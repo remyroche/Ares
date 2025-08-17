@@ -163,32 +163,32 @@ class TrainingCLI:
             )
 
             total_duration = time.time() - start_time
-            self.print(error("📊 Full training summary:")))
-            self.print(error("   Symbol: {symbol}")))
-            self.print(error("   Exchange: {exchange_name}")))
-            self.print(error("   MLflow Run ID: None")))
+            self.print(error("📊 Full training summary:"))
+            self.print(error("   Symbol: {symbol}"))
+            self.print(error("   Exchange: {exchange_name}"))
+            self.print(error("   MLflow Run ID: None"))
             self.logger.error(
                 f"   Training duration: {training_duration:.2f} seconds",
             )
-            self.print(error("   Total duration: {total_duration:.2f} seconds")))
-            self.print(failed("   Status: FAILED")))
+            self.print(error("   Total duration: {total_duration:.2f} seconds"))
+            self.print(failed("   Status: FAILED"))
 
             return False
 
         except Exception as e:
             total_duration = time.time() - start_time
-            self.print(failed("💥 Full training failed: {e}")))
-            self.print(error("Error type: {type(e).__name__}")))
-            self.print(error("Full traceback:")))
+            self.print(failed("💥 Full training failed: {e}"))
+            self.print(error("Error type: {type(e).__name__}"))
+            self.print(error("Full traceback:"))
             self.logger.exception(traceback.format_exc())
 
-            self.print(error("📊 Error context:")))
-            self.print(error("   Symbol: {symbol}")))
-            self.print(error("   Exchange: {exchange_name}")))
-            self.print(error("   Duration: {total_duration:.2f} seconds")))
-            self.print(error("   Error: {str(e)}")))
+            self.print(error("📊 Error context:"))
+            self.print(error("   Symbol: {symbol}"))
+            self.print(error("   Exchange: {exchange_name}"))
+            self.print(error("   Duration: {total_duration:.2f} seconds"))
+            self.print(error("   Error: {str(e)}"))
 
-            print(warning("Training error: {e}")))
+            print(warning("Training error: {e}"))
             return False
         finally:
             self.logger.info("🔧 Closing database connection...")
@@ -214,11 +214,11 @@ class TrainingCLI:
         try:
             return await self.run_full_training(symbol, exchange_name)
         except Exception as e:
-            self.print(failed("💥 Model retraining failed: {e}")))
-            self.print(error("Error type: {type(e).__name__}")))
-            self.print(error("Full traceback:")))
+            self.print(failed("💥 Model retraining failed: {e}"))
+            self.print(error("Error type: {type(e).__name__}"))
+            self.print(error("Full traceback:"))
             self.logger.exception(traceback.format_exc())
-            print(warning("Retraining error: {e}")))
+            print(warning("Retraining error: {e}"))
             return False
 
     async def run_full_test_run(self, symbol: str, exchange_name: str = "BINANCE"):
@@ -250,7 +250,7 @@ class TrainingCLI:
         )
 
         if not training_success:
-            self.print(failed("💥 Full training failed. Aborting full test run.")))
+            self.print(failed("💥 Full training failed. Aborting full test run."))
             return
 
         self.logger.info("✅ STEP 1/2 Complete: Training Successful!")
@@ -376,15 +376,15 @@ class TrainingCLI:
 
         except Exception as e:
             backtest_duration = time.time() - backtest_start_time
-            self.print(failed("💥 Backtesting failed during full test run: {e}")))
-            self.print(error("Error type: {type(e).__name__}")))
-            self.print(error("Full traceback:")))
+            self.print(failed("💥 Backtesting failed during full test run: {e}"))
+            self.print(error("Error type: {type(e).__name__}"))
+            self.print(error("Full traceback:"))
             self.logger.exception(traceback.format_exc())
-            self.print(error("📊 Backtest error context:")))
-            self.print(error("   Duration: {backtest_duration:.2f} seconds")))
-            self.print(error("   Error: {str(e)}")))
+            self.print(error("📊 Backtest error context:"))
+            self.print(error("   Duration: {backtest_duration:.2f} seconds"))
+            self.print(error("   Error: {str(e)}"))
 
-            print(failed("Backtesting failed: {e}")))
+            print(failed("Backtesting failed: {e}"))
             return
         finally:
             backtest_duration = time.time() - backtest_start_time
@@ -585,7 +585,7 @@ def get_symbols_to_process(argv: list) -> list[tuple[str, str]]:
         for token in tokens:
             symbols_list.append((token, exchange))
     if not symbols_list:
-        system_print(warning("No supported tokens found in configuration.")))
+        system_print(warning("No supported tokens found in configuration."))
     return symbols_list
 
 
@@ -606,7 +606,7 @@ async def main():
     logger.info(f"Working directory: {Path.cwd()}")
 
     if len(sys.argv) < 2:
-        print(warning("❌ No command provided, showing usage")))
+        print(warning("❌ No command provided, showing usage"))
         print_usage()
         sys.exit(1)
 
@@ -619,7 +619,7 @@ async def main():
         if command in ["train", "retrain", "full-test-run"]:
             symbols_to_process = get_symbols_to_process(sys.argv)
             if not symbols_to_process:
-                print(error("No symbols to process. Exiting.")))
+                print(error("No symbols to process. Exiting."))
                 sys.exit(1)
 
             if len(sys.argv) < 3:
@@ -672,8 +672,8 @@ async def main():
         # as they are now handled by src/training/regularization.py
 
         else:
-            print(error("❌ Unknown command: {command}")))
-            print(warning("Unknown command: {command}")))
+            print(error("❌ Unknown command: {command}"))
+            print(warning("Unknown command: {command}"))
             print_usage()
             sys.exit(1)
 

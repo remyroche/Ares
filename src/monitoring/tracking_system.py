@@ -225,7 +225,9 @@ class TrackingSystem:
             return True
 
         except Exception:
-            self.logger.exception(failed("❌ Tracking System initialization failed: {e}"))
+            self.logger.exception(
+                failed("❌ Tracking System initialization failed: {e}")
+            )
             return False
 
     @handle_errors(
@@ -246,7 +248,9 @@ class TrackingSystem:
             self.logger.info("Tracking storage initialized")
 
         except Exception:
-            self.logger.exception(initialization_error("Error initializing tracking storage: {e}"))
+            self.logger.exception(
+                initialization_error("Error initializing tracking storage: {e}")
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -274,7 +278,9 @@ class TrackingSystem:
             self.logger.info("Regime tracking initialized")
 
         except Exception:
-            self.logger.exception(initialization_error("Error initializing regime tracking: {e}"))
+            self.logger.exception(
+                initialization_error("Error initializing regime tracking: {e}")
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -287,7 +293,9 @@ class TrackingSystem:
             self.logger.info("Feature tracking initialized")
 
         except Exception:
-            self.logger.exception(initialization_error("Error initializing feature tracking: {e}"))
+            self.logger.exception(
+                initialization_error("Error initializing feature tracking: {e}")
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),

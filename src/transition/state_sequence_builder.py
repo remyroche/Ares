@@ -26,14 +26,20 @@ class StateSequenceBuilder:
     UnifiedRegimeClassifier (HMM) and its mapping to coarse regimes.
     """
 
-    def __init__(self, config: dict[str, Any], exchange: str = "UNKNOWN", symbol: str = "UNKNOWN") -> None:
+    def __init__(
+        self, config: dict[str, Any], exchange: str = "UNKNOWN", symbol: str = "UNKNOWN"
+    ) -> None:
         self.config = config
         self.logger = system_logger.getChild("StateSequenceBuilder")
         tm_cfg = (config or {}).get("TRANSITION_MODELING", {})
         self.sb_cfg = StateBuilderConfig(
             hmm_n_states=int(tm_cfg.get("hmm_n_states", 5)),
             use_existing_urc_models=bool(tm_cfg.get("use_existing_urc_models", True)),
-            cache_dir=str((tm_cfg.get("cache", {}) or {}).get("cache_dir", "checkpoints/transition_cache")),
+            cache_dir=str(
+                (tm_cfg.get("cache", {}) or {}).get(
+                    "cache_dir", "checkpoints/transition_cache"
+                )
+            ),
         )
         self.exchange = exchange
         self.symbol = symbol
@@ -56,6 +62,7 @@ class StateSequenceBuilder:
             if not getattr(self.urc, "trained", False):
                 # Minimal training using available history
                 import asyncio
+
                 loop = asyncio.get_event_loop()
                 loop.run_until_complete(self.urc.train_complete_system(klines_df))
         except Exception as e:
@@ -68,7 +75,9 @@ class StateSequenceBuilder:
           - regime (str: BULL/BEAR/SIDEWAYS)
         """
         if klines_df is None or klines_df.empty:
-            return pd.DataFrame(index=pd.Index([], name=getattr(klines_df, 'index', None)))
+            return pd.DataFrame(
+                index=pd.Index([], name=getattr(klines_df, "index", None))
+            )
         # Cache key: hash of index
         cache_dir = self.sb_cfg.cache_dir
         try:
@@ -88,20 +97,34 @@ class StateSequenceBuilder:
             if features_df.empty:
                 return pd.DataFrame(index=klines_df.index)
             # Scale and predict HMM states
-            X = features_df[[
-                "log_returns","volatility_20","volume_ratio","rsi","macd","macd_signal",
-                "macd_histogram","bb_position","bb_width","atr","volatility_regime","volatility_acceleration"
-            ]].fillna(0)
+            X = features_df[
+                [
+                    "log_returns",
+                    "volatility_20",
+                    "volume_ratio",
+                    "rsi",
+                    "macd",
+                    "macd_signal",
+                    "macd_histogram",
+                    "bb_position",
+                    "bb_width",
+                    "atr",
+                    "volatility_regime",
+                    "volatility_acceleration",
+                ]
+            ].fillna(0)
             if self.urc.scaler is not None:
                 X_scaled = self.urc.scaler.transform(X)
             else:
                 from sklearn.preprocessing import StandardScaler
+
                 self.urc.scaler = StandardScaler().fit(X)
                 X_scaled = self.urc.scaler.transform(X)
             hmm_model = self.urc.hmm_model
             if hmm_model is None:
                 # Train minimal HMM labeler if missing
                 import asyncio
+
                 loop = asyncio.get_event_loop()
                 loop.run_until_complete(self.urc.train_hmm_labeler(klines_df))
                 hmm_model = self.urc.hmm_model
@@ -109,10 +132,13 @@ class StateSequenceBuilder:
             # Map to coarse regimes
             mapping = self.urc.state_to_regime_map or {}
             regimes = [mapping.get(int(s), "SIDEWAYS") for s in state_ids]
-            out = pd.DataFrame({
-                "hmm_state_id": state_ids.astype(int),
-                "regime": regimes,
-            }, index=klines_df.index)
+            out = pd.DataFrame(
+                {
+                    "hmm_state_id": state_ids.astype(int),
+                    "regime": regimes,
+                },
+                index=klines_df.index,
+            )
             try:
                 if cache_dir:
                     out.to_parquet(os.path.join(cache_dir, key))

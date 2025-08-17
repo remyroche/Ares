@@ -26,8 +26,8 @@ class SavingStep:
 
     async def initialize(self) -> None:
         """Initialize the saving step."""
-        self.logger.info("Initializing Saving Step...")
-        self.logger.info("Saving Step initialized successfully")
+        self.logger.info("🚀 Initializing Saving Step...")
+        self.logger.info("✅ Saving Step initialized successfully")
 
     async def execute(
         self,
@@ -207,7 +207,7 @@ class SavingStep:
                 import mlflow  # type: ignore
             except Exception as import_error:
                 self.logger.error(
-                    "MLflow is required but not installed. Install it with: 'poetry add mlflow'",
+                    "🚨 MLflow is required but not installed. Install it with: 'poetry add mlflow'",
                 )
                 raise import_error
 
@@ -252,7 +252,7 @@ class SavingStep:
                 self.logger.info("✅ Training results saved to MLflow successfully")
 
         except Exception as e:
-            self.logger.exception("MLflow saving failed")
+            self.logger.exception("🚨 MLflow saving failed")
             raise
 
     async def _create_training_report(
@@ -318,7 +318,88 @@ class SavingStep:
             raise
 
 
+# Import training pipeline decorators for comprehensive security and troubleshooting
+from src.utils.training_pipeline_decorators import (
+    validate_step_prerequisites,
+    secure_data_processing,
+    prevent_data_leakage,
+    resource_monitor,
+    memory_efficient,
+    debug_training_step,
+    circuit_breaker_protection,
+    validate_step_output,
+    quality_gate,
+    deterministic_seed,
+    idempotent_step,
+    artifact_write_lock,
+    nan_inf_and_constant_guard,
+    artifact_versioning,
+    time_budget_watchdog,
+)
+
+
 # For backward compatibility with existing step structure
+@deterministic_seed(42)
+@idempotent_step(step_key="step16_saving")
+@artifact_write_lock()
+@nan_inf_and_constant_guard()
+@artifact_versioning("1.0")
+@time_budget_watchdog(soft_timeout_seconds=1200.0)
+@validate_step_prerequisites(
+    required_directories=["data/training", "models"],
+    min_memory_gb=4.0,
+    min_disk_gb=5.0,
+    required_packages=["pandas", "numpy", "mlflow"],
+    data_quality_checks={
+        "min_rows": 100,
+        "required_columns": ["timestamp", "features", "targets"],
+    },
+    context="Saving Results",
+)
+@secure_data_processing(
+    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True
+)
+@prevent_data_leakage(
+    temporal_validation=True,
+    feature_leakage_detection=True,
+    lookahead_bias_prevention=True,
+)
+@resource_monitor(
+    memory_threshold_gb=8.0,
+    cpu_threshold_percent=70.0,
+    disk_threshold_gb=10.0,
+    monitor_interval=30.0,
+    auto_cleanup=True,
+)
+@memory_efficient(
+    chunk_size=20000, streaming_processing=True, memory_pool=True, cleanup_frequency=40
+)
+@debug_training_step(
+    log_intermediate_results=True,
+    save_debug_artifacts=True,
+    performance_profiling=True,
+    error_context_preservation=True,
+)
+@circuit_breaker_protection(
+    failure_threshold=3,
+    recovery_timeout=120.0,
+    expected_exception=Exception,
+    monitor_interval=30.0,
+)
+@validate_step_output(
+    required_files=["data/training/{exchange}_{symbol}_training_report.json"],
+    data_quality_checks={
+        "min_rows": 1,
+        "required_columns": ["report_title", "generation_date"],
+    },
+    performance_thresholds={"saving_time_minutes": 30.0},
+    format_validation=True,
+)
+@quality_gate(
+    model_performance_thresholds={"saving_success_rate": 0.9},
+    data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
+    validation_score_requirements={"saving_score": 0.8},
+)
 async def run_step(
     symbol: str,
     exchange: str = "BINANCE",

@@ -269,13 +269,21 @@ class ModelTrainingIntegrator:
             if self.data_optimizer:
                 X = await self.data_optimizer.optimize_dataframe(X, strategy="speed")
 
-            # Split data
-            X_train, X_test, y_train, y_test = train_test_split(
-                X,
-                y,
-                test_size=self.test_size,
-                random_state=self.random_state,
-                stratify=y,
+            # Split data - FIXED: Use time-based split to prevent lookahead bias
+            split_idx = int(len(X) * (1 - self.test_size))
+            X_train = X.iloc[:split_idx]
+            X_test = X.iloc[split_idx:]
+            y_train = y.iloc[:split_idx]
+            y_test = y.iloc[split_idx:]
+
+            self.logger.info(
+                f"🔀 Time-based train/test split: {len(X_train)}/{len(X_test)} samples"
+            )
+            self.logger.info(
+                f"   → Train period: {X_train.index[0] if len(X_train) > 0 else 'N/A'} to {X_train.index[-1] if len(X_train) > 0 else 'N/A'}"
+            )
+            self.logger.info(
+                f"   → Test period: {X_test.index[0] if len(X_test) > 0 else 'N/A'} to {X_test.index[-1] if len(X_test) > 0 else 'N/A'}"
             )
 
             trained_models = {}

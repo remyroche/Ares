@@ -78,11 +78,11 @@ def launch_bot_with_monitoring():
 
             # Check if processes are still running
             if bot_process.poll() is not None:
-                print(warning("Bot process has stopped!")))
+                print(warning("Bot process has stopped!"))
                 break
 
             if monitor_process.poll() is not None:
-                print(warning("Monitor process has stopped!")))
+                print(warning("Monitor process has stopped!"))
                 break
 
     except KeyboardInterrupt:

@@ -22,6 +22,19 @@ from src.utils.warning_symbols import (
 )
 from src.utils.confidence import aggregate_directional_confidences
 
+# Import training pipeline decorators for comprehensive security and troubleshooting
+from src.utils.training_pipeline_decorators import (
+    validate_step_prerequisites,
+    secure_data_processing,
+    prevent_data_leakage,
+    resource_monitor,
+    memory_efficient,
+    debug_training_step,
+    circuit_breaker_protection,
+    validate_step_output,
+    quality_gate,
+)
+
 
 class DualModelSystem:
     """
@@ -443,6 +456,70 @@ class DualModelSystem:
             self.logger.exception(error_msg)
             self.print(initialization_error(error_msg))
 
+    @validate_step_prerequisites(
+        required_directories=["models", "data_cache"],
+        min_memory_gb=8.0,
+        min_disk_gb=5.0,
+        required_packages=["pandas", "numpy", "sklearn"],
+        data_quality_checks={
+            "min_rows": 100,
+            "required_columns": ["timestamp", "open", "high", "low", "close", "volume"],
+        },
+        context="Dual Model System",
+    )
+    @secure_data_processing(
+        backup_before=True,
+        integrity_checks=True,
+        memory_cleanup=True,
+        data_validation=True,
+    )
+    @prevent_data_leakage(
+        temporal_validation=True,
+        feature_leakage_detection=True,
+        lookahead_bias_prevention=True,
+    )
+    @resource_monitor(
+        memory_threshold_gb=16.0,
+        cpu_threshold_percent=80.0,
+        disk_threshold_gb=10.0,
+        monitor_interval=30.0,
+        auto_cleanup=True,
+    )
+    @memory_efficient(
+        chunk_size=10000,
+        streaming_processing=True,
+        memory_pool=True,
+        cleanup_frequency=30,
+    )
+    @debug_training_step(
+        log_intermediate_results=True,
+        save_debug_artifacts=True,
+        performance_profiling=True,
+        error_context_preservation=True,
+    )
+    @circuit_breaker_protection(
+        failure_threshold=3,
+        recovery_timeout=120.0,
+        expected_exception=Exception,
+        monitor_interval=30.0,
+    )
+    @validate_step_output(
+        required_files=["models/*.pkl"],
+        data_quality_checks={
+            "min_rows": 1,
+            "required_columns": ["action", "signal", "confidence"],
+        },
+        performance_thresholds={"decision_time_seconds": 30.0, "memory_usage_gb": 8.0},
+        format_validation=True,
+    )
+    @quality_gate(
+        model_performance_thresholds={
+            "decision_accuracy": 0.6,
+            "confidence_threshold": 0.5,
+        },
+        data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
+        validation_score_requirements={"decision_quality_score": 0.7},
+    )
     @handle_specific_errors(
         error_handlers={
             ValueError: (None, "Invalid market data for decision making"),
@@ -522,12 +599,26 @@ class DualModelSystem:
             )
 
             # Calculate final confidence using the specified formula
-            final_conf_agg = aggregate_directional_confidences([
-                {"direction": analyst_decision.get("direction", "HOLD"), "confidence": float(analyst_decision.get("confidence", 0.0))},
-                {"direction": (analyst_decision.get("direction", "HOLD") if tactician_decision.get("should_execute") else "HOLD"), "confidence": float(tactician_decision.get("confidence", 0.0))},
-            ])
+            final_conf_agg = aggregate_directional_confidences(
+                [
+                    {
+                        "direction": analyst_decision.get("direction", "HOLD"),
+                        "confidence": float(analyst_decision.get("confidence", 0.0)),
+                    },
+                    {
+                        "direction": (
+                            analyst_decision.get("direction", "HOLD")
+                            if tactician_decision.get("should_execute")
+                            else "HOLD"
+                        ),
+                        "confidence": float(tactician_decision.get("confidence", 0.0)),
+                    },
+                ]
+            )
             final_confidence = float(final_conf_agg.get("confidence", 0.0))
-            final_direction = final_conf_agg.get("direction", analyst_decision.get("direction", "HOLD"))
+            final_direction = final_conf_agg.get(
+                "direction", analyst_decision.get("direction", "HOLD")
+            )
 
             # Determine if we should execute the trade
             should_execute = final_confidence > 0.216  # Minimum threshold

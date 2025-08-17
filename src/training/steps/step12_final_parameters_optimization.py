@@ -40,13 +40,13 @@ class FinalParametersOptimizationStep:
     )
     async def initialize(self) -> None:
         """Initialize the final parameters optimization step."""
-        self.logger.info("Initializing Final Parameters Optimization Step...")
+        self.logger.info("🚀 Initializing Final Parameters Optimization Step...")
 
         # Validate Optuna configuration
         validation_errors = self._validate_optuna_config()
         if validation_errors:
             self.logger.warning(
-                f"Optuna config validation warnings: {validation_errors}",
+                f"⚠️ Optuna config validation warnings: {validation_errors}",
             )
 
         # Initialize optimization storage
@@ -87,7 +87,12 @@ class FinalParametersOptimizationStep:
 
             # Load calibration results
             from src.utils.logger import heartbeat
-            with heartbeat(self.logger, name="Step12 load_calibration_results", interval_seconds=60.0):
+
+            with heartbeat(
+                self.logger,
+                name="Step12 load_calibration_results",
+                interval_seconds=60.0,
+            ):
                 calibration_results = await self._load_calibration_results(
                     symbol,
                     exchange,
@@ -108,7 +113,11 @@ class FinalParametersOptimizationStep:
                 pass
 
             # Load previous optimization results for warm start
-            with heartbeat(self.logger, name="Step12 load_previous_optimization", interval_seconds=60.0):
+            with heartbeat(
+                self.logger,
+                name="Step12 load_previous_optimization",
+                interval_seconds=60.0,
+            ):
                 previous_results = await self._load_previous_optimization_results(
                     symbol,
                     exchange,
@@ -133,7 +142,11 @@ class FinalParametersOptimizationStep:
                 pass
 
             # Perform comprehensive parameter optimization
-            with heartbeat(self.logger, name="Step12 optimize_all_parameters", interval_seconds=60.0):
+            with heartbeat(
+                self.logger,
+                name="Step12 optimize_all_parameters",
+                interval_seconds=60.0,
+            ):
                 optimization_results = await self._optimize_all_parameters(
                     calibration_results,
                     previous_results,
@@ -155,7 +168,9 @@ class FinalParametersOptimizationStep:
                 pass
 
             # Validate optimization results
-            with heartbeat(self.logger, name="Step12 validate_optimization", interval_seconds=60.0):
+            with heartbeat(
+                self.logger, name="Step12 validate_optimization", interval_seconds=60.0
+            ):
                 validation_passed = await self._validate_optimization_results(
                     optimization_results,
                 )
@@ -165,7 +180,9 @@ class FinalParametersOptimizationStep:
                 )
 
             # Save optimization results
-            with heartbeat(self.logger, name="Step12 save_results", interval_seconds=60.0):
+            with heartbeat(
+                self.logger, name="Step12 save_results", interval_seconds=60.0
+            ):
                 await self._save_optimization_results(
                     optimization_results,
                     symbol,
@@ -181,7 +198,9 @@ class FinalParametersOptimizationStep:
                 pass
 
             # Generate optimization report
-            with heartbeat(self.logger, name="Step12 generate_report", interval_seconds=60.0):
+            with heartbeat(
+                self.logger, name="Step12 generate_report", interval_seconds=60.0
+            ):
                 report = await self._generate_optimization_report(
                     optimization_results,
                     start_time,
@@ -413,7 +432,9 @@ class FinalParametersOptimizationStep:
                     -metrics.get("max_drawdown", 0.1),
                 )
 
-            self.logger.info("Step12: Starting Optuna study for confidence thresholds (multi-objective)")
+            self.logger.info(
+                "Step12: Starting Optuna study for confidence thresholds (multi-objective)"
+            )
             study = optuna.create_study(
                 directions=["maximize", "maximize", "minimize", "maximize", "minimize"],
                 sampler=optuna.samplers.TPESampler(seed=42),
@@ -590,7 +611,9 @@ class FinalParametersOptimizationStep:
                     calibration_results,
                 )
 
-            self.logger.info("Step12: Starting Optuna study for position sizing parameters")
+            self.logger.info(
+                "Step12: Starting Optuna study for position sizing parameters"
+            )
             study = optuna.create_study(direction="maximize")
             # Warm start: enqueue previous best parameters if available
             if previous_results and "position_sizing_parameters" in previous_results:
@@ -599,7 +622,9 @@ class FinalParametersOptimizationStep:
                 )
                 if prev_params:
                     study.enqueue_trial(prev_params)
-            self.logger.info("Step12: Optimizing position sizing parameters (n_trials=60)")
+            self.logger.info(
+                "Step12: Optimizing position sizing parameters (n_trials=60)"
+            )
             study.optimize(objective, n_trials=60)
 
             return {
@@ -675,7 +700,9 @@ class FinalParametersOptimizationStep:
                     calibration_results,
                 )
 
-            self.logger.info("Step12: Starting Optuna study for risk management parameters")
+            self.logger.info(
+                "Step12: Starting Optuna study for risk management parameters"
+            )
             study = optuna.create_study(direction="maximize")
             # Warm start: enqueue previous best parameters if available
             if previous_results and "risk_management_parameters" in previous_results:
@@ -684,7 +711,9 @@ class FinalParametersOptimizationStep:
                 )
                 if prev_params:
                     study.enqueue_trial(prev_params)
-            self.logger.info("Step12: Optimizing risk management parameters (n_trials=50)")
+            self.logger.info(
+                "Step12: Optimizing risk management parameters (n_trials=50)"
+            )
             study.optimize(objective, n_trials=50)
 
             return {
@@ -823,7 +852,9 @@ class FinalParametersOptimizationStep:
 
                 return self._evaluate_regime_performance(params, calibration_results)
 
-            self.logger.info("Step12: Starting Optuna study for regime-specific parameters")
+            self.logger.info(
+                "Step12: Starting Optuna study for regime-specific parameters"
+            )
             study = optuna.create_study(direction="maximize")
             # Warm start: enqueue previous best parameters if available
             if previous_results and "regime_specific_parameters" in previous_results:
@@ -832,7 +863,9 @@ class FinalParametersOptimizationStep:
                 )
                 if prev_params:
                     study.enqueue_trial(prev_params)
-            self.logger.info("Step12: Optimizing regime-specific parameters (n_trials=30)")
+            self.logger.info(
+                "Step12: Optimizing regime-specific parameters (n_trials=30)"
+            )
             study.optimize(objective, n_trials=30)
 
             return {
@@ -1502,7 +1535,7 @@ class FinalParametersOptimizationStep:
                 if isinstance(df, pd.DataFrame):
                     return df
         except Exception:
-            self.logger.warning("Validation frame load failed from step 4")
+            self.logger.warning("⚠️ Validation frame load failed from step 4")
 
         # No fallback - step should fail if validation data is missing
         msg = f"Validation frame not found: {path}. Step 12 requires features from Step 4."
@@ -1585,7 +1618,91 @@ class FinalParametersOptimizationStep:
             }
 
 
+# Import training pipeline decorators for comprehensive security and troubleshooting
+from src.utils.training_pipeline_decorators import (
+    validate_step_prerequisites,
+    secure_data_processing,
+    prevent_data_leakage,
+    resource_monitor,
+    memory_efficient,
+    debug_training_step,
+    circuit_breaker_protection,
+    validate_step_output,
+    quality_gate,
+    deterministic_seed,
+    idempotent_step,
+    artifact_write_lock,
+    nan_inf_and_constant_guard,
+    artifact_versioning,
+    time_budget_watchdog,
+)
+
+
 # For backward compatibility with existing step structure
+@deterministic_seed(42)
+@idempotent_step(step_key="step12_final_parameters_optimization")
+@artifact_write_lock()
+@nan_inf_and_constant_guard()
+@artifact_versioning("1.0")
+@time_budget_watchdog(soft_timeout_seconds=10800.0)
+@validate_step_prerequisites(
+    required_directories=["data/training", "models"],
+    min_memory_gb=8.0,
+    min_disk_gb=5.0,
+    required_packages=["pandas", "numpy", "sklearn", "optuna"],
+    data_quality_checks={
+        "min_rows": 1000,
+        "required_columns": ["timestamp", "features", "targets"],
+    },
+    context="Final Parameters Optimization",
+)
+@secure_data_processing(
+    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True
+)
+@prevent_data_leakage(
+    temporal_validation=True,
+    feature_leakage_detection=True,
+    cross_validation_isolation=True,
+    lookahead_bias_prevention=True,
+)
+@resource_monitor(
+    memory_threshold_gb=16.0,
+    cpu_threshold_percent=90.0,
+    disk_threshold_gb=10.0,
+    monitor_interval=60.0,
+    auto_cleanup=True,
+)
+@memory_efficient(
+    chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=25
+)
+@debug_training_step(
+    log_intermediate_results=True,
+    save_debug_artifacts=True,
+    performance_profiling=True,
+    error_context_preservation=True,
+)
+@circuit_breaker_protection(
+    failure_threshold=3,
+    recovery_timeout=600.0,
+    expected_exception=Exception,
+    monitor_interval=60.0,
+)
+@validate_step_output(
+    required_files=["models/{exchange}_{symbol}_optimized_params.json"],
+    data_quality_checks={
+        "min_rows": 100,
+        "required_columns": ["predictions", "probabilities"],
+    },
+    performance_thresholds={"optimization_time_minutes": 180.0, "memory_usage_gb": 8.0},
+    format_validation=True,
+)
+@quality_gate(
+    model_performance_thresholds={"accuracy": 0.6, "f1_score": 0.5},
+    data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
+    convergence_checks=True,
+    overfitting_detection=True,
+    validation_score_requirements={"optimization_score": 0.6},
+)
 async def run_step(
     symbol: str,
     exchange: str = "BINANCE",

@@ -99,19 +99,6 @@ class MarketIndicators:
 
 @dataclass_json
 @dataclass
-class MarketHealth:
-    """Market health indicators."""
-
-    overall_health_score: float
-    volatility_regime: str
-    liquidity_score: float
-    stress_score: float
-    market_strength: float
-    volume_health: str
-    price_trend: str
-    market_regime: str
-
-
 @dataclass_json
 @dataclass
 class MLConfidenceScores:
@@ -141,7 +128,7 @@ class DetailedTradeRecord:
     position_sizing: PositionSizing
     pnl_analysis: PnLAnalysis
     market_indicators: MarketIndicators
-    market_health: MarketHealth
+
     ml_confidence_scores: MLConfidenceScores
     trade_status: str  # "open", "closed", "cancelled"
     # Fields with defaults must come after all non-default fields
@@ -217,7 +204,6 @@ class PaperTradingReporter:
         self,
         trade_data: dict[str, Any],
         market_indicators: dict[str, Any],
-        market_health: dict[str, Any],
         ml_confidence: dict[str, Any],
     ) -> bool:
         """
@@ -226,7 +212,6 @@ class PaperTradingReporter:
         Args:
             trade_data: Basic trade information
             market_indicators: Market indicators at trade time
-            market_health: Market health metrics
             ml_confidence: ML ensemble confidence scores
 
         Returns:
@@ -288,16 +273,6 @@ class PaperTradingReporter:
             )
 
             # Create market health
-            market_health_obj = MarketHealth(
-                overall_health_score=market_health.get("overall_health_score", 0.0),
-                volatility_regime=market_health.get("volatility_regime", "unknown"),
-                liquidity_score=market_health.get("liquidity_score", 0.0),
-                stress_score=market_health.get("stress_score", 0.0),
-                market_strength=market_health.get("market_strength", 0.0),
-                volume_health=market_health.get("volume_health", "unknown"),
-                price_trend=market_health.get("price_trend", "unknown"),
-                market_regime=market_health.get("market_regime", "unknown"),
-            )
 
             # Create ML confidence scores
             ml_confidence_obj = MLConfidenceScores(
@@ -329,7 +304,6 @@ class PaperTradingReporter:
                 position_sizing=position_sizing,
                 pnl_analysis=pnl_analysis,
                 market_indicators=market_indicators_obj,
-                market_health=market_health_obj,
                 ml_confidence_scores=ml_confidence_obj,
                 trade_status=trade_data.get("status", "open"),
                 execution_quality=trade_data.get("execution_quality", 0.0),
@@ -726,12 +700,6 @@ class PaperTradingReporter:
                     # Win rate calculation would need closed trades
 
             # Market health analysis
-            market_health_scores = [
-                t.market_health.overall_health_score for t in self.trade_records
-            ]
-            avg_market_health = (
-                np.mean(market_health_scores) if market_health_scores else 0.0
-            )
 
             # ML confidence analysis
             confidence_scores = [
@@ -741,12 +709,6 @@ class PaperTradingReporter:
 
             return {
                 "trade_type_analysis": trade_types,
-                "market_health_analysis": {
-                    "average_health_score": avg_market_health,
-                    "health_score_distribution": self._calculate_distribution(
-                        market_health_scores,
-                    ),
-                },
                 "confidence_analysis": {
                     "average_confidence": avg_confidence,
                     "confidence_distribution": self._calculate_distribution(
@@ -850,9 +812,6 @@ class PaperTradingReporter:
                     ),
                     "ensemble_confidence": trade.get("ml_confidence_scores", {}).get(
                         "ensemble_confidence",
-                    ),
-                    "market_health_score": trade.get("market_health", {}).get(
-                        "overall_health_score",
                     ),
                     "trade_status": trade.get("trade_status"),
                 }

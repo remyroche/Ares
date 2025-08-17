@@ -223,6 +223,19 @@ class PaperTradingIntegration:
                     f"✅ Integrated trade executed: {side} {quantity} {symbol} @ ${price:.4f}",
                 )
 
+                # Also write to dedicated trades log
+                try:
+                    from src.utils.comprehensive_logger import get_comprehensive_logger
+
+                    cl = get_comprehensive_logger()
+                    if cl:
+                        cl.log_trade(
+                            f"{side.upper()} {quantity} {symbol} @ ${price:.4f} ts={timestamp.isoformat()}"
+                        )
+                except Exception:
+                    # Trade logging should not affect execution
+                    pass
+
                 # Generate real-time report if enabled
                 if self.enable_real_time_reporting and self.reporter:
                     await self._generate_real_time_report()
@@ -453,5 +466,7 @@ async def setup_paper_trading_integration(
         return None
 
     except Exception:
-        system_logger.exception(error("Error setting up paper trading integration: {e}"))
+        system_logger.exception(
+            error("Error setting up paper trading integration: {e}")
+        )
         return None

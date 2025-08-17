@@ -568,8 +568,8 @@ class DualModelSystemParameters:
     confidence_threshold: float = 0.6
     max_prediction_horizon: int = 1
 
-    # Meta-labeling integration
-    enable_meta_labeling: bool = True
+    # Meta-labeling deprecated
+    enable_meta_labeling: bool = False
     meta_labeling_config: dict[str, Any] = None
 
     # Dual confidence formula parameters

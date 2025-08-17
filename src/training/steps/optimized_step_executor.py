@@ -15,6 +15,11 @@ import psutil
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.validator_orchestrator import validator_orchestrator
+from src.utils.data_quality_decorators import (
+    validate_data_quality,
+    validate_feature_engineering_with_lookahead_bias_detection,
+    ValidationLevel,
+)
 
 
 class OptimizedStepExecutor:
@@ -48,6 +53,27 @@ class OptimizedStepExecutor:
             if self.enable_parallel_execution
             else None
         )
+        # Validator mapping and behavior
+        self._validator_step_map: Dict[str, str] = {
+            "data_collection": "step1_data_collection",
+            "feature_engineering": "step2_feature_engineering",
+            "hmm_regime_discovery": "step3_hmm_regime_discovery",
+            "processing_labeling": "step4_processing_labeling",
+            "regime_classification": "step4_market_regime_classification",
+            "data_splitting": "step5_regime_data_splitting",
+            "hmm_based_training": "step6_hmm_based_training",
+            "unified_regime_intelligence": "step6_5_unified_regime_intelligence",
+            "analyst_enhancement": "step7_analyst_enhancement",
+            "tactician_labeling": "step8_tactician_labeling",
+            "tactician_specialist_training": "step9_tactician_specialist_training",
+            "confidence_calibration": "step10_confidence_calibration",
+            "final_parameters_optimization": "step11_final_parameters_optimization",
+            "walk_forward_validation": "step12_walk_forward_validation",
+            "monte_carlo_validation": "step13_monte_carlo_validation",
+            "ab_testing": "step14_ab_testing",
+            "saving": "step15_saving",
+        }
+        self.validator_required: bool = self.config.get("validator_required", True)
 
     async def execute_optimized_pipeline(
         self, symbol: str, exchange: str, timeframe: str = "1h"
@@ -57,6 +83,8 @@ class OptimizedStepExecutor:
         self.logger.info(f"🚀 Starting optimized training pipeline for {symbol}")
 
         pipeline_results = {}
+        pipeline_state: Dict[str, Any] = {}
+        training_input: Dict[str, Any] = {"symbol": symbol, "exchange": exchange, "timeframe": timeframe}
 
         try:
             # Step 1: Optimized Data Collection
@@ -69,6 +97,10 @@ class OptimizedStepExecutor:
                 timeframe,
             )
             pipeline_results["step_1_data_collection"] = data_results
+            pipeline_state[self._validator_step_map["data_collection"]] = data_results
+            if not await self._validate_and_gate("data_collection", training_input, pipeline_state):
+                pipeline_results["validation_failed_at"] = "step_1_data_collection"
+                return pipeline_results
 
             # Step 2: Market Regime Classification (with caching)
             self._take_memory_snapshot("after_data_collection")
@@ -80,6 +112,10 @@ class OptimizedStepExecutor:
                 exchange,
             )
             pipeline_results["step_2_regime_classification"] = regime_results
+            pipeline_state[self._validator_step_map["regime_classification"]] = regime_results
+            if not await self._validate_and_gate("regime_classification", training_input, pipeline_state):
+                pipeline_results["validation_failed_at"] = "step_2_regime_classification"
+                return pipeline_results
 
             # Step 3: Parallel Data Splitting
             splitting_results = await self._execute_step_with_optimization(
@@ -89,6 +125,10 @@ class OptimizedStepExecutor:
                 regime_results,
             )
             pipeline_results["step_3_data_splitting"] = splitting_results
+            pipeline_state[self._validator_step_map["data_splitting"]] = splitting_results
+            if not await self._validate_and_gate("data_splitting", training_input, pipeline_state):
+                pipeline_results["validation_failed_at"] = "step_3_data_splitting"
+                return pipeline_results
 
             # Step 4: Feature Engineering with Streaming
             self._take_memory_snapshot("after_regime_classification")
@@ -100,6 +140,10 @@ class OptimizedStepExecutor:
                 exchange,
             )
             pipeline_results["step_4_feature_engineering"] = feature_results
+            pipeline_state[self._validator_step_map["feature_engineering"]] = feature_results
+            if not await self._validate_and_gate("feature_engineering", training_input, pipeline_state):
+                pipeline_results["validation_failed_at"] = "step_4_feature_engineering"
+                return pipeline_results
 
             # Step 5: Parallel Specialist Training
             specialist_results = await self._execute_step_with_optimization(
@@ -109,6 +153,10 @@ class OptimizedStepExecutor:
                 regime_results,
             )
             pipeline_results["step_5_specialist_training"] = specialist_results
+            pipeline_state[self._validator_step_map["hmm_based_training"]] = specialist_results
+            if not await self._validate_and_gate("hmm_based_training", training_input, pipeline_state):
+                pipeline_results["validation_failed_at"] = "step_5_specialist_training"
+                return pipeline_results
 
             # Step 6: Enhanced Analysis (Memory Optimized)
             self._take_memory_snapshot("after_specialist_training")
@@ -119,8 +167,12 @@ class OptimizedStepExecutor:
                 feature_results,
             )
             pipeline_results["step_6_analyst_enhancement"] = enhancement_results
+            pipeline_state[self._validator_step_map["analyst_enhancement"]] = enhancement_results
+            if not await self._validate_and_gate("analyst_enhancement", training_input, pipeline_state):
+                pipeline_results["validation_failed_at"] = "step_6_analyst_enhancement"
+                return pipeline_results
 
-            # Step 7: Parallel Ensemble Creation
+            # Step 7: Parallel Ensemble Creation (no validator)
             ensemble_results = await self._execute_step_with_optimization(
                 "ensemble_creation",
                 self._optimized_ensemble_creation,
@@ -129,9 +181,13 @@ class OptimizedStepExecutor:
             )
             pipeline_results["step_7_ensemble_creation"] = ensemble_results
 
-            # Step 8-16: Remaining steps with optimizations
+            # Step 8-16: Remaining steps with validations where available
             remaining_results = await self._execute_remaining_steps_optimized(
-                ensemble_results, feature_results, regime_results
+                ensemble_results,
+                feature_results,
+                regime_results,
+                training_input,
+                pipeline_state,
             )
             pipeline_results.update(remaining_results)
 
@@ -144,14 +200,11 @@ class OptimizedStepExecutor:
                 "total_time_seconds": total_time,
                 "cache_hits": self.cache_hits,
                 "cache_misses": self.cache_misses,
-                "cache_hit_ratio": self.cache_hits
-                / (self.cache_hits + self.cache_misses)
+                "cache_hit_ratio": self.cache_hits / (self.cache_hits + self.cache_misses)
                 if (self.cache_hits + self.cache_misses) > 0
                 else 0,
                 "memory_snapshots": self.memory_snapshots,
-                "parallel_workers_used": self.max_workers
-                if self.enable_parallel_execution
-                else 1,
+                "parallel_workers_used": self.max_workers if self.enable_parallel_execution else 1,
             }
 
             self.logger.info(
@@ -399,6 +452,7 @@ class OptimizedStepExecutor:
         """Parallel feature engineering for different regimes."""
         regime_splits = splitting_results.get("regime_splits", {})
 
+        @validate_feature_engineering_with_lookahead_bias_detection
         async def engineer_features_for_regime(regime_name, regime_data):
             # Implement regime-specific feature engineering
             # This is a placeholder - implement your actual logic
@@ -427,8 +481,8 @@ class OptimizedStepExecutor:
         self, feature_results: Dict[str, Any], regime_results: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Optimized specialist training with incremental learning."""
-        from src.training.steps.step5_analyst_specialist_training import (
-            run_analyst_specialist_training,
+        from src.training.steps.step6_hmm_based_training import (
+            HMMBasedTrainingStep,
         )
 
         try:
@@ -438,9 +492,10 @@ class OptimizedStepExecutor:
                     feature_results, regime_results
                 )
             else:
-                return await run_analyst_specialist_training(
-                    feature_results, regime_results
-                )
+                # Create HMM-based training step instance
+                hmm_training_step = HMMBasedTrainingStep(self.config)
+                await hmm_training_step.initialize()
+                return await hmm_training_step.execute(feature_results, regime_results)
 
         except Exception as e:
             self.logger.error(f"Specialist training failed: {e}")
@@ -545,6 +600,8 @@ class OptimizedStepExecutor:
         ensemble_results: Dict[str, Any],
         feature_results: Dict[str, Any],
         regime_results: Dict[str, Any],
+        training_input: Dict[str, Any],
+        pipeline_state: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Execute remaining steps 8-16 with optimizations."""
         remaining_results = {}
@@ -570,6 +627,15 @@ class OptimizedStepExecutor:
                 step_name, ensemble_results, feature_results, regime_results
             )
             remaining_results[step_key] = step_result
+
+            # Run validator if mapping exists
+            validator_key = self._validator_step_map.get(step_name)
+            if validator_key:
+                pipeline_state[validator_key] = step_result
+                ok = await self._validate_and_gate(validator_key, training_input, pipeline_state, already_mapped=True)
+                if not ok:
+                    remaining_results["validation_failed_at"] = step_key
+                    break
 
             # Memory cleanup between steps
             if self.enable_memory_optimization and i % 3 == 0:
@@ -696,3 +762,35 @@ class OptimizedStepExecutor:
             "memory_optimization_enabled": self.enable_memory_optimization,
             "caching_enabled": self.enable_caching,
         }
+
+    async def _validate_and_gate(
+        self,
+        step_name: str,
+        training_input: Dict[str, Any],
+        pipeline_state: Dict[str, Any],
+        already_mapped: bool = False,
+    ) -> bool:
+        """Run step validator and decide whether to continue to the next step."""
+        try:
+            validator_step = step_name if already_mapped else self._validator_step_map.get(step_name)
+            if not validator_step:
+                return True
+            result = await validator_orchestrator.run_step_validator(
+                validator_step, training_input, pipeline_state, self.config
+            )
+            passed = bool(result.get("validation_passed", False)) if isinstance(result, dict) else bool(result)
+            if passed:
+                self.logger.info(f"✅ Validator approved progression for {validator_step}")
+                return True
+            msg = f"Validator rejected progression for {validator_step}"
+            if self.validator_required:
+                self.logger.error(msg)
+                return False
+            self.logger.warning(f"{msg}, but continuing due to configuration")
+            return True
+        except Exception as e:
+            if self.validator_required:
+                self.logger.error(f"Validator error for {step_name}: {e}")
+                return False
+            self.logger.warning(f"Validator error for {step_name}: {e}; continuing")
+            return True

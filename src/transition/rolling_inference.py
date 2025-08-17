@@ -28,14 +28,21 @@ class RollingMTInference:
     - Produces entry/exit decisions and supporting probabilities
     """
 
-    def __init__(self, config: dict[str, Any], models_dir: str, symbol: str, timeframe: str) -> None:
+    def __init__(
+        self, config: dict[str, Any], models_dir: str, symbol: str, timeframe: str
+    ) -> None:
         self.logger = system_logger.getChild("RollingMTInference")
         tm = (config or {}).get("TRANSITION_MODELING", {})
         r = tm.get("rolling", {}) if isinstance(tm.get("rolling", {}), dict) else {}
         self.cfg = RollingInferenceConfig(
             pre_window=int(r.get("pre_window", tm.get("pre_window", 60))),
             horizons=list(r.get("direction_horizons", [5, 15])),
-            path_class_priority=["beginning_of_trend", "continuation", "reversal", "end_of_trend"],
+            path_class_priority=[
+                "beginning_of_trend",
+                "continuation",
+                "reversal",
+                "end_of_trend",
+            ],
         )
         self.models_dir = models_dir
         self.prefix = f"{symbol}_{timeframe}_rolling_mtrf"
@@ -46,7 +53,9 @@ class RollingMTInference:
 
     def load(self) -> bool:
         try:
-            models, meta, feat = MultiTaskRandomForest.load(self.models_dir, prefix=self.prefix)
+            models, meta, feat = MultiTaskRandomForest.load(
+                self.models_dir, prefix=self.prefix
+            )
             self.models = models
             self.thresholds = meta.get("thresholds", {})
             self.reliability = meta.get("reliability", {})
@@ -62,8 +71,18 @@ class RollingMTInference:
     def _rf_pooled_features(self, seq_df: pd.DataFrame) -> Dict[str, float]:
         out: Dict[str, float] = {}
         for col in [
-            "log_returns","volatility_20","volume_ratio","rsi","macd","macd_signal",
-            "macd_histogram","bb_position","bb_width","atr","volatility_regime","volatility_acceleration",
+            "log_returns",
+            "volatility_20",
+            "volume_ratio",
+            "rsi",
+            "macd",
+            "macd_signal",
+            "macd_histogram",
+            "bb_position",
+            "bb_width",
+            "atr",
+            "volatility_regime",
+            "volatility_acceleration",
         ]:
             if col in seq_df.columns:
                 s = pd.to_numeric(seq_df[col], errors="coerce")
@@ -83,7 +102,9 @@ class RollingMTInference:
         x = {name: float(rf.get(name, 0.0)) for name in self.feature_names}
         return pd.DataFrame([x])
 
-    def _apply_reliability(self, head: str, value: float, cls: str | None = None) -> float:
+    def _apply_reliability(
+        self, head: str, value: float, cls: str | None = None
+    ) -> float:
         try:
             if head == "path_class" and cls is not None:
                 scale = float(self.reliability.get("path_class", {}).get(cls, 1.0))
@@ -94,7 +115,9 @@ class RollingMTInference:
         except Exception:
             return float(np.clip(value, 0.0, 1.0))
 
-    def _get_threshold(self, head: str, cls: str | None = None, default: float = 0.6) -> float:
+    def _get_threshold(
+        self, head: str, cls: str | None = None, default: float = 0.6
+    ) -> float:
         try:
             if head == "path_class" and cls is not None:
                 return float(self.thresholds.get("path_class", {}).get(cls, default))
@@ -116,7 +139,9 @@ class RollingMTInference:
                 proba = pc.predict_proba(X)[0]
                 classes = list(getattr(pc, "classes_", []))
                 for i, c in enumerate(classes):
-                    p_adj = self._apply_reliability("path_class", float(proba[i]), cls=str(c))
+                    p_adj = self._apply_reliability(
+                        "path_class", float(proba[i]), cls=str(c)
+                    )
                     p_path[str(c)] = p_adj
                 # Optionally normalize
                 s = float(sum(p_path.values()))
@@ -165,7 +190,9 @@ class RollingMTInference:
                 classes = list(getattr(nr, "classes_", []))
                 p_nr = {}
                 for i, c in enumerate(classes):
-                    p_adj = self._apply_reliability("next_regime", float(proba[i]), cls=str(c))
+                    p_adj = self._apply_reliability(
+                        "next_regime", float(proba[i]), cls=str(c)
+                    )
                     p_nr[str(c)] = p_adj
                 s = float(sum(p_nr.values()))
                 if s > 0:
@@ -189,7 +216,12 @@ class RollingMTInference:
             p_onset = float(out.get("p_onset_beginning", 0.0))
             thr_onset = self._get_threshold("onset_beginning", default=0.6)
             if p_onset >= thr_onset:
-                allow, trigger, fav, fav_thr = True, "onset_beginning", p_onset, thr_onset
+                allow, trigger, fav, fav_thr = (
+                    True,
+                    "onset_beginning",
+                    p_onset,
+                    thr_onset,
+                )
         out["allow_trade"] = allow
         out["trigger"] = trigger
 
@@ -203,7 +235,13 @@ class RollingMTInference:
             side = "long" if p_up >= thr_up else "short"
             # reinforcement: scale between 0.5 and 2.0 based on how far above threshold fav is
             if allow and fav_thr < 1.0:
-                mult = float(np.clip(0.5 + 1.5 * (fav - fav_thr) / max(1e-6, (1.0 - fav_thr)), 0.5, 2.0))
+                mult = float(
+                    np.clip(
+                        0.5 + 1.5 * (fav - fav_thr) / max(1e-6, (1.0 - fav_thr)),
+                        0.5,
+                        2.0,
+                    )
+                )
         out["side"] = side
         out["position_multiplier"] = mult
 
@@ -212,7 +250,10 @@ class RollingMTInference:
         thr_rev = self._get_threshold("path_class", "reversal", default=0.6)
         p_end = float(out.get("p_end_trend", 0.0))
         thr_end = self._get_threshold("end_trend", default=0.6)
-        favorable = max(float(p_path.get("continuation", 0.0)), float(p_path.get("beginning_of_trend", 0.0)))
+        favorable = max(
+            float(p_path.get("continuation", 0.0)),
+            float(p_path.get("beginning_of_trend", 0.0)),
+        )
         exit_bias = float(p_rev - favorable)
         exit_flag = bool(p_rev >= thr_rev or p_end >= thr_end or exit_bias > 0)
         out["exit_flag"] = exit_flag

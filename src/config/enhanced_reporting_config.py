@@ -72,8 +72,8 @@ def get_enhanced_reporting_config() -> dict[str, Any]:
             "analysis_interval": 3600,
             "enable_volatility_analysis": True,
             "enable_market_health_metrics": True,
-            "enable_liquidity_analysis": True,
-            "enable_stress_analysis": True,
+            "enable_liquidity_analysis": False,
+            "enable_stress_analysis": False,
             "volatility_regime_thresholds": {
                 "low": 0.1,
                 "medium": 0.2,

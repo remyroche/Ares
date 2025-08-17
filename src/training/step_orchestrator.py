@@ -34,23 +34,21 @@ class StepOrchestrator:
         # Define available steps in order (for reference)
         self.available_steps = [
             "step1_data_collection",
-            "step1_5_data_converter",  # NEW STEP
-            "step1_7_hmm_regime_discovery",  # NEW STEP: Block HMMs + Composite Clusters
-            "step2_processing_labeling_feature_engineering",
-            "step3_feature_engineering",
-            "step4_regime_data_splitting",
-            "step5_analyst_specialist_training",
-            "step6_analyst_enhancement",
-            "step7_analyst_ensemble_creation",
+            "step2_feature_engineering",
+            "step3_hmm_regime_discovery",
+            "step4_processing_labeling",
+            "step5_regime_data_splitting",
+            "step6_hmm_based_training",
+            "step6_5_unified_regime_intelligence",
+            "step7_analyst_enhancement",
             "step8_tactician_labeling",
             "step9_tactician_specialist_training",
-            "step10_tactician_ensemble_creation",
-            "step11_confidence_calibration",
-            "step12_final_parameters_optimization",
-            "step13_walk_forward_validation",
-            "step14_monte_carlo_validation",
-            "step15_ab_testing",
-            "step16_saving",
+            "step10_confidence_calibration",
+            "step11_final_parameters_optimization",
+            "step12_walk_forward_validation",
+            "step13_monte_carlo_validation",
+            "step14_ab_testing",
+            "step15_saving",
         ]
 
         # Enhanced training manager
@@ -183,10 +181,8 @@ class StepOrchestrator:
                 "data_dir": self.data_dir,
                 "start_step": step_name,
                 "force_rerun": force_rerun,
-                # Respect blank training defaults: 180 days if BLANK_TRAINING_MODE=1
-                "lookback_days": 180
-                if os.getenv("BLANK_TRAINING_MODE", "0") == "1"
-                else 730,
+                # Let the enhanced training manager determine lookback_days based on its configuration
+                # The enhanced training manager will use the correct lookback_days from its config
                 "exclude_recent_days": 2,  # Always exclude the last 2 days for both blank and full mode
             }
 
@@ -288,6 +284,19 @@ class StepOrchestrator:
             return False
 
         # Prepare training input for enhanced training manager
+        # Use proper lookback_days based on training mode
+        import os
+        from src.config.constants import (
+            FULL_TRAINING_LOOKBACK_DAYS,
+            BLANK_TRAINING_LOOKBACK_DAYS,
+        )
+
+        # Determine lookback_days based on training mode
+        if os.getenv("BLANK_TRAINING_MODE", "0") == "1":
+            lookback_days = BLANK_TRAINING_LOOKBACK_DAYS  # 180 days for blank mode
+        else:
+            lookback_days = FULL_TRAINING_LOOKBACK_DAYS  # 2 years for full mode
+
         training_input = {
             "symbol": self.symbol,
             "exchange": self.exchange,
@@ -295,7 +304,7 @@ class StepOrchestrator:
             "data_dir": self.data_dir,
             "start_step": start_step,
             "force_rerun": force_rerun,
-            "lookback_days": 30,  # Add missing lookback_days field
+            "lookback_days": lookback_days,
             "exclude_recent_days": 2,  # Always exclude the last 2 days for both blank and full mode
         }
 

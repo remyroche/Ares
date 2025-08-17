@@ -44,7 +44,7 @@ async def load_data(symbol: str, exchange: str, interval: str = "1m"):
         success = await download_all_data_with_consolidation(symbol, exchange, interval)
 
         if not success:
-            print(failed("❌ Data downloading failed")))
+            print(failed("❌ Data downloading failed"))
             return False
 
         logger.info("✅ Data downloading completed successfully")
@@ -102,7 +102,7 @@ async def load_data(symbol: str, exchange: str, interval: str = "1m"):
         return False
 
     except Exception as e:
-        print(error("❌ Error during data loading: {e}")))
+        print(error("❌ Error during data loading: {e}"))
         return False
 
 
@@ -136,7 +136,7 @@ def main():
         print("✅ Data loading completed successfully")
         sys.exit(0)
     else:
-        print(failed("Data loading failed")))
+        print(failed("Data loading failed"))
         sys.exit(1)
 
 

@@ -1,0 +1,33 @@
+Stage: Combine | Step: 04_03 | Columns: 31
+NaN_total=23 | Inf_total=0
+close_returns: float64
+open_returns: float64
+high_returns: float64
+low_returns: float64
+close_log: float64
+open_log: float64
+high_log: float64
+low_log: float64
+close_detrended: float64
+label: int8
+close_log_returns: float64
+sma_5: float64
+sma_20: float64
+ema_12: float64
+ema_26: float64
+price_momentum_5: float64
+price_momentum_20: float64
+volatility_5: float64
+volatility_20: float64
+volume_ma_5: float64
+volume_ma_20: float64
+volume_momentum: float64
+high_low_ratio: float64
+close_open_ratio: float64
+body_size: float64
+upper_shadow: float64
+lower_shadow: float64
+rsi: float64
+macd: float64
+macd_signal: float64
+macd_histogram: float64

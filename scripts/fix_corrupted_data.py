@@ -176,7 +176,7 @@ def main():
     # Check for CSV files in data_cache
     data_cache_dir = "data_cache"
     if not os.path.exists(data_cache_dir):
-        print(missing("Data cache directory not found: {data_cache_dir}")))
+        print(missing("Data cache directory not found: {data_cache_dir}"))
         return False
 
     # Find CSV files
@@ -185,7 +185,7 @@ def main():
         csv_files.extend(Path(data_cache_dir).glob(pattern))
 
     if not csv_files:
-        print(warning("No CSV files found in {data_cache_dir}")))
+        print(warning("No CSV files found in {data_cache_dir}"))
         return False
 
     print(f"📁 Found {len(csv_files)} CSV files to process")
@@ -202,7 +202,7 @@ def main():
     pkl_files = list(Path(data_cache_dir).glob("*_cached_data.pkl"))
     if pkl_files:
         print(f"\n🔍 Found {len(pkl_files)} existing pickle files")
-        print(warning(" Consider regenerating these files with corrected data")))
+        print(warning(" Consider regenerating these files with corrected data"))
 
         for pkl_file in pkl_files:
             try:

@@ -42,7 +42,9 @@ class EfficiencyConfig:
 
     # Data subsampling
     enable_data_subsampling: bool = True
-    subsample_fraction: float = 0.1  # Use 10% of data for initial trials (more aggressive)
+    subsample_fraction: float = (
+        0.1  # Use 10% of data for initial trials (more aggressive)
+    )
     adaptive_subsampling: bool = True  # Increase data usage for promising trials
 
     # Caching

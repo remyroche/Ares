@@ -998,5 +998,7 @@ async def setup_multi_exchange_ab_tester(
         return None
 
     except Exception:
-        system_logger.exception(error("Error setting up multi-exchange A/B tester: {e}"))
+        system_logger.exception(
+            error("Error setting up multi-exchange A/B tester: {e}")
+        )
         return None

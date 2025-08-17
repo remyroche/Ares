@@ -31,6 +31,19 @@ from src.utils.warning_symbols import (
     missing,
 )
 
+# Import training pipeline decorators for comprehensive security and troubleshooting
+from src.utils.training_pipeline_decorators import (
+    validate_step_prerequisites,
+    secure_data_processing,
+    prevent_data_leakage,
+    resource_monitor,
+    memory_efficient,
+    debug_training_step,
+    circuit_breaker_protection,
+    validate_step_output,
+    quality_gate,
+)
+
 
 @dataclass
 class EnsembleConfig:
@@ -238,6 +251,76 @@ class EnsembleCreator:
             self.print(error(error_msg))
             return False
 
+    @validate_step_prerequisites(
+        required_directories=["models", "data_cache", "ensembles"],
+        min_memory_gb=16.0,
+        min_disk_gb=10.0,
+        required_packages=["pandas", "numpy", "sklearn", "optuna"],
+        data_quality_checks={
+            "min_rows": 1000,
+            "required_columns": ["features", "targets"],
+        },
+        context="Ensemble Creation",
+    )
+    @secure_data_processing(
+        backup_before=True,
+        integrity_checks=True,
+        memory_cleanup=True,
+        data_validation=True,
+    )
+    @prevent_data_leakage(
+        temporal_validation=True,
+        feature_leakage_detection=True,
+        cross_validation_isolation=True,
+        lookahead_bias_prevention=True,
+    )
+    @resource_monitor(
+        memory_threshold_gb=32.0,
+        cpu_threshold_percent=90.0,
+        disk_threshold_gb=20.0,
+        monitor_interval=60.0,
+        auto_cleanup=True,
+    )
+    @memory_efficient(
+        chunk_size=5000,
+        streaming_processing=True,
+        memory_pool=True,
+        cleanup_frequency=20,
+    )
+    @debug_training_step(
+        log_intermediate_results=True,
+        save_debug_artifacts=True,
+        performance_profiling=True,
+        error_context_preservation=True,
+    )
+    @circuit_breaker_protection(
+        failure_threshold=3,
+        recovery_timeout=600.0,
+        expected_exception=Exception,
+        monitor_interval=60.0,
+    )
+    @validate_step_output(
+        required_files=["ensembles/*.pkl", "ensembles/*.joblib"],
+        data_quality_checks={
+            "min_rows": 100,
+            "required_columns": ["predictions", "probabilities"],
+        },
+        performance_thresholds={
+            "ensemble_creation_time_minutes": 120.0,
+            "memory_usage_gb": 16.0,
+        },
+        format_validation=True,
+    )
+    @quality_gate(
+        model_performance_thresholds={
+            "ensemble_accuracy": 0.7,
+            "ensemble_f1_score": 0.6,
+        },
+        data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
+        convergence_checks=True,
+        overfitting_detection=True,
+        validation_score_requirements={"ensemble_score": 0.7},
+    )
     @handle_specific_errors(
         error_handlers={
             ValueError: (None, "Invalid training data for ensemble creation"),
@@ -469,8 +552,12 @@ class EnsembleCreator:
                 self.logger.info(
                     {
                         "msg": "model_performance_pruning",
-                        "threshold": float(self.ensemble_config.model_performance_threshold),
-                        "performances": {k: float(v) for k, v in model_performances.items()},
+                        "threshold": float(
+                            self.ensemble_config.model_performance_threshold
+                        ),
+                        "performances": {
+                            k: float(v) for k, v in model_performances.items()
+                        },
                     }
                 )
             except Exception:
@@ -542,7 +629,12 @@ class EnsembleCreator:
                         "max_abs": float(np.max(upper_vals)),
                         "threshold": float(self.ensemble_config.correlation_threshold),
                     }
-                    self.logger.info({"msg": "prediction_correlation_summary", "summary": corr_summary})
+                    self.logger.info(
+                        {
+                            "msg": "prediction_correlation_summary",
+                            "summary": corr_summary,
+                        }
+                    )
             except Exception as e:
                 self.logger.warning(f"Failed to summarize correlation metrics: {e}")
             self.logger.info(f"Ensemble diversity metrics: {diversity_metrics}")
@@ -631,7 +723,13 @@ class EnsembleCreator:
             try:
                 kept = list(ensemble_data.get("models", {}).keys())
                 removed = list(models_to_remove)
-                self.logger.info({"msg": "correlation_pruning_result", "kept": kept, "removed": removed})
+                self.logger.info(
+                    {
+                        "msg": "correlation_pruning_result",
+                        "kept": kept,
+                        "removed": removed,
+                    }
+                )
             except Exception:
                 pass
 

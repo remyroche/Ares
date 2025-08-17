@@ -167,7 +167,6 @@ async def configuration_injection_example():
                 "max_analysis_history": 100,
                 "enable_technical_analysis": True,
                 "dual_model_system": {"model_type": "ensemble", "ensemble_size": 5},
-                "market_health_analyzer": {"health_threshold": 0.7},
             },
             "exchange": {"name": "binance", "api_key": "test_key", "rate_limit": 1200},
         }

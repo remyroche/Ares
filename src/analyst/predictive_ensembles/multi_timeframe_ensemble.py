@@ -870,9 +870,9 @@ class MultiTimeframeEnsemble:
             for timeframe in self.active_timeframes:
                 model_path = os.path.join(path, f"{timeframe}_model.joblib")
                 if os.path.exists(model_path):
-                    model = joblib.load(model_path)
+                    cached_model = joblib.load(model_path)
                     self.timeframe_models[timeframe] = {
-                        "model": model,
+                        "model": cached_model,
                         "model_type": "loaded",
                         "timeframe": timeframe,
                         "loaded_at": datetime.now(),

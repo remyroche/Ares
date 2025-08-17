@@ -1,0 +1,29 @@
+wavelet: 0
+momentum: 3
+volatility: 2
+correlation: 0
+liquidity: 0
+candlestick: 0
+microstructure: 0
+sr_distance: 0
+other: 18
+
+Other (sample up to 50):
+close_returns
+close_log_returns
+sma_5
+sma_20
+ema_12
+ema_26
+volume_ma_5
+volume_ma_20
+volume_ratio
+high_low_ratio
+close_open_ratio
+body_size
+upper_shadow
+lower_shadow
+rsi
+macd
+macd_signal
+macd_histogram

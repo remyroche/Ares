@@ -22,6 +22,9 @@ from src.utils.warning_symbols import (
     validation_error,
 )
 
+# Import StepDependencyValidator for step dependency validation
+from src.utils.step_dependency_validator import step_dependency_validator
+
 
 class MultiTimeframeTrainingManager:
     """
@@ -68,6 +71,9 @@ class MultiTimeframeTrainingManager:
         # Initialize multi-timeframe feature engineering and regime integration
         self.mtf_feature_engine = MultiTimeframeFeatureEngineering(config)
         self.mtf_regime_integration = MultiTimeframeRegimeIntegration(config)
+
+        # Initialize StepDependencyValidator for step dependency validation
+        self.step_dependency_validator = step_dependency_validator
 
     @handle_specific_errors(
         error_handlers={
@@ -264,10 +270,14 @@ class MultiTimeframeTrainingManager:
 
             self.logger.info("Timeframe analysis module initialized")
 
-        except Exception:
-            self.print(
-                initialization_error("Error initializing timeframe analysis: {e}"),
+        except Exception as e:
+            self.logger.exception(
+                f"Error initializing timeframe analysis: {e}",
             )
+            # Log specific error details for debugging
+            self.logger.error(f"Timeframe analysis initialization failed: {type(e).__name__}: {str(e)}")
+            # Re-raise the exception to prevent silent failures
+            raise
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -287,12 +297,14 @@ class MultiTimeframeTrainingManager:
 
             self.logger.info("Cross timeframe features module initialized")
 
-        except Exception:
-            self.print(
-                initialization_error(
-                    "Error initializing cross timeframe features: {e}"
-                ),
+        except Exception as e:
+            self.logger.exception(
+                f"Error initializing cross timeframe features: {e}",
             )
+            # Log specific error details for debugging
+            self.logger.error(f"Cross timeframe features initialization failed: {type(e).__name__}: {str(e)}")
+            # Re-raise the exception to prevent silent failures
+            raise
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -312,10 +324,14 @@ class MultiTimeframeTrainingManager:
 
             self.logger.info("Timeframe ensemble module initialized")
 
-        except Exception:
-            self.print(
-                initialization_error("Error initializing timeframe ensemble: {e}"),
+        except Exception as e:
+            self.logger.exception(
+                f"Error initializing timeframe ensemble: {e}",
             )
+            # Log specific error details for debugging
+            self.logger.error(f"Timeframe ensemble initialization failed: {type(e).__name__}: {str(e)}")
+            # Re-raise the exception to prevent silent failures
+            raise
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -335,10 +351,14 @@ class MultiTimeframeTrainingManager:
 
             self.logger.info("Timeframe optimization module initialized")
 
-        except Exception:
-            self.print(
-                initialization_error("Error initializing timeframe optimization: {e}"),
+        except Exception as e:
+            self.logger.exception(
+                f"Error initializing timeframe optimization: {e}",
             )
+            # Log specific error details for debugging
+            self.logger.error(f"Timeframe optimization initialization failed: {type(e).__name__}: {str(e)}")
+            # Re-raise the exception to prevent silent failures
+            raise
 
     async def _initialize_multi_timeframe_components(self) -> None:
         """Initialize multi-timeframe feature engineering and regime integration components."""
@@ -364,12 +384,14 @@ class MultiTimeframeTrainingManager:
             else:
                 self.logger.info("⚠️ Multi-Timeframe Regime Integration disabled")
 
-        except Exception:
-            self.print(
-                initialization_error(
-                    "Error initializing multi-timeframe components: {e}",
-                ),
+        except Exception as e:
+            self.logger.exception(
+                f"Error initializing multi-timeframe components: {e}",
             )
+            # Log specific error details for debugging
+            self.logger.error(f"Multi-timeframe components initialization failed: {type(e).__name__}: {str(e)}")
+            # Re-raise the exception to prevent silent failures
+            raise
 
     async def generate_multi_timeframe_features_for_training(
         self,
@@ -1224,6 +1246,45 @@ class MultiTimeframeTrainingManager:
             self.logger.exception(
                 f"Error stopping multi-timeframe training manager: {e}",
             )
+
+    async def _validate_step_dependencies(
+        self, step_name: str, pipeline_state: dict[str, Any]
+    ) -> bool:
+        """
+        Validate that all prerequisites for a step are met using StepDependencyValidator.
+
+        Args:
+            step_name: Name of the step to validate
+            pipeline_state: Current pipeline state
+
+        Returns:
+            bool: True if all dependencies are met, False otherwise
+        """
+        try:
+            self.logger.info(f"🔍 Validating dependencies for {step_name}")
+            
+            # Use StepDependencyValidator to check prerequisites
+            validation_result = await self.step_dependency_validator.validate_step_prerequisites(
+                step_name=step_name,
+                pipeline_state=pipeline_state,
+                checkpoint_dir="checkpoints"
+            )
+            
+            if validation_result["valid"]:
+                self.logger.info(f"✅ Dependencies validated for {step_name}: {validation_result['reason']}")
+                return True
+            else:
+                self.logger.error(f"❌ Dependencies failed for {step_name}: {validation_result['reason']}")
+                
+                # Log failed prerequisites for debugging
+                if "failed_steps" in validation_result:
+                    self.logger.error(f"   Failed prerequisites: {validation_result['failed_steps']}")
+                
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"🚨 Error validating dependencies for {step_name}: {e}")
+            return False
 
 
 # Global multi-timeframe training manager instance

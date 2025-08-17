@@ -1,0 +1,277 @@
+# Unified Regime Intelligence Configuration
+# This configuration consolidates regime detection, transition prediction, and S/R level detection
+# into a single, efficient multi-timeframe model that replaces step9_5 and step10
+
+# Model Architecture Configuration
+model_architecture:
+  timeframes: ["1m", "5m", "15m"]  # Multi-timeframe analysis
+  hmm_states_per_tf: 5             # HMM states per timeframe
+  sequence_length: 20              # Sequence length for temporal modeling
+  num_regimes: 20                  # Number of regime classes (including -1 for transitions)
+  
+  # Neural network architecture
+  d_model: 256                     # Model dimension
+  nhead: 8                         # Number of attention heads
+  num_layers: 4                    # Number of transformer layers
+  dropout: 0.1                     # Dropout rate
+  
+  # Output heads
+  regime_classifier_outputs: 20    # Number of regime classes
+  transition_predictor_outputs: 2  # Entry/exit probability
+  sr_detector_outputs: 3           # Support, resistance, neutral
+
+# Training Configuration
+training:
+  learning_rate: 0.0001
+  batch_size: 32
+  epochs: 100
+  validation_split: 0.2
+  
+  # Loss weights for multi-task learning
+  loss_weights:
+    regime: 1.0
+    transition: 0.8
+    sr_level: 0.6
+  
+  # Early stopping
+  early_stopping_patience: 10
+  early_stopping_min_delta: 0.001
+  
+  # Learning rate scheduling
+  lr_scheduler:
+    type: "ReduceLROnPlateau"
+    patience: 5
+    factor: 0.5
+    min_lr: 0.00001
+
+# Runtime Configuration
+runtime:
+  # Confidence thresholds
+  regime_confidence_threshold: 0.7
+  transition_threshold: 0.6
+  sr_confidence_threshold: 0.8
+  
+  # Expert activation thresholds
+  expert_activation_threshold: 0.7
+  transition_expert_threshold: 0.6
+  
+  # Position sizing
+  base_position_size: 0.7
+  transition_position_multiplier: 0.5
+  low_confidence_multiplier: 0.3
+  
+  # Performance monitoring
+  performance_window: 100          # Number of predictions to track
+  stability_threshold: 0.8         # Minimum regime stability score
+
+# Data Processing Configuration
+data_processing:
+  # HMM data sources
+  hmm_data_pattern: "data/BINANCE_ETHUSDT_hmm_composite_clusters_{timeframe}.parquet"
+  intensity_data_pattern: "data/BINANCE_ETHUSDT_hmm_composite_intensity_{timeframe}.parquet"
+  
+  # Feature engineering
+  feature_scaling: true
+  feature_normalization: "standard"  # standard, minmax, robust
+  
+  # Sequence preparation
+  min_sequence_length: 20
+  max_sequence_length: 50
+  sequence_stride: 1
+  
+  # Data augmentation
+  enable_augmentation: false
+  augmentation_factor: 1.0
+
+# Expert Activation Configuration
+expert_activation:
+  # Primary expert mapping
+  primary_experts:
+    BULL_TREND_EXPERT:
+      regimes: ["STRONG_BULL_TREND", "MODERATE_BULL_TREND", "WEAK_BULL_TREND"]
+      confidence_threshold: 0.7
+      position_size_multiplier: 1.0
+    
+    BEAR_TREND_EXPERT:
+      regimes: ["STRONG_BEAR_TREND", "MODERATE_BEAR_TREND", "WEAK_BEAR_TREND"]
+      confidence_threshold: 0.7
+      position_size_multiplier: 1.0
+    
+    SIDEWAYS_EXPERT:
+      regimes: ["TIGHT_SIDEWAYS_RANGE", "WIDE_SIDEWAYS_RANGE", "ASCENDING_SIDEWAYS", "DESCENDING_SIDEWAYS"]
+      confidence_threshold: 0.6
+      position_size_multiplier: 0.5
+    
+    VOLATILITY_EXPERT:
+      regimes: ["HIGH_VOLATILITY_BULL", "HIGH_VOLATILITY_BEAR", "EXTREME_VOLATILITY"]
+      confidence_threshold: 0.8
+      position_size_multiplier: 0.3
+    
+    TRANSITION_EXPERT:
+      regimes: ["RARE_MARKET_CONDITIONS", "BULL_TO_BEAR_TRANSITION", "BEAR_TO_BULL_TRANSITION"]
+      confidence_threshold: 0.6
+      position_size_multiplier: 0.4
+  
+  # Secondary expert activation
+  secondary_experts:
+    enable_secondary_experts: true
+    secondary_expert_threshold: 0.4
+    max_secondary_experts: 2
+
+# Trading Logic Configuration
+trading_logic:
+  # Action determination
+  actions:
+    BUY:
+      min_confidence: 0.7
+      min_regime_stability: 0.8
+      max_transition_probability: 0.4
+    
+    SELL:
+      min_confidence: 0.7
+      min_regime_stability: 0.8
+      max_transition_probability: 0.4
+    
+    HOLD:
+      default_action: true
+      max_confidence: 0.6
+      high_transition_probability: 0.7
+  
+  # Risk management
+  risk_management:
+    max_position_size: 1.0
+    min_position_size: 0.1
+    stop_loss_multiplier: 0.02     # 2% stop loss
+    take_profit_multiplier: 0.04   # 4% take profit
+    
+    # Dynamic position sizing
+    dynamic_sizing:
+      enabled: true
+      confidence_multiplier: 1.0
+      stability_multiplier: 1.0
+      transition_multiplier: 0.5
+
+# Support/Resistance Detection Configuration
+sr_detection:
+  # S/R level types
+  level_types:
+    SUPPORT:
+      confidence_threshold: 0.8
+      price_threshold: 0.01        # 1% from current price
+      volume_threshold: 1.5        # 1.5x average volume
+    
+    RESISTANCE:
+      confidence_threshold: 0.8
+      price_threshold: 0.01
+      volume_threshold: 1.5
+    
+    NEUTRAL:
+      default_level: true
+  
+  # S/R validation
+  validation:
+    min_touches: 2                 # Minimum price touches for S/R level
+    validation_period: 20          # Bars to validate S/R level
+    break_threshold: 0.02          # 2% break for S/R invalidation
+
+# Transition Detection Configuration
+transition_detection:
+  # Transition types
+  transition_types:
+    TREND_EMERGENCE:
+      probability_threshold: 0.6
+      confirmation_bars: 3
+      position_size_multiplier: 0.7
+    
+    TREND_CONTINUATION:
+      probability_threshold: 0.5
+      confirmation_bars: 2
+      position_size_multiplier: 1.0
+    
+    TREND_REVERSAL:
+      probability_threshold: 0.7
+      confirmation_bars: 5
+      position_size_multiplier: 0.3
+    
+    RANGE_BREAKOUT:
+      probability_threshold: 0.6
+      confirmation_bars: 3
+      position_size_multiplier: 0.6
+  
+  # Transition confirmation
+  confirmation:
+    require_confirmation: true
+    confirmation_threshold: 0.6
+    max_confirmation_bars: 10
+
+# Performance Monitoring Configuration
+performance_monitoring:
+  # Metrics tracking
+  metrics:
+    regime_accuracy: true
+    transition_accuracy: true
+    sr_accuracy: true
+    trading_performance: true
+  
+  # Alerting
+  alerts:
+    low_confidence_threshold: 0.5
+    regime_instability_threshold: 0.3
+    performance_degradation_threshold: 0.1
+  
+  # Logging
+  logging:
+    log_predictions: true
+    log_expert_activations: true
+    log_trading_decisions: true
+    log_performance_metrics: true
+
+# Artifacts and Storage Configuration
+artifacts:
+  # Model storage
+  model_dir: "checkpoints/unified_regime_intelligence"
+  model_filename: "final_model.pth"
+  best_model_filename: "best_model.pth"
+  
+  # Label encoders
+  encoder_dir: "checkpoints/unified_regime_intelligence"
+  encoder_suffix: "_encoder.pkl"
+  
+  # Configuration
+  config_filename: "config.json"
+  
+  # Performance tracking
+  performance_log: "logs/unified_regime_intelligence_performance.json"
+  
+  # Model versioning
+  versioning:
+    enabled: true
+    version_format: "v{major}.{minor}.{patch}"
+    auto_backup: true
+    max_backups: 5
+
+# Integration Configuration
+integration:
+  # Pipeline integration
+  pipeline:
+    replaces_steps: ["step9_5", "step10"]
+    input_steps: ["step1_7", "step5"]
+    output_format: "unified_prediction"
+  
+  # Expert ensemble integration
+  expert_ensembles:
+    enable_integration: true
+    ensemble_config_path: "src/config/regime_mapping_config.yaml"
+    fallback_expert: "GENERAL_EXPERT"
+  
+  # Live trading integration
+  live_trading:
+    enable_live_predictions: true
+    prediction_interval: 60        # seconds
+    real_time_threshold: 0.1       # seconds
+  
+  # Backtesting integration
+  backtesting:
+    enable_backtesting: true
+    backtest_config_path: "src/config/backtesting_config.yaml"
+    performance_metrics: ["sharpe_ratio", "max_drawdown", "win_rate"]

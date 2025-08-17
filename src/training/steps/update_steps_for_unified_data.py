@@ -15,7 +15,7 @@ TRAINING_STEPS = [
     "step2_market_regime_classification",
     "step3_regime_data_splitting",
     "step4_analyst_labeling_feature_engineering",
-    "step5_analyst_specialist_training",
+    "step5_hmm_based_training",
     "step6_analyst_enhancement",
     "step7_analyst_ensemble_creation",
     "step8_tactician_labeling",
@@ -71,6 +71,7 @@ def get_unified_data_loading_code(
         )
         
         if historical_data is None or historical_data.empty:
+            self.logger.error("❌ No data found - check symbol and exchange configuration")
             raise ValueError(f"No data found for {{symbol}} on {{exchange}}")
         
         # Log data information
@@ -84,50 +85,70 @@ def get_unified_data_loading_code(
         required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
         missing_columns = [col for col in required_columns if col not in historical_data.columns]
         if missing_columns:
+            self.logger.error(f"❌ Missing required columns: {{missing_columns}}")
             raise ValueError(f"Missing required columns: {{missing_columns}}")
 """
 
 
 def get_step_specific_guidance(step_name: str) -> Dict[str, Any]:
     """Get step-specific guidance for updating."""
+    from src.config.constants import (
+        BLANK_TRAINING_LOOKBACK_DAYS,
+        FULL_TRAINING_LOOKBACK_DAYS,
+        SHORT_BLANK_LOOKBACK_DAYS,
+    )
+
+    # High complexity areas that need special attention
+    high_complexity_areas = {
+        "step1_data_collection": "❌ HIGH COMPLEXITY - consolidate_files (D-23), run_step (C-18)",
+        "step4_main_model_training": "❌ HIGH COMPLEXITY - run_step (C-13)",
+        "step5_multi_stage_hpo": "⚠️  MEDIUM COMPLEXITY - run_step (B-9)",
+        "step7_monte_carlo_validation": "⚠️  MEDIUM COMPLEXITY - run_step (B-7)",
+        "step6_walk_forward_validation": "⚠️  MEDIUM COMPLEXITY - run_step (B-6)",
+        "step9_save_results": "⚠️  MEDIUM COMPLEXITY - run_step (B-6)",
+        "step3_coarse_optimization": "⚠️  MEDIUM COMPLEXITY - run_step (B-6)",
+        "step2_preliminary_optimization": "✅ LOW COMPLEXITY - run_step (A-5)",
+        "step8_ab_testing_setup": "✅ LOW COMPLEXITY - run_step (A-2)",
+    }
+
     guidance = {
         "step2_market_regime_classification": {
-            "lookback_days": 180,
+            "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1h",  # Regime classification typically uses 1h
             "notes": "May need to resample data to 1h timeframe for regime classification",
         },
         "step3_regime_data_splitting": {
-            "lookback_days": 180,
+            "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1m",
             "notes": "Uses regime classification results from step2",
         },
         "step4_analyst_labeling_feature_engineering": {
-            "lookback_days": 180,
+            "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1m",
             "notes": "Needs both OHLCV data and regime labels",
         },
-        "step5_analyst_specialist_training": {
-            "lookback_days": 180,
+        "step5_hmm_based_training": {
+            "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1m",
             "notes": "Uses labeled data from step4",
         },
         "step6_analyst_enhancement": {
-            "lookback_days": 180,
+            "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1m",
             "notes": "Uses trained models from step5",
         },
         "step7_analyst_ensemble_creation": {
-            "lookback_days": 180,
+            "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1m",
             "notes": "Creates ensemble from step6 models",
         },
         "step8_tactician_labeling": {
-            "lookback_days": 180,
+            "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1m",
             "notes": "Needs both OHLCV data and analyst predictions",
         },
         "step9_tactician_specialist_training": {
-            "lookback_days": 180,
+            "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1m",
             "notes": "Uses labeled data from step8",
         },
@@ -212,42 +233,69 @@ def generate_step_update_template(step_name: str) -> str:
 def main():
     """Main function to generate update guidance."""
     print("=" * 80)
-    print("UNIFIED DATA LOADER UPDATE GUIDE")
+    print("📋 UNIFIED DATA LOADER UPDATE GUIDE")
     print("=" * 80)
     print()
-    print("This guide helps update all training steps to use the unified data loader.")
-    print("The unified data loader provides access to the new Parquet partitioned")
     print(
-        "data format that includes klines, aggtrades, and futures data merged together."
+        "✅ This guide helps update all training steps to use the unified data loader."
+    )
+    print("🔄 The unified data loader provides access to the new Parquet partitioned")
+    print(
+        "📊 data format that includes klines, aggtrades, and futures data merged together."
     )
     print()
 
-    print("STEPS TO UPDATE:")
+    print("📝 STEPS TO UPDATE:")
     for i, step in enumerate(TRAINING_STEPS, 1):
-        print(f"{i:2d}. {step}")
+        print(f"  {i:2d}. {step}")
     print()
 
-    print("GENERAL UPDATE PROCESS:")
-    print("1. Add the unified data loader import")
-    print("2. Replace existing data loading code with unified data loader calls")
-    print("3. Update any step-specific data processing")
-    print("4. Test the updated step")
+    print("🛠️  GENERAL UPDATE PROCESS:")
+    print("  1. ➕ Add the unified data loader import")
+    print("  2. 🔄 Replace existing data loading code with unified data loader calls")
+    print("  3. ⚙️  Update any step-specific data processing")
+    print("  4. 🧪 Test the updated step")
     print()
 
-    print("STEP-SPECIFIC TEMPLATES:")
+    print("⚠️  COMMON ISSUES TO WATCH FOR:")
+    print("  ❌ Missing data files or incorrect paths")
+    print("  ❌ Incompatible data formats")
+    print("  ❌ Memory issues with large datasets")
+    print("  ❌ Missing required columns")
+    print("  ❌ Timezone mismatches")
+    print()
+
+    print("📋 STEP-SPECIFIC TEMPLATES:")
     print("=" * 80)
 
     for step in TRAINING_STEPS:
-        print(f"\n{step.upper()}:")
+        print(f"\n🔧 {step.upper()}:")
         print("-" * 40)
         guidance = get_step_specific_guidance(step)
-        print(f"Lookback days: {guidance['lookback_days']}")
-        print(f"Timeframe: {guidance['timeframe']}")
-        print(f"Notes: {guidance['notes']}")
+
+        # Check for complexity warnings
+        high_complexity_areas = {
+            "step1_data_collection": "❌ HIGH COMPLEXITY - consolidate_files (D-23), run_step (C-18)",
+            "step4_main_model_training": "❌ HIGH COMPLEXITY - run_step (C-13)",
+            "step5_multi_stage_hpo": "⚠️  MEDIUM COMPLEXITY - run_step (B-9)",
+            "step7_monte_carlo_validation": "⚠️  MEDIUM COMPLEXITY - run_step (B-7)",
+            "step6_walk_forward_validation": "⚠️  MEDIUM COMPLEXITY - run_step (B-6)",
+            "step9_save_results": "⚠️  MEDIUM COMPLEXITY - run_step (B-6)",
+            "step3_coarse_optimization": "⚠️  MEDIUM COMPLEXITY - run_step (B-6)",
+            "step2_preliminary_optimization": "✅ LOW COMPLEXITY - run_step (A-5)",
+            "step8_ab_testing_setup": "✅ LOW COMPLEXITY - run_step (A-2)",
+        }
+
+        if step in high_complexity_areas:
+            print(f"🚨 {high_complexity_areas[step]}")
+
+        print(f"📅 Lookback days: {guidance['lookback_days']}")
+        print(f"⏱️  Timeframe: {guidance['timeframe']}")
+        print(f"💡 Notes: {guidance['notes']}")
 
         # Generate template
         template = generate_step_update_template(step)
-        print("\nTemplate:")
+        print("\n📄 Template:")
         print(template)
         print("=" * 80)
 

@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Callable
 from contextlib import contextmanager
 import threading
+import sys as _sys
 
 from .structured_logging import CorrelationIdFilter, get_json_formatter  # added
 from .warning_symbols import (
@@ -32,15 +33,16 @@ class _SuppressTensorFlowTPUWarningFilter(logging.Filter):
     "Falling back to TensorFlow client; we recommended you install the Cloud TPU client directly with pip install cloud-tpu-client."
     """
 
-    TARGET_SUBSTRING = (
-        "Falling back to TensorFlow client; we recommended you install the Cloud TPU client"
-    )
+    TARGET_SUBSTRING = "Falling back to TensorFlow client; we recommended you install the Cloud TPU client"
 
     def filter(self, record: logging.LogRecord) -> bool:  # type: ignore[override]
         try:
             if record and isinstance(record.msg, str):
                 msg_text = record.getMessage()
-                if record.name.startswith("tensorflow") and self.TARGET_SUBSTRING in msg_text:
+                if (
+                    record.name.startswith("tensorflow")
+                    and self.TARGET_SUBSTRING in msg_text
+                ):
                     return False
         except Exception:
             # On any failure, do not drop the log
@@ -48,7 +50,9 @@ class _SuppressTensorFlowTPUWarningFilter(logging.Filter):
         return True
 
 
-def _configure_tensorflow_logging_suppression(system_logger: logging.Logger | None) -> None:
+def _configure_tensorflow_logging_suppression(
+    system_logger: logging.Logger | None,
+) -> None:
     """Reduce TensorFlow logger verbosity and suppress specific TPU fallback warning.
 
     This avoids requiring cloud-tpu-client installation when TPU is not needed.
@@ -241,7 +245,35 @@ class EnhancedLogger:
 
             # Add console handler
             if self.log_config.get("console_output", True):
-                console_handler = logging.StreamHandler(sys.stdout)
+                # Use a safe stream handler that swallows BrokenPipeError
+                class _SafeStreamHandler(logging.StreamHandler):
+                    def handleError(self, record: logging.LogRecord) -> None:  # type: ignore[override]
+                        exc_type, _, _ = _sys.exc_info()
+                        # Silently ignore BrokenPipeError and similar I/O errors
+                        if exc_type is BrokenPipeError or exc_type is OSError:
+                            try:
+                                self.acquire()
+                                try:
+                                    try:
+                                        self.flush()
+                                    except Exception:
+                                        pass
+                                    try:
+                                        self.close()
+                                    except Exception:
+                                        pass
+                                finally:
+                                    self.release()
+                            except Exception:
+                                pass
+                            return
+                        # Delegate to base for all other errors (respects logging.raiseExceptions)
+                        try:
+                            super().handleError(record)
+                        except Exception:
+                            pass
+
+                console_handler = _SafeStreamHandler(_sys.stdout)
                 console_handler.setFormatter(formatter)
                 self.logger.addHandler(console_handler)
 
@@ -272,6 +304,16 @@ class EnhancedLogger:
 
             # Prevent propagation to root logger to avoid duplicate messages
             self.logger.propagate = False
+
+            # Silence internal logging exceptions globally (prevents "--- Logging error ---" noise)
+            logging.raiseExceptions = False
+
+            # Reduce verbosity from noisy third-party libraries
+            try:
+                logging.getLogger("hmmlearn").setLevel(logging.ERROR)
+                logging.getLogger("hmmlearn.hmm").setLevel(logging.ERROR)
+            except Exception:
+                pass
 
             print("Logger setup completed successfully")
             return True
@@ -825,6 +867,7 @@ def heartbeat(
     name: str,
     interval_seconds: float = 15.0,
     details_provider: Callable[[], str] | None = None,
+    context: dict[str, str] | None = None,
 ):
     """
     Periodically log a short progress message while a long-running block executes.
@@ -832,6 +875,7 @@ def heartbeat(
     - Thread-based, safe for both sync and async code paths
     - Emits start, periodic "still running" with elapsed time, and end (with total duration)
     - Never raises; logging failures are swallowed
+    - Enhanced with context information (step, model, regime, asset, timeframe)
     """
     start_time = time.perf_counter()
     stop_event = threading.Event()
@@ -844,16 +888,40 @@ def heartbeat(
             tick += 1
             try:
                 elapsed = time.perf_counter() - start_time
+
+                # Build context string
+                context_str = ""
+                if context:
+                    context_parts = []
+                    if "step" in context:
+                        context_parts.append(f"step={context['step']}")
+                    if "model" in context:
+                        context_parts.append(f"model={context['model']}")
+                    if "regime" in context:
+                        context_parts.append(f"regime={context['regime']}")
+                    if "asset" in context and "timeframe" in context:
+                        context_parts.append(
+                            f"asset={context['asset']}/{context['timeframe']}"
+                        )
+                    elif "asset" in context:
+                        context_parts.append(f"asset={context['asset']}")
+
+                    if context_parts:
+                        context_str = f" | {' | '.join(context_parts)}"
+
                 extra = ""
                 if details_provider is not None:
                     try:
                         details_text = details_provider()
                         if details_text:
-                            extra = f" details={details_text}"
+                            extra = f" | {details_text}"
                     except Exception:
                         # Ignore detail provider errors
                         pass
-                logger.info(f"⏳ {name} still running... elapsed={elapsed:.1f}s{extra}")
+
+                logger.info(
+                    f"⏳ {name} still running... elapsed={elapsed:.1f}s{context_str}{extra}"
+                )
             except Exception:
                 # Never crash on logging
                 pass

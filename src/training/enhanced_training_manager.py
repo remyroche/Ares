@@ -6,6 +6,7 @@ import time
 import psutil
 import os
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -22,7 +23,7 @@ import numpy as np
 # Optional dependency: pyarrow is used for efficient parquet streaming; import lazily in methods
 try:
     import pyarrow.parquet as pq  # type: ignore
-except Exception:  # ImportError or others
+except ImportError:
     pq = None  # type: ignore
 
 # Avoid blanket suppression; warn only once for known noisy categories
@@ -34,13 +35,16 @@ from src.utils.error_handler import (
 )
 from src.utils.logger import system_logger
 from src.utils.validator_orchestrator import validator_orchestrator
+from src.utils.step_dependency_validator import step_dependency_validator
+
+# Import multi-timeframe training manager
+from src.training.steps.multi_timeframe_training.multi_timeframe_training_manager import (
+    MultiTimeframeTrainingManager,
+)
 
 # Import computational optimization components
-from src.training.optimization.computational_optimization_manager import (
-    ComputationalOptimizationManager,
-    create_computational_optimization_manager,
-)
 from src.config.computational_optimization import get_computational_optimization_config
+from src.training.optimization.computational_optimization_manager import create_computational_optimization_manager
 
 # Import optimized tools from enhanced_training_manager_optimized
 from src.training.enhanced_training_manager_optimized import (
@@ -60,6 +64,49 @@ from src.training.enhanced_training_manager_optimized import (
 from src.training.model_trainer import setup_model_trainer
 
 from contextlib import contextmanager
+
+
+# ==== Helpers for robust data path and JSON formatting ====
+def _is_relative_to(path: Path, base: Path) -> bool:
+    """Return True if path is within base when resolved; False otherwise."""
+    try:
+        path.resolve().relative_to(base.resolve())
+        return True
+    except Exception:
+        return False
+
+
+def _safe_json_write(target: Path, obj: Any) -> None:
+    """Atomically and deterministically write JSON to target.
+
+    - Ensures parent directory exists
+    - Writes UTF-8 with Unix newlines
+    - Sorts keys for deterministic diffs
+    - fsyncs before atomic replace
+    """
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_suffix(target.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8", newline="\n") as f:
+        json.dump(obj, f, indent=2, sort_keys=True, ensure_ascii=False)
+        try:
+            f.flush()
+            os.fsync(f.fileno())
+        except Exception:
+            # fsync best-effort; ignore if unavailable
+            pass
+    os.replace(tmp, target)
+
+
+_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+
+
+def _sanitize_identifier(value: str) -> str:
+    """Validate identifier for use in file/dir names. Raises ValueError on invalid."""
+    if not isinstance(value, str) or not value:
+        raise ValueError("Identifier must be a non-empty string")
+    if not _ID_RE.match(value):
+        raise ValueError(f"Invalid identifier: {value}")
+    return value
 
 
 class EnhancedTrainingManager:
@@ -132,7 +179,9 @@ class EnhancedTrainingManager:
         self.n_trials: int = self.enhanced_training_config.get("n_trials", 100)
         # Set lookback days based on BLANK mode
         default_lookback = 180 if self.blank_training_mode else 30
-        self.lookback_days: int = self.enhanced_training_config.get("lookback_days", default_lookback)
+        self.lookback_days: int = self.enhanced_training_config.get(
+            "lookback_days", default_lookback
+        )
 
         # Validation parameters
         self.enable_validators: bool = self.enhanced_training_config.get(
@@ -144,9 +193,8 @@ class EnhancedTrainingManager:
         self.enable_computational_optimization: bool = (
             self.enhanced_training_config.get("enable_computational_optimization", True)
         )
-        self.computational_optimization_manager: (
-            ComputationalOptimizationManager | None
-        ) = None
+        # Lazily set by create_computational_optimization_manager; type hint kept loose to avoid import cycle
+        self.computational_optimization_manager = None
         self.optimization_statistics: dict[str, Any] = {}
 
         # Optimization component configuration (ported)
@@ -198,6 +246,12 @@ class EnhancedTrainingManager:
         self.memory_manager = MemoryManager()
         self.data_manager = MemoryEfficientDataManager()
 
+        # Initialize StepDependencyValidator for step dependency validation
+        self.step_dependency_validator = step_dependency_validator
+
+        # Initialize multi-timeframe training manager
+        self.multi_timeframe_training_manager = MultiTimeframeTrainingManager(config)
+
         # Optimization configuration
         self.optimization_config = self.config.get("computational_optimization", {})
         self._load_optimization_config()
@@ -215,11 +269,19 @@ class EnhancedTrainingManager:
         self.label_expert_calibrators: dict[str, Any] = {}
         self.label_reliability: dict[str, float] = {}
         self.activation_thresholds: dict[str, float] = {}
-        self.artifacts_dir: Path = Path(self.enhanced_training_config.get("artifacts_dir", "artifacts/meta_labeling"))
+        self.artifacts_dir: Path = Path(
+            self.enhanced_training_config.get(
+                "artifacts_dir", "artifacts/meta_labeling"
+            )
+        )
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
         # Force rerun flag (env or config)
-        env_force = os.getenv("FORCE_RERUN", "0") == "1" or os.getenv("FORCE", "0") == "1"
-        self.force_rerun: bool = bool(self.enhanced_training_config.get("force_rerun", env_force))
+        env_force = (
+            os.getenv("FORCE_RERUN", "0") == "1" or os.getenv("FORCE", "0") == "1"
+        )
+        self.force_rerun: bool = bool(
+            self.enhanced_training_config.get("force_rerun", env_force)
+        )
 
         self.logger.info("Loaded optimization configuration")
 
@@ -293,10 +355,7 @@ class EnhancedTrainingManager:
             ns_dir = self.checkpoint_dir / exchange / symbol / timeframe
             ns_dir.mkdir(parents=True, exist_ok=True)
             target_file = ns_dir / "training_progress.json"
-            tmp_file = ns_dir / "training_progress.json.tmp"
-            with open(tmp_file, "w") as f:
-                json.dump(checkpoint_data, f, indent=2)
-            os.replace(tmp_file, target_file)
+            _safe_json_write(target_file, checkpoint_data)
 
             self.logger.info(f"💾 Checkpoint saved: {step_name} -> {target_file}")
 
@@ -351,15 +410,19 @@ class EnhancedTrainingManager:
                 / "training_progress.json"
             )
             if ns_file.exists():
-                ns_file.unlink()
-                self.logger.info(f"🗑️ Checkpoint cleared at {ns_file}")
+                # Guard against clearing outside configured checkpoint dir
+                if _is_relative_to(ns_file, self.checkpoint_dir) and not ns_file.is_symlink():
+                    ns_file.unlink()
+                    self.logger.info(f"🗑️ Checkpoint cleared at {ns_file}")
+                else:
+                    self.logger.warning(f"Skipped clearing checkpoint due to unsafe path: {ns_file}")
         except Exception as e:
             self.logger.warning(f"Failed to clear checkpoint: {e}")
 
     def _heartbeat(self, message: str) -> None:
         """
         Log a heartbeat message for monitoring training progress.
-        
+
         Args:
             message: Heartbeat message to log
         """
@@ -395,6 +458,57 @@ class EnhancedTrainingManager:
                 "system_memory_percent": 0,
                 "available_memory_gb": 0,
             }
+
+    async def validate_step_dependencies(
+        self, 
+        step_name: str, 
+        pipeline_state: dict[str, Any],
+        force_rerun: bool = False
+    ) -> bool:
+        """
+        Validate that all dependencies for a step are met.
+        
+        Args:
+            step_name: Name of the step to validate
+            pipeline_state: Current pipeline state
+            force_rerun: If True, skip dependency validation for the starting step
+            
+        Returns:
+            True if dependencies are met, False otherwise
+        """
+        try:
+            self.logger.info(f"🔍 Validating dependencies for {step_name}")
+            
+            # Use StepDependencyValidator to check prerequisites
+            # Use the correct checkpoint directory that matches where checkpoints are saved
+            # Extract exchange and symbol from pipeline_state or use defaults
+            exchange = pipeline_state.get("exchange", "BINANCE")
+            symbol = pipeline_state.get("symbol", "ETHUSDT")
+            timeframe = pipeline_state.get("timeframe", "1m")
+            # Use the same path structure as _save_checkpoint method
+            checkpoint_dir = f"checkpoints/{exchange}/{symbol}/{timeframe}"
+            validation_result = await self.step_dependency_validator.validate_step_prerequisites(
+                step_name=step_name,
+                pipeline_state=pipeline_state,
+                checkpoint_dir=checkpoint_dir,
+                force_rerun=force_rerun
+            )
+            
+            if validation_result["valid"]:
+                self.logger.info(f"✅ Dependencies validated for {step_name}: {validation_result['reason']}")
+                return True
+            else:
+                self.logger.error(f"❌ Dependencies failed for {step_name}: {validation_result['reason']}")
+                
+                # Log failed prerequisites for debugging
+                if "failed_steps" in validation_result:
+                    self.logger.error(f"   Failed prerequisites: {validation_result['failed_steps']}")
+                
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"🚨 Error validating dependencies for {step_name}: {e}")
+            return False
 
     def _analyze_resource_requirements(self) -> dict[str, Any]:
         """
@@ -503,40 +617,40 @@ class EnhancedTrainingManager:
         if is_blank_mode:
             return {
                 "step1_data_collection": 5,
-                "step2_market_regime_classification": 3,
-                "step4_regime_data_splitting": 2,
-                "step3_feature_engineering": 15,
-                "step5_analyst_specialist_training": 10,
-                "step6_analyst_enhancement": 8,
-                "step7_analyst_ensemble_creation": 12,
+                "step2_feature_engineering": 15,
+                "step3_hmm_regime_discovery": 3,
+                "step4_processing_labeling": 8,
+                "step5_regime_data_splitting": 2,
+                "step6_hmm_based_training": 10,
+                "step6_5_unified_regime_intelligence": 8,
+                "step7_analyst_enhancement": 8,
                 "step8_tactician_labeling": 5,
                 "step9_tactician_specialist_training": 10,
-                
-                "step11_confidence_calibration": 3,
-                "step12_final_parameters_optimization": 15,
-                "step13_walk_forward_validation": 8,
-                "step14_monte_carlo_validation": 8,
-                "step15_ab_testing": 5,
-                "step16_saving": 2,
+                "step10_confidence_calibration": 3,
+                "step11_final_parameters_optimization": 15,
+                "step12_walk_forward_validation": 8,
+                "step13_monte_carlo_validation": 8,
+                "step14_ab_testing": 5,
+                "step15_saving": 2,
             }
         else:
             return {
                 "step1_data_collection": 15,
-                "step2_market_regime_classification": 8,
-                "step4_regime_data_splitting": 5,
-                "step3_feature_engineering": 60,
-                "step5_analyst_specialist_training": 30,
-                "step6_analyst_enhancement": 25,
-                "step7_analyst_ensemble_creation": 35,
+                "step2_feature_engineering": 60,
+                "step3_hmm_regime_discovery": 8,
+                "step4_processing_labeling": 20,
+                "step5_regime_data_splitting": 5,
+                "step6_hmm_based_training": 30,
+                "step6_5_unified_regime_intelligence": 25,
+                "step7_analyst_enhancement": 25,
                 "step8_tactician_labeling": 15,
                 "step9_tactician_specialist_training": 30,
-                
-                "step11_confidence_calibration": 10,
-                "step12_final_parameters_optimization": 240,
-                "step13_walk_forward_validation": 60,
-                "step14_monte_carlo_validation": 60,
-                "step15_ab_testing": 30,
-                "step16_saving": 5,
+                "step10_confidence_calibration": 10,
+                "step11_final_parameters_optimization": 240,
+                "step12_walk_forward_validation": 60,
+                "step13_monte_carlo_validation": 60,
+                "step14_ab_testing": 30,
+                "step15_saving": 5,
             }
 
     def _optimize_memory_usage(self) -> None:
@@ -572,7 +686,7 @@ class EnhancedTrainingManager:
             self.logger.warning(f"Memory optimization failed: {e}")
 
     def _get_progress_percentage(
-        self, completed_steps: int, total_steps: int = 16
+        self, completed_steps: int, total_steps: int = 15
     ) -> float:
         """
         Calculate progress percentage.
@@ -587,7 +701,7 @@ class EnhancedTrainingManager:
         return (completed_steps / total_steps) * 100
 
     def _log_progress(
-        self, current_step: int, total_steps: int = 16, elapsed_time: float = 0
+        self, current_step: int, total_steps: int = 15, elapsed_time: float = 0
     ) -> None:
         """
         Log progress with estimated completion time.
@@ -811,7 +925,7 @@ class EnhancedTrainingManager:
         try:
             self.logger.info("=" * 80)
             self.logger.info(
-                "🚀 COMPREHENSIVE 16-STEP ENHANCED TRAINING PIPELINE START"
+                "🚀 COMPREHENSIVE 15-STEP ENHANCED TRAINING PIPELINE START"
             )
             self.logger.info("=" * 80)
             self.logger.info(
@@ -848,7 +962,7 @@ class EnhancedTrainingManager:
 
                 self.logger.info("=" * 80)
                 self.logger.info(
-                    "🎉 COMPREHENSIVE 16-STEP ENHANCED TRAINING PIPELINE COMPLETED SUCCESSFULLY"
+                    "🎉 COMPREHENSIVE 15-STEP ENHANCED TRAINING PIPELINE COMPLETED SUCCESSFULLY"
                 )
                 self.logger.info("=" * 80)
                 self.logger.info(
@@ -862,21 +976,21 @@ class EnhancedTrainingManager:
                 )
                 self.logger.info("📋 Completed Steps:")
                 self.logger.info("   1. Data Collection")
-                self.logger.info("   2. Market Regime Classification")
-                self.logger.info("   3. Regime Data Splitting")
-                self.logger.info("   4. Analyst Labeling & Feature Engineering")
-                self.logger.info("   5. Analyst Specialist Training")
-                self.logger.info("   6. Analyst Enhancement")
-                self.logger.info("   7. Analyst Ensemble Creation")
+                self.logger.info("   2. Feature Engineering")
+                self.logger.info("   3. HMM Regime Discovery")
+                self.logger.info("   4. Processing & Labeling")
+                self.logger.info("   5. Regime Data Splitting")
+                self.logger.info("   6. HMM-Based Training")
+                self.logger.info("   6.5. Unified Regime Intelligence")
+                self.logger.info("   7. Analyst Enhancement")
                 self.logger.info("   8. Tactician Labeling")
                 self.logger.info("   9. Tactician Specialist Training")
-                self.logger.info("   10. Tactician Ensemble Creation")
-                self.logger.info("   11. Confidence Calibration")
-                self.logger.info("   12. Final Parameters Optimization")
-                self.logger.info("   13. Walk Forward Validation")
-                self.logger.info("   14. Monte Carlo Validation")
-                self.logger.info("   15. A/B Testing")
-                self.logger.info("   16. Saving Results")
+                self.logger.info("   10. Confidence Calibration")
+                self.logger.info("   11. Final Parameters Optimization")
+                self.logger.info("   12. Walk Forward Validation")
+                self.logger.info("   13. Monte Carlo Validation")
+                self.logger.info("   14. A/B Testing")
+                self.logger.info("   15. Saving Results")
             else:
                 self.logger.error("❌ Enhanced training pipeline failed")
 
@@ -989,7 +1103,14 @@ class EnhancedTrainingManager:
             symbol = training_input.get("symbol", "")
             exchange = training_input.get("exchange", "")
             timeframe = training_input.get("timeframe", "1m")
+
+            # Validate identifiers for safe file path usage
+            symbol = _sanitize_identifier(symbol)
+            exchange = _sanitize_identifier(exchange)
+            timeframe = _sanitize_identifier(timeframe)
+
             data_dir = "data/training"
+            data_root = Path(data_dir)
             start_step = training_input.get("start_step", "step1_data_collection")
 
             # Initialize pipeline state and timing
@@ -1017,7 +1138,7 @@ class EnhancedTrainingManager:
 
             # Enhanced logging setup
             self.logger.info("=" * 100)
-            self.logger.info("🚀 COMPREHENSIVE TRAINING PIPELINE START")
+            self.logger.info("🚀 COMPREHENSIVE 15-STEP TRAINING PIPELINE START")
             self.logger.info("=" * 100)
             self.logger.info(
                 f"📅 Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
@@ -1036,9 +1157,11 @@ class EnhancedTrainingManager:
             self.logger.info(f"🚀 Starting from step: {start_step}")
             self.logger.info("=" * 100)
 
+            # Initialize step_start variable
+            step_start = time.time()
+
             # Use optimized data loading for Step 1: Data Collection
             if start_step == "step1_data_collection":
-                step_start = time.time()
                 self.logger.info("📊 STEP 1: Data Collection...")
                 self.logger.info("   🔍 Downloading and preparing market data...")
 
@@ -1071,14 +1194,23 @@ class EnhancedTrainingManager:
                 # Optionally run validator for Step 1
                 # Optionally run validator for Step 1
                 try:
-                    await self._run_step_validator(
+                    step1_validation = await self._run_step_validator(
                         "step1_data_collection",
                         training_input,
                         pipeline_state,
                     )
+                    if step1_validation and step1_validation.get("validation_passed", False):
+                        self.logger.info(
+                            "🎉 Step 1: Data Collection completed successfully and validation passed"
+                        )
+                        print(
+                            "🎉 Step 1: Data Collection completed successfully and validation passed"
+                        )
                 except Exception as e:
                     # Non-fatal if validator is missing, but log for debugging.
-                    self.logger.warning(f"Validator for step1_data_collection failed but is non-fatal: {e}")
+                    self.logger.warning(
+                        f"Validator for step1_data_collection failed but is non-fatal: {e}"
+                    )
             else:
                 self.logger.info(
                     "⏭️  Skipping Step 1: Data Collection (using pre-consolidated data)"
@@ -1089,68 +1221,236 @@ class EnhancedTrainingManager:
                     "result": {"message": "Using pre-consolidated data"},
                 }
 
-            # Step 1_7: HMM Regime Discovery (block HMMs + composite clustering)
-            self._heartbeat("Step 1_7: HMM Regime Discovery")
-            step_start_1_7 = time.time()
+            # Step 2: Feature Engineering
+            self._heartbeat("Step 2: Feature Engineering")
+
+            # Determine whether Step 2 should run based on requested start_step
+            start_step_key = training_input.get("start_step", "step1_data_collection")
+            step_order = [
+                "step1_data_collection",
+                "step2_feature_engineering",
+                "step3_hmm_regime_discovery",
+                "step4_processing_labeling",
+                "step5_regime_data_splitting",
+                "step6_hmm_based_training",
+                "step6_5_unified_regime_intelligence",
+                "step7_analyst_enhancement",
+                "step8_tactician_labeling",
+                "step9_tactician_specialist_training",
+                "step10_confidence_calibration",
+                "step11_final_parameters_optimization",
+                "step12_walk_forward_validation",
+                "step13_monte_carlo_validation",
+                "step14_ab_testing",
+                "step15_saving",
+            ]
+            def _should_run(step_name: str) -> bool:
+                try:
+                    return step_order.index(step_name) >= step_order.index(start_step_key)
+                except ValueError:
+                    # If unknown step names are provided, default to running to be safe
+                    return True
+
+            if not _should_run("step2_feature_engineering"):
+                self.logger.info(
+                    f"⏭️ Skipping Step 2: Feature Engineering (starting from '{start_step_key}')"
+                )
+                # Mark pipeline state as skipped; rely on existing artifacts from previous runs
+                pipeline_state["feature_engineering"] = {
+                    "status": "SKIPPED",
+                    "success": True,
+                    "skipped": True,
+                    "reason": f"start_step={start_step_key}",
+                }
+            else:
+                # Validate step dependencies BEFORE execution
+                if not await self.validate_step_dependencies("step2_feature_engineering", pipeline_state, self.force_rerun):
+                    self.logger.error("❌ Step 2 dependencies not met, skipping")
+                    return False
+            
+            step_start_2 = time.time()
             try:
-                from src.training.steps import step1_7_hmm_regime_discovery as _step1_7
-                step1_7_success = await _step1_7.run_step(
+                from src.training.steps import step2_feature_engineering
+
+                # Prepare feature engineering configuration
+                feature_config = self.config.get("vectorized_advanced_features", {})
+                if not feature_config:
+                    # Default configuration with difference and acceleration features enabled
+                    feature_config = {
+                        "enable_difference_acceleration_features": True,
+                        "enable_volatility_modeling": True,
+                        "enable_correlation_analysis": True,
+                        "enable_momentum_analysis": True,
+                        "enable_liquidity_analysis": True,
+                        "enable_candlestick_patterns": True,
+                        "enable_sr_distance": True,
+                        "enable_wavelet_transforms": True,
+                        "enable_multi_timeframe": True,
+                        "enable_meta_labeling": False,
+                        "enable_explicit_meta_labels": False,
+                    }
+                
+                step2_success = await step2_feature_engineering.run_step(
+                    symbol=symbol,
+                    exchange=exchange,
+                    data_dir=data_dir,
+                    timeframe=timeframe,
+                    force_rerun=self.force_rerun,
+                    feature_config={"vectorized_advanced_features": feature_config},
+                )
+            except Exception as e:
+                self.logger.error(f"❌ Error in Step 2: {e}")
+                step2_success = False
+
+            if not step2_success:
+                self._log_step_completion(
+                    "Step 2: Feature Engineering",
+                    step_start_2,
+                    step_times,
+                    success=False,
+                )
+                return False
+            else:
+                self._log_step_completion(
+                    "Step 2: Feature Engineering",
+                    step_start_2,
+                    step_times,
+                    success=True,
+                )
+
+            pipeline_state["feature_engineering"] = {
+                "status": "SUCCESS" if step2_success else "FAILED",
+                "success": bool(step2_success),
+                "completed": bool(step2_success),
+            }
+            self._save_checkpoint("step2_feature_engineering", pipeline_state)
+            step_times["step2_feature_engineering"] = time.time() - step_start_2
+
+            # Run validator for Step 2 (AFTER execution, for verification only)
+            # Run validator only if Step 2 was executed (not skipped above)
+            if _should_run("step2_feature_engineering"):
+                try:
+                    step2_validation = await self._run_step_validator(
+                        "step2_feature_engineering", training_input, pipeline_state
+                    )
+                    if step2_validation and step2_validation.get("validation_passed", False):
+                        # Explicit success notice when validation passes
+                        self.logger.info(
+                            "🎉 Step 2: Feature Engineering completed successfully and validation passed"
+                        )
+                        print(
+                            "🎉 Step 2: Feature Engineering completed successfully and validation passed"
+                        )
+                except Exception as e:
+                    self.logger.warning(
+                        f"Validator for step2_feature_engineering failed but is non-fatal: {e}"
+                    )
+                    step2_validation = {"validation_passed": False, "error": str(e)}
+                # Gate progression (validation is now informational, not blocking)
+                if not step2_validation or not bool(step2_validation.get("validation_passed", False)):
+                    self.logger.warning("⚠️ Step 2 validation failed but proceeding (validation is informational)")
+            # If step2 was skipped, proceed directly
+            self.logger.info("➡️ Proceeding to Step 3: HMM Regime Discovery")
+
+            # Step 3: HMM Regime Discovery (block HMMs + composite clustering)
+            self._heartbeat("Step 3: HMM Regime Discovery")
+            
+            # Validate step dependencies BEFORE execution
+            if not await self.validate_step_dependencies("step3_hmm_regime_discovery", pipeline_state, self.force_rerun):
+                self.logger.error("❌ Step 3 dependencies not met, skipping")
+                return False
+            
+            step_start_3 = time.time()
+            try:
+                from src.training.steps import step3_hmm_regime_discovery as _step3
+
+                step3_success = await _step3.run_step_enhanced(
                     symbol=symbol,
                     exchange=exchange,
                     data_dir=data_dir,
                     timeframe=timeframe,
                     lookback_days=self.lookback_days,
+                    force_rerun=self.force_rerun,
                 )
             except Exception as e:
-                self.logger.error(f"❌ Error in Step 1_7: {e}")
-                step1_7_success = False
+                self.logger.error(f"❌ Error in Step 3: {e}")
+                step3_success = False
 
-            if not step1_7_success:
+            if not step3_success:
                 self._log_step_completion(
-                    "Step 1_7: HMM Regime Discovery",
-                    step_start_1_7,
+                    "Step 3: HMM Regime Discovery",
+                    step_start_3,
                     step_times,
                     success=False,
                 )
-                # Non-fatal: proceed but warn
-                self.logger.warning("⚠️ Proceeding without Step 1_7 artifacts (no-fatal)")
+                self.logger.error("❌ Step 3 failed - stopping pipeline")
+                return False
             else:
                 self._log_step_completion(
-                    "Step 1_7: HMM Regime Discovery",
-                    step_start_1_7,
+                    "Step 3: HMM Regime Discovery",
+                    step_start_3,
                     step_times,
                     success=True,
                 )
 
             pipeline_state["hmm_regime_discovery"] = {
-                "status": "SUCCESS" if step1_7_success else "FAILED",
-                "success": bool(step1_7_success),
-                "completed": bool(step1_7_success),
+                "status": "SUCCESS" if step3_success else "FAILED",
+                "success": bool(step3_success),
+                "completed": bool(step3_success),
             }
-            self._save_checkpoint("step1_7_hmm_regime_discovery", pipeline_state)
-            step_times["step1_7_hmm_regime_discovery"] = time.time() - step_start_1_7
+            self._save_checkpoint("step3_hmm_regime_discovery", pipeline_state)
+            step_times["step3_hmm_regime_discovery"] = time.time() - step_start_3
 
-            # Run validator for Step 1_7
+            # Run validator for Step 3 (AFTER execution, for verification only)
             try:
-                await self._run_step_validator(
-                    "step1_7_hmm_regime_discovery", training_input, pipeline_state
+                step3_validation = await self._run_step_validator(
+                    "step3_hmm_regime_discovery", training_input, pipeline_state
                 )
+                if step3_validation and step3_validation.get("validation_passed", False):
+                    self.logger.info(
+                        "🎉 Step 3: HMM Regime Discovery completed successfully and validation passed"
+                    )
+                    print(
+                        "🎉 Step 3: HMM Regime Discovery completed successfully and validation passed"
+                    )
             except Exception as e:
                 self.logger.warning(
-                    f"Validator for step1_7_hmm_regime_discovery failed but is non-fatal: {e}"
+                    f"Validator for step3_hmm_regime_discovery failed but is non-fatal: {e}"
                 )
+                step3_validation = {"validation_passed": False, "error": str(e)}
+            # Gate progression (validation is now informational, not blocking)
+            if not step3_validation or not bool(step3_validation.get("validation_passed", False)):
+                self.logger.warning("⚠️ Step 3 validation failed but proceeding (validation is informational)")
+            self.logger.info("➡️ Proceeding to Step 4: Processing & Labeling")
 
-            # Step 2: Processing, meta-labeling, feature engineering (or legacy regime classification)
-            self._heartbeat("Step 2: Processing & Labeling")
-            try:
-                pipeline_cfg = self.config.get("pipeline", {})
-                method_a_cfg = pipeline_cfg.get("method_a", {})
-                use_alt_step2 = bool(method_a_cfg.get("step2_is_leveling", True))
-                if use_alt_step2:
-                    self.logger.info("Step 2: using processing/labeling/feature engineering branch")
-                    # Run Step 2 (processing/labeling/feature engineering)
-                    from src.training.steps import step2_processing_labeling_feature_engineering
-                    step2_success = await step2_processing_labeling_feature_engineering.run_step(
+            # Step 4: Processing & Labeling (market regime classification deprecated)
+            self._heartbeat("Step 4: Processing & Labeling")
+
+            should_run_step4 = _should_run("step4_processing_labeling")
+            if not should_run_step4:
+                self.logger.info(
+                    f"⏭️ Skipping Step 4: Processing & Labeling (starting from '{start_step_key}')"
+                )
+                pipeline_state["processing_labeling"] = {
+                    "status": "SKIPPED",
+                    "success": True,
+                    "skipped": True,
+                    "reason": f"start_step={start_step_key}",
+                }
+            else:
+                # Validate step dependencies before execution (non-blocking)
+                validation_result = await self.validate_step_dependencies("step4_processing_labeling", pipeline_state, self.force_rerun)
+                if not validation_result.get("valid", False):
+                    self.logger.warning(f"⚠️ Step 4 dependencies not fully met: {validation_result.get('reason', 'Unknown')}")
+                    self.logger.warning("⚠️ Proceeding anyway (validation is non-blocking)")
+                    # Continue execution even if validation fails
+
+                step_start_4 = time.time()
+                try:
+                    # Run Step 4 (processing/labeling)
+                    from src.training.steps import step4_processing_labeling
+
+                    step4_success = await step4_processing_labeling.run_step(
                         symbol=symbol,
                         exchange_name=exchange,
                         data_dir=data_dir,
@@ -1159,328 +1459,549 @@ class EnhancedTrainingManager:
                         force_rerun=self.force_rerun,
                         pipeline_config=self.config,
                     )
-                    validator_step_name = "step2_processing_labeling_feature_engineering"
+                    validator_step_name = "step4_processing_labeling"
+                except Exception as e:
+                    self.logger.error(f"❌ Error in Step 4: {e}")
+                    step4_success = False
+                    validator_step_name = "step4_processing_labeling"
+
+                if not step4_success:
+                    self._log_step_completion(
+                        "Step 4: Processing & Labeling",
+                        step_start_4,
+                        step_times,
+                        success=False,
+                    )
+                    return False
                 else:
-                    from src.training.steps import step2_market_regime_classification
-                    step2_success = await step2_market_regime_classification.run_step(
+                    self._log_step_completion(
+                        "Step 4: Processing & Labeling",
+                        step_start_4,
+                        step_times,
+                        success=True,
+                    )
+
+                # Update pipeline state
+                pipeline_state["processing_labeling"] = {
+                    "status": "SUCCESS",
+                    "success": step4_success,
+                }
+                
+                # Save checkpoint for Step 4
+                self._save_checkpoint("step4_processing_labeling", pipeline_state)
+
+                # Run validator for Step 4 (match orchestrator mapping)
+                validation_result = await self._run_step_validator(
+                    validator_step_name, training_input, pipeline_state
+                )
+                if validation_result and validation_result.get("validation_passed", False):
+                    self.logger.info(
+                        "🎉 Step 4: Processing & Labeling completed successfully and validation passed"
+                    )
+                    print(
+                        "🎉 Step 4: Processing & Labeling completed successfully and validation passed"
+                    )
+                # Gate progression
+                if not validation_result or not bool(validation_result.get("validation_passed", False)):
+                    self.logger.error("❌ Step 4 validation failed — stopping before Step 5")
+                    return False
+            self.logger.info("➡️ Proceeding to Step 5: Regime Data Splitting")
+
+            # Step 5: Data Splitting for Training (HMM composite clusters only)
+            self._heartbeat("Step 5: HMM Composite Regime Data Splitting")
+
+            should_run_step5 = _should_run("step5_regime_data_splitting")
+            if not should_run_step5:
+                self.logger.info(
+                    f"⏭️ Skipping Step 5: HMM Composite Regime Data Splitting (starting from '{start_step_key}')"
+                )
+                pipeline_state["hmm_composite_regime_data_splitting"] = {
+                    "status": "SKIPPED",
+                    "success": True,
+                    "skipped": True,
+                    "reason": f"start_step={start_step_key}",
+                }
+            else:
+                # Validate step dependencies before execution
+                if not await self.validate_step_dependencies("step5_regime_data_splitting", pipeline_state, self.force_rerun):
+                    self.logger.error("❌ Step 5 dependencies not met, skipping")
+                    return False
+
+                step_start_5 = time.time()
+                try:
+                    from src.training.steps import step4_regime_data_splitting as _split
+
+                    step5_kwargs = {}
+                    # HMM COMPOSITE CLUSTERS ONLY - NO FALLBACKS
+                    step5_kwargs["regime_basis"] = "hmm_composite_clusters_only"
+                    step5_success = await _split.run_step(
                         symbol=symbol,
                         exchange=exchange,
                         data_dir=data_dir,
                         timeframe=timeframe,
                         force_rerun=self.force_rerun,
+                        **step5_kwargs,
                     )
-                    validator_step_name = "step2_market_regime_classification"
-            except Exception as e:
-                self.logger.error(f"❌ Error in Step 2: {e}")
-                step2_success = False
-                validator_step_name = "step2_market_regime_classification"
+                except Exception as e:
+                    self.logger.error(f"❌ Error in Step 5: {e}")
+                    step5_success = False
 
-            # Record which Step 2 branch was attempted
-            used_alt_step2 = (validator_step_name == "step2_processing_labeling_feature_engineering")
+                if not step5_success:
+                    self._log_step_completion(
+                        "Step 5: HMM Composite Regime Data Splitting",
+                        step_start_5,
+                        step_times,
+                        success=False,
+                    )
+                    return False
+                else:
+                    self._log_step_completion(
+                        "Step 5: HMM Composite Regime Data Splitting",
+                        step_start_5,
+                        step_times,
+                        success=True,
+                    )
 
-            if not step2_success:
-                self._log_step_completion(
-                    "Step 2: Processing & Labeling",
-                    step_start,
-                    step_times,
-                    success=False,
+                # Provide explicit success indicators for validators
+                pipeline_state["hmm_composite_regime_data_splitting"] = {
+                    "status": "SUCCESS" if step5_success else "FAILED",
+                    "success": bool(step5_success),
+                    "completed": bool(step5_success),
+                }
+                self._save_checkpoint("step5_regime_data_splitting", pipeline_state)
+                self._optimize_memory_usage()
+
+                # Run validator for Step 5 (match orchestrator mapping)
+                step5_validation = await self._run_step_validator(
+                    "step5_regime_data_splitting",
+                    training_input,
+                    pipeline_state,
                 )
-                return False
+                if step5_validation and step5_validation.get("validation_passed", False):
+                    self.logger.info(
+                        "🎉 Step 5: HMM Composite Regime Data Splitting completed successfully and validation passed"
+                    )
+                    print(
+                        "🎉 Step 5: HMM Composite Regime Data Splitting completed successfully and validation passed"
+                    )
+                else:
+                    self.logger.error("❌ Step 5 validation failed — stopping before Step 6")
+                    return False
+            self.logger.info("➡️ Proceeding to Step 6: HMM-Based Training")
 
-            # Update pipeline state
-            pipeline_state["processing_labeling"] = {
-                "status": "SUCCESS",
-                "success": step2_success,
-            }
+            # Step 4_8: Regime Forecasting is now integrated into Step 6 training (artifacts emitted there)
 
-            # Run validator for Step 2 (match orchestrator mapping)
-            validation_result = await self._run_step_validator(
-                validator_step_name, training_input, pipeline_state
-            )
+            # Step 6: HMM-Based Training (enable Method A experts via config)
+            self._heartbeat("Step 6: HMM-Based Training")
 
-            self._log_step_completion(
-                "Step 2: Processing & Labeling", step_start, step_times
-            )
-
-            # Save checkpoint after step 2
-            self._save_checkpoint("step2_processing_labeling", pipeline_state)
-
-            # Step 3: Feature Engineering
-            self._heartbeat("Step 3: Feature Engineering")
-            try:
-                from src.training.steps import step3_feature_engineering
-                step3_success = await step3_feature_engineering.run_step(
-                    symbol=symbol,
-                    exchange=exchange,
-                    data_dir=data_dir,
-                    timeframe=timeframe,
+            should_run_step6 = _should_run("step6_hmm_based_training")
+            if not should_run_step6:
+                self.logger.info(
+                    f"⏭️ Skipping Step 6: HMM-Based Training (starting from '{start_step_key}')"
                 )
-            except Exception as e:
-                self.logger.error(f"❌ Error in Step 3: {e}")
-                step3_success = False
+                pipeline_state["hmm_based_training"] = {
+                    "status": "SKIPPED",
+                    "success": True,
+                    "skipped": True,
+                    "reason": f"start_step={start_step_key}",
+                }
+            else:
+                # Validate step dependencies before execution
+                if not await self.validate_step_dependencies("step6_regime_specific_training", pipeline_state, self.force_rerun):
+                    self.logger.error("❌ Step 6 dependencies not met, skipping")
+                    return False
 
-            if not step3_success:
-                self._log_step_completion(
-                    "Step 3: Feature Engineering",
-                    step_start,
-                    step_times,
-                    success=False,
-                )
-                return False
+                step_start_6 = time.time()
+                try:
+                    from src.training.steps import step6_hmm_based_training
 
-            # Update pipeline state
-            pipeline_state["feature_engineering"] = {
-                "status": "SUCCESS",
-                "success": step3_success,
-            }
-
-            # Run validator for Step 3 (uses step4_analyst_labeling_feature_engineering_validator)
-            validation_result = await self._run_step_validator(
-                "step3_feature_engineering", training_input, pipeline_state
-            )
-
-            self._log_step_completion(
-                "Step 3: Feature Engineering", step_start, step_times
-            )
-
-            # Save checkpoint after step 3
-            self._save_checkpoint("step3_feature_engineering", pipeline_state)
-
-            # Step 4: Data Splitting for Training (regimes or meta-labels)
-            self._heartbeat("Step 4: Data Splitting for Training")
-            try:
-                from src.training.steps import step4_regime_data_splitting as _split
-                step4_kwargs = {}
-                pipeline_cfg = self.config.get("pipeline", {})
-                method_a_cfg = pipeline_cfg.get("method_a", {})
-                regime_basis = str(method_a_cfg.get("regime_basis", "bull_bear_sideways")).lower()
-                # If Step 2 alt produced labeled splits, prefer meta_labels for splitting
-                if used_alt_step2:
-                    regime_basis = "meta_labels"
-                step4_kwargs["regime_basis"] = regime_basis
-                step4_success = await _split.run_step(
-                    symbol=symbol,
-                    exchange=exchange,
-                    data_dir=data_dir,
-                    timeframe=timeframe,
-                    force_rerun=self.force_rerun,
-                    **step4_kwargs,
-                )
-            except Exception as e:
-                self.logger.error(f"❌ Error in Step 4: {e}")
-                step4_success = False
-
-            if not step4_success:
-                self._log_step_completion(
-                    "Step 4: Data Splitting for Training",
-                    step_start,
-                    step_times,
-                    success=False,
-                )
-                return False
-
-            # Provide explicit success indicators for validators
-            pipeline_state["data_splitting_for_training"] = {
-                "status": "SUCCESS" if step4_success else "FAILED",
-                "success": bool(step4_success),
-                "completed": bool(step4_success),
-            }
-            self._save_checkpoint(
-                "step4_regime_data_splitting", pipeline_state
-            )
-            self._optimize_memory_usage()
-
-            # Run validator for Step 4 (match orchestrator mapping)
-            await self._run_step_validator(
-                "step4_regime_data_splitting",
-                training_input,
-                pipeline_state,
-            )
-
-            # Step 1_8: Regime Forecasting (emergence & exit hazard) — runs after splits are ready
-            self._heartbeat("Step 1_8: Regime Forecasting")
-            step_start_1_8 = time.time()
-            try:
-                from src.training.steps import step1_8_regime_forecasting as _step1_8
-                step1_8_success = await _step1_8.run_step(
-                    symbol=symbol,
-                    exchange=exchange,
-                    data_dir=data_dir,
-                    timeframe=timeframe,
-                    lookback_days=self.lookback_days,
-                )
-            except Exception as e:
-                self.logger.error(f"❌ Error in Step 1_8: {e}")
-                step1_8_success = False
-
-            pipeline_state["regime_forecasting"] = {
-                "status": "SUCCESS" if step1_8_success else "FAILED",
-                "success": bool(step1_8_success),
-                "completed": bool(step1_8_success),
-            }
-            self._save_checkpoint("step1_8_regime_forecasting", pipeline_state)
-            self._log_step_completion("Step 1_8: Regime Forecasting", step_start_1_8, step_times, success=bool(step1_8_success))
-            # Non-fatal on failure; continue pipeline
-
-            # Step 5: Analyst Specialist Training (enable Method A experts via config)
-            self._heartbeat("Step 5: Analyst Specialist Training")
-            try:
-                from src.training.steps import step5_analyst_specialist_training
-                method_a_cfg = self.config.get("method_a_mixture_of_experts", {})
-                step5_success = await step5_analyst_specialist_training.run_step(
-                    symbol=symbol,
-                    data_dir=data_dir,
-                    method_a_mixture_of_experts=method_a_cfg,
-                )
-            except Exception as e:
-                self.logger.error(f"❌ Error in Step 5: {e}")
-                step5_success = False
-
-            if not step5_success:
-                self._log_step_completion(
-                    "Step 5: Analyst Specialist Training",
-                    step_start,
-                    step_times,
-                    success=False,
-                )
-                return False
-
-            pipeline_state["analyst_specialist_training"] = {
-                "status": "SUCCESS" if step5_success else "FAILED",
-                "success": bool(step5_success),
-                "completed": bool(step5_success),
-            }
-
-            # Run validator for Step 5
-            await self._run_step_validator(
-                "step5_analyst_specialist_training", training_input, pipeline_state
-            )
-
-            # Step 6: Analyst Enhancement
-            with self._timed_step("Step 6: Analyst Enhancement", step_times):
-                self.logger.info("🔧 STEP 6: Analyst Enhancement (multi-timeframe)...")
-
-                from src.training.steps import step6_analyst_enhancement
-
-                analyst_timeframes = ["30m", "15m", "5m"]
-                for tf in analyst_timeframes:
-                    self.logger.info(f"🔧 STEP 6: Analyst Enhancement @ {tf}")
-                    step6_success = await step6_analyst_enhancement.run_step(
+                    method_a_cfg = self.config.get("method_a_mixture_of_experts", {})
+                    step6_success = await step6_hmm_based_training.run_step(
                         symbol=symbol,
                         data_dir=data_dir,
-                        timeframe=tf,
-                        exchange=exchange,
+                        method_a_mixture_of_experts=method_a_cfg,
                     )
-                    if not step6_success:
+                except Exception as e:
+                    self.logger.error(f"❌ Error in Step 6: {e}")
+                    step6_success = False
+
+                if not step6_success:
+                    self._log_step_completion(
+                        "Step 6: HMM-Based Training",
+                        step_start_6,
+                        step_times,
+                        success=False,
+                    )
+                    return False
+                else:
+                    self._log_step_completion(
+                        "Step 6: HMM-Based Training",
+                        step_start_6,
+                        step_times,
+                        success=True,
+                    )
+
+                pipeline_state["hmm_based_training"] = {
+                    "status": "SUCCESS" if step6_success else "FAILED",
+                    "success": bool(step6_success),
+                    "completed": bool(step6_success),
+                }
+
+                # Run validator for Step 6
+                step6_validation = await self._run_step_validator(
+                    "step6_hmm_based_training", training_input, pipeline_state
+                )
+                if step6_validation and step6_validation.get("validation_passed", False):
+                    self.logger.info(
+                        "🎉 Step 6: HMM-Based Training completed successfully and validation passed"
+                    )
+                    print(
+                        "🎉 Step 6: HMM-Based Training completed successfully and validation passed"
+                    )
+                else:
+                    self.logger.error("❌ Step 6 validation failed — stopping before Step 6_5")
+                    return False
+            self.logger.info("➡️ Proceeding to Step 6_5: Unified Regime Intelligence")
+
+            # Step 6_5: Unified Regime Intelligence
+            should_run_step6_5 = _should_run("step6_5_unified_regime_intelligence")
+            if not should_run_step6_5:
+                self.logger.info(
+                    f"⏭️ Skipping Step 6_5: Unified Regime Intelligence (starting from '{start_step_key}')"
+                )
+                pipeline_state["unified_regime_intelligence"] = {
+                    "status": "SKIPPED",
+                    "success": True,
+                    "skipped": True,
+                    "reason": f"start_step={start_step_key}",
+                }
+            else:
+                self._heartbeat("Step 6_5: Unified Regime Intelligence")
+                step_start_6_5 = time.time()
+                try:
+                    from src.training.steps import step5_5_unified_regime_intelligence as _step6_5
+
+                    step6_5_success = await _step6_5.run_step(
+                        symbol=symbol,
+                        exchange=exchange,
+                        data_dir=data_dir,
+                        timeframe=timeframe,
+                        lookback_days=self.lookback_days,
+                    )
+                except Exception as e:
+                    self.logger.error(f"❌ Error in Step 6_5: {e}")
+                    step6_5_success = False
+
+                pipeline_state["unified_regime_intelligence"] = {
+                    "status": "SUCCESS" if step6_5_success else "FAILED",
+                    "success": bool(step6_5_success),
+                    "completed": bool(step6_5_success),
+                }
+                self._save_checkpoint("step6_5_unified_regime_intelligence", pipeline_state)
+                self._log_step_completion(
+                    "Step 6_5: Unified Regime Intelligence",
+                    step_start_6_5,
+                    step_times,
+                    success=bool(step6_5_success),
+                )
+                # Non-fatal on failure; continue pipeline
+
+                # Run validator for Step 6_5
+                try:
+                    step6_5_validation = await self._run_step_validator(
+                        "step6_5_unified_regime_intelligence", training_input, pipeline_state
+                    )
+                    if step6_5_validation and step6_5_validation.get("validation_passed", False):
+                        self.logger.info(
+                            "🎉 Step 6_5: Unified Regime Intelligence completed successfully and validation passed"
+                        )
+                        print(
+                            "🎉 Step 6_5: Unified Regime Intelligence completed successfully and validation passed"
+                        )
+                except Exception as e:
+                    self.logger.warning(
+                        f"Validator for step6_5_unified_regime_intelligence failed but is non-fatal: {e}"
+                    )
+            self.logger.info("➡️ Proceeding to Step 7: Analyst Enhancement")
+
+            # Step 7: Analyst Enhancement
+            should_run_step7 = _should_run("step7_analyst_enhancement")
+            if not should_run_step7:
+                self.logger.info(
+                    f"⏭️ Skipping Step 7: Analyst Enhancement (starting from '{start_step_key}')"
+                )
+                pipeline_state["analyst_enhancement"] = {
+                    "status": "SKIPPED",
+                    "success": True,
+                    "skipped": True,
+                    "reason": f"start_step={start_step_key}",
+                }
+            else:
+                with self._timed_step("Step 7: Analyst Enhancement", step_times):
+                    self.logger.info("🔧 STEP 7: Analyst Enhancement (multi-timeframe)...")
+                    
+                    # Validate step dependencies before execution
+                    if not await self.validate_step_dependencies("step7_ensemble_creation", pipeline_state, self.force_rerun):
+                        self.logger.error("❌ Step 7 dependencies not met, skipping")
                         return False
 
-                    # Run validator for Step 6 (per timeframe)
-                    await self._run_step_validator(
-                        "step6_analyst_enhancement", {**training_input, "timeframe": tf}, pipeline_state
-                    )
+                    from src.training.steps import step7_analyst_enhancement
+
+                    analyst_timeframes = ["30m", "15m", "5m"]
+                    for tf in analyst_timeframes:
+                        self.logger.info(f"🔧 STEP 7: Analyst Enhancement @ {tf}")
+                        step7_success = await step7_analyst_enhancement.run_step(
+                            symbol=symbol,
+                            data_dir=data_dir,
+                            timeframe=tf,
+                            exchange=exchange,
+                        )
+                        if not step7_success:
+                            return False
+
+                        # Run validator for Step 7 (per timeframe)
+                        step7_validation = await self._run_step_validator(
+                            "step7_analyst_enhancement",
+                            {**training_input, "timeframe": tf},
+                            pipeline_state,
+                        )
+                        if step7_validation and step7_validation.get("validation_passed", False):
+                            self.logger.info(
+                                f"🎉 Step 7: Analyst Enhancement ({tf}) completed successfully and validation passed"
+                            )
+                            print(
+                                f"🎉 Step 7: Analyst Enhancement ({tf}) completed successfully and validation passed"
+                            )
+            self.logger.info("➡️ Proceeding to Step 8: Tactician Labeling")
 
             # Step 7: (Obsolete) Analyst Ensemble Creation skipped
 
             # Step 8: Tactician Labeling
-            with self._timed_step("Step 8: Tactician Labeling", step_times):
-                self.logger.info("🎯 STEP 8: Tactician Labeling...")
-                from src.training.steps import step8_tactician_labeling
-
-                step8_success = await step8_tactician_labeling.run_step(
-                    symbol=symbol,
-                    data_dir=data_dir,
-                    timeframe="1m",
-                    exchange=exchange,
+            should_run_step8 = _should_run("step8_tactician_labeling")
+            if not should_run_step8:
+                self.logger.info(
+                    f"⏭️ Skipping Step 8: Tactician Labeling (starting from '{start_step_key}')"
                 )
-                if not step8_success:
-                    return False
+                pipeline_state["tactician_labeling"] = {
+                    "status": "SKIPPED",
+                    "success": True,
+                    "skipped": True,
+                    "reason": f"start_step={start_step_key}",
+                }
+            else:
+                with self._timed_step("Step 8: Tactician Labeling", step_times):
+                    self.logger.info("🎯 STEP 8: Tactician Labeling...")
+                    
+                    # Validate step dependencies before execution
+                    if not await self.validate_step_dependencies("step8_model_evaluation", pipeline_state, self.force_rerun):
+                        self.logger.error("❌ Step 8 dependencies not met, skipping")
+                        return False
+                    
+                    from src.training.steps import step8_tactician_labeling
 
-                # Run validator for Step 8
-                await self._run_step_validator(
-                    "step8_tactician_labeling", {**training_input, "timeframe": "1m"}, pipeline_state
-                )
+                    step8_success = await step8_tactician_labeling.run_step(
+                        symbol=symbol,
+                        data_dir=data_dir,
+                        timeframe="1m",
+                        exchange=exchange,
+                    )
+                    if not step8_success:
+                        return False
+
+                    # Run validator for Step 8
+                    step8_validation = await self._run_step_validator(
+                        "step8_tactician_labeling",
+                        {**training_input, "timeframe": "1m"},
+                        pipeline_state,
+                    )
+                    if step8_validation and step8_validation.get("validation_passed", False):
+                        self.logger.info(
+                            "🎉 Step 8: Tactician Labeling completed successfully and validation passed"
+                        )
+                        print(
+                            "🎉 Step 8: Tactician Labeling completed successfully and validation passed"
+                        )
+            self.logger.info("➡️ Proceeding to Step 9: Tactician Specialist Training")
 
             # Step 9: Tactician Specialist Training
-            with self._timed_step("Step 9: Tactician Specialist Training", step_times):
-                self.logger.info("🎯 STEP 9: Tactician Specialist Training...")
-                from src.training.steps import step9_tactician_specialist_training
-
-                step9_success = await step9_tactician_specialist_training.run_step(
-                    symbol=symbol,
-                    data_dir=data_dir,
-                    timeframe="1m",
-                    exchange=exchange,
+            should_run_step9 = _should_run("step9_tactician_specialist_training")
+            if not should_run_step9:
+                self.logger.info(
+                    f"⏭️ Skipping Step 9: Tactician Specialist Training (starting from '{start_step_key}')"
                 )
-                if not step9_success:
-                    return False
+                pipeline_state["tactician_specialist_training"] = {
+                    "status": "SKIPPED",
+                    "success": True,
+                    "skipped": True,
+                    "reason": f"start_step={start_step_key}",
+                }
+            else:
+                with self._timed_step("Step 9: Tactician Specialist Training", step_times):
+                    self.logger.info("🎯 STEP 9: Tactician Specialist Training...")
+                    
+                    # Validate step dependencies before execution
+                    if not await self.validate_step_dependencies("step9_hyperparameter_optimization", pipeline_state, self.force_rerun):
+                        self.logger.error("❌ Step 9 dependencies not met, skipping")
+                        return False
+                    
+                    from src.training.steps import step9_tactician_specialist_training
 
-                # Run validator for Step 9
-                await self._run_step_validator(
-                    "step9_tactician_specialist_training", {**training_input, "timeframe": "1m"}, pipeline_state
-                )
+                    step9_success = await step9_tactician_specialist_training.run_step(
+                        symbol=symbol,
+                        data_dir=data_dir,
+                        timeframe="1m",
+                        exchange=exchange,
+                    )
+                    if not step9_success:
+                        return False
+
+                    # Run validator for Step 9
+                    step9_validation = await self._run_step_validator(
+                        "step9_tactician_specialist_training",
+                        {**training_input, "timeframe": "1m"},
+                        pipeline_state,
+                    )
+                    if step9_validation and step9_validation.get("validation_passed", False):
+                        self.logger.info(
+                            "🎉 Step 9: Tactician Specialist Training completed successfully and validation passed"
+                        )
+                        print(
+                            "🎉 Step 9: Tactician Specialist Training completed successfully and validation passed"
+                        )
+            self.logger.info("➡️ Proceeding to Step 10: Confidence Calibration")
 
             # Step 10: (Obsolete) Tactician Ensemble Creation skipped
 
-            # Step 11: Confidence Calibration
-            with self._timed_step("Step 11: Confidence Calibration", step_times):
-                self.logger.info("🎯 STEP 11: Confidence Calibration...")
-                from src.training.steps import step11_confidence_calibration
-
-                step11_success = await step11_confidence_calibration.run_step(
-                    symbol=symbol,
-                    data_dir=data_dir,
-                    timeframe=timeframe,
-                    exchange=exchange,
+            # Step 10: Confidence Calibration
+            should_run_step10 = _should_run("step10_confidence_calibration")
+            if not should_run_step10:
+                self.logger.info(
+                    f"⏭️ Skipping Step 10: Confidence Calibration (starting from '{start_step_key}')"
                 )
-                if not step11_success:
-                    return False
+                pipeline_state["confidence_calibration"] = {
+                    "status": "SKIPPED",
+                    "success": True,
+                    "skipped": True,
+                    "reason": f"start_step={start_step_key}",
+                }
+            else:
+                with self._timed_step("Step 10: Confidence Calibration", step_times):
+                    self.logger.info("🎯 STEP 10: Confidence Calibration...")
+                    
+                    # Validate step dependencies before execution
+                    if not await self.validate_step_dependencies("step10_model_selection", pipeline_state, self.force_rerun):
+                        self.logger.error("❌ Step 10 dependencies not met, skipping")
+                        return False
+                    
+                    from src.training.steps import step10_confidence_calibration
 
-                # Run validator for Step 11
-                await self._run_step_validator(
-                    "step11_confidence_calibration", training_input, pipeline_state
+                    step10_success = await step10_confidence_calibration.run_step(
+                        symbol=symbol,
+                        data_dir=data_dir,
+                        timeframe=timeframe,
+                        exchange=exchange,
+                    )
+                    if not step10_success:
+                        return False
+
+                    # Run validator for Step 10
+                    step10_validation = await self._run_step_validator(
+                        "step10_confidence_calibration", training_input, pipeline_state
+                    )
+                    if step10_validation and step10_validation.get("validation_passed", False):
+                        self.logger.info(
+                            "🎉 Step 10: Confidence Calibration completed successfully and validation passed"
+                        )
+                        print(
+                            "🎉 Step 10: Confidence Calibration completed successfully and validation passed"
+                        )
+            self.logger.info("➡️ Proceeding to Step 11: Final Parameters Optimization")
+
+            # Save calibration summary (guard undefined calibration_results) atomically
+            try:
+                summary_obj = (
+                    self._summarize_calibration(calibration_results)  # type: ignore[name-defined]
+                    if "calibration_results" in locals()
+                    else {"status": "unknown"}
                 )
-
-            # Save calibration summary
-            summary_file = f"{data_dir}/{exchange}_{symbol}_calibration_summary.json"
-            with open(summary_file, "w") as f:
-                json.dump(self._summarize_calibration(calibration_results), f, indent=2)
+                summary_path = data_root / f"{exchange}_{symbol}_calibration_summary.json"
+                _safe_json_write(summary_path, summary_obj)
+            except Exception:
+                pass
 
             # Run meta-label relevance evaluation with complementarity and persist active labels
             try:
                 from src.analyst.meta_label_relevance import MetaLabelRelevanceEvaluator
+
                 # Load the latest processed frame if available
-                processed_path = os.path.join(data_dir, f"{exchange}_{symbol}_labeled_validation.parquet")
+                processed_path = Path(data_dir) / f"{exchange}_{symbol}_labeled_validation.parquet"
                 df_proc = None
-                if os.path.exists(processed_path):
+                if processed_path.exists():
                     import pandas as _pd
+
                     df_proc = _pd.read_parquet(processed_path)
-                # Fallback to generic_val
-                df_input = df_proc if isinstance(df_proc, pd.DataFrame) else generic_val
+                # Fallback to generic_val (guard)
+                df_input = df_proc if isinstance(df_proc, pd.DataFrame) else None
                 # Gather label names from intensity columns
                 if isinstance(df_input, pd.DataFrame):
-                    label_names = sorted({c.replace("intensity_", "") for c in df_input.columns if isinstance(c, str) and c.startswith("intensity_")})
+                    label_names = sorted(
+                        {
+                            c.replace("intensity_", "")
+                            for c in df_input.columns
+                            if isinstance(c, str) and c.startswith("intensity_")
+                        }
+                    )
                     thresholds = self.get_activation_thresholds()
-                    artifacts_dir = self.config.get("meta_labeling", {}).get("artifacts_dir", "artifacts/meta_labeling")
-                    evaluator = MetaLabelRelevanceEvaluator(artifacts_dir=artifacts_dir, mi_threshold=0.01, sharpe_min_delta=0.0, synergy_mi_threshold=0.005, max_pairs=200)
-                    res = evaluator.evaluate_from_frame(df_input, label_names, thresholds, returns_col="close_returns", risk_free_rate=0.0)
+                    artifacts_dir = self.config.get("meta_labeling", {}).get(
+                        "artifacts_dir", "artifacts/meta_labeling"
+                    )
+                    evaluator = MetaLabelRelevanceEvaluator(
+                        artifacts_dir=artifacts_dir,
+                        mi_threshold=0.01,
+                        sharpe_min_delta=0.0,
+                        synergy_mi_threshold=0.005,
+                        max_pairs=200,
+                    )
+                    res = evaluator.evaluate_from_frame(
+                        df_input,
+                        label_names,
+                        thresholds,
+                        returns_col="close_returns",
+                        risk_free_rate=0.0,
+                    )
                     # Persist as part of pipeline state for traceability
                     pipeline_state["active_meta_labels"] = res.get("active_labels", [])
-                    pipeline_state["inactive_meta_labels"] = res.get("inactive_labels", [])
-                    self.logger.info({"msg": "meta_label_relevance", "active": len(res.get("active_labels", [])), "inactive": len(res.get("inactive_labels", []))})
+                    pipeline_state["inactive_meta_labels"] = res.get(
+                        "inactive_labels", []
+                    )
+                    self.logger.info(
+                        {
+                            "msg": "meta_label_relevance",
+                            "active": len(res.get("active_labels", [])),
+                            "inactive": len(res.get("inactive_labels", [])),
+                        }
+                    )
             except Exception as _re:
                 self.logger.warning(f"Meta-label relevance evaluation skipped: {_re}")
 
             # NEW: Persist thresholds and reliability for MetaLabelingSystem consumption
             try:
-                artifacts_dir = self.config.get("meta_labeling", {}).get("artifacts_dir", "artifacts/meta_labeling")
-                os.makedirs(artifacts_dir, exist_ok=True)
+                artifacts_dir = self.config.get("meta_labeling", {}).get(
+                    "artifacts_dir", "artifacts/meta_labeling"
+                )
+                artifacts_root = Path(artifacts_dir)
+                artifacts_root.mkdir(parents=True, exist_ok=True)
                 # Persist reliability if available from pipeline_state or calibration
-                reliability: dict[str, float] = pipeline_state.get("label_reliability", {}) if isinstance(pipeline_state, dict) else {}
+                reliability: dict[str, float] = (
+                    pipeline_state.get("label_reliability", {})
+                    if isinstance(pipeline_state, dict)
+                    else {}
+                )
                 if not reliability:
                     # fallback: simple per-label accuracy proxy from analyst_models calibration if present
                     acc_map: dict[str, float] = {}
                     try:
-                        for regime, models in (analyst_calibration or {}).items():
+                        for regime, models in (locals().get("analyst_calibration", {}) or {}).items():
                             if isinstance(models, dict):
                                 for name, res in models.items():
                                     if isinstance(res, dict) and "accuracy" in res:
@@ -1488,135 +2009,275 @@ class EnhancedTrainingManager:
                     except Exception:
                         pass
                     reliability = acc_map
-                with open(os.path.join(artifacts_dir, "reliability.json"), "w") as f:
-                    json.dump(reliability, f, indent=2)
+                _safe_json_write(artifacts_root / "reliability.json", reliability)
                 # Persist thresholds if provided in pipeline_state
-                thresholds = pipeline_state.get("activation_thresholds", {}) if isinstance(pipeline_state, dict) else {}
+                thresholds = (
+                    pipeline_state.get("activation_thresholds", {})
+                    if isinstance(pipeline_state, dict)
+                    else {}
+                )
                 if thresholds:
-                    with open(os.path.join(artifacts_dir, "thresholds.json"), "w") as f:
-                        json.dump(thresholds, f, indent=2)
+                    _safe_json_write(artifacts_root / "thresholds.json", thresholds)
                 # Persist active labels if evaluated
                 try:
-                    if "active_meta_labels" in pipeline_state or "inactive_meta_labels" in pipeline_state:
-                        with open(os.path.join(artifacts_dir, "active_labels.json"), "w") as f:
-                            json.dump({
-                                "active_labels": pipeline_state.get("active_meta_labels", []),
-                                "inactive_labels": pipeline_state.get("inactive_meta_labels", []),
-                            }, f, indent=2)
+                    if (
+                        "active_meta_labels" in pipeline_state
+                        or "inactive_meta_labels" in pipeline_state
+                    ):
+                        _safe_json_write(
+                            artifacts_root / "active_labels.json",
+                            {
+                                "active_labels": pipeline_state.get(
+                                    "active_meta_labels", []
+                                ),
+                                "inactive_labels": pipeline_state.get(
+                                    "inactive_meta_labels", []
+                                ),
+                            },
+                        )
                 except Exception:
                     pass
                 self.logger.info(f"Persisted meta-label artifacts to {artifacts_dir}")
             except Exception as _pe:
                 self.logger.warning(f"Threshold/reliability persistence skipped: {_pe}")
 
-            # Step 12: Final Parameters Optimization (with computational optimization)
-            with self._timed_step("Step 12: Final Parameters Optimization", step_times):
+            # Step 11: Final Parameters Optimization (with computational optimization)
+            should_run_step11 = _should_run("step11_final_parameters_optimization")
+            if not should_run_step11:
                 self.logger.info(
-                    "🔧 STEP 12: Final Parameters Optimization with Computational Optimization..."
+                    f"⏭️ Skipping Step 11: Final Parameters Optimization (starting from '{start_step_key}')"
                 )
-                if self.computational_optimization_manager:
-                    step12_success = await self._run_optimized_parameters_optimization(
-                        symbol=symbol,
-                        data_dir=data_dir,
-                        timeframe=timeframe,
-                        exchange=exchange,
+                pipeline_state["final_parameters_optimization"] = {
+                    "status": "SKIPPED",
+                    "success": True,
+                    "skipped": True,
+                    "reason": f"start_step={start_step_key}",
+                }
+            else:
+                with self._timed_step("Step 11: Final Parameters Optimization", step_times):
+                    self.logger.info(
+                        "🔧 STEP 11: Final Parameters Optimization with Computational Optimization..."
                     )
-                else:
-                    from src.training.steps import step12_final_parameters_optimization
-
-                    step12_success = (
-                        await step12_final_parameters_optimization.run_step(
+                    
+                    # Validate step dependencies before execution
+                    if not await self.validate_step_dependencies("step11_backtesting", pipeline_state, self.force_rerun):
+                        self.logger.error("❌ Step 11 dependencies not met, skipping")
+                        return False
+                    
+                    if self.computational_optimization_manager:
+                        step11_success = await self._run_optimized_parameters_optimization(
                             symbol=symbol,
                             data_dir=data_dir,
                             timeframe=timeframe,
                             exchange=exchange,
                         )
+                    else:
+                        from src.training.steps import step11_final_parameters_optimization
+
+                        step11_success = (
+                            await step11_final_parameters_optimization.run_step(
+                                symbol=symbol,
+                                data_dir=data_dir,
+                                timeframe=timeframe,
+                                exchange=exchange,
+                            )
+                        )
+                    if not step11_success:
+                        return False
+
+                    # Run validator for Step 11
+                    step11_validation = await self._run_step_validator(
+                        "step11_final_parameters_optimization",
+                        training_input,
+                        pipeline_state,
                     )
-                if not step12_success:
-                    return False
+                    if step11_validation and step11_validation.get("validation_passed", False):
+                        self.logger.info(
+                            "🎉 Step 11: Final Parameters Optimization completed successfully and validation passed"
+                        )
+                        print(
+                            "🎉 Step 11: Final Parameters Optimization completed successfully and validation passed"
+                        )
+            self.logger.info("➡️ Proceeding to Step 12: Walk Forward Validation")
 
-                # Run validator for Step 12
-                await self._run_step_validator(
-                    "step12_final_parameters_optimization",
-                    training_input,
-                    pipeline_state,
+            # Step 12: Walk Forward Validation
+            should_run_step12 = _should_run("step12_walk_forward_validation")
+            if not should_run_step12:
+                self.logger.info(
+                    f"⏭️ Skipping Step 12: Walk Forward Validation (starting from '{start_step_key}')"
                 )
+                pipeline_state["walk_forward_validation"] = {
+                    "status": "SKIPPED",
+                    "success": True,
+                    "skipped": True,
+                    "reason": f"start_step={start_step_key}",
+                }
+            else:
+                with self._timed_step("Step 12: Walk Forward Validation", step_times):
+                    self.logger.info("📈 STEP 12: Walk Forward Validation...")
+                    
+                    # Validate step dependencies before execution
+                    if not await self.validate_step_dependencies("step12_walk_forward_validation", pipeline_state, self.force_rerun):
+                        self.logger.error("❌ Step 12 dependencies not met, skipping")
+                        return False
+                    
+                    from src.training.steps import step12_walk_forward_validation
 
-            # Step 13: Walk Forward Validation
-            with self._timed_step("Step 13: Walk Forward Validation", step_times):
-                self.logger.info("📈 STEP 13: Walk Forward Validation...")
-                from src.training.steps import step13_walk_forward_validation
+                    step12_success = await step12_walk_forward_validation.run_step(
+                        symbol=symbol,
+                        data_dir=data_dir,
+                        timeframe=timeframe,
+                        exchange=exchange,
+                    )
+                    if not step12_success:
+                        return False
 
-                step13_success = await step13_walk_forward_validation.run_step(
-                    symbol=symbol,
-                    data_dir=data_dir,
-                    timeframe=timeframe,
-                    exchange=exchange,
+                    # Run validator for Step 12
+                    step12_validation = await self._run_step_validator(
+                        "step12_walk_forward_validation", training_input, pipeline_state
+                    )
+                    if step12_validation and step12_validation.get("validation_passed", False):
+                        self.logger.info(
+                            "🎉 Step 12: Walk Forward Validation completed successfully and validation passed"
+                        )
+                        print(
+                            "🎉 Step 12: Walk Forward Validation completed successfully and validation passed"
+                        )
+            self.logger.info("➡️ Proceeding to Step 13: Monte Carlo Validation")
+
+            # Step 13: Monte Carlo Validation
+            should_run_step13 = _should_run("step13_monte_carlo_validation")
+            if not should_run_step13:
+                self.logger.info(
+                    f"⏭️ Skipping Step 13: Monte Carlo Validation (starting from '{start_step_key}')"
                 )
-                if not step13_success:
-                    return False
+                pipeline_state["monte_carlo_validation"] = {
+                    "status": "SKIPPED",
+                    "success": True,
+                    "skipped": True,
+                    "reason": f"start_step={start_step_key}",
+                }
+            else:
+                with self._timed_step("Step 13: Monte Carlo Validation", step_times):
+                    self.logger.info("🎲 STEP 13: Monte Carlo Validation...")
+                    
+                    # Validate step dependencies before execution
+                    if not await self._validate_step_dependencies("step13_monte_carlo_validation", pipeline_state):
+                        self.logger.error("❌ Step 13 dependencies not met, skipping")
+                        return False
+                    
+                    from src.training.steps import step13_monte_carlo_validation
 
-                # Run validator for Step 13
-                await self._run_step_validator(
-                    "step13_walk_forward_validation", training_input, pipeline_state
+                    step13_success = await step13_monte_carlo_validation.run_step(
+                        symbol=symbol,
+                        data_dir=data_dir,
+                        timeframe=timeframe,
+                        exchange=exchange,
+                    )
+                    if not step13_success:
+                        return False
+
+                    # Run validator for Step 13
+                    step13_validation = await self._run_step_validator(
+                        "step13_monte_carlo_validation", training_input, pipeline_state
+                    )
+                    if step13_validation and step13_validation.get("validation_passed", False):
+                        self.logger.info(
+                            "🎉 Step 13: Monte Carlo Validation completed successfully and validation passed"
+                        )
+                        print(
+                            "🎉 Step 13: Monte Carlo Validation completed successfully and validation passed"
+                        )
+            self.logger.info("➡️ Proceeding to Step 14: A/B Testing")
+
+            # Step 14: A/B Testing
+            should_run_step14 = _should_run("step14_ab_testing")
+            if not should_run_step14:
+                self.logger.info(
+                    f"⏭️ Skipping Step 14: A/B Testing (starting from '{start_step_key}')"
                 )
+                pipeline_state["ab_testing"] = {
+                    "status": "SKIPPED",
+                    "success": True,
+                    "skipped": True,
+                    "reason": f"start_step={start_step_key}",
+                }
+            else:
+                with self._timed_step("Step 14: A/B Testing", step_times):
+                    self.logger.info("🧪 STEP 14: A/B Testing...")
+                    
+                    # Validate step dependencies before execution
+                    if not await self._validate_step_dependencies("step14_model_deployment", pipeline_state):
+                        self.logger.error("❌ Step 14 dependencies not met, skipping")
+                        return False
+                    
+                    from src.training.steps import step14_ab_testing
 
-            # Step 14: Monte Carlo Validation
-            with self._timed_step("Step 14: Monte Carlo Validation", step_times):
-                self.logger.info("🎲 STEP 14: Monte Carlo Validation...")
-                from src.training.steps import step14_monte_carlo_validation
+                    step14_success = await step14_ab_testing.run_step(
+                        symbol=symbol,
+                        data_dir=data_dir,
+                        timeframe=timeframe,
+                        exchange=exchange,
+                    )
+                    if not step14_success:
+                        return False
 
-                step14_success = await step14_monte_carlo_validation.run_step(
-                    symbol=symbol,
-                    data_dir=data_dir,
-                    timeframe=timeframe,
-                    exchange=exchange,
+                    # Run validator for Step 14
+                    step14_validation = await self._run_step_validator(
+                        "step14_ab_testing", training_input, pipeline_state
+                    )
+                    if step14_validation and step14_validation.get("validation_passed", False):
+                        self.logger.info(
+                            "🎉 Step 14: A/B Testing completed successfully and validation passed"
+                        )
+                        print(
+                            "🎉 Step 14: A/B Testing completed successfully and validation passed"
+                        )
+            self.logger.info("➡️ Proceeding to Step 15: Saving Results")
+
+            # Step 15: Saving Results
+            should_run_step15 = _should_run("step15_saving")
+            if not should_run_step15:
+                self.logger.info(
+                    f"⏭️ Skipping Step 15: Saving Results (starting from '{start_step_key}')"
                 )
-                if not step14_success:
-                    return False
+                pipeline_state["saving_results"] = {
+                    "status": "SKIPPED",
+                    "success": True,
+                    "skipped": True,
+                    "reason": f"start_step={start_step_key}",
+                }
+            else:
+                with self._timed_step("Step 15: Saving Results", step_times):
+                    self.logger.info("💾 STEP 15: Saving Results...")
+                    
+                    # Validate step dependencies before execution
+                    if not await self._validate_step_dependencies("step15_live_monitoring", pipeline_state):
+                        self.logger.error("❌ Step 15 dependencies not met, skipping")
+                        return False
+                    
+                    from src.training.steps import step15_saving
 
-                # Run validator for Step 14
-                await self._run_step_validator(
-                    "step14_monte_carlo_validation", training_input, pipeline_state
-                )
+                    step15_success = await step15_saving.run_step(
+                        symbol=symbol,
+                        data_dir=data_dir,
+                        timeframe=timeframe,
+                        exchange=exchange,
+                    )
+                    if not step15_success:
+                        return False
 
-            # Step 15: A/B Testing
-            with self._timed_step("Step 15: A/B Testing", step_times):
-                self.logger.info("🧪 STEP 15: A/B Testing...")
-                from src.training.steps import step15_ab_testing
-
-                step15_success = await step15_ab_testing.run_step(
-                    symbol=symbol,
-                    data_dir=data_dir,
-                    timeframe=timeframe,
-                    exchange=exchange,
-                )
-                if not step15_success:
-                    return False
-
-                # Run validator for Step 15
-                await self._run_step_validator(
-                    "step15_ab_testing", training_input, pipeline_state
-                )
-
-            # Step 16: Saving Results
-            with self._timed_step("Step 16: Saving Results", step_times):
-                self.logger.info("💾 STEP 16: Saving Results...")
-                from src.training.steps import step16_saving
-
-                step16_success = await step16_saving.run_step(
-                    symbol=symbol,
-                    data_dir=data_dir,
-                    timeframe=timeframe,
-                    exchange=exchange,
-                )
-                if not step16_success:
-                    return False
-
-                # Run validator for Step 16
-                await self._run_step_validator(
-                    "step16_saving", training_input, pipeline_state
-                )
+                    # Run validator for Step 15
+                    step15_validation = await self._run_step_validator(
+                        "step15_saving", training_input, pipeline_state
+                    )
+                    if step15_validation and step15_validation.get("validation_passed", False):
+                        self.logger.info(
+                            "🎉 Step 15: Saving Results completed successfully and validation passed"
+                        )
+                        print(
+                            "🎉 Step 15: Saving Results completed successfully and validation passed"
+                        )
 
             # Calculate total time and summary
             total_time = time.time() - start_time
@@ -1627,7 +2288,7 @@ class EnhancedTrainingManager:
             # Log comprehensive summary
             self.logger.info("=" * 100)
             self.logger.info(
-                "🎉 COMPREHENSIVE TRAINING PIPELINE COMPLETED SUCCESSFULLY"
+                "🎉 COMPREHENSIVE 15-STEP TRAINING PIPELINE COMPLETED SUCCESSFULLY"
             )
             self.logger.info("=" * 100)
             self.logger.info(
@@ -2023,21 +2684,23 @@ class EnhancedTrainingManager:
         return stats
 
     async def _run_step_validator(
-        self,
-        step_name: str,
-        training_input: dict[str, Any],
+        self, 
+        step_name: str, 
+        training_input: dict[str, Any], 
         pipeline_state: dict[str, Any],
+        force_rerun: bool = False
     ) -> dict[str, Any]:
         """
         Run validator for a specific step.
-
+        
         Args:
-            step_name: Name of the step
+            step_name: Name of the step to validate
             training_input: Training input parameters
             pipeline_state: Current pipeline state
-
+            force_rerun: If True, skip dependency validation for the starting step
+            
         Returns:
-            Dictionary containing validation results
+            Validation result dictionary
         """
         if not self.enable_validators:
             return {
@@ -2049,6 +2712,21 @@ class EnhancedTrainingManager:
 
         try:
             self.logger.info(f"🔍 Running validator for {step_name}")
+            
+            # First, validate step dependencies
+            dependency_validation = await step_dependency_validator.validate_step_prerequisites(
+                step_name, pipeline_state, "checkpoints", force_rerun
+            )
+            
+            if not dependency_validation["valid"]:
+                self.logger.error(f"❌ Step dependencies failed for {step_name}: {dependency_validation['reason']}")
+                return {
+                    "step_name": step_name, 
+                    "validation_passed": False, 
+                    "error": f"Dependency validation failed: {dependency_validation['reason']}"
+                }
+            
+            # If dependencies are valid, run the step validator
             validation_result = await validator_orchestrator.run_step_validator(
                 step_name=step_name,
                 training_input=training_input,
@@ -2395,30 +3073,30 @@ class EnhancedTrainingManager:
     ) -> bool:
         """
         Execute comprehensive feature selection and pruning.
-        
+
         Implements tiered feature selection strategy for 240+ features:
         - Tier 1: Core features (80)
         - Tier 2: Normalized features (40)
         - Tier 3: Interaction features (60)
         - Tier 4: Lagged features (40)
         - Tier 5: Causality features (20)
-        
+
         Args:
             symbol: Trading symbol
             data_dir: Data directory
             timeframe: Timeframe
             exchange: Exchange name
-            
+
         Returns:
             bool: True if successful, False otherwise
         """
         try:
             self.logger.info("🔍 Starting comprehensive feature selection...")
-            
+
             # Load feature selection configuration
             feature_config = self.config.get("feature_interactions", {})
             selection_tiers = feature_config.get("feature_selection_tiers", {})
-            
+
             # Get tiered selection parameters
             tier_1_count = selection_tiers.get("tier_1_base_features", 80)
             tier_2_count = selection_tiers.get("tier_2_normalized_features", 40)
@@ -2426,7 +3104,7 @@ class EnhancedTrainingManager:
             tier_4_count = selection_tiers.get("tier_4_lagged_features", 40)
             tier_5_count = selection_tiers.get("tier_5_causality_features", 20)
             total_max_features = selection_tiers.get("total_max_features", 240)
-            
+
             self.logger.info(f"📊 Feature selection targets:")
             self.logger.info(f"   Tier 1 (Core): {tier_1_count} features")
             self.logger.info(f"   Tier 2 (Normalized): {tier_2_count} features")
@@ -2434,24 +3112,30 @@ class EnhancedTrainingManager:
             self.logger.info(f"   Tier 4 (Lagged): {tier_4_count} features")
             self.logger.info(f"   Tier 5 (Causality): {tier_5_count} features")
             self.logger.info(f"   Total Max: {total_max_features} features")
-            
+
             # Load engineered features from previous step
             features_path = f"{data_dir}/{symbol}_{exchange}_{timeframe}_engineered_features.parquet"
-            
+
             if not os.path.exists(features_path):
-                self.logger.warning(f"⚠️ Engineered features not found at {features_path}")
-                self.logger.info("🔄 Proceeding with feature selection on available data...")
+                self.logger.warning(
+                    f"⚠️ Engineered features not found at {features_path}"
+                )
+                self.logger.info(
+                    "🔄 Proceeding with feature selection on available data..."
+                )
                 return True  # Continue with available features
-            
+
             # Load features using optimized data manager
             features_df = self.data_manager.load_from_parquet(features_path)
-            
+
             if features_df.empty:
                 self.logger.warning("⚠️ No features available for selection")
                 return True
-            
-            self.logger.info(f"📈 Loaded {len(features_df.columns)} features for selection")
-            
+
+            self.logger.info(
+                f"📈 Loaded {len(features_df.columns)} features for selection"
+            )
+
             # Execute tiered feature selection
             selected_features = await self._execute_tiered_feature_selection(
                 features_df=features_df,
@@ -2462,33 +3146,38 @@ class EnhancedTrainingManager:
                 tier_5_count=tier_5_count,
                 total_max_features=total_max_features,
             )
-            
+
             # Save selected features
-            selected_features_path = f"{data_dir}/{symbol}_{exchange}_{timeframe}_selected_features.parquet"
-            self.data_manager.save_to_parquet(
-                selected_features, selected_features_path
+            selected_features_path = (
+                Path(data_dir) / f"{symbol}_{exchange}_{timeframe}_selected_features.parquet"
             )
-            
+            self.data_manager.save_to_parquet(selected_features, str(selected_features_path))
+
             self.logger.info(f"✅ Feature selection completed:")
             self.logger.info(f"   Selected: {len(selected_features.columns)} features")
             self.logger.info(f"   Reduced from: {len(features_df.columns)} features")
-            self.logger.info(f"   Reduction: {((len(features_df.columns) - len(selected_features.columns)) / len(features_df.columns) * 100):.1f}%")
-            
+            self.logger.info(
+                f"   Reduction: {((len(features_df.columns) - len(selected_features.columns)) / len(features_df.columns) * 100):.1f}%"
+            )
+
             # Save feature selection metadata
             selection_metadata = {
                 "original_features": len(features_df.columns),
                 "selected_features": len(selected_features.columns),
-                "reduction_percentage": ((len(features_df.columns) - len(selected_features.columns)) / len(features_df.columns) * 100),
+                "reduction_percentage": (
+                    (len(features_df.columns) - len(selected_features.columns))
+                    / len(features_df.columns)
+                    * 100
+                ),
                 "selection_timestamp": datetime.now().isoformat(),
                 "selection_config": selection_tiers,
             }
-            
-            metadata_path = f"{data_dir}/{symbol}_{exchange}_{timeframe}_feature_selection_metadata.json"
-            with open(metadata_path, 'w') as f:
-                json.dump(selection_metadata, f, indent=2)
-            
+
+            metadata_path = Path(data_dir) / f"{symbol}_{exchange}_{timeframe}_feature_selection_metadata.json"
+            _safe_json_write(metadata_path, selection_metadata)
+
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Feature selection failed: {e}")
             return False
@@ -2510,7 +3199,7 @@ class EnhancedTrainingManager:
     ) -> pd.DataFrame:
         """
         Execute tiered feature selection strategy.
-        
+
         Args:
             features_df: DataFrame with all engineered features
             tier_1_count: Number of core features to select
@@ -2519,62 +3208,74 @@ class EnhancedTrainingManager:
             tier_4_count: Number of lagged features to select
             tier_5_count: Number of causality features to select
             total_max_features: Maximum total features
-            
+
         Returns:
             pd.DataFrame: DataFrame with selected features
         """
         try:
             self.logger.info("🎯 Executing tiered feature selection...")
-            
+
             # Categorize features by tier
             feature_categories = self._categorize_features_by_tier(features_df)
-            
+
             selected_features = pd.DataFrame(index=features_df.index)
-            
+
             # Tier 1: Core features (technical indicators, basic liquidity)
             tier_1_features = self._select_tier_1_features(
                 features_df, feature_categories["tier_1"], tier_1_count
             )
             selected_features = pd.concat([selected_features, tier_1_features], axis=1)
-            self.logger.info(f"   ✅ Tier 1: Selected {len(tier_1_features.columns)} core features")
-            
+            self.logger.info(
+                f"   ✅ Tier 1: Selected {len(tier_1_features.columns)} core features"
+            )
+
             # Tier 2: Normalized features (z-scores, changes, accelerations)
             tier_2_features = self._select_tier_2_features(
                 features_df, feature_categories["tier_2"], tier_2_count
             )
             selected_features = pd.concat([selected_features, tier_2_features], axis=1)
-            self.logger.info(f"   ✅ Tier 2: Selected {len(tier_2_features.columns)} normalized features")
-            
+            self.logger.info(
+                f"   ✅ Tier 2: Selected {len(tier_2_features.columns)} normalized features"
+            )
+
             # Tier 3: Interaction features (spread*volume, etc.)
             tier_3_features = self._select_tier_3_features(
                 features_df, feature_categories["tier_3"], tier_3_count
             )
             selected_features = pd.concat([selected_features, tier_3_features], axis=1)
-            self.logger.info(f"   ✅ Tier 3: Selected {len(tier_3_features.columns)} interaction features")
-            
+            self.logger.info(
+                f"   ✅ Tier 3: Selected {len(tier_3_features.columns)} interaction features"
+            )
+
             # Tier 4: Lagged features (lagged interactions)
             tier_4_features = self._select_tier_4_features(
                 features_df, feature_categories["tier_4"], tier_4_count
             )
             selected_features = pd.concat([selected_features, tier_4_features], axis=1)
-            self.logger.info(f"   ✅ Tier 4: Selected {len(tier_4_features.columns)} lagged features")
-            
+            self.logger.info(
+                f"   ✅ Tier 4: Selected {len(tier_4_features.columns)} lagged features"
+            )
+
             # Tier 5: Causality features (market microstructure causality)
             tier_5_features = self._select_tier_5_features(
                 features_df, feature_categories["tier_5"], tier_5_count
             )
             selected_features = pd.concat([selected_features, tier_5_features], axis=1)
-            self.logger.info(f"   ✅ Tier 5: Selected {len(tier_5_features.columns)} causality features")
-            
+            self.logger.info(
+                f"   ✅ Tier 5: Selected {len(tier_5_features.columns)} causality features"
+            )
+
             # Apply final pruning if we exceed total_max_features
             if len(selected_features.columns) > total_max_features:
                 selected_features = self._apply_final_pruning(
                     selected_features, total_max_features
                 )
-                self.logger.info(f"   🔧 Final pruning: Reduced to {len(selected_features.columns)} features")
-            
+                self.logger.info(
+                    f"   🔧 Final pruning: Reduced to {len(selected_features.columns)} features"
+                )
+
             return selected_features
-            
+
         except Exception as e:
             self.logger.error(f"❌ Tiered feature selection failed: {e}")
             return pd.DataFrame()
@@ -2588,129 +3289,173 @@ class EnhancedTrainingManager:
             "tier_4": [],  # Lagged features
             "tier_5": [],  # Causality features
         }
-        
+
         for col in features_df.columns:
             col_lower = col.lower()
-            
+
             # Tier 1: Core technical and liquidity features
-            if any(keyword in col_lower for keyword in [
-                "rsi", "macd", "bb", "atr", "adx", "sma", "ema", "cci", "mfi", "roc",
-                "volume", "spread", "liquidity", "price_impact", "kyle", "amihud"
-            ]):
+            if any(
+                keyword in col_lower
+                for keyword in [
+                    "rsi",
+                    "macd",
+                    "bb",
+                    "atr",
+                    "adx",
+                    "sma",
+                    "ema",
+                    "cci",
+                    "mfi",
+                    "roc",
+                    "volume",
+                    "spread",
+                    "liquidity",
+                    "price_impact",
+                    "kyle",
+                    "amihud",
+                ]
+            ):
                 categories["tier_1"].append(col)
-            
+
             # Tier 2: Normalized features
-            elif any(keyword in col_lower for keyword in [
-                "_z_score", "_change", "_pct_change", "_acceleration", "_bounded",
-                "_log", "_normalized"
-            ]):
+            elif any(
+                keyword in col_lower
+                for keyword in [
+                    "_z_score",
+                    "_change",
+                    "_pct_change",
+                    "_acceleration",
+                    "_bounded",
+                    "_log",
+                    "_normalized",
+                ]
+            ):
                 categories["tier_2"].append(col)
-            
+
             # Tier 3: Interaction features
             elif "_x_" in col_lower or "_div_" in col_lower:
                 categories["tier_3"].append(col)
-            
+
             # Tier 4: Lagged features
             elif "_lag" in col_lower:
                 categories["tier_4"].append(col)
-            
+
             # Tier 5: Causality features
-            elif any(keyword in col_lower for keyword in [
-                "_predicts_", "_causality", "_divergence", "_stress", "_extreme"
-            ]):
+            elif any(
+                keyword in col_lower
+                for keyword in [
+                    "_predicts_",
+                    "_causality",
+                    "_divergence",
+                    "_stress",
+                    "_extreme",
+                ]
+            ):
                 categories["tier_5"].append(col)
-            
+
             # Default to tier 1 for uncategorized features
             else:
                 categories["tier_1"].append(col)
-        
+
         return categories
 
-    def _select_tier_1_features(self, features_df: pd.DataFrame, tier_1_features: list, count: int) -> pd.DataFrame:
+    def _select_tier_1_features(
+        self, features_df: pd.DataFrame, tier_1_features: list, count: int
+    ) -> pd.DataFrame:
         """Select core features based on variance and correlation."""
         if not tier_1_features:
             return pd.DataFrame()
-        
+
         # Get available features
         available_features = [f for f in tier_1_features if f in features_df.columns]
         if not available_features:
             return pd.DataFrame()
-        
+
         # Calculate feature importance based on variance
         feature_variance = features_df[available_features].var()
         top_features = feature_variance.nlargest(count).index.tolist()
-        
+
         return features_df[top_features]
 
-    def _select_tier_2_features(self, features_df: pd.DataFrame, tier_2_features: list, count: int) -> pd.DataFrame:
+    def _select_tier_2_features(
+        self, features_df: pd.DataFrame, tier_2_features: list, count: int
+    ) -> pd.DataFrame:
         """Select normalized features based on stability."""
         if not tier_2_features:
             return pd.DataFrame()
-        
+
         available_features = [f for f in tier_2_features if f in features_df.columns]
         if not available_features:
             return pd.DataFrame()
-        
+
         # Select based on feature stability (lower variance for normalized features)
         feature_variance = features_df[available_features].var()
         stable_features = feature_variance.nsmallest(count).index.tolist()
-        
+
         return features_df[stable_features]
 
-    def _select_tier_3_features(self, features_df: pd.DataFrame, tier_3_features: list, count: int) -> pd.DataFrame:
+    def _select_tier_3_features(
+        self, features_df: pd.DataFrame, tier_3_features: list, count: int
+    ) -> pd.DataFrame:
         """Select interaction features based on significance."""
         if not tier_3_features:
             return pd.DataFrame()
-        
+
         available_features = [f for f in tier_3_features if f in features_df.columns]
         if not available_features:
             return pd.DataFrame()
-        
+
         # Select based on absolute mean (higher values indicate more significant interactions)
         feature_abs_mean = features_df[available_features].abs().mean()
         significant_features = feature_abs_mean.nlargest(count).index.tolist()
-        
+
         return features_df[significant_features]
 
-    def _select_tier_4_features(self, features_df: pd.DataFrame, tier_4_features: list, count: int) -> pd.DataFrame:
+    def _select_tier_4_features(
+        self, features_df: pd.DataFrame, tier_4_features: list, count: int
+    ) -> pd.DataFrame:
         """Select lagged features based on temporal significance."""
         if not tier_4_features:
             return pd.DataFrame()
-        
+
         available_features = [f for f in tier_4_features if f in features_df.columns]
         if not available_features:
             return pd.DataFrame()
-        
+
         # Select based on variance (higher variance indicates more temporal information)
         feature_variance = features_df[available_features].var()
         temporal_features = feature_variance.nlargest(count).index.tolist()
-        
+
         return features_df[temporal_features]
 
-    def _select_tier_5_features(self, features_df: pd.DataFrame, tier_5_features: list, count: int) -> pd.DataFrame:
+    def _select_tier_5_features(
+        self, features_df: pd.DataFrame, tier_5_features: list, count: int
+    ) -> pd.DataFrame:
         """Select causality features based on market logic significance."""
         if not tier_5_features:
             return pd.DataFrame()
-        
+
         available_features = [f for f in tier_5_features if f in features_df.columns]
         if not available_features:
             return pd.DataFrame()
-        
+
         # Select based on absolute mean (causality features should have meaningful values)
         feature_abs_mean = features_df[available_features].abs().mean()
         causality_features = feature_abs_mean.nlargest(count).index.tolist()
-        
+
         return features_df[causality_features]
 
-    def _apply_final_pruning(self, selected_features: pd.DataFrame, max_features: int) -> pd.DataFrame:
+    def _apply_final_pruning(
+        self, selected_features: pd.DataFrame, max_features: int
+    ) -> pd.DataFrame:
         """Apply final pruning to meet maximum feature count."""
         if len(selected_features.columns) <= max_features:
             return selected_features
-        
+
         # Calculate overall feature importance based on variance
         feature_variance = selected_features.var()
         top_features = feature_variance.nlargest(max_features).index.tolist()
-        
+
         return selected_features[top_features]
 
     # ===== Label Expert Artifacts API =====
@@ -2733,10 +3478,7 @@ class EnhancedTrainingManager:
     def save_activation_thresholds(self, thresholds: dict[str, Any]) -> None:
         try:
             target = self.artifacts_dir / "thresholds.json"
-            tmp = self.artifacts_dir / "thresholds.json.tmp"
-            with open(tmp, "w") as f:
-                json.dump(thresholds, f, indent=2)
-            os.replace(tmp, target)
+            _safe_json_write(target, thresholds)
             # Also cache in memory (flatten thresholds mapping label->threshold)
             flat: dict[str, float] = {}
             try:
@@ -2753,7 +3495,9 @@ class EnhancedTrainingManager:
 
     def _load_activation_thresholds(self) -> None:
         if self.force_rerun:
-            self.logger.info("Force rerun enabled; skipping loading persisted activation thresholds")
+            self.logger.info(
+                "Force rerun enabled; skipping loading persisted activation thresholds"
+            )
             return
         try:
             path = self.artifacts_dir / "thresholds.json"
@@ -2774,10 +3518,7 @@ class EnhancedTrainingManager:
     def save_label_reliability(self, reliability: dict[str, float]) -> None:
         try:
             target = self.artifacts_dir / "reliability.json"
-            tmp = self.artifacts_dir / "reliability.json.tmp"
-            with open(tmp, "w") as f:
-                json.dump(reliability, f, indent=2)
-            os.replace(tmp, target)
+            _safe_json_write(target, reliability)
             self.label_reliability.update({k: float(v) for k, v in reliability.items()})
             self.logger.info(f"Saved label reliability to {target}")
         except Exception as e:
@@ -2785,13 +3526,17 @@ class EnhancedTrainingManager:
 
     def _load_label_reliability(self) -> None:
         if self.force_rerun:
-            self.logger.info("Force rerun enabled; skipping loading persisted reliability")
+            self.logger.info(
+                "Force rerun enabled; skipping loading persisted reliability"
+            )
             return
         try:
             path = self.artifacts_dir / "reliability.json"
             if path.exists():
                 with open(path, "r") as f:
-                    self.label_reliability = {k: float(v) for k, v in json.load(f).items()}
+                    self.label_reliability = {
+                        k: float(v) for k, v in json.load(f).items()
+                    }
                 self.logger.info(f"Loaded label reliability from {path}")
         except Exception as e:
             self.logger.warning(f"Failed to load label reliability: {e}")

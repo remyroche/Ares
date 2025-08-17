@@ -44,7 +44,7 @@ vectorized_advanced_features:
   enable_candlestick_patterns: true
   enable_sr_distance: true
   enable_multi_timeframe: true
-  enable_meta_labeling: true
+  enable_meta_labeling: false
 
 wavelet_transforms:
   # Wavelet transform configuration
@@ -64,7 +64,7 @@ wavelet_transforms:
   scale_resolution: "octave"
   
   # Feature dimensionality management
-  max_features_per_wavelet: 20
+  max_features_per_wavelet: 50
   feature_selection_method: "variance"  # variance, energy, entropy, random
   min_feature_variance: 1e-6
   

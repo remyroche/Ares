@@ -1,9 +1,11 @@
 # src/tactician/sr_breakout_predictor.py
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
+import numpy as np
+import os  # Added for model loading
 
 from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
 from src.utils.error_handler import (
@@ -24,7 +26,11 @@ class SRBreakoutPredictor:
     """
     SR Breakout Predictor responsible for predicting support/resistance breakouts.
     This module handles all SR breakout prediction logic and feature engineering.
-    Uses the unified regime classifier's S/R levels (Dynamic Pivots and HVNs).
+    Centralized S/R detection using multiple methods:
+    - Fractal analysis for swing highs/lows
+    - Volume-weighted price levels
+    - Traditional pivot points (fallback)
+    - ATR-based activation ranges
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
@@ -56,13 +62,105 @@ class SRBreakoutPredictor:
             0.7,
         )
 
+        # Enhanced S/R Detection Configuration
+        self.enhanced_sr_config: dict[str, Any] = self.sr_config.get(
+            "enhanced_sr_detection", {}
+        )
+        self.enable_fractal_analysis: bool = self.enhanced_sr_config.get(
+            "enable_fractal_analysis", True
+        )
+        self.enable_volume_weighted_levels: bool = self.enhanced_sr_config.get(
+            "enable_volume_weighted_levels", True
+        )
+        self.enable_atr_based_activation: bool = self.enhanced_sr_config.get(
+            "enable_atr_based_activation", True
+        )
+
+        # Fractal Analysis Parameters
+        self.fractal_config: dict[str, Any] = self.enhanced_sr_config.get(
+            "fractal_analysis", {}
+        )
+        self.fractal_lookback_periods: int = self.fractal_config.get(
+            "lookback_periods", 5
+        )
+        self.fractal_min_swing_strength: float = self.fractal_config.get(
+            "min_swing_strength", 0.6
+        )
+        self.fractal_volume_threshold: float = self.fractal_config.get(
+            "volume_threshold", 1.5
+        )
+
+        # Volume-Weighted Level Parameters
+        self.vw_config: dict[str, Any] = self.enhanced_sr_config.get(
+            "volume_weighted_levels", {}
+        )
+        self.vw_window_size: int = self.vw_config.get("window_size", 100)
+        self.vw_price_bins: int = self.vw_config.get("price_bins", 50)
+        self.vw_min_volume_ratio: float = self.vw_config.get("min_volume_ratio", 0.1)
+
+        # ATR-Based Activation Parameters
+        self.atr_config: dict[str, Any] = self.enhanced_sr_config.get(
+            "atr_based_activation", {}
+        )
+        self.atr_period: int = self.atr_config.get("atr_period", 14)
+        self.atr_multiplier: float = self.atr_config.get("atr_multiplier", 1.5)
+        self.atr_fallback_multiplier: float = self.atr_config.get(
+            "fallback_multiplier", 0.03
+        )
+
+        # LM Model Selection Configuration
+        self.lm_config: dict[str, Any] = self.sr_config.get("lm_model_selection", {})
+        self.enable_specialist_models: bool = self.lm_config.get(
+            "enable_specialist_models", True
+        )
+        self.sr_proximity_trigger_base: float = self.lm_config.get(
+            "sr_proximity_trigger_base", 0.006
+        )  # 0.6% base proximity
+        self.sr_proximity_trigger_min: float = self.lm_config.get(
+            "sr_proximity_trigger_min", 0.003
+        )  # 0.3% minimum
+        self.sr_proximity_trigger_max: float = self.lm_config.get(
+            "sr_proximity_trigger_max", 0.01
+        )  # 1.0% maximum
+
+        # Single unified model for S/R outcome prediction
+        self.sr_outcome_model_type: str = self.lm_config.get(
+            "sr_outcome_model_type", "unified_transformer"
+        )
+        self.sr_outcome_threshold: float = self.lm_config.get(
+            "sr_outcome_threshold", 0.6
+        )
+
+        # S/R outcome classes
+        self.sr_outcome_classes = {"breakout": 0, "rebounce": 1, "consolidation": 2}
+
+        # Model confidence thresholds for each outcome
+        self.outcome_confidence_thresholds = {
+            "breakout": self.lm_config.get("breakout_confidence_threshold", 0.65),
+            "rebounce": self.lm_config.get("rebounce_confidence_threshold", 0.65),
+            "consolidation": self.lm_config.get(
+                "consolidation_confidence_threshold", 0.6
+            ),
+        }
+
+        # Specialist model types for different S/R scenarios
+        self.specialist_model_types = {
+            "breakout": ["breakout_lgbm", "breakout_transformer", "breakout_cnn"],
+            "rebounce": ["rebounce_lgbm", "rebounce_transformer", "rebounce_cnn"],
+            "consolidation": ["consolidation_lgbm", "consolidation_transformer"],
+            "default": ["generalist_lgbm", "generalist_transformer"],
+        }
+
         # Unified regime classifier for S/R levels
         self.regime_classifier: UnifiedRegimeClassifier | None = None
 
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid SR breakout predictor configuration"),
-            AttributeError: (False, "Missing required SR predictor parameters"),
+            AttributeError: (
+                False,
+                "Missing required SR breakout predictor parameters",
+            ),
             KeyError: (False, "Missing configuration keys"),
         },
         default_return=False,
@@ -70,120 +168,733 @@ class SRBreakoutPredictor:
     )
     async def initialize(self) -> bool:
         """
-        Initialize SR breakout predictor.
+        Initialize SR breakout predictor with enhanced S/R detection capabilities.
 
         Returns:
             bool: True if initialization successful, False otherwise
         """
         try:
-            self.logger.info("Initializing SR Breakout Predictor...")
+            self.logger.info("🚀 Initializing enhanced SR breakout predictor...")
 
-            # Validate configuration
-            if not self._validate_configuration():
-                self.print(invalid("Invalid configuration for SR breakout predictor"))
-                return False
-
-            # Initialize SR prediction models
-            await self._initialize_sr_models()
-
-            self.is_initialized = True
-            self.logger.info("✅ SR Breakout Predictor initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.exception(
-                f"❌ SR Breakout Predictor initialization failed: {e}",
-            )
-            return False
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
-    def _validate_configuration(self) -> bool:
-        """
-        Validate SR breakout predictor configuration.
-
-        Returns:
-            bool: True if configuration is valid, False otherwise
-        """
-        try:
-            if self.sr_proximity_threshold <= 0:
-                self.print(invalid("Invalid sr_proximity_threshold configuration"))
-                return False
-
-            if (
-                self.breakout_confidence_threshold <= 0
-                or self.breakout_confidence_threshold > 1
-            ):
-                self.print(
-                    invalid("Invalid breakout_confidence_threshold configuration"),
-                )
-                return False
-
-            return True
-
-        except Exception:
-            self.print(failed("Configuration validation failed: {e}"))
-            return False
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="SR models initialization",
-    )
-    async def _initialize_sr_models(self) -> None:
-        """Initialize SR prediction models and regime classifier."""
-        try:
-            self.logger.info(
-                "Initializing SR prediction models and regime classifier...",
-            )
-
-            # Initialize unified regime classifier for S/R levels
+            # Initialize unified regime classifier
             self.regime_classifier = UnifiedRegimeClassifier(
                 self.config,
                 "UNKNOWN",
                 "UNKNOWN",
             )
-            await self.regime_classifier.initialize()
 
-            # Load or train the regime classifier if needed
-            if not self.regime_classifier.trained:
-                self.logger.info(
-                    "Regime classifier not trained - will use in inference mode",
+            # Validate enhanced S/R detection configuration
+            if not self._validate_enhanced_sr_config():
+                self.logger.error("❌ Invalid enhanced S/R detection configuration")
+                return False
+
+            self.is_initialized = True
+            self.logger.info(
+                "✅ Enhanced SR breakout predictor initialized successfully"
+            )
+            return True
+
+        except Exception as e:
+            self.logger.error(f"❌ Error initializing SR breakout predictor: {e}")
+            return False
+
+    def _validate_enhanced_sr_config(self) -> bool:
+        """Validate enhanced S/R detection configuration."""
+        try:
+            # Validate fractal analysis parameters
+            if self.enable_fractal_analysis:
+                if self.fractal_lookback_periods < 3:
+                    self.logger.warning(
+                        "⚠️ Fractal lookback periods too small, setting to 3"
+                    )
+                    self.fractal_lookback_periods = 3
+                if (
+                    self.fractal_min_swing_strength < 0.1
+                    or self.fractal_min_swing_strength > 1.0
+                ):
+                    self.logger.warning(
+                        "⚠️ Invalid fractal swing strength, setting to 0.6"
+                    )
+                    self.fractal_min_swing_strength = 0.6
+
+            # Validate volume-weighted parameters
+            if self.enable_volume_weighted_levels:
+                if self.vw_window_size < 20:
+                    self.logger.warning(
+                        "⚠️ Volume-weighted window size too small, setting to 20"
+                    )
+                    self.vw_window_size = 20
+                if self.vw_price_bins < 10:
+                    self.logger.warning(
+                        "⚠️ Volume-weighted price bins too small, setting to 10"
+                    )
+                    self.vw_price_bins = 10
+
+            # Validate ATR parameters
+            if self.enable_atr_based_activation:
+                if self.atr_period < 5:
+                    self.logger.warning("⚠️ ATR period too small, setting to 5")
+                    self.atr_period = 5
+                if self.atr_multiplier < 0.1:
+                    self.logger.warning("⚠️ ATR multiplier too small, setting to 0.1")
+                    self.atr_multiplier = 0.1
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"❌ Error validating enhanced S/R config: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="enhanced S/R level detection",
+    )
+    def detect_enhanced_sr_levels(self, price_data: pd.DataFrame) -> dict[str, Any]:
+        """
+        Detect enhanced S/R levels using multiple methods:
+        1. Fractal analysis for swing highs/lows
+        2. Volume-weighted price levels
+        3. Traditional pivot points (fallback)
+
+        Args:
+            price_data: OHLCV price data
+
+        Returns:
+            Dictionary containing enhanced S/R levels with strength metrics
+        """
+        try:
+            if not self.is_initialized:
+                self.logger.error("❌ SR breakout predictor not initialized")
+                return {"support_levels": [], "resistance_levels": []}
+
+            enhanced_levels = {
+                "support_levels": [],
+                "resistance_levels": [],
+                "level_metadata": {},
+            }
+
+            # 1. Fractal Analysis for Swing Highs/Lows
+            if self.enable_fractal_analysis:
+                fractal_levels = self._detect_fractal_swing_levels(price_data)
+                enhanced_levels["support_levels"].extend(
+                    fractal_levels.get("support_levels", [])
+                )
+                enhanced_levels["resistance_levels"].extend(
+                    fractal_levels.get("resistance_levels", [])
+                )
+                enhanced_levels["level_metadata"]["fractal"] = fractal_levels.get(
+                    "metadata", {}
                 )
 
-            self.logger.info("✅ SR prediction models initialized")
+            # 2. Volume-Weighted Price Levels
+            if self.enable_volume_weighted_levels:
+                vw_levels = self._detect_volume_weighted_levels(price_data)
+                enhanced_levels["support_levels"].extend(
+                    vw_levels.get("support_levels", [])
+                )
+                enhanced_levels["resistance_levels"].extend(
+                    vw_levels.get("resistance_levels", [])
+                )
+                enhanced_levels["level_metadata"]["volume_weighted"] = vw_levels.get(
+                    "metadata", {}
+                )
 
-        except Exception:
-            self.print(failed("❌ Failed to initialize SR models: {e}"))
-            raise
+            # 3. Traditional Pivot Points (fallback)
+            pivot_levels = self._detect_pivot_point_levels(price_data)
+            enhanced_levels["support_levels"].extend(
+                pivot_levels.get("support_levels", [])
+            )
+            enhanced_levels["resistance_levels"].extend(
+                pivot_levels.get("resistance_levels", [])
+            )
+            enhanced_levels["level_metadata"]["pivot_points"] = pivot_levels.get(
+                "metadata", {}
+            )
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False, "Invalid prediction parameters"),
-            AttributeError: (False, "Missing prediction components"),
-            KeyError: (False, "Missing required prediction data"),
-        },
-        default_return=False,
-        context="SR breakout prediction",
+            # 4. Consolidate and deduplicate levels
+            consolidated_levels = self._consolidate_sr_levels(enhanced_levels)
+
+            # 5. Calculate ATR-based activation ranges
+            if self.enable_atr_based_activation:
+                consolidated_levels = self._add_atr_based_activation_ranges(
+                    price_data, consolidated_levels
+                )
+
+            self.logger.info(
+                f"✅ Detected {len(consolidated_levels['support_levels'])} support and {len(consolidated_levels['resistance_levels'])} resistance levels"
+            )
+
+            return consolidated_levels
+
+        except Exception as e:
+            self.logger.error(f"❌ Error detecting enhanced S/R levels: {e}")
+            return {"support_levels": [], "resistance_levels": []}
+
+    def _detect_fractal_swing_levels(self, price_data: pd.DataFrame) -> dict[str, Any]:
+        """
+        Detect swing highs and lows using fractal analysis.
+
+        Args:
+            price_data: OHLCV price data
+
+        Returns:
+            Dictionary containing fractal swing levels
+        """
+        try:
+            high = price_data["high"].astype(float)
+            low = price_data["low"].astype(float)
+            close = price_data["close"].astype(float)
+            volume = price_data["volume"].astype(float)
+
+            swing_highs = []
+            swing_lows = []
+            metadata = {
+                "swing_highs_count": 0,
+                "swing_lows_count": 0,
+                "avg_swing_strength": 0.0,
+            }
+
+            # Detect swing highs
+            for i in range(
+                self.fractal_lookback_periods, len(high) - self.fractal_lookback_periods
+            ):
+                # Check if current high is a swing high
+                left_window = high.iloc[i - self.fractal_lookback_periods : i]
+                right_window = high.iloc[i + 1 : i + self.fractal_lookback_periods + 1]
+                current_high = high.iloc[i]
+
+                # Fractal condition: current high is higher than surrounding highs
+                if (
+                    current_high > left_window.max()
+                    and current_high > right_window.max()
+                ):
+                    # Calculate swing strength based on volume and price movement
+                    price_movement = current_high - min(
+                        left_window.min(), right_window.min()
+                    )
+                    avg_volume = volume.iloc[
+                        i - self.fractal_lookback_periods : i
+                        + self.fractal_lookback_periods
+                        + 1
+                    ].mean()
+                    current_volume = volume.iloc[i]
+                    volume_ratio = (
+                        current_volume / avg_volume if avg_volume > 0 else 1.0
+                    )
+
+                    # Normalize price movement
+                    price_range = high.max() - low.min()
+                    normalized_movement = (
+                        price_movement / price_range if price_range > 0 else 0
+                    )
+
+                    # Calculate swing strength (0.0 to 1.0)
+                    swing_strength = min(
+                        (
+                            normalized_movement * 0.6
+                            + min(volume_ratio / self.fractal_volume_threshold, 1.0)
+                            * 0.4
+                        ),
+                        1.0,
+                    )
+
+                    if swing_strength >= self.fractal_min_swing_strength:
+                        swing_highs.append(
+                            {
+                                "price": float(current_high),
+                                "strength": float(swing_strength),
+                                "timestamp": price_data.index[i],
+                                "volume_ratio": float(volume_ratio),
+                                "price_movement": float(price_movement),
+                                "type": "fractal_swing_high",
+                            }
+                        )
+
+            # Detect swing lows
+            for i in range(
+                self.fractal_lookback_periods, len(low) - self.fractal_lookback_periods
+            ):
+                # Check if current low is a swing low
+                left_window = low.iloc[i - self.fractal_lookback_periods : i]
+                right_window = low.iloc[i + 1 : i + self.fractal_lookback_periods + 1]
+                current_low = low.iloc[i]
+
+                # Fractal condition: current low is lower than surrounding lows
+                if current_low < left_window.min() and current_low < right_window.min():
+                    # Calculate swing strength based on volume and price movement
+                    price_movement = (
+                        max(left_window.max(), right_window.max()) - current_low
+                    )
+                    avg_volume = volume.iloc[
+                        i - self.fractal_lookback_periods : i
+                        + self.fractal_lookback_periods
+                        + 1
+                    ].mean()
+                    current_volume = volume.iloc[i]
+                    volume_ratio = (
+                        current_volume / avg_volume if avg_volume > 0 else 1.0
+                    )
+
+                    # Normalize price movement
+                    price_range = high.max() - low.min()
+                    normalized_movement = (
+                        price_movement / price_range if price_range > 0 else 0
+                    )
+
+                    # Calculate swing strength (0.0 to 1.0)
+                    swing_strength = min(
+                        (
+                            normalized_movement * 0.6
+                            + min(volume_ratio / self.fractal_volume_threshold, 1.0)
+                            * 0.4
+                        ),
+                        1.0,
+                    )
+
+                    if swing_strength >= self.fractal_min_swing_strength:
+                        swing_lows.append(
+                            {
+                                "price": float(current_low),
+                                "strength": float(swing_strength),
+                                "timestamp": price_data.index[i],
+                                "volume_ratio": float(volume_ratio),
+                                "price_movement": float(price_movement),
+                                "type": "fractal_swing_low",
+                            }
+                        )
+
+            # Classify as support/resistance based on current price
+            current_price = close.iloc[-1]
+            support_levels = []
+            resistance_levels = []
+
+            for swing in swing_lows:
+                if swing["price"] < current_price:
+                    support_levels.append(swing)
+                else:
+                    resistance_levels.append(swing)
+
+            for swing in swing_highs:
+                if swing["price"] < current_price:
+                    support_levels.append(swing)
+                else:
+                    resistance_levels.append(swing)
+
+            # Update metadata
+            metadata["swing_highs_count"] = len(swing_highs)
+            metadata["swing_lows_count"] = len(swing_lows)
+            all_strengths = [s["strength"] for s in swing_highs + swing_lows]
+            metadata["avg_swing_strength"] = (
+                float(np.mean(all_strengths)) if all_strengths else 0.0
+            )
+
+            self.logger.info(
+                f"🔍 Fractal analysis: {len(swing_highs)} swing highs, {len(swing_lows)} swing lows"
+            )
+
+            return {
+                "support_levels": support_levels,
+                "resistance_levels": resistance_levels,
+                "metadata": metadata,
+            }
+
+        except Exception as e:
+            self.logger.error(f"❌ Error in fractal swing detection: {e}")
+            return {"support_levels": [], "resistance_levels": [], "metadata": {}}
+
+    def _detect_volume_weighted_levels(
+        self, price_data: pd.DataFrame
+    ) -> dict[str, Any]:
+        """
+        Detect volume-weighted price levels using volume profile analysis.
+
+        Args:
+            price_data: OHLCV price data
+
+        Returns:
+            Dictionary containing volume-weighted levels
+        """
+        try:
+            high = price_data["high"].astype(float)
+            low = price_data["low"].astype(float)
+            close = price_data["close"].astype(float)
+            volume = price_data["volume"].astype(float)
+
+            # Use the last vw_window_size periods
+            window_data = price_data.tail(self.vw_window_size)
+            window_high = window_data["high"].astype(float)
+            window_low = window_data["low"].astype(float)
+            window_close = window_data["close"].astype(float)
+            window_volume = window_data["volume"].astype(float)
+
+            # Create price bins
+            price_min = window_low.min()
+            price_max = window_high.max()
+            price_range = price_max - price_min
+
+            if price_range <= 0:
+                return {"support_levels": [], "resistance_levels": [], "metadata": {}}
+
+            bin_size = price_range / self.vw_price_bins
+            volume_profile = np.zeros(self.vw_price_bins)
+
+            # Calculate volume profile
+            for i in range(len(window_data)):
+                price = window_close.iloc[i]
+                vol = window_volume.iloc[i]
+
+                # Determine which bin this price falls into
+                bin_index = int((price - price_min) / bin_size)
+                bin_index = max(0, min(bin_index, self.vw_price_bins - 1))
+
+                volume_profile[bin_index] += vol
+
+            # Find significant volume nodes
+            total_volume = volume_profile.sum()
+            if total_volume <= 0:
+                return {"support_levels": [], "resistance_levels": [], "metadata": {}}
+
+            # Calculate volume ratios and find peaks
+            volume_ratios = volume_profile / total_volume
+            avg_volume_ratio = volume_ratios.mean()
+            threshold = avg_volume_ratio * self.vw_min_volume_ratio
+
+            # Find local maxima in volume profile
+            significant_levels = []
+            for i in range(1, len(volume_ratios) - 1):
+                if (
+                    volume_ratios[i] > threshold
+                    and volume_ratios[i] > volume_ratios[i - 1]
+                    and volume_ratios[i] > volume_ratios[i + 1]
+                ):
+                    # Calculate price level for this bin
+                    price_level = price_min + (i + 0.5) * bin_size
+                    volume_ratio = volume_ratios[i]
+
+                    # Calculate strength based on volume ratio
+                    strength = min(volume_ratio / avg_volume_ratio, 2.0) / 2.0
+
+                    significant_levels.append(
+                        {
+                            "price": float(price_level),
+                            "strength": float(strength),
+                            "volume_ratio": float(volume_ratio),
+                            "type": "volume_weighted",
+                        }
+                    )
+
+            # Classify as support/resistance based on current price
+            current_price = close.iloc[-1]
+            support_levels = []
+            resistance_levels = []
+
+            for level in significant_levels:
+                if level["price"] < current_price:
+                    support_levels.append(level)
+                else:
+                    resistance_levels.append(level)
+
+            metadata = {
+                "total_volume": float(total_volume),
+                "avg_volume_ratio": float(avg_volume_ratio),
+                "significant_levels_count": len(significant_levels),
+                "price_range": float(price_range),
+                "bin_size": float(bin_size),
+            }
+
+            self.logger.info(
+                f"📊 Volume-weighted analysis: {len(significant_levels)} significant levels"
+            )
+
+            return {
+                "support_levels": support_levels,
+                "resistance_levels": resistance_levels,
+                "metadata": metadata,
+            }
+
+        except Exception as e:
+            self.logger.error(f"❌ Error in volume-weighted level detection: {e}")
+            return {"support_levels": [], "resistance_levels": [], "metadata": {}}
+
+    def _detect_pivot_point_levels(self, price_data: pd.DataFrame) -> dict[str, Any]:
+        """
+        Detect traditional pivot point levels using the existing regime classifier.
+
+        Args:
+            price_data: OHLCV price data
+
+        Returns:
+            Dictionary containing pivot point levels
+        """
+        try:
+            if not self.regime_classifier:
+                return {"support_levels": [], "resistance_levels": [], "metadata": {}}
+
+            # Use the last 24 periods for pivot calculation
+            window_data = price_data.tail(24)
+            if len(window_data) < 5:
+                return {"support_levels": [], "resistance_levels": [], "metadata": {}}
+
+            # Calculate pivot points using the regime classifier
+            pivots = self.regime_classifier._calculate_rolling_pivots(window_data)
+
+            support_levels = []
+            resistance_levels = []
+
+            # Extract support levels
+            for level_name in ["s1", "s2"]:
+                if pivots[level_name] > 0:
+                    support_levels.append(
+                        {
+                            "price": float(pivots[level_name]),
+                            "strength": float(
+                                pivots["strengths"][level_name]["strength"]
+                            ),
+                            "touches": int(pivots["strengths"][level_name]["touches"]),
+                            "volume": float(pivots["strengths"][level_name]["volume"]),
+                            "age": int(pivots["strengths"][level_name]["age"]),
+                            "type": "pivot_point",
+                        }
+                    )
+
+            # Extract resistance levels
+            for level_name in ["r1", "r2"]:
+                if pivots[level_name] > 0:
+                    resistance_levels.append(
+                        {
+                            "price": float(pivots[level_name]),
+                            "strength": float(
+                                pivots["strengths"][level_name]["strength"]
+                            ),
+                            "touches": int(pivots["strengths"][level_name]["touches"]),
+                            "volume": float(pivots["strengths"][level_name]["volume"]),
+                            "age": int(pivots["strengths"][level_name]["age"]),
+                            "type": "pivot_point",
+                        }
+                    )
+
+            metadata = {
+                "pivot": float(pivots["pivot"]),
+                "support_count": len(support_levels),
+                "resistance_count": len(resistance_levels),
+            }
+
+            return {
+                "support_levels": support_levels,
+                "resistance_levels": resistance_levels,
+                "metadata": metadata,
+            }
+
+        except Exception as e:
+            self.logger.error(f"❌ Error in pivot point detection: {e}")
+            return {"support_levels": [], "resistance_levels": [], "metadata": {}}
+
+    def _consolidate_sr_levels(self, enhanced_levels: dict[str, Any]) -> dict[str, Any]:
+        """
+        Consolidate and deduplicate S/R levels from multiple detection methods.
+
+        Args:
+            enhanced_levels: Dictionary containing levels from multiple methods
+
+        Returns:
+            Consolidated levels with deduplication
+        """
+        try:
+            all_support = enhanced_levels.get("support_levels", [])
+            all_resistance = enhanced_levels.get("resistance_levels", [])
+
+            # Group levels by proximity
+            consolidated_support = self._group_levels_by_proximity(all_support)
+            consolidated_resistance = self._group_levels_by_proximity(all_resistance)
+
+            # Sort by strength
+            consolidated_support.sort(key=lambda x: x["strength"], reverse=True)
+            consolidated_resistance.sort(key=lambda x: x["strength"], reverse=True)
+
+            # Keep only the strongest levels (limit to prevent overcrowding)
+            max_levels_per_side = 10
+            consolidated_support = consolidated_support[:max_levels_per_side]
+            consolidated_resistance = consolidated_resistance[:max_levels_per_side]
+
+            return {
+                "support_levels": consolidated_support,
+                "resistance_levels": consolidated_resistance,
+                "level_metadata": enhanced_levels.get("level_metadata", {}),
+            }
+
+        except Exception as e:
+            self.logger.error(f"❌ Error consolidating S/R levels: {e}")
+            return {"support_levels": [], "resistance_levels": []}
+
+    def _group_levels_by_proximity(self, levels: list[dict]) -> list[dict]:
+        """
+        Group levels that are close to each other and merge their properties.
+
+        Args:
+            levels: List of level dictionaries
+
+        Returns:
+            Consolidated list of levels
+        """
+        if not levels:
+            return []
+
+        # Sort by price
+        sorted_levels = sorted(levels, key=lambda x: x["price"])
+
+        # Group levels within proximity threshold
+        proximity_threshold = 0.005  # 0.5% of price
+        grouped_levels = []
+        current_group = [sorted_levels[0]]
+
+        for i in range(1, len(sorted_levels)):
+            current_level = sorted_levels[i]
+            last_level = current_group[-1]
+
+            # Check if levels are close enough to group
+            price_diff = (
+                abs(current_level["price"] - last_level["price"]) / last_level["price"]
+            )
+
+            if price_diff <= proximity_threshold:
+                current_group.append(current_level)
+            else:
+                # Merge current group
+                merged_level = self._merge_level_group(current_group)
+                grouped_levels.append(merged_level)
+                current_group = [current_level]
+
+        # Merge the last group
+        if current_group:
+            merged_level = self._merge_level_group(current_group)
+            grouped_levels.append(merged_level)
+
+        return grouped_levels
+
+    def _merge_level_group(self, level_group: list[dict]) -> dict:
+        """
+        Merge a group of nearby levels into a single level.
+
+        Args:
+            level_group: List of levels to merge
+
+        Returns:
+            Merged level dictionary
+        """
+        if not level_group:
+            return {}
+
+        # Calculate weighted average price
+        total_weight = sum(level["strength"] for level in level_group)
+        weighted_price = (
+            sum(level["price"] * level["strength"] for level in level_group)
+            / total_weight
+        )
+
+        # Take the maximum strength
+        max_strength = max(level["strength"] for level in level_group)
+
+        # Combine types
+        types = list(set(level.get("type", "unknown") for level in level_group))
+
+        # Create merged level
+        merged_level = {
+            "price": float(weighted_price),
+            "strength": float(max_strength),
+            "type": "+".join(types),
+            "group_size": len(level_group),
+        }
+
+        # Add additional properties if available
+        if "timestamp" in level_group[0]:
+            merged_level["timestamp"] = level_group[0]["timestamp"]
+        if "volume_ratio" in level_group[0]:
+            merged_level["volume_ratio"] = float(
+                np.mean([level.get("volume_ratio", 0) for level in level_group])
+            )
+
+        return merged_level
+
+    def _add_atr_based_activation_ranges(
+        self, price_data: pd.DataFrame, levels: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Add ATR-based activation ranges to S/R levels.
+
+        Args:
+            price_data: OHLCV price data
+            levels: Dictionary containing S/R levels
+
+        Returns:
+            Levels with ATR-based activation ranges
+        """
+        try:
+            # Calculate ATR
+            high = price_data["high"].astype(float)
+            low = price_data["low"].astype(float)
+            close = price_data["close"].astype(float)
+
+            # True Range calculation
+            close_prev = close.shift(1)
+            tr1 = high - low
+            tr2 = np.abs(high - close_prev)
+            tr3 = np.abs(low - close_prev)
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+            # ATR
+            atr = true_range.rolling(window=self.atr_period, min_periods=1).mean()
+            current_atr = atr.iloc[-1]
+
+            # Add activation ranges to levels
+            for level_type in ["support_levels", "resistance_levels"]:
+                for level in levels.get(level_type, []):
+                    level_strength = level.get("strength", 1.0)
+
+                    # Calculate ATR-based activation range
+                    activation_range = (
+                        current_atr * self.atr_multiplier * level_strength
+                    )
+
+                    # Fallback to percentage-based if ATR is too small
+                    if activation_range < level["price"] * self.atr_fallback_multiplier:
+                        activation_range = (
+                            level["price"]
+                            * self.atr_fallback_multiplier
+                            * level_strength
+                        )
+
+                    level["activation_range"] = float(activation_range)
+                    level["atr_value"] = float(current_atr)
+
+            return levels
+
+        except Exception as e:
+            self.logger.error(f"❌ Error adding ATR-based activation ranges: {e}")
+            return levels
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="enhanced S/R breakout prediction",
     )
     async def predict_breakouts(
         self,
         prediction_input: dict[str, Any],
     ) -> dict[str, Any]:
         """
-        Predict SR breakouts.
+        Enhanced S/R breakout prediction using multiple detection methods.
 
         Args:
             prediction_input: Prediction input parameters
 
         Returns:
-            dict: SR breakout prediction results
+            Dictionary containing enhanced S/R breakout predictions
         """
         try:
-            self.logger.info("🔮 Predicting SR breakouts...")
+            if not self.is_initialized:
+                self.logger.error("❌ SR breakout predictor not initialized")
+                return {}
 
             # Validate prediction input
             if not self._validate_prediction_input(prediction_input):
@@ -194,32 +905,95 @@ class SRBreakoutPredictor:
             current_price = prediction_input.get("current_price")
 
             if df is None or current_price is None:
-                self.print(missing("Missing required prediction data"))
+                self.logger.error("Missing required prediction data")
                 return {}
 
-            # Get SR breakout prediction
-            prediction_results = await self._get_sr_breakout_prediction_enhanced(
-                df,
-                current_price,
+            # Detect enhanced S/R levels
+            enhanced_levels = self.detect_enhanced_sr_levels(df)
+
+            # Calculate distances and proximity scores
+            support_distances = []
+            resistance_distances = []
+
+            for level in enhanced_levels.get("support_levels", []):
+                distance = (current_price - level["price"]) / current_price
+                if distance > 0:  # Price is above support
+                    support_distances.append(
+                        {
+                            "level": level,
+                            "distance": distance,
+                            "proximity_score": self._calculate_proximity_score(
+                                distance, level
+                            ),
+                        }
+                    )
+
+            for level in enhanced_levels.get("resistance_levels", []):
+                distance = (level["price"] - current_price) / current_price
+                if distance > 0:  # Price is below resistance
+                    resistance_distances.append(
+                        {
+                            "level": level,
+                            "distance": distance,
+                            "proximity_score": self._calculate_proximity_score(
+                                distance, level
+                            ),
+                        }
+                    )
+
+            # Sort by proximity
+            support_distances.sort(key=lambda x: x["distance"])
+            resistance_distances.sort(key=lambda x: x["distance"])
+
+            # Generate predictions
+            predictions = {
+                "nearest_support": support_distances[0] if support_distances else None,
+                "nearest_resistance": resistance_distances[0]
+                if resistance_distances
+                else None,
+                "support_levels": enhanced_levels.get("support_levels", []),
+                "resistance_levels": enhanced_levels.get("resistance_levels", []),
+                "current_price": float(current_price),
+                "level_metadata": enhanced_levels.get("level_metadata", {}),
+            }
+
+            # Add breakout probability estimates
+            if predictions["nearest_support"] and predictions["nearest_resistance"]:
+                support_proximity = predictions["nearest_support"]["proximity_score"]
+                resistance_proximity = predictions["nearest_resistance"][
+                    "proximity_score"
+                ]
+
+                # Breakout probability based on proximity and strength
+                support_strength = predictions["nearest_support"]["level"]["strength"]
+                resistance_strength = predictions["nearest_resistance"]["level"][
+                    "strength"
+                ]
+
+                # Higher proximity and lower strength of opposing level = higher breakout probability
+                breakout_up_prob = min(
+                    resistance_proximity * (1 - support_strength) * 0.8 + 0.2, 1.0
+                )
+                breakout_down_prob = min(
+                    support_proximity * (1 - resistance_strength) * 0.8 + 0.2, 1.0
+                )
+
+                predictions["breakout_probabilities"] = {
+                    "breakout_up": float(breakout_up_prob),
+                    "breakout_down": float(breakout_down_prob),
+                }
+
+            self.sr_predictions = predictions
+            self.logger.info(
+                "✅ Enhanced SR breakout prediction completed successfully"
             )
 
-            if prediction_results:
-                self.sr_predictions = prediction_results
-                self.logger.info("✅ SR breakout prediction completed successfully")
-            else:
-                self.print(warning("⚠️ SR breakout prediction returned no results"))
+            return predictions
 
-            return prediction_results
-
-        except Exception:
-            self.print(failed("❌ SR breakout prediction failed: {e}"))
+        except Exception as e:
+            self.logger.error(f"❌ Error in enhanced breakout prediction: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="prediction input validation",
-    )
     def _validate_prediction_input(self, prediction_input: dict[str, Any]) -> bool:
         """
         Validate prediction input parameters.
@@ -236,941 +1010,67 @@ class SRBreakoutPredictor:
             for field in required_fields:
                 if field not in prediction_input:
                     self.logger.error(
-                        f"Missing required prediction input field: {field}",
+                        f"Missing required prediction input field: {field}"
                     )
                     return False
 
             # Validate specific field values
             if prediction_input.get("current_price", 0) <= 0:
-                self.print(invalid("Invalid current_price value"))
+                self.logger.error("Invalid current_price value")
                 return False
 
             return True
 
-        except Exception:
-            self.print(failed("Prediction input validation failed: {e}"))
+        except Exception as e:
+            self.logger.error(f"Prediction input validation failed: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="SR breakout prediction enhanced",
-    )
-    async def _get_sr_breakout_prediction_enhanced(
-        self,
-        df: pd.DataFrame,
-        current_price: float,
-    ) -> dict[str, Any]:
+    def _calculate_proximity_score(self, distance: float, level: dict) -> float:
         """
-        Get enhanced SR breakout prediction.
+        Calculate proximity score based on distance and level properties.
 
         Args:
-            df: Price dataframe
-            current_price: Current price
+            distance: Distance to level (as percentage)
+            level: Level dictionary
 
         Returns:
-            dict: Enhanced SR breakout prediction results
+            Proximity score (0.0 to 1.0)
         """
         try:
-            # Prepare features for SR prediction
-            features_df = self._prepare_features_for_sr_prediction(df, current_price)
-
-            # Get SR context
-            sr_context = self._get_sr_context(df, current_price)
-
-            # Make predictions
-            predictions = await self._make_sr_predictions(features_df, sr_context)
-
-            # Combine predictions
-            breakout_prob, bounce_prob, confidence = self._combine_sr_predictions(
-                predictions,
-            )
-
-            # Get recommendation
-            recommendation = self._get_sr_recommendation(
-                breakout_prob,
-                bounce_prob,
-                confidence,
-            )
-
-            # Annotate near-level proximity based on configured threshold
-            try:
-                prox = self.sr_proximity_threshold
-                ns = float(sr_context.get("nearest_support", current_price) or current_price)
-                nr = float(sr_context.get("nearest_resistance", current_price) or current_price)
-                near_support = abs(current_price - ns) / max(current_price, 1e-9) <= prox
-                near_resistance = abs(nr - current_price) / max(current_price, 1e-9) <= prox
-                is_near_level = bool(near_support or near_resistance)
-            except (AttributeError, ValueError, TypeError):
-                is_near_level = False
-
-            # Enrich sr_context
-            sr_context_enriched = dict(sr_context or {})
-            sr_context_enriched["is_near_level"] = is_near_level
-
-            return {
-                "breakout_probability": breakout_prob,
-                "bounce_probability": bounce_prob,
-                "confidence": confidence,
-                "recommendation": recommendation,
-                "sr_context": sr_context_enriched,
-                "predictions": predictions,
-                "timestamp": datetime.now(),
-            }
-
-        except Exception:
-            self.print(failed("❌ Enhanced SR breakout prediction failed: {e}"))
-            return {}
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="features preparation for SR prediction",
-    )
-    def _prepare_features_for_sr_prediction(
-        self,
-        df: pd.DataFrame,
-        current_price: float,
-        sr_context: dict = None,
-    ) -> pd.DataFrame:
-        """
-        Prepare features for SR prediction.
-
-        Args:
-            df: Price dataframe
-            current_price: Current price
-            sr_context: SR context dictionary
-
-        Returns:
-            pd.DataFrame: Features dataframe
-        """
-        try:
-            features_df = df.copy()
-
-            # Add price-based features
-            features_df["price_change"] = features_df["close"].pct_change()
-            features_df["price_volatility"] = features_df["close"].rolling(20).std()
-            features_df["price_momentum"] = features_df["close"] - features_df[
-                "close"
-            ].shift(10)
-
-            # Add volume-based features
-            features_df["volume_ratio"] = (
-                features_df["volume"] / features_df["volume"].rolling(20).mean()
-            )
-            features_df["volume_momentum"] = features_df["volume"] - features_df[
-                "volume"
-            ].shift(5)
-
-            # Add technical indicators
-            features_df["rsi"] = self._calculate_rsi(features_df["close"])
-            features_df["macd"] = self._calculate_macd(features_df["close"])
-            features_df["bollinger_upper"] = self._calculate_bollinger_bands(
-                features_df["close"],
-            )[0]
-            features_df["bollinger_lower"] = self._calculate_bollinger_bands(
-                features_df["close"],
-            )[1]
-
-            # Add SR-specific features
-            if sr_context:
-                # Distance to nearest support and resistance
-                nearest_support = sr_context.get("nearest_support", current_price)
-                nearest_resistance = sr_context.get("nearest_resistance", current_price)
-
-                features_df["distance_to_support"] = (
-                    current_price - nearest_support
-                ) / current_price
-                features_df["distance_to_resistance"] = (
-                    nearest_resistance - current_price
-                ) / current_price
-
-                # Distance to pivot levels
-                pivot_levels = sr_context.get("pivot_levels", {})
-                if pivot_levels:
-                    pivot_supports = pivot_levels.get("supports", [])
-                    pivot_resistances = pivot_levels.get("resistances", [])
-                    pivot_strengths = pivot_levels.get("strengths", {})
-
-                    if pivot_supports:
-                        nearest_pivot_support = self._find_nearest_level(
-                            current_price,
-                            pivot_supports,
-                        )
-                        features_df["distance_to_pivot_support"] = (
-                            current_price - nearest_pivot_support
-                        ) / current_price
-
-                        # Add pivot strength features
-                        if pivot_strengths:
-                            features_df["nearest_pivot_strength"] = (
-                                self._get_nearest_level_strength(
-                                    nearest_pivot_support,
-                                    pivot_supports,
-                                    pivot_strengths,
-                                    "supports",
-                                )
-                            )
-                            features_df["nearest_pivot_touches"] = (
-                                self._get_nearest_level_touches(
-                                    nearest_pivot_support,
-                                    pivot_supports,
-                                    pivot_strengths,
-                                    "supports",
-                                )
-                            )
-                            features_df["nearest_pivot_volume"] = (
-                                self._get_nearest_level_volume(
-                                    nearest_pivot_support,
-                                    pivot_supports,
-                                    pivot_strengths,
-                                    "supports",
-                                )
-                            )
-                            features_df["nearest_pivot_age"] = (
-                                self._get_nearest_level_age(
-                                    nearest_pivot_support,
-                                    pivot_supports,
-                                    pivot_strengths,
-                                    "supports",
-                                )
-                            )
-                        else:
-                            features_df["nearest_pivot_strength"] = 0.0
-                            features_df["nearest_pivot_touches"] = 0.0
-                            features_df["nearest_pivot_volume"] = 0.0
-                            features_df["nearest_pivot_age"] = 0.0
-                    else:
-                        features_df["distance_to_pivot_support"] = 1.0
-                        features_df["nearest_pivot_strength"] = 0.0
-                        features_df["nearest_pivot_touches"] = 0.0
-                        features_df["nearest_pivot_volume"] = 0.0
-                        features_df["nearest_pivot_age"] = 0.0
-
-                    if pivot_resistances:
-                        nearest_pivot_resistance = self._find_nearest_level(
-                            current_price,
-                            pivot_resistances,
-                        )
-                        features_df["distance_to_pivot_resistance"] = (
-                            nearest_pivot_resistance - current_price
-                        ) / current_price
-
-                        # Add pivot resistance strength features
-                        if pivot_strengths:
-                            features_df["nearest_pivot_resistance_strength"] = (
-                                self._get_nearest_level_strength(
-                                    nearest_pivot_resistance,
-                                    pivot_resistances,
-                                    pivot_strengths,
-                                    "resistances",
-                                )
-                            )
-                            features_df["nearest_pivot_resistance_touches"] = (
-                                self._get_nearest_level_touches(
-                                    nearest_pivot_resistance,
-                                    pivot_resistances,
-                                    pivot_strengths,
-                                    "resistances",
-                                )
-                            )
-                            features_df["nearest_pivot_resistance_volume"] = (
-                                self._get_nearest_level_volume(
-                                    nearest_pivot_resistance,
-                                    pivot_resistances,
-                                    pivot_strengths,
-                                    "resistances",
-                                )
-                            )
-                            features_df["nearest_pivot_resistance_age"] = (
-                                self._get_nearest_level_age(
-                                    nearest_pivot_resistance,
-                                    pivot_resistances,
-                                    pivot_strengths,
-                                    "resistances",
-                                )
-                            )
-                        else:
-                            features_df["nearest_pivot_resistance_strength"] = 0.0
-                            features_df["nearest_pivot_resistance_touches"] = 0.0
-                            features_df["nearest_pivot_resistance_volume"] = 0.0
-                            features_df["nearest_pivot_resistance_age"] = 0.0
-                    else:
-                        features_df["distance_to_pivot_resistance"] = 1.0
-                        features_df["nearest_pivot_resistance_strength"] = 0.0
-                        features_df["nearest_pivot_resistance_touches"] = 0.0
-                        features_df["nearest_pivot_resistance_volume"] = 0.0
-                        features_df["nearest_pivot_resistance_age"] = 0.0
-                else:
-                    features_df["distance_to_pivot_support"] = 1.0
-                    features_df["distance_to_pivot_resistance"] = 1.0
-                    features_df["nearest_pivot_strength"] = 0.0
-                    features_df["nearest_pivot_touches"] = 0.0
-                    features_df["nearest_pivot_volume"] = 0.0
-                    features_df["nearest_pivot_age"] = 0.0
-                    features_df["nearest_pivot_resistance_strength"] = 0.0
-                    features_df["nearest_pivot_resistance_touches"] = 0.0
-                    features_df["nearest_pivot_resistance_volume"] = 0.0
-                    features_df["nearest_pivot_resistance_age"] = 0.0
-
-                # Distance to HVN levels
-                hvn_levels = sr_context.get("hvn_levels", {})
-                if hvn_levels:
-                    hvn_supports = hvn_levels.get("supports", [])
-                    hvn_resistances = hvn_levels.get("resistances", [])
-                    hvn_strengths = hvn_levels.get("strengths", {})
-
-                    if hvn_supports:
-                        nearest_hvn_support = self._find_nearest_level(
-                            current_price,
-                            hvn_supports,
-                        )
-                        features_df["distance_to_hvn_support"] = (
-                            current_price - nearest_hvn_support
-                        ) / current_price
-
-                        # Add HVN strength features
-                        if hvn_strengths:
-                            features_df["nearest_hvn_strength"] = (
-                                self._get_nearest_level_strength(
-                                    nearest_hvn_support,
-                                    hvn_supports,
-                                    hvn_strengths,
-                                    "supports",
-                                )
-                            )
-                            features_df["nearest_hvn_touches"] = (
-                                self._get_nearest_level_touches(
-                                    nearest_hvn_support,
-                                    hvn_supports,
-                                    hvn_strengths,
-                                    "supports",
-                                )
-                            )
-                            features_df["nearest_hvn_volume"] = (
-                                self._get_nearest_level_volume(
-                                    nearest_hvn_support,
-                                    hvn_supports,
-                                    hvn_strengths,
-                                    "supports",
-                                )
-                            )
-                            features_df["nearest_hvn_age"] = (
-                                self._get_nearest_level_age(
-                                    nearest_hvn_support,
-                                    hvn_supports,
-                                    hvn_strengths,
-                                    "supports",
-                                )
-                            )
-                        else:
-                            features_df["nearest_hvn_strength"] = 0.0
-                            features_df["nearest_hvn_touches"] = 0.0
-                            features_df["nearest_hvn_volume"] = 0.0
-                            features_df["nearest_hvn_age"] = 0.0
-                    else:
-                        features_df["distance_to_hvn_support"] = 1.0
-                        features_df["nearest_hvn_strength"] = 0.0
-                        features_df["nearest_hvn_touches"] = 0.0
-                        features_df["nearest_hvn_volume"] = 0.0
-                        features_df["nearest_hvn_age"] = 0.0
-
-                    if hvn_resistances:
-                        nearest_hvn_resistance = self._find_nearest_level(
-                            current_price,
-                            hvn_resistances,
-                        )
-                        features_df["distance_to_hvn_resistance"] = (
-                            nearest_hvn_resistance - current_price
-                        ) / current_price
-
-                        # Add HVN resistance strength features
-                        if hvn_strengths:
-                            features_df["nearest_hvn_resistance_strength"] = (
-                                self._get_nearest_level_strength(
-                                    nearest_hvn_resistance,
-                                    hvn_resistances,
-                                    hvn_strengths,
-                                    "resistances",
-                                )
-                            )
-                            features_df["nearest_hvn_resistance_touches"] = (
-                                self._get_nearest_level_touches(
-                                    nearest_hvn_resistance,
-                                    hvn_resistances,
-                                    hvn_strengths,
-                                    "resistances",
-                                )
-                            )
-                            features_df["nearest_hvn_resistance_volume"] = (
-                                self._get_nearest_level_volume(
-                                    nearest_hvn_resistance,
-                                    hvn_resistances,
-                                    hvn_strengths,
-                                    "resistances",
-                                )
-                            )
-                            features_df["nearest_hvn_resistance_age"] = (
-                                self._get_nearest_level_age(
-                                    nearest_hvn_resistance,
-                                    hvn_resistances,
-                                    hvn_strengths,
-                                    "resistances",
-                                )
-                            )
-                        else:
-                            features_df["nearest_hvn_resistance_strength"] = 0.0
-                            features_df["nearest_hvn_resistance_touches"] = 0.0
-                            features_df["nearest_hvn_resistance_volume"] = 0.0
-                            features_df["nearest_hvn_resistance_age"] = 0.0
-                    else:
-                        features_df["distance_to_hvn_resistance"] = 1.0
-                        features_df["nearest_hvn_resistance_strength"] = 0.0
-                        features_df["nearest_hvn_resistance_touches"] = 0.0
-                        features_df["nearest_hvn_resistance_volume"] = 0.0
-                        features_df["nearest_hvn_resistance_age"] = 0.0
-                else:
-                    features_df["distance_to_hvn_support"] = 1.0
-                    features_df["distance_to_hvn_resistance"] = 1.0
-                    features_df["nearest_hvn_strength"] = 0.0
-                    features_df["nearest_hvn_touches"] = 0.0
-                    features_df["nearest_hvn_volume"] = 0.0
-                    features_df["nearest_hvn_age"] = 0.0
-                    features_df["nearest_hvn_resistance_strength"] = 0.0
-                    features_df["nearest_hvn_resistance_touches"] = 0.0
-                    features_df["nearest_hvn_resistance_volume"] = 0.0
-                    features_df["nearest_hvn_resistance_age"] = 0.0
-
-                # Location classification features
-                current_location = sr_context.get("current_location", "OPEN_RANGE")
-                features_df["is_pivot_support"] = (
-                    1.0 if "PIVOT_S" in current_location else 0.0
-                )
-                features_df["is_pivot_resistance"] = (
-                    1.0 if "PIVOT_R" in current_location else 0.0
-                )
-                features_df["is_hvn_support"] = (
-                    1.0 if "HVN_SUPPORT" in current_location else 0.0
-                )
-                features_df["is_hvn_resistance"] = (
-                    1.0 if "HVN_RESISTANCE" in current_location else 0.0
-                )
-                features_df["is_confluence"] = (
-                    1.0 if "CONFLUENCE" in current_location else 0.0
-                )
-                features_df["is_open_range"] = (
-                    1.0 if current_location == "OPEN_RANGE" else 0.0
-                )
-
-                features_df["sr_breakout_pressure"] = (
-                    self._calculate_sr_breakout_pressure(df, sr_context)
-                )
-
-            # Clean up NaN values
-            return features_df.fillna(method="ffill").fillna(0)
-
-        except Exception:
-            self.print(failed("❌ Feature preparation failed: {e}"))
-            return df
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="SR context calculation",
-    )
-    def _get_sr_context(self, df: pd.DataFrame, current_price: float) -> dict[str, Any]:
-        """
-        Get SR context information using unified regime classifier's S/R levels.
-
-        Args:
-            df: Price dataframe
-            current_price: Current price
-
-        Returns:
-            dict: SR context information
-        """
-        try:
-            if self.regime_classifier is None:
-                self.logger.warning(
-                    "Regime classifier not available, using fallback S/R calculation",
-                )
-                return self._get_fallback_sr_context(df, current_price)
-
-            # Use unified regime classifier to get S/R levels
-            features_df = self.regime_classifier._calculate_features(df)
-            if features_df.empty:
-                return self._get_fallback_sr_context(df, current_price)
-
-            # Get location classification which includes S/R levels
-            location_labels = self.regime_classifier._classify_location(features_df)
-
-            # Extract S/R levels from the classification
-            pivot_levels = self._extract_pivot_levels(features_df)
-            hvn_levels = self._extract_hvn_levels(features_df)
-
-            # Combine all levels
-            support_levels = []
-            resistance_levels = []
-
-            # Add pivot levels
-            if pivot_levels:
-                support_levels.extend(pivot_levels.get("supports", []))
-                resistance_levels.extend(pivot_levels.get("resistances", []))
-
-            # Add HVN levels
-            if hvn_levels:
-                support_levels.extend(hvn_levels.get("supports", []))
-                resistance_levels.extend(hvn_levels.get("resistances", []))
-
-            # Find nearest levels
-            nearest_support = self._find_nearest_level(current_price, support_levels)
-            nearest_resistance = self._find_nearest_level(
-                current_price,
-                resistance_levels,
-            )
-
-            # Get current location classification
-            current_location = location_labels[-1] if location_labels else "OPEN_RANGE"
-
-            return {
-                "support_levels": support_levels,
-                "resistance_levels": resistance_levels,
-                "nearest_support": nearest_support,
-                "nearest_resistance": nearest_resistance,
-                "current_price": current_price,
-                "current_location": current_location,
-                "pivot_levels": pivot_levels,
-                "hvn_levels": hvn_levels,
-            }
-
-        except Exception:
-            self.print(failed("❌ SR context calculation failed: {e}"))
-            return self._get_fallback_sr_context(df, current_price)
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="SR predictions combination",
-    )
-    def _combine_sr_predictions(self, predictions: dict) -> tuple[float, float, float]:
-        """
-        Combine SR predictions.
-
-        Args:
-            predictions: Dictionary of predictions
-
-        Returns:
-            tuple: (breakout_prob, bounce_prob, confidence)
-        """
-        try:
-            # Extract individual predictions
-            breakout_preds = predictions.get("breakout", [])
-            bounce_preds = predictions.get("bounce", [])
-            confidence_preds = predictions.get("confidence", [])
-
-            # Calculate weighted averages
-            breakout_prob = (
-                sum(breakout_preds) / len(breakout_preds) if breakout_preds else 0.5
-            )
-            bounce_prob = sum(bounce_preds) / len(bounce_preds) if bounce_preds else 0.5
-            confidence = (
-                sum(confidence_preds) / len(confidence_preds)
-                if confidence_preds
-                else 0.5
-            )
-
-            # Normalize probabilities
-            total_prob = breakout_prob + bounce_prob
-            if total_prob > 0:
-                breakout_prob /= total_prob
-                bounce_prob /= total_prob
-
-            return breakout_prob, bounce_prob, confidence
-
-        except Exception:
-            self.print(failed("❌ SR predictions combination failed: {e}"))
-            return 0.5, 0.5, 0.5
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="SR recommendation generation",
-    )
-    def _get_sr_recommendation(
-        self,
-        breakout_prob: float,
-        bounce_prob: float,
-        confidence: float,
-    ) -> str:
-        """
-        Get SR recommendation based on predictions.
-
-        Args:
-            breakout_prob: Breakout probability
-            bounce_prob: Bounce probability
-            confidence: Prediction confidence
-
-        Returns:
-            str: Recommendation
-        """
-        try:
-            if confidence < self.breakout_confidence_threshold:
-                return "HOLD_LOW_CONFIDENCE"
-
-            if breakout_prob > bounce_prob and breakout_prob > 0.6:
-                return "BREAKOUT_LIKELY"
-            if bounce_prob > breakout_prob and bounce_prob > 0.6:
-                return "BOUNCE_LIKELY"
-            if abs(breakout_prob - bounce_prob) < 0.1:
-                return "UNCERTAIN"
-            return "MONITOR"
-
-        except Exception:
-            self.print(failed("❌ SR recommendation generation failed: {e}"))
-            return "ERROR"
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="SR predictions making",
-    )
-    async def _make_sr_predictions(
-        self,
-        features_df: pd.DataFrame,
-        sr_context: dict[str, Any],
-    ) -> dict[str, Any]:
-        """
-        Make SR predictions using models.
-
-        Args:
-            features_df: Features dataframe
-            sr_context: SR context
-
-        Returns:
-            dict: Predictions
-        """
-        try:
-            # This would typically use trained models to make predictions
-            # For now, return mock predictions
-            return {
-                "breakout": [0.6, 0.7, 0.5],
-                "bounce": [0.4, 0.3, 0.5],
-                "confidence": [0.8, 0.7, 0.6],
-            }
-
-        except Exception:
-            self.print(failed("❌ SR predictions making failed: {e}"))
-            return {}
-
-    # Helper methods for technical indicators
-    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
-        """Calculate RSI indicator."""
-        delta = prices.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        rs = gain / loss
-        return 100 - (100 / (1 + rs))
-
-    def _calculate_macd(
-        self,
-        prices: pd.Series,
-        fast: int = 12,
-        slow: int = 26,
-        signal: int = 9,
-    ) -> pd.Series:
-        """Calculate MACD indicator."""
-        ema_fast = prices.ewm(span=fast).mean()
-        ema_slow = prices.ewm(span=slow).mean()
-        return ema_fast - ema_slow
-
-    def _calculate_bollinger_bands(
-        self,
-        prices: pd.Series,
-        period: int = 20,
-        std: int = 2,
-    ) -> tuple[pd.Series, pd.Series]:
-        """Calculate Bollinger Bands."""
-        sma = prices.rolling(window=period).mean()
-        std_dev = prices.rolling(window=period).std()
-        upper_band = sma + (std_dev * std)
-        lower_band = sma - (std_dev * std)
-        return upper_band, lower_band
-
-    def _get_fallback_sr_context(
-        self,
-        df: pd.DataFrame,
-        current_price: float,
-    ) -> dict[str, Any]:
-        """
-        Get fallback SR context using simplified methods.
-
-        Args:
-            df: Price dataframe
-            current_price: Current price
-
-        Returns:
-            dict: Fallback SR context
-        """
-        try:
-            # Calculate support and resistance levels using simplified methods
-            support_levels = self._find_support_levels(df)
-            resistance_levels = self._find_resistance_levels(df)
-
-            # Find nearest levels
-            nearest_support = self._find_nearest_level(current_price, support_levels)
-            nearest_resistance = self._find_nearest_level(
-                current_price,
-                resistance_levels,
-            )
-
-            return {
-                "support_levels": support_levels,
-                "resistance_levels": resistance_levels,
-                "nearest_support": nearest_support,
-                "nearest_resistance": nearest_resistance,
-                "current_price": current_price,
-                "current_location": "OPEN_RANGE",
-                "pivot_levels": {},
-                "hvn_levels": {},
-            }
-
-        except Exception:
-            self.print(failed("❌ Fallback SR context calculation failed: {e}"))
-            return {}
-
-    def _extract_pivot_levels(
-        self,
-        features_df: pd.DataFrame,
-    ) -> dict[str, list[float]]:
-        """
-        Extract pivot levels from features DataFrame with strength metrics.
-
-        Args:
-            features_df: Features DataFrame from regime classifier
-
-        Returns:
-            dict: Pivot support and resistance levels with strength data
-        """
-        try:
-            supports = []
-            resistances = []
-            strengths = {}
-
-            # Calculate rolling pivots for the last few periods
-            for i in range(max(0, len(features_df) - 24), len(features_df)):
-                if i < 5:  # Need at least 5 data points
-                    continue
-
-                window = features_df.iloc[max(0, i - 24) : i + 1]
-                if len(window) < 5:
-                    continue
-
-                pivots = self.regime_classifier._calculate_rolling_pivots(window)
-
-                # Extract levels and their strengths
-                if pivots["s1"] > 0:
-                    supports.append(pivots["s1"])
-                    strengths[f"s1_{i}"] = pivots["strengths"]["s1"]
-                if pivots["s2"] > 0:
-                    supports.append(pivots["s2"])
-                    strengths[f"s2_{i}"] = pivots["strengths"]["s2"]
-                if pivots["r1"] > 0:
-                    resistances.append(pivots["r1"])
-                    strengths[f"r1_{i}"] = pivots["strengths"]["r1"]
-                if pivots["r2"] > 0:
-                    resistances.append(pivots["r2"])
-                    strengths[f"r2_{i}"] = pivots["strengths"]["r2"]
-
-            return {
-                "supports": list(set(supports)),  # Remove duplicates
-                "resistances": list(set(resistances)),
-                "strengths": strengths,
-            }
-
-        except Exception:
-            self.print(error("Error extracting pivot levels: {e}"))
-            return {"supports": [], "resistances": [], "strengths": {}}
-
-    def _extract_hvn_levels(self, features_df: pd.DataFrame) -> dict[str, list[float]]:
-        """
-        Extract HVN levels from features DataFrame with strength metrics.
-
-        Args:
-            features_df: Features DataFrame from regime classifier
-
-        Returns:
-            dict: HVN support and resistance levels with strength data
-        """
-        try:
-            supports = []
-            resistances = []
-            strengths = {}
-
-            # Analyze volume levels for the last period
-            if len(features_df) >= 720:  # Need enough data for HVN analysis
-                hvn_window = features_df.iloc[-720:]
-                volume_levels = self.regime_classifier._analyze_volume_levels(
-                    hvn_window,
-                )
-
-                if volume_levels:
-                    for level_name, level_data in volume_levels.items():
-                        level_price = level_data["price"]
-                        current_price = features_df["close"].iloc[-1]
-
-                        # Classify as support or resistance based on current price
-                        if current_price > level_price:
-                            supports.append(level_price)
-                            strengths[f"hvn_support_{level_name}"] = {
-                                "strength": level_data.get("strength", 0.0),
-                                "touches": level_data.get("touches", 0),
-                                "volume": level_data.get("volume", 0.0),
-                                "age": level_data.get("age", 0),
-                            }
-                        else:
-                            resistances.append(level_price)
-                            strengths[f"hvn_resistance_{level_name}"] = {
-                                "strength": level_data.get("strength", 0.0),
-                                "touches": level_data.get("touches", 0),
-                                "volume": level_data.get("volume", 0.0),
-                                "age": level_data.get("age", 0),
-                            }
-
-            return {
-                "supports": list(set(supports)),  # Remove duplicates
-                "resistances": list(set(resistances)),
-                "strengths": strengths,
-            }
-
-        except Exception:
-            self.print(error("Error extracting HVN levels: {e}"))
-            return {"supports": [], "resistances": [], "strengths": {}}
-
-    def _find_support_levels(self, df: pd.DataFrame) -> list[float]:
-        """Find support levels."""
-        # Simplified support level detection
-        return [df["low"].min() * 0.95, df["low"].min() * 0.98, df["low"].min()]
-
-    def _find_resistance_levels(self, df: pd.DataFrame) -> list[float]:
-        """Find resistance levels."""
-        # Simplified resistance level detection
-        return [df["high"].max(), df["high"].max() * 1.02, df["high"].max() * 1.05]
-
-    def _find_nearest_level(self, price: float, levels: list[float]) -> float:
-        """Find nearest level to current price."""
-        if not levels:
-            return price
-        return min(levels, key=lambda x: abs(x - price))
-
-    def _get_nearest_level_strength(
-        self,
-        nearest_level: float,
-        levels: list[float],
-        strengths: dict,
-        level_type: str,
-    ) -> float:
-        """Get strength of the nearest level."""
-        try:
-            if not levels or not strengths:
-                return 0.0
-
-            # Find the strength data for the nearest level
-            for strength_data in strengths.values():
-                if isinstance(strength_data, dict) and "strength" in strength_data:
-                    # For HVN levels
-                    return strength_data["strength"]
-                if isinstance(strength_data, dict):
-                    # For pivot levels
-                    return strength_data.get("strength", 0.0)
-
-            return 0.0
-        except Exception:
-            self.print(error("Error getting nearest level strength: {e}"))
+            # Base proximity using exponential decay
+            base_proximity = np.exp(-distance / 0.02)  # 2% scale
+
+            # Adjust for level strength
+            strength_factor = level.get("strength", 1.0)
+
+            # Adjust for activation range if available
+            activation_range = level.get("activation_range", None)
+            if activation_range:
+                # Normalize activation range
+                normalized_range = activation_range / level["price"]
+                range_factor = 1.0 / (
+                    1.0 + normalized_range * 10
+                )  # Penalize wide ranges
+            else:
+                range_factor = 1.0
+
+            # Combine factors
+            proximity_score = base_proximity * strength_factor * range_factor
+
+            return float(np.clip(proximity_score, 0.0, 1.0))
+
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating proximity score: {e}")
             return 0.0
 
-    def _get_nearest_level_touches(
-        self,
-        nearest_level: float,
-        levels: list[float],
-        strengths: dict,
-        level_type: str,
-    ) -> float:
-        """Get number of touches for the nearest level."""
+    async def stop(self) -> None:
+        """Stop SR breakout predictor."""
         try:
-            if not levels or not strengths:
-                return 0.0
-
-            # Find the touch data for the nearest level
-            for strength_data in strengths.values():
-                if isinstance(strength_data, dict) and "touches" in strength_data:
-                    return float(strength_data["touches"])
-
-            return 0.0
-        except Exception:
-            self.print(error("Error getting nearest level touches: {e}"))
-            return 0.0
-
-    def _get_nearest_level_volume(
-        self,
-        nearest_level: float,
-        levels: list[float],
-        strengths: dict,
-        level_type: str,
-    ) -> float:
-        """Get volume for the nearest level."""
-        try:
-            if not levels or not strengths:
-                return 0.0
-
-            # Find the volume data for the nearest level
-            for strength_data in strengths.values():
-                if isinstance(strength_data, dict) and "volume" in strength_data:
-                    return float(strength_data["volume"])
-
-            return 0.0
-        except Exception:
-            self.print(error("Error getting nearest level volume: {e}"))
-            return 0.0
-
-    def _get_nearest_level_age(
-        self,
-        nearest_level: float,
-        levels: list[float],
-        strengths: dict,
-        level_type: str,
-    ) -> float:
-        """Get age for the nearest level."""
-        try:
-            if not levels or not strengths:
-                return 0.0
-
-            # Find the age data for the nearest level
-            for strength_data in strengths.values():
-                if isinstance(strength_data, dict) and "age" in strength_data:
-                    return float(strength_data["age"])
-
-            return 0.0
-        except Exception:
-            self.print(error("Error getting nearest level age: {e}"))
-            return 0.0
-
-    def _calculate_sr_breakout_pressure(
-        self,
-        df: pd.DataFrame,
-        sr_context: dict[str, Any],
-    ) -> float:
-        """Calculate SR breakout pressure."""
-        # Simplified breakout pressure calculation
-        return 0.5
-
-    def get_sr_predictions(self) -> dict[str, Any]:
-        """
-        Get the latest SR predictions.
-
-        Returns:
-            dict: SR predictions
-        """
-        return self.sr_predictions.copy()
+            self.logger.info("🛑 Stopping SR breakout predictor...")
+            self.is_initialized = False
+            self.logger.info("✅ SR breakout predictor stopped successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Error stopping SR breakout predictor: {e}")
 
     @handle_errors(
         exceptions=(Exception,),
@@ -1186,6 +1086,960 @@ class SRBreakoutPredictor:
 
         except Exception:
             self.print(failed("❌ Failed to stop SR Breakout Predictor: {e}"))
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=0.0,
+        context="SR confidence score calculation",
+    )
+    def calculate_sr_confidence_score(
+        self,
+        sr_context: dict[str, Any],
+        current_price: float,
+        market_data: pd.DataFrame,
+    ) -> float:
+        """
+        Calculate comprehensive S/R confidence score for risk management.
+
+        This method integrates all S/R detection methods and provides a unified
+        confidence score based on:
+        1. Level strength (touches, volume, age)
+        2. Proximity to levels
+        3. Breakout/bounce probabilities
+        4. Market context and volatility
+
+        Args:
+            sr_context: S/R context from get_sr_context
+            current_price: Current market price
+            market_data: Recent market data for context
+
+        Returns:
+            float: Confidence score between 0.0 and 1.0
+        """
+        try:
+            confidence_components = {}
+
+            # 1. Level Strength Component (40% weight)
+            level_strength_score = self._calculate_level_strength_score(sr_context)
+            confidence_components["level_strength"] = level_strength_score
+
+            # 2. Proximity Component (25% weight)
+            proximity_score = self._calculate_proximity_score(sr_context, current_price)
+            confidence_components["proximity"] = proximity_score
+
+            # 3. Breakout/Bounce Probability Component (20% weight)
+            probability_score = self._calculate_probability_score(sr_context)
+            confidence_components["probability"] = probability_score
+
+            # 4. Market Context Component (15% weight)
+            context_score = self._calculate_market_context_score(
+                market_data, sr_context
+            )
+            confidence_components["market_context"] = context_score
+
+            # Calculate weighted confidence score
+            weights = {
+                "level_strength": 0.40,
+                "proximity": 0.25,
+                "probability": 0.20,
+                "market_context": 0.15,
+            }
+
+            final_confidence = sum(
+                confidence_components[component] * weights[component]
+                for component in weights.keys()
+            )
+
+            # Log confidence breakdown for debugging
+            self.logger.debug(f"SR Confidence Components: {confidence_components}")
+            self.logger.debug(f"Final SR Confidence Score: {final_confidence:.3f}")
+
+            return max(0.0, min(1.0, final_confidence))
+
+        except Exception as e:
+            self.logger.error(f"Error calculating SR confidence score: {e}")
+            return 0.5  # Neutral confidence as fallback
+
+    def _calculate_level_strength_score(self, sr_context: dict[str, Any]) -> float:
+        """Calculate confidence based on S/R level strength."""
+        try:
+            strength_scores = []
+
+            # Analyze pivot levels
+            pivot_levels = sr_context.get("pivot_levels", {})
+            if pivot_levels:
+                pivot_strengths = pivot_levels.get("strengths", {})
+                for strength_data in pivot_strengths.values():
+                    if isinstance(strength_data, dict):
+                        # Combine touches, volume, and age
+                        touches = strength_data.get("touches", 0)
+                        volume_strength = strength_data.get("strength", 0.0)
+                        age = strength_data.get("age", 0)
+
+                        # Normalize components
+                        touch_score = min(touches / 10.0, 1.0)  # Max 10 touches
+                        age_score = min(age / 100.0, 1.0)  # Max 100 periods
+
+                        # Weighted strength score
+                        level_strength = (
+                            touch_score * 0.4 + volume_strength * 0.4 + age_score * 0.2
+                        )
+                        strength_scores.append(level_strength)
+
+            # Analyze HVN levels
+            hvn_levels = sr_context.get("hvn_levels", {})
+            if hvn_levels:
+                hvn_strengths = hvn_levels.get("strengths", {})
+                for strength_data in hvn_strengths.values():
+                    if isinstance(strength_data, dict):
+                        strength_scores.append(strength_data.get("strength", 0.0))
+
+            # Return average strength score
+            if strength_scores:
+                return sum(strength_scores) / len(strength_scores)
+            else:
+                return 0.3  # Default low strength
+
+        except Exception as e:
+            self.logger.error(f"Error calculating level strength score: {e}")
+            return 0.3
+
+    def _calculate_proximity_score(
+        self, sr_context: dict[str, Any], current_price: float
+    ) -> float:
+        """Calculate confidence based on proximity to S/R levels."""
+        try:
+            nearest_support = sr_context.get("nearest_support", current_price)
+            nearest_resistance = sr_context.get("nearest_resistance", current_price)
+
+            # Calculate proximity percentages
+            support_proximity = abs(current_price - nearest_support) / current_price
+            resistance_proximity = (
+                abs(nearest_resistance - current_price) / current_price
+            )
+
+            # Convert to proximity scores (closer = higher score)
+            # Optimal proximity is 1-3%, too close (<0.5%) or far (>5%) reduces confidence
+            def proximity_to_score(proximity: float) -> float:
+                if proximity < 0.005:  # Too close
+                    return 0.3
+                elif 0.01 <= proximity <= 0.03:  # Optimal range
+                    return 1.0
+                elif 0.03 < proximity <= 0.05:  # Good range
+                    return 0.8
+                else:  # Too far
+                    return 0.2
+
+            support_score = proximity_to_score(support_proximity)
+            resistance_score = proximity_to_score(resistance_proximity)
+
+            # Return the higher score (closer to a level)
+            return max(support_score, resistance_score)
+
+        except Exception as e:
+            self.logger.error(f"Error calculating proximity score: {e}")
+            return 0.5
+
+    def _calculate_probability_score(self, sr_context: dict[str, Any]) -> float:
+        """Calculate confidence based on breakout/bounce probabilities."""
+        try:
+            breakout_prob = sr_context.get("breakout_probability", 0.5)
+            bounce_prob = sr_context.get("bounce_probability", 0.5)
+
+            # Higher confidence when probabilities are more extreme (closer to 0 or 1)
+            # Lower confidence when probabilities are around 0.5 (uncertain)
+            breakout_confidence = (
+                1.0 - abs(breakout_prob - 0.5) * 2
+            )  # 0.5 -> 0.0, 0.0/1.0 -> 1.0
+            bounce_confidence = 1.0 - abs(bounce_prob - 0.5) * 2
+
+            # Return average of both confidences
+            return (breakout_confidence + bounce_confidence) / 2
+
+        except Exception as e:
+            self.logger.error(f"Error calculating probability score: {e}")
+            return 0.5
+
+    def _calculate_market_context_score(
+        self, market_data: pd.DataFrame, sr_context: dict[str, Any]
+    ) -> float:
+        """Calculate confidence based on market context and volatility."""
+        try:
+            if market_data.empty:
+                return 0.5
+
+            # Calculate volatility
+            price_volatility = (
+                market_data["close"].pct_change().rolling(20).std().iloc[-1]
+            )
+
+            # Calculate volume trend
+            volume_ratio = (
+                market_data["volume"].iloc[-5:].mean()
+                / market_data["volume"].iloc[-20:].mean()
+            )
+
+            # Calculate price momentum
+            price_momentum = (
+                market_data["close"].iloc[-1] - market_data["close"].iloc[-10]
+            ) / market_data["close"].iloc[-10]
+
+            # Volatility score: moderate volatility is best for S/R
+            if price_volatility < 0.01:  # Too low volatility
+                volatility_score = 0.3
+            elif 0.01 <= price_volatility <= 0.03:  # Good volatility
+                volatility_score = 1.0
+            elif 0.03 < price_volatility <= 0.05:  # High but acceptable
+                volatility_score = 0.7
+            else:  # Too volatile
+                volatility_score = 0.2
+
+            # Volume score: higher volume near levels is better
+            volume_score = min(volume_ratio, 2.0) / 2.0  # Normalize to 0-1
+
+            # Momentum score: strong momentum can break levels
+            momentum_score = (
+                1.0 - min(abs(price_momentum), 0.1) / 0.1
+            )  # Lower momentum = higher confidence
+
+            # Combine context scores
+            context_score = (
+                volatility_score * 0.5 + volume_score * 0.3 + momentum_score * 0.2
+            )
+
+            return context_score
+
+        except Exception as e:
+            self.logger.error(f"Error calculating market context score: {e}")
+            return 0.5
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="enhanced SR prediction with confidence",
+    )
+    async def predict_breakout_with_confidence(
+        self,
+        market_data: pd.DataFrame,
+        current_price: float,
+    ) -> dict[str, Any]:
+        """
+        Enhanced SR breakout prediction with comprehensive confidence scoring.
+
+        Args:
+            market_data: Recent market data
+            current_price: Current market price
+
+        Returns:
+            dict: Enhanced prediction with confidence scores
+        """
+        try:
+            # Get base SR context
+            sr_context = await self.get_sr_context(market_data, current_price)
+
+            # Calculate comprehensive confidence score
+            sr_confidence = self.calculate_sr_confidence_score(
+                sr_context, current_price, market_data
+            )
+
+            # Get breakout prediction
+            breakout_prediction = await self.predict_breakout(
+                market_data, current_price
+            )
+
+            # Enhance prediction with confidence
+            enhanced_prediction = {
+                **breakout_prediction,
+                "sr_confidence_score": sr_confidence,
+                "confidence_breakdown": {
+                    "level_strength": self._calculate_level_strength_score(sr_context),
+                    "proximity": self._calculate_proximity_score(
+                        sr_context, current_price
+                    ),
+                    "probability": self._calculate_probability_score(sr_context),
+                    "market_context": self._calculate_market_context_score(
+                        market_data, sr_context
+                    ),
+                },
+                "risk_assessment": {
+                    "high_confidence": sr_confidence >= 0.8,
+                    "medium_confidence": 0.6 <= sr_confidence < 0.8,
+                    "low_confidence": sr_confidence < 0.6,
+                    "recommended_position_size": min(sr_confidence, 0.8),  # Cap at 80%
+                    "stop_loss_multiplier": 1.0
+                    + (1.0 - sr_confidence) * 0.5,  # Wider stops for low confidence
+                },
+            }
+
+            return enhanced_prediction
+
+        except Exception as e:
+            self.logger.error(f"Error in enhanced SR prediction: {e}")
+            return {
+                "sr_confidence_score": 0.5,
+                "confidence_breakdown": {},
+                "risk_assessment": {
+                    "high_confidence": False,
+                    "medium_confidence": True,
+                    "low_confidence": False,
+                    "recommended_position_size": 0.5,
+                    "stop_loss_multiplier": 1.25,
+                },
+            }
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="S/R proximity detection",
+    )
+    def is_near_sr_level(
+        self, current_price: float, sr_context: dict[str, Any]
+    ) -> bool:
+        """
+        Determine if current price is near a significant S/R level.
+        Uses dynamic proximity thresholds based on S/R level strength.
+
+        Args:
+            current_price: Current market price
+            sr_context: S/R context from get_sr_context
+
+        Returns:
+            bool: True if near S/R level, False otherwise
+        """
+        try:
+            if not sr_context:
+                return False
+
+            # Get nearest support and resistance levels
+            nearest_support = sr_context.get("nearest_support", current_price)
+            nearest_resistance = sr_context.get("nearest_resistance", current_price)
+
+            # Calculate proximity to each level
+            support_proximity = abs(current_price - nearest_support) / current_price
+            resistance_proximity = (
+                abs(nearest_resistance - current_price) / current_price
+            )
+
+            # Get S/R level strength to adjust proximity threshold
+            support_strength = sr_context.get("support_strength", 0.5)
+            resistance_strength = sr_context.get("resistance_strength", 0.5)
+
+            # Calculate dynamic proximity thresholds based on level strength
+            # Stronger levels get wider proximity (easier to detect)
+            # Weaker levels get tighter proximity (harder to detect)
+            support_threshold = self._calculate_dynamic_proximity_threshold(
+                support_strength
+            )
+            resistance_threshold = self._calculate_dynamic_proximity_threshold(
+                resistance_strength
+            )
+
+            # Check if within dynamic proximity thresholds
+            near_support = support_proximity <= support_threshold
+            near_resistance = resistance_proximity <= resistance_threshold
+
+            return near_support or near_resistance
+
+        except Exception as e:
+            self.logger.error(f"Error detecting S/R proximity: {e}")
+            return False
+
+    def _calculate_dynamic_proximity_threshold(self, level_strength: float) -> float:
+        """
+        Calculate dynamic proximity threshold based on S/R level strength.
+
+        Args:
+            level_strength: Strength of the S/R level (0.0 to 1.0)
+
+        Returns:
+            float: Dynamic proximity threshold (0.3% to 1.0%)
+        """
+        try:
+            # Normalize level strength to 0-1 range
+            normalized_strength = max(0.0, min(1.0, level_strength))
+
+            # Calculate dynamic threshold
+            # Stronger levels (higher strength) get wider proximity
+            # Weaker levels (lower strength) get tighter proximity
+            threshold_range = (
+                self.sr_proximity_trigger_max - self.sr_proximity_trigger_min
+            )
+            dynamic_threshold = self.sr_proximity_trigger_min + (
+                normalized_strength * threshold_range
+            )
+
+            # Ensure within bounds
+            dynamic_threshold = max(
+                self.sr_proximity_trigger_min,
+                min(self.sr_proximity_trigger_max, dynamic_threshold),
+            )
+
+            return dynamic_threshold
+
+        except Exception as e:
+            self.logger.error(f"Error calculating dynamic proximity threshold: {e}")
+            return self.sr_proximity_trigger_base  # Fallback to base threshold
+
+    def get_sr_proximity_details(
+        self, current_price: float, sr_context: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Get detailed S/R proximity information including dynamic thresholds.
+
+        Args:
+            current_price: Current market price
+            sr_context: S/R context from get_sr_context
+
+        Returns:
+            dict: Detailed proximity information
+        """
+        try:
+            if not sr_context:
+                return {
+                    "is_near_sr": False,
+                    "reason": "No S/R context available",
+                    "proximity_details": {},
+                }
+
+            # Get nearest levels
+            nearest_support = sr_context.get("nearest_support", current_price)
+            nearest_resistance = sr_context.get("nearest_resistance", current_price)
+
+            # Calculate proximities
+            support_proximity = abs(current_price - nearest_support) / current_price
+            resistance_proximity = (
+                abs(nearest_resistance - current_price) / current_price
+            )
+
+            # Get level strengths
+            support_strength = sr_context.get("support_strength", 0.5)
+            resistance_strength = sr_context.get("resistance_strength", 0.5)
+
+            # Calculate dynamic thresholds
+            support_threshold = self._calculate_dynamic_proximity_threshold(
+                support_strength
+            )
+            resistance_threshold = self._calculate_dynamic_proximity_threshold(
+                resistance_strength
+            )
+
+            # Check proximity
+            near_support = support_proximity <= support_threshold
+            near_resistance = resistance_proximity <= resistance_threshold
+            is_near_sr = near_support or near_resistance
+
+            # Build detailed response
+            proximity_details = {
+                "support": {
+                    "level": nearest_support,
+                    "proximity": support_proximity,
+                    "threshold": support_threshold,
+                    "strength": support_strength,
+                    "is_near": near_support,
+                    "distance_pct": support_proximity * 100,
+                },
+                "resistance": {
+                    "level": nearest_resistance,
+                    "proximity": resistance_proximity,
+                    "threshold": resistance_threshold,
+                    "strength": resistance_strength,
+                    "is_near": near_resistance,
+                    "distance_pct": resistance_proximity * 100,
+                },
+                "configuration": {
+                    "base_threshold": self.sr_proximity_trigger_base,
+                    "min_threshold": self.sr_proximity_trigger_min,
+                    "max_threshold": self.sr_proximity_trigger_max,
+                    "current_price": current_price,
+                },
+            }
+
+            return {
+                "is_near_sr": is_near_sr,
+                "reason": f"Near {'support' if near_support else 'resistance' if near_resistance else 'neither'} level",
+                "proximity_details": proximity_details,
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error getting S/R proximity details: {e}")
+            return {
+                "is_near_sr": False,
+                "reason": f"Error: {e}",
+                "proximity_details": {},
+            }
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return="consolidation",
+        context="S/R outcome prediction",
+    )
+    async def predict_sr_outcome(
+        self,
+        market_data: pd.DataFrame,
+        current_price: float,
+        sr_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Predict S/R outcome using unified model: breakout, rebounce, or consolidation.
+
+        Args:
+            market_data: Recent market data
+            current_price: Current market price
+            sr_context: S/R context
+
+        Returns:
+            dict: Prediction with outcome, confidence, and probabilities
+        """
+        try:
+            # Check if we're near S/R level
+            is_near_level = self.is_near_sr_level(current_price, sr_context)
+
+            if not is_near_level:
+                return {
+                    "outcome": "consolidation",
+                    "confidence": 0.8,
+                    "probabilities": {
+                        "breakout": 0.1,
+                        "rebounce": 0.1,
+                        "consolidation": 0.8,
+                    },
+                    "reason": "Not near S/R level",
+                }
+
+            # Prepare features for outcome prediction
+            features = self._prepare_sr_outcome_features(
+                market_data, current_price, sr_context
+            )
+
+            # Get model prediction (this would use the actual trained model)
+            prediction_result = await self._get_sr_outcome_prediction(features)
+
+            # Determine outcome based on highest probability
+            probabilities = prediction_result.get("probabilities", {})
+            outcome = (
+                max(probabilities, key=probabilities.get)
+                if probabilities
+                else "consolidation"
+            )
+            confidence = prediction_result.get("confidence", 0.5)
+
+            # Check if confidence meets threshold for the predicted outcome
+            threshold = self.outcome_confidence_thresholds.get(outcome, 0.6)
+            if confidence < threshold:
+                outcome = "consolidation"  # Default to consolidation if low confidence
+                confidence = max(confidence, 0.6)
+
+            return {
+                "outcome": outcome,
+                "confidence": confidence,
+                "probabilities": probabilities,
+                "is_near_sr_level": True,
+                "sr_context": sr_context,
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error predicting S/R outcome: {e}")
+            return {
+                "outcome": "consolidation",
+                "confidence": 0.5,
+                "probabilities": {
+                    "breakout": 0.33,
+                    "rebounce": 0.33,
+                    "consolidation": 0.34,
+                },
+                "reason": f"Prediction error: {e}",
+            }
+
+    def _prepare_sr_outcome_features(
+        self,
+        market_data: pd.DataFrame,
+        current_price: float,
+        sr_context: dict[str, Any],
+    ) -> dict[str, float]:
+        """
+        Prepare features for S/R outcome prediction.
+
+        Args:
+            market_data: Market data
+            current_price: Current price
+            sr_context: S/R context
+
+        Returns:
+            dict: Feature dictionary for outcome prediction
+        """
+        try:
+            features = {}
+
+            # Price-based features
+            features["price_change_1m"] = (
+                market_data["close"].pct_change().iloc[-1]
+                if len(market_data) > 1
+                else 0
+            )
+            features["price_change_5m"] = (
+                market_data["close"].pct_change(5).iloc[-1]
+                if len(market_data) > 5
+                else 0
+            )
+            features["price_volatility"] = (
+                market_data["close"].rolling(20).std().iloc[-1]
+                if len(market_data) >= 20
+                else 0
+            )
+
+            # Volume-based features
+            features["volume_ratio"] = (
+                (
+                    market_data["volume"].iloc[-1]
+                    / market_data["volume"].rolling(20).mean().iloc[-1]
+                )
+                if len(market_data) >= 20
+                else 1.0
+            )
+            features["volume_momentum"] = (
+                market_data["volume"].pct_change().iloc[-1]
+                if len(market_data) > 1
+                else 0
+            )
+
+            # Technical indicators
+            features["rsi"] = (
+                self._calculate_rsi(market_data["close"]).iloc[-1]
+                if len(market_data) >= 14
+                else 50
+            )
+            features["macd"] = (
+                self._calculate_macd(market_data["close"]).iloc[-1]
+                if len(market_data) >= 26
+                else 0
+            )
+
+            # S/R-specific features
+            if sr_context:
+                nearest_support = sr_context.get("nearest_support", current_price)
+                nearest_resistance = sr_context.get("nearest_resistance", current_price)
+
+                # Distance to levels (normalized)
+                features["distance_to_support"] = (
+                    current_price - nearest_support
+                ) / current_price
+                features["distance_to_resistance"] = (
+                    nearest_resistance - current_price
+                ) / current_price
+
+                # Level strength features
+                features["support_strength"] = sr_context.get("support_strength", 0.5)
+                features["resistance_strength"] = sr_context.get(
+                    "resistance_strength", 0.5
+                )
+
+                # Pivot level features
+                pivot_levels = sr_context.get("pivot_levels", {})
+                if pivot_levels:
+                    features["nearest_pivot_strength"] = pivot_levels.get(
+                        "nearest_strength", 0.5
+                    )
+                    features["pivot_touches"] = pivot_levels.get("nearest_touches", 0)
+                else:
+                    features["nearest_pivot_strength"] = 0.5
+                    features["pivot_touches"] = 0
+
+            # Market context features
+            features["market_trend"] = self._calculate_market_trend(market_data)
+            features["momentum_strength"] = self._calculate_momentum_strength(
+                market_data
+            )
+
+            return features
+
+        except Exception as e:
+            self.logger.error(f"Error preparing S/R outcome features: {e}")
+            return {}
+
+    async def _get_sr_outcome_prediction(
+        self, features: dict[str, float]
+    ) -> dict[str, Any]:
+        """
+        Get S/R outcome prediction from the unified model.
+        Loads and uses trained ML models for breakout/rebounce/consolidation prediction.
+
+        Args:
+            features: Prepared features
+
+        Returns:
+            dict: Model prediction with probabilities and confidence
+        """
+        try:
+            # Try to load and use trained model first
+            model_prediction = await self._get_trained_model_prediction(features)
+            if model_prediction:
+                return model_prediction
+
+            # Fallback to rule-based prediction if no trained model available
+            return self._get_rule_based_prediction(features)
+
+        except Exception as e:
+            self.logger.error(f"Error getting S/R outcome prediction: {e}")
+            return {
+                "probabilities": {
+                    "breakout": 0.33,
+                    "rebounce": 0.33,
+                    "consolidation": 0.34,
+                },
+                "confidence": 0.5,
+            }
+
+    async def _get_trained_model_prediction(
+        self, features: dict[str, float]
+    ) -> Optional[dict[str, Any]]:
+        """
+        Get prediction from trained ML model.
+
+        Args:
+            features: Prepared features
+
+        Returns:
+            dict: Model prediction or None if model not available
+        """
+        try:
+            # Check if we have a trained model available
+            model_path = self.config.get(
+                "sr_outcome_model_path", "models/sr_outcome_model.pkl"
+            )
+            if not os.path.exists(model_path):
+                self.logger.debug(
+                    f"Trained S/R outcome model not found at {model_path}"
+                )
+                return None
+
+            # Load the trained model
+            import pickle
+
+            with open(model_path, "rb") as f:
+                model = pickle.load(f)
+
+            # Prepare features for model input
+            feature_names = [
+                "price_change_1m",
+                "price_change_5m",
+                "price_volatility",
+                "volume_ratio",
+                "volume_momentum",
+                "rsi",
+                "macd",
+                "distance_to_support",
+                "distance_to_resistance",
+                "support_strength",
+                "resistance_strength",
+                "nearest_pivot_strength",
+                "pivot_touches",
+                "market_trend",
+                "momentum_strength",
+            ]
+
+            # Create feature vector
+            feature_vector = []
+            for feature_name in feature_names:
+                feature_vector.append(features.get(feature_name, 0.0))
+
+            # Make prediction
+            if hasattr(model, "predict_proba"):
+                # For sklearn models
+                probabilities = model.predict_proba([feature_vector])[0]
+                prediction = model.predict([feature_vector])[0]
+
+                # Map prediction to outcome
+                outcome_mapping = {0: "breakout", 1: "rebounce", 2: "consolidation"}
+                outcome = outcome_mapping.get(prediction, "consolidation")
+
+                # Create probability dict
+                prob_dict = {
+                    "breakout": probabilities[0],
+                    "rebounce": probabilities[1],
+                    "consolidation": probabilities[2],
+                }
+
+                # Calculate confidence as max probability
+                confidence = max(probabilities)
+
+            elif hasattr(model, "forward"):
+                # For PyTorch models
+                import torch
+
+                model.eval()
+                with torch.no_grad():
+                    feature_tensor = torch.FloatTensor([feature_vector])
+                    outputs = model(feature_tensor)
+                    probabilities = torch.softmax(outputs, dim=1)[0].numpy()
+
+                    outcome_mapping = {0: "breakout", 1: "rebounce", 2: "consolidation"}
+                    prediction = torch.argmax(outputs, dim=1).item()
+                    outcome = outcome_mapping.get(prediction, "consolidation")
+
+                    prob_dict = {
+                        "breakout": float(probabilities[0]),
+                        "rebounce": float(probabilities[1]),
+                        "consolidation": float(probabilities[2]),
+                    }
+                    confidence = float(max(probabilities))
+            else:
+                self.logger.warning(
+                    "Unknown model type, falling back to rule-based prediction"
+                )
+                return None
+
+            return {
+                "probabilities": prob_dict,
+                "confidence": confidence,
+                "outcome": outcome,
+                "model_type": "trained_ml_model",
+            }
+
+        except Exception as e:
+            self.logger.debug(f"Error loading trained model: {e}")
+            return None
+
+    def _get_rule_based_prediction(self, features: dict[str, float]) -> dict[str, Any]:
+        """
+        Get rule-based prediction as fallback when trained model is not available.
+
+        Args:
+            features: Prepared features
+
+        Returns:
+            dict: Rule-based prediction
+        """
+        try:
+            # Extract key features
+            momentum = features.get("momentum_strength", 0)
+            volume_ratio = features.get("volume_ratio", 1.0)
+            rsi = features.get("rsi", 50)
+            market_trend = features.get("market_trend", 0)
+            distance_to_support = features.get("distance_to_support", 0)
+            distance_to_resistance = features.get("distance_to_resistance", 0)
+            support_strength = features.get("support_strength", 0.5)
+            resistance_strength = features.get("resistance_strength", 0.5)
+
+            # Rule-based logic for outcome prediction
+            breakout_score = 0.0
+            rebounce_score = 0.0
+            consolidation_score = 0.0
+
+            # Breakout conditions
+            if momentum > 0.5 and volume_ratio > 1.2 and market_trend > 0.3:
+                breakout_score += 0.4
+            if rsi > 70 and momentum > 0.3:
+                breakout_score += 0.3
+            if distance_to_resistance < 0.01 and resistance_strength < 0.7:
+                breakout_score += 0.3
+
+            # Rebounce conditions
+            if momentum < -0.5 and volume_ratio > 1.2 and market_trend < -0.3:
+                rebounce_score += 0.4
+            if rsi < 30 and momentum < -0.3:
+                rebounce_score += 0.3
+            if distance_to_support < 0.01 and support_strength < 0.7:
+                rebounce_score += 0.3
+
+            # Consolidation conditions (default)
+            consolidation_score = 0.4  # Base consolidation probability
+
+            # Adjust based on volatility and trend strength
+            if abs(momentum) < 0.2 and volume_ratio < 1.1:
+                consolidation_score += 0.3
+                breakout_score *= 0.7
+                rebounce_score *= 0.7
+
+            # Normalize scores to probabilities
+            total_score = breakout_score + rebounce_score + consolidation_score
+            if total_score > 0:
+                probabilities = {
+                    "breakout": breakout_score / total_score,
+                    "rebounce": rebounce_score / total_score,
+                    "consolidation": consolidation_score / total_score,
+                }
+            else:
+                probabilities = {
+                    "breakout": 0.33,
+                    "rebounce": 0.33,
+                    "consolidation": 0.34,
+                }
+
+            # Determine outcome and confidence
+            outcome = max(probabilities, key=probabilities.get)
+            confidence = probabilities[outcome]
+
+            # Boost confidence for clear signals
+            if max(probabilities.values()) > 0.6:
+                confidence = min(0.9, confidence * 1.2)
+
+            return {
+                "probabilities": probabilities,
+                "confidence": confidence,
+                "outcome": outcome,
+                "model_type": "rule_based",
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error in rule-based prediction: {e}")
+            return {
+                "probabilities": {
+                    "breakout": 0.33,
+                    "rebounce": 0.33,
+                    "consolidation": 0.34,
+                },
+                "confidence": 0.5,
+                "outcome": "consolidation",
+                "model_type": "rule_based",
+            }
+
+    def _calculate_market_trend(self, market_data: pd.DataFrame) -> float:
+        """Calculate market trend strength."""
+        try:
+            if len(market_data) < 20:
+                return 0.0
+
+            # Simple trend calculation using linear regression slope
+            prices = market_data["close"].values
+            x = np.arange(len(prices))
+            slope = np.polyfit(x, prices, 1)[0]
+
+            # Normalize slope
+            avg_price = np.mean(prices)
+            normalized_slope = slope / avg_price if avg_price > 0 else 0
+
+            return np.clip(normalized_slope * 100, -1, 1)  # Clip to [-1, 1]
+
+        except Exception as e:
+            self.logger.error(f"Error calculating market trend: {e}")
+            return 0.0
+
+    def _calculate_momentum_strength(self, market_data: pd.DataFrame) -> float:
+        """Calculate momentum strength."""
+        try:
+            if len(market_data) < 10:
+                return 0.0
+
+            # Calculate momentum using price change over different periods
+            short_momentum = (
+                market_data["close"].pct_change(5).iloc[-1]
+                if len(market_data) > 5
+                else 0
+            )
+            long_momentum = (
+                market_data["close"].pct_change(20).iloc[-1]
+                if len(market_data) > 20
+                else 0
+            )
+
+            # Combine momentums
+            momentum = short_momentum * 0.7 + long_momentum * 0.3
+
+            return np.clip(momentum * 100, -1, 1)  # Clip to [-1, 1]
+
+        except Exception as e:
+            self.logger.error(f"Error calculating momentum strength: {e}")
+            return 0.0
 
 
 @handle_errors(

@@ -64,7 +64,7 @@ All training steps (2-16) have been updated to use the `UnifiedDataLoader`:
    - ✅ Replaced partitioned dataset loading with unified data loader
    - ✅ Enhanced data validation and logging
 
-4. **Step 5 - Analyst Specialist Training** (`step5_analyst_specialist_training.py`)
+4. **Step 5 - HMM-Based Training** (`step5_hmm_based_training.py`)
    - ✅ Added unified data loader import
    - ✅ Continues to work with feature files from step4
 

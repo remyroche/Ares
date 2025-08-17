@@ -1,0 +1,61 @@
+wavelet: 16
+momentum: 93
+volatility: 3
+correlation: 3
+liquidity: 16
+candlestick: 5
+microstructure: 3
+sr_distance: 0
+other: 127
+
+Other (sample up to 50):
+bb_zscore_20
+ema20_slope
+sma50_slope
+rsi_14
+rsi_20
+price_acceleration_5
+price_acceleration_10
+volume_acceleration_5
+volume_acceleration_10
+vwap_deviation
+volume_zscore
+body_range_ratio
+high_low_ratio
+close_open_ratio
+body_size
+upper_shadow
+lower_shadow
+sma_5
+sma_20
+ema_12
+ema_26
+volume_ratio
+rsi
+macd
+macd_signal
+macd_histogram
+bb_upper
+bb_lower
+bb_position
+atr
+stoch_k
+stoch_d
+williams_r
+cci
+mfi
+price_efficiency_20
+volume_price_trend
+on_balance_volume
+accumulation_distribution
+chaikin_money_flow
+price_velocity_5
+price_velocity_10
+volume_velocity_5
+volume_velocity_10
+distance_to_support
+normalized_distance_to_support
+distance_to_resistance
+normalized_distance_to_resistance
+adaptive_sma
+adaptive_sma_slope

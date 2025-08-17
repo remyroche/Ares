@@ -14,9 +14,17 @@ try:
 except Exception:  # pragma: no cover
     numba = None  # type: ignore
 
-if 'numba' in globals() and numba is not None:
+if "numba" in globals() and numba is not None:
+
     @numba.jit(nopython=True, cache=True)
-    def _numba_triple_barrier_labels(close: np.ndarray, high: np.ndarray, low: np.ndarray, pt_mult: float, sl_mult: float, end_idx_arr: np.ndarray) -> np.ndarray:
+    def _numba_triple_barrier_labels(
+        close: np.ndarray,
+        high: np.ndarray,
+        low: np.ndarray,
+        pt_mult: float,
+        sl_mult: float,
+        end_idx_arr: np.ndarray,
+    ) -> np.ndarray:
         labels = np.zeros(close.shape[0], dtype=np.int8)
         n = close.shape[0]
         for i in range(n - 1):
@@ -37,6 +45,7 @@ if 'numba' in globals() and numba is not None:
                     break
             labels[i] = lab
         return labels
+
 
 class OptimizedTripleBarrierLabeling:
     """
@@ -176,7 +185,9 @@ class OptimizedTripleBarrierLabeling:
         if use_time_barrier:
             try:
                 idx_ns = idx.view(np.int64)
-                delta_ns = np.int64(self.time_barrier_minutes) * np.int64(60_000_000_000)
+                delta_ns = np.int64(self.time_barrier_minutes) * np.int64(
+                    60_000_000_000
+                )
                 end_times = idx_ns + delta_ns
                 end_by_time = np.searchsorted(idx_ns, end_times, side="right")
             except Exception:
@@ -189,10 +200,21 @@ class OptimizedTripleBarrierLabeling:
         sl_mult = float(self.stop_loss_multiplier)
 
         labels: np.ndarray
-        use_numba = 'numba' in globals() and numba is not None and callable(globals().get('_numba_triple_barrier_labels'))
+        use_numba = (
+            "numba" in globals()
+            and numba is not None
+            and callable(globals().get("_numba_triple_barrier_labels"))
+        )
         if use_numba and n >= 512:
             self.logger.info("⚡ Using Numba-accelerated triple barrier labeling")
-            labels = _numba_triple_barrier_labels(close.astype(np.float64), high.astype(np.float64), low.astype(np.float64), pt_mult, sl_mult, end_idx_arr.astype(np.int64))
+            labels = _numba_triple_barrier_labels(
+                close.astype(np.float64),
+                high.astype(np.float64),
+                low.astype(np.float64),
+                pt_mult,
+                sl_mult,
+                end_idx_arr.astype(np.int64),
+            )
         else:
             # Fallback to vectorized Python implementation
             labels = np.zeros(n, dtype=np.int8)

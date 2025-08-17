@@ -10,7 +10,7 @@ import pandas as pd
 
 from src.training.enhanced_training_manager import EnhancedTrainingManager
 from src.utils.logger import system_logger
-from src.analyst.meta_labeling_system import MetaLabelingSystem
+from src.analyst.meta_labeling_system import CompositeHMMRegimeSystem
 
 
 @dataclass
@@ -43,9 +43,13 @@ class EventTriggerIndexer:
             post_window=int(tm_cfg.get("post_window", 20)),
             label_cooldown_bars=int(tm_cfg.get("label_cooldown_bars", 45)),
             window_iou_threshold=float(tm_cfg.get("window_iou_threshold", 0.5)),
-            use_reliability_weighting=bool(tm_cfg.get("use_reliability_weighting", True)),
+            use_reliability_weighting=bool(
+                tm_cfg.get("use_reliability_weighting", True)
+            ),
             use_rising_edge_only=bool(tm_cfg.get("use_rising_edge_only", True)),
-            preserve_secondary_labels=bool(tm_cfg.get("preserve_secondary_labels", True)),
+            preserve_secondary_labels=bool(
+                tm_cfg.get("preserve_secondary_labels", True)
+            ),
         )
 
         # Load thresholds and reliability
@@ -113,7 +117,7 @@ class EventTriggerIndexer:
         out: list[dict] = []
         for ev in sorted_events:
             lab = ev["event_label"]
-            last = last_idx_by_label.get(lab, -10**9)
+            last = last_idx_by_label.get(lab, -(10**9))
             if ev["row_index"] - last < cooldown:
                 continue
             out.append(ev)
@@ -131,9 +135,9 @@ class EventTriggerIndexer:
         int_cols = [c for c in combined_df.columns if c.startswith("intensity_")]
         if int_cols:
             return combined_df
-        # Try to compute intensities using MetaLabelingSystem
+        # Try to compute intensities using CompositeHMMRegimeSystem
         try:
-            meta = MetaLabelingSystem(self.config)
+            meta = CompositeHMMRegimeSystem(self.config)
             labels = candidate_labels
             if labels is None:
                 labels = meta.all_labels
@@ -142,10 +146,16 @@ class EventTriggerIndexer:
             act_cols = [c for c in combined_df.columns if c.startswith("active_")]
             if act_cols:
                 for ac in act_cols:
-                    out[ac.replace("active_", "intensity_")] = combined_df[ac].astype(float)
+                    out[ac.replace("active_", "intensity_")] = combined_df[ac].astype(
+                        float
+                    )
                 return out
             # Coarse proxy intensities if price/volume provided
-            if price_data is not None and not price_data.empty and volume_data is not None:
+            if (
+                price_data is not None
+                and not price_data.empty
+                and volume_data is not None
+            ):
                 max_labels = 50
                 labels = list(labels)[:max_labels]
                 for lab in labels:
@@ -157,29 +167,49 @@ class EventTriggerIndexer:
                         try:
                             feats.update(meta._calculate_technical_indicators(p_slice))
                         except Exception as e:
-                            self.logger.warning(f"Technical indicators failed at i={i} for {lab}: {e}")
+                            self.logger.warning(
+                                f"Technical indicators failed at i={i} for {lab}: {e}"
+                            )
                         try:
                             feats.update(meta._calculate_volume_features(v_slice))
                         except Exception as e:
-                            self.logger.warning(f"Volume features failed at i={i} for {lab}: {e}")
+                            self.logger.warning(
+                                f"Volume features failed at i={i} for {lab}: {e}"
+                            )
                         try:
                             feats.update(meta._calculate_price_action_patterns(p_slice))
                         except Exception as e:
-                            self.logger.warning(f"Price action patterns failed at i={i} for {lab}: {e}")
+                            self.logger.warning(
+                                f"Price action patterns failed at i={i} for {lab}: {e}"
+                            )
                         try:
                             feats.update(meta._calculate_volatility_patterns(p_slice))
                         except Exception as e:
-                            self.logger.warning(f"Volatility patterns failed at i={i} for {lab}: {e}")
+                            self.logger.warning(
+                                f"Volatility patterns failed at i={i} for {lab}: {e}"
+                            )
                         try:
                             feats.update(meta._calculate_momentum_patterns(p_slice))
                         except Exception as e:
-                            self.logger.warning(f"Momentum patterns failed at i={i} for {lab}: {e}")
+                            self.logger.warning(
+                                f"Momentum patterns failed at i={i} for {lab}: {e}"
+                            )
                         try:
-                            vals.append(meta._compute_label_intensity(lab, p_slice, v_slice, feats))
+                            vals.append(
+                                meta._compute_label_intensity(
+                                    lab, p_slice, v_slice, feats
+                                )
+                            )
                         except Exception as e:
-                            self.logger.warning(f"Intensity computation failed at i={i} for {lab}: {e}")
+                            self.logger.warning(
+                                f"Intensity computation failed at i={i} for {lab}: {e}"
+                            )
                             vals.append(0.0)
-                    out[f"intensity_{lab}"] = pd.Series(vals, index=price_data.index).reindex(out.index).fillna(0.0)
+                    out[f"intensity_{lab}"] = (
+                        pd.Series(vals, index=price_data.index)
+                        .reindex(out.index)
+                        .fillna(0.0)
+                    )
                 return out
         except Exception as e:
             self.logger.warning(f"Intensity backfill failed: {e}")
@@ -208,12 +238,16 @@ class EventTriggerIndexer:
             return pd.DataFrame()
 
         # Ensure intensities are available
-        combined_df = self._compute_intensities_if_missing(combined_df, price_data, volume_data, candidate_labels)
+        combined_df = self._compute_intensities_if_missing(
+            combined_df, price_data, volume_data, candidate_labels
+        )
 
         # Determine candidate labels from columns
         if candidate_labels is None:
             # Look for intensity_ columns: intensity_<LABEL>
-            intensity_cols = [c for c in combined_df.columns if c.startswith("intensity_")]
+            intensity_cols = [
+                c for c in combined_df.columns if c.startswith("intensity_")
+            ]
             candidate_labels = [c.replace("intensity_", "") for c in intensity_cols]
         labels = list(candidate_labels)
         if not labels:
@@ -235,7 +269,11 @@ class EventTriggerIndexer:
                 edges = series >= thr
             trigger_idx = np.where(edges.values)[0]
             # Pre-extract intensity columns for secondary lookup to avoid constructing Series repeatedly
-            secondary_cols = {other_lab: f"intensity_{other_lab}" for other_lab in labels if other_lab != lab and f"intensity_{other_lab}" in combined_df.columns}
+            secondary_cols = {
+                other_lab: f"intensity_{other_lab}"
+                for other_lab in labels
+                if other_lab != lab and f"intensity_{other_lab}" in combined_df.columns
+            }
             for ridx in trigger_idx:
                 ts = base_index[ridx]
                 intensity = float(series.iat[ridx])
@@ -248,16 +286,22 @@ class EventTriggerIndexer:
                         thr2 = float(self.activation_thresholds.get(other_lab, 0.5))
                         if inten2 >= thr2:
                             secondary.append(other_lab)
-                events.append({
-                    "timestamp": ts,
-                    "row_index": int(ridx),
-                    "event_label": lab,
-                    "intensity": intensity,
-                    "weighted_intensity": weighted,
-                    "secondary_labels": secondary,
-                    "timeframe": timeframe or combined_df.get("timeframe", pd.Series([None]*len(combined_df), index=base_index)).iat[ridx],
-                    "instrument_id": instrument_id,
-                })
+                events.append(
+                    {
+                        "timestamp": ts,
+                        "row_index": int(ridx),
+                        "event_label": lab,
+                        "intensity": intensity,
+                        "weighted_intensity": weighted,
+                        "secondary_labels": secondary,
+                        "timeframe": timeframe
+                        or combined_df.get(
+                            "timeframe",
+                            pd.Series([None] * len(combined_df), index=base_index),
+                        ).iat[ridx],
+                        "instrument_id": instrument_id,
+                    }
+                )
 
         if not events:
             return pd.DataFrame()

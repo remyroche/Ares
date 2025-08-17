@@ -12,6 +12,7 @@ try:
         generate_latest,
     )
     from prometheus_client.exposition import start_http_server
+
     _PROM_AVAILABLE = True
 except Exception as e:  # pragma: no cover - optional dependency fallback
     Counter = Gauge = Histogram = None  # type: ignore[assignment]
@@ -137,6 +138,24 @@ class PrometheusMetrics:
         """Start the Prometheus metrics server."""
         if not _PROM_AVAILABLE:
             return
+
+        # Check if server is already running on this port
+        import socket
+
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            result = sock.connect_ex(("localhost", self.port))
+            sock.close()
+            if result == 0:
+                # Port is already in use, don't start another server
+                logger.info(
+                    f"Prometheus metrics server already running on port {self.port}"
+                )
+                self.metrics_initialized = True
+                return
+        except Exception:
+            pass
+
         try:
             start_http_server(self.port)
             logger.info(f"Prometheus metrics server started on port {self.port}")
@@ -243,5 +262,17 @@ class PrometheusMetrics:
         return generate_latest()  # type: ignore[return-value]
 
 
-# Global metrics instance
-metrics = PrometheusMetrics()
+# Global metrics instance (singleton)
+_metrics_instance = None
+
+
+def get_metrics():
+    """Get the global metrics instance (singleton pattern)."""
+    global _metrics_instance
+    if _metrics_instance is None:
+        _metrics_instance = PrometheusMetrics()
+    return _metrics_instance
+
+
+# For backward compatibility
+metrics = get_metrics()

@@ -115,10 +115,10 @@ class LiquidationRiskModel:
     )
     async def _load_risk_configuration(self) -> None:
         """Load risk model configuration."""
-        self.logger.info("Loading liquidation risk configuration...")
+        self.logger.info("Loading liquidation risk model configuration...")
 
         # Additional configuration can be loaded here
-        self.logger.info("Risk configuration loaded successfully")
+        self.logger.info("Risk model configuration loaded successfully")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -136,22 +136,18 @@ class LiquidationRiskModel:
                 self.print(error("safe_leverage_multiplier must be between 0 and 1"))
                 return False
 
-            if self.max_leverage < 10:
-                self.logger.error(
-                    "max_leverage must be at least 10 for high leverage trading",
-                )
+            if self.max_leverage <= 0:
+                self.print(error("max_leverage must be positive"))
                 return False
 
-            if self.min_leverage < 10:
-                self.logger.error(
-                    "min_leverage must be at least 10 for high leverage trading",
-                )
+            if self.min_leverage <= 0 or self.min_leverage > self.max_leverage:
+                self.print(error("min_leverage must be positive and <= max_leverage"))
                 return False
 
-            self.logger.info("Risk model configuration validation passed")
+            self.logger.info("Liquidation risk model configuration validation passed")
             return True
 
-        except Exception:
+        except Exception as e:
             self.print(failed("Configuration validation failed: {e}"))
             return False
 
@@ -170,26 +166,28 @@ class LiquidationRiskModel:
         target_direction: str = "long",
     ) -> dict[str, Any]:
         """
-        Calculate liquidation risk based on ML confidence predictions.
+        Calculate liquidation risk and safe leverage levels.
 
         Args:
-            ml_predictions: Predictions from ml_confidence_predictor.py
-            current_price: Current asset price
-            target_direction: "long" or "short"
+            ml_predictions: ML confidence predictions
+            current_price: Current market price
+            target_direction: Target trading direction ("long" or "short")
 
         Returns:
-            dict: Risk assessment with safe leverage levels and liquidation prices
+            dict: Risk assessment results
         """
-        if not self.is_initialized:
-            self.print(initialization_error("Liquidation risk model not initialized"))
-            return None
-
         try:
-            self.logger.info(
-                f"Calculating liquidation risk for {target_direction} position",
-            )
+            if not self.is_initialized:
+                self.print(
+                    initialization_error("Liquidation Risk Model not initialized")
+                )
+                return None
 
-            # Extract adverse movement probabilities from ML predictions
+            if not ml_predictions or current_price <= 0:
+                self.print(invalid("Invalid input data for risk calculation"))
+                return None
+
+            # Extract adverse risk from ML predictions
             adverse_risk = self._extract_adverse_risk(ml_predictions, target_direction)
 
             # Calculate safe leverage levels
@@ -237,48 +235,49 @@ class LiquidationRiskModel:
         target_direction: str,
     ) -> float:
         """
-        Extract adverse movement risk from ML predictions.
+        Extract adverse risk from ML predictions.
 
         Args:
-            ml_predictions: Predictions from ml_confidence_predictor
-            target_direction: "long" or "short"
+            ml_predictions: ML confidence predictions
+            target_direction: Target trading direction
 
         Returns:
-            float: Adverse risk probability (0-1)
+            float: Adverse risk score (0-1)
         """
         try:
-            # Look for adverse movement probabilities in ML predictions
-            ml_predictions.get("adverse_probabilities", {})
+            # Get confidence from ML predictions
+            confidence = ml_predictions.get("confidence", 0.5)
+
+            # Get probability distributions
+            increase_probs = ml_predictions.get("increase_probabilities", {})
+            decrease_probs = ml_predictions.get("decrease_probabilities", {})
 
             if target_direction == "long":
-                # For long positions, adverse movement is downward
-                adverse_key = "decrease_probabilities"
+                # For long positions, adverse risk is probability of significant decrease
+                adverse_risk = (
+                    sum(decrease_probs.values()) / len(decrease_probs)
+                    if decrease_probs
+                    else 0.5
+                )
             else:
-                # For short positions, adverse movement is upward
-                adverse_key = "increase_probabilities"
+                # For short positions, adverse risk is probability of significant increase
+                adverse_risk = (
+                    sum(increase_probs.values()) / len(increase_probs)
+                    if increase_probs
+                    else 0.5
+                )
 
-            # Get the highest adverse probability as the risk measure
-            if adverse_key in ml_predictions:
-                adverse_probs = ml_predictions[adverse_key]
-                if isinstance(adverse_probs, dict):
-                    max_adverse_prob = (
-                        max(adverse_probs.values()) if adverse_probs else 0.0
-                    )
-                else:
-                    max_adverse_prob = float(adverse_probs) if adverse_probs else 0.0
-            else:
-                # Fallback: use a default risk based on confidence
-                confidence = ml_predictions.get("confidence", 0.5)
-                max_adverse_prob = 1.0 - confidence
+            # Adjust based on confidence
+            if confidence < 0.3:
+                adverse_risk *= 1.5  # Increase risk for low confidence
+            elif confidence > 0.7:
+                adverse_risk *= 0.8  # Decrease risk for high confidence
 
-            self.logger.info(
-                f"Extracted adverse risk: {max_adverse_prob:.3f} for {target_direction}",
-            )
-            return max_adverse_prob
+            return max(0.0, min(1.0, adverse_risk))
 
-        except Exception:
+        except Exception as e:
             self.print(error("Error extracting adverse risk: {e}"))
-            return 0.5  # Default moderate risk
+            return 0.5
 
     def _calculate_safe_leverage(
         self,
@@ -289,14 +288,14 @@ class LiquidationRiskModel:
         Calculate safe leverage level based on adverse risk.
 
         Args:
-            adverse_risk: Probability of adverse movement (0-1)
-            target_direction: "long" or "short"
+            adverse_risk: Adverse risk score (0-1)
+            target_direction: Target trading direction
 
         Returns:
             int: Safe leverage level
         """
         try:
-            # Find the highest leverage level where adverse risk is acceptable
+            # Find the highest leverage level that can handle the adverse risk
             safe_leverage = self.min_leverage
 
             for leverage, max_risk in sorted(self.leverage_risk_levels.items()):
@@ -310,21 +309,25 @@ class LiquidationRiskModel:
 
             # Ensure within bounds
             safe_leverage = max(
-                self.min_leverage,
-                min(safe_leverage, self.max_leverage),
+                self.min_leverage, min(self.max_leverage, safe_leverage)
             )
 
-            self.logger.info(
-                f"Calculated safe leverage: {safe_leverage}x (adverse risk: {adverse_risk:.3f})",
-            )
             return safe_leverage
 
-        except Exception:
+        except Exception as e:
             self.print(error("Error calculating safe leverage: {e}"))
             return self.min_leverage
 
     def _get_max_safe_leverage(self, adverse_risk: float) -> int:
-        """Get maximum safe leverage without safety multiplier."""
+        """
+        Get maximum safe leverage for given adverse risk.
+
+        Args:
+            adverse_risk: Adverse risk score (0-1)
+
+        Returns:
+            int: Maximum safe leverage
+        """
         try:
             max_leverage = self.min_leverage
 
@@ -336,21 +339,72 @@ class LiquidationRiskModel:
 
             return max_leverage
 
-        except Exception:
-            self.print(error("Error calculating max safe leverage: {e}"))
+        except Exception as e:
+            self.print(error("Error getting max safe leverage: {e}"))
             return self.min_leverage
+
+    def _classify_risk_level(self, adverse_risk: float) -> str:
+        """
+        Classify risk level based on adverse risk.
+
+        Args:
+            adverse_risk: Adverse risk score (0-1)
+
+        Returns:
+            str: Risk level classification
+        """
+        try:
+            if adverse_risk <= 0.2:
+                return "LOW"
+            if adverse_risk <= 0.4:
+                return "MEDIUM"
+            if adverse_risk <= 0.6:
+                return "HIGH"
+            return "EXTREME"
+
+        except Exception as e:
+            self.print(error("Error classifying risk level: {e}"))
+            return "UNKNOWN"
+
+    def _generate_risk_recommendation(
+        self,
+        adverse_risk: float,
+        safe_leverage: int,
+    ) -> str:
+        """
+        Generate risk recommendation.
+
+        Args:
+            adverse_risk: Adverse risk score (0-1)
+            safe_leverage: Safe leverage level
+
+        Returns:
+            str: Risk recommendation
+        """
+        try:
+            if adverse_risk > 0.7:
+                return "AVOID_TRADING"
+            if adverse_risk > 0.5:
+                return "REDUCE_POSITION_SIZE"
+            if safe_leverage < 20:
+                return "USE_LOW_LEVERAGE"
+            return "NORMAL_TRADING"
+
+        except Exception as e:
+            self.print(error("Error generating risk recommendation: {e}"))
+            return "UNKNOWN"
 
     def _calculate_liquidation_prices(
         self,
         current_price: float,
         target_direction: str,
-    ) -> dict[str, Any]:
+    ) -> dict[str, float]:
         """
         Calculate liquidation prices for different leverage levels.
 
         Args:
-            current_price: Current asset price
-            target_direction: "long" or "short"
+            current_price: Current market price
+            target_direction: Target trading direction
 
         Returns:
             dict: Liquidation prices for different leverage levels
@@ -358,138 +412,38 @@ class LiquidationRiskModel:
         try:
             liquidation_prices = {}
 
-            for leverage in sorted(self.leverage_risk_levels.keys()):
-                if target_direction == "long":
-                    # For long positions, liquidation price is below current price
-                    liquidation_price = current_price * (1 - 1 / leverage)
-                    distance_to_liquidation = (
-                        current_price - liquidation_price
-                    ) / current_price
-                else:
-                    # For short positions, liquidation price is above current price
-                    liquidation_price = current_price * (1 + 1 / leverage)
-                    distance_to_liquidation = (
-                        liquidation_price - current_price
-                    ) / current_price
+            for leverage in [10, 20, 30, 50, 75, 100]:
+                if leverage in self.leverage_risk_levels:
+                    max_adverse_move = self.leverage_risk_levels[leverage]
 
-                liquidation_prices[f"{leverage}x"] = {
-                    "liquidation_price": liquidation_price,
-                    "distance_to_liquidation": distance_to_liquidation,
-                    "distance_percentage": distance_to_liquidation * 100,
-                }
+                    if target_direction == "long":
+                        # For long positions, liquidation price is below current price
+                        liquidation_price = current_price * (1 - max_adverse_move)
+                    else:
+                        # For short positions, liquidation price is above current price
+                        liquidation_price = current_price * (1 + max_adverse_move)
 
-            self.logger.info(
-                f"Calculated liquidation prices for {len(liquidation_prices)} leverage levels",
-            )
+                    liquidation_prices[f"{leverage}x"] = liquidation_price
+
             return liquidation_prices
 
-        except Exception:
+        except Exception as e:
             self.print(error("Error calculating liquidation prices: {e}"))
             return {}
 
-    def _classify_risk_level(self, adverse_risk: float) -> str:
-        """Classify risk level based on adverse probability."""
-        if adverse_risk <= 0.05:  # 5% adverse risk
-            return "VERY_LOW"
-        if adverse_risk <= 0.1:  # 10% adverse risk
-            return "LOW"
-        if adverse_risk <= 0.2:  # 20% adverse risk
-            return "MODERATE"
-        if adverse_risk <= 0.3:  # 30% adverse risk
-            return "HIGH"
-        return "VERY_HIGH"
-
-    def _generate_risk_recommendation(
-        self,
-        adverse_risk: float,
-        safe_leverage: int,
-    ) -> str:
-        """Generate risk recommendation based on assessment."""
-        risk_level = self._classify_risk_level(adverse_risk)
-
-        if risk_level == "VERY_LOW":
-            return f"Very low risk environment. Safe to use up to {safe_leverage}x leverage."
-        if risk_level == "LOW":
-            return f"Low risk environment. Safe to use up to {safe_leverage}x leverage."
-        if risk_level == "MODERATE":
-            return f"Moderate risk. Use {safe_leverage}x leverage with caution."
-        if risk_level == "HIGH":
-            return f"High risk environment. Limit leverage to {safe_leverage}x maximum."
-        return f"Very high risk. Avoid leverage or use minimum {safe_leverage}x only."
-
-    def get_risk_assessment(self) -> dict[str, Any]:
-        """Get the latest risk assessment."""
+    def get_risk_assessments(self) -> dict[str, Any]:
+        """Get current risk assessments."""
         return self.risk_assessments
 
-    def get_risk_summary(self) -> dict[str, Any]:
-        """Get a summary of risk metrics."""
-        if not self.risk_assessments:
-            return {}
-
+    def get_model_status(self) -> dict[str, Any]:
+        """Get model status."""
         return {
-            "safe_leverage": self.risk_assessments.get("safe_leverage", 10),
-            "risk_level": self.risk_assessments.get("risk_level", "UNKNOWN"),
-            "adverse_risk": self.risk_assessments.get("adverse_risk", 0.0),
-            "recommendation": self.risk_assessments.get("recommendation", ""),
-            "current_price": self.risk_assessments.get("current_price", 0.0),
-            "timestamp": self.risk_assessments.get("timestamp", ""),
+            "is_initialized": self.is_initialized,
+            "max_leverage": self.max_leverage,
+            "min_leverage": self.min_leverage,
+            "safe_leverage_multiplier": self.safe_leverage_multiplier,
+            "max_adverse_risk": self.max_adverse_risk,
         }
-
-    def get_liquidation_price_for_leverage(
-        self,
-        leverage: int,
-        current_price: float,
-        direction: str,
-    ) -> float:
-        """
-        Get liquidation price for a specific leverage level.
-
-        Args:
-            leverage: Leverage level
-            current_price: Current asset price
-            direction: "long" or "short"
-
-        Returns:
-            float: Liquidation price
-        """
-        try:
-            if direction == "long":
-                return current_price * (1 - 1 / leverage)
-            return current_price * (1 + 1 / leverage)
-        except Exception:
-            self.print(error("Error calculating liquidation price: {e}"))
-            return current_price
-
-    def get_distance_to_liquidation(
-        self,
-        leverage: int,
-        current_price: float,
-        direction: str,
-    ) -> float:
-        """
-        Get distance to liquidation as a percentage.
-
-        Args:
-            leverage: Leverage level
-            current_price: Current asset price
-            direction: "long" or "short"
-
-        Returns:
-            float: Distance to liquidation as percentage
-        """
-        try:
-            liquidation_price = self.get_liquidation_price_for_leverage(
-                leverage,
-                current_price,
-                direction,
-            )
-
-            if direction == "long":
-                return ((current_price - liquidation_price) / current_price) * 100
-            return ((liquidation_price - current_price) / current_price) * 100
-        except Exception:
-            self.print(error("Error calculating distance to liquidation: {e}"))
-            return 0.0
 
     @handle_errors(
         exceptions=(Exception,),
@@ -503,7 +457,7 @@ class LiquidationRiskModel:
             self.is_initialized = False
             self.risk_assessments = {}
             self.logger.info("✅ Liquidation Risk Model stopped successfully")
-        except Exception:
+        except Exception as e:
             self.print(error("❌ Error stopping Liquidation Risk Model: {e}"))
 
 
@@ -537,5 +491,5 @@ async def setup_liquidation_risk_model(
         return None
 
     except Exception:
-        system_logger.exception(error("❌ Error setting up Liquidation Risk Model: {e}"))
+        system_logger.exception(failed("Failed to setup Liquidation Risk Model: {e}"))
         return None

@@ -76,7 +76,7 @@ async def run_enhanced_training(symbol: str, lookback_days: int, timeframe: str 
             logger.info(f"  {key}: {value}")
 
         return True
-    print(failed("❌ Training failed!")))
+    print(failed("❌ Training failed!"))
     return False
 
 

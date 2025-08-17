@@ -31,7 +31,7 @@ from src.utils.warning_symbols import (
 )
 
 
-class MetaLabelingSystem:
+class CompositeHMMRegimeSystem:
     """
     Comprehensive meta-labeling system for path-dependent trading signals.
     Implements both analyst labels (setup identification) and tactician labels (entry optimization).
@@ -39,7 +39,7 @@ class MetaLabelingSystem:
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
-        self.logger = system_logger.getChild("MetaLabelingSystem")
+        self.logger = system_logger.getChild("CompositeHMMRegimeSystem")
 
         # Configuration
         self.labeling_config = config.get("meta_labeling", {})
@@ -55,7 +55,9 @@ class MetaLabelingSystem:
         # Pattern detection parameters
         self.pattern_config = self.labeling_config.get("pattern_detection", {})
         # Centralized thresholds with defaults
-        self.volatility_threshold = self.pattern_config.get("volatility_threshold", 0.02)
+        self.volatility_threshold = self.pattern_config.get(
+            "volatility_threshold", 0.02
+        )
         self.momentum_threshold = self.pattern_config.get("momentum_threshold", 0.01)
         self.volume_threshold = self.pattern_config.get("volume_threshold", 1.5)
         # Bollinger thresholds
@@ -63,25 +65,39 @@ class MetaLabelingSystem:
         self.bb_edge_high = self.pattern_config.get("bb_edge_high", 0.8)
         self.bb_mid_low = self.pattern_config.get("bb_mid_low", 0.3)
         self.bb_mid_high = self.pattern_config.get("bb_mid_high", 0.7)
-        self.bb_width_compression = self.pattern_config.get("bb_width_compression", 0.05)
+        self.bb_width_compression = self.pattern_config.get(
+            "bb_width_compression", 0.05
+        )
         self.bb_width_triangle = self.pattern_config.get("bb_width_triangle", 0.03)
         # Momentum thresholds
-        self.trend_momentum_strong = self.pattern_config.get("trend_momentum_strong", 0.02)
+        self.trend_momentum_strong = self.pattern_config.get(
+            "trend_momentum_strong", 0.02
+        )
         self.breakout_momentum = self.pattern_config.get("breakout_momentum", 0.01)
-        self.failed_break_momentum = self.pattern_config.get("failed_break_momentum", 0.005)
+        self.failed_break_momentum = self.pattern_config.get(
+            "failed_break_momentum", 0.005
+        )
         # RSI thresholds
         self.rsi_overbought = self.pattern_config.get("rsi_overbought", 70)
         self.rsi_oversold = self.pattern_config.get("rsi_oversold", 30)
         self.rsi_momentum_hi = self.pattern_config.get("rsi_momentum_hi", 60)
         self.rsi_momentum_lo = self.pattern_config.get("rsi_momentum_lo", 40)
         # Volume ratios
-        self.absorption_volume_spike = self.pattern_config.get("absorption_volume_spike", 1.5)
-        self.stop_hunt_volume_spike = self.pattern_config.get("stop_hunt_volume_spike", 2.0)
-        self.ignition_volume_spike = self.pattern_config.get("ignition_volume_spike", 3.0)
+        self.absorption_volume_spike = self.pattern_config.get(
+            "absorption_volume_spike", 1.5
+        )
+        self.stop_hunt_volume_spike = self.pattern_config.get(
+            "stop_hunt_volume_spike", 2.0
+        )
+        self.ignition_volume_spike = self.pattern_config.get(
+            "ignition_volume_spike", 3.0
+        )
         # Lookbacks
         self.lookback_breakout = self.pattern_config.get("lookback_breakout", 20)
         self.lookback_stop_hunt = self.pattern_config.get("lookback_stop_hunt", 15)
-        self.lookback_price_position = self.pattern_config.get("lookback_price_position", 20)
+        self.lookback_price_position = self.pattern_config.get(
+            "lookback_price_position", 20
+        )
         self.lookback_poc_bins = self.pattern_config.get("lookback_poc_bins", 20)
         self.lookback_poc_window = self.pattern_config.get("lookback_poc_window", 1440)
         # Support/Resistance parameters
@@ -89,7 +105,9 @@ class MetaLabelingSystem:
         self.sr_near_pct = self.pattern_config.get("sr_near_pct", 0.003)  # 0.3%
         self.sr_break_pct = self.pattern_config.get("sr_break_pct", 0.0005)
         # Liquidity shift parameters
-        self.liquidity_drain_ratio = self.pattern_config.get("liquidity_drain_ratio", 0.6)
+        self.liquidity_drain_ratio = self.pattern_config.get(
+            "liquidity_drain_ratio", 0.6
+        )
         self.wall_removal_drop = self.pattern_config.get("wall_removal_drop", 0.5)
         self.stacking_increase = self.pattern_config.get("stacking_increase", 0.5)
         # Volume profile dynamics
@@ -119,7 +137,9 @@ class MetaLabelingSystem:
         self.weight_min = float(self.aggregation_config.get("w_min", 0.0))
         self.weight_max = float(self.aggregation_config.get("w_max", 1.0))
         self.top_k = int(self.aggregation_config.get("top_k", 0))  # 0 = no pruning
-        self.normalize_weights = bool(self.aggregation_config.get("normalize_weights", False))
+        self.normalize_weights = bool(
+            self.aggregation_config.get("normalize_weights", False)
+        )
 
         # Applicability coverage constraints for threshold tuning
         cov_cfg = self.labeling_config.get("coverage", {})
@@ -127,7 +147,9 @@ class MetaLabelingSystem:
         self.max_coverage = float(cov_cfg.get("max_coverage", 1.0))
 
         # Artifacts directory for persisted thresholds/reliability
-        self.artifacts_dir = self.labeling_config.get("artifacts_dir", "artifacts/meta_labeling")
+        self.artifacts_dir = self.labeling_config.get(
+            "artifacts_dir", "artifacts/meta_labeling"
+        )
         # Active labels set for complementarity-aware pruning
         self.active_labels: set[str] = set()
         # Debug/performance logging controls
@@ -142,30 +164,71 @@ class MetaLabelingSystem:
             "trend_cont_streak": 0,
         }
 
+        # Throttled logging for analyst label summaries (per timeframe)
+        self.analyst_log_throttle_seconds: int = int(
+            self.labeling_config.get("log_throttle_seconds", 60)
+        )
+        self._last_analyst_log: dict[str, str] = {}
+        self._last_analyst_log_ts: dict[str, float] = {}
+
         # Canonical label list (single source of truth)
         self.all_labels: list[str] = [
             # Trend/price action
-            "STRONG_TREND_CONTINUATION","EXHAUSTION_REVERSAL","RANGE_MEAN_REVERSION",
-            "BREAKOUT_SUCCESS","BREAKOUT_FAILURE","FLAG_FORMATION","TRIANGLE_FORMATION","RECTANGLE_FORMATION",
-            "MOMENTUM_IGNITION","IGNITION_BAR","MICRO_MOMENTUM_DIVERGENCE",
+            "STRONG_TREND_CONTINUATION",
+            "EXHAUSTION_REVERSAL",
+            "RANGE_MEAN_REVERSION",
+            "BREAKOUT_SUCCESS",
+            "BREAKOUT_FAILURE",
+            "FLAG_FORMATION",
+            "TRIANGLE_FORMATION",
+            "RECTANGLE_FORMATION",
+            "MOMENTUM_IGNITION",
+            "IGNITION_BAR",
+            "MICRO_MOMENTUM_DIVERGENCE",
             # Volatility
-            "VOLATILITY_COMPRESSION","VOLATILITY_EXPANSION","FLASH_CRASH_PATTERN",
+            "VOLATILITY_COMPRESSION",
+            "VOLATILITY_EXPANSION",
+            "FLASH_CRASH_PATTERN",
             # Volume profile & auction
-            "PRICE_AT_POC","PRICE_REJECTING_VAH","PRICE_REJECTING_VAL","LVN_TRANSIT","POC_SHIFT","HIGH_VOLUME_NODE_REJECTION",
+            "PRICE_AT_POC",
+            "PRICE_REJECTING_VAH",
+            "PRICE_REJECTING_VAL",
+            "LVN_TRANSIT",
+            "POC_SHIFT",
+            "HIGH_VOLUME_NODE_REJECTION",
             # S/R related
-            "SR_TOUCH","SR_BOUNCE","SR_BREAK","SR_FAKE_BREAK",
+            "SR_TOUCH",
+            "SR_BOUNCE",
+            "SR_BREAK",
+            "SR_FAKE_BREAK",
             # Liquidity & market depth
-            "BID_ASK_COMPRESSION","ICE_BERG_ORDERS","LIQUIDITY_DRAIN","BID_WALL_REMOVAL","OFFER_STACKING",
+            "BID_ASK_COMPRESSION",
+            "ICE_BERG_ORDERS",
+            "LIQUIDITY_DRAIN",
+            "BID_WALL_REMOVAL",
+            "OFFER_STACKING",
             # Traps & false signals
-            "BULL_TRAP","BEAR_TRAP","FAKE_BREAKOUT",
+            "BULL_TRAP",
+            "BEAR_TRAP",
+            "FAKE_BREAKOUT",
             # Regime transitions
-            "VOLATILITY_REGIME_CHANGE","TREND_TO_RANGE_TRANSITION",
+            "VOLATILITY_REGIME_CHANGE",
+            "TREND_TO_RANGE_TRANSITION",
             # Risk/conviction
-            "CHOP_WARNING","FAKE_OUT_RISK_HIGH","LOW_CONVICTION_SETUP","HIGH_CONVICTION_SETUP",
+            "CHOP_WARNING",
+            "FAKE_OUT_RISK_HIGH",
+            "LOW_CONVICTION_SETUP",
+            "HIGH_CONVICTION_SETUP",
             # Sentiment/momentum refinements
-            "MOMENTUM_ACCELERATION","MOMENTUM_DECELERATION","CAPITULATION_SELLING","EUPHORIC_BUYING",
+            "MOMENTUM_ACCELERATION",
+            "MOMENTUM_DECELERATION",
+            "CAPITULATION_SELLING",
+            "EUPHORIC_BUYING",
             # Order flow/stop dynamics
-            "STOP_HUNT_BELOW_LOW","STOP_HUNT_ABOVE_HIGH","PASSIVE_ABSORPTION_BID","PASSIVE_ABSORPTION_ASK",
+            "STOP_HUNT_BELOW_LOW",
+            "STOP_HUNT_ABOVE_HIGH",
+            "PASSIVE_ABSORPTION_BID",
+            "PASSIVE_ABSORPTION_ASK",
         ]
 
     @handle_errors(
@@ -176,15 +239,17 @@ class MetaLabelingSystem:
     async def initialize(self) -> bool:
         """Initialize meta-labeling system."""
         try:
-            self.logger.info("🚀 Initializing meta-labeling system...")
+            self.logger.info("🚀 Initializing composite HMM regime system...")
             self.is_initialized = True
             try:
                 self.load_activation_thresholds_from_artifacts()
                 self.load_reliability_from_artifacts()
                 self.load_active_labels_from_artifacts()
             except Exception as e:
-                self.logger.warning(f"Could not load artifacts during initialization: {e}")
-            self.logger.info("✅ Meta-labeling system initialized successfully")
+                self.logger.warning(
+                    f"Could not load artifacts during initialization: {e}"
+                )
+            self.logger.info("✅ Composite HMM regime system initialized successfully")
             return True
         except Exception as e:
             self.logger.exception(
@@ -202,60 +267,80 @@ class MetaLabelingSystem:
         try:
             if price_data.empty or "close" not in price_data.columns:
                 return pd.DataFrame()
-            
+
             # Calculate returns from close prices
             returns_data = price_data.copy()
             returns_data["returns"] = price_data["close"].pct_change()
             # Alias to common naming used elsewhere
             returns_data["close_returns"] = returns_data["returns"]
-            
+
             # Calculate log returns for better statistical properties
-            returns_data["log_returns"] = np.log(price_data["close"] / price_data["close"].shift(1))
-            
+            returns_data["log_returns"] = np.log(
+                price_data["close"] / price_data["close"].shift(1)
+            )
+
             # Calculate rolling returns for different periods
             for period in [5, 10, 20]:
-                returns_data[f"returns_{period}"] = price_data["close"].pct_change(period)
-                returns_data[f"log_returns_{period}"] = np.log(price_data["close"] / price_data["close"].shift(period))
-            
+                returns_data[f"returns_{period}"] = price_data["close"].pct_change(
+                    period
+                )
+                returns_data[f"log_returns_{period}"] = np.log(
+                    price_data["close"] / price_data["close"].shift(period)
+                )
+
             # Remove NaN values
             returns_data = returns_data.dropna()
-            
+
             return returns_data
-            
+
         except Exception as e:
             self.logger.exception(f"Error preparing returns data: {e}")
             return pd.DataFrame()
 
-    def _prepare_stationary_data(self, price_data: pd.DataFrame, volume_data: pd.DataFrame = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    def _prepare_stationary_data(
+        self, price_data: pd.DataFrame, volume_data: pd.DataFrame = None
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """Convert price and volume data to stationary data for analysis."""
         try:
             # Prepare price returns
             returns_data = self._prepare_returns_data(price_data)
-            
+
             # Prepare volume stationary data
             stationary_volume = pd.DataFrame(index=price_data.index)
-            if volume_data is not None and not volume_data.empty and "volume" in volume_data.columns:
+            if (
+                volume_data is not None
+                and not volume_data.empty
+                and "volume" in volume_data.columns
+            ):
                 volume_series = volume_data["volume"]
                 # Primary stationary representation: percent change (aligns with VectorizedStationarityChecker)
-                with np.errstate(divide='ignore', invalid='ignore'):
+                with np.errstate(divide="ignore", invalid="ignore"):
                     stationary_volume["volume_returns"] = volume_series.pct_change()
                 # Log changes for volume (alternative stationary)
-                with np.errstate(divide='ignore', invalid='ignore'):
-                    stationary_volume["volume_log_returns"] = np.log(volume_series / volume_series.shift(1))
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    stationary_volume["volume_log_returns"] = np.log(
+                        volume_series / volume_series.shift(1)
+                    )
                 # Also expose legacy naming
-                stationary_volume["volume_pct_change"] = stationary_volume["volume_returns"]
-                
+                stationary_volume["volume_pct_change"] = stationary_volume[
+                    "volume_returns"
+                ]
+
                 # Calculate rolling volume changes
                 for period in [5, 10, 20]:
-                    with np.errstate(divide='ignore', invalid='ignore'):
-                        stationary_volume[f"volume_log_returns_{period}"] = np.log(volume_series / volume_series.shift(period))
-                    stationary_volume[f"volume_pct_change_{period}"] = volume_series.pct_change(period)
-                
+                    with np.errstate(divide="ignore", invalid="ignore"):
+                        stationary_volume[f"volume_log_returns_{period}"] = np.log(
+                            volume_series / volume_series.shift(period)
+                        )
+                    stationary_volume[f"volume_pct_change_{period}"] = (
+                        volume_series.pct_change(period)
+                    )
+
                 # Remove NaN values
                 stationary_volume = stationary_volume.dropna()
-            
+
             return returns_data, stationary_volume
-            
+
         except Exception as e:
             self.logger.exception(f"Error preparing stationary data: {e}")
             return pd.DataFrame(), pd.DataFrame()
@@ -301,12 +386,18 @@ class MetaLabelingSystem:
                 return {}
 
             # Prepare stationary data for analysis
-            returns_data, stationary_volume = self._prepare_stationary_data(price_data, volume_data)
+            returns_data, stationary_volume = self._prepare_stationary_data(
+                price_data, volume_data
+            )
             if returns_data.empty:
-                self.logger.warning("Could not prepare returns data, using raw price data")
+                self.logger.warning(
+                    "Could not prepare returns data, using raw price data"
+                )
                 returns_data = price_data
             if stationary_volume.empty:
-                self.logger.warning("Could not prepare stationary volume data, using raw volume data")
+                self.logger.warning(
+                    "Could not prepare stationary volume data, using raw volume data"
+                )
                 stationary_volume = volume_data
 
             features = {}
@@ -354,9 +445,13 @@ class MetaLabelingSystem:
                 pass
             try:
                 if "volume" in volume_data.columns:
-                    vol_ma10 = volume_data["volume"].rolling(10, min_periods=1).mean().iloc[-1]
+                    vol_ma10 = (
+                        volume_data["volume"].rolling(10, min_periods=1).mean().iloc[-1]
+                    )
                     last_vol = volume_data["volume"].iloc[-1]
-                    features["volume_spike"] = float(last_vol / vol_ma10) if vol_ma10 else 1.0
+                    features["volume_spike"] = (
+                        float(last_vol / vol_ma10) if vol_ma10 else 1.0
+                    )
             except Exception:
                 pass
 
@@ -396,7 +491,9 @@ class MetaLabelingSystem:
             rs = rs.clip(upper=1e6)  # cap extreme ratios to avoid inf
             rsi_series = 100 - (100 / (1 + rs))
             if rsi_series.replace([np.inf, -np.inf], np.nan).notna().any():
-                features["rsi"] = float(rsi_series.replace([np.inf, -np.inf], np.nan).fillna(100.0).iloc[-1])
+                features["rsi"] = float(
+                    rsi_series.replace([np.inf, -np.inf], np.nan).fillna(100.0).iloc[-1]
+                )
             else:
                 features["rsi"] = 50
 
@@ -463,13 +560,23 @@ class MetaLabelingSystem:
             try:
                 up_move = data["high"].diff()
                 down_move = -data["low"].diff()
-                plus_dm = ((up_move > down_move) & (up_move > 0)).astype(float) * up_move
-                minus_dm = ((down_move > up_move) & (down_move > 0)).astype(float) * down_move
+                plus_dm = ((up_move > down_move) & (up_move > 0)).astype(
+                    float
+                ) * up_move
+                minus_dm = ((down_move > up_move) & (down_move > 0)).astype(
+                    float
+                ) * down_move
                 atr14 = true_range.rolling(14).mean()
                 plus_di = 100 * (plus_dm.rolling(14).mean() / atr14.replace(0, np.nan))
-                minus_di = 100 * (minus_dm.rolling(14).mean() / atr14.replace(0, np.nan))
-                dx = 100 * (np.abs(plus_di - minus_di) / (plus_di + minus_di).replace(0, np.nan))
-                adx = dx.rolling(14).mean().replace([np.inf, -np.inf], np.nan).fillna(20)
+                minus_di = 100 * (
+                    minus_dm.rolling(14).mean() / atr14.replace(0, np.nan)
+                )
+                dx = 100 * (
+                    np.abs(plus_di - minus_di) / (plus_di + minus_di).replace(0, np.nan)
+                )
+                adx = (
+                    dx.rolling(14).mean().replace([np.inf, -np.inf], np.nan).fillna(20)
+                )
                 features["adx"] = float(adx.iloc[-1])
             except Exception:
                 features["adx"] = 20.0
@@ -554,13 +661,15 @@ class MetaLabelingSystem:
                     returns.rolling(10).mean().iloc[-1] if len(returns) >= 10 else 0
                 )
                 features["returns_acceleration"] = (
-                    returns.rolling(5).mean().diff().iloc[-1] if len(returns) >= 5 else 0
+                    returns.rolling(5).mean().diff().iloc[-1]
+                    if len(returns) >= 5
+                    else 0
                 )
                 # Aliases expected downstream by detectors
                 features["price_momentum_5"] = features["returns_momentum_5"]
                 features["price_momentum_10"] = features["returns_momentum_10"]
                 features["price_acceleration"] = features["returns_acceleration"]
-                
+
                 # Returns-based position (relative to recent returns range)
                 if len(returns) >= 20:
                     recent_high = returns.rolling(20).max().iloc[-1]
@@ -578,8 +687,12 @@ class MetaLabelingSystem:
                 # Fallback to price-based patterns if returns not available
                 required_columns = ["open", "high", "low", "close"]
                 if not all(col in data.columns for col in required_columns):
-                    missing_cols = [col for col in required_columns if col not in data.columns]
-                    self.logger.warning(f"Missing required columns for price action patterns: {missing_cols}")
+                    missing_cols = [
+                        col for col in required_columns if col not in data.columns
+                    ]
+                    self.logger.warning(
+                        f"Missing required columns for price action patterns: {missing_cols}"
+                    )
                     return features
 
                 # Support and resistance levels
@@ -646,21 +759,29 @@ class MetaLabelingSystem:
             elif "close" in data.columns:
                 returns = data["close"].pct_change()
             else:
-                self.logger.warning("No returns or close data available for volatility patterns")
+                self.logger.warning(
+                    "No returns or close data available for volatility patterns"
+                )
                 return features
 
             # Remove NaN values
             returns = returns.dropna()
             if len(returns) < 10:
-                self.logger.warning("Insufficient returns data for volatility calculation")
+                self.logger.warning(
+                    "Insufficient returns data for volatility calculation"
+                )
                 return features
 
             # Volatility measures using returns
             features["volatility_20"] = (
-                returns.rolling(20).std().iloc[-1] if len(returns) >= 20 else returns.std()
+                returns.rolling(20).std().iloc[-1]
+                if len(returns) >= 20
+                else returns.std()
             )
             features["volatility_10"] = (
-                returns.rolling(10).std().iloc[-1] if len(returns) >= 10 else returns.std()
+                returns.rolling(10).std().iloc[-1]
+                if len(returns) >= 10
+                else returns.std()
             )
             features["volatility_ratio"] = (
                 features["volatility_10"] / features["volatility_20"]
@@ -677,7 +798,9 @@ class MetaLabelingSystem:
             if len(returns) >= 20:
                 returns_sma20 = returns.rolling(20).mean()
                 returns_std20 = returns.rolling(20).std()
-                bb_width = (returns_sma20 + (returns_std20 * 2)) - (returns_sma20 - (returns_std20 * 2))
+                bb_width = (returns_sma20 + (returns_std20 * 2)) - (
+                    returns_sma20 - (returns_std20 * 2)
+                )
                 features["bb_width"] = (
                     bb_width.iloc[-1] / returns_sma20.iloc[-1]
                     if not returns_sma20.empty and returns_sma20.iloc[-1] > 0
@@ -707,13 +830,17 @@ class MetaLabelingSystem:
             elif "close" in data.columns:
                 returns = data["close"].pct_change()
             else:
-                self.logger.warning("No returns or close data available for momentum patterns")
+                self.logger.warning(
+                    "No returns or close data available for momentum patterns"
+                )
                 return {"MOMENTUM_IGNITION": 0}
 
             # Remove NaN values
             returns = returns.dropna()
             if len(returns) < 5:
-                self.logger.warning("Insufficient returns data for momentum calculation")
+                self.logger.warning(
+                    "Insufficient returns data for momentum calculation"
+                )
                 return {"MOMENTUM_IGNITION": 0}
 
             # Returns-based momentum
@@ -773,7 +900,14 @@ class MetaLabelingSystem:
             bb_pos = float(features.get("bb_position", 0.5))
             vol_ratio = float(features.get("volume_ratio", 1.0))
             vol_20 = float(features.get("volatility_20", 0.0))
-            rng10 = float((high.tail(10).max() - low.tail(10).min()) / max(1e-12, close.iloc[-1])) if len(close) >= 10 else 0.0
+            rng10 = (
+                float(
+                    (high.tail(10).max() - low.tail(10).min())
+                    / max(1e-12, close.iloc[-1])
+                )
+                if len(close) >= 10
+                else 0.0
+            )
             momentum_5 = float(features.get("price_momentum_5", 0.0))
             momentum_10 = float(features.get("price_momentum_10", 0.0))
 
@@ -785,10 +919,19 @@ class MetaLabelingSystem:
             try:
                 # Price progress proxy over last N bars
                 N = 5
-                progress = abs(float(close.iloc[-1] - close.iloc[-N])) / max(1e-12, float(close.iloc[-N])) if len(close) >= N else 0.0
+                progress = (
+                    abs(float(close.iloc[-1] - close.iloc[-N]))
+                    / max(1e-12, float(close.iloc[-N]))
+                    if len(close) >= N
+                    else 0.0
+                )
                 vol_spike = vol_ratio > max(1.5, self.volume_threshold)
-                patterns["PASSIVE_ABSORPTION_BID"] = 1 if (vol_spike and progress < 0.001 and momentum_5 > 0) else 0
-                patterns["PASSIVE_ABSORPTION_ASK"] = 1 if (vol_spike and progress < 0.001 and momentum_5 < 0) else 0
+                patterns["PASSIVE_ABSORPTION_BID"] = (
+                    1 if (vol_spike and progress < 0.001 and momentum_5 > 0) else 0
+                )
+                patterns["PASSIVE_ABSORPTION_ASK"] = (
+                    1 if (vol_spike and progress < 0.001 and momentum_5 < 0) else 0
+                )
             except Exception:
                 patterns["PASSIVE_ABSORPTION_BID"] = 0
                 patterns["PASSIVE_ABSORPTION_ASK"] = 0
@@ -796,13 +939,29 @@ class MetaLabelingSystem:
             # 3) STOP_HUNT_* (poke beyond prior extreme and close back inside)
             try:
                 M = 15
-                prior_recent_low = float(low.rolling(M, min_periods=1).min().shift(1).iloc[-1]) if len(low) >= 2 else float(low.iloc[-1])
-                prior_recent_high = float(high.rolling(M, min_periods=1).max().shift(1).iloc[-1]) if len(high) >= 2 else float(high.iloc[-1])
-                broke_low = float(low.iloc[-1]) < prior_recent_low and float(close.iloc[-1]) > prior_recent_low
-                broke_high = float(high.iloc[-1]) > prior_recent_high and float(close.iloc[-1]) < prior_recent_high
+                prior_recent_low = (
+                    float(low.rolling(M, min_periods=1).min().shift(1).iloc[-1])
+                    if len(low) >= 2
+                    else float(low.iloc[-1])
+                )
+                prior_recent_high = (
+                    float(high.rolling(M, min_periods=1).max().shift(1).iloc[-1])
+                    if len(high) >= 2
+                    else float(high.iloc[-1])
+                )
+                broke_low = (
+                    float(low.iloc[-1]) < prior_recent_low
+                    and float(close.iloc[-1]) > prior_recent_low
+                )
+                broke_high = (
+                    float(high.iloc[-1]) > prior_recent_high
+                    and float(close.iloc[-1]) < prior_recent_high
+                )
                 vol_spike2 = vol_ratio > 2.0
                 patterns["STOP_HUNT_BELOW_LOW"] = 1 if (broke_low and vol_spike2) else 0
-                patterns["STOP_HUNT_ABOVE_HIGH"] = 1 if (broke_high and vol_spike2) else 0
+                patterns["STOP_HUNT_ABOVE_HIGH"] = (
+                    1 if (broke_high and vol_spike2) else 0
+                )
             except Exception:
                 patterns["STOP_HUNT_BELOW_LOW"] = 0
                 patterns["STOP_HUNT_ABOVE_HIGH"] = 0
@@ -827,14 +986,25 @@ class MetaLabelingSystem:
                     vah = float(edges[min(vah_idx, bins - 1)])
                     val = float(edges[max(val_idx, 0)])
                     # Reject VAH/VAL: intrabar breach and close back inside
-                    rejecting_vah = (float(high.iloc[-1]) > vah) and (float(close.iloc[-1]) < vah)
-                    rejecting_val = (float(low.iloc[-1]) < val) and (float(close.iloc[-1]) > val)
+                    rejecting_vah = (float(high.iloc[-1]) > vah) and (
+                        float(close.iloc[-1]) < vah
+                    )
+                    rejecting_val = (float(low.iloc[-1]) < val) and (
+                        float(close.iloc[-1]) > val
+                    )
                     patterns["PRICE_REJECTING_VAH"] = 1 if rejecting_vah else 0
                     patterns["PRICE_REJECTING_VAL"] = 1 if rejecting_val else 0
                     # LVN transit: current in low histogram bin region
                     lvn_threshold = np.percentile(hist, 20)
                     current_bin = int(np.searchsorted(edges, current) - 1)
-                    patterns["LVN_TRANSIT"] = 1 if (0 <= current_bin < len(hist) and hist[current_bin] <= lvn_threshold) else 0
+                    patterns["LVN_TRANSIT"] = (
+                        1
+                        if (
+                            0 <= current_bin < len(hist)
+                            and hist[current_bin] <= lvn_threshold
+                        )
+                        else 0
+                    )
                 else:
                     patterns["PRICE_AT_POC"] = 0
                     patterns["PRICE_REJECTING_VAH"] = 0
@@ -848,29 +1018,52 @@ class MetaLabelingSystem:
 
             # 5) IGNITION_BAR
             try:
-                rng = float((high.iloc[-1] - low.iloc[-1]) / max(1e-12, close.iloc[-1])) if len(close) else 0.0
-                avg_rng = float((high - low).tail(20).mean() / max(1e-12, close.iloc[-1])) if len(close) >= 20 else rng
+                rng = (
+                    float((high.iloc[-1] - low.iloc[-1]) / max(1e-12, close.iloc[-1]))
+                    if len(close)
+                    else 0.0
+                )
+                avg_rng = (
+                    float((high - low).tail(20).mean() / max(1e-12, close.iloc[-1]))
+                    if len(close) >= 20
+                    else rng
+                )
                 vol_spike3 = vol_ratio > 3.0
-                patterns["IGNITION_BAR"] = 1 if (vol_spike3 and rng > 2 * avg_rng and rng10 < 0.02) else 0
+                patterns["IGNITION_BAR"] = (
+                    1 if (vol_spike3 and rng > 2 * avg_rng and rng10 < 0.02) else 0
+                )
             except Exception:
                 patterns["IGNITION_BAR"] = 0
 
             # 6) MICRO_MOMENTUM_DIVERGENCE
             try:
-                made_higher_high = len(high) >= 10 and float(high.iloc[-1]) > float(high.iloc[-10:-1].max())
+                made_higher_high = len(high) >= 10 and float(high.iloc[-1]) > float(
+                    high.iloc[-10:-1].max()
+                )
                 # Compute a short RSI window to detect micro divergence
                 delta = close.diff()
                 gain = delta.where(delta > 0, 0.0).rolling(5, min_periods=1).mean()
                 loss = (-delta.where(delta < 0, 0.0)).rolling(5, min_periods=1).mean()
-                with np.errstate(divide='ignore', invalid='ignore'):
+                with np.errstate(divide="ignore", invalid="ignore"):
                     rs = gain / loss.replace(0, np.nan)
                     rsi_short_series = 100 - (100 / (1 + rs))
                 rsi_short_series = rsi_short_series.fillna(50)
-                rsi_short_now = float(rsi_short_series.iloc[-1]) if len(rsi_short_series) else 50.0
-                rsi_window_max = float(
-                    rsi_short_series.rolling(10, min_periods=2).max().shift(1).iloc[-1]
-                ) if len(rsi_short_series) >= 2 else 50.0
-                patterns["MICRO_MOMENTUM_DIVERGENCE"] = 1 if (made_higher_high and rsi_short_now < rsi_window_max) else 0
+                rsi_short_now = (
+                    float(rsi_short_series.iloc[-1]) if len(rsi_short_series) else 50.0
+                )
+                rsi_window_max = (
+                    float(
+                        rsi_short_series.rolling(10, min_periods=2)
+                        .max()
+                        .shift(1)
+                        .iloc[-1]
+                    )
+                    if len(rsi_short_series) >= 2
+                    else 50.0
+                )
+                patterns["MICRO_MOMENTUM_DIVERGENCE"] = (
+                    1 if (made_higher_high and rsi_short_now < rsi_window_max) else 0
+                )
             except Exception:
                 patterns["MICRO_MOMENTUM_DIVERGENCE"] = 0
 
@@ -883,34 +1076,69 @@ class MetaLabelingSystem:
                 near_sup = abs(cp - sr_sup) / max(1e-12, cp) <= self.sr_near_pct
                 patterns["SR_TOUCH"] = 1 if (near_res or near_sup) else 0
                 # Provide distances for ML models to infer bounce/break nuances downstream
-                patterns["SR_DISTANCE_RESISTANCE_PCT"] = float(abs(cp - sr_res) / max(1e-12, cp))
-                patterns["SR_DISTANCE_SUPPORT_PCT"] = float(abs(cp - sr_sup) / max(1e-12, cp))
+                patterns["SR_DISTANCE_RESISTANCE_PCT"] = float(
+                    abs(cp - sr_res) / max(1e-12, cp)
+                )
+                patterns["SR_DISTANCE_SUPPORT_PCT"] = float(
+                    abs(cp - sr_sup) / max(1e-12, cp)
+                )
             except Exception:
                 patterns["SR_TOUCH"] = patterns.get("SR_TOUCH", 0)
-                patterns["SR_DISTANCE_RESISTANCE_PCT"] = patterns.get("SR_DISTANCE_RESISTANCE_PCT", 1.0)
-                patterns["SR_DISTANCE_SUPPORT_PCT"] = patterns.get("SR_DISTANCE_SUPPORT_PCT", 1.0)
+                patterns["SR_DISTANCE_RESISTANCE_PCT"] = patterns.get(
+                    "SR_DISTANCE_RESISTANCE_PCT", 1.0
+                )
+                patterns["SR_DISTANCE_SUPPORT_PCT"] = patterns.get(
+                    "SR_DISTANCE_SUPPORT_PCT", 1.0
+                )
 
             # 8) Liquidity shifts & market depth (requires order_flow_data; use proxies if limited)
             try:
                 # LIQUIDITY_DRAIN: total depth falls below x% of its rolling mean
-                if order_flow_data is not None and {"bid_depth", "ask_depth"}.issubset(order_flow_data.columns):
-                    bd = order_flow_data["bid_depth"].reindex(close.index, method="ffill").fillna(0)
-                    ad = order_flow_data["ask_depth"].reindex(close.index, method="ffill").fillna(0)
+                if order_flow_data is not None and {"bid_depth", "ask_depth"}.issubset(
+                    order_flow_data.columns
+                ):
+                    bd = (
+                        order_flow_data["bid_depth"]
+                        .reindex(close.index, method="ffill")
+                        .fillna(0)
+                    )
+                    ad = (
+                        order_flow_data["ask_depth"]
+                        .reindex(close.index, method="ffill")
+                        .fillna(0)
+                    )
                     tot = bd + ad
                     ma = tot.rolling(20, min_periods=5).mean()
-                    drain = float(tot.iloc[-1] / max(1e-12, ma.iloc[-1])) < self.liquidity_drain_ratio
+                    drain = (
+                        float(tot.iloc[-1] / max(1e-12, ma.iloc[-1]))
+                        < self.liquidity_drain_ratio
+                    )
                     patterns["LIQUIDITY_DRAIN"] = 1 if drain else 0
                     # BID_WALL_REMOVAL: large drop in bid wall size
                     if "bid_size" in order_flow_data.columns:
-                        bs = order_flow_data["bid_size"].reindex(close.index, method="ffill").fillna(0)
-                        drop = (bs.diff().iloc[-1] < -abs(bs.rolling(10, min_periods=3).mean().iloc[-1] * self.wall_removal_drop))
+                        bs = (
+                            order_flow_data["bid_size"]
+                            .reindex(close.index, method="ffill")
+                            .fillna(0)
+                        )
+                        drop = bs.diff().iloc[-1] < -abs(
+                            bs.rolling(10, min_periods=3).mean().iloc[-1]
+                            * self.wall_removal_drop
+                        )
                         patterns["BID_WALL_REMOVAL"] = 1 if drop else 0
                     else:
                         patterns["BID_WALL_REMOVAL"] = 0
                     # OFFER_STACKING: rapid increase in ask depth
                     if "ask_size" in order_flow_data.columns:
-                        aS = order_flow_data["ask_size"].reindex(close.index, method="ffill").fillna(0)
-                        inc = (aS.diff().iloc[-1] > abs(aS.rolling(10, min_periods=3).mean().iloc[-1] * self.stacking_increase))
+                        aS = (
+                            order_flow_data["ask_size"]
+                            .reindex(close.index, method="ffill")
+                            .fillna(0)
+                        )
+                        inc = aS.diff().iloc[-1] > abs(
+                            aS.rolling(10, min_periods=3).mean().iloc[-1]
+                            * self.stacking_increase
+                        )
                         patterns["OFFER_STACKING"] = 1 if inc else 0
                     else:
                         patterns["OFFER_STACKING"] = 0
@@ -925,8 +1153,26 @@ class MetaLabelingSystem:
 
             # 9) False signals & traps
             try:
-                recent_high = float(high.rolling(self.lookback_breakout, min_periods=5).max().shift(1).iloc[-1]) if len(high) else float(high.iloc[-1])
-                recent_low = float(low.rolling(self.lookback_breakout, min_periods=5).min().shift(1).iloc[-1]) if len(low) else float(low.iloc[-1])
+                recent_high = (
+                    float(
+                        high.rolling(self.lookback_breakout, min_periods=5)
+                        .max()
+                        .shift(1)
+                        .iloc[-1]
+                    )
+                    if len(high)
+                    else float(high.iloc[-1])
+                )
+                recent_low = (
+                    float(
+                        low.rolling(self.lookback_breakout, min_periods=5)
+                        .min()
+                        .shift(1)
+                        .iloc[-1]
+                    )
+                    if len(low)
+                    else float(low.iloc[-1])
+                )
                 broke_up = float(close.iloc[-1]) > recent_high
                 broke_dn = float(close.iloc[-1]) < recent_low
                 mom = float(features.get("price_momentum_5", 0.0))
@@ -936,7 +1182,9 @@ class MetaLabelingSystem:
                 patterns["BEAR_TRAP"] = 1 if (broke_dn and mom > 0 and rev5 > 0) else 0
                 # Fake breakout: break then bb_position retreats to mid within 5 bars
                 bb_pos = float(features.get("bb_position", 0.5))
-                patterns["FAKE_BREAKOUT"] = 1 if ((broke_up or broke_dn) and 0.3 < bb_pos < 0.7) else 0
+                patterns["FAKE_BREAKOUT"] = (
+                    1 if ((broke_up or broke_dn) and 0.3 < bb_pos < 0.7) else 0
+                )
             except Exception:
                 patterns["BULL_TRAP"] = patterns.get("BULL_TRAP", 0)
                 patterns["BEAR_TRAP"] = patterns.get("BEAR_TRAP", 0)
@@ -952,23 +1200,54 @@ class MetaLabelingSystem:
                     poc_idx = int(np.argmax(hist))
                     poc = float((edges[poc_idx] + edges[poc_idx + 1]) / 2.0)
                     # Prior window
-                    prev_seg = close.tail(window + 50).head(window).values if len(close) >= window + 50 else seg
-                    prev_hist, prev_edges = np.histogram(prev_seg, bins=self.lookback_poc_bins)
+                    prev_seg = (
+                        close.tail(window + 50).head(window).values
+                        if len(close) >= window + 50
+                        else seg
+                    )
+                    prev_hist, prev_edges = np.histogram(
+                        prev_seg, bins=self.lookback_poc_bins
+                    )
                     prev_poc_idx = int(np.argmax(prev_hist))
-                    prev_poc = float((prev_edges[prev_poc_idx] + prev_edges[prev_poc_idx + 1]) / 2.0)
-                    patterns["POC_SHIFT"] = 1 if (abs(poc - prev_poc) / max(1e-12, prev_poc) >= self.poc_shift_threshold) else 0
+                    prev_poc = float(
+                        (prev_edges[prev_poc_idx] + prev_edges[prev_poc_idx + 1]) / 2.0
+                    )
+                    patterns["POC_SHIFT"] = (
+                        1
+                        if (
+                            abs(poc - prev_poc) / max(1e-12, prev_poc)
+                            >= self.poc_shift_threshold
+                        )
+                        else 0
+                    )
                     # HVN rejection: current price near HVN bin edge then reverse
                     hvn_cut = np.percentile(hist, self.hvn_percentile)
                     current = float(close.iloc[-1])
                     cur_bin = int(np.searchsorted(edges, current) - 1)
                     hvn_hit = 0 <= cur_bin < len(hist) and hist[cur_bin] >= hvn_cut
-                    patterns["HIGH_VOLUME_NODE_REJECTION"] = 1 if (hvn_hit and (abs(float(close.pct_change(3).iloc[-1]) if len(close) >= 4 else 0.0) > 0)) else 0
+                    patterns["HIGH_VOLUME_NODE_REJECTION"] = (
+                        1
+                        if (
+                            hvn_hit
+                            and (
+                                abs(
+                                    float(close.pct_change(3).iloc[-1])
+                                    if len(close) >= 4
+                                    else 0.0
+                                )
+                                > 0
+                            )
+                        )
+                        else 0
+                    )
                 else:
                     patterns.setdefault("POC_SHIFT", 0)
                     patterns.setdefault("HIGH_VOLUME_NODE_REJECTION", 0)
             except Exception:
                 patterns["POC_SHIFT"] = patterns.get("POC_SHIFT", 0)
-                patterns["HIGH_VOLUME_NODE_REJECTION"] = patterns.get("HIGH_VOLUME_NODE_REJECTION", 0)
+                patterns["HIGH_VOLUME_NODE_REJECTION"] = patterns.get(
+                    "HIGH_VOLUME_NODE_REJECTION", 0
+                )
 
             # 11) Market regime transitions
             try:
@@ -976,15 +1255,23 @@ class MetaLabelingSystem:
                 vol10 = float(features.get("volatility_10", 0.0))
                 prev_regime = int(self.state.get("vol_regime", 0))
                 curr_regime = 1 if vol20 > self.volatility_threshold else 0
-                patterns["VOLATILITY_REGIME_CHANGE"] = 1 if curr_regime != prev_regime else 0
+                patterns["VOLATILITY_REGIME_CHANGE"] = (
+                    1 if curr_regime != prev_regime else 0
+                )
                 self.state["vol_regime"] = curr_regime
                 # Trend-to-range transition: ADX falls and bb_width expands into mid
                 adx = float(features.get("adx", 20.0))
                 bb_width = float(features.get("bb_width", 0.0))
-                patterns["TREND_TO_RANGE_TRANSITION"] = 1 if (adx < 20 and bb_width > self.bb_width_compression) else 0
+                patterns["TREND_TO_RANGE_TRANSITION"] = (
+                    1 if (adx < 20 and bb_width > self.bb_width_compression) else 0
+                )
             except Exception:
-                patterns["VOLATILITY_REGIME_CHANGE"] = patterns.get("VOLATILITY_REGIME_CHANGE", 0)
-                patterns["TREND_TO_RANGE_TRANSITION"] = patterns.get("TREND_TO_RANGE_TRANSITION", 0)
+                patterns["VOLATILITY_REGIME_CHANGE"] = patterns.get(
+                    "VOLATILITY_REGIME_CHANGE", 0
+                )
+                patterns["TREND_TO_RANGE_TRANSITION"] = patterns.get(
+                    "TREND_TO_RANGE_TRANSITION", 0
+                )
 
             return patterns
 
@@ -1081,9 +1368,13 @@ class MetaLabelingSystem:
             features.get("price_position", 0.5)
 
             # Conditions for range mean reversion
-            is_at_edge = bb_position < self.bb_edge_low or bb_position > self.bb_edge_high
+            is_at_edge = (
+                bb_position < self.bb_edge_low or bb_position > self.bb_edge_high
+            )
             is_low_volatility = volatility < self.volatility_threshold
-            is_sideways = abs(features.get("price_momentum_10", 0)) < self.momentum_threshold
+            is_sideways = (
+                abs(features.get("price_momentum_10", 0)) < self.momentum_threshold
+            )
 
             range_mean_reversion = is_at_edge and is_low_volatility and is_sideways
 
@@ -1114,25 +1405,35 @@ class MetaLabelingSystem:
             rolling_high = data["high"].rolling(20, min_periods=1).max().shift(1)
             rolling_low = data["low"].rolling(20, min_periods=1).min().shift(1)
             recent_high = (
-                float(rolling_high.iloc[-1]) if not rolling_high.empty else current_price
+                float(rolling_high.iloc[-1])
+                if not rolling_high.empty
+                else current_price
             )
             recent_low = (
                 float(rolling_low.iloc[-1]) if not rolling_low.empty else current_price
             )
 
             # Breakout success: price breaks prior level and continues with momentum and volume
-            is_breakout_up = current_price > recent_high and momentum > self.breakout_momentum
-            is_breakout_down = current_price < recent_low and momentum < -self.breakout_momentum
+            is_breakout_up = (
+                current_price > recent_high and momentum > self.breakout_momentum
+            )
+            is_breakout_down = (
+                current_price < recent_low and momentum < -self.breakout_momentum
+            )
             is_high_volume = volume_ratio > self.volume_threshold
             breakout_success = (is_breakout_up or is_breakout_down) and is_high_volume
 
             # Breakout failure: price pushes to BB extremes but lacks follow-through
-            is_failed_breakout = (bb_position > self.bb_edge_high or bb_position < self.bb_edge_low) and abs(momentum) < self.failed_break_momentum
+            is_failed_breakout = (
+                bb_position > self.bb_edge_high or bb_position < self.bb_edge_low
+            ) and abs(momentum) < self.failed_break_momentum
 
             return {
                 "BREAKOUT_SUCCESS": 1 if breakout_success else 0,
                 "BREAKOUT_FAILURE": 1 if is_failed_breakout else 0,
-                "breakout_confidence": min(volume_ratio / 2, 1.0) if breakout_success else 0,
+                "breakout_confidence": min(volume_ratio / 2, 1.0)
+                if breakout_success
+                else 0,
             }
 
         except Exception as e:
@@ -1155,7 +1456,9 @@ class MetaLabelingSystem:
             volume_ratio = features.get("volume_ratio", 1.0)
 
             # Volatility compression: BB width narrowing
-            is_compression = bb_width < self.bb_width_compression and volatility_ratio < 0.8
+            is_compression = (
+                bb_width < self.bb_width_compression and volatility_ratio < 0.8
+            )
 
             # Volatility expansion: sudden increase in volatility
             is_expansion = (
@@ -1367,7 +1670,9 @@ class MetaLabelingSystem:
             signals = {}
 
             # VWAP reversion entry (use rolling VWAP from features if available)
-            current_price = float(features.get("current_price", 0.0) or features.get("close", 0.0) or 0.0)
+            current_price = float(
+                features.get("current_price", 0.0) or features.get("close", 0.0) or 0.0
+            )
             vwap = float(features.get("vwap", current_price))
             price_vwap_ratio = current_price / vwap if vwap != 0 else 1.0
             is_vwap_reversion = abs(price_vwap_ratio - 1.0) < 0.01
@@ -1375,7 +1680,9 @@ class MetaLabelingSystem:
 
             # Market order now: aggressive momentum with volume spike
             momentum = float(features.get("price_momentum_5", 0.0))
-            volume_spike = float(features.get("volume_spike", features.get("volume_ratio", 1.0)))
+            volume_spike = float(
+                features.get("volume_spike", features.get("volume_ratio", 1.0))
+            )
             is_market_order = (
                 abs(momentum) > self.momentum_threshold * 2
                 and volume_spike > self.volume_threshold
@@ -1385,20 +1692,34 @@ class MetaLabelingSystem:
             # Chase micro breakout: break last N bars' high/low
             prev_high = float(features.get("recent_high", current_price))
             prev_low = float(features.get("recent_low", current_price))
-            is_micro_breakout = (current_price > prev_high) or (current_price < prev_low)
+            is_micro_breakout = (current_price > prev_high) or (
+                current_price < prev_low
+            )
             signals["CHASE_MICRO_BREAKOUT"] = 1 if is_micro_breakout else 0
 
             # Order book imbalance flip (requires order flow)
             is_imbalance_flip = False
-            if order_flow_data is not None and {"bid_volume", "ask_volume"}.issubset(order_flow_data.columns):
+            if order_flow_data is not None and {"bid_volume", "ask_volume"}.issubset(
+                order_flow_data.columns
+            ):
                 try:
                     last_b = float(order_flow_data["bid_volume"].iloc[-1])
                     last_a = float(order_flow_data["ask_volume"].iloc[-1])
-                    prev_b = float(order_flow_data["bid_volume"].iloc[-2]) if len(order_flow_data) >= 2 else last_b
-                    prev_a = float(order_flow_data["ask_volume"].iloc[-2]) if len(order_flow_data) >= 2 else last_a
+                    prev_b = (
+                        float(order_flow_data["bid_volume"].iloc[-2])
+                        if len(order_flow_data) >= 2
+                        else last_b
+                    )
+                    prev_a = (
+                        float(order_flow_data["ask_volume"].iloc[-2])
+                        if len(order_flow_data) >= 2
+                        else last_a
+                    )
                     prev_imb = (prev_b - prev_a) / max(1e-12, (prev_b + prev_a))
                     last_imb = (last_b - last_a) / max(1e-12, (last_b + last_a))
-                    is_imbalance_flip = (prev_imb > 0 and last_imb < 0) or (prev_imb < 0 and last_imb > 0)
+                    is_imbalance_flip = (prev_imb > 0 and last_imb < 0) or (
+                        prev_imb < 0 and last_imb > 0
+                    )
                 except Exception:
                     is_imbalance_flip = False
             signals["ORDERBOOK_IMBALANCE_FLIP"] = 1 if is_imbalance_flip else 0
@@ -1511,26 +1832,47 @@ class MetaLabelingSystem:
             if precomputed_features:
                 features = dict(precomputed_features)
             else:
-                features = await self._calculate_pattern_features(price_data, volume_data)
+                features = await self._calculate_pattern_features(
+                    price_data, volume_data
+                )
 
             # 1) Prefer HMM composite regime labels over meta labels, but preserve S/R labels
             analyst_labels: dict[str, Any] = {}
             try:
                 # Resolve exchange/symbol from config or features context
-                exchange = str(self.config.get("EXCHANGE", self.config.get("exchange", "BINANCE")))
-                symbol = str(self.config.get("SYMBOL", self.config.get("symbol", "ETHUSDT")))
+                exchange = str(
+                    self.config.get("EXCHANGE", self.config.get("exchange", "BINANCE"))
+                )
+                symbol = str(
+                    self.config.get("SYMBOL", self.config.get("symbol", "ETHUSDT"))
+                )
                 data_dir = str(self.config.get("DATA_DIR", "data/training"))
-                comp_path = os.path.join(data_dir, f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet")
-                if os.path.exists(comp_path):
-                    comp_df = pd.read_parquet(comp_path)
+
+                # Use centralized HMM composite manager
+                from src.utils.hmm_composite_manager import get_hmm_composite_manager
+
+                hmm_manager = get_hmm_composite_manager()
+
+                # Load once per run (manager caches and rate-limits logging)
+                comp_df = hmm_manager.load_composite_clusters(
+                    exchange, symbol, timeframe, data_dir, auto_create=True
+                )
+                if comp_df is not None:
                     # align last timestamp
                     if "timestamp" in comp_df.columns:
-                        comp_df["timestamp"] = pd.to_datetime(comp_df["timestamp"], errors="coerce", utc=True)
-                        comp_df = comp_df.dropna(subset=["timestamp"]).sort_values("timestamp")
+                        comp_df["timestamp"] = pd.to_datetime(
+                            comp_df["timestamp"], errors="coerce", utc=True
+                        )
+                        comp_df = comp_df.dropna(subset=["timestamp"]).sort_values(
+                            "timestamp"
+                        )
                         comp_df = comp_df.set_index("timestamp")
                     # Determine current timestamp context from price_data
                     ts = None
-                    if isinstance(price_data.index, pd.DatetimeIndex) and len(price_data.index) > 0:
+                    if (
+                        isinstance(price_data.index, pd.DatetimeIndex)
+                        and len(price_data.index) > 0
+                    ):
                         ts = price_data.index[-1]
                     if ts is not None and isinstance(ts, pd.Timestamp):
                         row = comp_df.loc[comp_df.index <= ts].tail(1)
@@ -1542,8 +1884,6 @@ class MetaLabelingSystem:
                         # Expose soft probabilities via short-window EWMA of current cluster index (proxy)
                         # Note: true p_k(t) time series can be persisted later; here we expose basic context
                         analyst_labels["HMM_IS_ASSIGNED"] = 1 if cid >= 0 else 0
-                else:
-                    self.logger.info(f"HMM composite clusters not found for {exchange}_{symbol}_{timeframe}; using meta-only")
             except Exception as e:
                 self.logger.warning(f"HMM composite cluster integration failed: {e}")
 
@@ -1552,16 +1892,34 @@ class MetaLabelingSystem:
                 sr_only = {}
                 sr_only.update(self._detect_sr_touch_bounce_break(price_data, features))
                 # Retain only proximity SR labels for downstream ML
-                sr_keys = ("SR_TOUCH", "SR_DISTANCE_RESISTANCE_PCT", "SR_DISTANCE_SUPPORT_PCT")
+                sr_keys = (
+                    "SR_TOUCH",
+                    "SR_DISTANCE_RESISTANCE_PCT",
+                    "SR_DISTANCE_SUPPORT_PCT",
+                )
                 sr_keep = {k: features.get(k) for k in sr_keys if k in features}
                 analyst_labels.update(sr_keep)
             except Exception:
                 pass
 
-            # 3) Optionally keep a minimal subset of meta labels complementary to HMM regimes
+            # 3) Do NOT add legacy meta labels; HMM + SR only (explicitly enforced)
             try:
-                # No additional meta labels retained; S/R labels provide the structure
-                pass
+                # Intentionally no legacy meta labels added
+                # Ensure prior meta-only labels are not leaking in
+                for k in list(analyst_labels.keys()):
+                    if (
+                        k
+                        not in (
+                            "HMM_COMPOSITE_CLUSTER",
+                            "HMM_IS_ASSIGNED",
+                            "SR_TOUCH",
+                            "SR_DISTANCE_RESISTANCE_PCT",
+                            "SR_DISTANCE_SUPPORT_PCT",
+                        )
+                        and k.isupper()
+                    ):
+                        # Remove any unintended legacy meta label
+                        analyst_labels.pop(k, None)
             except Exception:
                 pass
 
@@ -1590,15 +1948,46 @@ class MetaLabelingSystem:
             # No intensity/activation scoring here; HMM-ML system governs regime and model activation
 
             try:
-                # Summarize analyst label activations once per timeframe
-                summary_parts = [k for k, v in analyst_labels.items() if isinstance(v, (int, float)) and k.isupper() and v > 0]
-                self.logger.info(
-                    f"Analyst labels [{timeframe}] count={analyst_labels.get('label_count', 0)} | " + ", ".join(summary_parts[:20]) + (" ..." if len(summary_parts) > 20 else "")
+                # Build summary line (top 20 active labels) and throttle duplicates
+                summary_parts = [
+                    k
+                    for k, v in analyst_labels.items()
+                    if isinstance(v, (int, float)) and k.isupper() and v > 0
+                ]
+                base_msg = f"Analyst labels [{timeframe}] count={analyst_labels.get('label_count', 0)}"
+                if summary_parts:
+                    msg = (
+                        base_msg
+                        + " | "
+                        + ", ".join(summary_parts[:20])
+                        + (" ..." if len(summary_parts) > 20 else "")
+                    )
+                else:
+                    msg = base_msg
+
+                now_ts = time.time()
+                last_msg = self._last_analyst_log.get(timeframe)
+                last_ts = self._last_analyst_log_ts.get(timeframe, 0.0)
+                should_log = (msg != last_msg) or (
+                    now_ts - last_ts >= self.analyst_log_throttle_seconds
                 )
+                if should_log:
+                    self.logger.info(msg)
+                    self._last_analyst_log[timeframe] = msg
+                    self._last_analyst_log_ts[timeframe] = now_ts
             except Exception:
-                self.logger.info(
-                    f"Analyst labels [{timeframe}] count={analyst_labels.get('label_count', 0)}"
+                # On any unexpected error, fall back to a throttled minimal line
+                msg = f"Analyst labels [{timeframe}] count={analyst_labels.get('label_count', 0)}"
+                now_ts = time.time()
+                last_msg = self._last_analyst_log.get(timeframe)
+                last_ts = self._last_analyst_log_ts.get(timeframe, 0.0)
+                should_log = (msg != last_msg) or (
+                    now_ts - last_ts >= self.analyst_log_throttle_seconds
                 )
+                if should_log:
+                    self.logger.info(msg)
+                    self._last_analyst_log[timeframe] = msg
+                    self._last_analyst_log_ts[timeframe] = now_ts
             return analyst_labels
 
         except Exception as e:
@@ -1709,12 +2098,14 @@ class MetaLabelingSystem:
                             summaries[k] = {"type": type(v).__name__}
                     except Exception:
                         summaries[k] = {"summary": "unavailable"}
-                self.logger.info({
-                    "msg": f"Tactician labels summary for {timeframe}",
-                    "timeframe": timeframe,
-                    "signal_count": tactician_labels.get("signal_count", 0),
-                    "labels": summaries,
-                })
+                self.logger.info(
+                    {
+                        "msg": f"Tactician labels summary for {timeframe}",
+                        "timeframe": timeframe,
+                        "signal_count": tactician_labels.get("signal_count", 0),
+                        "labels": summaries,
+                    }
+                )
             except Exception as e:
                 self.logger.warning(f"Failed to log tactician label summary: {e}")
             return tactician_labels
@@ -1770,9 +2161,17 @@ class MetaLabelingSystem:
             )
 
             # Combine labels and compute MoE-based weights placeholder
-            label_keys = [k for k, v in analyst_labels.items() if k.isupper() and isinstance(v, (int, float))]
-            intensities = {k: analyst_labels.get(f"intensity_{k}", 0.0) for k in label_keys}
-            moe_confidences: dict[str, float] = {k: 0.5 for k in label_keys}  # placeholder; replace with real MoE output
+            label_keys = [
+                k
+                for k, v in analyst_labels.items()
+                if k.isupper() and isinstance(v, (int, float))
+            ]
+            intensities = {
+                k: analyst_labels.get(f"intensity_{k}", 0.0) for k in label_keys
+            }
+            moe_confidences: dict[str, float] = {
+                k: 0.5 for k in label_keys
+            }  # placeholder; replace with real MoE output
             weights = self.compute_label_weights(intensities, moe_confidences)
 
             avg_conf = float(np.mean(list(weights.values()))) if weights else 0.0
@@ -1784,7 +2183,8 @@ class MetaLabelingSystem:
                 "combined_confidence": avg_conf,
                 "combined_timestamp": pd.Timestamp.now().isoformat(),
                 "total_labels": (
-                    int(analyst_labels.get("label_count", 0)) + int(tactician_labels.get("signal_count", 0))
+                    int(analyst_labels.get("label_count", 0))
+                    + int(tactician_labels.get("signal_count", 0))
                 ),
             }
 
@@ -1854,9 +2254,15 @@ class MetaLabelingSystem:
         """Compute a 0-1 intensity score per label using bounded linear scaling and percentile ranking for unbounded metrics."""
         try:
             close = price_data["close"]
-            volume = volume_data["volume"] if "volume" in volume_data.columns else pd.Series(index=close.index, dtype=float)
+            volume = (
+                volume_data["volume"]
+                if "volume" in volume_data.columns
+                else pd.Series(index=close.index, dtype=float)
+            )
             # Common series
-            vol_ratio_series = (volume / volume.rolling(20, min_periods=5).mean()).replace([np.inf, -np.inf], np.nan)
+            vol_ratio_series = (
+                volume / volume.rolling(20, min_periods=5).mean()
+            ).replace([np.inf, -np.inf], np.nan)
             momentum5_series = close.pct_change(5).rolling(5, min_periods=1).sum()
 
             if label_name == "STRONG_TREND_CONTINUATION":
@@ -1865,7 +2271,9 @@ class MetaLabelingSystem:
                 rsi = float(features.get("rsi", 50.0))
                 part_trend = self._percentile_rank(close.pct_change(10), trend)
                 part_bb = 1.0 - abs(bb_pos - 0.5) / 0.5
-                part_rsi = 1.0 - abs((rsi - (self.rsi_oversold + self.rsi_overbought) / 2) / 50.0)
+                part_rsi = 1.0 - abs(
+                    (rsi - (self.rsi_oversold + self.rsi_overbought) / 2) / 50.0
+                )
                 return float(np.clip((part_trend + part_bb + part_rsi) / 3.0, 0.0, 1.0))
 
             if label_name == "EXHAUSTION_REVERSAL":
@@ -1877,16 +2285,31 @@ class MetaLabelingSystem:
                 part_bb = self._linear_scale(bb_pos, self.bb_edge_high, 1.0)
                 part_mom = self._percentile_rank(-momentum5_series, -momentum)
                 part_vol = self._percentile_rank(vol_ratio_series, vol_ratio)
-                return float(np.clip((part_rsi + part_bb + part_mom + part_vol) / 4.0, 0.0, 1.0))
+                return float(
+                    np.clip((part_rsi + part_bb + part_mom + part_vol) / 4.0, 0.0, 1.0)
+                )
 
             if label_name == "RANGE_MEAN_REVERSION":
                 bb_pos = float(features.get("bb_position", 0.5))
                 vol20 = float(features.get("volatility_20", 0.0))
                 mom10 = float(features.get("price_momentum_10", 0.0))
-                part_edge = max(self._linear_scale(self.bb_edge_low - bb_pos, 0.0, self.bb_edge_low), self._linear_scale(bb_pos - self.bb_edge_high, 0.0, 1.0 - self.bb_edge_high))
-                part_vol = 1.0 - self._percentile_rank(close.pct_change().rolling(20).std(), vol20)
-                part_sideways = 1.0 - self._percentile_rank(abs(close.pct_change(10)), abs(mom10))
-                return float(np.clip((part_edge + part_vol + part_sideways) / 3.0, 0.0, 1.0))
+                part_edge = max(
+                    self._linear_scale(
+                        self.bb_edge_low - bb_pos, 0.0, self.bb_edge_low
+                    ),
+                    self._linear_scale(
+                        bb_pos - self.bb_edge_high, 0.0, 1.0 - self.bb_edge_high
+                    ),
+                )
+                part_vol = 1.0 - self._percentile_rank(
+                    close.pct_change().rolling(20).std(), vol20
+                )
+                part_sideways = 1.0 - self._percentile_rank(
+                    abs(close.pct_change(10)), abs(mom10)
+                )
+                return float(
+                    np.clip((part_edge + part_vol + part_sideways) / 3.0, 0.0, 1.0)
+                )
 
             if label_name in ("BREAKOUT_SUCCESS", "BREAKOUT_FAILURE"):
                 momentum = float(features.get("price_momentum_5", 0.0))
@@ -1900,10 +2323,14 @@ class MetaLabelingSystem:
                 bb_width = float(features.get("bb_width", 0.0))
                 vol_ratio = float(features.get("volatility_ratio", 1.0))
                 if label_name == "VOLATILITY_COMPRESSION":
-                    part_width = 1.0 - self._percentile_rank(price_data["close"].rolling(20).std(), bb_width)
+                    part_width = 1.0 - self._percentile_rank(
+                        price_data["close"].rolling(20).std(), bb_width
+                    )
                     part_vr = 1.0 - self._linear_scale(vol_ratio, 1.0, 2.0)
                 else:
-                    part_width = self._percentile_rank(price_data["close"].rolling(20).std(), bb_width)
+                    part_width = self._percentile_rank(
+                        price_data["close"].rolling(20).std(), bb_width
+                    )
                     part_vr = self._linear_scale(vol_ratio, 1.0, 2.0)
                 return float(np.clip((part_width + part_vr) / 2.0, 0.0, 1.0))
 
@@ -1911,8 +2338,15 @@ class MetaLabelingSystem:
                 rsi = float(features.get("rsi", 50.0))
                 macd_hist = float(features.get("macd_histogram", 0.0))
                 momentum = float(features.get("price_momentum_5", 0.0))
-                part_rsi = max(self._linear_scale(rsi, self.rsi_momentum_hi, 100.0), self._linear_scale(100.0 - rsi, self.rsi_momentum_lo, 100.0))
-                part_macd = self._percentile_rank(price_data["close"].ewm(span=12).mean() - price_data["close"].ewm(span=26).mean(), macd_hist)
+                part_rsi = max(
+                    self._linear_scale(rsi, self.rsi_momentum_hi, 100.0),
+                    self._linear_scale(100.0 - rsi, self.rsi_momentum_lo, 100.0),
+                )
+                part_macd = self._percentile_rank(
+                    price_data["close"].ewm(span=12).mean()
+                    - price_data["close"].ewm(span=26).mean(),
+                    macd_hist,
+                )
                 part_mom = self._percentile_rank(abs(momentum5_series), abs(momentum))
                 return float(np.clip((part_rsi + part_macd + part_mom) / 3.0, 0.0, 1.0))
 
@@ -1921,7 +2355,10 @@ class MetaLabelingSystem:
                 p3 = float(close.pct_change(3).iloc[-1]) if len(close) >= 4 else 0.0
                 rsi = float(features.get("rsi", 50.0))
                 volr = float(features.get("volume_ratio", 1.0))
-                part_drop = max(self._linear_scale(-p1, 0.0, 0.03), self._linear_scale(-p3, 0.0, 0.05))
+                part_drop = max(
+                    self._linear_scale(-p1, 0.0, 0.03),
+                    self._linear_scale(-p3, 0.0, 0.05),
+                )
                 part_vol = self._percentile_rank(vol_ratio_series, volr)
                 part_rsi = self._linear_scale(30.0 - rsi, 0.0, 30.0)
                 return float(np.clip((part_drop + part_vol + part_rsi) / 3.0, 0.0, 1.0))
@@ -1931,7 +2368,9 @@ class MetaLabelingSystem:
                 p3 = float(close.pct_change(3).iloc[-1]) if len(close) >= 4 else 0.0
                 rsi = float(features.get("rsi", 50.0))
                 volr = float(features.get("volume_ratio", 1.0))
-                part_up = max(self._linear_scale(p1, 0.0, 0.03), self._linear_scale(p3, 0.0, 0.05))
+                part_up = max(
+                    self._linear_scale(p1, 0.0, 0.03), self._linear_scale(p3, 0.0, 0.05)
+                )
                 part_vol = self._percentile_rank(vol_ratio_series, volr)
                 part_rsi = self._linear_scale(rsi - 70.0, 0.0, 30.0)
                 return float(np.clip((part_up + part_vol + part_rsi) / 3.0, 0.0, 1.0))
@@ -1967,14 +2406,18 @@ class MetaLabelingSystem:
     ) -> dict[str, float]:
         scores: dict[str, float] = {}
         for name in label_names:
-            scores[name] = self._compute_label_intensity(name, price_data, volume_data, features)
+            scores[name] = self._compute_label_intensity(
+                name, price_data, volume_data, features
+            )
         return scores
 
     # Activation thresholds and reliability
     def _init_thresholds_and_reliability(self) -> None:
         self.activation_thresholds: dict[str, float] = {}
         self.reliability_scores: dict[str, float] = {}
-        self.default_activation_threshold: float = float(self.pattern_config.get("default_activation_threshold", 0.5))
+        self.default_activation_threshold: float = float(
+            self.pattern_config.get("default_activation_threshold", 0.5)
+        )
 
     def set_activation_threshold(self, label: str, threshold: float) -> None:
         if not hasattr(self, "activation_thresholds"):
@@ -2004,17 +2447,19 @@ class MetaLabelingSystem:
 
         scores: dict[str, float] = {}
         if self.debug_logging:
-            self.logger.info({
-                "msg": "compute_label_weights_start",
-                "labels": len(intensity_scores),
-                "alpha": alpha,
-                "beta": beta,
-                "gamma": gamma,
-                "top_k": top_k,
-                "w_min": w_min,
-                "w_max": w_max,
-                "normalize": normalize,
-            })
+            self.logger.info(
+                {
+                    "msg": "compute_label_weights_start",
+                    "labels": len(intensity_scores),
+                    "alpha": alpha,
+                    "beta": beta,
+                    "gamma": gamma,
+                    "top_k": top_k,
+                    "w_min": w_min,
+                    "w_max": w_max,
+                    "normalize": normalize,
+                }
+            )
         for label, intensity in intensity_scores.items():
             conf = float(np.clip((moe_confidences or {}).get(label, 0.5), 0.0, 1.0))
             rel = float(np.clip(self.reliability_scores.get(label, 1.0), 0.0, 1.0))
@@ -2026,14 +2471,16 @@ class MetaLabelingSystem:
             scores[label] = float(np.clip(s, 0.0, 1.0))
             if self.debug_logging:
                 try:
-                    self.logger.info({
-                        "msg": "mixture_components",
-                        "label": label,
-                        "intensity": float(intensity),
-                        "confidence": float(conf),
-                        "reliability": float(rel),
-                        "mixture_score": float(scores[label]),
-                    })
+                    self.logger.info(
+                        {
+                            "msg": "mixture_components",
+                            "label": label,
+                            "intensity": float(intensity),
+                            "confidence": float(conf),
+                            "reliability": float(rel),
+                            "mixture_score": float(scores[label]),
+                        }
+                    )
                 except Exception:
                     pass
 
@@ -2045,7 +2492,13 @@ class MetaLabelingSystem:
         if self.debug_logging:
             try:
                 kept = sorted(list(keep))
-                self.logger.info({"msg": "top_k_selection", "kept_count": len(kept), "kept_labels": kept[:20]})
+                self.logger.info(
+                    {
+                        "msg": "top_k_selection",
+                        "kept_count": len(kept),
+                        "kept_labels": kept[:20],
+                    }
+                )
             except Exception:
                 pass
 
@@ -2056,7 +2509,9 @@ class MetaLabelingSystem:
                 if self.active_labels and (label not in self.active_labels):
                     weights[label] = 0.0
                     if self.debug_logging:
-                        self.logger.info({"msg": "inactive_label_zeroed", "label": label})
+                        self.logger.info(
+                            {"msg": "inactive_label_zeroed", "label": label}
+                        )
                     continue
                 lo = w_min if w_min > 0 else 0.0
                 hi = w_max if w_max < 1.0 else 1.0
@@ -2075,7 +2530,14 @@ class MetaLabelingSystem:
                 vmax = max(weights.values()) if weights else 0.0
             except Exception:
                 vmax = 0.0
-            self.logger.info({"msg": "compute_label_weights_end", "duration_ms": dt_ms, "labels": len(weights), "max_weight": float(vmax)})
+            self.logger.info(
+                {
+                    "msg": "compute_label_weights_end",
+                    "duration_ms": dt_ms,
+                    "labels": len(weights),
+                    "max_weight": float(vmax),
+                }
+            )
 
         return weights
 
@@ -2095,14 +2557,29 @@ class MetaLabelingSystem:
             t0 = time.time()
             if thresholds_grid is None:
                 thresholds_grid = [round(x, 2) for x in np.linspace(0.1, 0.9, 9)]
-            
+
             # Prepare outcomes and proxy returns if needed
-            labels_series = triple_barrier_df.get("label", pd.Series(index=price_data.index, dtype=float)).reindex(price_data.index).fillna(0).astype(int)
+            labels_series = (
+                triple_barrier_df.get(
+                    "label", pd.Series(index=price_data.index, dtype=float)
+                )
+                .reindex(price_data.index)
+                .fillna(0)
+                .astype(int)
+            )
             # If available, use realized return; else next-bar return as proxy
             if "tb_return" in triple_barrier_df.columns:
-                ret_series = triple_barrier_df["tb_return"].reindex(price_data.index).fillna(0.0)
+                ret_series = (
+                    triple_barrier_df["tb_return"].reindex(price_data.index).fillna(0.0)
+                )
             else:
-                ret_series = price_data["close"].pct_change().shift(-1).reindex(price_data.index).fillna(0.0)
+                ret_series = (
+                    price_data["close"]
+                    .pct_change()
+                    .shift(-1)
+                    .reindex(price_data.index)
+                    .fillna(0.0)
+                )
 
             best: dict[str, dict[str, float]] = {}
             # Iterate bars to compute intensities
@@ -2112,29 +2589,47 @@ class MetaLabelingSystem:
                 for i in range(len(price_data)):
                     p_slice = price_data.iloc[: i + 1]
                     v_slice = volume_data.iloc[: i + 1]
-                    
+
                     # Prepare stationary data for feature calculation
                     returns_data = self._prepare_returns_data(p_slice)
                     if returns_data.empty:
                         returns_data = p_slice  # Fallback to raw data
-                    
+
                     feats = {}
                     try:
                         # Use stationary data for pattern analysis
-                        feats.update(self._calculate_technical_indicators(p_slice))  # Keep raw for technical indicators
-                        feats.update(self._calculate_volume_features(v_slice))  # Uses stationary volume data
-                        feats.update(self._calculate_price_action_patterns(returns_data))  # Uses returns
-                        feats.update(self._calculate_volatility_patterns(returns_data))  # Uses returns
-                        feats.update(self._calculate_momentum_patterns(returns_data))  # Uses returns
+                        feats.update(
+                            self._calculate_technical_indicators(p_slice)
+                        )  # Keep raw for technical indicators
+                        feats.update(
+                            self._calculate_volume_features(v_slice)
+                        )  # Uses stationary volume data
+                        feats.update(
+                            self._calculate_price_action_patterns(returns_data)
+                        )  # Uses returns
+                        feats.update(
+                            self._calculate_volatility_patterns(returns_data)
+                        )  # Uses returns
+                        feats.update(
+                            self._calculate_momentum_patterns(returns_data)
+                        )  # Uses returns
                     except Exception:
                         pass
-                    scores.append(self._compute_label_intensity(label, p_slice, v_slice, feats))
+                    scores.append(
+                        self._compute_label_intensity(label, p_slice, v_slice, feats)
+                    )
                 scores_series = pd.Series(scores, index=price_data.index)
 
                 # Evaluate thresholds
                 best_threshold = self.default_activation_threshold
                 best_pf = -np.inf
-                best_stats = {"threshold": best_threshold, "hit_rate": 0.0, "frequency": 0.0, "profit_factor": 0.0, "avg_return": 0.0}
+                best_stats = {
+                    "threshold": best_threshold,
+                    "hit_rate": 0.0,
+                    "frequency": 0.0,
+                    "profit_factor": 0.0,
+                    "avg_return": 0.0,
+                }
                 for thr in thresholds_grid:
                     triggers = scores_series >= thr
                     freq = float(triggers.mean())
@@ -2147,9 +2642,13 @@ class MetaLabelingSystem:
                     hit_rate = float((y == 1).mean()) if len(y) else 0.0
                     gross = float(wins.clip(lower=0).sum())
                     loss = float(-losses.clip(upper=0).sum())
-                    profit_factor = (gross / loss) if loss > 0 else (gross if gross > 0 else 0.0)
+                    profit_factor = (
+                        (gross / loss) if loss > 0 else (gross if gross > 0 else 0.0)
+                    )
                     avg_return = float(r.mean()) if len(r) else 0.0
-                    if profit_factor > best_pf and (self.min_coverage <= freq <= self.max_coverage):
+                    if profit_factor > best_pf and (
+                        self.min_coverage <= freq <= self.max_coverage
+                    ):
                         best_pf = profit_factor
                         best_threshold = float(thr)
                         best_stats = {
@@ -2161,24 +2660,34 @@ class MetaLabelingSystem:
                         }
                     if self.debug_logging:
                         try:
-                            self.logger.info({
-                                "msg": "threshold_eval",
-                                "label": label,
-                                "thr": float(thr),
-                                "freq": float(freq),
-                                "hit_rate": float(hit_rate),
-                                "profit_factor": float(profit_factor),
-                                "avg_return": float(avg_return),
-                            })
+                            self.logger.info(
+                                {
+                                    "msg": "threshold_eval",
+                                    "label": label,
+                                    "thr": float(thr),
+                                    "freq": float(freq),
+                                    "hit_rate": float(hit_rate),
+                                    "profit_factor": float(profit_factor),
+                                    "avg_return": float(avg_return),
+                                }
+                            )
                         except Exception:
                             pass
                 self.set_activation_threshold(label, best_threshold)
                 best[label] = best_stats
                 if self.perf_logging:
-                    self.logger.info({"msg": "best_threshold", "label": label, **best_stats})
+                    self.logger.info(
+                        {"msg": "best_threshold", "label": label, **best_stats}
+                    )
             if self.perf_logging:
                 dt_ms = int((time.time() - t0) * 1000)
-                self.logger.info({"msg": "fit_activation_thresholds_complete", "labels": len(label_names), "duration_ms": dt_ms})
+                self.logger.info(
+                    {
+                        "msg": "fit_activation_thresholds_complete",
+                        "labels": len(label_names),
+                        "duration_ms": dt_ms,
+                    }
+                )
             return best
         except Exception as e:
             self.logger.warning(f"Activation threshold fitting failed: {e}")
@@ -2191,16 +2700,30 @@ class MetaLabelingSystem:
         high_roll = data["high"].rolling(look, min_periods=5).max().shift(1)
         low_roll = data["low"].rolling(look, min_periods=5).min().shift(1)
         try:
-            out["resistance_level"] = float(high_roll.iloc[-1]) if not high_roll.empty else float(data["high"].iloc[-1])
-            out["support_level"] = float(low_roll.iloc[-1]) if not low_roll.empty else float(data["low"].iloc[-1])
+            out["resistance_level"] = (
+                float(high_roll.iloc[-1])
+                if not high_roll.empty
+                else float(data["high"].iloc[-1])
+            )
+            out["support_level"] = (
+                float(low_roll.iloc[-1])
+                if not low_roll.empty
+                else float(data["low"].iloc[-1])
+            )
             cp = float(data["close"].iloc[-1])
-            out["dist_to_resistance_pct"] = float(abs(cp - out["resistance_level"]) / max(1e-12, cp))
-            out["dist_to_support_pct"] = float(abs(cp - out["support_level"]) / max(1e-12, cp))
+            out["dist_to_resistance_pct"] = float(
+                abs(cp - out["resistance_level"]) / max(1e-12, cp)
+            )
+            out["dist_to_support_pct"] = float(
+                abs(cp - out["support_level"]) / max(1e-12, cp)
+            )
         except Exception:
             pass
         return out
 
-    def load_activation_thresholds_from_artifacts(self, artifacts_dir: str | None = None) -> None:
+    def load_activation_thresholds_from_artifacts(
+        self, artifacts_dir: str | None = None
+    ) -> None:
         """Load persisted activation thresholds from artifacts directory if available."""
         try:
             path = os.path.join(artifacts_dir or self.artifacts_dir, "thresholds.json")
@@ -2211,7 +2734,9 @@ class MetaLabelingSystem:
                     thr = v.get("threshold", v) if isinstance(v, dict) else v
                     self.set_activation_threshold(str(k), float(thr))
         except Exception as e:
-            self.logger.warning(f"Could not load activation thresholds from artifacts: {e}")
+            self.logger.warning(
+                f"Could not load activation thresholds from artifacts: {e}"
+            )
 
     def load_reliability_from_artifacts(self, artifacts_dir: str | None = None) -> None:
         """Load persisted label reliability scores from artifacts directory if available."""
@@ -2225,10 +2750,14 @@ class MetaLabelingSystem:
         except Exception as e:
             self.logger.warning(f"Could not load reliability from artifacts: {e}")
 
-    def load_active_labels_from_artifacts(self, artifacts_dir: str | None = None) -> None:
+    def load_active_labels_from_artifacts(
+        self, artifacts_dir: str | None = None
+    ) -> None:
         """Load active/inactive labels to enforce complementarity-aware removal."""
         try:
-            path = os.path.join(artifacts_dir or self.artifacts_dir, "active_labels.json")
+            path = os.path.join(
+                artifacts_dir or self.artifacts_dir, "active_labels.json"
+            )
             if os.path.exists(path):
                 with open(path, "r") as f:
                     data = json.load(f)
@@ -2237,3 +2766,7 @@ class MetaLabelingSystem:
                     self.active_labels = {str(x) for x in active}
         except Exception:
             pass
+
+
+# Alias for backward compatibility - MetaLabelingSystem is the same as CompositeHMMRegimeSystem
+MetaLabelingSystem = CompositeHMMRegimeSystem

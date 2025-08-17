@@ -56,7 +56,7 @@ def setup_challenger_model(run_id: str):
             logger.info(f"Run name: {run.data.tags.get('mlflow.runName', 'N/A')}")
             logger.info(f"Status: {run.info.status}")
         except Exception as e:
-            print(error("Could not find MLflow run {run_id}: {e}")))
+            print(error("Could not find MLflow run {run_id}: {e}"))
             return False
 
         # Set the challenger model run ID
@@ -66,7 +66,7 @@ def setup_challenger_model(run_id: str):
         return True
 
     except Exception as e:
-        print(error("Error setting up challenger model: {e}")))
+        print(error("Error setting up challenger model: {e}"))
         return False
 
 
@@ -86,7 +86,7 @@ def list_available_models():
         # Find the experiment
         experiment = client.get_experiment_by_name(experiment_name)
         if not experiment:
-            print(missing("Experiment '{experiment_name}' not found")))
+            print(missing("Experiment '{experiment_name}' not found"))
             return False
 
         # Search for runs
@@ -116,7 +116,7 @@ def list_available_models():
         return True
 
     except Exception as e:
-        print(error("Error listing models: {e}")))
+        print(error("Error listing models: {e}"))
         return False
 
 
@@ -136,7 +136,7 @@ def clear_challenger_model():
         return True
 
     except Exception as e:
-        print(error("Error clearing challenger model: {e}")))
+        print(error("Error clearing challenger model: {e}"))
         return False
 
 

@@ -281,6 +281,19 @@ class EnhancedBacktester:
 
                     if trade_result:
                         results["trades"].append(trade_result)
+                        # Also log to dedicated backtest log
+                        try:
+                            from src.utils.comprehensive_logger import (
+                                get_comprehensive_logger,
+                            )
+
+                            cl = get_comprehensive_logger()
+                            if cl:
+                                cl.log_backtest(
+                                    f"TRADE {trade_result.get('side')} {trade_result.get('quantity', 0):.6f} {symbol} @ ${price:.4f} ts={timestamp.isoformat()}"
+                                )
+                        except Exception:
+                            pass
 
                 # Update equity curve
                 self._update_equity_curve()
@@ -295,6 +308,14 @@ class EnhancedBacktester:
                 results["detailed_analysis"] = await self._generate_detailed_analysis()
 
             self.logger.info("✅ Enhanced backtest completed successfully")
+            try:
+                from src.utils.comprehensive_logger import get_comprehensive_logger
+
+                cl = get_comprehensive_logger()
+                if cl:
+                    cl.log_backtest("Backtest completed successfully")
+            except Exception:
+                pass
             return results
 
         except Exception as e:
@@ -613,14 +634,12 @@ class EnhancedBacktester:
 
             # Get market indicators (simulated for backtesting)
             market_indicators = trade_metadata.get("market_indicators", {})
-            market_health = trade_metadata.get("market_health", {})
             ml_confidence = trade_metadata.get("ml_confidence", {})
 
             # Record the trade
             await self.reporter.record_trade(
                 trade_data=trade_data,
                 market_indicators=market_indicators,
-                market_health=market_health,
                 ml_confidence=ml_confidence,
             )
 

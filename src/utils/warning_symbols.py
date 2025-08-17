@@ -246,6 +246,11 @@ def failed(message: str) -> str:
     return format_error_message(message, WarningSymbols.FAILED)
 
 
+def success(message: str) -> str:
+    """Format a success message."""
+    return format_warning_message(message, "✅", ColorCodes.BRIGHT_GREEN)
+
+
 def invalid(message: str) -> str:
     """Format an invalid configuration/input message."""
     return format_error_message(message, WarningSymbols.RED_X)

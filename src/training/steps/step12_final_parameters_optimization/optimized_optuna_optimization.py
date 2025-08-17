@@ -192,13 +192,10 @@ class AdvancedOptunaManager:
                 # --- Data Subsampling for Efficiency ---
                 X_sample, y_sample = (X, y)
                 if subsample_fraction and subsample_fraction < 1.0:
-                    X_sample, _, y_sample, _ = train_test_split(
-                        X,
-                        y,
-                        train_size=subsample_fraction,
-                        stratify=y,
-                        random_state=trial.number,
-                    )
+                    # FIXED: Use time-based subsampling to prevent lookahead bias
+                    subsample_size = int(len(X) * subsample_fraction)
+                    X_sample = X.iloc[:subsample_size]
+                    y_sample = y.iloc[:subsample_size]
 
                 # --- Model and Hyperparameter Setup ---
                 config = self._model_configs[model_type]

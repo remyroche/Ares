@@ -71,7 +71,7 @@ class ConfigurationUsageExample:
                 and not hpo_config["bayesian_optimization"]["enabled"]
                 and not hpo_config["adaptive_optimization"]["enabled"]
             ):
-                print(warning("All optimization types are disabled")))
+                print(warning("All optimization types are disabled"))
 
             # Validate computational optimization
             comp_config = self.comp_config
@@ -79,13 +79,13 @@ class ConfigurationUsageExample:
                 not comp_config["caching"]["enabled"]
                 and not comp_config["parallelization"]["enabled"]
             ):
-                print(warning("All computational optimizations are disabled")))
+                print(warning("All computational optimizations are disabled"))
 
             logger.info("Configuration validation passed")
             return True
 
         except Exception as e:
-            print(failed("Configuration validation failed: {e}")))
+            print(failed("Configuration validation failed: {e}"))
             return False
 
     def print_configuration_summary(self):
@@ -205,7 +205,7 @@ class ConfigurationUsageExample:
             for constraint, value in risk_constraints.items():
                 print(f"  {constraint}: {value}")
         else:
-            print(warning("Multi-objective optimization is disabled")))
+            print(warning("Multi-objective optimization is disabled"))
 
     def demonstrate_bayesian_config(self):
         """Demonstrate Bayesian optimization configuration usage"""
@@ -237,7 +237,7 @@ class ConfigurationUsageExample:
                     elif isinstance(param_config, dict) and "choices" in param_config:
                         print(f"    {param_name}: {param_config['choices']}")
         else:
-            print(warning("Bayesian optimization is disabled")))
+            print(warning("Bayesian optimization is disabled"))
 
     def demonstrate_adaptive_config(self):
         """Demonstrate adaptive optimization configuration usage"""
@@ -265,7 +265,7 @@ class ConfigurationUsageExample:
                 for constraint_name, constraint_range in constraints.items():
                     print(f"    {constraint_name}: {constraint_range}")
         else:
-            print(warning("Adaptive optimization is disabled")))
+            print(warning("Adaptive optimization is disabled"))
 
     def demonstrate_computational_config(self):
         """Demonstrate computational optimization configuration usage"""
@@ -282,7 +282,7 @@ class ConfigurationUsageExample:
             print(f"  Max cache size: {caching_config['max_cache_size']} entries")
             print(f"  Cache TTL: {caching_config['cache_ttl']} seconds")
         else:
-            print(warning("Caching is disabled")))
+            print(warning("Caching is disabled"))
 
         # Parallelization
         parallel_config = comp_config["parallelization"]
@@ -340,7 +340,11 @@ class ConfigurationUsageExample:
             print("  Weights: 50%, 30%, 20% respectively")
 
         except Exception as e:
-            print(initialization_error("Error initializing multi-objective optimizer: {e}")))
+            print(
+                initialization_error(
+                    "Error initializing multi-objective optimizer: {e}"
+                )
+            )
 
         # Example 2: Bayesian optimization
         print("\n🔍 Example 2: Bayesian Optimization")
@@ -359,7 +363,7 @@ class ConfigurationUsageExample:
             )
 
         except Exception as e:
-            print(initialization_error("Error initializing Bayesian optimizer: {e}")))
+            print(initialization_error("Error initializing Bayesian optimizer: {e}"))
 
         # Example 3: Computational optimization
         print("\n⚡ Example 3: Computational Optimization")
@@ -381,7 +385,7 @@ class ConfigurationUsageExample:
             )
 
         except Exception as e:
-            print(initialization_error("Error initializing optimized backtester: {e}")))
+            print(initialization_error("Error initializing optimized backtester: {e}"))
 
     def demonstrate_configuration_modification(self):
         """Demonstrate how to modify configuration settings"""
@@ -436,7 +440,7 @@ class ConfigurationUsageExample:
 
         # Validate configuration
         if not self.validate_configuration():
-            print(failed("Configuration validation failed. Exiting.")))
+            print(failed("Configuration validation failed. Exiting."))
             return False
 
         # Print configuration summary
@@ -479,7 +483,7 @@ def main():
             sys.exit(1)
 
     except Exception as e:
-        print(error("Error running configuration usage example: {e}")))
+        print(error("Error running configuration usage example: {e}"))
         sys.exit(1)
 
 

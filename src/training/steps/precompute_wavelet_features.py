@@ -26,6 +26,7 @@ from src.utils.warning_symbols import (
     failed,
     initialization_error,
 )
+from src.utils.data_quality_decorators import validate_wavelet_data_quality
 
 
 class WaveletFeaturePrecomputer:
@@ -200,6 +201,7 @@ class WaveletFeaturePrecomputer:
             self.print(error("Error loading dataset: {e}"))
             return None
 
+    @validate_wavelet_data_quality
     async def _process_dataset(
         self,
         dataset: pd.DataFrame,
@@ -247,6 +249,7 @@ class WaveletFeaturePrecomputer:
             self.print(error("Error processing dataset: {e}"))
             return False
 
+    @validate_wavelet_data_quality
     async def _process_batch(
         self,
         batch_data: pd.DataFrame,
@@ -483,7 +486,7 @@ async def main():
                 "enable_candlestick_patterns": True,
                 "enable_sr_distance": True,
                 "enable_multi_timeframe": True,
-                "enable_meta_labeling": True,
+                "enable_meta_labeling": False,
             },
         }
 

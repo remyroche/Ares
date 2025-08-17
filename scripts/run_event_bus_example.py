@@ -43,7 +43,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n⚠️ Example interrupted by user")
     except Exception as e:
-        print(warning("Error running example: {e}")))
+        print(warning("Error running example: {e}"))
         import traceback
 
         traceback.print_exc()

@@ -217,7 +217,7 @@ def get_trading_config() -> dict[str, Any]:
             "max_analysis_history": 100,
             "enable_technical_analysis": True,
             "enable_dual_model_system": True,
-            "enable_market_health_analysis": True,
+            "enable_market_health_analysis": False,
             "enable_liquidation_risk_analysis": True,
         },
     }

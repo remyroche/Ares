@@ -41,6 +41,14 @@ from src.utils.warning_symbols import (
 )
 from src.utils.decorators import with_tracing_span, guard_dataframe_nulls
 
+# Import training pipeline decorators for comprehensive security and troubleshooting
+from src.utils.training_pipeline_decorators import (
+    monitor_pipeline_step,
+    validate_pipeline_input,
+    monitor_pipeline_performance,
+    PipelineValidationLevel,
+)
+
 
 class UnifiedDataLoader:
     """
@@ -271,25 +279,154 @@ class UnifiedDataLoader:
             base_path = f"data_cache/unified/{exchange.lower()}/{symbol}/{timeframe}/exchange={exchange.upper()}/symbol={symbol}/timeframe={timeframe}"
 
             if os.path.exists(base_path):
+                # Check for timestamp issues (year=1970 indicates incorrect timestamps)
+                year_1970_exists = os.path.exists(os.path.join(base_path, "year=1970"))
+                if year_1970_exists:
+                    self.logger.warning(
+                        f"   ⚠️ Detected timestamp issue in {timeframe} data (year=1970), attempting self-healing..."
+                    )
+                    # Remove the problematic data and regenerate
+                    try:
+                        import shutil
+
+                        backup_dir = f"{base_path}_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                        shutil.copytree(base_path, backup_dir)
+                        shutil.rmtree(base_path)
+                        self.logger.info(
+                            f"   📦 Backed up and removed problematic {timeframe} data"
+                        )
+                    except Exception as e:
+                        self.logger.error(
+                            f"   ❌ Failed to remove problematic data: {e}"
+                        )
+
                 self.logger.info(
                     "   📁 Found unified data cache, using optimized pyarrow loading"
                 )
-                return await self._load_with_optimized_pyarrow(
+                unified_data = await self._load_with_optimized_pyarrow(
                     base_path, start_date, end_date
                 )
+                if unified_data is not None and not unified_data.empty:
+                    return unified_data
+                else:
+                    self.logger.warning(
+                        "   ⚠️ Unified data loading failed, trying fallback"
+                    )
             else:
                 self.logger.warning(
-                    "   ⚠️ Unified data cache not found, trying fallback approaches"
+                    f"   ⚠️ Unified data cache not found at: {base_path}"
                 )
 
-                # Try fallback to legacy data
-                return await self._fallback_to_legacy_data(
+                # Try to create unified data structure using step1_5
+                self.logger.info(
+                    "   🔄 Attempting to create unified data structure using step1_5..."
+                )
+                unified_created = await self._create_unified_data_structure(
+                    symbol, exchange, timeframe
+                )
+
+                if unified_created:
+                    self.logger.info(
+                        "   ✅ Unified data structure created successfully, retrying load..."
+                    )
+                    # Retry loading the unified data
+                    if os.path.exists(base_path):
+                        unified_data = await self._load_with_optimized_pyarrow(
+                            base_path, start_date, end_date
+                        )
+                        if unified_data is not None and not unified_data.empty:
+                            return unified_data
+                    else:
+                        self.logger.warning(
+                            "   ⚠️ Unified data structure creation failed"
+                        )
+
+            # Try to resample from 1m data if the requested timeframe is not available
+            if timeframe != "1m":
+                self.logger.info(
+                    f"   🔄 Timeframe {timeframe} not found, attempting to resample from 1m data"
+                )
+                resampled_data = await self._resample_from_1m_data(
                     symbol, exchange, timeframe, start_date, end_date
                 )
+                if resampled_data is not None and not resampled_data.empty:
+                    self.logger.info(
+                        f"   ✅ Successfully resampled {timeframe} data from 1m source"
+                    )
+
+                    # Save resampled data to unified structure for future use
+                    save_success = await self._save_resampled_data_to_unified(
+                        resampled_data, symbol, exchange, timeframe
+                    )
+                    if save_success:
+                        self.logger.info(
+                            f"   💾 Saved resampled {timeframe} data to unified structure"
+                        )
+
+                    return resampled_data
+
+            self.logger.warning(
+                "   ⚠️ Unified data cache not found, trying fallback approaches"
+            )
+
+            # Try fallback to legacy data
+            return await self._fallback_to_legacy_data(
+                symbol, exchange, timeframe, start_date, end_date
+            )
 
         except Exception as e:
             self.logger.error(f"❌ Unified data loading failed: {e}")
             return None
+
+    async def _create_unified_data_structure(
+        self, symbol: str, exchange: str, timeframe: str
+    ) -> bool:
+        """
+        Create unified data structure using step1_5 data converter.
+
+        Args:
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframe: Timeframe
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            self.logger.info(
+                f"🔄 Creating unified data structure for {symbol} on {exchange} ({timeframe})..."
+            )
+
+            # Import step1_5 data converter
+            try:
+                from src.training.steps.step1_5_data_converter import run_step
+            except ImportError as e:
+                self.logger.error(f"❌ Could not import step1_5_data_converter: {e}")
+                return False
+
+            # Run step1_5 to create unified data structure
+            success = await run_step(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                data_dir="data_cache",
+                force_rerun=False,  # Don't force rerun, just create if missing
+            )
+
+            if success:
+                self.logger.info(
+                    f"✅ Unified data structure created successfully for {symbol} on {exchange} ({timeframe})"
+                )
+                return True
+            else:
+                self.logger.warning(
+                    f"⚠️ Failed to create unified data structure for {symbol} on {exchange} ({timeframe})"
+                )
+                return False
+
+        except Exception as e:
+            self.logger.error(f"❌ Error creating unified data structure: {e}")
+            return False
 
     def _estimate_dataset_size(self, start_date: datetime, end_date: datetime) -> int:
         """Estimate dataset size based on date range."""
@@ -359,7 +496,9 @@ class UnifiedDataLoader:
                     if chunk_df is not None and not chunk_df.empty:
                         # Only log every 10th file to reduce verbosity
                         if (i + 1) % 10 == 0 or i == 0:
-                            self.logger.info(f"   ✅ Loaded file {i+1}: {chunk_df.shape}")
+                            self.logger.info(
+                                f"   ✅ Loaded file {i+1}: {chunk_df.shape}"
+                            )
 
                         # Filter by date range immediately to reduce memory
                         if "timestamp" in chunk_df.columns:
@@ -385,7 +524,9 @@ class UnifiedDataLoader:
 
                             # Only log every 10th file to reduce verbosity
                             if (i + 1) % 10 == 0 or i == 0:
-                                self.logger.info(f"   📊 Total rows so far: {total_rows}")
+                                self.logger.info(
+                                    f"   📊 Total rows so far: {total_rows}"
+                                )
 
                             # Clear the dataframe immediately
                             del chunk_df
@@ -617,6 +758,227 @@ class UnifiedDataLoader:
         gc.collect()
         self.logger.info("🧹 Data cache cleared")
 
+    async def _resample_from_1m_data(
+        self,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> Optional[pd.DataFrame]:
+        """Resample 1m data to the requested timeframe."""
+        try:
+            self.logger.info(f"🔄 Resampling 1m data to {timeframe}...")
+
+            # Load 1m data
+            base_path_1m = f"data_cache/unified/{exchange.lower()}/{symbol}/1m/exchange={exchange.upper()}/symbol={symbol}/timeframe=1m"
+
+            if not os.path.exists(base_path_1m):
+                self.logger.warning("   ⚠️ 1m data not available for resampling")
+                return None
+
+            # Load 1m data
+            data_1m = await self._load_with_optimized_pyarrow(
+                base_path_1m, start_date, end_date
+            )
+
+            if data_1m is None or data_1m.empty:
+                self.logger.warning("   ⚠️ No 1m data available for resampling")
+                return None
+
+            self.logger.info(
+                f"   📊 Loaded {len(data_1m)} rows of 1m data for resampling"
+            )
+
+            # Ensure timestamp is the index
+            if "timestamp" in data_1m.columns:
+                data_1m = data_1m.set_index("timestamp")
+            elif not isinstance(data_1m.index, pd.DatetimeIndex):
+                self.logger.error("   ❌ No timestamp column found for resampling")
+                return None
+
+            # Sort by timestamp
+            data_1m = data_1m.sort_index()
+
+            # Define timeframe mapping
+            timeframe_map = {
+                "5m": "5T",
+                "15m": "15T",
+                "30m": "30T",
+                "1h": "1H",
+                "4h": "4H",
+                "1d": "1D",
+            }
+
+            if timeframe not in timeframe_map:
+                self.logger.error(
+                    f"   ❌ Unsupported timeframe for resampling: {timeframe}"
+                )
+                return None
+
+            resample_freq = timeframe_map[timeframe]
+
+            # Resample OHLCV data
+            resampled_data = pd.DataFrame()
+
+            # OHLCV columns
+            ohlcv_cols = ["open", "high", "low", "close", "volume"]
+            available_ohlcv = [col for col in ohlcv_cols if col in data_1m.columns]
+
+            if available_ohlcv:
+                # Resample OHLCV
+                if "open" in data_1m.columns:
+                    resampled_data["open"] = (
+                        data_1m["open"].resample(resample_freq).first()
+                    )
+                if "high" in data_1m.columns:
+                    resampled_data["high"] = (
+                        data_1m["high"].resample(resample_freq).max()
+                    )
+                if "low" in data_1m.columns:
+                    resampled_data["low"] = data_1m["low"].resample(resample_freq).min()
+                if "close" in data_1m.columns:
+                    resampled_data["close"] = (
+                        data_1m["close"].resample(resample_freq).last()
+                    )
+                if "volume" in data_1m.columns:
+                    resampled_data["volume"] = (
+                        data_1m["volume"].resample(resample_freq).sum()
+                    )
+
+            # Handle other numeric columns (sum or mean as appropriate)
+            numeric_cols = data_1m.select_dtypes(include=[np.number]).columns
+            for col in numeric_cols:
+                if col not in available_ohlcv:
+                    # For most numeric features, use mean
+                    resampled_data[col] = data_1m[col].resample(resample_freq).mean()
+
+            # Handle categorical/string columns (take first value)
+            categorical_cols = data_1m.select_dtypes(
+                include=["object", "category"]
+            ).columns
+            for col in categorical_cols:
+                resampled_data[col] = data_1m[col].resample(resample_freq).first()
+
+            # Drop rows with all NaN values
+            resampled_data = resampled_data.dropna(how="all")
+
+            # Reset index to make timestamp a column
+            resampled_data = resampled_data.reset_index()
+
+            # Convert timestamp to milliseconds for proper partitioning
+            if "timestamp" in resampled_data.columns:
+                resampled_data["timestamp"] = (
+                    resampled_data["timestamp"].astype(np.int64) // 10**6
+                )
+
+            self.logger.info(
+                f"   ✅ Resampled to {timeframe}: {len(resampled_data)} rows"
+            )
+            return resampled_data
+
+        except Exception as e:
+            self.logger.error(f"   ❌ Error resampling data: {e}")
+            return None
+
+    async def _save_resampled_data_to_unified(
+        self,
+        resampled_data: pd.DataFrame,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+    ) -> bool:
+        """Save resampled data to unified structure for future use."""
+        try:
+            self.logger.info(
+                f"   💾 Saving resampled {timeframe} data to unified structure..."
+            )
+
+            # Import step1_5 data converter for saving
+            try:
+                from src.training.steps.step1_5_data_converter import (
+                    ParquetDatasetManager,
+                )
+            except ImportError as e:
+                self.logger.error(f"   ❌ Could not import step1_5_data_converter: {e}")
+                return False
+
+            # Create parquet dataset manager instance
+            converter = ParquetDatasetManager(logger=self.logger)
+
+            # Prepare the data for saving
+            # Ensure timestamp is in milliseconds for proper partitioning
+            if "timestamp" in resampled_data.columns:
+                if pd.api.types.is_datetime64_any_dtype(resampled_data["timestamp"]):
+                    resampled_data["timestamp"] = (
+                        resampled_data["timestamp"].astype(np.int64) // 10**6
+                    )
+
+            # Add required columns for unified structure
+            if "exchange" not in resampled_data.columns:
+                resampled_data["exchange"] = exchange.upper()
+            if "symbol" not in resampled_data.columns:
+                resampled_data["symbol"] = symbol
+            if "timeframe" not in resampled_data.columns:
+                resampled_data["timeframe"] = timeframe
+
+            # Save to unified structure
+            base_dir = f"data_cache/unified/{exchange.lower()}/{symbol}/{timeframe}/exchange={exchange.upper()}/symbol={symbol}/timeframe={timeframe}"
+
+            # Create directory if it doesn't exist
+            os.makedirs(base_dir, exist_ok=True)
+
+            # Save using the converter's write_partitioned_dataset method
+            try:
+                converter.write_partitioned_dataset(
+                    df=resampled_data,
+                    base_dir=base_dir,
+                    partition_cols=["year", "month", "day"],
+                    schema_name=None,
+                    compression="snappy",
+                    max_rows_per_file=100000,
+                    auto_add_date_columns=True,
+                    metadata={
+                        "source": "resampled_from_1m",
+                        "timeframe": timeframe,
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "created_at": datetime.now().isoformat(),
+                    },
+                )
+
+                # Verify the data was saved by checking if the directory exists and has files
+                if os.path.exists(base_dir):
+                    # Check for year directories
+                    year_dirs = [
+                        d for d in os.listdir(base_dir) if d.startswith("year=")
+                    ]
+                    if year_dirs and "year=1970" not in year_dirs:
+                        self.logger.info(
+                            f"   ✅ Successfully saved resampled {timeframe} data to unified structure"
+                        )
+                        return True
+                    else:
+                        self.logger.warning(
+                            f"   ⚠️ Saved data has incorrect timestamps (year=1970)"
+                        )
+                        return False
+                else:
+                    self.logger.warning(
+                        f"   ⚠️ Failed to save resampled {timeframe} data to unified structure"
+                    )
+                    return False
+
+            except Exception as e:
+                self.logger.error(f"   ❌ Error saving resampled data: {e}")
+                return False
+
+        except Exception as e:
+            self.logger.error(
+                f"   ❌ Error saving resampled data to unified structure: {e}"
+            )
+            return False
+
     async def _fallback_to_legacy_data(
         self,
         symbol: str,
@@ -628,47 +990,88 @@ class UnifiedDataLoader:
         """Fallback to legacy data sources if unified data is not available."""
         self.logger.info("🔄 Falling back to legacy data sources...")
 
-        # First, try individual parquet files approach (which we know works)
+        # First, try individual parquet files in data_cache directory
         try:
-            from test_individual_parquet import load_individual_parquet_files
+            import glob
+            import os
 
-            # Calculate how many files we need for the date range
-            days_diff = (end_date - start_date).days
-            max_files = min(days_diff + 10, 180)  # Add buffer, but cap at 180 files
+            # Look for individual parquet files in data_cache directory
+            pattern = f"data_cache/aggtrades_{exchange}_{symbol}_*.parquet"
+            parquet_files = glob.glob(pattern)
 
-            self.logger.info(
-                f"🔄 Trying individual parquet files approach (max {max_files} files)..."
-            )
-            trade_data = load_individual_parquet_files(
-                exchange, symbol, max_files=max_files
-            )
+            if parquet_files:
+                # Sort files by date (newest first)
+                parquet_files.sort(reverse=True)
 
-            if not trade_data.empty:
-                # Convert trade data to OHLCV format
-                from src.training.steps.step2_market_regime_classification import (
-                    convert_trade_data_to_ohlcv,
+                # Calculate how many files we need for the date range
+                days_diff = (end_date - start_date).days
+                max_files = min(days_diff + 10, 180)  # Add buffer, but cap at 180 files
+
+                # Limit files for blank mode
+                if os.environ.get("BLANK_TRAINING_MODE", "0") == "1":
+                    parquet_files = parquet_files[:max_files]
+
+                self.logger.info(
+                    f"🔄 Found {len(parquet_files)} individual parquet files, loading up to {max_files}..."
                 )
 
-                self.logger.info("🔄 Converting trade data to OHLCV format...")
-                ohlcv_data = convert_trade_data_to_ohlcv(trade_data, timeframe="1h")
+                # Load files one by one
+                all_data = []
+                total_rows = 0
 
-                if not ohlcv_data.empty:
-                    # Filter by date range
-                    ohlcv_data = ohlcv_data[
-                        (ohlcv_data["timestamp"] >= start_date)
-                        & (ohlcv_data["timestamp"] <= end_date)
-                    ]
+                for i, file_path in enumerate(parquet_files[:max_files]):
+                    try:
+                        if i % 10 == 0:
+                            self.logger.info(
+                                f"📂 Loading file {i+1}/{len(parquet_files[:max_files])}: {os.path.basename(file_path)}"
+                            )
 
-                    if not ohlcv_data.empty:
-                        self.logger.info(
-                            f"✅ Loaded {len(ohlcv_data)} rows from individual parquet files"
-                        )
-                        return ohlcv_data.sort_values("timestamp").reset_index(
-                            drop=True
-                        )
+                        # Load individual file
+                        df = pd.read_parquet(file_path)
+
+                        if not df.empty:
+                            # Filter by date range, but be flexible if no data found
+                            original_df = df.copy()
+                            df_filtered = df[
+                                (df["timestamp"] >= start_date)
+                                & (df["timestamp"] <= end_date)
+                            ]
+
+                            if not df_filtered.empty:
+                                all_data.append(df_filtered)
+                                total_rows += len(df_filtered)
+                                self.logger.info(
+                                    f"✅ Loaded {len(df_filtered):,} rows from {os.path.basename(file_path)}"
+                                )
+                            else:
+                                # If no data in requested range, use all available data
+                                self.logger.warning(
+                                    f"⚠️ No data in requested date range for {os.path.basename(file_path)}, using all available data"
+                                )
+                                all_data.append(original_df)
+                                total_rows += len(original_df)
+                                self.logger.info(
+                                    f"✅ Loaded {len(original_df):,} rows from {os.path.basename(file_path)} (all available)"
+                                )
+
+                    except Exception as e:
+                        self.logger.warning(f"❌ Failed to load {file_path}: {e}")
+                        continue
+
+                if all_data:
+                    # Combine all data
+                    combined_df = pd.concat(all_data, ignore_index=True)
+                    combined_df = combined_df.sort_values("timestamp").reset_index(
+                        drop=True
+                    )
+
+                    self.logger.info(
+                        f"✅ Successfully loaded {len(combined_df):,} total rows from {len(all_data)} files"
+                    )
+                    return combined_df
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Individual parquet files approach failed: {e}")
+            self.logger.warning(f"⚠️ Individual parquet approach failed: {e}")
 
         # Try consolidated parquet files as fallback
         consolidated_paths = [

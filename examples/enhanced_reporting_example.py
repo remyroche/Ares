@@ -40,13 +40,13 @@ async def example_paper_trading():
     # Setup enhanced trading launcher
     launcher = await setup_enhanced_trading_launcher(config)
     if not launcher:
-        print(failed("Failed to setup enhanced trading launcher")))
+        print(failed("Failed to setup enhanced trading launcher"))
         return
 
     # Launch paper trading
     success = await launcher.launch_paper_trading()
     if not success:
-        print(failed("Failed to launch paper trading")))
+        print(failed("Failed to launch paper trading"))
         return
 
     print("✅ Paper trading launched successfully")
@@ -201,7 +201,7 @@ async def example_paper_trading():
                 f"✅ Executed {trade['side']} trade: {trade['quantity']} {trade['symbol']} @ ${trade['price']:.2f}",
             )
         else:
-            print(failed("Failed to execute trade: {trade['symbol']}")))
+            print(failed("Failed to execute trade: {trade['symbol']}"))
 
     # Get performance metrics
     metrics = launcher.get_performance_metrics()
@@ -236,7 +236,7 @@ async def example_backtesting():
     # Setup enhanced trading launcher
     launcher = await setup_enhanced_trading_launcher(config)
     if not launcher:
-        print(failed("Failed to setup enhanced trading launcher")))
+        print(failed("Failed to setup enhanced trading launcher"))
         return
 
     # Generate sample historical data
@@ -356,7 +356,7 @@ async def example_backtesting():
         )
 
     else:
-        print(failed("Backtest failed")))
+        print(failed("Backtest failed"))
 
     # Stop launcher
     await launcher.stop()
@@ -378,7 +378,7 @@ async def main():
         print("\n🎉 All examples completed successfully!")
 
     except Exception as e:
-        print(warning("Error running examples: {e}")))
+        print(warning("Error running examples: {e}"))
 
 
 if __name__ == "__main__":

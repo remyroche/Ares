@@ -89,9 +89,9 @@ def classify_regime_series(
 
     # Normalized EMA separation relative to a smoothed price level
     ema_sep = (feats[fast_col] - feats[slow_col]).abs()
-    ema_sep_norm = (
-        ema_sep / feats["close"].rolling(max(ema_slow, 2)).mean()
-    ).fillna(0.0)
+    ema_sep_norm = (ema_sep / feats["close"].rolling(max(ema_slow, 2)).mean()).fillna(
+        0.0
+    )
 
     # Trend condition with tunable thresholds
     meets_adx = feats["adx"] >= adx_trend_threshold
@@ -115,11 +115,15 @@ def classify_regime_series(
     # Confidence calculation (parameter-aware)
     # Sideways confidence increases as ADX drops below the sideways threshold
     denom_sw = max(adx_sideways_threshold, 1e-6)
-    conf_sideways = np.clip((adx_sideways_threshold - feats["adx"]) / denom_sw, 0.2, 1.0)
+    conf_sideways = np.clip(
+        (adx_sideways_threshold - feats["adx"]) / denom_sw, 0.2, 1.0
+    )
 
     # Trend confidence increases with ADX above sideways threshold and EMA separation
     denom_tr = max(adx_trend_threshold - adx_sideways_threshold, 1e-6)
-    adx_component = np.clip((feats["adx"] - adx_sideways_threshold) / denom_tr, 0.0, 1.0)
+    adx_component = np.clip(
+        (feats["adx"] - adx_sideways_threshold) / denom_tr, 0.0, 1.0
+    )
     sep_component = np.clip(ema_sep_norm * 10.0, 0.0, 1.0)
     conf_trend = np.clip(0.5 * adx_component + 0.5 * sep_component, 0.2, 1.0)
 

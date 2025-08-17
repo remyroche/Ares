@@ -63,7 +63,7 @@ async def run_enhanced_backtesting(symbol: str, lookback_days: int = 730):
     )
 
     if not session_id:
-        print(failed("❌ Enhanced training failed")))
+        print(failed("❌ Enhanced training failed"))
         return False
 
     # Step 2: Run paper trading simulation
@@ -71,7 +71,7 @@ async def run_enhanced_backtesting(symbol: str, lookback_days: int = 730):
     paper_success = await run_paper_trading_simulation(symbol, training_manager)
 
     if not paper_success:
-        print(failed("❌ Paper trading simulation failed")))
+        print(failed("❌ Paper trading simulation failed"))
         return False
 
     # Step 3: Generate comprehensive report
@@ -109,7 +109,7 @@ async def run_paper_trading_simulation(symbol: str, training_manager):
         return True
 
     except Exception as e:
-        print(failed("❌ Paper trading simulation failed: {e}")))
+        print(failed("❌ Paper trading simulation failed: {e}"))
         return False
 
 
@@ -166,7 +166,7 @@ async def run_backtesting_only(symbol: str, lookback_days: int = 730):
     if session_id:
         logger.info("✅ Backtesting completed successfully!")
         return True
-    print(failed("❌ Backtesting failed!")))
+    print(failed("❌ Backtesting failed!"))
     return False
 
 

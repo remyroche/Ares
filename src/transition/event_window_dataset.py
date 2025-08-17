@@ -32,7 +32,9 @@ class EventWindowDatasetBuilder:
     - Produces tensors and RF-friendly pooled features
     """
 
-    def __init__(self, config: dict[str, Any], exchange: str = "UNKNOWN", symbol: str = "UNKNOWN") -> None:
+    def __init__(
+        self, config: dict[str, Any], exchange: str = "UNKNOWN", symbol: str = "UNKNOWN"
+    ) -> None:
         self.config = config
         self.logger = system_logger.getChild("EventWindowDatasetBuilder")
         tm_cfg = (config or {}).get("TRANSITION_MODELING", {})
@@ -40,15 +42,29 @@ class EventWindowDatasetBuilder:
             pre_window=int(tm_cfg.get("pre_window", 60)),
             post_window=int(tm_cfg.get("post_window", 20)),
             max_events_per_label=int(tm_cfg.get("max_events_per_label", 10000)),
-            duplicate_similarity_threshold=float(tm_cfg.get("early_pruning", {}).get("duplicate_similarity_threshold", 0.98)),
-            downsample_near_duplicates=bool(tm_cfg.get("early_pruning", {}).get("downsample_near_duplicate_sequences", True)),
+            duplicate_similarity_threshold=float(
+                tm_cfg.get("early_pruning", {}).get(
+                    "duplicate_similarity_threshold", 0.98
+                )
+            ),
+            downsample_near_duplicates=bool(
+                tm_cfg.get("early_pruning", {}).get(
+                    "downsample_near_duplicate_sequences", True
+                )
+            ),
         )
-        self.state_builder = StateSequenceBuilder(config, exchange=exchange, symbol=symbol)
-        self.cache_dir = str((tm_cfg.get("cache", {}) or {}).get("cache_dir", "checkpoints/transition_cache"))
-        bcfg = (tm_cfg.get("barriers", {}) or {})
+        self.state_builder = StateSequenceBuilder(
+            config, exchange=exchange, symbol=symbol
+        )
+        self.cache_dir = str(
+            (tm_cfg.get("cache", {}) or {}).get(
+                "cache_dir", "checkpoints/transition_cache"
+            )
+        )
+        bcfg = tm_cfg.get("barriers", {}) or {}
         self.pt_mult = float(bcfg.get("profit_take_multiplier", 0.002))
         self.sl_mult = float(bcfg.get("stop_loss_multiplier", 0.001))
-        self.ctx_cfg = (tm_cfg.get("context_features", {}) or {})
+        self.ctx_cfg = tm_cfg.get("context_features", {}) or {}
 
     async def initialize(self) -> bool:
         return await self.state_builder.initialize()
@@ -64,8 +80,18 @@ class EventWindowDatasetBuilder:
         # Summaries for RandomForest: mean/std of key numeric features
         out: dict[str, float] = {}
         for col in [
-            "log_returns","volatility_20","volume_ratio","rsi","macd","macd_signal",
-            "macd_histogram","bb_position","bb_width","atr","volatility_regime","volatility_acceleration"
+            "log_returns",
+            "volatility_20",
+            "volume_ratio",
+            "rsi",
+            "macd",
+            "macd_signal",
+            "macd_histogram",
+            "bb_position",
+            "bb_width",
+            "atr",
+            "volatility_regime",
+            "volatility_acceleration",
         ]:
             if col in seq_df.columns:
                 s = pd.to_numeric(seq_df[col], errors="coerce")
@@ -99,7 +125,13 @@ class EventWindowDatasetBuilder:
                         meta = json.load(f)
                     # Minimal load path: return meta only; samples remain to be regenerated if needed
                     if meta.get("label_index"):
-                        return {"samples": [], "label_index": meta.get("label_index", []), "numeric_feature_names": meta.get("numeric_feature_names", [])}
+                        return {
+                            "samples": [],
+                            "label_index": meta.get("label_index", []),
+                            "numeric_feature_names": meta.get(
+                                "numeric_feature_names", []
+                            ),
+                        }
         except Exception:
             pass
 
@@ -112,8 +144,18 @@ class EventWindowDatasetBuilder:
         combined_num = combined_df.reindex(klines_df.index)
         # Define a compact numeric feature set if present
         candidate_numeric = [
-            "close_returns","volatility_20","volume_ratio","rsi","macd","macd_signal",
-            "macd_histogram","bb_position","bb_width","atr","volatility_regime","volatility_acceleration"
+            "close_returns",
+            "volatility_20",
+            "volume_ratio",
+            "rsi",
+            "macd",
+            "macd_signal",
+            "macd_histogram",
+            "bb_position",
+            "bb_width",
+            "atr",
+            "volatility_regime",
+            "volatility_acceleration",
         ]
         present_numeric = [c for c in candidate_numeric if c in combined_num.columns]
 
@@ -122,11 +164,20 @@ class EventWindowDatasetBuilder:
         samples: list[dict[str, Any]] = []
 
         # Prepare multi-hot vector template
-        all_labels = sorted({lab for lab in event_index["event_label"].unique()}.union(*event_index.get("secondary_labels", pd.Series([[]]*len(event_index))).tolist()))
+        all_labels = sorted(
+            {lab for lab in event_index["event_label"].unique()}.union(
+                *event_index.get(
+                    "secondary_labels", pd.Series([[]] * len(event_index))
+                ).tolist()
+            )
+        )
         label_to_idx = {l: i for i, l in enumerate(all_labels)}
 
         # Early pruning: drop events without full window
-        valid_events = event_index[(event_index["row_index"] >= pre) & (event_index["row_index"] < len(klines_df) - post)]
+        valid_events = event_index[
+            (event_index["row_index"] >= pre)
+            & (event_index["row_index"] < len(klines_df) - post)
+        ]
         if valid_events.empty:
             return {"samples": []}
 
@@ -147,7 +198,13 @@ class EventWindowDatasetBuilder:
             Y_states = states_df.iloc[post_slice]
             # Numeric sequence (compact set)
             if present_numeric:
-                X_num = pd.to_numeric(combined_num[present_numeric].iloc[pre_slice], errors="coerce").fillna(0.0).to_numpy(dtype=float)
+                X_num = (
+                    pd.to_numeric(
+                        combined_num[present_numeric].iloc[pre_slice], errors="coerce"
+                    )
+                    .fillna(0.0)
+                    .to_numpy(dtype=float)
+                )
             else:
                 X_num = np.zeros((pre, 0), dtype=float)
             # Macro context at t0 (static across pre-window for simplicity)
@@ -155,23 +212,41 @@ class EventWindowDatasetBuilder:
                 try:
                     macro_cols = []
                     # 1h EMA50 and ATR pct if available
-                    if bool(self.ctx_cfg.get("include_price_over_ema50", True)) and "1h_ema_50" in combined_num.columns:
+                    if (
+                        bool(self.ctx_cfg.get("include_price_over_ema50", True))
+                        and "1h_ema_50" in combined_num.columns
+                    ):
                         ema = float(combined_num["1h_ema_50"].iloc[i0])
                         price = float(klines_df["close"].iloc[i0])
                         macro_cols.append([price / ema - 1.0 if ema else 0.0])
-                    if bool(self.ctx_cfg.get("include_atr_pct", True)) and "1h_atr" in combined_num.columns:
+                    if (
+                        bool(self.ctx_cfg.get("include_atr_pct", True))
+                        and "1h_atr" in combined_num.columns
+                    ):
                         atr = float(combined_num["1h_atr"].iloc[i0])
                         price = float(klines_df["close"].iloc[i0])
                         macro_cols.append([atr / max(price, 1e-12)])
-                    if bool(self.ctx_cfg.get("include_macro_hmm_state", True)) and "1h_hmm_state" in combined_num.columns:
-                        macro_cols.append([float(combined_num["1h_hmm_state"].iloc[i0])])
-                    if bool(self.ctx_cfg.get("also_include_4h", False)) and "4h_hmm_state" in combined_num.columns:
-                        macro_cols.append([float(combined_num["4h_hmm_state"].iloc[i0])])
+                    if (
+                        bool(self.ctx_cfg.get("include_macro_hmm_state", True))
+                        and "1h_hmm_state" in combined_num.columns
+                    ):
+                        macro_cols.append(
+                            [float(combined_num["1h_hmm_state"].iloc[i0])]
+                        )
+                    if (
+                        bool(self.ctx_cfg.get("also_include_4h", False))
+                        and "4h_hmm_state" in combined_num.columns
+                    ):
+                        macro_cols.append(
+                            [float(combined_num["4h_hmm_state"].iloc[i0])]
+                        )
                     if macro_cols:
                         macro_vec = np.concatenate(macro_cols, axis=0).astype(float)
                         # replicate across pre timesteps
                         rep = np.repeat(macro_vec.reshape(1, -1), repeats=pre, axis=0)
-                        X_num = np.concatenate([X_num, rep], axis=1) if X_num.size else rep
+                        X_num = (
+                            np.concatenate([X_num, rep], axis=1) if X_num.size else rep
+                        )
                 except Exception:
                     pass
             # Targets: returns and next states
@@ -187,7 +262,7 @@ class EventWindowDatasetBuilder:
             mh = np.zeros(len(all_labels), dtype=np.float32)
             # include anchor and secondaries
             mh[label_to_idx[ev["event_label"]]] = 1.0
-            for s in (ev.get("secondary_labels") or []):
+            for s in ev.get("secondary_labels") or []:
                 if s in label_to_idx:
                     mh[label_to_idx[s]] = 1.0
 
@@ -195,18 +270,22 @@ class EventWindowDatasetBuilder:
             seq_numeric = combined_num.iloc[pre_slice]
             rf_feats = self._rf_pooled_features(seq_numeric)
 
-            samples.append({
-                "event_label": ev["event_label"],
-                "t0_time": t0,
-                "X_pre_states": X_states[["hmm_state_id","regime"]].copy(),
-                "X_pre_numeric": X_num,
-                "Y_post_returns": ret_seq.copy(),
-                "Y_post_states": Y_states[["hmm_state_id","regime"]].copy(),
-                "Y_time_to_pt": int(tt_pt),
-                "multi_hot_labels": mh.copy(),
-                "rf_features": rf_feats,
-                "weighted_intensity": float(ev.get("weighted_intensity", ev.get("intensity", 0.0))),
-            })
+            samples.append(
+                {
+                    "event_label": ev["event_label"],
+                    "t0_time": t0,
+                    "X_pre_states": X_states[["hmm_state_id", "regime"]].copy(),
+                    "X_pre_numeric": X_num,
+                    "Y_post_returns": ret_seq.copy(),
+                    "Y_post_states": Y_states[["hmm_state_id", "regime"]].copy(),
+                    "Y_time_to_pt": int(tt_pt),
+                    "multi_hot_labels": mh.copy(),
+                    "rf_features": rf_feats,
+                    "weighted_intensity": float(
+                        ev.get("weighted_intensity", ev.get("intensity", 0.0))
+                    ),
+                }
+            )
 
         # Optional down-sampling of near-duplicate pre sequences using cosine similarity on rf_features vector
         if self.ds_cfg.downsample_near_duplicates and len(samples) > 1:
@@ -234,7 +313,17 @@ class EventWindowDatasetBuilder:
         try:
             if self.cache_dir:
                 with open(os.path.join(self.cache_dir, key + ".meta.json"), "w") as f:
-                    json.dump({"label_index": all_labels, "numeric_feature_names": present_numeric}, f)
+                    json.dump(
+                        {
+                            "label_index": all_labels,
+                            "numeric_feature_names": present_numeric,
+                        },
+                        f,
+                    )
         except Exception:
             pass
-        return {"samples": samples, "label_index": all_labels, "numeric_feature_names": present_numeric}
+        return {
+            "samples": samples,
+            "label_index": all_labels,
+            "numeric_feature_names": present_numeric,
+        }

@@ -540,7 +540,7 @@ async def main():
                 "enable_candlestick_patterns": True,
                 "enable_sr_distance": True,
                 "enable_multi_timeframe": True,
-                "enable_meta_labeling": True,
+                "enable_meta_labeling": False,
             },
         }
 

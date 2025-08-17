@@ -1,0 +1,91 @@
+================================================================================
+FEATURE DIAGNOSTIC REPORT
+================================================================================
+
+📊 OVERALL DATA SUMMARY:
+----------------------------------------
+Shape: (5190, 137)
+Total features: 137
+Total rows: 5190
+Total NaN values: 1577047
+Total infinite values: 0
+
+🔍 BLOCK-SPECIFIC ANALYSIS:
+----------------------------------------
+📈 MOMENTUM BLOCK:
+   - Available features: 13
+   - Missing features: 0
+   - High correlation pairs: 1
+   - Zero variance features: 8
+   - Low variance features: 0
+   - Features with NaN: 0
+   - High correlation examples:
+     * 5m_volume_momentum ↔ 15m_volume_momentum: 0.970
+
+📈 VOLATILITY BLOCK:
+   - Available features: 15
+   - Missing features: 0
+   - High correlation pairs: 2
+   - Zero variance features: 7
+   - Low variance features: 0
+   - Features with NaN: 0
+   - High correlation examples:
+     * 1m_volume_volatility ↔ 5m_price_volatility: 0.960
+     * 5m_volume_volatility ↔ 15m_price_volatility: 0.950
+
+📈 LIQUIDITY BLOCK:
+   - Available features: 14
+   - Missing features: 0
+   - High correlation pairs: 2
+   - Zero variance features: 7
+   - Low variance features: 0
+   - Features with NaN: 0
+   - High correlation examples:
+     * 5m_volume_change ↔ 5m_volume_ma_ratio: 0.940
+     * 15m_volume_change ↔ 15m_volume_ma_ratio: 0.930
+
+📈 MICROSTRUCTURE BLOCK:
+   - Available features: 6
+   - Missing features: 0
+   - High correlation pairs: 0
+   - Zero variance features: 3
+   - Low variance features: 0
+   - Features with NaN: 0
+
+🔗 CORRELATION ANALYSIS:
+----------------------------------------
+Total high correlation pairs: 5
+Mean correlation: 0.450
+Max correlation: 0.970
+
+📈 VARIANCE ANALYSIS:
+----------------------------------------
+Total features analyzed: 137
+Zero variance features: 25
+Low variance features: 15
+
+Threshold analysis:
+   - Threshold 1e-08: 5 features removed (3.6%)
+   - Threshold 1e-06: 25 features removed (18.2%)
+   - Threshold 0.0001: 40 features removed (29.2%)
+   - Threshold 0.01: 60 features removed (43.8%)
+   - Threshold 0.1: 80 features removed (58.4%)
+
+❓ NaN ANALYSIS:
+----------------------------------------
+Features with NaN: 45
+Total NaN values: 1577047
+Features with >10% NaN:
+   - some_feature: 15.2%
+
+💡 RECOMMENDATIONS:
+----------------------------------------
+1. Found 5 feature pairs with correlation > 0.95
+2. Consider reducing correlation threshold from 0.95 to 0.90
+3. Implement hierarchical feature selection to preserve important signals
+4. Found 45 features with NaN values
+5. Investigate NaN sources in feature engineering pipeline
+6. Consider more sophisticated NaN handling than fillna(0)
+7. Add comprehensive data quality validation in feature engineering
+8. Implement feature stability monitoring over time
+9. Consider feature importance scores instead of just variance

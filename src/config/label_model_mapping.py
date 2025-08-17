@@ -152,19 +152,31 @@ LABEL_GROUPS: Dict[str, Dict[str, Any]] = {
     # Support/Resistance family
     "SR_TOUCH": {
         "low": ("catboost", {"depth": 8, "learning_rate": 0.05, "l2_leaf_reg": 3}),
-        "high": ("lightgbm", {"num_leaves": 64, "feature_fraction": 0.8, "learning_rate": 0.05}),
+        "high": (
+            "lightgbm",
+            {"num_leaves": 64, "feature_fraction": 0.8, "learning_rate": 0.05},
+        ),
     },
     "SR_BOUNCE": {
         "low": ("catboost", {"depth": 8, "learning_rate": 0.05, "l2_leaf_reg": 3}),
-        "high": ("lightgbm", {"num_leaves": 64, "feature_fraction": 0.8, "learning_rate": 0.05}),
+        "high": (
+            "lightgbm",
+            {"num_leaves": 64, "feature_fraction": 0.8, "learning_rate": 0.05},
+        ),
     },
     "SR_BREAK": {
         "low": ("catboost", {"depth": 8, "learning_rate": 0.05, "l2_leaf_reg": 3}),
-        "high": ("lightgbm", {"num_leaves": 64, "feature_fraction": 0.8, "learning_rate": 0.05}),
+        "high": (
+            "lightgbm",
+            {"num_leaves": 64, "feature_fraction": 0.8, "learning_rate": 0.05},
+        ),
     },
     "SR_FAKE_BREAK": {
         "low": ("catboost", {"depth": 8, "learning_rate": 0.05, "l2_leaf_reg": 3}),
-        "high": ("lightgbm", {"num_leaves": 64, "feature_fraction": 0.8, "learning_rate": 0.05}),
+        "high": (
+            "lightgbm",
+            {"num_leaves": 64, "feature_fraction": 0.8, "learning_rate": 0.05},
+        ),
     },
 }
 
@@ -183,7 +195,9 @@ def _tf_band(timeframe: str) -> str:
     return "high"
 
 
-def get_model_choice_for_label(label: str, timeframe: str) -> Tuple[str, Dict[str, Any]]:
+def get_model_choice_for_label(
+    label: str, timeframe: str
+) -> Tuple[str, Dict[str, Any]]:
     """Return (model_key, params) for the given base label and timeframe.
 
     If label not in mapping, default to a conservative LightGBM.
@@ -199,7 +213,7 @@ def get_model_choice_for_label(label: str, timeframe: str) -> Tuple[str, Dict[st
 
 def build_model(model_key: str, params: Dict[str, Any]):
     """Instantiate a model from a key and params. Returns a fitted-ready estimator.
-    
+
     Supported keys: 'xgboost', 'lightgbm', 'catboost', 'random_forest',
     'sgd_hinge', 'sgd_elastic_net', 'logistic_regression', 'hmm_gaussian'.
     For hmm_gaussian, we return a lightweight wrapper with fit/predict_proba interface if possible,
@@ -296,7 +310,11 @@ def build_model(model_key: str, params: Dict[str, Any]):
 
                 class HMMWrapper:
                     def __init__(self, n_states: int = 4):
-                        self.hmm = GaussianHMM(n_components=n_states, covariance_type="diag", random_state=42)
+                        self.hmm = GaussianHMM(
+                            n_components=n_states,
+                            covariance_type="diag",
+                            random_state=42,
+                        )
                         self.decoder = LogisticRegression(max_iter=500, random_state=42)
                         self._fitted = False
 
@@ -333,7 +351,9 @@ def build_model(model_key: str, params: Dict[str, Any]):
         # Fallback default
         from sklearn.ensemble import RandomForestClassifier
 
-        return RandomForestClassifier(n_estimators=200, max_depth=10, random_state=42, n_jobs=-1)
+        return RandomForestClassifier(
+            n_estimators=200, max_depth=10, random_state=42, n_jobs=-1
+        )
 
 
 def select_model_for_label_timeframe(label: str, timeframe: str):

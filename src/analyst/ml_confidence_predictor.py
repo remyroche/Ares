@@ -163,37 +163,22 @@ class MLConfidencePredictor:
         self.regime_models: dict[str, Any] = {}
         self.multi_timeframe_models: dict[str, Any] = {}
 
-        # Meta-labeling system integration
-        self.meta_labeling_system: Any = None
-        # Align with labels actually produced by MetaLabelingSystem
+        # Meta-labeling system removed - using only HMM market regimes
+        self.logger.info(
+            "ℹ️ Meta-labeling system removed - using only HMM market regimes for labeling"
+        )
+        # HMM market regime labels - these are the cluster IDs found by step1_7
+        # The actual cluster names will be determined by the HMM model during step1_7
         self.analyst_labels: list[str] = [
-            "STRONG_TREND_CONTINUATION",
-            "EXHAUSTION_REVERSAL",
-            "RANGE_MEAN_REVERSION",
-            "BREAKOUT_SUCCESS",
-            "BREAKOUT_FAILURE",
-            "VOLATILITY_COMPRESSION",
-            "VOLATILITY_EXPANSION",
-            "FLAG_FORMATION",
-            "TRIANGLE_FORMATION",
-            "RECTANGLE_FORMATION",
-            "MOMENTUM_IGNITION",
-            # Newly supported advanced labels
-            "FAILED_RETEST",
-            "ICE_BERG_ORDERS",
-            "MOMENTUM_ACCELERATION",
-            "MOMENTUM_DECELERATION",
-            "CAPITULATION_SELLING",
-            "EUPHORIC_BUYING",
-            "DULL_MARKET",
-            "FLASH_CRASH_PATTERN",
-            "CHOP_WARNING",
-            "FAKE_OUT_RISK_HIGH",
-            "LOW_CONVICTION_SETUP",
-            "HIGH_CONVICTION_SETUP",
-            # Legacy/fallback
-            "CLIMACTIC_REVERSAL",
-            "NO_SETUP",
+            "hmm_composite_cluster_id",  # The main cluster ID from step1_7
+            "intensity_cluster_0",  # Intensity scores for each cluster
+            "intensity_cluster_1",
+            "intensity_cluster_2",
+            "intensity_cluster_3",
+            "intensity_cluster_4",
+            "intensity_cluster_5",
+            "intensity_cluster_6",
+            "intensity_cluster_7",
         ]
         self.tactician_labels: list[str] = [
             "LOWEST_PRICE_NEXT_1m",
@@ -213,11 +198,32 @@ class MLConfidencePredictor:
         self.order_manager_config = config.get("enhanced_order_manager", {})
 
         # Label-expert (MoE) containers
-        self.label_expert_models: dict[str, dict[str, Any]] = {}  # {label: {timeframe: model}}
-        self.label_expert_calibrators: dict[str, Any] = {}  # {label: calibrator or {timeframe: calibrator}}
+        self.label_expert_models: dict[
+            str, dict[str, Any]
+        ] = {}  # {label: {timeframe: model}}
+        self.label_expert_calibrators: dict[
+            str, Any
+        ] = {}  # {label: calibrator or {timeframe: calibrator}}
         self.label_reliability: dict[str, float] = {}  # {label: reliability_score}
-        self.label_expert_feature_specs: dict[str, Any] = {}  # Optional feature schemas per label
+        self.label_expert_feature_specs: dict[
+            str, Any
+        ] = {}  # Optional feature schemas per label
         self.label_timeframes: list[str] = ["30m", "15m", "5m", "1m"]
+
+    def is_enhanced_training_available(self) -> bool:
+        """
+        Check if enhanced training manager is available and has trained models.
+
+        Returns:
+            bool: True if enhanced training manager is available and has models
+        """
+        return (
+            self.enhanced_training_manager is not None
+            and hasattr(self.enhanced_training_manager, "get_enhanced_training_status")
+            and self.enhanced_training_manager.get_enhanced_training_status().get(
+                "has_trained_models", False
+            )
+        )
 
     @handle_specific_errors(
         error_handlers={
@@ -532,7 +538,11 @@ class MLConfidencePredictor:
             # Combine predictions with meta-labels
             # Determine routing: if no meta labels active, mark as generalist route
             # Count only domain labels (exclude metadata and NO_SETUP)
-            label_whitelist = self.analyst_labels if model_type == "analyst" else self.tactician_labels
+            label_whitelist = (
+                self.analyst_labels
+                if model_type == "analyst"
+                else self.tactician_labels
+            )
             active_meta = 0
             if isinstance(meta_labels, dict):
                 for k in label_whitelist:
@@ -893,7 +903,7 @@ class MLConfidencePredictor:
         """Initialize meta-labeling system integration."""
         try:
             # Import meta-labeling system
-            from src.analyst.meta_labeling_system import MetaLabelingSystem
+            from src.analyst.meta_labeling_system import CompositeHMMRegimeSystem
 
             # Get configuration for meta-labeling
             meta_config = self.config.get(
@@ -913,8 +923,8 @@ class MLConfidencePredictor:
                 },
             )
 
-            # Initialize meta-labeling system
-            self.meta_labeling_system = MetaLabelingSystem(meta_config)
+            # Initialize composite HMM regime system
+            self.meta_labeling_system = CompositeHMMRegimeSystem(meta_config)
             await self.meta_labeling_system.initialize()
 
             self.logger.info("✅ Meta-labeling system initialized successfully")
@@ -1240,7 +1250,9 @@ class MLConfidencePredictor:
                 self._load_label_experts_from_disk()
                 return
             # Models
-            if hasattr(etm, "label_expert_models") and isinstance(etm.label_expert_models, dict):
+            if hasattr(etm, "label_expert_models") and isinstance(
+                etm.label_expert_models, dict
+            ):
                 self.label_expert_models = etm.label_expert_models
             elif hasattr(etm, "get_label_expert_models"):
                 try:
@@ -1248,15 +1260,21 @@ class MLConfidencePredictor:
                 except Exception:
                     self.label_expert_models = {}
             # Calibrators
-            if hasattr(etm, "label_expert_calibrators") and isinstance(etm.label_expert_calibrators, dict):
+            if hasattr(etm, "label_expert_calibrators") and isinstance(
+                etm.label_expert_calibrators, dict
+            ):
                 self.label_expert_calibrators = etm.label_expert_calibrators
             elif hasattr(etm, "get_label_expert_calibrators"):
                 try:
-                    self.label_expert_calibrators = etm.get_label_expert_calibrators() or {}
+                    self.label_expert_calibrators = (
+                        etm.get_label_expert_calibrators() or {}
+                    )
                 except Exception:
                     self.label_expert_calibrators = {}
             # Reliability
-            if hasattr(etm, "label_reliability") and isinstance(etm.label_reliability, dict):
+            if hasattr(etm, "label_reliability") and isinstance(
+                etm.label_reliability, dict
+            ):
                 self.label_reliability = etm.label_reliability
             elif hasattr(etm, "get_label_reliability"):
                 try:
@@ -1281,6 +1299,7 @@ class MLConfidencePredictor:
         """Load label expert models from data_dir/label_experts if present."""
         import os
         import pickle
+
         base_dir = self.config.get("data_dir", "data/training")
         experts_dir = os.path.join(base_dir, "label_experts")
         if not os.path.isdir(experts_dir):
@@ -1480,205 +1499,6 @@ class MLConfidencePredictor:
                 f"Error in price target confidence prediction: {str(e)}",
             )
             return self._generate_fallback_predictions(current_price)
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="prediction preparation",
-    )
-    async def _prepare_for_prediction(self) -> bool:
-        """
-        Prepare the predictor for making predictions.
-
-        Returns:
-            bool: True if ready for prediction, False otherwise
-        """
-        # Check if enhanced training manager is available and has models
-        if not self.is_enhanced_training_available():
-            self.logger.warning(
-                "Enhanced training manager not available or no models loaded - using fallback predictions",
-            )
-            return False
-
-        # Try to refresh models from enhanced training manager if not trained
-        if not self.is_trained:
-            self.logger.info(
-                "Attempting to refresh models from enhanced training manager...",
-            )
-            await self.refresh_models_from_enhanced_training()
-
-        # Check if we have trained models from enhanced training manager
-        if not self._has_trained_models():
-            self.logger.warning(
-                "No trained models available, using fallback predictions",
-            )
-            return False
-
-        return True
-
-    def _has_trained_models(self) -> bool:
-        """
-        Check if trained models are available.
-
-        Returns:
-            bool: True if trained models are available
-        """
-        return self.is_trained and (
-            self.price_target_models
-            or self.adversarial_models
-            or self.ensemble_models
-            or self.regime_models
-            or self.multi_timeframe_models
-        )
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="price target predictions generation",
-    )
-    async def _generate_price_target_predictions(
-        self,
-        features: pd.DataFrame,
-    ) -> dict[str, float]:
-        """
-        Generate price target confidence predictions.
-
-        Args:
-            features: Prepared features for prediction
-
-        Returns:
-            dict: Price target confidence predictions
-        """
-        price_target_confidences = {}
-
-        for target in self.price_movement_levels:
-            model_key = f"price_target_{target:.1f}"
-            confidence = self._get_prediction_for_target(
-                features,
-                model_key,
-                "price_target",
-                target,
-            )
-            price_target_confidences[f"{target:.1f}%"] = confidence
-
-        return price_target_confidences
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="adversarial predictions generation",
-    )
-    async def _generate_adversarial_predictions(
-        self,
-        features: pd.DataFrame,
-    ) -> dict[str, float]:
-        """
-        Generate adversarial confidence predictions.
-
-        Args:
-            features: Prepared features for prediction
-
-        Returns:
-            dict: Adversarial confidence predictions
-        """
-        adversarial_confidences = {}
-
-        for level in self.adversarial_movement_levels:
-            model_key = f"adversarial_{level:.1f}"
-            confidence = self._get_prediction_for_target(
-                features,
-                model_key,
-                "adversarial",
-                level,
-            )
-            adversarial_confidences[f"{level:.1f}%"] = confidence
-
-        return adversarial_confidences
-
-    def _get_prediction_for_target(
-        self,
-        features: pd.DataFrame,
-        model_key: str,
-        model_type: str,
-        target_level: float,
-    ) -> float:
-        """
-        Get prediction for a specific target level.
-
-        Args:
-            features: Prepared features
-            model_key: Model key
-            model_type: Type of model
-            target_level: Target level
-
-        Returns:
-            float: Prediction confidence
-        """
-        if model_type == "price_target":
-            models = self.price_target_models
-            fallback_func = self._get_fallback_confidence
-        else:  # adversarial
-            models = self.adversarial_models
-            fallback_func = self._get_fallback_decrease_probability
-
-        if model_key in models and models[model_key] is not None:
-            return self._predict_single_target(features, model_key, model_type)
-        return fallback_func(target_level)
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="ensemble predictions generation",
-    )
-    async def _generate_ensemble_predictions_if_available(
-        self,
-        features: pd.DataFrame,
-    ) -> dict[str, Any]:
-        """
-        Generate ensemble predictions if available.
-
-        Args:
-            features: Prepared features
-
-        Returns:
-            dict: Ensemble predictions
-        """
-        if self.ensemble_models:
-            return await self._generate_ensemble_predictions(features)
-        return {}
-
-    def _build_prediction_result(
-        self,
-        price_target_confidences: dict[str, float],
-        adversarial_confidences: dict[str, float],
-        directional_analysis: dict[str, Any],
-        ensemble_predictions: dict[str, Any],
-        current_price: float,
-    ) -> dict[str, Any]:
-        """
-        Build the final prediction result.
-
-        Args:
-            price_target_confidences: Price target confidence predictions
-            adversarial_confidences: Adversarial confidence predictions
-            directional_analysis: Directional confidence analysis
-            ensemble_predictions: Ensemble predictions
-            current_price: Current price
-
-        Returns:
-            dict: Complete prediction result
-        """
-        return {
-            "price_target_confidences": price_target_confidences,
-            "adversarial_confidences": adversarial_confidences,
-            "directional_analysis": directional_analysis,
-            "ensemble_predictions": ensemble_predictions,
-            "timestamp": datetime.now().isoformat(),
-            "current_price": current_price,
-            "model_status": "enhanced_training" if self.is_trained else "fallback",
-            "model_info": self.get_enhanced_training_model_info(),
-            "availability_status": self.get_model_availability_status(),
-        }
 
     async def predict_ensemble_confidence(
         self,
@@ -3018,7 +2838,9 @@ class MLConfidencePredictor:
         if features is None or features.empty:
             return {label: 0.5 for label in self.analyst_labels}
 
-        tf = timeframe or (self.analyst_timeframes[0] if self.analyst_timeframes else "30m")
+        tf = timeframe or (
+            self.analyst_timeframes[0] if self.analyst_timeframes else "30m"
+        )
         confidences: dict[str, float] = {}
         for label in self.analyst_labels:
             try:
@@ -3041,7 +2863,11 @@ class MLConfidencePredictor:
                 if hasattr(model, "predict_proba"):
                     proba = model.predict_proba(features)
                     # assume binary classifier: take positive class probability
-                    if isinstance(proba, (list, np.ndarray)) and np.ndim(proba) == 2 and proba.shape[1] >= 2:
+                    if (
+                        isinstance(proba, (list, np.ndarray))
+                        and np.ndim(proba) == 2
+                        and proba.shape[1] >= 2
+                    ):
                         conf_val = float(proba[-1, 1])
                     else:
                         conf_val = float(np.clip(np.mean(proba), 0.0, 1.0))
@@ -3056,9 +2882,17 @@ class MLConfidencePredictor:
                 if calibrator is not None:
                     try:
                         if hasattr(calibrator, "predict_proba"):
-                            conf_val = float(np.clip(calibrator.predict_proba([[conf_val]])[0][-1], 0.0, 1.0))
+                            conf_val = float(
+                                np.clip(
+                                    calibrator.predict_proba([[conf_val]])[0][-1],
+                                    0.0,
+                                    1.0,
+                                )
+                            )
                         elif hasattr(calibrator, "predict"):
-                            conf_val = float(np.clip(calibrator.predict([[conf_val]])[0], 0.0, 1.0))
+                            conf_val = float(
+                                np.clip(calibrator.predict([[conf_val]])[0], 0.0, 1.0)
+                            )
                     except Exception:
                         pass
                 confidences[label] = float(np.clip(conf_val, 0.0, 1.0))
@@ -3085,7 +2919,11 @@ class MLConfidencePredictor:
         for label, inten in intensities.items():
             c = float(np.clip(confidences.get(label, 0.5), 0.0, 1.0))
             r = float(np.clip(rel_map.get(label, 1.0), 0.0, 1.0))
-            s = float(np.power(np.clip(float(inten), 0.0, 1.0), alpha) * np.power(c, beta) * np.power(r, gamma))
+            s = float(
+                np.power(np.clip(float(inten), 0.0, 1.0), alpha)
+                * np.power(c, beta)
+                * np.power(r, gamma)
+            )
             scores[label] = float(np.clip(s, 0.0, 1.0))
         if top_k > 0 and len(scores) > top_k:
             ranked = sorted(scores.items(), key=lambda t: t[1], reverse=True)
@@ -3149,7 +2987,9 @@ class MLConfidencePredictor:
         features = await self._prepare_prediction_features(market_data)
         if features is None or features.empty:
             return {label: 0.5 for label in self.tactician_labels}
-        tf = timeframe or (self.tactician_timeframes[0] if self.tactician_timeframes else "1m")
+        tf = timeframe or (
+            self.tactician_timeframes[0] if self.tactician_timeframes else "1m"
+        )
         confidences: dict[str, float] = {}
         for label in self.tactician_labels:
             try:
@@ -3168,7 +3008,11 @@ class MLConfidencePredictor:
                     continue
                 if hasattr(model, "predict_proba"):
                     proba = model.predict_proba(features)
-                    if isinstance(proba, (list, np.ndarray)) and np.ndim(proba) == 2 and proba.shape[1] >= 2:
+                    if (
+                        isinstance(proba, (list, np.ndarray))
+                        and np.ndim(proba) == 2
+                        and proba.shape[1] >= 2
+                    ):
                         conf_val = float(proba[-1, 1])
                     else:
                         conf_val = float(np.clip(np.mean(proba), 0.0, 1.0))
@@ -3181,9 +3025,17 @@ class MLConfidencePredictor:
                 if calibrator is not None:
                     try:
                         if hasattr(calibrator, "predict_proba"):
-                            conf_val = float(np.clip(calibrator.predict_proba([[conf_val]])[0][-1], 0.0, 1.0))
+                            conf_val = float(
+                                np.clip(
+                                    calibrator.predict_proba([[conf_val]])[0][-1],
+                                    0.0,
+                                    1.0,
+                                )
+                            )
                         elif hasattr(calibrator, "predict"):
-                            conf_val = float(np.clip(calibrator.predict([[conf_val]])[0], 0.0, 1.0))
+                            conf_val = float(
+                                np.clip(calibrator.predict([[conf_val]])[0], 0.0, 1.0)
+                            )
                     except Exception:
                         pass
                 confidences[label] = float(np.clip(conf_val, 0.0, 1.0))
@@ -3205,7 +3057,9 @@ class MLConfidencePredictor:
         tf_list = timeframes or list(self.tactician_timeframes)
         all_conf: dict[str, float] = {}
         for tf in tf_list:
-            confs = await self.predict_tactician_label_confidences(market_data, timeframe=tf)
+            confs = await self.predict_tactician_label_confidences(
+                market_data, timeframe=tf
+            )
             for label, val in confs.items():
                 all_conf[f"{tf}_{label}"] = float(val)
         return all_conf

@@ -160,7 +160,9 @@ class MonitoringIntegrationManager:
                 self.logger.info("✅ Tracking System initialized")
 
         except Exception:
-            self.logger.exception(initialization_error("Error initializing components: {e}"))
+            self.logger.exception(
+                initialization_error("Error initializing components: {e}")
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -519,5 +521,7 @@ async def setup_monitoring_integration_manager(
         return None
 
     except Exception:
-        system_logger.exception(error("Error setting up monitoring integration manager: {e}"))
+        system_logger.exception(
+            error("Error setting up monitoring integration manager: {e}")
+        )
         return None

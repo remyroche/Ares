@@ -24,6 +24,9 @@ Usage:
     # Enhanced model training with efficiency optimizations (uses existing data)
     python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE
 
+    # Short blank training (30 days instead of 60 for faster testing)
+    python ares_launcher.py short-blank --symbol ETHUSDT --exchange BINANCE
+
     # Multi-timeframe ensemble training (trains models on 1m, 5m, 15m, 1h, 4h, 1d and creates ensembles)
     python ares_launcher.py multi-timeframe --symbol ETHUSDT --exchange BINANCE
 
@@ -73,7 +76,11 @@ except ImportError:
     REQUESTS_AVAILABLE = False
 
 from src.config import CONFIG
-from src.config.constants import FULL_TRAINING_LOOKBACK_DAYS
+from src.config.constants import (
+    FULL_TRAINING_LOOKBACK_DAYS,
+    BLANK_TRAINING_LOOKBACK_DAYS,
+    SHORT_BLANK_LOOKBACK_DAYS,
+)
 from src.utils.comprehensive_logger import (
     setup_comprehensive_logging,
 )
@@ -109,7 +116,15 @@ class AresLauncher:
 
         self.logger = self.comprehensive_logger.get_component_logger("AresLauncher")
         self.global_logger = self.comprehensive_logger.get_global_logger()
-        self.full_log_path = getattr(self.comprehensive_logger, "get_full_log_path", lambda: None)()
+        self.full_log_path = getattr(
+            self.comprehensive_logger, "get_full_log_path", lambda: None
+        )()
+        self.trades_log_path = getattr(
+            self.comprehensive_logger, "get_trades_log_path", lambda: None
+        )()
+        self.backtest_log_path = getattr(
+            self.comprehensive_logger, "get_backtest_log_path", lambda: None
+        )()
         self.processes = []  # Track subprocesses for cleanup
         self.gui_process = None
         self.portfolio_process = None
@@ -139,6 +154,10 @@ class AresLauncher:
             )
         if self.full_log_path:
             self.logger.info(f"Full run log: {self.full_log_path}")
+        if self.trades_log_path:
+            self.logger.info(f"Trades log: {self.trades_log_path}")
+        if self.backtest_log_path:
+            self.logger.info(f"Backtest log: {self.backtest_log_path}")
         self.logger.info("=" * 80)
 
     @handle_errors(
@@ -284,7 +303,9 @@ class AresLauncher:
             )
         return normalized
 
-    def _clear_checkpoint_files(self, symbol: str, exchange: str, timeframe: str = "1m") -> None:
+    def _clear_checkpoint_files(
+        self, symbol: str, exchange: str, timeframe: str = "1m"
+    ) -> None:
         """Remove enhanced training checkpoints to guarantee a fresh start."""
         try:
             ns_dir = Path("checkpoints") / exchange / symbol / timeframe
@@ -304,14 +325,21 @@ class AresLauncher:
                     f"Cannot clear progress: step '{start_step}' is not in available steps"
                 )
                 return
-            start_idx = steps.index(start_step)
-            for step in steps[start_idx:]:
-                orchestrator.clear_progress(step)
-            self.logger.info(
-                f"🧹 Cleared progress for steps from '{start_step}' to the end of the pipeline"
-            )
+            # Per artifact policy: only clear the selected start step when forcing
+            # Do NOT proactively clear artifacts from previous steps, and do not
+            # clear later steps here; they will be overwritten as needed.
+            if orchestrator.clear_progress(start_step):
+                self.logger.info(
+                    f"🧹 Cleared progress for '{start_step}' only (force)"
+                )
+            else:
+                self.logger.warning(
+                    f"⚠️ Failed to clear progress for '{start_step}'"
+                )
         except (OSError, IOError) as e:
-            self.logger.warning(f"Failed clearing progress from step '{start_step}': {e}")
+            self.logger.warning(
+                f"Failed clearing progress from step '{start_step}': {e}"
+            )
 
     def _run_unified_training(
         self,
@@ -522,7 +550,28 @@ class AresLauncher:
             symbol=symbol,
             exchange=exchange,
             training_mode="blank",
-            lookback_days=60,  # 60 days for blank training (expanded for better regime coverage)
+            lookback_days=BLANK_TRAINING_LOOKBACK_DAYS,  # 180 days for blank training
+            with_gui=with_gui,
+        )
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="run_short_blank_training",
+    )
+    def run_short_blank_training(
+        self,
+        symbol: str,
+        exchange: str,
+        with_gui: bool = False,
+    ):
+        """Run short blank training using unified training method with 30 days."""
+        # Short blank training uses only 30 days for very quick testing
+        return self._run_unified_training(
+            symbol=symbol,
+            exchange=exchange,
+            training_mode="blank",
+            lookback_days=SHORT_BLANK_LOOKBACK_DAYS,  # 30 days for short blank training
             with_gui=with_gui,
         )
 
@@ -543,7 +592,7 @@ class AresLauncher:
             symbol=symbol,
             exchange=exchange,
             training_mode="full",
-            lookback_days=FULL_TRAINING_LOOKBACK_DAYS,  # 3 years for full training
+            lookback_days=FULL_TRAINING_LOOKBACK_DAYS,  # 2 years for full training
             with_gui=with_gui,
         )
 
@@ -895,7 +944,7 @@ class AresLauncher:
             with_gui=with_gui,
         )
 
-    # REMOVED: run_model_trainer method - Use blank command with step5_analyst_specialist_training instead
+    # REMOVED: run_model_trainer method - Use blank command with step5_hmm_based_training instead
 
     @handle_errors(
         exceptions=(Exception,),
@@ -1244,7 +1293,7 @@ class AresLauncher:
             symbol=symbol,
             exchange=exchange,
             training_mode="blank",
-            lookback_days=60,  # 60 days for blank training (expanded for better regime coverage)
+            lookback_days=180,  # 180 days for blank training (6 months for better regime coverage)
             with_gui=with_gui,
         )
 
@@ -1349,8 +1398,6 @@ class AresLauncher:
             env["BLANK_TRAINING_MODE"] = "1"
             download_result = subprocess.run(
                 download_cmd,
-                capture_output=True,
-                text=True,
                 env=env,
                 check=False,
             )
@@ -1392,8 +1439,6 @@ class AresLauncher:
             self.logger.info("🔄 Starting consolidation subprocess...")
             consolidate_result = subprocess.run(
                 consolidate_cmd,
-                capture_output=True,
-                text=True,
                 env=env,
                 check=False,
                 timeout=1800,  # 30 minute timeout for large datasets
@@ -1635,8 +1680,12 @@ class AresLauncher:
         # Prevent blank mode with step1 data collection
         if training_mode == "blank" and start_step == "step1_data_collection":
             self.logger.error("❌ Cannot use blank mode with step1_data_collection")
-            self.logger.error("Blank mode is designed for quick testing with limited data")
-            self.logger.error("step1_data_collection processes all available data files")
+            self.logger.error(
+                "Blank mode is designed for quick testing with limited data"
+            )
+            self.logger.error(
+                "step1_data_collection processes all available data files"
+            )
             self.logger.error("Use one of the following instead:")
             self.logger.error(
                 "  - python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE (for full data)"
@@ -1690,7 +1739,9 @@ class AresLauncher:
             )
 
             if success:
-                self.logger.info("✅ Step-based training pipeline completed successfully")
+                self.logger.info(
+                    "✅ Step-based training pipeline completed successfully"
+                )
                 return True
             else:
                 self.logger.error("❌ Step-based training pipeline failed")
@@ -1711,12 +1762,13 @@ Examples:
   python ares_launcher.py paper --symbol ETHUSDT --exchange BINANCE
   python ares_launcher.py backtest --symbol ETHUSDT --exchange BINANCE --gui
   python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --gui
+  python ares_launcher.py short-blank --symbol ETHUSDT --exchange BINANCE
   python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step4_regime_data_splitting
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step1_data_collection
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_processing_labeling_feature_engineering
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step3_feature_engineering
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step4_regime_data_splitting
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step5_analyst_specialist_training
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step5_hmm_based_training
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step6_analyst_enhancement
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step7_analyst_ensemble_creation
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step8_tactician_labeling
@@ -1729,11 +1781,11 @@ Examples:
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step15_ab_testing
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step16_saving
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_processing_labeling_feature_engineering --force
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step5_analyst_specialist_training --force --gui
+  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step5_hmm_based_training --force --gui
   python ares_launcher.py live --symbol ETHUSDT --exchange BINANCE
-  python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE
-  python ares_launcher.py load --symbol ETHUSDT --exchange MEXC
-  python ares_launcher.py load --symbol ETHUSDT --exchange GATEIO
+  python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE  # Safe: only downloads missing data
+  python ares_launcher.py load --symbol ETHUSDT --exchange MEXC    # Safe: only downloads missing data
+  python ares_launcher.py load --symbol ETHUSDT --exchange GATEIO  # Safe: only downloads missing data
   python ares_launcher.py portfolio --gui
   python ares_launcher.py gui --mode paper --symbol ETHUSDT --exchange BINANCE
   python ares_launcher.py precompute --symbol ETHUSDT --exchange BINANCE
@@ -1746,11 +1798,12 @@ Examples:
             "paper",
             "challenger",
             "backtest",
-            # "model_trainer",  # REMOVED: Use blank command with step5_analyst_specialist_training instead
+            # "model_trainer",  # REMOVED: Use blank command with step5_hmm_based_training instead
             "live",
             "portfolio",
             "gui",
             "blank",
+            "short-blank",
             "full",
             "multi-timeframe",
             "load",
@@ -1794,7 +1847,7 @@ Examples:
             "paper",
             "challenger",
             "backtest",
-            # "model_trainer",  # REMOVED: Use blank command with step5_analyst_specialist_training instead
+            # "model_trainer",  # REMOVED: Use blank command with step5_hmm_based_training instead
             "live",
             "portfolio",
             "load",
@@ -1839,14 +1892,14 @@ Examples:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Force a fresh run starting from the specified step (clears progress and checkpoints from that step)",
+        help="Force a fresh run starting from the specified step (clears progress and checkpoints from that step). Not available for 'load' command.",
     )
 
     # Backward compatibility alias
     parser.add_argument(
         "--force-rerun",
         action="store_true",
-        help="[Deprecated] Use --force instead. Force rerun of completed steps",
+        help="[Deprecated] Use --force instead. Force rerun of completed steps. Not available for 'load' command.",
     )
 
     return parser.parse_args()
@@ -1860,13 +1913,24 @@ def validate_arguments(args: argparse.Namespace) -> None:
                 "Symbol and exchange are required when using gui with mode",
             )
 
+    # Validate that force flag is not used with load command
+    force_flag = bool(
+        getattr(args, "force", False) or getattr(args, "force_rerun", False)
+    )
+    if args.command == "load" and force_flag:
+        raise ValueError(
+            "The --force flag is not available for the 'load' command. "
+            "The load command is designed to be safe and only downloads missing data."
+        )
+
     commands_requiring_symbol = [
         "paper",
         "challenger",
         "backtest",
-        # "model_trainer",  # REMOVED: Use blank command with step5_analyst_specialist_training instead
+        # "model_trainer",  # REMOVED: Use blank command with step5_hmm_based_training instead
         "live",
         "blank",
+        "short-blank",
         "full",
         "multi-timeframe",
         "load",
@@ -1897,7 +1961,9 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
 
     # Normalize input step name to current naming, and collapse force flags
     normalized_step = launcher._normalize_step_name(getattr(args, "step", None))
-    force_flag = bool(getattr(args, "force", False) or getattr(args, "force_rerun", False))
+    force_flag = bool(
+        getattr(args, "force", False) or getattr(args, "force_rerun", False)
+    )
 
     command_handlers = {
         "backtest": lambda: launcher.run_backtesting(
@@ -1918,14 +1984,21 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
         "blank": lambda: launcher.run_step_based_training(
             args.symbol,
             args.exchange,
-            start_step=normalized_step or "step2_processing_labeling_feature_engineering",
+            start_step=normalized_step
+            or "step2_processing_labeling_feature_engineering",
             force_rerun=force_flag,
+            with_gui=args.gui,
+        ),
+        "short-blank": lambda: launcher.run_short_blank_training(
+            args.symbol,
+            args.exchange,
             with_gui=args.gui,
         ),
         "full": lambda: launcher.run_step_based_full_training(
             args.symbol,
             args.exchange,
-            start_step=normalized_step or "step2_processing_labeling_feature_engineering",
+            start_step=normalized_step
+            or "step2_processing_labeling_feature_engineering",
             force_rerun=force_flag,
             with_gui=args.gui,
         ),

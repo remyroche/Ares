@@ -415,7 +415,7 @@ class ModelManager:
             if model_path.endswith(".joblib"):
                 import joblib
 
-                model = joblib.load(model_path)
+                cached_model = joblib.load(model_path)
             elif model_path.endswith(".pkl"):
                 import pickle
 

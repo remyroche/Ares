@@ -26,8 +26,8 @@ class ABTestingStep:
     async def initialize(self) -> None:
         """Initialize the A/B testing step."""
         try:
-            self.logger.info("Initializing A/B Testing Step...")
-            self.logger.info("A/B Testing Step initialized successfully")
+            self.logger.info("🚀 Initializing A/B Testing Step...")
+            self.logger.info("✅ A/B Testing Step initialized successfully")
 
         except Exception as e:
             self.logger.exception(
@@ -199,7 +199,86 @@ class ABTestingStep:
             return {"status": "FAILED", "error": str(e), "duration": 0.0}
 
 
+# Import training pipeline decorators for comprehensive security and troubleshooting
+from src.utils.training_pipeline_decorators import (
+    validate_step_prerequisites,
+    secure_data_processing,
+    prevent_data_leakage,
+    resource_monitor,
+    memory_efficient,
+    debug_training_step,
+    circuit_breaker_protection,
+    validate_step_output,
+    quality_gate,
+    deterministic_seed,
+    idempotent_step,
+    artifact_write_lock,
+    nan_inf_and_constant_guard,
+    artifact_versioning,
+    time_budget_watchdog,
+)
+
+
 # For backward compatibility with existing step structure
+@deterministic_seed(42)
+@idempotent_step(step_key="step15_ab_testing")
+@artifact_write_lock()
+@nan_inf_and_constant_guard()
+@artifact_versioning("1.0")
+@time_budget_watchdog(soft_timeout_seconds=3600.0)
+@validate_step_prerequisites(
+    required_directories=["data/training", "models"],
+    min_memory_gb=4.0,
+    min_disk_gb=3.0,
+    required_packages=["pandas", "numpy", "sklearn", "scipy"],
+    data_quality_checks={
+        "min_rows": 1000,
+        "required_columns": ["timestamp", "features", "targets"],
+    },
+    context="A/B Testing",
+)
+@secure_data_processing(
+    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True
+)
+@prevent_data_leakage(
+    temporal_validation=True,
+    feature_leakage_detection=True,
+    cross_validation_isolation=True,
+    lookahead_bias_prevention=True,
+)
+@resource_monitor(
+    memory_threshold_gb=8.0,
+    cpu_threshold_percent=80.0,
+    disk_threshold_gb=5.0,
+    monitor_interval=30.0,
+    auto_cleanup=True,
+)
+@memory_efficient(
+    chunk_size=15000, streaming_processing=True, memory_pool=True, cleanup_frequency=35
+)
+@debug_training_step(
+    log_intermediate_results=True,
+    save_debug_artifacts=True,
+    performance_profiling=True,
+    error_context_preservation=True,
+)
+@circuit_breaker_protection(
+    failure_threshold=3,
+    recovery_timeout=120.0,
+    expected_exception=Exception,
+    monitor_interval=30.0,
+)
+@validate_step_output(
+    required_files=["data/training/{exchange}_{symbol}_ab_testing_summary.json"],
+    data_quality_checks={"min_rows": 100, "required_columns": ["winner", "p_value"]},
+    performance_thresholds={"ab_testing_time_minutes": 60.0},
+    format_validation=True,
+)
+@quality_gate(
+    model_performance_thresholds={"ab_accuracy": 0.6, "ab_p_value": 0.05},
+    data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
+    validation_score_requirements={"ab_test_score": 0.6},
+)
 async def run_step(
     symbol: str,
     exchange: str = "BINANCE",

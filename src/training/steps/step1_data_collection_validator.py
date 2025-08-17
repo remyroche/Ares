@@ -59,7 +59,9 @@ class Step1DataCollectionValidator(BaseValidator):
         symbol = training_input.get("symbol", "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
         data_dir = training_input.get("data_dir", "data/training")
-        self.logger.info(f"🔍 Validating Step 1 data collection for {exchange} {symbol}")
+        self.logger.info(
+            f"🔍 Validating Step 1 data collection for {exchange} {symbol}"
+        )
 
         # Check pipeline_state presence
         md = pipeline_state.get("market_data") or {}
@@ -67,20 +69,32 @@ class Step1DataCollectionValidator(BaseValidator):
             self.logger.info(f"✅ Market data present in state: {md.shape} rows/cols")
             try:
                 if isinstance(md.index, pd.DatetimeIndex):
-                    self.logger.info(f"   Date range: {md.index.min()} -> {md.index.max()}")
-                req = [c for c in ["open","high","low","close"] if c in md.columns]
+                    self.logger.info(
+                        f"   Date range: {md.index.min()} -> {md.index.max()}"
+                    )
+                req = [c for c in ["open", "high", "low", "close"] if c in md.columns]
                 self.logger.info(f"   OHLC present: {req}")
             except Exception:
                 pass
             return True
 
         # Fallback: look for consolidated parquet/csv
-        parquet = os.path.join("data_cache", f"klines_{exchange}_{symbol}_1m_consolidated.parquet")
-        csv = os.path.join("data_cache", f"klines_{exchange}_{symbol}_1m_consolidated.csv")
+        parquet = os.path.join(
+            "data_cache", f"klines_{exchange}_{symbol}_1m_consolidated.parquet"
+        )
+        csv = os.path.join(
+            "data_cache", f"klines_{exchange}_{symbol}_1m_consolidated.csv"
+        )
         if os.path.exists(parquet) or os.path.exists(csv):
-            self.logger.info(f"✅ Found cached files: parquet={os.path.exists(parquet)} csv={os.path.exists(csv)}")
+            self.logger.info(
+                f"✅ Found cached files: parquet={os.path.exists(parquet)} csv={os.path.exists(csv)}"
+            )
             try:
-                df = pd.read_parquet(parquet) if os.path.exists(parquet) else pd.read_csv(csv)
+                df = (
+                    pd.read_parquet(parquet)
+                    if os.path.exists(parquet)
+                    else pd.read_csv(csv)
+                )
                 self.logger.info(f"   Cached shape: {df.shape}")
                 return True
             except Exception as e:

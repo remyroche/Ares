@@ -16,6 +16,7 @@ from src.utils.warning_symbols import (
     failed,
 )
 from src.training.steps.unified_data_loader import get_unified_data_loader
+from src.training.data_sharing_manager import get_data_sharing_manager
 
 # Preference order for selecting analyst ensembles
 ENSEMBLE_PREFERENCE_ORDER = ("stacking_cv", "dynamic_weighting", "voting")
@@ -52,7 +53,7 @@ class TacticianTripleBarrierLabeler:
             A DataFrame with the new 'tactician_label' column.
         """
         self.logger.info(
-            "Applying specialized Tactician triple barrier labels using fixed percentages...",
+            "🔧 Applying specialized Tactician triple barrier labels using fixed percentages...",
         )
 
         # Get parameters from config, with defaults for a high-leverage, 1m timeframe
@@ -69,7 +70,7 @@ class TacticianTripleBarrierLabeler:
         )
         if entry_points.empty:
             self.logger.warning(
-                "No strategic signals found to label. Returning data without labels.",
+                "⚠️ No strategic signals found to label. Returning data without labels.",
             )
             data[
                 "tactician_label"
@@ -137,7 +138,7 @@ class TacticianLabelingStep:
     )
     async def initialize(self) -> None:
         """Initialize the tactician labeling step."""
-        self.logger.info("Initializing Tactician Labeling Step...")
+        self.logger.info("🚀 Initializing Tactician Labeling Step...")
 
     @handle_errors(
         exceptions=(Exception,),
@@ -157,29 +158,52 @@ class TacticianLabelingStep:
             exchange = training_input.get("exchange", "BINANCE")
             data_dir = training_input.get("data_dir", "data/training")
 
-            # Use unified data loader to get comprehensive data for tactician labeling
-            self.logger.info("🔄 Loading unified data for tactician labeling...")
-            data_loader = get_unified_data_loader(self.config)
+            # Use data sharing manager to get comprehensive data for tactician labeling
+            self.logger.info(
+                "🔄 Loading unified data for tactician labeling via data sharing manager..."
+            )
+            data_sharing_manager = get_data_sharing_manager(self.config)
             timeframe = training_input.get("timeframe", "1m")
 
-            # Load unified data with optimizations for ML training (180 days for tactician labeling)
-            data_1m = await data_loader.load_unified_data(
+            # Load unified data with optimizations for ML training
+            # Use data sharing manager to avoid redundant loading
+            from src.config.constants import (
+                BLANK_TRAINING_LOOKBACK_DAYS,
+                FULL_TRAINING_LOOKBACK_DAYS,
+                SHORT_BLANK_LOOKBACK_DAYS,
+            )
+
+            # Use lookback_days from config (should be passed from enhanced training manager)
+            config_lookback = self.config.get(
+                "lookback_days", BLANK_TRAINING_LOOKBACK_DAYS
+            )
+            data_1m = await data_sharing_manager.get_unified_data(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
-                lookback_days=180,
-                use_streaming=True,  # Enable streaming for large datasets
+                lookback_days=config_lookback,
+                force_reload=False,  # Use cache if available from previous steps
             )
 
             if data_1m is None or data_1m.empty:
-                self.logger.error(f"No unified data found for {symbol} on {exchange}")
+                self.logger.error(
+                    f"🚨 No unified data found for {symbol} on {exchange}"
+                )
                 return {
                     "status": "FAILED",
                     "error": f"No unified data found for {symbol} on {exchange}",
                 }
 
             # Log data information
-            data_info = data_loader.get_data_info(data_1m)
+            try:
+                _loader = get_unified_data_loader(self.config)
+                data_info = _loader.get_data_info(data_1m)
+            except Exception as e:
+                self.logger.warning(f"⚠️ Could not get data info: {e}")
+                data_info = {
+                    "rows": len(data_1m) if hasattr(data_1m, "__len__") else None,
+                    "columns": list(getattr(data_1m, "columns", [])) if hasattr(data_1m, "columns") else None,
+                }
             self.logger.info(f"✅ Loaded unified data: {data_info['rows']} rows")
             self.logger.info(
                 f"   Date range: {data_info['date_range']['start']} to {data_info['date_range']['end']}"
@@ -195,7 +219,7 @@ class TacticianLabelingStep:
                 col for col in required_columns if col not in data_1m.columns
             ]
             if missing_columns:
-                self.logger.error(f"Missing required columns: {missing_columns}")
+                self.logger.error(f"🚨 Missing required columns: {missing_columns}")
                 return {
                     "status": "FAILED",
                     "error": f"Missing required columns: {missing_columns}",
@@ -246,7 +270,7 @@ class TacticianLabelingStep:
                 "signals_file": signals_file,
             }
         except Exception as e:
-            self.print(error("❌ Error in Tactician Labeling: {e}"))
+            self.logger.error(f"❌ Error in Tactician Labeling: {e}")
             return {"status": "FAILED", "error": str(e)}
 
     def _load_analyst_ensembles(self, data_dir: str) -> dict[str, Any]:
@@ -452,7 +476,87 @@ class TacticianLabelingStep:
         return labeled_file_parquet, signals_file_parquet
 
 
+# Import training pipeline decorators for comprehensive security and troubleshooting
+from src.utils.training_pipeline_decorators import (
+    validate_step_prerequisites,
+    secure_data_processing,
+    prevent_data_leakage,
+    resource_monitor,
+    memory_efficient,
+    debug_training_step,
+    circuit_breaker_protection,
+    validate_step_output,
+    quality_gate,
+    deterministic_seed,
+    idempotent_step,
+    artifact_write_lock,
+    nan_inf_and_constant_guard,
+    artifact_versioning,
+    time_budget_watchdog,
+)
+
+
 # For backward compatibility with existing step structure
+@deterministic_seed(42)
+@idempotent_step(step_key="step8_tactician_labeling")
+@artifact_write_lock()
+@nan_inf_and_constant_guard()
+@artifact_versioning("1.0")
+@time_budget_watchdog(soft_timeout_seconds=2400.0)
+@validate_step_prerequisites(
+    required_directories=["data/training"],
+    min_memory_gb=4.0,
+    min_disk_gb=3.0,
+    required_packages=["pandas", "numpy", "sklearn"],
+    data_quality_checks={
+        "min_rows": 1000,
+        "required_columns": ["timestamp", "open", "high", "low", "close", "volume"],
+    },
+    context="Tactician Labeling",
+)
+@secure_data_processing(
+    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True
+)
+@prevent_data_leakage(
+    temporal_validation=True,
+    feature_leakage_detection=True,
+    lookahead_bias_prevention=True,
+)
+@resource_monitor(
+    memory_threshold_gb=8.0,
+    cpu_threshold_percent=80.0,
+    disk_threshold_gb=5.0,
+    monitor_interval=30.0,
+    auto_cleanup=True,
+)
+@memory_efficient(
+    chunk_size=20000, streaming_processing=True, memory_pool=True, cleanup_frequency=40
+)
+@debug_training_step(
+    log_intermediate_results=True,
+    save_debug_artifacts=True,
+    performance_profiling=True,
+    error_context_preservation=True,
+)
+@circuit_breaker_protection(
+    failure_threshold=3,
+    recovery_timeout=120.0,
+    expected_exception=Exception,
+    monitor_interval=30.0,
+)
+@validate_step_output(
+    required_files=["data/training/{exchange}_{symbol}_tactician_labels.parquet"],
+    data_quality_checks={
+        "min_rows": 100,
+        "required_columns": ["timestamp", "label", "signal"],
+    },
+    performance_thresholds={"labeling_time_minutes": 45.0},
+    format_validation=True,
+)
+@quality_gate(
+    data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
+    validation_score_requirements={"labeling_accuracy": 0.7},
+)
 async def run_step(
     symbol: str,
     exchange: str = "BINANCE",

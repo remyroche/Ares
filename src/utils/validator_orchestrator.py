@@ -57,8 +57,12 @@ class ValidatorOrchestrator:
             try:
                 self.logger.debug(
                     "Input context - training_input_keys=%s pipeline_state_keys=%s",
-                    list(training_input.keys()) if isinstance(training_input, dict) else type(training_input).__name__,
-                    list(pipeline_state.keys()) if isinstance(pipeline_state, dict) else type(pipeline_state).__name__,
+                    list(training_input.keys())
+                    if isinstance(training_input, dict)
+                    else type(training_input).__name__,
+                    list(pipeline_state.keys())
+                    if isinstance(pipeline_state, dict)
+                    else type(pipeline_state).__name__,
                 )
             except Exception:
                 # Defensive: never fail due to logging of keys
@@ -86,10 +90,14 @@ class ValidatorOrchestrator:
 
             # Record metrics
             try:
-                metrics.record_step_execution(step_name=step_name, duration=duration, status=status)
+                metrics.record_step_execution(
+                    step_name=step_name, duration=duration, status=status
+                )
             except Exception:
                 # Metrics are best-effort; do not fail validation on metrics issues
-                self.logger.debug("Metrics recording for step execution failed", exc_info=True)
+                self.logger.debug(
+                    "Metrics recording for step execution failed", exc_info=True
+                )
 
             if passed:
                 metrics.record_validation_result(
@@ -133,9 +141,13 @@ class ValidatorOrchestrator:
 
             # Record failure metric
             try:
-                metrics.record_step_execution(step_name=step_name, duration=duration, status="EXCEPTION")
+                metrics.record_step_execution(
+                    step_name=step_name, duration=duration, status="EXCEPTION"
+                )
             except Exception:
-                self.logger.debug("Metrics recording for exception failed", exc_info=True)
+                self.logger.debug(
+                    "Metrics recording for exception failed", exc_info=True
+                )
 
             metrics.record_validation_result(
                 step_name=step_name,
@@ -168,48 +180,34 @@ class ValidatorOrchestrator:
         # Map step names to validator modules
         validator_mapping = {
             "step1_data_collection": "step1_data_collection_validator",
-            "step2_market_regime_classification": (
+            "step2_feature_engineering": "step2_feature_engineering_validator",
+            "step3_hmm_regime_discovery": "step3_hmm_regime_discovery_validator",
+            "step4_processing_labeling": "step4_processing_labeling_validator",
+            "step4_market_regime_classification": (
                 "step2_market_regime_classification_validator"
             ),
-            # New step names
-            "step1_7_hmm_regime_discovery": (
-                "step1_7_hmm_regime_discovery_validator"
-            ),
-            "step2_processing_labeling_feature_engineering": (
-                "step4_analyst_labeling_feature_engineering_validator"
-            ),
-            "step3_feature_engineering": (
-                "step4_analyst_labeling_feature_engineering_validator"
-            ),
-            "step4_regime_data_splitting": "step3_regime_data_splitting_validator",
-            "step5_analyst_specialist_training": (
-                "step5_analyst_specialist_training_validator"
-            ),
-            "step6_analyst_enhancement": "step6_analyst_enhancement_validator",
-            "step7_analyst_ensemble_creation": (
-                "step7_analyst_ensemble_creation_validator"
-            ),
+            "step5_regime_data_splitting": "step5_regime_data_splitting_validator",
+            "step6_hmm_based_training": "step6_hmm_based_training_validator",
+            "step6_5_unified_regime_intelligence": "step5_5_unified_regime_intelligence_validator",
+            "step7_analyst_enhancement": "step6_analyst_enhancement_validator",
             "step8_tactician_labeling": "step8_tactician_labeling_validator",
             "step9_tactician_specialist_training": (
                 "step9_tactician_specialist_training_validator"
             ),
-            "step10_tactician_ensemble_creation": (
-                "step10_tactician_ensemble_creation_validator"
-            ),
-            "step11_confidence_calibration": (
+            "step10_confidence_calibration": (
                 "step11_confidence_calibration_validator"
             ),
-            "step12_final_parameters_optimization": (
+            "step11_final_parameters_optimization": (
                 "step12_final_parameters_optimization_validator"
             ),
-            "step13_walk_forward_validation": (
+            "step12_walk_forward_validation": (
                 "step13_walk_forward_validation_validator"
             ),
-            "step14_monte_carlo_validation": (
+            "step13_monte_carlo_validation": (
                 "step14_monte_carlo_validation_validator"
             ),
-            "step15_ab_testing": "step15_ab_testing_validator",
-            "step16_saving": "step16_saving_validator",
+            "step14_ab_testing": "step15_ab_testing_validator",
+            "step15_saving": "step16_saving_validator",
         }
 
         validator_module_name = validator_mapping.get(step_name)
@@ -226,9 +224,13 @@ class ValidatorOrchestrator:
             self.validators[step_name] = validator_module
 
             # Resolve run function
-            run_validator_func: Any | None = getattr(validator_module, "run_validator", None)
+            run_validator_func: Any | None = getattr(
+                validator_module, "run_validator", None
+            )
             if run_validator_func is None or not callable(run_validator_func):
-                warn_msg = f"run_validator not found or not callable in module {module_path}"
+                warn_msg = (
+                    f"run_validator not found or not callable in module {module_path}"
+                )
                 self.logger.warning(missing(warn_msg))
                 return {
                     "step_name": step_name,
@@ -247,7 +249,11 @@ class ValidatorOrchestrator:
                 f"{bool(result.get('validation_passed', False)) if isinstance(result, dict) else bool(result)}",
             )
             # Ensure dict result; normalize later in caller
-            return result if isinstance(result, dict) else {"validation_passed": bool(result)}
+            return (
+                result
+                if isinstance(result, dict)
+                else {"validation_passed": bool(result)}
+            )
 
         except ImportError as e:
             # Explicitly warn about missing module and continue as a soft skip
@@ -296,7 +302,9 @@ class ValidatorOrchestrator:
 
         # If failed and no explicit reason, extract one for better troubleshooting
         if not bool(normalized.get("validation_passed", False)) and not (
-            normalized.get("error") or normalized.get("warning") or normalized.get("message")
+            normalized.get("error")
+            or normalized.get("warning")
+            or normalized.get("message")
         ):
             normalized["error"] = self._extract_failure_reason(normalized)
 

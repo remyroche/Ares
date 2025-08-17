@@ -60,7 +60,7 @@ def convert_trade_data_to_ohlcv(
         return ohlcv
 
     except Exception as e:
-        system_logger.error(f"Error converting trade data to OHLCV: {e}")
+        system_logger.error(f"🚨 Error converting trade data to OHLCV: {e}")
         raise
 
 
@@ -74,13 +74,13 @@ class MarketRegimeClassificationStep:
 
     async def initialize(self) -> None:
         """Initialize the market regime classification step."""
-        self.logger.info("Initializing Market Regime Classification Step...")
+        self.logger.info("🚀 Initializing Market Regime Classification Step...")
 
         # No ML classifier; using deterministic EMA/ADX rules
         self.regime_classifier = None
 
         self.logger.info(
-            "Market Regime Classification Step initialized successfully",
+            "✅ Market Regime Classification Step initialized successfully"
         )
 
     async def execute(
@@ -111,7 +111,17 @@ class MarketRegimeClassificationStep:
         data_loader = get_unified_data_loader(self.config)
 
         # Determine lookback period: prefer training_input, fallback to config (default 180 days)
-        lookback_days = training_input.get("lookback_days", self.config.get("lookback_days", 180))
+        from src.config.constants import (
+            BLANK_TRAINING_LOOKBACK_DAYS,
+            FULL_TRAINING_LOOKBACK_DAYS,
+            SHORT_BLANK_LOOKBACK_DAYS,
+        )
+
+        # Use lookback_days from training_input (passed from enhanced training manager) or config
+        lookback_days = training_input.get(
+            "lookback_days",
+            self.config.get("lookback_days", BLANK_TRAINING_LOOKBACK_DAYS),
+        )
 
         # Load unified data with optimizations for ML training
         historical_data = await data_loader.load_unified_data(
@@ -172,42 +182,44 @@ class MarketRegimeClassificationStep:
 
         # Create DataFrame with expected columns
         if (
-                "regime_sequence" in regime_results
-                and "confidence_scores" in regime_results
-            ):
-                # Use timestamps from original data/index
-                if "timestamp" in historical_data.columns:
-                    timestamps = pd.to_datetime(historical_data["timestamp"]).tolist()
-                elif isinstance(historical_data.index, pd.DatetimeIndex):
-                    timestamps = historical_data.index.to_list()
-                else:
-                    # Fallback: generate hourly timestamps ending at current time
-                    try:
-                        periods = len(regime_results["regime_sequence"])
-                        timestamps = pd.date_range(end=pd.Timestamp.utcnow(), periods=periods, freq="1H").to_list()
-                    except Exception:
-                        timestamps = list(range(len(regime_results["regime_sequence"])))
+            "regime_sequence" in regime_results
+            and "confidence_scores" in regime_results
+        ):
+            # Use timestamps from original data/index
+            if "timestamp" in historical_data.columns:
+                timestamps = pd.to_datetime(historical_data["timestamp"]).tolist()
+            elif isinstance(historical_data.index, pd.DatetimeIndex):
+                timestamps = historical_data.index.to_list()
+            else:
+                # Fallback: generate hourly timestamps ending at current time
+                try:
+                    periods = len(regime_results["regime_sequence"])
+                    timestamps = pd.date_range(
+                        end=pd.Timestamp.utcnow(), periods=periods, freq="1H"
+                    ).to_list()
+                except Exception:
+                    timestamps = list(range(len(regime_results["regime_sequence"])))
 
-                # Ensure all sequences have the same length
-                min_length = min(
-                    len(timestamps),
-                    len(regime_results["regime_sequence"]),
-                    len(regime_results["confidence_scores"]),
-                )
+            # Ensure all sequences have the same length
+            min_length = min(
+                len(timestamps),
+                len(regime_results["regime_sequence"]),
+                len(regime_results["confidence_scores"]),
+            )
 
-                parquet_df = pd.DataFrame(
-                    {
-                        "timestamp": timestamps[:min_length],
-                        "regime": regime_results["regime_sequence"][:min_length],
-                        "confidence": regime_results["confidence_scores"][:min_length],
-                    }
-                )
+            parquet_df = pd.DataFrame(
+                {
+                    "timestamp": timestamps[:min_length],
+                    "regime": regime_results["regime_sequence"][:min_length],
+                    "confidence": regime_results["confidence_scores"][:min_length],
+                }
+            )
 
-                # Save to parquet
-                parquet_df.to_parquet(parquet_file_path, index=False)
-                self.logger.info(
-                    f"✅ Saved regime classification results to parquet: {parquet_file_path}"
-                )
+            # Save to parquet
+            parquet_df.to_parquet(parquet_file_path, index=False)
+            self.logger.info(
+                f"✅ Saved regime classification results to parquet: {parquet_file_path}"
+            )
 
         self.logger.info(
             f"✅ Market regime classification completed. Results saved to {regime_file_path}",
@@ -269,7 +281,7 @@ class MarketRegimeClassificationStep:
             return resampled
 
         except Exception as e:
-            self.logger.error(f"Error resampling data: {e}")
+            self.logger.error(f"🚨 Error resampling data: {e}")
             raise
 
     async def _classify_market_regimes(
@@ -307,7 +319,9 @@ class MarketRegimeClassificationStep:
                 if old_col in data.columns and new_col not in data.columns:
                     data = data.rename(columns={old_col: new_col})
 
-            missing_columns = [col for col in required_columns if col not in data.columns]
+            missing_columns = [
+                col for col in required_columns if col not in data.columns
+            ]
             if missing_columns:
                 raise ValueError(
                     f"Missing required columns for regime classification: {missing_columns}",
@@ -319,8 +333,16 @@ class MarketRegimeClassificationStep:
             df = data.copy()
 
             # Resolve parameter overrides (training_input > config > defaults)
-            regime_cfg = (self.config or {}).get("regime_classification", {}) if isinstance(self.config, dict) else {}
-            overrides = (training_input or {}).get("regime_params", {}) if isinstance(training_input, dict) else {}
+            regime_cfg = (
+                (self.config or {}).get("regime_classification", {})
+                if isinstance(self.config, dict)
+                else {}
+            )
+            overrides = (
+                (training_input or {}).get("regime_params", {})
+                if isinstance(training_input, dict)
+                else {}
+            )
 
             ema_fast = overrides.get("ema_fast", regime_cfg.get("ema_fast", 21))
             ema_slow = overrides.get("ema_slow", regime_cfg.get("ema_slow", 55))
@@ -337,7 +359,8 @@ class MarketRegimeClassificationStep:
 
             # Optional auto-calibration to hit target SIDEWAYS band
             target_range = overrides.get(
-                "target_sideways_range", regime_cfg.get("target_sideways_range", [0.25, 0.35])
+                "target_sideways_range",
+                regime_cfg.get("target_sideways_range", [0.25, 0.35]),
             )  # default 25–35%
             auto_calibrate = overrides.get(
                 "auto_calibrate_sideways",
@@ -401,7 +424,12 @@ class MarketRegimeClassificationStep:
                 "ema_sep_min_ratio": ema_sep_min_ratio,
             }
 
-            if auto_calibrate and target_range and isinstance(target_range, (list, tuple)) and len(target_range) == 2:
+            if (
+                auto_calibrate
+                and target_range
+                and isinstance(target_range, (list, tuple))
+                and len(target_range) == 2
+            ):
                 target_low = float(target_range[0])
                 target_high = float(target_range[1])
                 it = 0
@@ -412,24 +440,38 @@ class MarketRegimeClassificationStep:
                 _EMA_SEP_UPPER_BOUND = 0.02
                 _ADX_THRESHOLD_GAP = 1.0
 
-                while (sideways_ratio < target_low or sideways_ratio > target_high) and it < max_calibration_iters:
+                while (
+                    sideways_ratio < target_low or sideways_ratio > target_high
+                ) and it < max_calibration_iters:
                     # Adjust thresholds to move ratio toward band
                     if sideways_ratio > target_high:
                         # Too much SIDEWAYS -> make trend easier
-                        adx_trend_threshold = max(_ADX_LOWER_BOUND, adx_trend_threshold - adx_trend_step)
-                        adx_sideways_threshold = max(_ADX_LOWER_BOUND, adx_sideways_threshold - adx_sideways_step)
-                        ema_sep_min_ratio = max(_EMA_SEP_LOWER_BOUND, ema_sep_min_ratio - ema_sep_step)
+                        adx_trend_threshold = max(
+                            _ADX_LOWER_BOUND, adx_trend_threshold - adx_trend_step
+                        )
+                        adx_sideways_threshold = max(
+                            _ADX_LOWER_BOUND, adx_sideways_threshold - adx_sideways_step
+                        )
+                        ema_sep_min_ratio = max(
+                            _EMA_SEP_LOWER_BOUND, ema_sep_min_ratio - ema_sep_step
+                        )
                     else:
                         # Too little SIDEWAYS -> make trend harder / expand sideways
-                        adx_trend_threshold = min(_ADX_UPPER_BOUND, adx_trend_threshold + adx_trend_step)
+                        adx_trend_threshold = min(
+                            _ADX_UPPER_BOUND, adx_trend_threshold + adx_trend_step
+                        )
                         adx_sideways_threshold = min(
                             adx_trend_threshold - _ADX_THRESHOLD_GAP,
                             adx_sideways_threshold + adx_sideways_step,
                         )
-                        ema_sep_min_ratio = min(_EMA_SEP_UPPER_BOUND, ema_sep_min_ratio + ema_sep_step)
+                        ema_sep_min_ratio = min(
+                            _EMA_SEP_UPPER_BOUND, ema_sep_min_ratio + ema_sep_step
+                        )
 
                     # Enforce relationship
-                    adx_sideways_threshold = min(adx_sideways_threshold, adx_trend_threshold - _ADX_THRESHOLD_GAP)
+                    adx_sideways_threshold = min(
+                        adx_sideways_threshold, adx_trend_threshold - _ADX_THRESHOLD_GAP
+                    )
 
                     regimes, confidences, sideways_ratio = classify_and_ratio(
                         ema_fast,
@@ -442,17 +484,20 @@ class MarketRegimeClassificationStep:
 
                     it += 1
 
-                calibrated_params.update({
-                    "adx_trend_threshold": adx_trend_threshold,
-                    "adx_sideways_threshold": adx_sideways_threshold,
-                    "ema_sep_min_ratio": ema_sep_min_ratio,
-                    "target_sideways_range": [target_low, target_high],
-                    "achieved_sideways_ratio": sideways_ratio,
-                    "calibration_iters": it,
-                })
+                calibrated_params.update(
+                    {
+                        "adx_trend_threshold": adx_trend_threshold,
+                        "adx_sideways_threshold": adx_sideways_threshold,
+                        "ema_sep_min_ratio": ema_sep_min_ratio,
+                        "target_sideways_range": [target_low, target_high],
+                        "achieved_sideways_ratio": sideways_ratio,
+                        "calibration_iters": it,
+                    }
+                )
 
             # Build results
             from collections import Counter
+
             regime_counts = Counter(regimes)
 
             formatted_results = {
@@ -483,12 +528,14 @@ class MarketRegimeClassificationStep:
             s_regimes = pd.Series(regimes)
             shifted = s_regimes.shift(1)
             mask = s_regimes != shifted
-            transitions_df = pd.DataFrame({
-                'from_regime': shifted[mask],
-                'to_regime': s_regimes[mask],
-                'transition_index': s_regimes.index[mask]
-            })
-            formatted_results["regime_transitions"] = transitions_df.to_dict('records')
+            transitions_df = pd.DataFrame(
+                {
+                    "from_regime": shifted[mask],
+                    "to_regime": s_regimes[mask],
+                    "transition_index": s_regimes.index[mask],
+                }
+            )
+            formatted_results["regime_transitions"] = transitions_df.to_dict("records")
 
             self.logger.info(
                 f"Regime classification (EMA/ADX) completed. Found {len(regime_counts)} distinct regimes",
@@ -497,11 +544,76 @@ class MarketRegimeClassificationStep:
             return formatted_results
 
         except Exception as e:
-            self.logger.error(f"Error in regime classification: {e}")
+            self.logger.error(f"🚨 Error in regime classification: {e}")
             raise
 
 
+# Import training pipeline decorators for comprehensive security and troubleshooting
+from src.utils.training_pipeline_decorators import (
+    validate_step_prerequisites,
+    secure_data_processing,
+    prevent_data_leakage,
+    resource_monitor,
+    memory_efficient,
+    debug_training_step,
+    circuit_breaker_protection,
+    validate_step_output,
+    quality_gate,
+)
+
+
 # For backward compatibility with existing step structure
+@validate_step_prerequisites(
+    required_directories=["data_cache", "data/training"],
+    min_memory_gb=4.0,
+    min_disk_gb=2.0,
+    required_packages=["pandas", "numpy", "sklearn"],
+    data_quality_checks={
+        "min_rows": 1000,
+        "required_columns": ["timestamp", "open", "high", "low", "close", "volume"],
+    },
+    context="Market Regime Classification",
+)
+@secure_data_processing(
+    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True
+)
+@prevent_data_leakage(
+    temporal_validation=True,
+    feature_leakage_detection=True,
+    lookahead_bias_prevention=True,
+)
+@resource_monitor(
+    memory_threshold_gb=8.0,
+    cpu_threshold_percent=80.0,
+    disk_threshold_gb=5.0,
+    monitor_interval=30.0,
+    auto_cleanup=True,
+)
+@memory_efficient(
+    chunk_size=25000, streaming_processing=True, memory_pool=True, cleanup_frequency=50
+)
+@debug_training_step(
+    log_intermediate_results=True,
+    save_debug_artifacts=True,
+    performance_profiling=True,
+    error_context_preservation=True,
+)
+@circuit_breaker_protection(
+    failure_threshold=3,
+    recovery_timeout=120.0,
+    expected_exception=Exception,
+    monitor_interval=30.0,
+)
+@validate_step_output(
+    required_files=["data/training/{exchange}_{symbol}_regime_classification.json"],
+    data_quality_checks={"min_rows": 100, "required_columns": ["regime", "confidence"]},
+    performance_thresholds={"classification_time_minutes": 30.0},
+    format_validation=True,
+)
+@quality_gate(
+    data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
+    validation_score_requirements={"classification_accuracy": 0.7},
+)
 async def run_step(
     symbol: str,
     exchange: str = "BINANCE",

@@ -1180,8 +1180,7 @@ class EnhancedTrainingManager:
                     step_times,
                     success=False,
                 )
-                # Non-fatal: proceed but warn
-                self.logger.warning("⚠️ Proceeding without Step 3 HMM artifacts (non-fatal)")
+                return False
             else:
                 self._log_step_completion(
                     "Step 3: HMM Regime Discovery",
@@ -1208,19 +1207,7 @@ class EnhancedTrainingManager:
                     f"Validator for step3_hmm_regime_discovery failed but is non-fatal: {e}"
                 )
 
-            # Step 3: Feature Engineering
-            self._heartbeat("Step 3: Feature Engineering")
-            try:
-                from src.training.steps import step3_feature_engineering
-                step3_success = await step3_feature_engineering.run_step(
-                    symbol=symbol,
-                    exchange=exchange,
-                    data_dir=data_dir,
-                    timeframe=timeframe,
-                )
-            except Exception as e:
-                self.logger.error(f"❌ Error in Step 3: {e}")
-                step3_success = False
+            # Removed old Step 3 Feature Engineering: feature engineering is handled in Step 2 now
 
             if not step3_success:
                 self._log_step_completion(

@@ -35,9 +35,8 @@ class StepOrchestrator:
         self.available_steps = [
             "step1_data_collection",
             "step1_5_data_converter",  # NEW STEP
+            "step2_processing_labeling_feature_engineering",  # Step 2 = Feature engineering now
             "step3_hmm_regime_discovery",  # HMM Regimes after Step 2
-            "step2_processing_labeling_feature_engineering",
-            "step3_feature_engineering",
             "step4_regime_data_splitting",
             "step5_analyst_specialist_training",
             "step6_analyst_enhancement",

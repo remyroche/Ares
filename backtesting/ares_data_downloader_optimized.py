@@ -123,6 +123,10 @@ class OptimizedDataDownloader:
         self.semaphore = asyncio.Semaphore(config.max_concurrent_requests)
         self.download_semaphore = asyncio.Semaphore(config.max_concurrent_downloads)
         self.cache_dir = "data_cache"
+        # Ensure cache directory exists early
+        os.makedirs(self.cache_dir, exist_ok=True)
+        # Initialize exchange client placeholder so attributes exist before initialize()
+        self.exchange_client = None
         self.stats = {
             "klines_downloaded": 0,
             "aggtrades_downloaded": 0,
@@ -131,11 +135,186 @@ class OptimizedDataDownloader:
             "errors": 0,
         }
 
-        # Ensure cache directory exists
-        os.makedirs(self.cache_dir, exist_ok=True)
+    @staticmethod
+    def _to_utc_ms(dt: datetime) -> int:
+        """Convert naive-UTC datetime to milliseconds since epoch, preserving sub-second precision."""
+        import calendar
 
-        # Initialize exchange client
-        self.exchange_client = None
+        return int(calendar.timegm(dt.timetuple()) * 1000 + (dt.microsecond // 1000))
+
+    def _adjust_daily_boundaries(
+        self,
+        start_dt: datetime,
+        start_ms: int,
+        end_ms: int,
+    ) -> tuple[int, int]:
+        """Adjust daily start/end to avoid overlap with neighboring daily CSVs.
+
+        - If previous day's CSV exists, set start to max(original start, prev_day_last_ts+1)
+        - If next day's CSV exists, set end to min(original end, next_day_first_ts)
+        - If neighbor files are empty/unreadable, ignore adjustment for that side
+        """
+        from pathlib import Path
+        import pandas as pd
+
+        def find_last_timestamp(csv_path: Path) -> int | None:
+            try:
+                if not csv_path.exists() or csv_path.stat().st_size == 0:
+                    return None
+                # Read timestamp column and compute max to be robust to unsorted files
+                df = pd.read_csv(
+                    csv_path, usecols=["timestamp"], parse_dates=["timestamp"]
+                )
+                if df.empty or "timestamp" not in df.columns:
+                    return None
+                last_ts = int(df["timestamp"].max().value // 1_000_000)
+                return last_ts
+            except Exception:
+                return None
+
+        def find_first_timestamp(csv_path: Path) -> int | None:
+            try:
+                if not csv_path.exists() or csv_path.stat().st_size == 0:
+                    return None
+                df = pd.read_csv(
+                    csv_path, usecols=["timestamp"], parse_dates=["timestamp"]
+                )
+                if df.empty or "timestamp" not in df.columns:
+                    return None
+                first_ts = int(df["timestamp"].min().value // 1_000_000)
+                return first_ts
+            except Exception:
+                return None
+
+        prev_day = (start_dt - timedelta(days=1)).strftime("%Y-%m-%d")
+        next_day = (start_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+        prev_csv = (
+            Path(self.cache_dir)
+            / f"aggtrades_{self.config.exchange}_{self.config.symbol}_{prev_day}.csv"
+        )
+        next_csv = (
+            Path(self.cache_dir)
+            / f"aggtrades_{self.config.exchange}_{self.config.symbol}_{next_day}.csv"
+        )
+
+        effective_start_ms = start_ms
+        effective_end_ms = end_ms
+
+        prev_last = find_last_timestamp(prev_csv)
+        if prev_last is not None:
+            effective_start_ms = max(effective_start_ms, prev_last + 1)
+
+        next_first = find_first_timestamp(next_csv)
+        if next_first is not None:
+            effective_end_ms = min(effective_end_ms, next_first)
+
+        return effective_start_ms, effective_end_ms
+
+    async def _fetch_aggtrades_from_binance_vision(
+        self,
+        symbol: str,
+        day_dt: datetime,
+        effective_start_ms: int,
+        effective_end_ms: int,
+        market_segment: str = "um",
+    ) -> list[dict]:
+        """Download aggregated trades from Binance Data (binance.vision) for a specific day.
+
+        Args:
+            symbol: Trading symbol (e.g., ETHUSDT)
+            day_dt: Datetime object representing the day (UTC) to fetch
+            effective_start_ms: Lower bound (inclusive) in ms to filter rows
+            effective_end_ms: Upper bound (exclusive) in ms to filter rows
+            market_segment: 'um' for USDT-M futures, 'cm' for COIN-M futures
+
+        Returns:
+            List of trade dicts with keys matching Binance aggTrades API ('a','p','q','f','l','T','m').
+        """
+        import io
+        import zipfile
+
+        base_url = "https://data.binance.vision"
+        date_str = day_dt.strftime("%Y-%m-%d")
+        # Futures USDT-M (fapi) dataset path
+        path = f"data/futures/{market_segment}/daily/aggTrades/{symbol}/{symbol}-aggTrades-{date_str}.zip"
+        url = f"{base_url}/{path}"
+
+        try:
+            # Use certifi CA bundle to avoid SSL verification issues on some systems
+            import ssl
+            import certifi
+
+            ssl_context = ssl.create_default_context(cafile=certifi.where())
+
+            async with self.session.get(url, ssl=ssl_context) as resp:
+                if resp.status != 200:
+                    logger.info(
+                        f"Binance Vision: no file for {symbol} {date_str} (status {resp.status})",
+                    )
+                    return []
+                content = await resp.read()
+
+            with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                # Pick first CSV entry
+                csv_names = [n for n in zf.namelist() if n.endswith(".csv")]
+                if not csv_names:
+                    logger.warning(
+                        f"Binance Vision: archive for {symbol} {date_str} has no CSV entries",
+                    )
+                    return []
+                with zf.open(csv_names[0]) as f:
+                    df = pd.read_csv(
+                        f,
+                        header=None,
+                        names=["a", "p", "q", "f", "l", "T", "m", "M"],
+                    )
+
+            if df.empty:
+                return []
+
+            # Coerce types to expected numeric/bool
+            for col in ["a", "f", "l", "T"]:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+            for col in ["p", "q"]:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+            # Normalize boolean 'm'
+            df["m"] = (
+                df["m"]
+                .astype(str)
+                .str.lower()
+                .map(
+                    {
+                        "true": True,
+                        "false": False,
+                        "1": True,
+                        "0": False,
+                    }
+                )
+                .fillna(False)
+                .astype(bool)
+            )
+
+            # Drop rows with invalid timestamps
+            df = df.dropna(subset=["T"])
+
+            # Filter to the effective time window
+            df = df[(df["T"] >= effective_start_ms) & (df["T"] < effective_end_ms)]
+            if df.empty:
+                return []
+
+            # Convert to list of dicts compatible with _process_aggtrades_data
+            records = df[["a", "p", "q", "f", "l", "T", "m"]].to_dict(
+                orient="records",
+            )
+            return records
+        except Exception as e:
+            import traceback
+
+            error_details = traceback.format_exc()
+            logger.warning(
+                f"Binance Vision fallback failed for {symbol} {date_str}: {e}\n{error_details}",
+            )
+            return []
 
     async def initialize(self):
         """Initialize the downloader and exchange client."""
@@ -334,10 +513,29 @@ class OptimizedDataDownloader:
                     max_days = 365 * self.config.lookback_years
                     start_date = end_date - timedelta(days=max_days)
         else:
-            # For other data types, use standard lookback
-            end_date = datetime.now()
-            max_days = 365 * self.config.lookback_years
-            start_date = end_date - timedelta(days=max_days)
+            # For other data types, use explicit date range if provided, otherwise standard lookback
+            if self.config.start_date_str and self.config.end_date_str:
+                try:
+                    start_date = datetime.strptime(
+                        self.config.start_date_str, "%Y-%m-%d"
+                    )
+                    end_date = datetime.strptime(
+                        self.config.end_date_str, "%Y-%m-%d"
+                    ) + timedelta(days=1)
+                    print(
+                        f"🔍 DEBUG: Using explicit date range for {data_type}: {start_date} to {end_date}"
+                    )
+                except Exception as e:
+                    print(
+                        f"⚠️ Invalid explicit date range: {e}; falling back to standard lookback"
+                    )
+                    end_date = datetime.now()
+                    max_days = 365 * self.config.lookback_years
+                    start_date = end_date - timedelta(days=max_days)
+            else:
+                end_date = datetime.now()
+                max_days = 365 * self.config.lookback_years
+                start_date = end_date - timedelta(days=max_days)
 
         print(
             f"   📊 Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}",
@@ -400,41 +598,101 @@ class OptimizedDataDownloader:
             print("   📊 Processing aggtrades (daily periods)...")
             logger.info("📊 Processing aggtrades (daily periods)...")
             # Daily periods for aggtrades
-            periods = []
-            day_count = 0
-            skip_count = 0
+            periods: list[tuple[datetime, datetime]] = []
+            scheduled_count = 0
+            fully_covered_count = 0
 
             # Starting point already set above; create daily periods
             current = start_date
 
+            # Helper to compute CSV coverage (first and last timestamps in ms)
+            def _csv_ts_bounds(path: str) -> tuple[int | None, int | None]:
+                try:
+                    if not os.path.exists(path) or os.path.getsize(path) == 0:
+                        return None, None
+                    df_cov = pd.read_csv(
+                        path, usecols=["timestamp"], parse_dates=["timestamp"]
+                    )  # type: ignore[arg-type]
+                    if df_cov.empty:
+                        return None, None
+                    first_ms = int(df_cov["timestamp"].iloc[0].value // 1_000_000)
+                    last_ms = int(df_cov["timestamp"].iloc[-1].value // 1_000_000)
+                    return first_ms, last_ms
+                except Exception:
+                    return None, None
+
             # Create daily periods from current to end_date
-            print(f"🔍 DEBUG: Starting daily period loop from {current} to {end_date}")
+            # Reduce logging verbosity for routine file checks
             while current < end_date:
                 period_end = current + timedelta(days=1)
                 filename = f"aggtrades_{self.config.exchange}_{self.config.symbol}_{current.strftime('%Y-%m-%d')}.csv"
                 filepath = os.path.join(self.cache_dir, filename)
+                force_mode = getattr(self.config, "force", False)
 
-                print(f"🔍 DEBUG: Checking file: {filename}")
+                # Compute UTC ms boundaries for the day (preserve microseconds)
+                day_start_ms = self._to_utc_ms(current)
+                day_end_ms = self._to_utc_ms(period_end)
 
-                # Only download if file doesn't exist
-                if not os.path.exists(filepath):
+                if (
+                    force_mode
+                    or not os.path.exists(filepath)
+                    or os.path.getsize(filepath) == 0
+                ):
                     periods.append((current, period_end))
-                    day_count += 1
-                    print(f"   📥 Will download: {filename}")
+                    scheduled_count += 1
                     logger.info(f"📥 Will download: {filename}")
                 else:
-                    skip_count += 1
-                    print(f"   📁 Skipping existing: {filename}")
-                    logger.info(f"📁 Skipping existing: {filename}")
+                    # Verify coverage; schedule top-ups for missing prefix/suffix
+                    # Only log at DEBUG level to reduce verbosity
+                    logger.debug(f"🔍 Checking coverage: {filename}")
+                    cov_first_ms, cov_last_ms = _csv_ts_bounds(filepath)
+
+                    if cov_first_ms is None or cov_last_ms is None:
+                        # Unreadable or empty after parse → full day
+                        periods.append((current, period_end))
+                        scheduled_count += 1
+                        logger.info(f"📥 Coverage unknown → re-download: {filename}")
+                    else:
+                        missing = False
+                        # Prefix gap
+                        if cov_first_ms > day_start_ms:
+                            # Build timezone-aware UTC datetimes for precise slicing
+                            from datetime import datetime as _dt, timezone as _tz
+
+                            gap_start_dt = current.replace(tzinfo=_tz.utc)
+                            gap_end_dt = _dt.fromtimestamp(
+                                cov_first_ms / 1000.0, tz=_tz.utc
+                            )
+                            periods.append((gap_start_dt, gap_end_dt))
+                            scheduled_count += 1
+                            missing = True
+                            # Only log at DEBUG level to reduce verbosity
+                            logger.debug(f"📥 Will top-up prefix: {gap_start_dt} → {gap_end_dt}")
+                        # Suffix gap
+                        if cov_last_ms < day_end_ms - 1:
+                            from datetime import datetime as _dt, timezone as _tz
+
+                            gap_start_dt = _dt.fromtimestamp(
+                                (cov_last_ms + 1) / 1000.0, tz=_tz.utc
+                            )
+                            gap_end_dt = period_end.replace(tzinfo=_tz.utc)
+                            periods.append((gap_start_dt, gap_end_dt))
+                            scheduled_count += 1
+                            missing = True
+                            # Only log at DEBUG level to reduce verbosity
+                            logger.debug(f"📥 Will top-up suffix: {gap_start_dt} → {gap_end_dt}")
+                        if not missing:
+                            fully_covered_count += 1
+                            # Only log at DEBUG level to reduce verbosity
+                            logger.debug(f"✅ Already fully covered: {filename}")
 
                 current = period_end
-                print(f"🔍 DEBUG: Moving to next day: {current}")
 
             print(
-                f"   📊 Summary: {day_count} days to download, {skip_count} days skipped",
+                f"   📊 Summary: {scheduled_count} periods to download, {fully_covered_count} days fully covered",
             )
             logger.info(
-                f"📊 Summary: {day_count} days to download, {skip_count} days skipped",
+                f"📊 Summary: {scheduled_count} periods to download, {fully_covered_count} days fully covered",
             )
             return periods
         # futures
@@ -581,9 +839,11 @@ class OptimizedDataDownloader:
                 )
                 logger.info(f"📥 Downloading klines for {start_dt.strftime('%Y-%m')}")
 
-                # Convert to milliseconds
-                start_ms = int(start_dt.timestamp() * 1000)
-                end_ms = int(end_dt.timestamp() * 1000)
+                # Convert to milliseconds in UTC to avoid local tz shifts
+                import calendar
+
+                start_ms = int(calendar.timegm(start_dt.timetuple()) * 1000)
+                end_ms = int(calendar.timegm(end_dt.timetuple()) * 1000)
 
                 print(f"         ⏰ Time range: {start_dt} to {end_dt}")
                 print(f"         🔢 Timestamps: {start_ms} to {end_ms}")
@@ -962,14 +1222,49 @@ class OptimizedDataDownloader:
                     f"📥 Downloading aggtrades for {start_dt.strftime('%Y-%m-%d')}",
                 )
 
-                # Convert to milliseconds
-                start_ms = int(start_dt.timestamp() * 1000)
-                end_ms = int(end_dt.timestamp() * 1000)
+                # Convert to milliseconds in UTC to avoid local tz shifts
+                import calendar
 
-                print(f"         ⏰ Time range: {start_dt} to {end_dt}")
-                print(f"         🔢 Timestamps: {start_ms} to {end_ms}")
-                logger.info(f"⏰ Time range: {start_dt} to {end_dt}")
-                logger.info(f"🔢 Timestamps: {start_ms} to {end_ms}")
+                start_ms = int(calendar.timegm(start_dt.timetuple()) * 1000)
+                end_ms = int(calendar.timegm(end_dt.timetuple()) * 1000)
+
+                # Adjust boundaries to avoid overlap with neighboring periods if those files exist
+                effective_start_ms, effective_end_ms = self._adjust_daily_boundaries(
+                    start_dt, start_ms, end_ms
+                )
+
+                # If fully covered by neighbors, skip gracefully
+                if effective_start_ms >= effective_end_ms:
+                    print(
+                        "         ⏭️ Skipping day: fully covered by neighboring data (no safe gap to download)",
+                    )
+                    logger.info(
+                        "⏭️ Skipping day: fully covered by neighboring data (no safe gap to download)",
+                    )
+                    return True
+
+                print(
+                    f"         ⏰ Time range: {datetime.fromtimestamp(effective_start_ms/1000)} to {datetime.fromtimestamp(effective_end_ms/1000)}",
+                )
+                print(
+                    f"         🔢 Timestamps: {effective_start_ms} to {effective_end_ms}",
+                )
+                logger.info(
+                    f"⏰ Time range: {datetime.fromtimestamp(effective_start_ms/1000)} to {datetime.fromtimestamp(effective_end_ms/1000)}",
+                )
+                logger.info(
+                    f"🔢 Timestamps: {effective_start_ms} to {effective_end_ms}",
+                )
+
+                # Prefer Binance Vision archive for older dates to avoid API empties
+                prefer_archive = False
+                try:
+                    now_utc = datetime.utcnow()
+                    prefer_archive = (
+                        now_utc - start_dt
+                    ).days >= 7 and self.config.exchange.upper() == "BINANCE"
+                except Exception:
+                    pass
 
                 # Download data - try multiple approaches for MEXC
                 print(f"         🔌 Making API call to {self.config.exchange}...")
@@ -1116,6 +1411,63 @@ class OptimizedDataDownloader:
                             f"✅ Created {len(trades)} synthetic trades from klines",
                         )
                 else:
+                    # For BINANCE and older dates, try archive first
+                    if prefer_archive:
+                        try:
+                            vision_trades = (
+                                await self._fetch_aggtrades_from_binance_vision(
+                                    self.config.symbol,
+                                    start_dt,
+                                    effective_start_ms,
+                                    effective_end_ms,
+                                    market_segment="um",
+                                )
+                            )
+                            if vision_trades:
+                                df = self._process_aggtrades_data(vision_trades)
+                                merged_df = self._merge_existing_aggtrades(
+                                    filepath,
+                                    df,
+                                    start_dt,
+                                    end_dt,
+                                )
+                                merged_df.to_csv(filepath, index=False)
+                                try:
+                                    parquet_path = (
+                                        os.path.splitext(filepath)[0] + ".parquet"
+                                    )
+                                    merged_df.to_parquet(
+                                        parquet_path, compression="zstd", index=False
+                                    )
+                                    logger.info(
+                                        f"🧩 Saved Parquet sibling: {parquet_path}"
+                                    )
+                                except Exception as _e:
+                                    logger.warning(
+                                        f"Could not save Parquet sibling: {_e}"
+                                    )
+                                file_size = os.path.getsize(filepath)
+                                print(
+                                    f"         ✅ CSV FILE UPDATED (archive-first): {filename}"
+                                )
+                                print(f"            📊 Size: {file_size:,} bytes")
+                                print(
+                                    f"            📈 Records: {len(merged_df)} aggtrades"
+                                )
+                                logger.info(
+                                    f"✅ CSV FILE UPDATED (archive-first): {filename}"
+                                )
+                                logger.info(f"📊 Size: {file_size:,} bytes")
+                                logger.info(f"📈 Records: {len(merged_df)} aggtrades")
+                                logger.info(
+                                    f"📅 Period: {start_dt.strftime('%Y-%m-%d')} (daily)",
+                                )
+                                return True
+                        except Exception as _e:
+                            logger.info(
+                                f"Archive-first attempt skipped due to error: {_e}"
+                            )
+
                     # For other exchanges, use the standard approach with pagination
                     print(
                         f"         🔄 Starting incremental download for {start_dt.strftime('%Y-%m-%d')}...",
@@ -1125,11 +1477,14 @@ class OptimizedDataDownloader:
                     )
 
                     all_trades = []
-                    current_start_time = start_ms
+                    current_start_time = effective_start_ms
                     batch_count = 0
                     max_batches = 1000  # Safety limit to prevent infinite loops
 
-                    while current_start_time < end_ms and batch_count < max_batches:
+                    while (
+                        current_start_time < effective_end_ms
+                        and batch_count < max_batches
+                    ):
                         batch_count += 1
                         print(
                             f"         📥 Batch {batch_count}: Downloading from {datetime.fromtimestamp(current_start_time/1000)}...",
@@ -1156,7 +1511,7 @@ class OptimizedDataDownloader:
                             await self.exchange_client.get_historical_agg_trades(
                                 self.config.symbol,
                                 current_start_time,
-                                end_ms,
+                                effective_end_ms,
                                 limit=1000,  # Standard batch size
                             )
                         )
@@ -1246,17 +1601,24 @@ class OptimizedDataDownloader:
                         logger.info(f"🔄 Processing {len(all_trades)} total trades...")
 
                         df = self._process_aggtrades_data(all_trades)
+                        # Merge with existing file if present to avoid gaps
+                        merged_df = self._merge_existing_aggtrades(
+                            filepath,
+                            df,
+                            start_dt,
+                            end_dt,
+                        )
 
-                        print(f"         💾 Creating new CSV file: {filename}")
+                        print(f"         💾 Writing merged CSV file: {filename}")
                         print(f"            📁 File path: {filepath}")
-                        print(f"            📊 Data shape: {df.shape}")
-                        print(f"            📈 Records: {len(df)} aggtrades")
-                        logger.info(f"💾 Creating new CSV file: {filename}")
+                        print(f"            📊 Data shape: {merged_df.shape}")
+                        print(f"            📈 Records: {len(merged_df)} aggtrades")
+                        logger.info(f"💾 Writing merged CSV file: {filename}")
                         logger.info(f"📁 File path: {filepath}")
-                        logger.info(f"📊 Data shape: {df.shape}")
-                        logger.info(f"📈 Records: {len(df)} aggtrades")
+                        logger.info(f"📊 Data shape: {merged_df.shape}")
+                        logger.info(f"📈 Records: {len(merged_df)} aggtrades")
 
-                        df.to_csv(filepath, index=False)
+                        merged_df.to_csv(filepath, index=False)
                         # Also save Parquet for efficient downstream processing
                         try:
                             parquet_path = os.path.splitext(filepath)[0] + ".parquet"
@@ -1266,26 +1628,92 @@ class OptimizedDataDownloader:
                             logger.warning(f"Could not save Parquet sibling: {_e}")
 
                         file_size = os.path.getsize(filepath)
-                        print(f"         ✅ NEW CSV FILE CREATED: {filename}")
+                        print(f"         ✅ CSV FILE UPDATED: {filename}")
                         print(f"            📊 Size: {file_size:,} bytes")
-                        print(f"            📈 Records: {len(df)} aggtrades")
+                        print(f"            📈 Records: {len(merged_df)} aggtrades")
                         print(
                             f"            📅 Period: {start_dt.strftime('%Y-%m-%d')} (daily)",
                         )
-                        logger.info(f"✅ NEW CSV FILE CREATED: {filename}")
+                        logger.info(f"✅ CSV FILE UPDATED: {filename}")
                         logger.info(f"📊 Size: {file_size:,} bytes")
-                        logger.info(f"📈 Records: {len(df)} aggtrades")
+                        logger.info(f"📈 Records: {len(merged_df)} aggtrades")
                         logger.info(
                             f"📅 Period: {start_dt.strftime('%Y-%m-%d')} (daily)",
                         )
 
                         return True
+                    # Fallback: try CCXT aggregate trades to avoid gaps without synthesizing
                     print(
-                        f"         ⚠️ No aggtrades received for {start_dt.strftime('%Y-%m-%d')}",
+                        f"         ⚠️ Empty aggtrades for {start_dt.strftime('%Y-%m-%d')}, trying CCXT fallback...",
                     )
                     logger.warning(
-                        f"⚠️ No aggtrades received for {start_dt.strftime('%Y-%m-%d')}",
+                        f"⚠️ Empty aggtrades for {start_dt.strftime('%Y-%m-%d')}, trying CCXT fallback...",
                     )
+                    try:
+                        # First try CCXT aggregate trades
+                        ccxt_trades: list[dict] = []
+                        if hasattr(
+                            self.exchange_client, "get_historical_agg_trades_ccxt"
+                        ):
+                            ccxt_trades = await self.exchange_client.get_historical_agg_trades_ccxt(
+                                self.config.symbol,
+                                effective_start_ms,
+                                effective_end_ms,
+                                limit=1000,
+                            )
+                        if not ccxt_trades:
+                            print(
+                                f"         🔁 CCXT empty, trying Binance Vision archive...",
+                            )
+                            logger.info(
+                                "CCXT empty, trying Binance Vision archive...",
+                            )
+                            vision_trades = (
+                                await self._fetch_aggtrades_from_binance_vision(
+                                    self.config.symbol,
+                                    start_dt,
+                                    effective_start_ms,
+                                    effective_end_ms,
+                                    market_segment="um",
+                                )
+                            )
+                            if not vision_trades:
+                                print(
+                                    f"         ⚠️ No aggtrades available from API/CCXT/Vision for {start_dt.strftime('%Y-%m-%d')}",
+                                )
+                                logger.warning(
+                                    f"No aggtrades available from API/CCXT/Vision for {start_dt.strftime('%Y-%m-%d')}",
+                                )
+                                return False
+                            ccxt_trades = vision_trades
+
+                        df = self._process_aggtrades_data(ccxt_trades)
+                        merged_df = self._merge_existing_aggtrades(
+                            filepath,
+                            df,
+                            start_dt,
+                            end_dt,
+                        )
+                        merged_df.to_csv(filepath, index=False)
+                        try:
+                            parquet_path = os.path.splitext(filepath)[0] + ".parquet"
+                            df.to_parquet(parquet_path, compression="zstd", index=False)
+                            logger.info(f"🧩 Saved Parquet sibling: {parquet_path}")
+                        except Exception as _e:
+                            logger.warning(f"Could not save Parquet sibling: {_e}")
+                        file_size = os.path.getsize(filepath)
+                        print(f"         ✅ CSV FILE UPDATED (archive): {filename}")
+                        print(f"            📊 Size: {file_size:,} bytes")
+                        print(f"            📈 Records: {len(merged_df)} aggtrades")
+                        logger.info(f"✅ CSV FILE UPDATED (archive): {filename}")
+                        logger.info(f"📊 Size: {file_size:,} bytes")
+                        logger.info(f"📈 Records: {len(merged_df)} aggtrades")
+                        logger.info(
+                            f"📅 Period: {start_dt.strftime('%Y-%m-%d')} (daily)",
+                        )
+                        return True
+                    except Exception as _e:
+                        logger.warning(f"Archive fallbacks failed: {_e}")
                     return False
 
             except Exception as e:
@@ -1611,6 +2039,92 @@ class OptimizedDataDownloader:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
 
         return df
+
+    def _merge_existing_aggtrades(
+        self,
+        filepath: str,
+        new_df: pd.DataFrame,
+        day_start_dt: datetime,
+        day_end_dt: datetime,
+    ) -> pd.DataFrame:
+        """Merge new aggtrade rows into an existing daily CSV without losing data.
+
+        - Reads existing CSV if present
+        - Concatenates with new rows
+        - Deduplicates (prefer 'agg_trade_id' if available; otherwise by key columns)
+        - Clips to [day_start, day_end) and sorts by timestamp
+        - Returns merged DataFrame ready to be saved
+        """
+
+        # Normalize timezone handling to naive UTC for comparison
+        def _naive_utc(dt: datetime) -> datetime:
+            try:
+                from datetime import timezone as _tz
+
+                if dt.tzinfo is not None:
+                    return dt.astimezone(_tz.utc).replace(tzinfo=None)
+            except Exception:
+                pass
+            return dt
+
+        start_dt_naive = _naive_utc(day_start_dt)
+        end_dt_naive = _naive_utc(day_end_dt)
+
+        frames: list[pd.DataFrame] = []
+        # Read existing file if present
+        try:
+            if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+                existing_df = pd.read_csv(
+                    filepath,
+                    parse_dates=["timestamp"],
+                )
+                frames.append(existing_df)
+        except Exception:
+            pass
+
+        # Ensure new df has parsed timestamps
+        if "timestamp" in new_df.columns and not pd.api.types.is_datetime64_any_dtype(
+            new_df["timestamp"]
+        ):
+            try:
+                new_df = new_df.copy()
+                new_df["timestamp"] = pd.to_datetime(new_df["timestamp"])
+            except Exception:
+                pass
+
+        frames.append(new_df)
+        merged = pd.concat(frames, ignore_index=True) if len(frames) > 1 else new_df
+
+        # Deduplicate
+        if "agg_trade_id" in merged.columns:
+            merged = merged.drop_duplicates(subset=["agg_trade_id"], keep="first")
+        else:
+            dedup_keys = [
+                c
+                for c in [
+                    "timestamp",
+                    "price",
+                    "quantity",
+                    "first_trade_id",
+                    "last_trade_id",
+                ]
+                if c in merged.columns
+            ]
+            if dedup_keys:
+                merged = merged.drop_duplicates(subset=dedup_keys, keep="first")
+            else:
+                merged = merged.drop_duplicates(keep="first")
+
+        # Clip to the day window and sort
+        if "timestamp" in merged.columns:
+            merged = merged[
+                (merged["timestamp"] >= start_dt_naive)
+                & (merged["timestamp"] < end_dt_naive)
+            ]
+            merged = merged.sort_values(by="timestamp")
+        merged = merged.reset_index(drop=True)
+
+        return merged
 
     def _process_futures_data(self, futures_data: list[dict]) -> pd.DataFrame:
         """Process futures data into a DataFrame."""

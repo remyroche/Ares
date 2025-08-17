@@ -212,7 +212,9 @@ class ModelBehaviorTracker:
             self.logger.info("📈 Feature importance tracking initialized")
 
         except Exception:
-            self.logger.exception(initialization_error("Error initializing feature tracking: {e}"))
+            self.logger.exception(
+                initialization_error("Error initializing feature tracking: {e}")
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -252,7 +254,9 @@ class ModelBehaviorTracker:
             return True
 
         except Exception:
-            self.logger.exception(failed("❌ Failed to start Model Behavior Tracker: {e}"))
+            self.logger.exception(
+                failed("❌ Failed to start Model Behavior Tracker: {e}")
+            )
             return False
 
     @handle_errors(
@@ -367,7 +371,9 @@ class ModelBehaviorTracker:
             return max(0.0, min(1.0, consistency))
 
         except Exception:
-            self.logger.exception(error("Error calculating prediction consistency: {e}"))
+            self.logger.exception(
+                error("Error calculating prediction consistency: {e}")
+            )
             return 0.0
 
     def _calculate_confidence_trend(
@@ -477,7 +483,9 @@ class ModelBehaviorTracker:
             return max(0.0, min(1.0, stability))
 
         except Exception:
-            self.logger.exception(error("Error calculating decision path stability: {e}"))
+            self.logger.exception(
+                error("Error calculating decision path stability: {e}")
+            )
             return None
 
     def _calculate_confidence_calibration(

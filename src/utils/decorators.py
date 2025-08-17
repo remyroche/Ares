@@ -8,6 +8,7 @@ Reusable decorators for validation, vectorization, data hygiene, error normaliza
 - Error normalization: centralize exception mapping into domain-specific errors.
 - Logging/tracing/audit: correlation IDs and structured entry/exit logs with PII scrubbing.
 """
+
 from __future__ import annotations
 
 import functools
@@ -61,6 +62,7 @@ except Exception:  # pragma: no cover
 # Type/schema validation
 # --------------------------
 
+
 def validate_call_or_runtime_types(*v_args: Any, **v_kwargs: Any) -> Callable[[F], F]:
     """Decorator factory that prefers pydantic.validate_call if available.
 
@@ -80,7 +82,9 @@ def validate_call_or_runtime_types(*v_args: Any, **v_kwargs: Any) -> Callable[[F
     return decorator
 
 
-def pa_check_input(schema: Any, *, arg_name: str | None = None, arg_index: int = 0, strict: bool = True) -> Callable[[F], F]:
+def pa_check_input(
+    schema: Any, *, arg_name: str | None = None, arg_index: int = 0, strict: bool = True
+) -> Callable[[F], F]:
     """Compatibility wrapper for pandera.check_input.
 
     Uses real pandera when available; otherwise performs minimal DataFrame/type checks.
@@ -91,7 +95,12 @@ def pa_check_input(schema: Any, *, arg_name: str | None = None, arg_index: int =
             return cast("F", pa.check_input(schema, lazy=not strict)(func))  # type: ignore[attr-defined]
 
         # Fallback to lightweight validation
-        return pa_check_io(input_schema=schema, df_arg_name=arg_name, df_arg_index=arg_index, strict=strict)(func)
+        return pa_check_io(
+            input_schema=schema,
+            df_arg_name=arg_name,
+            df_arg_index=arg_index,
+            strict=strict,
+        )(func)
 
     return decorator
 
@@ -211,6 +220,7 @@ def pa_check_io(
 # Vectorization guarantees
 # --------------------------
 
+
 def enforce_ndarray(
     *,
     arg_index: int = 0,
@@ -291,6 +301,7 @@ def auto_vectorize(*, otypes: list[type] | None = None) -> Callable[[F], F]:
 # NaN/Inf/null guards
 # --------------------------
 
+
 def guard_array_nan_inf(
     *,
     mode: str = "raise",  # "raise" | "warn" | "coerce"
@@ -351,7 +362,9 @@ def guard_array_nan_inf(
                         f"{'Inf' if has_inf else ''} in argument '{param_name}' (index {index}) for {func.__name__}"
                     )
                     if mode == "raise":
-                        raise DataValidationError(msg, context={"function": func.__name__})
+                        raise DataValidationError(
+                            msg, context={"function": func.__name__}
+                        )
                     if mode == "warn":
                         logger.warning(msg)
                     if mode == "coerce":
@@ -407,20 +420,47 @@ def guard_dataframe_nulls(
                 )
             selected = df if columns is None else df[columns]
             num_nan = int(selected.isna().sum().sum())
-            num_inf = int(np.isinf(selected.to_numpy()).sum())
+            
+            # Safely check for infinite values only on numeric columns
+            num_inf = 0
+            try:
+                # First try to get numeric columns only
+                numeric_selected = selected.select_dtypes(include=[np.number])
+                if not numeric_selected.empty:
+                    num_inf = int(np.isinf(numeric_selected.to_numpy()).sum())
+            except Exception:
+                # Fallback: handle mixed data types more carefully
+                num_inf = 0
+                for col in selected.columns:
+                    try:
+                        # Check if column is numeric before processing
+                        if pd.api.types.is_numeric_dtype(selected[col]):
+                            col_data = selected[col]
+                            # Handle pandas Series with mixed types
+                            if hasattr(col_data, 'dtype') and col_data.dtype == 'object':
+                                # Try to convert to numeric, skipping non-numeric values
+                                col_data = pd.to_numeric(col_data, errors='coerce')
+                            num_inf += int(np.isinf(col_data).sum())
+                    except (ValueError, TypeError, AttributeError):
+                        # Skip non-numeric columns or columns with conversion issues
+                        continue
+            
             if num_nan or num_inf:
-                msg = (
-                    f"DataFrame has {num_nan} NaN and {num_inf} Inf values in {func.__name__}"
-                )
+                msg = f"DataFrame has {num_nan} NaN and {num_inf} Inf values in {func.__name__}"
                 if mode == "raise":
                     raise DataValidationError(msg, context={"function": func.__name__})
                 if mode == "warn":
                     logger.warning(msg)
                 if mode == "fill":
                     df = df.copy()
-                    df[selected.columns] = (
-                        selected.replace([np.inf, -np.inf], fill_value).fillna(fill_value)
-                    )
+                    # Only fill numeric columns to avoid type issues
+                    numeric_cols = selected.select_dtypes(include=[np.number]).columns
+                    if not numeric_cols.empty:
+                        df[numeric_cols] = selected[numeric_cols].replace(
+                            [np.inf, -np.inf], fill_value
+                        ).fillna(fill_value)
+                    # Fill NaN values in all columns
+                    df[selected.columns] = selected.fillna(fill_value)
             return df
 
         @functools.wraps(func)
@@ -432,7 +472,9 @@ def guard_dataframe_nulls(
             if arg_index < len(param_names):
                 param_name = param_names[arg_index]
                 if param_name in bound_args.arguments:
-                    bound_args.arguments[param_name] = _check(bound_args.arguments[param_name])
+                    bound_args.arguments[param_name] = _check(
+                        bound_args.arguments[param_name]
+                    )
             return await func(*bound_args.args, **bound_args.kwargs)  # type: ignore[misc]
 
         @functools.wraps(func)
@@ -444,7 +486,9 @@ def guard_dataframe_nulls(
             if arg_index < len(param_names):
                 param_name = param_names[arg_index]
                 if param_name in bound_args.arguments:
-                    bound_args.arguments[param_name] = _check(bound_args.arguments[param_name])
+                    bound_args.arguments[param_name] = _check(
+                        bound_args.arguments[param_name]
+                    )
             return func(*bound_args.args, **bound_args.kwargs)
 
         if inspect.iscoroutinefunction(func):
@@ -514,7 +558,9 @@ def normalize_errors(
                     f"{func.__name__} failed: {exc}",
                     context={"function": func.__name__},
                 )
-                logger.exception("Normalized error", extra={"correlation_id": get_correlation_id()})
+                logger.exception(
+                    "Normalized error", extra={"correlation_id": get_correlation_id()}
+                )
                 if reraise:
                     raise norm_exc from exc
                 return None
@@ -533,7 +579,9 @@ def normalize_errors(
                     f"{func.__name__} failed: {exc}",
                     context={"function": func.__name__},
                 )
-                logger.exception("Normalized error", extra={"correlation_id": get_correlation_id()})
+                logger.exception(
+                    "Normalized error", extra={"correlation_id": get_correlation_id()}
+                )
                 if reraise:
                     raise norm_exc from exc
                 return None
@@ -549,7 +597,15 @@ def normalize_errors(
 # Logging/tracing/audit
 # --------------------------
 
-_SENSITIVE_KEYS = {"password", "secret", "token", "api_key", "apikey", "access_key", "private_key"}
+_SENSITIVE_KEYS = {
+    "password",
+    "secret",
+    "token",
+    "api_key",
+    "apikey",
+    "access_key",
+    "private_key",
+}
 
 
 def _sanitize(value: Any) -> Any:
@@ -595,13 +651,19 @@ def with_tracing_span(
         async def async_wrapper(*args: Any, **kwargs: Any):
             cid = ensure_correlation_id()
             # Prefer instance logger if available
-            active_logger = getattr(args[0], "logger", module_logger) if args else module_logger
+            active_logger = (
+                getattr(args[0], "logger", module_logger) if args else module_logger
+            )
             if log_args:
                 safe_args = _sanitize(args)
                 safe_kwargs = _sanitize(kwargs)
                 active_logger.info(
                     f"➡️ {resolved_span} start",
-                    extra={"correlation_id": cid, "args": safe_args, "kwargs": safe_kwargs},
+                    extra={
+                        "correlation_id": cid,
+                        "args": safe_args,
+                        "kwargs": safe_kwargs,
+                    },
                 )
             else:
                 active_logger.info(
@@ -637,13 +699,19 @@ def with_tracing_span(
         def sync_wrapper(*args: Any, **kwargs: Any):
             cid = ensure_correlation_id()
             # Prefer instance logger if available
-            active_logger = getattr(args[0], "logger", module_logger) if args else module_logger
+            active_logger = (
+                getattr(args[0], "logger", module_logger) if args else module_logger
+            )
             if log_args:
                 safe_args = _sanitize(args)
                 safe_kwargs = _sanitize(kwargs)
                 active_logger.info(
                     f"➡️ {resolved_span} start",
-                    extra={"correlation_id": cid, "args": safe_args, "kwargs": safe_kwargs},
+                    extra={
+                        "correlation_id": cid,
+                        "args": safe_args,
+                        "kwargs": safe_kwargs,
+                    },
                 )
             else:
                 active_logger.info(

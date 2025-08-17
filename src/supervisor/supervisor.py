@@ -186,7 +186,6 @@ class Supervisor:
         self.component_monitors: dict[str, dict[str, Any]] = {
             "analyst": {
                 "dual_model_system": False,
-                "market_health_analyzer": False,
                 "liquidation_risk_model": False,
                 "feature_engineering_orchestrator": False,
                 # Legacy S/R/Candle code removed,
@@ -456,7 +455,6 @@ class Supervisor:
         # Define analyst features to monitor
         analyst_features = {
             "dual_model_system": "dual_model_system",
-            "market_health_analyzer": "market_health_analyzer",
             "liquidation_risk_model": "liquidation_risk_model",
             "feature_engineering_orchestrator": "feature_engineering_orchestrator",
             "ml_confidence_predictor": "ml_confidence_predictor",
@@ -614,12 +612,10 @@ class Supervisor:
                 if hasattr(strategist, "current_strategy"):
                     strategy_data = strategist.current_strategy
 
-                # Gather analyst market health and liquidation risk
-                market_health = None
+                # Gather analyst liquidation risk
                 liquidation_risk = None
                 if analyst and hasattr(analyst, "get_analysis_results"):
                     analysis = analyst.get_analysis_results()
-                    market_health = analysis.get("market_health")
                     liquidation_risk = analysis.get("liquidation_risk")
 
                 tactics_input = {
@@ -628,7 +624,6 @@ class Supervisor:
                     "timeframe": (strategy_data or {}).get("timeframe"),
                     "current_price": (strategy_data or {}).get("current_price"),
                     "ml_predictions": (strategy_data or {}).get("ml_predictions", {}),
-                    "market_health_analysis": market_health,
                     "liquidation_risk_analysis": liquidation_risk,
                     "strategist_risk_parameters": (strategy_data or {}).get(
                         "risk_parameters",

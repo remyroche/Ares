@@ -256,13 +256,21 @@ class WaveletFeatureSelectionWorkflow:
             # Prepare feature matrix
             feature_df = pd.DataFrame(features)
 
-            # Split data
-            X_train, X_test, y_train, y_test = train_test_split(
-                feature_df,
-                labels,
-                test_size=self.test_size,
-                random_state=self.random_state,
-                stratify=labels,
+            # Split data - FIXED: Use time-based split to prevent lookahead bias
+            split_idx = int(len(feature_df) * (1 - self.test_size))
+            X_train = feature_df.iloc[:split_idx]
+            X_test = feature_df.iloc[split_idx:]
+            y_train = labels.iloc[:split_idx]
+            y_test = labels.iloc[split_idx:]
+
+            self.logger.info(
+                f"🔀 Time-based train/test split: {len(X_train)}/{len(X_test)} samples"
+            )
+            self.logger.info(
+                f"   → Train period: {X_train.index[0] if len(X_train) > 0 else 'N/A'} to {X_train.index[-1] if len(X_train) > 0 else 'N/A'}"
+            )
+            self.logger.info(
+                f"   → Test period: {X_test.index[0] if len(X_test) > 0 else 'N/A'} to {X_test.index[-1] if len(X_test) > 0 else 'N/A'}"
             )
 
             # Train Discovery Model (optimized for feature selection)
@@ -571,14 +579,12 @@ class WaveletFeatureSelectionWorkflow:
             # Create lean feature matrix
             lean_feature_df = pd.DataFrame(lean_features)
 
-            # Split lean dataset
-            X_train_lean, X_test_lean, y_train_lean, y_test_lean = train_test_split(
-                lean_feature_df,
-                labels,
-                test_size=self.test_size,
-                random_state=self.random_state,
-                stratify=labels,
-            )
+            # Split lean dataset - FIXED: Use time-based split to prevent lookahead bias
+            split_idx = int(len(lean_feature_df) * (1 - self.test_size))
+            X_train_lean = lean_feature_df.iloc[:split_idx]
+            X_test_lean = lean_feature_df.iloc[split_idx:]
+            y_train_lean = labels.iloc[:split_idx]
+            y_test_lean = labels.iloc[split_idx:]
 
             self.logger.info(
                 f"✅ Lean dataset created with {len(winner_features)} features",

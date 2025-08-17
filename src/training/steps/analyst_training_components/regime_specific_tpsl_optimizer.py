@@ -24,7 +24,7 @@ import pandas as pd
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.analyst.meta_labeling_system import MetaLabelingSystem
+# MetaLabelingSystem removed - using only HMM market regimes
 from src.config import CONFIG
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
@@ -38,10 +38,10 @@ from src.utils.warning_symbols import (
 
 class RegimeSpecificTPSLOptimizer:
     """
-    Optimizes Take Profit (TP) and Stop Loss (SL) parameters based on label-driven market context.
+    Optimizes Take Profit (TP) and Stop Loss (SL) parameters based on HMM market regimes.
 
-    This optimizer uses the MetaLabelingSystem to identify the current dominant meta label
-    and then applies label-specific optimization based on backtest performance.
+    This optimizer uses HMM market regimes to identify the current market state
+    and then applies regime-specific optimization based on backtest performance.
     """
 
     def __init__(self, config: dict[str, Any]):
@@ -55,13 +55,16 @@ class RegimeSpecificTPSLOptimizer:
         self.logger = system_logger.getChild("RegimeSpecificTPSLOptimizer")
         self.print = self.logger.info
 
-        # Initialize Meta-Labeling system
-        self.meta_labeling_system = MetaLabelingSystem(config)
+        # Meta-labeling system removed - using only HMM market regimes
+        self.logger.info(
+            "ℹ️ Meta-labeling system removed - using only HMM market regimes for labeling"
+        )
 
-        # Regime-specific parameters (seeded defaults) for key meta-labels
+        # Regime-specific parameters for HMM clusters (seeded defaults)
+        # These will be dynamically updated based on actual HMM cluster analysis
         self.regime_parameters = {
-            # Trend/price action
-            "STRONG_TREND_CONTINUATION": {
+            # HMM Cluster 0 - will be characterized by step1_7 analysis
+            "hmm_cluster_0": {
                 "target_pct": 0.5,
                 "stop_pct": 0.2,
                 "risk_reward_ratio": 2.5,
@@ -69,7 +72,8 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 7.0,
                 "frequency_score": 100.0,
             },
-            "EXHAUSTION_REVERSAL": {
+            # HMM Cluster 1 - will be characterized by step1_7 analysis
+            "hmm_cluster_1": {
                 "target_pct": 0.4,
                 "stop_pct": 0.15,
                 "risk_reward_ratio": 2.67,
@@ -77,7 +81,8 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 6.5,
                 "frequency_score": 80.0,
             },
-            "RANGE_MEAN_REVERSION": {
+            # HMM Cluster 2 - will be characterized by step1_7 analysis
+            "hmm_cluster_2": {
                 "target_pct": 0.3,
                 "stop_pct": 0.2,
                 "risk_reward_ratio": 1.5,
@@ -85,7 +90,8 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 7.5,
                 "frequency_score": 100.0,
             },
-            "BREAKOUT_SUCCESS": {
+            # HMM Cluster 3 - will be characterized by step1_7 analysis
+            "hmm_cluster_3": {
                 "target_pct": 0.6,
                 "stop_pct": 0.15,
                 "risk_reward_ratio": 4.0,
@@ -93,7 +99,8 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 6.0,
                 "frequency_score": 70.0,
             },
-            "BREAKOUT_FAILURE": {
+            # HMM Cluster 4 - will be characterized by step1_7 analysis
+            "hmm_cluster_4": {
                 "target_pct": 0.35,
                 "stop_pct": 0.2,
                 "risk_reward_ratio": 1.75,
@@ -101,7 +108,8 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 5.5,
                 "frequency_score": 60.0,
             },
-            "MOMENTUM_IGNITION": {
+            # HMM Cluster 5 - will be characterized by step1_7 analysis
+            "hmm_cluster_5": {
                 "target_pct": 0.5,
                 "stop_pct": 0.15,
                 "risk_reward_ratio": 3.33,
@@ -109,8 +117,8 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 5.5,
                 "frequency_score": 70.0,
             },
-            # Volatility regimes
-            "VOLATILITY_COMPRESSION": {
+            # HMM Cluster 6 - will be characterized by step1_7 analysis
+            "hmm_cluster_6": {
                 "target_pct": 0.25,
                 "stop_pct": 0.2,
                 "risk_reward_ratio": 1.25,
@@ -118,7 +126,8 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 6.0,
                 "frequency_score": 90.0,
             },
-            "VOLATILITY_EXPANSION": {
+            # HMM Cluster 7 - will be characterized by step1_7 analysis
+            "hmm_cluster_7": {
                 "target_pct": 0.5,
                 "stop_pct": 0.25,
                 "risk_reward_ratio": 2.0,
@@ -126,28 +135,11 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 5.8,
                 "frequency_score": 70.0,
             },
-            # S/R and high impact candle analogs
-            "SR_TOUCH": {
-                "target_pct": 0.4,
-                "stop_pct": 0.2,
-                "risk_reward_ratio": 2.0,
-                "avg_duration_minutes": 40.0,
-                "success_rate": 6.8,
-                "frequency_score": 85.0,
-            },
-            "SR_BREAK": {
-                "target_pct": 0.5,
-                "stop_pct": 0.2,
-                "risk_reward_ratio": 2.5,
-                "avg_duration_minutes": 35.0,
-                "success_rate": 6.2,
-                "frequency_score": 75.0,
-            },
-            "IGNITION_BAR": {
+            "VOLATILE": {
                 "target_pct": 0.6,
-                "stop_pct": 0.1,
-                "risk_reward_ratio": 6.0,
-                "avg_duration_minutes": 15.0,
+                "stop_pct": 0.4,
+                "risk_reward_ratio": 1.5,
+                "avg_duration_minutes": 45.0,
                 "success_rate": 6.0,
                 "frequency_score": 100.0,
             },
@@ -232,7 +224,9 @@ class RegimeSpecificTPSLOptimizer:
             bool: True if initialization successful, False otherwise
         """
         try:
-            self.logger.info("Initializing Regime-Specific TP/SL Optimizer (Meta-Label)...")
+            self.logger.info(
+                "Initializing Regime-Specific TP/SL Optimizer (Meta-Label)..."
+            )
 
             # Initialize Meta-Labeling system
             if not await self._initialize_meta_label_system():
@@ -263,12 +257,16 @@ class RegimeSpecificTPSLOptimizer:
         try:
             ok = await self.meta_labeling_system.initialize()
             if ok:
-                self.logger.info("✅ Meta-Labeling system initialized for regime identification")
+                self.logger.info(
+                    "✅ Meta-Labeling system initialized for regime identification"
+                )
                 return True
             self.logger.warning("Meta-Labeling system failed to initialize")
             return False
         except Exception as e:
-            self.print(initialization_error(f"Error initializing Meta-Labeling system: {e}"))
+            self.print(
+                initialization_error(f"Error initializing Meta-Labeling system: {e}")
+            )
             return False
 
     async def _load_optimization_results(self) -> None:
@@ -323,7 +321,11 @@ class RegimeSpecificTPSLOptimizer:
         try:
             # Require meta-labeling to be initialized
             if not getattr(self.meta_labeling_system, "is_initialized", False):
-                self.print(warning("Meta-Labeling system not initialized, using default regime"))
+                self.print(
+                    warning(
+                        "Meta-Labeling system not initialized, using default regime"
+                    )
+                )
                 return "SIDEWAYS_RANGE", 0.5, {"method": "default"}
 
             # Use the same frame for price and volume; expect OHLCV input
@@ -338,7 +340,9 @@ class RegimeSpecificTPSLOptimizer:
             actives: dict[str, int] = {}
             for label in self.candidate_labels:
                 intensities[label] = float(labels.get(f"intensity_{label}", 0.0))
-                actives[label] = int(labels.get(f"active_{label}", labels.get(label, 0)))
+                actives[label] = int(
+                    labels.get(f"active_{label}", labels.get(label, 0))
+                )
 
             # Choose the dominant label by intensity, breaking ties by active flag
             best_label = max(
@@ -349,7 +353,11 @@ class RegimeSpecificTPSLOptimizer:
             confidence = float(intensities.get(best_label, 0.0))
 
             # Log and return with compact info
-            top3 = sorted(((k, intensities.get(k, 0.0)) for k in self.candidate_labels), key=lambda x: x[1], reverse=True)[:3]
+            top3 = sorted(
+                ((k, intensities.get(k, 0.0)) for k in self.candidate_labels),
+                key=lambda x: x[1],
+                reverse=True,
+            )[:3]
             self.logger.info(
                 {
                     "msg": "Identified label-driven regime",
@@ -359,12 +367,16 @@ class RegimeSpecificTPSLOptimizer:
                     "timeframe": self.analysis_timeframe,
                 }
             )
-            return best_label, confidence, {
-                "method": "meta_labeling",
-                "timeframe": self.analysis_timeframe,
-                "top3": top3,
-                "actives": {k: actives.get(k, 0) for k in self.candidate_labels},
-            }
+            return (
+                best_label,
+                confidence,
+                {
+                    "method": "meta_labeling",
+                    "timeframe": self.analysis_timeframe,
+                    "top3": top3,
+                    "actives": {k: actives.get(k, 0) for k in self.candidate_labels},
+                },
+            )
 
         except Exception as e:
             self.print(error(f"Error identifying regime: {e}"))

@@ -36,12 +36,10 @@ class LiveRegimeCalculator:
         self.logger = system_logger.getChild("LiveRegimeCalculator")
 
         # Thresholds (aligned with existing modules defaults where possible)
-        analyst_cfg = (
-            self.config.get("analyst", {}).get("unified_regime_classifier", {})
+        analyst_cfg = self.config.get("analyst", {}).get(
+            "unified_regime_classifier", {}
         )
-        pattern_cfg = (
-            self.config.get("meta_labeling", {}).get("pattern_detection", {})
-        )
+        pattern_cfg = self.config.get("meta_labeling", {}).get("pattern_detection", {})
 
         # Trend/ADX thresholds
         self.adx_sideways_threshold: float = float(
@@ -87,7 +85,9 @@ class LiveRegimeCalculator:
 
     # --------------------------- Public API ---------------------------
 
-    @handle_errors(exceptions=(Exception,), default_return={}, context="calculate_features")
+    @handle_errors(
+        exceptions=(Exception,), default_return={}, context="calculate_features"
+    )
     def calculate_features(self, ohlcv: pd.DataFrame) -> dict[str, float]:
         """
         Compute a unified set of features on the latest bar.
@@ -121,19 +121,29 @@ class LiveRegimeCalculator:
         pct_returns = close.pct_change()
         vol20 = log_returns.rolling(20, min_periods=5).std()
         vol10 = log_returns.rolling(10, min_periods=5).std()
-        features["log_return"] = float(log_returns.iloc[-1]) if not log_returns.empty else 0.0
-        features["price_change"] = float(pct_returns.iloc[-1]) if not pct_returns.empty else 0.0
+        features["log_return"] = (
+            float(log_returns.iloc[-1]) if not log_returns.empty else 0.0
+        )
+        features["price_change"] = (
+            float(pct_returns.iloc[-1]) if not pct_returns.empty else 0.0
+        )
         features["volatility_20"] = float(vol20.iloc[-1]) if not vol20.empty else 0.0
         features["volatility_10"] = float(vol10.iloc[-1]) if not vol10.empty else 0.0
         features["volatility_ratio"] = (
-            float(features["volatility_10"] / features["volatility_20"]) if features["volatility_20"] > 0 else 1.0
+            float(features["volatility_10"] / features["volatility_20"])
+            if features["volatility_20"] > 0
+            else 1.0
         )
 
         # Volume metrics
         vol_ma20 = volume.rolling(20, min_periods=1).mean()
-        features["volume_sma_20"] = float(vol_ma20.iloc[-1]) if not vol_ma20.empty else float(volume.iloc[-1])
+        features["volume_sma_20"] = (
+            float(vol_ma20.iloc[-1]) if not vol_ma20.empty else float(volume.iloc[-1])
+        )
         features["volume_ratio"] = (
-            float(volume.iloc[-1] / features["volume_sma_20"]) if features["volume_sma_20"] > 0 else 1.0
+            float(volume.iloc[-1] / features["volume_sma_20"])
+            if features["volume_sma_20"] > 0
+            else 1.0
         )
 
         # Moving averages and EMA band
@@ -161,19 +171,29 @@ class LiveRegimeCalculator:
         macd = ema12 - ema26
         macd_signal = macd.ewm(span=9, adjust=False).mean()
         features["macd"] = float(macd.iloc[-1]) if not macd.empty else 0.0
-        features["macd_signal"] = float(macd_signal.iloc[-1]) if not macd_signal.empty else 0.0
-        features["macd_histogram"] = float((macd - macd_signal).iloc[-1]) if not macd.empty else 0.0
+        features["macd_signal"] = (
+            float(macd_signal.iloc[-1]) if not macd_signal.empty else 0.0
+        )
+        features["macd_histogram"] = (
+            float((macd - macd_signal).iloc[-1]) if not macd.empty else 0.0
+        )
 
         # Bollinger Bands (20, 2)
         bb_mid = sma20
         bb_std = close.rolling(20, min_periods=1).std()
         bb_upper = bb_mid + 2 * bb_std
         bb_lower = bb_mid - 2 * bb_std
-        features["bb_upper"] = float(bb_upper.iloc[-1]) if not bb_upper.empty else last_close
-        features["bb_lower"] = float(bb_lower.iloc[-1]) if not bb_lower.empty else last_close
+        features["bb_upper"] = (
+            float(bb_upper.iloc[-1]) if not bb_upper.empty else last_close
+        )
+        features["bb_lower"] = (
+            float(bb_lower.iloc[-1]) if not bb_lower.empty else last_close
+        )
         denom = max(features["bb_upper"] - features["bb_lower"], 1e-12)
         features["bb_position"] = float((last_close - features["bb_lower"]) / denom)
-        features["bb_width"] = float((bb_upper.iloc[-1] - bb_lower.iloc[-1]) / max(bb_mid.iloc[-1], 1e-12))
+        features["bb_width"] = float(
+            (bb_upper.iloc[-1] - bb_lower.iloc[-1]) / max(bb_mid.iloc[-1], 1e-12)
+        )
 
         # ATR(14), plus extended ATR windows
         tr1 = high - low
@@ -183,13 +203,25 @@ class LiveRegimeCalculator:
         atr14 = true_range.rolling(14, min_periods=1).mean()
         atr20 = true_range.rolling(20, min_periods=1).mean()
         atr100 = true_range.rolling(100, min_periods=1).mean()
-        features["atr"] = float(atr14.iloc[-1]) if not atr14.empty else float(true_range.iloc[-1])
-        features["atr_20"] = float(atr20.iloc[-1]) if not atr20.empty else features["atr"]
-        features["atr_100"] = float(atr100.iloc[-1]) if not atr100.empty else features["atr_20"]
+        features["atr"] = (
+            float(atr14.iloc[-1]) if not atr14.empty else float(true_range.iloc[-1])
+        )
+        features["atr_20"] = (
+            float(atr20.iloc[-1]) if not atr20.empty else features["atr"]
+        )
+        features["atr_100"] = (
+            float(atr100.iloc[-1]) if not atr100.empty else features["atr_20"]
+        )
         # ATR normalization
         price_abs_change = close.diff().abs()
-        atr_den = float(price_abs_change.iloc[-1]) if not price_abs_change.empty else max(last_close, 1.0)
-        features["atr_normalized"] = float(np.clip(features["atr"] / max(atr_den, 1e-8), 0.0, 10.0))
+        atr_den = (
+            float(price_abs_change.iloc[-1])
+            if not price_abs_change.empty
+            else max(last_close, 1.0)
+        )
+        features["atr_normalized"] = float(
+            np.clip(features["atr"] / max(atr_den, 1e-8), 0.0, 10.0)
+        )
 
         # ADX(14)
         up_move = high.diff()
@@ -199,8 +231,15 @@ class LiveRegimeCalculator:
         atr_for_adx = true_range.rolling(14, min_periods=1).mean().replace(0, np.nan)
         plus_di = 100.0 * (plus_dm.rolling(14, min_periods=1).mean() / atr_for_adx)
         minus_di = 100.0 * (minus_dm.rolling(14, min_periods=1).mean() / atr_for_adx)
-        dx = 100.0 * (np.abs(plus_di - minus_di) / (plus_di + minus_di).replace(0, np.nan))
-        adx = dx.rolling(14, min_periods=1).mean().replace([np.inf, -np.inf], np.nan).fillna(25.0)
+        dx = 100.0 * (
+            np.abs(plus_di - minus_di) / (plus_di + minus_di).replace(0, np.nan)
+        )
+        adx = (
+            dx.rolling(14, min_periods=1)
+            .mean()
+            .replace([np.inf, -np.inf], np.nan)
+            .fillna(25.0)
+        )
         features["adx"] = float(adx.iloc[-1])
 
         # Price action windows
@@ -209,26 +248,44 @@ class LiveRegimeCalculator:
         features["recent_high"] = float(recent_high.iloc[-1])
         features["recent_low"] = float(recent_low.iloc[-1])
         denom_pr = max(features["recent_high"] - features["recent_low"], 1e-12)
-        features["price_position"] = float((last_close - features["recent_low"]) / denom_pr)
+        features["price_position"] = float(
+            (last_close - features["recent_low"]) / denom_pr
+        )
 
         # Momentum
-        features["price_momentum_5"] = float(close.pct_change(5).iloc[-1]) if len(close) >= 5 else 0.0
-        features["price_momentum_10"] = float(close.pct_change(10).iloc[-1]) if len(close) >= 10 else 0.0
-        features["price_acceleration"] = float(close.pct_change(5).diff().iloc[-1]) if len(close) >= 7 else 0.0
+        features["price_momentum_5"] = (
+            float(close.pct_change(5).iloc[-1]) if len(close) >= 5 else 0.0
+        )
+        features["price_momentum_10"] = (
+            float(close.pct_change(10).iloc[-1]) if len(close) >= 10 else 0.0
+        )
+        features["price_acceleration"] = (
+            float(close.pct_change(5).diff().iloc[-1]) if len(close) >= 7 else 0.0
+        )
 
         # Simple S/R proxy and distances
         high_roll = high.rolling(max(5, self.sr_lookback), min_periods=5).max().shift(1)
         low_roll = low.rolling(max(5, self.sr_lookback), min_periods=5).min().shift(1)
-        resistance = float(high_roll.iloc[-1]) if not high_roll.empty else float(high.iloc[-1])
-        support = float(low_roll.iloc[-1]) if not low_roll.empty else float(low.iloc[-1])
+        resistance = (
+            float(high_roll.iloc[-1]) if not high_roll.empty else float(high.iloc[-1])
+        )
+        support = (
+            float(low_roll.iloc[-1]) if not low_roll.empty else float(low.iloc[-1])
+        )
         features["resistance_level"] = resistance
         features["support_level"] = support
-        features["dist_to_resistance_pct"] = float(abs(last_close - resistance) / max(1e-12, last_close))
-        features["dist_to_support_pct"] = float(abs(last_close - support) / max(1e-12, last_close))
+        features["dist_to_resistance_pct"] = float(
+            abs(last_close - resistance) / max(1e-12, last_close)
+        )
+        features["dist_to_support_pct"] = float(
+            abs(last_close - support) / max(1e-12, last_close)
+        )
 
         return features
 
-    @handle_errors(exceptions=(Exception,), default_return={}, context="calculate_regime_flags")
+    @handle_errors(
+        exceptions=(Exception,), default_return={}, context="calculate_regime_flags"
+    )
     def calculate_regime_flags(self, features: dict[str, float]) -> dict[str, Any]:
         """
         Derive unified regime flags from computed features.
@@ -255,9 +312,13 @@ class LiveRegimeCalculator:
 
         # Trend confidence (mirrors simple rules style)
         denom_sw = max(self.adx_sideways_threshold, 1e-6)
-        conf_sideways = float(np.clip((self.adx_sideways_threshold - adx_val) / denom_sw, 0.2, 1.0))
+        conf_sideways = float(
+            np.clip((self.adx_sideways_threshold - adx_val) / denom_sw, 0.2, 1.0)
+        )
         denom_tr = max(self.adx_trend_threshold - self.adx_sideways_threshold, 1e-6)
-        adx_component = float(np.clip((adx_val - self.adx_sideways_threshold) / denom_tr, 0.0, 1.0))
+        adx_component = float(
+            np.clip((adx_val - self.adx_sideways_threshold) / denom_tr, 0.0, 1.0)
+        )
         sep_component = float(np.clip(ema_sep_norm * 10.0, 0.0, 1.0))
         conf_trend = float(np.clip(0.5 * adx_component + 0.5 * sep_component, 0.2, 1.0))
         trend_conf = conf_sideways if is_sideways else conf_trend
@@ -291,11 +352,15 @@ class LiveRegimeCalculator:
         recent_low = float(features.get("recent_low", 0.0))
         momentum_5 = float(features.get("price_momentum_5", 0.0))
         volume_ratio = float(features.get("volume_ratio", 1.0))
-        is_breakout_up = (close_val > max(recent_high, 1e-12)) and (momentum_5 > self.breakout_momentum) and (
-            volume_ratio > self.volume_threshold
+        is_breakout_up = (
+            (close_val > max(recent_high, 1e-12))
+            and (momentum_5 > self.breakout_momentum)
+            and (volume_ratio > self.volume_threshold)
         )
-        is_breakout_down = (close_val < max(recent_low, 1e-12)) and (momentum_5 < -self.breakout_momentum) and (
-            volume_ratio > self.volume_threshold
+        is_breakout_down = (
+            (close_val < max(recent_low, 1e-12))
+            and (momentum_5 < -self.breakout_momentum)
+            and (volume_ratio > self.volume_threshold)
         )
 
         # Compression/Expansion

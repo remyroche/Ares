@@ -1,6 +1,7 @@
 """
 Domain-specific error types for normalization and validation.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -13,7 +14,13 @@ class DomainError(Exception):
     for consistent error handling and logging.
     """
 
-    def __init__(self, message: str, *, code: str = "domain_error", context: dict[str, Any] | None = None):
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "domain_error",
+        context: dict[str, Any] | None = None,
+    ):
         super().__init__(message)
         self.code = code
         self.context = context or {}

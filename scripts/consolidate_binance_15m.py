@@ -52,7 +52,7 @@ def consolidate_binance_15m_data():
         logger.info(f"   ... and {len(source_files) - 5} more files")
 
     if not source_files:
-        print(error("❌ No 15m Binance files found")))
+        print(error("❌ No 15m Binance files found"))
         return False
 
     # Output file
@@ -75,15 +75,15 @@ def consolidate_binance_15m_data():
 
             # Validate data
             if len(df) == 0:
-                print(warning("   ⚠️ Empty file: {os.path.basename(file)}")))
+                print(warning("   ⚠️ Empty file: {os.path.basename(file)}"))
                 continue
 
             # Check columns
             expected_columns = ["timestamp", "open", "high", "low", "close", "volume"]
             if not all(col in df.columns for col in expected_columns):
-                print(missing("   ⚠️ Missing columns in {os.path.basename(file)}")))
-                print(warning("   📋 Expected: {expected_columns}")))
-                print(warning("   📋 Found: {list(df.columns)}")))
+                print(missing("   ⚠️ Missing columns in {os.path.basename(file)}"))
+                print(warning("   📋 Expected: {expected_columns}"))
+                print(warning("   📋 Found: {list(df.columns)}"))
                 continue
 
             # Convert timestamp
@@ -96,7 +96,7 @@ def consolidate_binance_15m_data():
 
             # Check for reasonable price data
             if df["close"].isna().all():
-                print(invalid("   ⚠️ Invalid price data in {os.path.basename(file)}")))
+                print(invalid("   ⚠️ Invalid price data in {os.path.basename(file)}"))
                 continue
 
             # Check price range (ETH should be reasonable)
@@ -117,11 +117,11 @@ def consolidate_binance_15m_data():
             total_records += len(df)
 
         except Exception as e:
-            print(error("   ❌ Error processing {os.path.basename(file)}: {e}")))
+            print(error("   ❌ Error processing {os.path.basename(file)}: {e}"))
             continue
 
     if not all_data:
-        print(error("❌ No valid data files found")))
+        print(error("❌ No valid data files found"))
         return False
 
     logger.info(f"📊 Consolidating {len(all_data)} dataframes...")

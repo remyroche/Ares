@@ -141,13 +141,13 @@ async def main():
         missing_files = [f for f in required_files if not os.path.exists(f)]
 
         if missing_files:
-            print(missing("❌ Missing required data files: {missing_files}")))
+            print(missing("❌ Missing required data files: {missing_files}"))
             logger.error(
                 "Please run data downloading first or ensure data files exist.",
             )
-            print(error("Expected files:")))
+            print(error("Expected files:"))
             for file in required_files:
-                print(error("  - {file}")))
+                print(error("  - {file}"))
             sys.exit(1)
 
         logger.info("✅ All required data files found, proceeding with training")
@@ -260,13 +260,13 @@ async def main():
                 validation_data["futures"] = futures_df
                 logger.info(f"📊 Loaded futures: {len(futures_df)} rows")
             else:
-                print(missing("⚠️  Futures file not found, skipping validation")))
+                print(missing("⚠️  Futures file not found, skipping validation"))
 
             # Validate data format
             format_valid, format_errors = validate_data_format(validation_data)
             if not format_valid:
-                print(failed("❌ Data format validation failed: {format_errors}")))
-                print(failed("Data format validation failed: {format_errors}")))
+                print(failed("❌ Data format validation failed: {format_errors}"))
+                print(failed("Data format validation failed: {format_errors}"))
                 msg = "Data format validation failed"
                 raise Exception(msg)
             logger.info("✅ Data format validation passed")
@@ -275,8 +275,8 @@ async def main():
             # Validate data quality
             quality_valid, quality_errors = validate_data_quality(validation_data)
             if not quality_valid:
-                print(failed("❌ Data quality validation failed: {quality_errors}")))
-                print(failed("Data quality validation failed: {quality_errors}")))
+                print(failed("❌ Data quality validation failed: {quality_errors}"))
+                print(failed("Data quality validation failed: {quality_errors}"))
                 msg = "Data quality validation failed"
                 raise Exception(msg)
             logger.info("✅ Data quality validation passed")
@@ -346,11 +346,11 @@ async def main():
             print("✅ All training stages completed successfully")
 
         except Exception as e:
-            print(failed("❌ Training pipeline failed with exception: {e}")))
-            print(failed("Training pipeline failed with exception: {e}")))
-            print(error("Exception type: {type(e).__name__}")))
+            print(failed("❌ Training pipeline failed with exception: {e}"))
+            print(failed("Training pipeline failed with exception: {e}"))
+            print(error("Exception type: {type(e).__name__}"))
             print(f"Exception type: {type(e).__name__}")
-            print(error("Full traceback:")))
+            print(error("Full traceback:"))
             print("Full traceback:")
             import traceback
 
@@ -371,27 +371,27 @@ async def main():
             logger.info(f"   Duration: {training_duration:.2f} seconds")
             logger.info("   Status: SUCCESS")
         else:
-            print(failed("❌ 'Blank' training pipeline failed.")))
-            print(error("📊 Training summary:")))
-            print(error("   Symbol: {args.symbol}")))
-            print(error("   Exchange: {args.exchange}")))
-            print(error("   Duration: {training_duration:.2f} seconds")))
-            print(failed("   Status: FAILED")))
+            print(failed("❌ 'Blank' training pipeline failed."))
+            print(error("📊 Training summary:"))
+            print(error("   Symbol: {args.symbol}"))
+            print(error("   Exchange: {args.exchange}"))
+            print(error("   Duration: {training_duration:.2f} seconds"))
+            print(failed("   Status: FAILED"))
             sys.exit(1)
 
     except Exception as e:
-        print(critical("💥 CRITICAL ERROR during blank training run")))
-        print(error("Error type: {type(e).__name__}")))
-        print(error("Error message: {str(e)}")))
-        print(error("Full traceback:")))
+        print(critical("💥 CRITICAL ERROR during blank training run"))
+        print(error("Error type: {type(e).__name__}"))
+        print(error("Error message: {str(e)}"))
+        print(error("Full traceback:"))
         logger.critical(traceback.format_exc())
 
         # Log additional debugging information
-        print(error("📊 Error context:")))
-        print(error("   Symbol: {args.symbol}")))
-        print(error("   Exchange: {args.exchange}")))
-        print(error("   Python path: {sys.path[:3]}...")))  # First 3 entries
-        print(error("   Working directory: {Path.cwd()}")))
+        print(error("📊 Error context:"))
+        print(error("   Symbol: {args.symbol}"))
+        print(error("   Exchange: {args.exchange}"))
+        print(error("   Python path: {sys.path[:3]}..."))  # First 3 entries
+        print(error("   Working directory: {Path.cwd()}"))
 
         sys.exit(1)
     finally:

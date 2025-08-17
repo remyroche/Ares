@@ -40,8 +40,8 @@ class ConfidenceCalibrationStep:
     )
     async def initialize(self) -> None:
         """Initialize the confidence calibration step."""
-        self.logger.info("Initializing Confidence Calibration Step...")
-        self.logger.info("Confidence Calibration Step initialized successfully")
+        self.logger.info("🚀 Initializing Confidence Calibration Step...")
+        self.logger.info("✅ Confidence Calibration Step initialized successfully")
 
     @handle_errors(
         exceptions=(Exception,),
@@ -79,7 +79,12 @@ class ConfidenceCalibrationStep:
             analyst_models_dir = f"{data_dir}/enhanced_analyst_models"
             if os.path.exists(analyst_models_dir):
                 from src.utils.logger import heartbeat
-                with heartbeat(self.logger, name="Step11 load_analyst_models", interval_seconds=60.0):
+
+                with heartbeat(
+                    self.logger,
+                    name="Step11 load_analyst_models",
+                    interval_seconds=60.0,
+                ):
                     for regime_dir in os.listdir(analyst_models_dir):
                         regime_path = os.path.join(analyst_models_dir, regime_dir)
                         if os.path.isdir(regime_path):
@@ -100,10 +105,12 @@ class ConfidenceCalibrationStep:
                                             )
                                         else:
                                             with open(model_path, "rb") as f:
-                                                regime_models[model_name] = pickle.load(f)
+                                                regime_models[model_name] = pickle.load(
+                                                    f
+                                                )
                                     except Exception as e:
                                         self.logger.warning(
-                                            f"Failed to load model {model_file}: {e}",
+                                            f"⚠️ Failed to load model {model_file}: {e}",
                                         )
                             analyst_models[regime_dir] = regime_models
             try:
@@ -121,7 +128,12 @@ class ConfidenceCalibrationStep:
             tactician_models_dir = f"{data_dir}/tactician_models"
             if os.path.exists(tactician_models_dir):
                 from src.utils.logger import heartbeat
-                with heartbeat(self.logger, name="Step11 load_tactician_models", interval_seconds=60.0):
+
+                with heartbeat(
+                    self.logger,
+                    name="Step11 load_tactician_models",
+                    interval_seconds=60.0,
+                ):
                     for model_file in os.listdir(tactician_models_dir):
                         if model_file.endswith(".pkl"):
                             model_name = model_file.replace(".pkl", "")
@@ -148,7 +160,12 @@ class ConfidenceCalibrationStep:
             analyst_ensembles_dir = f"{data_dir}/analyst_ensembles"
             if os.path.exists(analyst_ensembles_dir):
                 from src.utils.logger import heartbeat
-                with heartbeat(self.logger, name="Step11 load_analyst_ensembles", interval_seconds=60.0):
+
+                with heartbeat(
+                    self.logger,
+                    name="Step11 load_analyst_ensembles",
+                    interval_seconds=60.0,
+                ):
                     for ensemble_file in os.listdir(analyst_ensembles_dir):
                         if ensemble_file.endswith("_ensemble.pkl"):
                             regime_name = ensemble_file.replace("_ensemble.pkl", "")
@@ -165,7 +182,12 @@ class ConfidenceCalibrationStep:
             if os.path.exists(tactician_ensembles_dir):
                 # New format: single model pickle per symbol/exchange
                 from src.utils.logger import heartbeat
-                with heartbeat(self.logger, name="Step11 load_tactician_ensembles", interval_seconds=60.0):
+
+                with heartbeat(
+                    self.logger,
+                    name="Step11 load_tactician_ensembles",
+                    interval_seconds=60.0,
+                ):
                     model_path = os.path.join(
                         tactician_ensembles_dir,
                         f"{exchange}_{symbol}_tactician_ensemble.pkl",
@@ -173,7 +195,9 @@ class ConfidenceCalibrationStep:
                     if os.path.exists(model_path):
                         with open(model_path, "rb") as f:
                             # Store under a default key for downstream usage
-                            tactician_ensembles["blended"] = {"ensemble": pickle.load(f)}
+                            tactician_ensembles["blended"] = {
+                                "ensemble": pickle.load(f)
+                            }
                     # Also support any additional ensembles present (e.g., experimental)
                     for ensemble_file in os.listdir(tactician_ensembles_dir):
                         if (
@@ -192,7 +216,7 @@ class ConfidenceCalibrationStep:
                                     }
                             except Exception as e:
                                 self.logger.warning(
-                                    f"Failed to load tactician ensemble {ensemble_file}: {e}",
+                                    f"⚠️ Failed to load tactician ensemble {ensemble_file}: {e}",
                                 )
             try:
                 print(
@@ -207,15 +231,33 @@ class ConfidenceCalibrationStep:
             # Try to augment with 1m meta-labels if present
             try:
                 step4_train = f"{data_dir}/{exchange}_{symbol}_labeled_train.pkl"
-                if os.path.exists(step4_train) and isinstance(generic_val, pd.DataFrame):
+                if os.path.exists(step4_train) and isinstance(
+                    generic_val, pd.DataFrame
+                ):
                     with open(step4_train, "rb") as f:
                         step4_df = pickle.load(f)
-                    one_m_cols = [c for c in getattr(step4_df, 'columns', []) if isinstance(c, str) and c.startswith('1m_')]
-                    if one_m_cols and 'timestamp' in step4_df.columns and 'timestamp' in generic_val.columns:
-                        generic_val = generic_val.merge(step4_df[['timestamp', *one_m_cols]], on='timestamp', how='left')
-                        self.logger.info(f"Augmented validation frame with {len(one_m_cols)} 1m meta-label columns")
+                    one_m_cols = [
+                        c
+                        for c in getattr(step4_df, "columns", [])
+                        if isinstance(c, str) and c.startswith("1m_")
+                    ]
+                    if (
+                        one_m_cols
+                        and "timestamp" in step4_df.columns
+                        and "timestamp" in generic_val.columns
+                    ):
+                        generic_val = generic_val.merge(
+                            step4_df[["timestamp", *one_m_cols]],
+                            on="timestamp",
+                            how="left",
+                        )
+                        self.logger.info(
+                            f"Augmented validation frame with {len(one_m_cols)} 1m meta-label columns"
+                        )
             except Exception as _ce:
-                self.logger.warning(f"Could not augment validation frame with 1m meta-labels: {_ce}")
+                self.logger.warning(
+                    f"⚠️ Could not augment validation frame with 1m meta-labels: {_ce}"
+                )
             try:
                 self.logger.info(
                     f"Validation frame loaded: shape={getattr(generic_val, 'shape', None)}",
@@ -311,12 +353,23 @@ class ConfidenceCalibrationStep:
                 self.logger.info(f"Saved calibration results: {calibration_file}")
                 # Compact summary of counts for quick troubleshooting
                 summary_counts = {
-                    "analyst_models": sum(len(v or {}) for v in calibration_results.get("analyst_models", {}).values()),
-                    "tactician_models": len(calibration_results.get("tactician_models", {})),
-                    "analyst_ensembles": len(calibration_results.get("analyst_ensembles", {})),
-                    "tactician_ensembles": len(calibration_results.get("tactician_ensembles", {})),
+                    "analyst_models": sum(
+                        len(v or {})
+                        for v in calibration_results.get("analyst_models", {}).values()
+                    ),
+                    "tactician_models": len(
+                        calibration_results.get("tactician_models", {})
+                    ),
+                    "analyst_ensembles": len(
+                        calibration_results.get("analyst_ensembles", {})
+                    ),
+                    "tactician_ensembles": len(
+                        calibration_results.get("tactician_ensembles", {})
+                    ),
                 }
-                self.logger.info({"msg": "calibration_saved_summary", "counts": summary_counts})
+                self.logger.info(
+                    {"msg": "calibration_saved_summary", "counts": summary_counts}
+                )
                 print(
                     f"Step11Monitor ▶ Saved calibration: {os.path.basename(calibration_file)}",
                     flush=True,
@@ -329,12 +382,18 @@ class ConfidenceCalibrationStep:
             with open(summary_file, "w") as f:
                 json.dump(self._summarize_calibration(calibration_results), f, indent=2)
 
-            # NEW: Persist thresholds and reliability for MetaLabelingSystem consumption
+            # Meta-labeling system removed - using only HMM market regimes
             try:
-                artifacts_dir = self.config.get("meta_labeling", {}).get("artifacts_dir", "artifacts/meta_labeling")
+                artifacts_dir = self.config.get("meta_labeling", {}).get(
+                    "artifacts_dir", "artifacts/meta_labeling"
+                )
                 os.makedirs(artifacts_dir, exist_ok=True)
                 # Persist reliability if available from pipeline_state or calibration
-                reliability: dict[str, float] = pipeline_state.get("label_reliability", {}) if isinstance(pipeline_state, dict) else {}
+                reliability: dict[str, float] = (
+                    pipeline_state.get("label_reliability", {})
+                    if isinstance(pipeline_state, dict)
+                    else {}
+                )
                 if not reliability:
                     # fallback: simple per-label accuracy proxy from analyst_models calibration if present
                     acc_map: dict[str, float] = {}
@@ -352,7 +411,11 @@ class ConfidenceCalibrationStep:
                 with open(os.path.join(artifacts_dir, "reliability.json"), "w") as f:
                     json.dump(reliability, f, indent=2)
                 # Persist thresholds if provided in pipeline_state
-                thresholds = pipeline_state.get("activation_thresholds", {}) if isinstance(pipeline_state, dict) else {}
+                thresholds = (
+                    pipeline_state.get("activation_thresholds", {})
+                    if isinstance(pipeline_state, dict)
+                    else {}
+                )
                 if thresholds:
                     with open(os.path.join(artifacts_dir, "thresholds.json"), "w") as f:
                         json.dump(thresholds, f, indent=2)
@@ -484,9 +547,11 @@ class ConfidenceCalibrationStep:
                         continue
                     X_val, y_val = self._extract_features(regime_df, base_model)
                     # Baseline metrics before calibration
-                    base_metrics = self._calculate_base_metrics(base_model, X_val, y_val)
+                    base_metrics = self._calculate_base_metrics(
+                        base_model, X_val, y_val
+                    )
                     calibrator = CalibratedClassifierCV(
-                        base_estimator=base_model,
+                        estimator=base_model,
                         cv="prefit",
                         method="isotonic",
                     )
@@ -542,7 +607,7 @@ class ConfidenceCalibrationStep:
                 # Baseline metrics
                 base_metrics = self._calculate_base_metrics(base_model, X_val, y_val)
                 calibrator = CalibratedClassifierCV(
-                    base_estimator=base_model,
+                    estimator=base_model,
                     cv="prefit",
                     method="isotonic",
                 )
@@ -608,7 +673,7 @@ class ConfidenceCalibrationStep:
                 base_metrics = self._calculate_base_metrics(ensemble_obj, X_val, y_val)
                 wrapper = _PrefitWrapper(ensemble_obj)
                 calibrator = CalibratedClassifierCV(
-                    base_estimator=wrapper,
+                    estimator=wrapper,
                     cv="prefit",
                     method="isotonic",
                 )
@@ -661,7 +726,7 @@ class ConfidenceCalibrationStep:
                 base_metrics = self._calculate_base_metrics(ensemble_obj, X_val, y_val)
                 wrapper = _PrefitWrapper(ensemble_obj)
                 calibrator = CalibratedClassifierCV(
-                    base_estimator=wrapper,
+                    estimator=wrapper,
                     cv="prefit",
                     method="isotonic",
                 )
@@ -696,9 +761,7 @@ class ConfidenceCalibrationStep:
         # Analyst models
         analyst = results.get("analyst_models", {})
         summary["analyst_models"] = {
-            regime: {
-                name: data.get("metrics", {}) for name, data in models.items()
-            }
+            regime: {name: data.get("metrics", {}) for name, data in models.items()}
             for regime, models in analyst.items()
         }
         # Tactician models
@@ -778,7 +841,88 @@ class _PrefitWrapper:
         return proba
 
 
+# Import training pipeline decorators for comprehensive security and troubleshooting
+from src.utils.training_pipeline_decorators import (
+    validate_step_prerequisites,
+    secure_data_processing,
+    prevent_data_leakage,
+    resource_monitor,
+    memory_efficient,
+    debug_training_step,
+    circuit_breaker_protection,
+    validate_step_output,
+    quality_gate,
+    deterministic_seed,
+    idempotent_step,
+    artifact_write_lock,
+    nan_inf_and_constant_guard,
+    artifact_versioning,
+    time_budget_watchdog,
+)
+
+
 # For backward compatibility with existing step structure
+@deterministic_seed(42)
+@idempotent_step(step_key="step11_confidence_calibration")
+@artifact_write_lock()
+@nan_inf_and_constant_guard()
+@artifact_versioning("1.0")
+@time_budget_watchdog(soft_timeout_seconds=2400.0)
+@validate_step_prerequisites(
+    required_directories=["data/training", "models"],
+    min_memory_gb=4.0,
+    min_disk_gb=3.0,
+    required_packages=["pandas", "numpy", "sklearn"],
+    data_quality_checks={
+        "min_rows": 1000,
+        "required_columns": ["timestamp", "features", "targets"],
+    },
+    context="Confidence Calibration",
+)
+@secure_data_processing(
+    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True
+)
+@prevent_data_leakage(
+    temporal_validation=True,
+    feature_leakage_detection=True,
+    lookahead_bias_prevention=True,
+)
+@resource_monitor(
+    memory_threshold_gb=8.0,
+    cpu_threshold_percent=80.0,
+    disk_threshold_gb=5.0,
+    monitor_interval=30.0,
+    auto_cleanup=True,
+)
+@memory_efficient(
+    chunk_size=15000, streaming_processing=True, memory_pool=True, cleanup_frequency=35
+)
+@debug_training_step(
+    log_intermediate_results=True,
+    save_debug_artifacts=True,
+    performance_profiling=True,
+    error_context_preservation=True,
+)
+@circuit_breaker_protection(
+    failure_threshold=3,
+    recovery_timeout=120.0,
+    expected_exception=Exception,
+    monitor_interval=30.0,
+)
+@validate_step_output(
+    required_files=["models/{exchange}_{symbol}_calibrated.pkl"],
+    data_quality_checks={
+        "min_rows": 100,
+        "required_columns": ["predictions", "probabilities"],
+    },
+    performance_thresholds={"calibration_time_minutes": 60.0},
+    format_validation=True,
+)
+@quality_gate(
+    model_performance_thresholds={"calibration_accuracy": 0.7},
+    data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
+    validation_score_requirements={"calibration_score": 0.7},
+)
 async def run_step(
     symbol: str,
     exchange: str = "BINANCE",

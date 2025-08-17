@@ -22,7 +22,11 @@ from sklearn.model_selection import TimeSeriesSplit
 from src.training.data_cleaning import handle_missing_data
 from src.training.feature_engineering import FeatureGenerator
 from typing import TYPE_CHECKING
-from src.utils.decorators import with_tracing_span, guard_dataframe_nulls, validate_call_or_runtime_types
+from src.utils.decorators import (
+    with_tracing_span,
+    guard_dataframe_nulls,
+    validate_call_or_runtime_types,
+)
 
 # Avoid importing heavy optional dependencies (e.g., xgboost) at module import time.
 # Import HPO manager lazily inside the method when HPO is actually used.
@@ -41,6 +45,19 @@ from src.utils.warning_symbols import (
     failed,
     invalid,
     missing,
+)
+
+# Import training pipeline decorators for comprehensive security and troubleshooting
+from src.utils.training_pipeline_decorators import (
+    validate_step_prerequisites,
+    secure_data_processing,
+    prevent_data_leakage,
+    resource_monitor,
+    memory_efficient,
+    debug_training_step,
+    circuit_breaker_protection,
+    validate_step_output,
+    quality_gate,
 )
 
 
@@ -248,6 +265,73 @@ class RayModelTrainer:
             self.print(failed("❌ Failed to initialize model storage: {e}"))
             raise
 
+    @validate_step_prerequisites(
+        required_directories=["models", "data_cache", "mlruns"],
+        min_memory_gb=16.0,
+        min_disk_gb=10.0,
+        required_packages=["pandas", "numpy", "sklearn", "ray", "mlflow", "shap"],
+        data_quality_checks={
+            "min_rows": 1000,
+            "required_columns": ["features", "targets"],
+        },
+        context="Model Training",
+    )
+    @secure_data_processing(
+        backup_before=True,
+        integrity_checks=True,
+        memory_cleanup=True,
+        data_validation=True,
+    )
+    @prevent_data_leakage(
+        temporal_validation=True,
+        feature_leakage_detection=True,
+        cross_validation_isolation=True,
+        lookahead_bias_prevention=True,
+    )
+    @resource_monitor(
+        memory_threshold_gb=32.0,
+        cpu_threshold_percent=90.0,
+        disk_threshold_gb=20.0,
+        monitor_interval=60.0,
+        auto_cleanup=True,
+    )
+    @memory_efficient(
+        chunk_size=5000,
+        streaming_processing=True,
+        memory_pool=True,
+        cleanup_frequency=20,
+    )
+    @debug_training_step(
+        log_intermediate_results=True,
+        save_debug_artifacts=True,
+        performance_profiling=True,
+        error_context_preservation=True,
+    )
+    @circuit_breaker_protection(
+        failure_threshold=3,
+        recovery_timeout=600.0,
+        expected_exception=Exception,
+        monitor_interval=60.0,
+    )
+    @validate_step_output(
+        required_files=["models/*.pkl", "models/*.joblib"],
+        data_quality_checks={
+            "min_rows": 100,
+            "required_columns": ["predictions", "probabilities"],
+        },
+        performance_thresholds={
+            "training_time_minutes": 180.0,
+            "memory_usage_gb": 16.0,
+        },
+        format_validation=True,
+    )
+    @quality_gate(
+        model_performance_thresholds={"accuracy": 0.6, "f1_score": 0.5},
+        data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
+        convergence_checks=True,
+        overfitting_detection=True,
+        validation_score_requirements={"cross_validation_score": 0.6},
+    )
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid training parameters"),
@@ -337,8 +421,8 @@ class RayModelTrainer:
                             mlflow.log_artifact(result["scaler_path"])
                         # SHAP explainability integration
                         try:
-                            model = joblib.load(result["model_path"])
-                            scaler = joblib.load(result["scaler_path"])
+                            cached_model = joblib.load(result["model_path"])
+                            cached_scaler = joblib.load(result["scaler_path"])
                             X_sample = training_data["tactician_1m"].features.iloc[:200]
                             X_sample_scaled = scaler.transform(X_sample)
                             explainer = shap.TreeExplainer(model)
@@ -757,12 +841,12 @@ class RayModelTrainer:
                 metadata = self.model_metadata[model_key]
 
                 # Load model
-                model = joblib.load(metadata["path"])
+                cached_model = joblib.load(metadata["path"])
 
                 # Load scaler
                 scaler = None
                 if "scaler_path" in metadata:
-                    scaler = joblib.load(metadata["scaler_path"])
+                    cached_scaler = joblib.load(metadata["scaler_path"])
 
                 return model, scaler
 

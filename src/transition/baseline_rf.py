@@ -48,7 +48,9 @@ class TransitionRandomForest:
         self.label_names: List[str] = []
         self.feature_names_: List[str] = []
 
-    def _assemble_features(self, samples: list[dict[str, Any]], label_index: list[str]) -> tuple[pd.DataFrame, pd.Series]:
+    def _assemble_features(
+        self, samples: list[dict[str, Any]], label_index: list[str]
+    ) -> tuple[pd.DataFrame, pd.Series]:
         rows: list[dict[str, Any]] = []
         y: list[str] = []
         for s in samples:
@@ -68,7 +70,9 @@ class TransitionRandomForest:
         X = X.fillna(0)
         return X, pd.Series(y)
 
-    def fit(self, samples: list[dict[str, Any]], label_index: list[str]) -> dict[str, Any]:
+    def fit(
+        self, samples: list[dict[str, Any]], label_index: list[str]
+    ) -> dict[str, Any]:
         if not self.cfg.enabled or not samples:
             return {"trained": False}
         X, y = self._assemble_features(samples, label_index)
@@ -76,7 +80,12 @@ class TransitionRandomForest:
         if len(X) > self.cfg.max_train_samples:
             X = X.iloc[: self.cfg.max_train_samples]
             y = y.iloc[: self.cfg.max_train_samples]
-        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=self.cfg.random_state, stratify=y)
+        # FIXED: Use time-based split to prevent lookahead bias
+        split_idx = int(len(X) * 0.8)
+        X_train = X.iloc[:split_idx]
+        X_val = X.iloc[split_idx:]
+        y_train = y.iloc[:split_idx]
+        y_val = y.iloc[split_idx:]
         mdl = RandomForestClassifier(
             n_estimators=self.cfg.n_estimators,
             max_depth=self.cfg.max_depth,
@@ -101,7 +110,9 @@ class TransitionRandomForest:
             classes, val_true, val_proba = [], [], {}
         result = {"trained": True, "report": rep}
         if classes:
-            result.update({"val_true": val_true, "val_proba": val_proba, "classes": classes})
+            result.update(
+                {"val_true": val_true, "val_proba": val_proba, "classes": classes}
+            )
         # SHAP (optional)
         if self.cfg.enable_shap and shap is not None:
             try:
@@ -112,11 +123,15 @@ class TransitionRandomForest:
                 # summarize mean |shap| per feature
                 if isinstance(shap_vals, list):
                     # multiclass returns list per class
-                    abs_mean = np.mean([np.abs(v).mean(axis=0) for v in shap_vals], axis=0)
+                    abs_mean = np.mean(
+                        [np.abs(v).mean(axis=0) for v in shap_vals], axis=0
+                    )
                 else:
                     abs_mean = np.abs(shap_vals).mean(axis=0)
                 top_idx = np.argsort(-abs_mean)[:50]
-                top_features = {self.feature_names_[i]: float(abs_mean[i]) for i in top_idx}
+                top_features = {
+                    self.feature_names_[i]: float(abs_mean[i]) for i in top_idx
+                }
                 result["shap_top_features"] = top_features
             except Exception as e:
                 self.logger.warning(f"SHAP computation failed/skipped: {e}")

@@ -28,6 +28,7 @@ from src.utils.warning_symbols import (
     initialization_error,
     execution_error,
 )
+from src.utils.data_quality_decorators import validate_feature_engineering_with_lookahead_bias_detection
 from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
 
 
@@ -690,68 +691,118 @@ class FeatureInteractionEngine:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("FeatureInteractionEngine")
-        
+
         # Interaction configuration
         self.interaction_config = config.get("feature_interactions", {})
-        self.enable_interactions = self.interaction_config.get("enable_interactions", True)
+        self.enable_interactions = self.interaction_config.get(
+            "enable_interactions", True
+        )
         self.max_interactions = self.interaction_config.get("max_interactions", 20)
-        self.interaction_threshold = self.interaction_config.get("interaction_threshold", 0.1)
-        
+        self.interaction_threshold = self.interaction_config.get(
+            "interaction_threshold", 0.1
+        )
+
         # Lag configuration for causality-aware interactions
         self.lag_config = self.interaction_config.get("lag_config", {})
         self.max_lag = self.lag_config.get("max_lag", 5)  # Maximum lag to test
-        self.enable_lagged_interactions = self.lag_config.get("enable_lagged_interactions", True)
-        self.causality_test_lags = self.lag_config.get("causality_test_lags", [1, 2, 3, 5])  # Specific lags to test
-        
+        self.enable_lagged_interactions = self.lag_config.get(
+            "enable_lagged_interactions", True
+        )
+        self.causality_test_lags = self.lag_config.get(
+            "causality_test_lags", [1, 2, 3, 5]
+        )  # Specific lags to test
+
         # Define feature groups for interactions
         self.spread_features = [
-            "spread_liquidity", "spread_liquidity_bps", "spread_liquidity_z_score",
-            "spread_liquidity_change", "spread_liquidity_pct_change", "bid_ask_spread"
+            "spread_liquidity",
+            "spread_liquidity_bps",
+            "spread_liquidity_z_score",
+            "spread_liquidity_change",
+            "spread_liquidity_pct_change",
+            "bid_ask_spread",
         ]
-        
+
+        # Enhanced volume features for HMM regime detection
         self.volume_features = [
-            "volume_roc", "volume_pct_change", "volume_z_score", "volume_liquidity",
-            "volume_ma_ratio", "volume_log_diff", "volume_liquidity_z_score"
+            # Basic volume metrics (from OHLCV)
+            "volume",                    # Raw trading volume
+            "volume_sma_5",             # 5-period volume moving average
+            "volume_sma_20",            # 20-period volume moving average
+            "volume_ratio",             # Current volume / 20-period average
+            "volume_trend",             # Volume trend direction (1, 0, -1)
+            "volume_acceleration",      # Rate of change in volume
+            "volume_volatility",        # Standard deviation of volume over 20 periods
+            
+            # Volume patterns (from aggtrades)
+            "volume_per_trade",         # Average trade size
+            "trade_frequency",          # Number of trades per period
+            "volume_concentration",     # How concentrated volume is in time
+            "volume_consistency",       # Stability of volume over time
+            "volume_percentile",        # Volume percentile over last 100 periods
+            "volume_zscore",            # Volume z-score relative to recent history
+            "volume_spike",             # Binary indicator for volume spikes (>2x average)
+            
+            # Volume quality indicators
+            "large_trade_ratio",        # Ratio of large trades to total volume
+            "volume_efficiency",        # How efficiently volume moves price
+            "volume_momentum",          # Volume momentum indicator
+            "volume_divergence",        # Volume-price divergence
+            "volume_clustering",        # Clustering of volume in specific periods
+            
+            # Legacy features (keeping for compatibility)
+            "volume_roc",               # Rate of change in volume
+            "volume_pct_change",        # Percentage change in volume
+            "volume_ma_ratio",          # Volume moving average ratio
+            "volume_log_diff",          # Log difference in volume
         ]
-        
+
         self.volatility_features = [
-            "realized_volatility", "parkinson_volatility", "garman_klass_volatility",
-            "realized_volatility_z_score", "volatility_regime", "volatility_percentile"
+            "realized_volatility",
+            "parkinson_volatility",
+            "garman_klass_volatility",
+            "realized_volatility_z_score",
+            "volatility_regime",
+            "volatility_percentile",
         ]
-        
+
         self.momentum_features = [
-            "momentum_5", "momentum_10", "momentum_20", "momentum_50",
-            "momentum_z_score", "momentum_acceleration", "momentum_strength"
+            "momentum_5",
+            "momentum_10",
+            "momentum_20",
+            "momentum_50",
+            "momentum_z_score",
+            "momentum_acceleration",
+            "momentum_strength",
         ]
-        
+
         self.liquidity_features = [
-            "price_impact", "kyle_lambda", "amihud_illiquidity", "liquidity_regime",
-            "liquidity_percentile", "liquidity_stress", "liquidity_health"
+            "price_impact",
+            "kyle_lambda",
+            "amihud_illiquidity",
+            "liquidity_regime",
+            "liquidity_percentile",
+            "liquidity_health",
         ]
-        
+
         # Causality-aware feature pairs (predictor -> target)
         self.causality_pairs = [
             # Spread changes predict volume changes
             ("spread_liquidity_change", "volume_roc"),
             ("spread_liquidity_pct_change", "volume_pct_change"),
             ("bid_ask_spread", "volume_liquidity"),
-            
             # Volume changes predict price impact
             ("volume_roc", "price_impact"),
             ("volume_pct_change", "kyle_lambda"),
             ("volume_liquidity", "amihud_illiquidity"),
-            
             # Volatility changes predict momentum
             ("realized_volatility", "momentum_5"),
             ("parkinson_volatility", "momentum_acceleration"),
             ("volatility_regime", "momentum_strength"),
-            
             # Momentum changes predict liquidity
-            ("momentum_5", "liquidity_stress"),
             ("momentum_acceleration", "liquidity_health"),
             ("momentum_strength", "liquidity_percentile"),
         ]
-        
+
         self.is_initialized = False
 
     @handle_errors(
@@ -780,10 +831,10 @@ class FeatureInteractionEngine:
     async def generate_interactions(self, features: dict[str, Any]) -> dict[str, Any]:
         """
         Generate feature interaction terms from normalized features.
-        
+
         Args:
             features: Dictionary of normalized features
-            
+
         Returns:
             Dictionary containing original features plus interaction terms
         """
@@ -798,346 +849,436 @@ class FeatureInteractionEngine:
                 return features
 
             self.logger.info("🔗 Generating feature interactions...")
-            
+
             # Start with original features
             interaction_features = features.copy()
-            
+
             # Generate concurrent interactions (t=0)
             concurrent_interactions = self._generate_concurrent_interactions(features)
             interaction_features.update(concurrent_interactions)
-            
+
             # Generate lagged interactions for causality
             if self.enable_lagged_interactions:
                 lagged_interactions = self._generate_lagged_interactions(features)
                 interaction_features.update(lagged_interactions)
-            
+
             # Generate causality-aware interactions
             causality_interactions = self._generate_causality_interactions(features)
             interaction_features.update(causality_interactions)
-            
+
             # Filter interactions based on significance
-            filtered_interactions = self._filter_significant_interactions(interaction_features)
-            
-            self.logger.info(f"✅ Generated {len(filtered_interactions) - len(features)} interaction terms")
+            filtered_interactions = self._filter_significant_interactions(
+                interaction_features
+            )
+
+            self.logger.info(
+                f"✅ Generated {len(filtered_interactions) - len(features)} interaction terms"
+            )
             return filtered_interactions
 
         except Exception as e:
             self.print(error("Error generating feature interactions: {e}"))
             return features
 
-    def _generate_concurrent_interactions(self, features: dict[str, Any]) -> dict[str, float]:
+    def _generate_concurrent_interactions(
+        self, features: dict[str, Any]
+    ) -> dict[str, float]:
         """Generate concurrent (t=0) feature interactions."""
         interactions = {}
-        
+
         try:
             # Generate spread-volume interactions (primary focus)
-            spread_volume_interactions = self._generate_spread_volume_interactions(features)
+            spread_volume_interactions = self._generate_spread_volume_interactions(
+                features
+            )
             interactions.update(spread_volume_interactions)
-            
+
             # Generate volatility-momentum interactions
-            volatility_momentum_interactions = self._generate_volatility_momentum_interactions(features)
+            volatility_momentum_interactions = (
+                self._generate_volatility_momentum_interactions(features)
+            )
             interactions.update(volatility_momentum_interactions)
-            
+
             # Generate liquidity-pressure interactions
-            liquidity_pressure_interactions = self._generate_liquidity_pressure_interactions(features)
+            liquidity_pressure_interactions = (
+                self._generate_liquidity_pressure_interactions(features)
+            )
             interactions.update(liquidity_pressure_interactions)
-            
+
             # Generate cross-regime interactions
-            cross_regime_interactions = self._generate_cross_regime_interactions(features)
+            cross_regime_interactions = self._generate_cross_regime_interactions(
+                features
+            )
             interactions.update(cross_regime_interactions)
-            
+
             return interactions
-            
+
         except Exception as e:
             self.logger.warning(f"Error generating concurrent interactions: {e}")
             return interactions
 
-    def _generate_lagged_interactions(self, features: dict[str, Any]) -> dict[str, float]:
+    def _generate_lagged_interactions(
+        self, features: dict[str, Any]
+    ) -> dict[str, float]:
         """Generate lagged interactions for causality testing."""
         interactions = {}
-        
+
         try:
             # Test causality pairs with different lags
             for predictor, target in self.causality_pairs:
                 if predictor in features and target in features:
                     predictor_val = features.get(predictor, 0.0)
                     target_val = features.get(target, 0.0)
-                    
-                    if isinstance(predictor_val, (int, float)) and isinstance(target_val, (int, float)):
+
+                    if isinstance(predictor_val, (int, float)) and isinstance(
+                        target_val, (int, float)
+                    ):
                         # Test different lag combinations
                         for lag in self.causality_test_lags:
                             # Predictor(t-lag) * Target(t) - tests if predictor leads target
                             lagged_name = f"{predictor}_lag{lag}_x_{target}"
-                            lagged_value = predictor_val * target_val  # Simplified for now
+                            lagged_value = (
+                                predictor_val * target_val
+                            )  # Simplified for now
                             interactions[lagged_name] = lagged_value
-                            
+
                             # Target(t-lag) * Predictor(t) - tests if target leads predictor
                             reverse_lagged_name = f"{target}_lag{lag}_x_{predictor}"
-                            reverse_lagged_value = target_val * predictor_val  # Simplified for now
+                            reverse_lagged_value = (
+                                target_val * predictor_val
+                            )  # Simplified for now
                             interactions[reverse_lagged_name] = reverse_lagged_value
-                            
+
                             # Conditional lagged interactions
-                            if abs(predictor_val) > self.interaction_threshold and abs(target_val) > self.interaction_threshold:
-                                conditional_name = f"{predictor}_lag{lag}_conditional_x_{target}"
+                            if (
+                                abs(predictor_val) > self.interaction_threshold
+                                and abs(target_val) > self.interaction_threshold
+                            ):
+                                conditional_name = (
+                                    f"{predictor}_lag{lag}_conditional_x_{target}"
+                                )
                                 conditional_value = predictor_val * target_val * 1.5
                                 interactions[conditional_name] = conditional_value
-            
+
             return interactions
-            
+
         except Exception as e:
             self.logger.warning(f"Error generating lagged interactions: {e}")
             return interactions
 
-    def _generate_causality_interactions(self, features: dict[str, Any]) -> dict[str, float]:
+    def _generate_causality_interactions(
+        self, features: dict[str, Any]
+    ) -> dict[str, float]:
         """Generate causality-aware interactions with specific market logic."""
         interactions = {}
-        
+
         try:
             # Spread changes predicting volume changes (market microstructure causality)
             if "spread_liquidity_change" in features and "volume_roc" in features:
                 spread_change = features.get("spread_liquidity_change", 0.0)
                 volume_roc = features.get("volume_roc", 0.0)
-                
+
                 # Widening spreads often predict volume increases (liquidity search)
                 spread_volume_causality = f"spread_change_predicts_volume"
                 causality_value = spread_change * volume_roc
                 interactions[spread_volume_causality] = causality_value
-                
+
                 # Amplify when spread is widening and volume is increasing
                 if spread_change > 0 and volume_roc > 0:
                     amplified_name = f"spread_widening_volume_increase"
                     amplified_value = spread_change * volume_roc * 2.0
                     interactions[amplified_name] = amplified_value
-            
+
             # Volume changes predicting price impact (market impact causality)
             if "volume_roc" in features and "price_impact" in features:
                 volume_roc = features.get("volume_roc", 0.0)
                 price_impact = features.get("price_impact", 0.0)
-                
+
                 # High volume often predicts higher price impact
                 volume_impact_causality = f"volume_predicts_price_impact"
                 causality_value = volume_roc * price_impact
                 interactions[volume_impact_causality] = causality_value
-            
+
             # Volatility changes predicting momentum (regime causality)
             if "realized_volatility" in features and "momentum_5" in features:
                 volatility = features.get("realized_volatility", 0.0)
                 momentum = features.get("momentum_5", 0.0)
-                
+
                 # High volatility often predicts momentum breakdown
                 vol_momentum_causality = f"volatility_predicts_momentum"
                 causality_value = volatility * momentum
                 interactions[vol_momentum_causality] = causality_value
-                
+
                 # Volatility-momentum divergence (when they move in opposite directions)
                 if volatility * momentum < 0:
                     divergence_name = f"volatility_momentum_divergence"
                     divergence_value = abs(volatility) * abs(momentum) * -1
                     interactions[divergence_name] = divergence_value
-            
+
             # Momentum changes predicting liquidity stress (flow causality)
-            if "momentum_5" in features and "liquidity_stress" in features:
+            if "momentum_5" in features and "spread_liquidity_change" in features:
                 momentum = features.get("momentum_5", 0.0)
-                liquidity_stress = features.get("liquidity_stress", 0.0)
-                
-                # Strong momentum often predicts liquidity stress
+                spread_change = features.get("spread_liquidity_change", 0.0)
+
+                # Strong momentum often predicts liquidity stress (spread widening)
                 momentum_liquidity_causality = f"momentum_predicts_liquidity_stress"
-                causality_value = momentum * liquidity_stress
+                causality_value = momentum * spread_change
                 interactions[momentum_liquidity_causality] = causality_value
-            
+
+                # Amplify when momentum is strong and spreads are widening
+                if abs(momentum) > self.interaction_threshold and spread_change > 0:
+                    amplified_name = f"strong_momentum_liquidity_stress"
+                    amplified_value = momentum * spread_change * 1.5
+                    interactions[amplified_name] = amplified_value
+
             return interactions
-            
+
         except Exception as e:
             self.logger.warning(f"Error generating causality interactions: {e}")
             return interactions
 
-    def _generate_spread_volume_interactions(self, features: dict[str, Any]) -> dict[str, float]:
+    def _generate_spread_volume_interactions(
+        self, features: dict[str, Any]
+    ) -> dict[str, float]:
         """Generate spread-volume interaction terms."""
         interactions = {}
-        
+
         try:
             # Get available spread and volume features
             available_spreads = [f for f in self.spread_features if f in features]
             available_volumes = [f for f in self.volume_features if f in features]
-            
+
             if not available_spreads or not available_volumes:
                 return interactions
-            
+
             # Create spread-volume interactions
             for spread_feature in available_spreads:
                 for volume_feature in available_volumes:
                     spread_val = features.get(spread_feature, 0.0)
                     volume_val = features.get(volume_feature, 0.0)
-                    
-                    if isinstance(spread_val, (int, float)) and isinstance(volume_val, (int, float)):
+
+                    if isinstance(spread_val, (int, float)) and isinstance(
+                        volume_val, (int, float)
+                    ):
                         # Main interaction: spread * volume_roc
                         interaction_name = f"{spread_feature}_x_{volume_feature}"
                         interaction_value = spread_val * volume_val
                         interactions[interaction_name] = interaction_value
-                        
+
                         # Additional interaction: spread * volume_roc * volatility (if available)
-                        volatility_features = [f for f in self.volatility_features if f in features]
+                        volatility_features = [
+                            f for f in self.volatility_features if f in features
+                        ]
                         if volatility_features:
                             vol_feature = volatility_features[0]  # Use first available
                             vol_val = features.get(vol_feature, 0.0)
                             if isinstance(vol_val, (int, float)):
                                 triple_interaction_name = f"{spread_feature}_x_{volume_feature}_x_{vol_feature}"
-                                triple_interaction_value = spread_val * volume_val * vol_val
-                                interactions[triple_interaction_name] = triple_interaction_value
-                        
+                                triple_interaction_value = (
+                                    spread_val * volume_val * vol_val
+                                )
+                                interactions[triple_interaction_name] = (
+                                    triple_interaction_value
+                                )
+
                         # Ratio interaction: spread / volume (when volume is significant)
                         if abs(volume_val) > 1e-6:
                             ratio_name = f"{spread_feature}_div_{volume_feature}"
                             ratio_value = spread_val / (abs(volume_val) + 1e-8)
                             interactions[ratio_name] = ratio_value
-                        
+
                         # Conditional interaction: spread * volume only when both are significant
-                        if abs(spread_val) > self.interaction_threshold and abs(volume_val) > self.interaction_threshold:
-                            conditional_name = f"{spread_feature}_conditional_x_{volume_feature}"
-                            conditional_value = spread_val * volume_val * 2.0  # Amplify significant interactions
+                        if (
+                            abs(spread_val) > self.interaction_threshold
+                            and abs(volume_val) > self.interaction_threshold
+                        ):
+                            conditional_name = (
+                                f"{spread_feature}_conditional_x_{volume_feature}"
+                            )
+                            conditional_value = (
+                                spread_val * volume_val * 2.0
+                            )  # Amplify significant interactions
                             interactions[conditional_name] = conditional_value
-            
+
             return interactions
-            
+
         except Exception as e:
             self.logger.warning(f"Error generating spread-volume interactions: {e}")
             return interactions
 
-    def _generate_volatility_momentum_interactions(self, features: dict[str, Any]) -> dict[str, float]:
+    def _generate_volatility_momentum_interactions(
+        self, features: dict[str, Any]
+    ) -> dict[str, float]:
         """Generate volatility-momentum interaction terms."""
         interactions = {}
-        
+
         try:
-            available_volatility = [f for f in self.volatility_features if f in features]
+            available_volatility = [
+                f for f in self.volatility_features if f in features
+            ]
             available_momentum = [f for f in self.momentum_features if f in features]
-            
+
             if not available_volatility or not available_momentum:
                 return interactions
-            
+
             for vol_feature in available_volatility:
                 for mom_feature in available_momentum:
                     vol_val = features.get(vol_feature, 0.0)
                     mom_val = features.get(mom_feature, 0.0)
-                    
-                    if isinstance(vol_val, (int, float)) and isinstance(mom_val, (int, float)):
+
+                    if isinstance(vol_val, (int, float)) and isinstance(
+                        mom_val, (int, float)
+                    ):
                         # Volatility-momentum interaction
                         interaction_name = f"{vol_feature}_x_{mom_feature}"
                         interaction_value = vol_val * mom_val
                         interactions[interaction_name] = interaction_value
-                        
+
                         # Volatility-momentum divergence (when they move in opposite directions)
                         if vol_val * mom_val < 0:
                             divergence_name = f"{vol_feature}_divergence_{mom_feature}"
-                            divergence_value = abs(vol_val) * abs(mom_val) * -1  # Negative for divergence
+                            divergence_value = (
+                                abs(vol_val) * abs(mom_val) * -1
+                            )  # Negative for divergence
                             interactions[divergence_name] = divergence_value
-            
-            return interactions
-            
-        except Exception as e:
-            self.logger.warning(f"Error generating volatility-momentum interactions: {e}")
+
             return interactions
 
-    def _generate_liquidity_pressure_interactions(self, features: dict[str, Any]) -> dict[str, float]:
+        except Exception as e:
+            self.logger.warning(
+                f"Error generating volatility-momentum interactions: {e}"
+            )
+            return interactions
+
+    def _generate_liquidity_pressure_interactions(
+        self, features: dict[str, Any]
+    ) -> dict[str, float]:
         """Generate liquidity-pressure interaction terms."""
         interactions = {}
-        
+
         try:
             available_liquidity = [f for f in self.liquidity_features if f in features]
             available_volumes = [f for f in self.volume_features if f in features]
-            
+
             if not available_liquidity or not available_volumes:
                 return interactions
-            
+
             for liq_feature in available_liquidity:
                 for vol_feature in available_volumes:
                     liq_val = features.get(liq_feature, 0.0)
                     vol_val = features.get(vol_feature, 0.0)
-                    
-                    if isinstance(liq_val, (int, float)) and isinstance(vol_val, (int, float)):
+
+                    if isinstance(liq_val, (int, float)) and isinstance(
+                        vol_val, (int, float)
+                    ):
                         # Liquidity-pressure interaction
                         interaction_name = f"{liq_feature}_x_{vol_feature}"
                         interaction_value = liq_val * vol_val
                         interactions[interaction_name] = interaction_value
-                        
+
                         # Liquidity stress amplification (when both are high)
-                        if abs(liq_val) > self.interaction_threshold and abs(vol_val) > self.interaction_threshold:
+                        if (
+                            abs(liq_val) > self.interaction_threshold
+                            and abs(vol_val) > self.interaction_threshold
+                        ):
                             stress_name = f"{liq_feature}_stress_{vol_feature}"
-                            stress_value = liq_val * vol_val * 1.5  # Amplify stress conditions
+                            stress_value = (
+                                liq_val * vol_val * 1.5
+                            )  # Amplify stress conditions
                             interactions[stress_name] = stress_value
-            
-            return interactions
-            
-        except Exception as e:
-            self.logger.warning(f"Error generating liquidity-pressure interactions: {e}")
+
             return interactions
 
-    def _generate_cross_regime_interactions(self, features: dict[str, Any]) -> dict[str, float]:
+        except Exception as e:
+            self.logger.warning(
+                f"Error generating liquidity-pressure interactions: {e}"
+            )
+            return interactions
+
+    def _generate_cross_regime_interactions(
+        self, features: dict[str, Any]
+    ) -> dict[str, float]:
         """Generate cross-regime interaction terms."""
         interactions = {}
-        
+
         try:
             # Look for regime-related features
-            regime_features = [f for f in features.keys() if 'regime' in f.lower()]
-            z_score_features = [f for f in features.keys() if 'z_score' in f.lower()]
-            
+            regime_features = [f for f in features.keys() if "regime" in f.lower()]
+            z_score_features = [f for f in features.keys() if "z_score" in f.lower()]
+
             if not regime_features or not z_score_features:
                 return interactions
-            
+
             for regime_feature in regime_features:
                 for z_score_feature in z_score_features:
                     regime_val = features.get(regime_feature, 0.0)
                     z_score_val = features.get(z_score_feature, 0.0)
-                    
-                    if isinstance(regime_val, (int, float)) and isinstance(z_score_val, (int, float)):
+
+                    if isinstance(regime_val, (int, float)) and isinstance(
+                        z_score_val, (int, float)
+                    ):
                         # Regime-zscore interaction
                         interaction_name = f"{regime_feature}_x_{z_score_feature}"
                         interaction_value = regime_val * z_score_val
                         interactions[interaction_name] = interaction_value
-                        
+
                         # Extreme regime conditions
                         if abs(z_score_val) > 2.0:  # More than 2 standard deviations
                             extreme_name = f"{regime_feature}_extreme_{z_score_feature}"
-                            extreme_value = regime_val * z_score_val * 2.0  # Amplify extreme conditions
+                            extreme_value = (
+                                regime_val * z_score_val * 2.0
+                            )  # Amplify extreme conditions
                             interactions[extreme_name] = extreme_value
-            
+
             return interactions
-            
+
         except Exception as e:
             self.logger.warning(f"Error generating cross-regime interactions: {e}")
             return interactions
 
-    def _filter_significant_interactions(self, features: dict[str, Any]) -> dict[str, Any]:
+    def _filter_significant_interactions(
+        self, features: dict[str, Any]
+    ) -> dict[str, Any]:
         """Filter interactions based on significance threshold."""
         try:
             if len(features) <= self.max_interactions:
                 return features
-            
+
             # Separate original features from interactions
             original_features = {}
             interaction_features = {}
-            
+
             for key, value in features.items():
-                if '_x_' in key or '_div_' in key or '_conditional_' in key or '_divergence_' in key or '_stress_' in key or '_extreme_' in key or '_lag' in key or '_predicts_' in key:
+                if (
+                    "_x_" in key
+                    or "_div_" in key
+                    or "_conditional_" in key
+                    or "_divergence_" in key
+                    or "_stress_" in key
+                    or "_extreme_" in key
+                    or "_lag" in key
+                    or "_predicts_" in key
+                ):
                     interaction_features[key] = value
                 else:
                     original_features[key] = value
-            
+
             # Sort interactions by absolute value
             sorted_interactions = sorted(
                 interaction_features.items(),
                 key=lambda x: abs(x[1]) if isinstance(x[1], (int, float)) else 0,
-                reverse=True
+                reverse=True,
             )
-            
+
             # Keep top interactions
             max_interaction_count = self.max_interactions - len(original_features)
             selected_interactions = dict(sorted_interactions[:max_interaction_count])
-            
+
             # Combine original features with selected interactions
             filtered_features = {**original_features, **selected_interactions}
-            
+
             return filtered_features
-            
+
         except Exception as e:
             self.logger.warning(f"Error filtering interactions: {e}")
             return features
@@ -1183,10 +1324,8 @@ class AdvancedFeatureEngineering:
             "enable_multi_timeframe",
             True,
         )
-        self.enable_meta_labeling = self.feature_config.get(
-            "enable_meta_labeling",
-            True,
-        )
+        # Meta-labeling deprecated: force disabled
+        self.enable_meta_labeling = False
 
         # Multi-timeframe configuration
         self.timeframes = ["1m", "5m", "15m", "30m"]
@@ -1238,6 +1377,10 @@ class AdvancedFeatureEngineering:
 
         self.is_initialized = False
 
+    def print(self, message: str) -> None:
+        """Print message with proper formatting."""
+        print(message)
+
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
@@ -1276,12 +1419,7 @@ class AdvancedFeatureEngineering:
             # Initialize feature interaction engine
             await self.feature_interaction_engine.initialize()
 
-            # Initialize meta-labeling system
-            if self.enable_meta_labeling:
-                from src.analyst.meta_labeling_system import MetaLabelingSystem
-
-                self.meta_labeling_system = MetaLabelingSystem(self.config)
-                await self.meta_labeling_system.initialize()
+            # Meta-labeling deprecated: do not initialize
 
             self.is_initialized = True
             self.logger.info("✅ Advanced feature engineering initialized successfully")
@@ -1298,11 +1436,13 @@ class AdvancedFeatureEngineering:
         default_return=None,
         context="advanced feature engineering",
     )
+    @validate_feature_engineering_with_lookahead_bias_detection
     async def engineer_features(
         self,
         price_data: pd.DataFrame,
         volume_data: pd.DataFrame,
         order_flow_data: pd.DataFrame | None = None,
+        aggtrades_data: pd.DataFrame | None = None,
     ) -> dict[str, Any]:
         """
         Engineer advanced features for improved prediction accuracy.
@@ -1324,11 +1464,16 @@ class AdvancedFeatureEngineering:
 
             features = {}
 
+            # Load aggtrades data if not provided
+            if aggtrades_data is None:
+                aggtrades_data = await self._load_aggtrades_data(price_data)
+
             # Market microstructure features
             microstructure_features = await self._engineer_microstructure_features(
                 price_data,
                 volume_data,
                 order_flow_data,
+                aggtrades_data=aggtrades_data,
             )
             features.update(microstructure_features)
 
@@ -1376,9 +1521,9 @@ class AdvancedFeatureEngineering:
             # Lightweight macro context (1h EMA/ATR) appended to source frame so it can be used downstream
             try:
                 # Make a shallow frame carrying OHLC for context calculation, then bring back series
-                src_df = price_data[["open","high","low","close"]].copy()
+                src_df = price_data[["open", "high", "low", "close"]].copy()
                 src_df = self._calculate_additional_context_features(src_df)
-                for col in ["1h_ema_50","1h_atr"]:
+                for col in ["1h_ema_50", "1h_atr"]:
                     if col in src_df.columns:
                         features[col] = src_df[col]
             except Exception:
@@ -1406,17 +1551,14 @@ class AdvancedFeatureEngineering:
                 )
                 selected_features.update(multi_timeframe_features)
 
-            # Add meta-labeling if enabled
-            if self.enable_meta_labeling:
-                meta_labels = await self._generate_meta_labels(
-                    price_data,
-                    volume_data,
-                    order_flow_data,
-                )
-                selected_features.update(meta_labels)
+            # Meta-labeling deprecated: skip
 
             # Generate feature interactions
-            interaction_features = await self.feature_interaction_engine.generate_interactions(selected_features)
+            interaction_features = (
+                await self.feature_interaction_engine.generate_interactions(
+                    selected_features
+                )
+            )
             original_feature_count = len(selected_features)
             selected_features.update(interaction_features)
             interaction_count = len(selected_features) - original_feature_count
@@ -1425,7 +1567,9 @@ class AdvancedFeatureEngineering:
                 f"✅ Engineered {len(selected_features)} advanced features (including {interaction_count} interaction terms)",
             )
             try:
-                self.logger.info(f"🧾 Feature list ({len(selected_features)}): {sorted(list(selected_features.keys()))}")
+                self.logger.info(
+                    f"🧾 Feature list ({len(selected_features)}): {sorted(list(selected_features.keys()))}"
+                )
             except Exception as e:
                 self.logger.warning(f"Failed to log feature list: {e}")
             return selected_features
@@ -1593,9 +1737,9 @@ class AdvancedFeatureEngineering:
                 (macd - signal).iloc[-1] if not macd.empty else 0
             )
 
-            # Bollinger Bands
-            sma20 = data["close"].rolling(20).mean()
-            std20 = data["close"].rolling(20).std()
+            # Bollinger Bands - FIXED: Use only past data to prevent lookahead bias
+            sma20 = data["close"].shift(1).rolling(20).mean()
+            std20 = data["close"].shift(1).rolling(20).std()
             features[f"{timeframe}_bb_upper"] = (
                 (sma20 + (std20 * 2)).iloc[-1]
                 if not sma20.empty
@@ -1681,10 +1825,12 @@ class AdvancedFeatureEngineering:
                 else true_range.iloc[-1]
             )
 
-            # Volatility
+            # Volatility - FIXED: Use only past data to prevent lookahead bias
             returns = data["close"].pct_change()
             features[f"{timeframe}_volatility"] = (
-                returns.rolling(20).std().iloc[-1] if len(data) >= 20 else returns.std()
+                returns.shift(1).rolling(20).std().iloc[-1]
+                if len(data) >= 20
+                else returns.shift(1).std()
             )
 
             return features
@@ -1920,6 +2066,7 @@ class AdvancedFeatureEngineering:
         price_data: pd.DataFrame,
         volume_data: pd.DataFrame,
         order_flow_data: pd.DataFrame | None = None,
+        aggtrades_data: pd.DataFrame | None = None,
     ) -> dict[str, Any]:
         """Engineer market microstructure features."""
         try:
@@ -1932,8 +2079,12 @@ class AdvancedFeatureEngineering:
             if order_flow_data is not None:
                 features.update(self._calculate_order_flow_imbalance(order_flow_data))
 
-            # Volume profile analysis
+            # Volume profile analysis (enhanced with comprehensive volume features)
             features.update(self._calculate_volume_profile(price_data, volume_data))
+
+            # Aggtrades volume features (trade-level volume analysis)
+            if aggtrades_data is not None:
+                features.update(self._calculate_aggtrades_volume_features(aggtrades_data))
 
             # Bid-ask spread analysis
             if order_flow_data is not None:
@@ -2025,38 +2176,214 @@ class AdvancedFeatureEngineering:
         price_data: pd.DataFrame,
         volume_data: pd.DataFrame,
     ) -> dict[str, float]:
-        """Calculate volume profile metrics."""
+        """Calculate comprehensive volume profile metrics for HMM regime detection."""
         try:
+            features = {}
+            
+            # Basic volume metrics (from OHLCV)
+            volume = volume_data["volume"]
+            
+            # Volume moving averages
+            features["volume_sma_5"] = volume.rolling(5).mean().iloc[-1] if len(volume) >= 5 else volume.iloc[-1]
+            features["volume_sma_20"] = volume.rolling(20).mean().iloc[-1] if len(volume) >= 20 else volume.iloc[-1]
+            
+            # Volume ratio and trend
+            features["volume_ratio"] = volume.iloc[-1] / features["volume_sma_20"] if features["volume_sma_20"] > 0 else 1.0
+            features["volume_trend"] = np.sign(volume.rolling(10).mean().diff().iloc[-1]) if len(volume) >= 10 else 0
+            
+            # Volume acceleration and volatility
+            features["volume_acceleration"] = volume.pct_change().diff().iloc[-1] if len(volume) >= 2 else 0
+            features["volume_volatility"] = volume.rolling(20).std().iloc[-1] if len(volume) >= 20 else volume.std()
+            
+            # Volume patterns and quality indicators
+            features["volume_percentile"] = (volume.rank(pct=True).iloc[-1] * 100) if len(volume) >= 100 else 50
+            features["volume_zscore"] = ((volume.iloc[-1] - volume.rolling(20).mean().iloc[-1]) / 
+                                       volume.rolling(20).std().iloc[-1]) if len(volume) >= 20 else 0
+            
+            # Volume spike detection
+            volume_avg = volume.rolling(20).mean().iloc[-1] if len(volume) >= 20 else volume.mean()
+            features["volume_spike"] = 1.0 if volume.iloc[-1] > (2 * volume_avg) else 0.0
+            
+            # Volume consistency (stability over time)
+            volume_std = volume.rolling(20).std().iloc[-1] if len(volume) >= 20 else volume.std()
+            features["volume_consistency"] = 1.0 - (volume_std / volume_avg) if volume_avg > 0 else 0.0
+            
+            # Volume momentum
+            features["volume_momentum"] = volume.pct_change(5).iloc[-1] if len(volume) >= 5 else 0
+            
+            # Volume-price divergence (simplified)
+            price_change = price_data["close"].pct_change(5).iloc[-1] if len(price_data) >= 5 else 0
+            volume_change = volume.pct_change(5).iloc[-1] if len(volume) >= 5 else 0
+            features["volume_divergence"] = volume_change - price_change
+            
+            # Volume efficiency (how much price moves per unit volume)
+            price_volatility = price_data["close"].pct_change().rolling(20).std().iloc[-1] if len(price_data) >= 20 else 0
+            features["volume_efficiency"] = price_volatility / (volume.iloc[-1] / volume_avg) if volume_avg > 0 else 0
+            
+            # Legacy features (keeping for compatibility)
             # Volume-weighted average price (VWAP)
-            vwap = (price_data["close"] * volume_data["volume"]).rolling(
-                20,
-            ).sum() / volume_data["volume"].rolling(20).sum()
-
+            vwap = (price_data["close"] * volume).rolling(20).sum() / volume.rolling(20).sum()
+            features["vwap"] = vwap.iloc[-1] if not vwap.empty else price_data["close"].iloc[-1]
+            
             # Volume price trend (VPT)
-            vpt = (volume_data["volume"] * price_data["close"].pct_change()).cumsum()
-
+            vpt = (volume * price_data["close"].pct_change()).cumsum()
+            features["vpt"] = vpt.iloc[-1] if not vpt.empty else 0.0
+            
             # Volume rate of change
-            volume_roc = volume_data["volume"].pct_change(5)
-
+            features["volume_roc"] = volume.pct_change(5).iloc[-1] if len(volume) >= 5 else 0
+            
             # Volume moving average ratio
-            volume_ma_ratio = (
-                volume_data["volume"] / volume_data["volume"].rolling(20).mean()
-            )
+            features["volume_ma_ratio"] = volume.iloc[-1] / features["volume_sma_20"] if features["volume_sma_20"] > 0 else 1.0
+            
+            # Volume log difference
+            features["volume_log_diff"] = np.log(volume.iloc[-1] / volume.iloc[-2]) if len(volume) >= 2 and volume.iloc[-2] > 0 else 0
+            
+            # Volume percentage change
+            features["volume_pct_change"] = volume.pct_change().iloc[-1] if len(volume) >= 1 else 0
 
-            return {
-                "vwap": vwap.iloc[-1]
-                if not vwap.empty
-                else price_data["close"].iloc[-1],
-                "vpt": vpt.iloc[-1] if not vpt.empty else 0.0,
-                "volume_roc": volume_roc.iloc[-1] if not volume_roc.empty else 0.0,
-                "volume_ma_ratio": volume_ma_ratio.iloc[-1]
-                if not volume_ma_ratio.empty
-                else 1.0,
-            }
+            return features
 
         except Exception as e:
             self.print(error("Error calculating volume profile: {e}"))
             return {}
+
+    def _calculate_aggtrades_volume_features(
+        self,
+        aggtrades_data: pd.DataFrame,
+    ) -> dict[str, float]:
+        """Calculate volume features from aggtrades data."""
+        try:
+            features = {}
+            
+            if aggtrades_data.empty or "qty" not in aggtrades_data.columns:
+                # Return default values if no aggtrades data
+                features.update({
+                    "volume_per_trade": 0.0,
+                    "trade_frequency": 0.0,
+                    "volume_concentration": 0.0,
+                    "large_trade_ratio": 0.0,
+                    "volume_clustering": 0.0,
+                })
+                return features
+            
+            # Calculate trade-based volume features
+            trade_sizes = aggtrades_data["qty"]
+            
+            # Average trade size
+            features["volume_per_trade"] = trade_sizes.mean() if len(trade_sizes) > 0 else 0.0
+            
+            # Trade frequency (trades per minute if timestamp available)
+            if "timestamp" in aggtrades_data.columns:
+                # Group by minute and count trades
+                aggtrades_data["minute"] = pd.to_datetime(aggtrades_data["timestamp"]).dt.floor("min")
+                trade_counts = aggtrades_data.groupby("minute").size()
+                features["trade_frequency"] = trade_counts.mean() if len(trade_counts) > 0 else 0.0
+            else:
+                features["trade_frequency"] = len(aggtrades_data)  # Total trades in period
+            
+            # Volume concentration (how concentrated volume is in time)
+            if len(trade_sizes) > 0:
+                # Calculate Gini coefficient of trade sizes (measure of concentration)
+                sorted_sizes = np.sort(trade_sizes)
+                n = len(sorted_sizes)
+                cumsum = np.cumsum(sorted_sizes)
+                features["volume_concentration"] = (n + 1 - 2 * np.sum(cumsum) / cumsum[-1]) / n if cumsum[-1] > 0 else 0.0
+            else:
+                features["volume_concentration"] = 0.0
+            
+            # Large trade ratio (trades > 2x average size)
+            if len(trade_sizes) > 0:
+                avg_trade_size = trade_sizes.mean()
+                large_trades = trade_sizes[trade_sizes > (2 * avg_trade_size)]
+                features["large_trade_ratio"] = len(large_trades) / len(trade_sizes) if len(trade_sizes) > 0 else 0.0
+            else:
+                features["large_trade_ratio"] = 0.0
+            
+            # Volume clustering (temporal clustering of volume)
+            if "timestamp" in aggtrades_data.columns and len(aggtrades_data) > 1:
+                # Calculate time intervals between trades
+                timestamps = pd.to_datetime(aggtrades_data["timestamp"]).sort_values()
+                intervals = timestamps.diff().dt.total_seconds()
+                # Clustering measure: standard deviation of intervals (lower = more clustered)
+                features["volume_clustering"] = 1.0 / (1.0 + intervals.std()) if intervals.std() > 0 else 1.0
+            else:
+                features["volume_clustering"] = 0.5  # Neutral value
+            
+            return features
+
+        except Exception as e:
+            self.print(error("Error calculating aggtrades volume features: {e}"))
+            return {
+                "volume_per_trade": 0.0,
+                "trade_frequency": 0.0,
+                "volume_concentration": 0.0,
+                "large_trade_ratio": 0.0,
+                "volume_clustering": 0.0,
+            }
+
+    async def _load_aggtrades_data(
+        self,
+        price_data: pd.DataFrame,
+    ) -> pd.DataFrame | None:
+        """Load aggtrades data for the same time period as price_data."""
+        try:
+            if price_data.empty:
+                return None
+
+            # Get the time range from price_data
+            start_time = price_data["timestamp"].min()
+            end_time = price_data["timestamp"].max()
+
+            # Look for aggtrades files in data_cache
+            import glob
+            import os
+            from datetime import datetime
+
+            # Find aggtrades files that might contain data for this period
+            aggtrades_files = glob.glob("data_cache/aggtrades_BINANCE_ETHUSDT_*.csv")
+            aggtrades_files.extend(glob.glob("data_cache/aggtrades_BINANCE_ETHUSDT_*.parquet"))
+
+            if not aggtrades_files:
+                self.logger.info("No aggtrades files found")
+                return None
+
+            # Load and combine aggtrades data
+            all_aggtrades = []
+            for file_path in aggtrades_files:
+                try:
+                    if file_path.endswith(".csv"):
+                        df = pd.read_csv(file_path)
+                    else:
+                        df = pd.read_parquet(file_path)
+
+                    # Convert timestamp to datetime
+                    if "timestamp" in df.columns:
+                        df["timestamp"] = pd.to_datetime(df["timestamp"])
+                        
+                        # Filter by time range
+                        mask = (df["timestamp"] >= start_time) & (df["timestamp"] <= end_time)
+                        df = df[mask]
+
+                        if not df.empty:
+                            all_aggtrades.append(df)
+
+                except Exception as e:
+                    self.logger.warning(f"Failed to load {file_path}: {e}")
+
+            if not all_aggtrades:
+                self.logger.info("No aggtrades data found for the specified time range")
+                return None
+
+            # Combine all aggtrades data
+            combined_aggtrades = pd.concat(all_aggtrades, ignore_index=True)
+            combined_aggtrades = combined_aggtrades.drop_duplicates().sort_values("timestamp")
+
+            self.logger.info(f"Loaded {len(combined_aggtrades)} aggtrades records")
+            return combined_aggtrades
+
+        except Exception as e:
+            self.logger.warning(f"Failed to load aggtrades data: {e}")
+            return None
 
     def _engineer_adaptive_indicators(
         self,
@@ -2090,9 +2417,9 @@ class AdvancedFeatureEngineering:
     ) -> dict[str, float]:
         """Calculate adaptive moving averages based on volatility."""
         try:
-            # Calculate volatility
+            # Calculate volatility - FIXED: Use only past data to prevent lookahead bias
             returns = price_data["close"].pct_change()
-            volatility = returns.rolling(20).std()
+            volatility = returns.shift(1).rolling(20).std()
 
             # Adaptive periods based on volatility
             base_period = 20
@@ -2166,23 +2493,32 @@ class AdvancedFeatureEngineering:
             loss = (-delta.where(delta < 0, 0.0)).rolling(14, min_periods=1).mean()
             rs = gain / loss.replace(0, np.nan)
             rsi = (100 - (100 / (1 + rs))).fillna(50)
-            # Volatility-aware smoothing
-            vol = close.pct_change().rolling(20, min_periods=1).std().fillna(0)
+            # Volatility-aware smoothing - FIXED: Use only past data to prevent lookahead bias
+            vol = close.pct_change().shift(1).rolling(20, min_periods=1).std().fillna(0)
             weight = (1 / (1 + vol * 100)).clip(0, 1)
-            smoothed = (weight * rsi.rolling(5, min_periods=1).mean() + (1 - weight) * rsi.rolling(20, min_periods=1).mean()).fillna(method="ffill").fillna(50)
+            smoothed = (
+                (
+                    weight * rsi.rolling(5, min_periods=1).mean()
+                    + (1 - weight) * rsi.rolling(20, min_periods=1).mean()
+                )
+                .ffill()
+                .fillna(50)
+            )
             return {"adaptive_rsi": float(smoothed.iloc[-1])}
         except Exception as e:
             self.logger.warning(f"Failed to calculate adaptive RSI: {e}")
             return {"adaptive_rsi": 50.0}
 
-    def _calculate_adaptive_bollinger_bands(self, price_data: pd.DataFrame) -> dict[str, float]:
+    def _calculate_adaptive_bollinger_bands(
+        self, price_data: pd.DataFrame
+    ) -> dict[str, float]:
         """Calculate adaptive Bollinger Bands and position based on volatility."""
         try:
             close = price_data["close"].astype(float)
-            sma = close.rolling(20, min_periods=1).mean()
-            std = close.rolling(20, min_periods=1).std().fillna(0)
-            # Adjust band width by recent volatility percentile
-            vol = close.pct_change().rolling(20, min_periods=1).std().fillna(0)
+            sma = close.shift(1).rolling(20, min_periods=1).mean()
+            std = close.shift(1).rolling(20, min_periods=1).std().fillna(0)
+            # Adjust band width by recent volatility percentile - FIXED: Use only past data to prevent lookahead bias
+            vol = close.pct_change().shift(1).rolling(20, min_periods=1).std().fillna(0)
             vol_pct = (vol.rank(pct=True)).fillna(0.5)
             width_mult = 1.5 + vol_pct  # 1.5..2.5x
             upper = sma + width_mult * std
@@ -2190,13 +2526,21 @@ class AdvancedFeatureEngineering:
             denom = (upper - lower).replace(0, np.nan)
             pos = ((close - lower) / denom).clip(0, 1).fillna(0.5)
             return {
-                "adaptive_bb_upper": float(upper.iloc[-1] if not upper.empty else close.iloc[-1]),
-                "adaptive_bb_lower": float(lower.iloc[-1] if not lower.empty else close.iloc[-1]),
+                "adaptive_bb_upper": float(
+                    upper.iloc[-1] if not upper.empty else close.iloc[-1]
+                ),
+                "adaptive_bb_lower": float(
+                    lower.iloc[-1] if not lower.empty else close.iloc[-1]
+                ),
                 "adaptive_bb_position": float(pos.iloc[-1] if not pos.empty else 0.5),
             }
         except Exception as e:
             self.logger.warning(f"Failed to calculate adaptive Bollinger Bands: {e}")
-            return {"adaptive_bb_upper": float("nan"), "adaptive_bb_lower": float("nan"), "adaptive_bb_position": 0.5}
+            return {
+                "adaptive_bb_upper": float("nan"),
+                "adaptive_bb_lower": float("nan"),
+                "adaptive_bb_position": 0.5,
+            }
 
     def _calculate_adaptive_macd(self, price_data: pd.DataFrame) -> dict[str, float]:
         """Calculate an adaptive MACD with volatility-aware blending of spans."""
@@ -2213,8 +2557,10 @@ class AdvancedFeatureEngineering:
             ema_slow = close.ewm(span=34, adjust=False).mean()
             macd_alt = ema_fast - ema_slow
             signal_alt = macd_alt.ewm(span=9, adjust=False).mean()
-            vol = close.pct_change().rolling(20, min_periods=1).std().fillna(0)
-            alpha = (1 / (1 + vol * 100)).clip(0, 1)  # high vol => smaller alpha; blend tilts toward alt MACD (8/34) with longer slow span (more conservative)
+            vol = close.pct_change().shift(1).rolling(20, min_periods=1).std().fillna(0)
+            alpha = (1 / (1 + vol * 100)).clip(
+                0, 1
+            )  # high vol => smaller alpha; blend tilts toward alt MACD (8/34) with longer slow span (more conservative)
             macd_adapt = (alpha * macd + (1 - alpha) * macd_alt).iloc[-1]
             signal_adapt = (alpha * signal + (1 - alpha) * signal_alt).iloc[-1]
             hist_adapt = macd_adapt - signal_adapt
@@ -2225,28 +2571,46 @@ class AdvancedFeatureEngineering:
             }
         except Exception as e:
             self.logger.warning(f"Failed to calculate adaptive MACD: {e}")
-            return {"adaptive_macd": 0.0, "adaptive_macd_signal": 0.0, "adaptive_macd_histogram": 0.0}
+            return {
+                "adaptive_macd": 0.0,
+                "adaptive_macd_signal": 0.0,
+                "adaptive_macd_histogram": 0.0,
+            }
 
     def _calculate_additional_context_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add lightweight higher-timeframe context features (1h/4h EMA50 and ATR) if missing."""
         try:
-            if df.empty or not set(["open","high","low","close"]).issubset(df.columns):
+            if df.empty or not set(["open", "high", "low", "close"]).issubset(
+                df.columns
+            ):
                 return df
             # Avoid recompute if already present
-            if all(c in df.columns for c in ["1h_ema_50","1h_atr"]):
+            if all(c in df.columns for c in ["1h_ema_50", "1h_atr"]):
                 return df
             # Resample to 1h
             try:
-                ohlc = df[["open","high","low","close"]].copy()
-                ohlc_1h = ohlc.resample("1H").agg({"open":"first","high":"max","low":"min","close":"last"}).dropna()
-                ema50_1h = ohlc_1h["close"].ewm(span=50).mean().reindex(df.index, method="pad")
+                ohlc = df[["open", "high", "low", "close"]].copy()
+                ohlc_1h = (
+                    ohlc.resample("1h")
+                    .agg(
+                        {"open": "first", "high": "max", "low": "min", "close": "last"}
+                    )
+                    .dropna()
+                )
+                ema50_1h = (
+                    ohlc_1h["close"].ewm(span=50).mean().reindex(df.index, method="pad")
+                )
                 df["1h_ema_50"] = ema50_1h
                 # ATR(14) on 1h
                 tr = (ohlc_1h["high"] - ohlc_1h["low"]).to_frame("hl")
                 tr["hc"] = (ohlc_1h["high"] - ohlc_1h["close"].shift()).abs()
                 tr["lc"] = (ohlc_1h["low"] - ohlc_1h["close"].shift()).abs()
                 true_range = tr.max(axis=1)
-                atr_1h = true_range.rolling(14, min_periods=1).mean().reindex(df.index, method="pad")
+                atr_1h = (
+                    true_range.rolling(14, min_periods=1)
+                    .mean()
+                    .reindex(df.index, method="pad")
+                )
                 df["1h_atr"] = atr_1h
             except Exception:
                 pass
@@ -2255,18 +2619,35 @@ class AdvancedFeatureEngineering:
         except Exception:
             return df
 
-    def _compute_macro_hmm_state(self, price_data: pd.DataFrame, timeframe: str = "1h") -> pd.Series:
+    def _compute_macro_hmm_state(
+        self, price_data: pd.DataFrame, timeframe: str = "1h"
+    ) -> pd.Series:
         """Compute macro HMM state on resampled data and align to base index (safe default to SIDEWAYS state=1)."""
         try:
             if price_data.empty or "close" not in price_data.columns:
                 return pd.Series(index=price_data.index, dtype=float)
             # Resample to requested timeframe
-            ohlc = price_data[["open","high","low","close","volume"]].copy()
-            rule = "1H" if timeframe == "1h" else timeframe.upper()
-            ohlc_tf = ohlc.resample(rule).agg({"open":"first","high":"max","low":"min","close":"last","volume":"sum"}).dropna()
+            ohlc = price_data[["open", "high", "low", "close", "volume"]].copy()
+            rule = "1h" if timeframe == "1h" else timeframe.upper()
+            ohlc_tf = (
+                ohlc.resample(rule)
+                .agg(
+                    {
+                        "open": "first",
+                        "high": "max",
+                        "low": "min",
+                        "close": "last",
+                        "volume": "sum",
+                    }
+                )
+                .dropna()
+            )
             # Initialize URC for macro and try to load existing models only
-            urc = UnifiedRegimeClassifier(self.config, exchange="UNKNOWN", symbol="UNKNOWN")
+            urc = UnifiedRegimeClassifier(
+                self.config, exchange="UNKNOWN", symbol="UNKNOWN"
+            )
             import asyncio
+
             loop = asyncio.get_event_loop()
             loop.run_until_complete(urc.initialize())
             hmm = urc.hmm_model
@@ -2274,10 +2655,22 @@ class AdvancedFeatureEngineering:
             if hmm is not None:
                 # Compute features and predict states
                 feats = urc._calculate_features(ohlc_tf)
-                X = feats[[
-                    "log_returns","volatility_20","volume_ratio","rsi","macd","macd_signal",
-                    "macd_histogram","bb_position","bb_width","atr","volatility_regime","volatility_acceleration"
-                ]].fillna(0)
+                X = feats[
+                    [
+                        "log_returns",
+                        "volatility_20",
+                        "volume_ratio",
+                        "rsi",
+                        "macd",
+                        "macd_signal",
+                        "macd_histogram",
+                        "bb_position",
+                        "bb_width",
+                        "atr",
+                        "volatility_regime",
+                        "volatility_acceleration",
+                    ]
+                ].fillna(0)
                 if urc.scaler is not None:
                     Xs = urc.scaler.transform(X)
                 else:
@@ -2299,23 +2692,33 @@ class AdvancedFeatureEngineering:
                 for t in ohlc_tf.index:
                     c = float(ohlc_tf.loc[t, "close"])
                     e = float(ema.loc[t]) if not pd.isna(ema.loc[t]) else c
-                    a = float(adx_proxy.loc[t]) if not pd.isna(adx_proxy.loc[t]) else 0.0
+                    a = (
+                        float(adx_proxy.loc[t])
+                        if not pd.isna(adx_proxy.loc[t])
+                        else 0.0
+                    )
                     if a < adx_thr:
                         regimes.append(1)
                     else:
                         regimes.append(2 if c >= e else 0)
                 states_tf = pd.Series(regimes, index=ohlc_tf.index)
             # Map back to base index via forward fill
-            states_base = states_tf.reindex(price_data.index, method="ffill").fillna(1).astype(int)
+            states_base = (
+                states_tf.reindex(price_data.index, method="ffill")
+                .fillna(1)
+                .astype(int)
+            )
             return states_base.rename(f"{timeframe}_hmm_state")
         except Exception:
             return pd.Series(index=price_data.index, dtype=float)
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={}
-    )
-    async def _generate_feature_blocks(self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None = None, order_flow_data: pd.DataFrame | None = None) -> dict[str, Any]:
+    @handle_errors(exceptions=(Exception,), default_return={})
+    async def _generate_feature_blocks(
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame | None = None,
+        order_flow_data: pd.DataFrame | None = None,
+    ) -> dict[str, Any]:
         features: dict[str, Any] = {}
         try:
             # existing feature generation
@@ -2348,8 +2751,8 @@ class VolatilityRegimeModel:
         try:
             returns = price_data["close"].pct_change().dropna()
 
-            # Calculate various volatility measures
-            realized_vol = returns.rolling(20).std()
+            # Calculate various volatility measures - FIXED: Use only past data to prevent lookahead bias
+            realized_vol = returns.shift(1).rolling(20).std()
             parkinson_vol = self._calculate_parkinson_volatility(price_data)
             garman_klass_vol = self._calculate_garman_klass_volatility(price_data)
 
@@ -2432,8 +2835,8 @@ class CorrelationAnalyzer:
             corr_20 = returns.rolling(20).corr(returns.shift(1))
 
             # Cross-timeframe correlations
-            returns_5m = returns.resample("5T").last()
-            returns_1h = returns.resample("1H").last()
+            returns_5m = returns.resample("5min").last()
+            returns_1h = returns.resample("1h").last()
 
             cross_corr = (
                 returns_5m.corr(returns_1h)

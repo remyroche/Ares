@@ -59,14 +59,14 @@ class UnifiedRegimeClassifier:
         """
         # Ensure NumPy RNG pickles created under different versions can be loaded
         self._enable_numpy_rng_unpickle_compat(system_logger)
-        
+
         # Configuration setup with enhanced logging
         self.config = config.get("analyst", {}).get("unified_regime_classifier", {})
         self.global_config = config
         self.logger = system_logger.getChild("UnifiedRegimeClassifier")
         self.exchange = exchange
         self.symbol = symbol
-        
+
         # Add print method for compatibility
         self.print = self.logger.info
 
@@ -96,9 +96,15 @@ class UnifiedRegimeClassifier:
         # Optimized thresholds for better regime balance
         self.adx_sideways_threshold = self.config.get("adx_sideways_threshold", 18)
         self.volatility_threshold = self.config.get("volatility_threshold", 0.025)
-        self.atr_normalized_threshold = self.config.get("atr_normalized_threshold", 0.035)
-        self.volatility_percentile_threshold = self.config.get("volatility_percentile_threshold", 0.80)
-        self.bb_width_volatility_threshold = self.config.get("bb_width_volatility_threshold", 0.045)
+        self.atr_normalized_threshold = self.config.get(
+            "atr_normalized_threshold", 0.035
+        )
+        self.volatility_percentile_threshold = self.config.get(
+            "volatility_percentile_threshold", 0.80
+        )
+        self.bb_width_volatility_threshold = self.config.get(
+            "bb_width_volatility_threshold", 0.045
+        )
 
         # Log threshold configuration
         self.logger.info(
@@ -118,7 +124,9 @@ class UnifiedRegimeClassifier:
         blank_mode = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
         if blank_mode:
             self.min_data_points = self.config.get("min_data_points", 50)
-            self.logger.info("🔧 BLANK MODE DETECTED: Using reduced minimum data points (50)")
+            self.logger.info(
+                "🔧 BLANK MODE DETECTED: Using reduced minimum data points (50)"
+            )
         else:
             self.min_data_points = self.config.get("min_data_points", 1000)
 
@@ -159,7 +167,7 @@ class UnifiedRegimeClassifier:
                 base_checkpoint_dir = os.path.join(project_root, base_checkpoint_dir)
 
             self.model_dir = os.path.join(base_checkpoint_dir, "analyst_models")
-            
+
             # Optional hierarchical directory for compatibility
             self._hierarchical_model_dir = os.path.join(
                 self.model_dir,
@@ -167,7 +175,7 @@ class UnifiedRegimeClassifier:
                 self.symbol,
                 self.target_timeframe,
             )
-            
+
             # Create model directory
             os.makedirs(self.model_dir, exist_ok=True)
 
@@ -214,17 +222,24 @@ class UnifiedRegimeClassifier:
 
             original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
             if original_ctor is None:
-                UnifiedRegimeClassifier._enable_numpy_rng_unpickle_compat._patched = True
+                UnifiedRegimeClassifier._enable_numpy_rng_unpickle_compat._patched = (
+                    True
+                )
                 return
 
             def _normalized_numpy_bitgen_ctor(
-                bit_generator_name: Any, state: Optional[Any] = None, *args: Any, **kwargs: Any
+                bit_generator_name: Any,
+                state: Optional[Any] = None,
+                *args: Any,
+                **kwargs: Any,
             ) -> Any:
                 name_candidate = bit_generator_name
                 try:
                     if hasattr(name_candidate, "__name__"):
                         name_candidate = name_candidate.__name__
-                    elif isinstance(name_candidate, str) and name_candidate.startswith("<class "):
+                    elif isinstance(name_candidate, str) and name_candidate.startswith(
+                        "<class "
+                    ):
                         name_candidate = name_candidate.split(".")[-1].split("'>")[0]
                 except Exception:
                     pass
@@ -237,10 +252,12 @@ class UnifiedRegimeClassifier:
                     except Exception as ctor_exc:
                         try:
                             import numpy as _np
+
                             bitgen_cls = getattr(_np.random, name_candidate, None)
                             if bitgen_cls is None and name_candidate == "MT19937":
                                 try:
                                     import numpy.random._mt19937 as _mt  # type: ignore[attr-defined]
+
                                     bitgen_cls = getattr(_mt, "MT19937", None)
                                 except Exception:
                                     bitgen_cls = None
@@ -349,24 +366,24 @@ class UnifiedRegimeClassifier:
             safe_division(features_df["close"], features_df["close"].shift(1))
         )
         features_df["price_change"] = features_df["close"].pct_change()
-        
+
         # Enhanced ratio calculations with better handling of edge cases
         high_diff = features_df["high"].diff()
         low_diff = features_df["low"].diff()
         open_diff = features_df["open"].diff()
         close_diff = features_df["close"].diff()
-        
+
         # Use safer division with clipping to prevent extreme values
         features_df["high_low_diff_ratio"] = np.where(
             np.abs(low_diff) > 1e-8,
             np.clip(safe_division(high_diff, low_diff), -100, 100),
-            1.0  # Default to neutral ratio when denominator is too small
+            1.0,  # Default to neutral ratio when denominator is too small
         )
-        
+
         features_df["close_open_diff_ratio"] = np.where(
             np.abs(open_diff) > 1e-8,
             np.clip(safe_division(close_diff, open_diff), -100, 100),
-            1.0  # Default to neutral ratio when denominator is too small
+            1.0,  # Default to neutral ratio when denominator is too small
         )
 
         # Volatility features with enhanced calculation
@@ -384,7 +401,7 @@ class UnifiedRegimeClassifier:
         features_df["volume_ratio"] = np.where(
             volume_ma > 1e-8,
             np.clip(safe_division(features_df["volume"], volume_ma), 0, 50),
-            1.0  # Default to neutral ratio when denominator is too small
+            1.0,  # Default to neutral ratio when denominator is too small
         )
         features_df["volume_change"] = features_df["volume"].pct_change()
 
@@ -393,21 +410,23 @@ class UnifiedRegimeClassifier:
         features_df = self._calculate_macd(features_df)
         features_df = self._calculate_bollinger_bands(features_df)
         features_df = self._calculate_atr(features_df)
-        
+
         # Enhanced ATR normalization with clipping
         atr_denominator = features_df["close"].diff().abs() + 1e-8
         features_df["atr_normalized"] = np.clip(
             safe_division(features_df["atr"], atr_denominator), 0, 10
         )
-        
+
         features_df = self._calculate_adx(features_df)
 
         # Enhanced volatility features for VOLATILE regime detection
-        features_df["volatility_regime"] = self._calculate_volatility_regime(features_df)
-        features_df["volatility_acceleration"] = features_df["volatility_20"].diff()
-        features_df["volatility_momentum"] = (
-            features_df["volatility_20"] - features_df["volatility_20"].shift(5)
+        features_df["volatility_regime"] = self._calculate_volatility_regime(
+            features_df
         )
+        features_df["volatility_acceleration"] = features_df["volatility_20"].diff()
+        features_df["volatility_momentum"] = features_df["volatility_20"] - features_df[
+            "volatility_20"
+        ].shift(5)
 
         # Comprehensive NaN handling with detailed logging
         initial_length = len(features_df)
@@ -429,23 +448,35 @@ class UnifiedRegimeClassifier:
     def _handle_nan_values(self, features_df: pd.DataFrame) -> pd.DataFrame:
         """
         Handle NaN values with comprehensive strategy and logging.
-        
+
         Args:
             features_df: DataFrame with potential NaN values
-            
+
         Returns:
             DataFrame with NaN values handled
         """
         # Log initial NaN counts
         nan_counts = features_df.isnull().sum()
         if nan_counts.sum() > 0:
-            self.logger.info(f"🔍 Initial NaN counts: {nan_counts[nan_counts > 0].to_dict()}")
+            self.logger.info(
+                f"🔍 Initial NaN counts: {nan_counts[nan_counts > 0].to_dict()}"
+            )
 
         # Improved NaN handling: use forward fill for technical indicators
         technical_columns = [
-            "rsi", "macd", "macd_signal", "macd_histogram",
-            "bb_upper", "bb_middle", "bb_lower", "bb_position", "bb_width",
-            "atr", "atr_normalized", "adx", "volatility_regime",
+            "rsi",
+            "macd",
+            "macd_signal",
+            "macd_histogram",
+            "bb_upper",
+            "bb_middle",
+            "bb_lower",
+            "bb_position",
+            "bb_width",
+            "atr",
+            "atr_normalized",
+            "adx",
+            "volatility_regime",
         ]
 
         for col in technical_columns:
@@ -457,8 +488,11 @@ class UnifiedRegimeClassifier:
 
         # For log_returns and other price-based features, use 0 for NaN
         price_features = [
-            "log_returns", "price_change", "volume_change",
-            "volatility_acceleration", "volatility_momentum",
+            "log_returns",
+            "price_change",
+            "volume_change",
+            "volatility_acceleration",
+            "volatility_momentum",
         ]
         for col in price_features:
             if col in features_df.columns:
@@ -466,7 +500,9 @@ class UnifiedRegimeClassifier:
 
         # For ratio features, use 1 for NaN (neutral ratio)
         ratio_features = [
-            "high_low_diff_ratio", "close_open_diff_ratio", "volume_ratio",
+            "high_low_diff_ratio",
+            "close_open_diff_ratio",
+            "volume_ratio",
         ]
         for col in ratio_features:
             if col in features_df.columns:
@@ -474,7 +510,10 @@ class UnifiedRegimeClassifier:
 
         # For volatility features, use 0 for NaN
         vol_features = [
-            "volatility_20", "volatility_10", "volatility_5", "ewma_volatility_20",
+            "volatility_20",
+            "volatility_10",
+            "volatility_5",
+            "ewma_volatility_20",
         ]
         for col in vol_features:
             if col in features_df.columns:
@@ -482,27 +521,27 @@ class UnifiedRegimeClassifier:
 
         # CRITICAL: Handle infinity and extremely large values
         features_df = features_df.replace([np.inf, -np.inf], np.nan)
-        
+
         # Clip extremely large values to prevent HMM training issues
         numeric_columns = features_df.select_dtypes(include=[np.number]).columns
         for col in numeric_columns:
             if col in features_df.columns:
                 # Clip to reasonable ranges based on feature type
-                if 'ratio' in col.lower():
+                if "ratio" in col.lower():
                     features_df[col] = np.clip(features_df[col], -100, 100)
-                elif 'volatility' in col.lower():
+                elif "volatility" in col.lower():
                     features_df[col] = np.clip(features_df[col], 0, 1)
-                elif 'volume' in col.lower():
+                elif "volume" in col.lower():
                     features_df[col] = np.clip(features_df[col], 0, 100)
-                elif 'rsi' in col.lower():
+                elif "rsi" in col.lower():
                     features_df[col] = np.clip(features_df[col], 0, 100)
-                elif 'macd' in col.lower():
+                elif "macd" in col.lower():
                     features_df[col] = np.clip(features_df[col], -10, 10)
-                elif 'bb_' in col.lower():
+                elif "bb_" in col.lower():
                     features_df[col] = np.clip(features_df[col], -10, 10)
-                elif 'atr' in col.lower():
+                elif "atr" in col.lower():
                     features_df[col] = np.clip(features_df[col], 0, 10)
-                elif 'adx' in col.lower():
+                elif "adx" in col.lower():
                     features_df[col] = np.clip(features_df[col], 0, 100)
                 else:
                     # Default clipping for other numeric features
@@ -511,7 +550,9 @@ class UnifiedRegimeClassifier:
         # Only drop rows that still have NaN values after all the filling
         final_nan_counts = features_df.isnull().sum()
         if final_nan_counts.sum() > 0:
-            self.logger.warning(f"⚠️ Remaining NaN counts after handling: {final_nan_counts[final_nan_counts > 0].to_dict()}")
+            self.logger.warning(
+                f"⚠️ Remaining NaN counts after handling: {final_nan_counts[final_nan_counts > 0].to_dict()}"
+            )
             features_df = features_df.dropna()
 
         return features_df
@@ -519,10 +560,10 @@ class UnifiedRegimeClassifier:
     def _calculate_volatility_regime(self, features_df: pd.DataFrame) -> pd.Series:
         """
         Calculate volatility regime for VOLATILE classification.
-        
+
         Args:
             features_df: DataFrame with calculated features
-            
+
         Returns:
             Series with volatility regime indicators
         """
@@ -654,12 +695,9 @@ class UnifiedRegimeClassifier:
         df["bb_upper"] = sma + (std * std_dev)
         df["bb_lower"] = sma - (std * std_dev)
         df["bb_position"] = safe_division(
-            (close_diff - df["bb_lower"]),
-            (df["bb_upper"] - df["bb_lower"])
+            (close_diff - df["bb_lower"]), (df["bb_upper"] - df["bb_lower"])
         )
-        df["bb_width"] = safe_division(
-            (df["bb_upper"] - df["bb_lower"]), sma
-        )
+        df["bb_width"] = safe_division((df["bb_upper"] - df["bb_lower"]), sma)
         return df
 
     @handle_errors(
@@ -691,11 +729,11 @@ class UnifiedRegimeClassifier:
         """
         Interpret HMM states and map them to basic market regimes.
         Now uses simplified logic focusing on directional trends only.
-        
+
         Args:
             features_df: DataFrame with calculated features
             state_sequence: Array of HMM state predictions
-            
+
         Returns:
             Dict containing state analysis and regime mapping
         """
@@ -737,7 +775,7 @@ class UnifiedRegimeClassifier:
             # Optimized regime classification logic for better balance
             # Check for sideways movement (moderate directional strength)
             is_sideways = mean_adx < adx_sideways_threshold
-            
+
             # Tweak thresholds to reduce SIDEWAYS dominance
             small_return = 0.0002
             dir_return = 0.0004
@@ -788,29 +826,52 @@ class UnifiedRegimeClassifier:
 
         # Post-mapping balancing: softly constrain SIDEWAYS to ~20-40% by reassigning borderline states
         try:
-            total = sum(d.get("count", 0) for s, d in state_analysis.items() if s != "state_to_regime_map")
+            total = sum(
+                d.get("count", 0)
+                for s, d in state_analysis.items()
+                if s != "state_to_regime_map"
+            )
             if total > 0:
-                sideways_count = sum(d.get("count", 0) for s, d in state_analysis.items() if s != "state_to_regime_map" and d.get("regime") == "SIDEWAYS")
+                sideways_count = sum(
+                    d.get("count", 0)
+                    for s, d in state_analysis.items()
+                    if s != "state_to_regime_map" and d.get("regime") == "SIDEWAYS"
+                )
                 sideways_ratio = sideways_count / total
                 target_min, target_max = 0.20, 0.40
                 if sideways_ratio > target_max:
                     # Reassign the weakest SIDEWAYS states (highest |mean_return|) to directional to reduce ratio
                     candidates = [
-                        (s, d) for s, d in state_analysis.items()
+                        (s, d)
+                        for s, d in state_analysis.items()
                         if s != "state_to_regime_map" and d.get("regime") == "SIDEWAYS"
                     ]
                     # Sort by abs(mean_return) descending (more directional), then by mean_adx descending
-                    candidates.sort(key=lambda x: (abs(x[1].get("mean_return", 0.0)), x[1].get("mean_adx", 0.0)), reverse=True)
+                    candidates.sort(
+                        key=lambda x: (
+                            abs(x[1].get("mean_return", 0.0)),
+                            x[1].get("mean_adx", 0.0),
+                        ),
+                        reverse=True,
+                    )
                     to_flip = 0
                     while sideways_ratio > target_max and to_flip < len(candidates):
                         s, d = candidates[to_flip]
-                        new_regime = "BULL" if d.get("mean_return", 0.0) >= 0 else "BEAR"
+                        new_regime = (
+                            "BULL" if d.get("mean_return", 0.0) >= 0 else "BEAR"
+                        )
                         state_analysis[s]["regime"] = new_regime
                         sideways_count -= d.get("count", 0)
-                        sideways_ratio = sideways_count / total if total else sideways_ratio
+                        sideways_ratio = (
+                            sideways_count / total if total else sideways_ratio
+                        )
                         to_flip += 1
                     # Rebuild map
-                    state_to_regime_map = {s: d["regime"] for s, d in state_analysis.items() if s != "state_to_regime_map"}
+                    state_to_regime_map = {
+                        s: d["regime"]
+                        for s, d in state_analysis.items()
+                        if s != "state_to_regime_map"
+                    }
                     state_analysis["state_to_regime_map"] = state_to_regime_map
         except Exception as e:
             self.logger.warning(f"Error in regime balancing: {e}")
@@ -850,10 +911,10 @@ class UnifiedRegimeClassifier:
     async def train_hmm_labeler(self, historical_klines: pd.DataFrame) -> bool:
         """
         Train HMM-based labeler for basic regimes (BULL, BEAR, SIDEWAYS).
-        
+
         Args:
             historical_klines: Historical market data
-            
+
         Returns:
             bool: True if training successful, False otherwise
         """
@@ -912,16 +973,21 @@ class UnifiedRegimeClassifier:
                 covariance_type="full",
             )
 
-            self.logger.info(f"🔧 Training HMM with {self.n_states} states, {self.n_iter} iterations...")
+            self.logger.info(
+                f"🔧 Training HMM with {self.n_states} states, {self.n_iter} iterations..."
+            )
             self.hmm_model.fit(hmm_features_scaled)
 
             # Get state sequence and validate
             state_sequence = self.hmm_model.predict(hmm_features_scaled)
-            
+
             # Log HMM training results
             unique_states = np.unique(state_sequence)
-            state_counts = {int(state): int((state_sequence == state).sum()) for state in unique_states}
-            
+            state_counts = {
+                int(state): int((state_sequence == state).sum())
+                for state in unique_states
+            }
+
             self.logger.info(
                 {
                     "msg": "HMM training completed",
@@ -951,10 +1017,10 @@ class UnifiedRegimeClassifier:
     async def train_location_classifier(self, historical_klines: pd.DataFrame) -> bool:
         """
         Train location classifier for OPEN_RANGE, PIVOT_S, PIVOT_R, HVN_SUPPORT, HVN_RESISTANCE, CONFLUENCE_S, CONFLUENCE_R.
-        
+
         Args:
             historical_klines: Historical market data
-            
+
         Returns:
             bool: True if training successful, False otherwise
         """
@@ -964,7 +1030,9 @@ class UnifiedRegimeClassifier:
             # Calculate features
             features_df = self._calculate_features(historical_klines)
             if features_df.empty:
-                self.logger.error("No features available for location classifier training")
+                self.logger.error(
+                    "No features available for location classifier training"
+                )
                 return False
 
             # Check if we have enough data for location classification
@@ -990,7 +1058,9 @@ class UnifiedRegimeClassifier:
 
             # Encode location labels
             self.location_label_encoder = LabelEncoder()
-            location_encoded = self.location_label_encoder.fit_transform(location_labels)
+            location_encoded = self.location_label_encoder.fit_transform(
+                location_labels
+            )
 
             # Prepare features for location classification
             location_features = features_df[
@@ -1010,8 +1080,10 @@ class UnifiedRegimeClassifier:
 
             # Log location classifier training results
             unique_locations = np.unique(location_labels)
-            location_counts = {loc: int(location_labels.count(loc)) for loc in unique_locations}
-            
+            location_counts = {
+                loc: int(location_labels.count(loc)) for loc in unique_locations
+            }
+
             self.logger.info(
                 {
                     "msg": "Location classifier training completed",
@@ -1036,10 +1108,10 @@ class UnifiedRegimeClassifier:
     async def train_basic_ensemble(self, historical_klines: pd.DataFrame) -> bool:
         """
         Train ensemble for basic regime classification (BULL, BEAR, SIDEWAYS).
-        
+
         Args:
             historical_klines: Historical market data
-            
+
         Returns:
             bool: True if training successful, False otherwise
         """
@@ -1070,11 +1142,11 @@ class UnifiedRegimeClassifier:
                     "volatility_acceleration",
                 ]
             ].fillna(0)
-            
+
             if self.scaler is None:
                 self.logger.error("Scaler not available for ensemble training")
                 return False
-                
+
             hmm_features_scaled = self.scaler.transform(hmm_features)
             state_sequence = self.hmm_model.predict(hmm_features_scaled)
 
@@ -1083,15 +1155,17 @@ class UnifiedRegimeClassifier:
                 self.state_to_regime_map.get(state, "SIDEWAYS")
                 for state in state_sequence
             ]
-            
+
             # Log the regime distribution from the balanced mapping
             regime_counts = {}
             for regime in regime_labels:
                 regime_counts[regime] = regime_counts.get(regime, 0) + 1
-            
+
             total_labels = len(regime_labels)
-            regime_distribution = {regime: count/total_labels for regime, count in regime_counts.items()}
-            
+            regime_distribution = {
+                regime: count / total_labels for regime, count in regime_counts.items()
+            }
+
             self.logger.info(
                 {
                     "msg": "Ensemble training regime distribution (balanced)",
@@ -1099,13 +1173,21 @@ class UnifiedRegimeClassifier:
                     "total_labels": total_labels,
                 }
             )
-            
+
             # Verify that the balanced regime mapping is being used correctly
-            sideways_ratio = regime_counts.get("SIDEWAYS", 0) / total_labels if total_labels > 0 else 0
+            sideways_ratio = (
+                regime_counts.get("SIDEWAYS", 0) / total_labels
+                if total_labels > 0
+                else 0
+            )
             if sideways_ratio > 0.40:
-                self.logger.warning(f"⚠️ SIDEWAYS ratio in ensemble training data is {sideways_ratio:.3f} > 0.40 - balancing may not be working correctly")
+                self.logger.warning(
+                    f"⚠️ SIDEWAYS ratio in ensemble training data is {sideways_ratio:.3f} > 0.40 - balancing may not be working correctly"
+                )
             else:
-                self.logger.info(f"✅ SIDEWAYS ratio in ensemble training data is {sideways_ratio:.3f} (within acceptable range)")
+                self.logger.info(
+                    f"✅ SIDEWAYS ratio in ensemble training data is {sideways_ratio:.3f} (within acceptable range)"
+                )
 
             # Encode regime labels
             self.basic_label_encoder = LabelEncoder()
@@ -1137,7 +1219,7 @@ class UnifiedRegimeClassifier:
                 max_depth=6,
                 random_state=42,
                 verbose=-1,
-                class_weight='balanced',  # Add class balancing
+                class_weight="balanced",  # Add class balancing
                 is_unbalance=True,  # LightGBM specific parameter for imbalanced data
             )
 
@@ -1145,15 +1227,19 @@ class UnifiedRegimeClassifier:
 
             # Log training results
             train_predictions = self.basic_ensemble.predict(ensemble_features)
-            train_regime_labels = self.basic_label_encoder.inverse_transform(train_predictions)
-            
+            train_regime_labels = self.basic_label_encoder.inverse_transform(
+                train_predictions
+            )
+
             train_counts = {}
             for regime in train_regime_labels:
                 train_counts[regime] = train_counts.get(regime, 0) + 1
-            
+
             train_total = len(train_regime_labels)
-            train_distribution = {regime: count/train_total for regime, count in train_counts.items()}
-            
+            train_distribution = {
+                regime: count / train_total for regime, count in train_counts.items()
+            }
+
             self.logger.info(
                 {
                     "msg": "Ensemble training results",
@@ -1161,13 +1247,19 @@ class UnifiedRegimeClassifier:
                     "train_total": train_total,
                 }
             )
-            
+
             # Check if training maintained the balance
-            train_sideways_ratio = train_counts.get("SIDEWAYS", 0) / train_total if train_total > 0 else 0
+            train_sideways_ratio = (
+                train_counts.get("SIDEWAYS", 0) / train_total if train_total > 0 else 0
+            )
             if train_sideways_ratio > 0.40:
-                self.logger.warning(f"⚠️ Ensemble training produced SIDEWAYS ratio {train_sideways_ratio:.3f} > 0.40")
+                self.logger.warning(
+                    f"⚠️ Ensemble training produced SIDEWAYS ratio {train_sideways_ratio:.3f} > 0.40"
+                )
             else:
-                self.logger.info(f"✅ Ensemble training maintained SIDEWAYS ratio {train_sideways_ratio:.3f} (within acceptable range)")
+                self.logger.info(
+                    f"✅ Ensemble training maintained SIDEWAYS ratio {train_sideways_ratio:.3f} (within acceptable range)"
+                )
 
             self.logger.info("✅ Basic regime ensemble trained successfully")
             return True
@@ -1184,10 +1276,10 @@ class UnifiedRegimeClassifier:
     async def train_complete_system(self, historical_klines: pd.DataFrame) -> bool:
         """
         Train the complete regime and location classification system.
-        
+
         Args:
             historical_klines: Historical market data
-            
+
         Returns:
             bool: True if training successful, False otherwise
         """
@@ -1212,8 +1304,10 @@ class UnifiedRegimeClassifier:
             self.trained = True
             self.last_training_time = datetime.now()
 
-            self.logger.info("✅ Complete regime classification system trained successfully")
-            
+            self.logger.info(
+                "✅ Complete regime classification system trained successfully"
+            )
+
             # Persist trained models so subsequent runs can load them
             self.save_models()
             return True
@@ -1275,11 +1369,13 @@ class UnifiedRegimeClassifier:
             ].fillna(0)
 
             if self.basic_ensemble and self.basic_label_encoder:
-                regime_proba = self.basic_ensemble.predict_proba(regime_features.iloc[-1:])
+                regime_proba = self.basic_ensemble.predict_proba(
+                    regime_features.iloc[-1:]
+                )
                 regime_pred = self.basic_ensemble.predict(regime_features.iloc[-1:])[0]
                 regime = self.basic_label_encoder.inverse_transform([regime_pred])[0]
                 regime_confidence = float(np.max(regime_proba))
-                
+
                 self.logger.info(
                     {
                         "msg": "Regime prediction completed",
@@ -1291,7 +1387,9 @@ class UnifiedRegimeClassifier:
             else:
                 regime = "SIDEWAYS"
                 regime_confidence = 0.5
-                self.logger.warning("Ensemble model not available, using default prediction")
+                self.logger.warning(
+                    "Ensemble model not available, using default prediction"
+                )
 
             additional_info = {
                 "regime_confidence": regime_confidence,
@@ -1358,7 +1456,9 @@ class UnifiedRegimeClassifier:
             ].fillna(0)
 
             if self.basic_ensemble and self.basic_label_encoder:
-                regime_proba = self.basic_ensemble.predict_proba(regime_features.iloc[-1:])
+                regime_proba = self.basic_ensemble.predict_proba(
+                    regime_features.iloc[-1:]
+                )
                 regime_pred = self.basic_ensemble.predict(regime_features.iloc[-1:])[0]
                 regime = self.basic_label_encoder.inverse_transform([regime_pred])[0]
                 regime_confidence = float(np.max(regime_proba))
@@ -1372,9 +1472,15 @@ class UnifiedRegimeClassifier:
             ].fillna(0)
 
             if self.location_classifier and self.location_label_encoder:
-                location_proba = self.location_classifier.predict_proba(location_features.iloc[-1:])
-                location_pred = self.location_classifier.predict(location_features.iloc[-1:])[0]
-                location = self.location_label_encoder.inverse_transform([location_pred])[0]
+                location_proba = self.location_classifier.predict_proba(
+                    location_features.iloc[-1:]
+                )
+                location_pred = self.location_classifier.predict(
+                    location_features.iloc[-1:]
+                )[0]
+                location = self.location_label_encoder.inverse_transform(
+                    [location_pred]
+                )[0]
                 location_confidence = float(np.max(location_proba))
             else:
                 # Fallback to rule-based location classification
@@ -1418,27 +1524,35 @@ class UnifiedRegimeClassifier:
         """Save all trained models with enhanced error handling and logging."""
         try:
             self.logger.info("💾 Saving trained models...")
-            
+
             if self.hmm_model:
                 joblib.dump(self.hmm_model, self.hmm_model_path)
                 self.logger.info(f"✅ HMM model saved to {self.hmm_model_path}")
 
             if self.basic_ensemble:
                 joblib.dump(self.basic_ensemble, self.ensemble_model_path)
-                self.logger.info(f"✅ Basic ensemble saved to {self.ensemble_model_path}")
+                self.logger.info(
+                    f"✅ Basic ensemble saved to {self.ensemble_model_path}"
+                )
 
             if self.location_classifier:
                 joblib.dump(self.location_classifier, self.location_model_path)
-                self.logger.info(f"✅ Location classifier saved to {self.location_model_path}")
+                self.logger.info(
+                    f"✅ Location classifier saved to {self.location_model_path}"
+                )
 
             # Save label encoders
             if self.basic_label_encoder:
-                encoder_path = self.ensemble_model_path.replace(".joblib", "_encoder.joblib")
+                encoder_path = self.ensemble_model_path.replace(
+                    ".joblib", "_encoder.joblib"
+                )
                 joblib.dump(self.basic_label_encoder, encoder_path)
                 self.logger.info(f"✅ Basic label encoder saved to {encoder_path}")
 
             if self.location_label_encoder:
-                encoder_path = self.location_model_path.replace(".joblib", "_encoder.joblib")
+                encoder_path = self.location_model_path.replace(
+                    ".joblib", "_encoder.joblib"
+                )
                 joblib.dump(self.location_label_encoder, encoder_path)
                 self.logger.info(f"✅ Location label encoder saved to {encoder_path}")
 
@@ -1464,7 +1578,9 @@ class UnifiedRegimeClassifier:
                     "hmm_model_path": self.hmm_model_path,
                     "ensemble_model_path": self.ensemble_model_path,
                     "location_model_path": self.location_model_path,
-                    "hierarchical_model_dir": getattr(self, "_hierarchical_model_dir", None),
+                    "hierarchical_model_dir": getattr(
+                        self, "_hierarchical_model_dir", None
+                    ),
                 }
             )
 
@@ -1543,15 +1659,17 @@ class UnifiedRegimeClassifier:
             loc_enc_path = _first_existing(location_encoder_candidates)
             if loc_enc_path is not None:
                 self.location_label_encoder = joblib.load(loc_enc_path)
-                self.logger.info(f"✅ Loaded location label encoder from {loc_enc_path}")
+                self.logger.info(
+                    f"✅ Loaded location label encoder from {loc_enc_path}"
+                )
 
             self.trained = loaded_any
-            
+
             if loaded_any:
                 self.logger.info("✅ Model loading completed successfully")
             else:
                 self.logger.info("ℹ️ No models found to load")
-                
+
             return loaded_any
 
         except Exception as e:
@@ -1575,7 +1693,9 @@ class UnifiedRegimeClassifier:
         """
         try:
             if not self.trained:
-                self.logger.info("🎓 Models not trained, training complete system now...")
+                self.logger.info(
+                    "🎓 Models not trained, training complete system now..."
+                )
                 training_success = await self.train_complete_system(historical_klines)
                 if not training_success:
                     self.logger.error("❌ Failed to train regime classification models")
@@ -1608,18 +1728,28 @@ class UnifiedRegimeClassifier:
 
             regimes = []
             confidence_scores = []
-            
+
             if self.basic_ensemble and self.basic_label_encoder:
-                self.logger.info("🔍 Using trained basic ensemble for regime classification")
+                self.logger.info(
+                    "🔍 Using trained basic ensemble for regime classification"
+                )
                 regime_predictions = self.basic_ensemble.predict(regime_features)
-                regime_probabilities = self.basic_ensemble.predict_proba(regime_features)
-                regimes = self.basic_label_encoder.inverse_transform(regime_predictions).tolist()
+                regime_probabilities = self.basic_ensemble.predict_proba(
+                    regime_features
+                )
+                regimes = self.basic_label_encoder.inverse_transform(
+                    regime_predictions
+                ).tolist()
                 # Calculate confidence scores as max probability for each prediction
-                confidence_scores = [float(np.max(proba)) for proba in regime_probabilities]
-                
+                confidence_scores = [
+                    float(np.max(proba)) for proba in regime_probabilities
+                ]
+
                 unique_regimes = list(sorted(set(regimes)))
-                counts = {r: int((np.array(regimes) == r).sum()) for r in unique_regimes}
-                
+                counts = {
+                    r: int((np.array(regimes) == r).sum()) for r in unique_regimes
+                }
+
                 # Detailed logging on regime prediction composition
                 self.logger.info(
                     {
@@ -1636,7 +1766,7 @@ class UnifiedRegimeClassifier:
                         },
                     }
                 )
-                
+
                 # Compare ensemble predictions with HMM predictions for validation
                 if self.hmm_model and self.scaler and self.state_to_regime_map:
                     hmm_features_scaled = self.scaler.transform(regime_features)
@@ -1645,21 +1775,25 @@ class UnifiedRegimeClassifier:
                         self.state_to_regime_map.get(state, "SIDEWAYS")
                         for state in hmm_state_sequence
                     ]
-                    
+
                     hmm_counts = {}
                     for regime in hmm_regimes:
                         hmm_counts[regime] = hmm_counts.get(regime, 0) + 1
-                    
+
                     ensemble_counts = {}
                     for regime in regimes:
                         ensemble_counts[regime] = ensemble_counts.get(regime, 0) + 1
-                    
-                    self.logger.info(f"📊 Model comparison - HMM: {hmm_counts}, Ensemble: {ensemble_counts}")
-                    
+
+                    self.logger.info(
+                        f"📊 Model comparison - HMM: {hmm_counts}, Ensemble: {ensemble_counts}"
+                    )
+
                     # Calculate agreement rate
-                    agreement = sum(1 for e, h in zip(regimes, hmm_regimes) if e == h) / len(regimes)
+                    agreement = sum(
+                        1 for e, h in zip(regimes, hmm_regimes) if e == h
+                    ) / len(regimes)
                     self.logger.info(f"📊 Model agreement rate: {agreement:.3f}")
-                
+
                 if len(unique_regimes) < self.n_states:
                     self.logger.warning(
                         warning(
@@ -1667,7 +1801,7 @@ class UnifiedRegimeClassifier:
                             "Consider increasing min_data_points or enhancing volatility features."
                         )
                     )
-                    
+
             # Fallback to HMM states
             elif self.hmm_model and self.scaler and self.state_to_regime_map:
                 self.logger.info("🔍 Using HMM model for regime classification")
@@ -1678,10 +1812,14 @@ class UnifiedRegimeClassifier:
                     for state in state_sequence
                 ]
                 # For HMM, use a default confidence score since we don't have probabilities
-                confidence_scores = [0.8] * len(regimes)  # Default high confidence for HMM
+                confidence_scores = [0.8] * len(
+                    regimes
+                )  # Default high confidence for HMM
                 unique_regimes = list(sorted(set(regimes)))
-                counts = {r: int((np.array(regimes) == r).sum()) for r in unique_regimes}
-                
+                counts = {
+                    r: int((np.array(regimes) == r).sum()) for r in unique_regimes
+                }
+
                 self.logger.info(
                     {
                         "msg": "HMM regime prediction summary",
@@ -1691,7 +1829,7 @@ class UnifiedRegimeClassifier:
                         "total_records": int(len(regime_features)),
                     }
                 )
-                
+
                 if len(unique_regimes) < self.n_states:
                     self.logger.warning(
                         warning(
@@ -1700,7 +1838,9 @@ class UnifiedRegimeClassifier:
                         )
                     )
             else:
-                self.logger.warning("⚠️ No trained models available, attempting to train models now...")
+                self.logger.warning(
+                    "⚠️ No trained models available, attempting to train models now..."
+                )
                 # Try to train the complete system
                 training_success = await self.train_complete_system(historical_klines)
                 if not training_success:
@@ -1708,7 +1848,9 @@ class UnifiedRegimeClassifier:
                     return {"error": "Failed to train regime classification models"}
 
                 # Retry classification after training
-                self.logger.info("🔄 Retrying regime classification with newly trained models...")
+                self.logger.info(
+                    "🔄 Retrying regime classification with newly trained models..."
+                )
                 return await self.classify_regimes(historical_klines)
 
             # Get location predictions
@@ -1725,7 +1867,9 @@ class UnifiedRegimeClassifier:
                 "locations": location_labels,
                 "total_records": len(features_df),
                 "regime_distribution": regime_distribution,
-                "location_distribution": dict(pd.Series(location_labels).value_counts()),
+                "location_distribution": dict(
+                    pd.Series(location_labels).value_counts()
+                ),
             }
 
         except Exception as e:
@@ -1736,7 +1880,9 @@ class UnifiedRegimeClassifier:
         """Get system status and statistics with enhanced information."""
         return {
             "trained": self.trained,
-            "last_training_time": self.last_training_time.isoformat() if self.last_training_time else None,
+            "last_training_time": self.last_training_time.isoformat()
+            if self.last_training_time
+            else None,
             "hmm_model_loaded": self.hmm_model is not None,
             "basic_ensemble_loaded": self.basic_ensemble is not None,
             "location_classifier_loaded": self.location_classifier is not None,
@@ -1890,16 +2036,18 @@ class UnifiedRegimeClassifier:
         default_return=None,
         context="UnifiedRegimeClassifier._analyze_volume_levels",
     )
-    def _analyze_volume_levels(self, df_window: pd.DataFrame) -> Optional[Dict[str, Any]]:
+    def _analyze_volume_levels(
+        self, df_window: pd.DataFrame
+    ) -> Optional[Dict[str, Any]]:
         """
         Analyzes the volume profile to find the two most significant High Volume Nodes (HVNs),
         their age, and the number of times they've been tested.
-        
+
         OPTIMIZED VERSION: Reduced complexity for better performance
-        
+
         Args:
             df_window: DataFrame window for volume analysis
-            
+
         Returns:
             Dict containing volume level analysis or None if insufficient data
         """
@@ -1920,7 +2068,9 @@ class UnifiedRegimeClassifier:
 
             # --- 2. Find Top 2 HVNs ---
             price_bins = pd.cut(df_window["close"], bins=bins, right=False)
-            volume_by_bin = df_window.groupby(price_bins, observed=False)["volume"].sum()
+            volume_by_bin = df_window.groupby(price_bins, observed=False)[
+                "volume"
+            ].sum()
             if volume_by_bin.empty:
                 return None
 
@@ -1949,8 +2099,12 @@ class UnifiedRegimeClassifier:
                 touches = 0
                 if len(df_window) > 1:
                     # Use vectorized operations to find price crosses
-                    high_crosses = (df_window["high"] >= level_price) & (df_window["high"].shift() < level_price)
-                    low_crosses = (df_window["low"] <= level_price) & (df_window["low"].shift() > level_price)
+                    high_crosses = (df_window["high"] >= level_price) & (
+                        df_window["high"].shift() < level_price
+                    )
+                    low_crosses = (df_window["low"] <= level_price) & (
+                        df_window["low"].shift() > level_price
+                    )
                     touches = (high_crosses | low_crosses).sum()
 
                 # Calculate additional strength metrics
@@ -1999,23 +2153,33 @@ class UnifiedRegimeClassifier:
         """
         Classifies location using a multi-layered context of short-term Dynamic Pivots (tactical)
         and long-term High Volume Nodes (strategic).
-        
+
         OPTIMIZED VERSION: Uses vectorized operations instead of per-point calculations
-        
+
         Args:
             features_df: DataFrame with calculated features
-            
+
         Returns:
             List of location classifications
         """
         try:
-            self.logger.info("Classifying location with tactical pivots and strategic volume levels...")
+            self.logger.info(
+                "Classifying location with tactical pivots and strategic volume levels..."
+            )
 
             # --- Configuration for dual-timeframe analysis ---
-            long_term_hvn_period = self.config.get("long_term_hvn_period", 720)  # 30 days on a 1h chart
-            short_term_pivot_period = self.config.get("short_term_pivot_period", 24)  # 1 day on a 1h chart
-            tolerance = self.config.get("level_tolerance", 0.01)  # 1% proximity tolerance
-            min_level_touches = self.config.get("min_level_touches", 1)  # Must have at least 1 re-test
+            long_term_hvn_period = self.config.get(
+                "long_term_hvn_period", 720
+            )  # 30 days on a 1h chart
+            short_term_pivot_period = self.config.get(
+                "short_term_pivot_period", 24
+            )  # 1 day on a 1h chart
+            tolerance = self.config.get(
+                "level_tolerance", 0.01
+            )  # 1% proximity tolerance
+            min_level_touches = self.config.get(
+                "min_level_touches", 1
+            )  # Must have at least 1 re-test
 
             # Check if we have enough data for location classification
             if len(features_df) < long_term_hvn_period:
@@ -2028,37 +2192,41 @@ class UnifiedRegimeClassifier:
 
             # Initialize all locations as OPEN_RANGE
             locations = ["OPEN_RANGE"] * len(features_df)
-            
+
             # Calculate price differences once (vectorized)
             price_diffs = features_df["close"].diff()
-            
+
             # Start processing after the longest period
             start_index = long_term_hvn_period
-            
+
             # OPTIMIZATION: Calculate global volume levels once instead of per-point
             self.logger.info("🔍 Calculating global volume levels...")
             global_volume_levels = self._analyze_volume_levels(features_df)
-            
+
             # Process in batches for better performance
             batch_size = 100
             total_batches = (len(features_df) - start_index) // batch_size + 1
-            
-            self.logger.info(f"📊 Processing {len(features_df) - start_index} records in {total_batches} batches...")
-            
+
+            self.logger.info(
+                f"📊 Processing {len(features_df) - start_index} records in {total_batches} batches..."
+            )
+
             for batch_start in range(start_index, len(features_df), batch_size):
                 batch_end = min(batch_start + batch_size, len(features_df))
                 batch_num = (batch_start - start_index) // batch_size + 1
-                
+
                 if batch_num % 10 == 0:  # Log progress every 10 batches
-                    self.logger.info(f"🔄 Processing batch {batch_num}/{total_batches} (records {batch_start}-{batch_end})")
-                
+                    self.logger.info(
+                        f"🔄 Processing batch {batch_num}/{total_batches} (records {batch_start}-{batch_end})"
+                    )
+
                 for i in range(batch_start, batch_end):
                     current_price_diff = price_diffs.iloc[i]
-                    
+
                     # Skip if price difference is NaN
                     if pd.isna(current_price_diff):
                         continue
-                    
+
                     # --- 1. Tactical Pivot Analysis (Short-Term) ---
                     # Only calculate pivots if we have enough data
                     if i >= short_term_pivot_period:
@@ -2080,12 +2248,22 @@ class UnifiedRegimeClassifier:
 
                     # Check for Pivot proximity using price differences
                     for p_sup in pivot_supports:
-                        if p_sup > 0 and abs(current_price_diff - p_sup) / (abs(current_price_diff) + 1e-8) <= tolerance:
+                        if (
+                            p_sup > 0
+                            and abs(current_price_diff - p_sup)
+                            / (abs(current_price_diff) + 1e-8)
+                            <= tolerance
+                        ):
                             loc_pivot = "PIVOT_S"
                             break
                     if not loc_pivot:
                         for p_res in pivot_resistances:
-                            if p_res > 0 and abs(current_price_diff - p_res) / (abs(current_price_diff) + 1e-8) <= tolerance:
+                            if (
+                                p_res > 0
+                                and abs(current_price_diff - p_res)
+                                / (abs(current_price_diff) + 1e-8)
+                                <= tolerance
+                            ):
                                 loc_pivot = "PIVOT_R"
                                 break
 
@@ -2096,7 +2274,11 @@ class UnifiedRegimeClassifier:
                             if level_data["touches"] < min_level_touches:
                                 continue
 
-                            if abs(current_price_diff - level_data["price"]) / (abs(current_price_diff) + 1e-8) <= tolerance:
+                            if (
+                                abs(current_price_diff - level_data["price"])
+                                / (abs(current_price_diff) + 1e-8)
+                                <= tolerance
+                            ):
                                 hvn_type = (
                                     "SUPPORT"
                                     if current_price_diff > level_data["price"]
@@ -2128,4 +2310,8 @@ class UnifiedRegimeClassifier:
         except Exception as e:
             self.logger.error(f"Error in location classification: {e}")
             # Return safe fallback
-            return ["OPEN_RANGE"] * len(features_df) if len(features_df) > 0 else ["OPEN_RANGE"]
+            return (
+                ["OPEN_RANGE"] * len(features_df)
+                if len(features_df) > 0
+                else ["OPEN_RANGE"]
+            )

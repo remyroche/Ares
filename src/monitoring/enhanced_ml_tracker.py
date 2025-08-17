@@ -336,7 +336,9 @@ class EnhancedMLTracker:
             return True
 
         except Exception as e:
-            self.logger.exception(failed("❌ Enhanced ML Tracker initialization failed: {e}"))
+            self.logger.exception(
+                failed("❌ Enhanced ML Tracker initialization failed: {e}")
+            )
             return False
 
     async def _initialize_storage(self) -> None:
@@ -360,7 +362,9 @@ class EnhancedMLTracker:
             )
 
         except Exception as e:
-            self.logger.exception(failed("Failed to initialize ML tracker storage: {e}"))
+            self.logger.exception(
+                failed("Failed to initialize ML tracker storage: {e}")
+            )
             raise
 
     async def _create_ml_tracking_tables(self) -> None:
@@ -477,7 +481,9 @@ class EnhancedMLTracker:
             self.logger.info("Performance analysis components initialized")
 
         except Exception as e:
-            self.logger.exception(failed("Failed to initialize performance analysis: {e}"))
+            self.logger.exception(
+                failed("Failed to initialize performance analysis: {e}")
+            )
             raise
 
     async def _start_background_tasks(self) -> None:
@@ -969,7 +975,9 @@ class EnhancedMLTracker:
             return float(correlation) if not np.isnan(correlation) else 0.5
 
         except Exception as e:
-            self.logger.exception(failed("Failed to calculate confidence calibration: {e}"))
+            self.logger.exception(
+                failed("Failed to calculate confidence calibration: {e}")
+            )
             return 0.5
 
     async def _calculate_feature_stability(
@@ -1297,7 +1305,9 @@ class EnhancedMLTracker:
             return report
 
         except Exception as e:
-            self.logger.exception(failed("Failed to generate model comparison report: {e}"))
+            self.logger.exception(
+                failed("Failed to generate model comparison report: {e}")
+            )
             return None
 
     async def _calculate_comparison_metrics(
@@ -1370,7 +1380,9 @@ class EnhancedMLTracker:
             return recommendations
 
         except Exception as e:
-            self.logger.exception(failed("Failed to generate model recommendations: {e}"))
+            self.logger.exception(
+                failed("Failed to generate model recommendations: {e}")
+            )
             return []
 
     async def _generate_retraining_recommendations(
@@ -1392,7 +1404,9 @@ class EnhancedMLTracker:
             return recommendations
 
         except Exception as e:
-            self.logger.exception(failed("Failed to generate retraining recommendations: {e}"))
+            self.logger.exception(
+                failed("Failed to generate retraining recommendations: {e}")
+            )
             return []
 
     async def _store_comparison_report(self, report: ModelComparisonReport) -> None:

@@ -243,7 +243,9 @@ class MLMonitor:
             self.logger.info("Drift detection initialized")
 
         except Exception:
-            self.logger.exception(initialization_error("Error initializing drift detection: {e}"))
+            self.logger.exception(
+                initialization_error("Error initializing drift detection: {e}")
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -259,7 +261,9 @@ class MLMonitor:
             self.logger.info("Feature importance tracking initialized")
 
         except Exception:
-            self.logger.exception(initialization_error("Error initializing feature tracking: {e}"))
+            self.logger.exception(
+                initialization_error("Error initializing feature tracking: {e}")
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -275,7 +279,9 @@ class MLMonitor:
             self.logger.info("Online learning monitoring initialized")
 
         except Exception:
-            self.logger.exception(initialization_error("Error initializing online learning: {e}"))
+            self.logger.exception(
+                initialization_error("Error initializing online learning: {e}")
+            )
 
     @handle_specific_errors(
         error_handlers={

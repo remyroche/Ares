@@ -302,17 +302,28 @@ class Strategist:
             try:
                 tm_cfg = self.config.get("TRANSITION_MODELING", {})
                 if bool(tm_cfg.get("enabled", False)):
-                    from src.transition.inference_combiner import TransitionInferenceCombiner
+                    from src.transition.inference_combiner import (
+                        TransitionInferenceCombiner,
+                    )
+
                     combiner = TransitionInferenceCombiner(self.config)
                     # Gather per-timeframe path_class probabilities if available
                     # Expect ml_predictions to carry per-timeframe outputs when served; otherwise fallback to 1m only
-                    path_probs_by_timeframe = ml_predictions.get("path_probs_by_timeframe", {})
+                    path_probs_by_timeframe = ml_predictions.get(
+                        "path_probs_by_timeframe", {}
+                    )
                     if not path_probs_by_timeframe and "path_probs" in ml_predictions:
-                        path_probs_by_timeframe = {"1m": ml_predictions.get("path_probs", {})}
+                        path_probs_by_timeframe = {
+                            "1m": ml_predictions.get("path_probs", {})
+                        }
                     combined = combiner.combine_probs(path_probs_by_timeframe)
                     # Macro regime from 1h_hmm_state mapped to BULL/BEAR/SIDEWAYS via URC mapping (if provided in regime_info)
-                    macro_regime = regime_info.get("macro_regime") or self.current_regime
-                    gate = combiner.gate_decision(combined, timeframe="1m", macro_regime=macro_regime)
+                    macro_regime = (
+                        regime_info.get("macro_regime") or self.current_regime
+                    )
+                    gate = combiner.gate_decision(
+                        combined, timeframe="1m", macro_regime=macro_regime
+                    )
                     ml_predictions["transition_gate"] = gate
                     # Exit bias from 1m
                     path_1m = path_probs_by_timeframe.get("1m", {})
@@ -351,36 +362,47 @@ class Strategist:
         """Classify the current market regime using EMA/ADX rules (same as training)."""
         try:
             # Ensure required columns
-            required = {"open","high","low","close","volume"}
+            required = {"open", "high", "low", "close", "volume"}
             missing = [c for c in required if c not in market_data.columns]
             if missing:
-                self.logger.error(f"Missing columns for regime classification: {missing}")
+                self.logger.error(
+                    f"Missing columns for regime classification: {missing}"
+                )
                 return None
 
             # Resample to 1h timeframe for regime classification
             df = market_data.copy()
             if "timestamp" in df.columns:
                 if not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
-                    df["timestamp"] = pd.to_datetime(df["timestamp"]) 
+                    df["timestamp"] = pd.to_datetime(df["timestamp"])
                 df = df.sort_values("timestamp").reset_index(drop=True)
                 df_idx = df.set_index("timestamp")
             elif isinstance(df.index, pd.DatetimeIndex):
                 df_idx = df.sort_index()
             else:
-                self.logger.error("Market data lacks a datetime index or 'timestamp' column for resampling")
+                self.logger.error(
+                    "Market data lacks a datetime index or 'timestamp' column for resampling"
+                )
                 return None
 
-            df_1h = df_idx.resample("1h").agg({
-                "open": "first",
-                "high": "max",
-                "low": "min",
-                "close": "last",
-                "volume": "sum",
-            }).dropna()
+            df_1h = (
+                df_idx.resample("1h")
+                .agg(
+                    {
+                        "open": "first",
+                        "high": "max",
+                        "low": "min",
+                        "close": "last",
+                        "volume": "sum",
+                    }
+                )
+                .dropna()
+            )
             df_1h = df_1h.reset_index().rename(columns={"index": "timestamp"})
 
             # Use same rules as training
             from src.analyst.simple_regime_rules import classify_last
+
             regime, confidence = classify_last(df_1h)
             additional_info = {"method": "EMA21_EMA55_ADX", "timeframe": "1h"}
 
@@ -442,9 +464,11 @@ class Strategist:
             model_type="analyst",
         )
         if not ml_predictions:
-            ml_predictions = await self.ml_confidence_predictor.predict_confidence_table(
-                market_data,
-                current_price,
+            ml_predictions = (
+                await self.ml_confidence_predictor.predict_confidence_table(
+                    market_data,
+                    current_price,
+                )
             )
 
         if ml_predictions:

@@ -32,6 +32,7 @@ def normalize_dual_confidence(
         pass
     return dual, normalized
 
+
 from typing import Any, Iterable
 
 
@@ -97,7 +98,9 @@ def aggregate_directional_confidences(
 
     # Weighted average by total weight (per review suggestion)
     signed_avg = signed_sum / total_weight
-    final_direction = "LONG" if signed_avg > 0 else ("SHORT" if signed_avg < 0 else "HOLD")
+    final_direction = (
+        "LONG" if signed_avg > 0 else ("SHORT" if signed_avg < 0 else "HOLD")
+    )
     final_confidence = _clamp01(abs(signed_avg))
 
     return {

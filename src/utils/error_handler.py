@@ -49,6 +49,62 @@ def get_system_logger() -> logging.Logger:
         return logger
 
 
+def call_method_robust(
+    obj: Any,
+    method_name: str,
+    *args,
+    fallback_method: str | None = None,
+    default_return: Any = None,
+    logger: logging.Logger | None = None,
+    **kwargs,
+) -> Any:
+    """
+    Robustly call a method on an object with fallback options.
+
+    Args:
+        obj: Object to call method on
+        method_name: Name of the primary method to call
+        *args: Arguments to pass to the method
+        fallback_method: Name of fallback method if primary fails
+        default_return: Default return value if all methods fail
+        logger: Logger instance for error reporting
+        **kwargs: Keyword arguments to pass to the method
+
+    Returns:
+        Result of method call or default_return if all methods fail
+    """
+    try:
+        # Try primary method
+        if hasattr(obj, method_name):
+            method = getattr(obj, method_name)
+            if callable(method):
+                return method(*args, **kwargs)
+
+        # Try fallback method
+        if fallback_method and hasattr(obj, fallback_method):
+            method = getattr(obj, fallback_method)
+            if callable(method):
+                if logger:
+                    logger.debug(
+                        f"Primary method '{method_name}' not available, using fallback '{fallback_method}'"
+                    )
+                return method(*args, **kwargs)
+
+        # Return default if no methods available
+        if logger:
+            logger.warning(
+                f"Neither '{method_name}' nor '{fallback_method}' methods available on {type(obj).__name__}"
+            )
+        return default_return
+
+    except Exception as e:
+        if logger:
+            logger.error(
+                f"Error calling method '{method_name}' on {type(obj).__name__}: {e}"
+            )
+        return default_return
+
+
 class CircuitState(Enum):
     """Circuit breaker states."""
 
@@ -1010,6 +1066,9 @@ def _clean_numeric_result(result: Any) -> Any:
             return 0.0
     elif isinstance(result, np.ndarray):
         result = np.nan_to_num(result, nan=0.0, posinf=0.0, neginf=0.0)
+    elif isinstance(result, pd.Series):
+        # Handle pandas Series separately to avoid ambiguous truth value
+        result = result.fillna(0).replace([np.inf, -np.inf], 0)
 
     return result
 
@@ -1523,6 +1582,10 @@ def handle_nan_issues(func: Callable) -> Callable:
                 if np.isnan(result) or np.isinf(result):
                     return 0.0
                 return result
+            elif isinstance(result, pd.Series):
+                # Handle pandas Series separately to avoid ambiguous truth value
+                result = result.fillna(0).replace([np.inf, -np.inf], 0)
+                return result
 
             return result
 
@@ -1575,7 +1638,11 @@ def safe_division(numerator: float, denominator: float, default: float = 0.0) ->
         if denominator == 0:
             return default
         result = numerator / denominator
-        return result if not (np.isnan(result) or np.isinf(result)) else default
+        # Handle scalar result safely
+        if isinstance(result, (int, float)):
+            return result if not (np.isnan(result) or np.isinf(result)) else default
+        else:
+            return result
     except Exception as e:
         logger = get_system_logger()
         logger.warning(f"Error in safe division: {e}")

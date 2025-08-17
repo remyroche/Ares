@@ -19,7 +19,9 @@ class PurgedKFoldTime:
     purge: pd.Timedelta | int = pd.Timedelta(minutes=30)
     embargo: pd.Timedelta | int = pd.Timedelta(minutes=15)
 
-    def split(self, X: pd.DataFrame, y=None, groups=None) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
+    def split(
+        self, X: pd.DataFrame, y=None, groups=None
+    ) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
         if not isinstance(X, pd.DataFrame):
             raise ValueError("X must be a pandas DataFrame with an index")
         index = X.index
@@ -46,8 +48,16 @@ class PurgedKFoldTime:
             if is_time:
                 val_start_time = index[val_start_i]
                 val_end_time = index[val_stop_i - 1]
-                purge_delta = self.purge if isinstance(self.purge, pd.Timedelta) else pd.Timedelta(minutes=int(self.purge))
-                embargo_delta = self.embargo if isinstance(self.embargo, pd.Timedelta) else pd.Timedelta(minutes=int(self.embargo))
+                purge_delta = (
+                    self.purge
+                    if isinstance(self.purge, pd.Timedelta)
+                    else pd.Timedelta(minutes=int(self.purge))
+                )
+                embargo_delta = (
+                    self.embargo
+                    if isinstance(self.embargo, pd.Timedelta)
+                    else pd.Timedelta(minutes=int(self.embargo))
+                )
                 # Build boolean mask for training indices
                 train_mask = np.ones(n_samples, dtype=bool)
                 left_bound_time = val_start_time - purge_delta
@@ -60,7 +70,9 @@ class PurgedKFoldTime:
                 train_idx = np.nonzero(train_mask)[0]
             else:
                 purge_n = int(self.purge) if isinstance(self.purge, (int, float)) else 0
-                embargo_n = int(self.embargo) if isinstance(self.embargo, (int, float)) else 0
+                embargo_n = (
+                    int(self.embargo) if isinstance(self.embargo, (int, float)) else 0
+                )
                 left = max(0, val_start_i - purge_n)
                 right = min(n_samples, val_stop_i + embargo_n)
                 train_mask = np.ones(n_samples, dtype=bool)

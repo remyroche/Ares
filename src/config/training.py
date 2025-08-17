@@ -79,6 +79,83 @@ def get_training_config() -> dict[str, Any]:
             "enable_computational_optimization": True,  # Enable computational optimization strategies
             "enable_validators": True,  # Enable step validators
         },
+        # --- HMM-LM Model Configuration ---
+        "HMM_LM": {
+            "generalist": {
+                "enabled": True,
+                "hmm_states": 5,
+                "sequence_length": 20,
+                "model_type": "hmm_lm_hybrid",
+                "timeframes": ["1m", "5m", "15m", "30m"],
+                "d_model": 256,
+                "nhead": 8,
+                "num_layers": 6,
+                "dropout_rate": 0.1,
+                "learning_rate": 0.0001,
+                "batch_size": 32,
+                "epochs": 100,
+                "early_stopping_patience": 10,
+            },
+            "specialist_models": {
+                "1m": {
+                    "architecture": "CNN",
+                    "filters": [32, 64, 128],
+                    "kernel_size": 3,
+                    "sequence_length": 60,
+                    "dropout_rate": 0.3,
+                    "learning_rate": 0.001,
+                    "batch_size": 32,
+                    "epochs": 50,
+                },
+                "5m": {
+                    "architecture": "TCN",
+                    "channels": [64, 128, 256],
+                    "kernel_size": 3,
+                    "dilation_base": 2,
+                    "sequence_length": 24,
+                    "dropout_rate": 0.2,
+                    "learning_rate": 0.001,
+                    "batch_size": 64,
+                    "epochs": 100,
+                },
+                "15m": {
+                    "architecture": "Transformer",
+                    "d_model": 256,
+                    "nhead": 8,
+                    "num_layers": 6,
+                    "sequence_length": 16,
+                    "dropout_rate": 0.1,
+                    "learning_rate": 0.0001,
+                    "batch_size": 32,
+                    "epochs": 150,
+                },
+                "30m": {
+                    "architecture": "LightGBM",
+                    "n_estimators": 1000,
+                    "max_depth": 8,
+                    "learning_rate": 0.01,
+                    "num_leaves": 31,
+                    "subsample": 0.8,
+                    "colsample_bytree": 0.8,
+                    "reg_alpha": 0.01,
+                    "reg_lambda": 0.01,
+                },
+            },
+            "regime_change_detection": {
+                "enabled": True,
+                "min_regime_duration": 5,  # Minimum bars in a regime
+                "regime_change_threshold": 0.7,  # Confidence threshold for regime change
+                "lookback_window": 20,  # Bars to look back for regime stability
+                "prediction_horizon": 10,  # Bars ahead to predict regime changes
+            },
+            "training_pipeline": {
+                "step_order": ["5", "9", "9.5", "6", "10"],  # Training step order
+                "enable_regime_change_features": True,
+                "enable_multi_timeframe_alignment": True,
+                "enable_sequence_creation": True,
+                "enable_hmm_lm_training": True,
+            },
+        },
         # --- Labeling & Feature Pipeline Parameters ---
         "vectorized_labelling_orchestrator": {
             # Optimize Triple Barrier parameters before labeling (grid search)
@@ -97,40 +174,78 @@ def get_training_config() -> dict[str, Any]:
             "pt_candidates": [0.0015, 0.002, 0.003],
             "sl_candidates": [0.001, 0.0015, 0.002],
             "time_barrier_candidates": [15, 30, 60],
-            "max_lookahead_candidates": [50, 100, 150]
+            "max_lookahead_candidates": [50, 100, 150],
+            # S/R Level Configuration - Loosened criteria for more granular regime detection
+            "sr_distance_scale": 0.02,  # 2% scale (increased from 1%)
+            "sr_proximity_threshold": 0.05,  # 5% threshold (increased from 2%)
+            "sr_activation_range_multiplier": 0.03,  # 3% activation range (increased from 1%)
+            "sr_fallback_range": 8,  # 0-8 range for fallback counts (increased from 0-3)
+            "sr_volatility_factor": 0.1,  # Volatility contribution factor (reduced for better granularity)
         },
         # --- Method A: Mixture of Experts Pipeline Controls ---
         "pipeline": {
             "method_a": {
                 # If True, Step2 runs Step4 early to materialize L0/L1/L2/L3 before splitting
                 "step2_is_leveling": True,
-                # What to use for regime splitting in Step3: 'bull_bear_sideways' or 'meta_labels'
-                "regime_basis": "meta_labels",
+                # HMM composite clusters are paramount - no fallbacks allowed
+                "regime_basis": "hmm_composite_clusters_only",
             }
         },
         # --- Method A: Expert Training Configuration ---
         "method_a_mixture_of_experts": {
             "enabled": True,
-            # Regime source for expert datasets: 'step2_bull_bear_sideways' or 'meta_labels'
-            "regime_source": "meta_labels",
-            # When using meta_labels, which columns to use as regimes
-            "meta_label_columns": [
-                # Example defaults (adjust per asset):
-                "sr_breakout_up",
-                "sr_breakout_down",
-                "sr_bounce_up",
-                "sr_bounce_down",
+            # HMM composite clusters are paramount - no fallbacks allowed
+            "regime_source": "hmm_composite_clusters_only",
+            # HMM composite cluster columns (automatically generated by step3)
+            "hmm_composite_columns": [
+                "composite_cluster_id",
+                "intensity_cluster_0",
+                "intensity_cluster_1",
+                "intensity_cluster_2",
+                "intensity_cluster_3",
+                "intensity_cluster_4",
+                "intensity_cluster_5",
+                "intensity_cluster_6",
+                "intensity_cluster_7",
+                "intensity_cluster_8",
+                "intensity_cluster_9",
+                "intensity_cluster_10",
+                "intensity_cluster_11",
+                "intensity_cluster_12",
+                "intensity_cluster_13",
+                "intensity_cluster_14",
+                "intensity_cluster_15",
+                "intensity_cluster_16",
+                "intensity_cluster_17",
+                "intensity_cluster_18",
+                "intensity_cluster_19",
             ],
             # Minimum rows required to train a given expert
             "min_rows_per_expert": 5000,
             # Whether to use strength-weighted combining in live dispatcher
             "use_strength_weighting": True,
-            # Mapping from regime/meta to strength column name (if available)
-            "strength_columns": {
-                "sr_breakout_up": "sr_zone_strength",
-                "sr_breakout_down": "sr_zone_strength",
-                "sr_bounce_up": "sr_zone_strength",
-                "sr_bounce_down": "sr_zone_strength",
+            # Mapping from HMM cluster to intensity column name
+            "intensity_columns": {
+                "cluster_0": "intensity_cluster_0",
+                "cluster_1": "intensity_cluster_1",
+                "cluster_2": "intensity_cluster_2",
+                "cluster_3": "intensity_cluster_3",
+                "cluster_4": "intensity_cluster_4",
+                "cluster_5": "intensity_cluster_5",
+                "cluster_6": "intensity_cluster_6",
+                "cluster_7": "intensity_cluster_7",
+                "cluster_8": "intensity_cluster_8",
+                "cluster_9": "intensity_cluster_9",
+                "cluster_10": "intensity_cluster_10",
+                "cluster_11": "intensity_cluster_11",
+                "cluster_12": "intensity_cluster_12",
+                "cluster_13": "intensity_cluster_13",
+                "cluster_14": "intensity_cluster_14",
+                "cluster_15": "intensity_cluster_15",
+                "cluster_16": "intensity_cluster_16",
+                "cluster_17": "intensity_cluster_17",
+                "cluster_18": "intensity_cluster_18",
+                "cluster_19": "intensity_cluster_19",
             },
         },
         # --- Multi-Timeframe Training Configuration ---
@@ -387,7 +502,7 @@ def get_training_config() -> dict[str, Any]:
             "cache": {
                 "enable_state_cache": True,
                 "enable_dataset_cache": True,
-                "cache_dir": "checkpoints/transition_cache"
+                "cache_dir": "checkpoints/transition_cache",
             },
             # Multi-timeframe context features
             "context_features": {
@@ -396,14 +511,14 @@ def get_training_config() -> dict[str, Any]:
                 "include_price_over_ema50": True,
                 "include_atr_pct": True,
                 "include_macro_hmm_state": True,
-                "also_include_4h": False
+                "also_include_4h": False,
             },
             # Efficiency and pruning
             "early_pruning": {
                 "prefilter_with_vectorized_labels": True,
                 "min_gap_between_candidates": 5,
                 "downsample_near_duplicate_sequences": True,
-                "duplicate_similarity_threshold": 0.98
+                "duplicate_similarity_threshold": 0.98,
             },
             # Baseline modeling (computationally efficient)
             "baseline_random_forest": {
@@ -412,7 +527,7 @@ def get_training_config() -> dict[str, Any]:
                 "max_depth": 12,
                 "min_samples_leaf": 5,
                 "random_state": 42,
-                "max_train_samples": 200000
+                "max_train_samples": 200000,
             },
             # SHAP explainability
             "enable_shap": True,
@@ -421,12 +536,12 @@ def get_training_config() -> dict[str, Any]:
                 "enable_beginning_of_trend": True,
                 "adx_sideways_threshold": 18,
                 "return_threshold": 0.001,
-                "onset_window_bars": 8
+                "onset_window_bars": 8,
             },
             # Barrier aux targets (approximate time-to-PT/SL)
             "barriers": {
                 "profit_take_multiplier": 0.002,
-                "stop_loss_multiplier": 0.001
+                "stop_loss_multiplier": 0.001,
             },
             # Storage
             "artifacts_dir": "checkpoints/transition_datasets",
@@ -442,44 +557,49 @@ def get_training_config() -> dict[str, Any]:
                 "lr": 0.001,
                 "teacher_forcing_ratio": 1.0,
                 "scheduled_sampling": {"start": 1.0, "end": 0.5, "epochs": 10},
-                "path_class_weights": {"continuation": 1.0, "reversal": 1.2, "end_of_trend": 0.8, "beginning_of_trend": 1.5},
+                "path_class_weights": {
+                    "continuation": 1.0,
+                    "reversal": 1.2,
+                    "end_of_trend": 0.8,
+                    "beginning_of_trend": 1.5,
+                },
                 "focal_gamma": 0.0,
                 "quantile_returns": [0.1, 0.5, 0.9],
                 "cv_folds": 3,
-                "artifact_dir_models": "checkpoints/transition_models"
+                "artifact_dir_models": "checkpoints/transition_models",
             },
             # Inference gating thresholds per timeframe and macro-regime
             "inference": {
                 "path_class_thresholds": {
                     "1m": {"continuation": 0.75, "beginning_of_trend": 0.75},
-                    "5m": {"continuation": 0.70, "beginning_of_trend": 0.70}
+                    "5m": {"continuation": 0.70, "beginning_of_trend": 0.70},
                 },
                 "macro_regime_thresholds": {
                     "BULL": {
                         "1m": {"continuation": 0.70, "beginning_of_trend": 0.70},
-                        "5m": {"continuation": 0.68, "beginning_of_trend": 0.68}
+                        "5m": {"continuation": 0.68, "beginning_of_trend": 0.68},
                     },
                     "BEAR": {
                         "1m": {"continuation": 0.80, "beginning_of_trend": 0.85},
-                        "5m": {"continuation": 0.78, "beginning_of_trend": 0.82}
+                        "5m": {"continuation": 0.78, "beginning_of_trend": 0.82},
                     },
                     "SIDEWAYS": {
                         "1m": {"continuation": 0.78, "beginning_of_trend": 0.80},
-                        "5m": {"continuation": 0.75, "beginning_of_trend": 0.78}
-                    }
-                }
+                        "5m": {"continuation": 0.75, "beginning_of_trend": 0.78},
+                    },
+                },
             },
             # Timeframe ensemble for combining predictions (weights must sum to <= 1)
             "timeframe_ensemble": {
                 "enabled": False,
-                "weights": {"1m": 0.30, "5m": 0.30, "15m": 0.25, "30m": 0.15}
+                "weights": {"1m": 0.30, "5m": 0.30, "15m": 0.25, "30m": 0.15},
             },
             # Optional lightweight validation on higher timeframes
             "htf_validation": {
                 "enabled": False,
                 "timeframes": ["15m", "1h"],
-                "run_seq2seq": False
-            }
+                "run_seq2seq": False,
+            },
         },
     }
 

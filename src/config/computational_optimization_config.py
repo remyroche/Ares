@@ -100,6 +100,14 @@ COMPUTATIONAL_OPTIMIZATION_CONFIG = {
             "execution_time_factor": 2.0,
         },
     },
+    "data_sharing": {
+        "enabled": True,
+        "max_cache_size_gb": 8.0,
+        "cache_ttl_hours": 24,
+        "enable_memory_optimization": True,
+        "cache_statistics": True,
+        "step_level_sharing": True,
+    },
 }
 
 

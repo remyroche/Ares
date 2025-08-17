@@ -1467,5 +1467,7 @@ async def setup_position_division_strategy(
         return None
 
     except Exception:
-        system_logger.exception(failed("Failed to setup Position Division Strategy: {e}"))
+        system_logger.exception(
+            failed("Failed to setup Position Division Strategy: {e}")
+        )
         return None

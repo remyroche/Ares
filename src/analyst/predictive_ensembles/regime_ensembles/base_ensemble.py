@@ -14,6 +14,10 @@ from src.utils.warning_symbols import (
     failed,
     warning,
 )
+from src.utils.lookahead_bias_detector import (
+    detect_lookahead_bias,
+    apply_feature_lagging,
+)
 
 # Import SMOTE with fallback
 try:
@@ -60,7 +64,7 @@ class BaseEnsemble:
         self.ensemble_name = ensemble_name
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.info(f"Initializing {self.ensemble_name} ensemble...")
-        
+
         # Initialize model components
         self.models: dict[Any, Any] = {}
         self.meta_learner = None
@@ -69,7 +73,7 @@ class BaseEnsemble:
         self.meta_feature_scaler = StandardScaler()
         self.best_meta_params: dict[Any, Any] = {}
         self.label_encoder = LabelEncoder()
-        
+
         # Load configuration parameters with defaults
         self.n_pca_components = self.config.get("n_pca_components", 15)
         self.use_smote = self.config.get("use_smote", True)
@@ -194,7 +198,6 @@ class BaseEnsemble:
             "vwap",
             "volume_roc",
             "volume_ma_ratio",
-            "liquidity_stress",
             "liquidity_health",
             "realized_volatility",
             "parkinson_volatility",
@@ -235,9 +238,6 @@ class BaseEnsemble:
             "volume_liquidity_z_score",
             "volume_liquidity_change",
             "liquidity_percentile_z_score",
-            "liquidity_stress_log",
-            "liquidity_stress_z_score",
-            "liquidity_stress_change",
             "liquidity_health_z_score",
             "liquidity_health_change",
             "order_flow_imbalance_bounded",
@@ -454,7 +454,9 @@ class BaseEnsemble:
             return
 
         # Fit scaler and PCA on training data only
-        self.logger.info("Scaling and applying PCA to meta-features (train-only fit)...")
+        self.logger.info(
+            "Scaling and applying PCA to meta-features (train-only fit)..."
+        )
         self.meta_feature_scaler = StandardScaler()
         X_meta_scaled = self.meta_feature_scaler.fit_transform(X_meta_train)
         n_components = min(self.n_pca_components, X_meta_scaled.shape[1])
@@ -472,7 +474,7 @@ class BaseEnsemble:
         self._train_meta_learner(X_meta_pca_df, y_meta_train, self.best_meta_params)
         self.trained = True
         self.logger.info(f"Training pipeline for {self.ensemble_name} complete.")
-        
+
         # Validate ensemble state after training
         self._validate_ensemble_state()
 
@@ -485,30 +487,36 @@ class BaseEnsemble:
         """Validate that the ensemble is properly trained and ready for prediction."""
         try:
             if not self.trained:
-                self.logger.warning(f"{self.ensemble_name}: Ensemble not marked as trained")
+                self.logger.warning(
+                    f"{self.ensemble_name}: Ensemble not marked as trained"
+                )
                 return False
-                
+
             if not self.models:
                 self.logger.warning(f"{self.ensemble_name}: No base models found")
                 return False
-                
+
             if not self.meta_learner:
                 self.logger.warning(f"{self.ensemble_name}: No meta-learner found")
                 return False
-                
+
             if not self.meta_feature_scaler:
-                self.logger.warning(f"{self.ensemble_name}: No meta-feature scaler found")
+                self.logger.warning(
+                    f"{self.ensemble_name}: No meta-feature scaler found"
+                )
                 return False
-                
+
             if not self.label_encoder:
                 self.logger.warning(f"{self.ensemble_name}: No label encoder found")
                 return False
-                
+
             self.logger.info(f"{self.ensemble_name}: Ensemble state validation passed")
             return True
-            
+
         except Exception as e:
-            self.logger.error(f"{self.ensemble_name}: Error validating ensemble state: {e}")
+            self.logger.error(
+                f"{self.ensemble_name}: Error validating ensemble state: {e}"
+            )
             return False
 
     @handle_errors(
@@ -526,7 +534,9 @@ class BaseEnsemble:
         # SR context features are expected upstream (step4 unified S/R system)
 
         # Apply comprehensive feature normalization (Step 4 Enhancement)
-        self.logger.info("Applying comprehensive feature normalization for prediction...")
+        self.logger.info(
+            "Applying comprehensive feature normalization for prediction..."
+        )
         current_features = self.normalize_non_price_features(current_features)
 
         # Ensure current_features has all expected columns, fill missing with 0.0
@@ -547,9 +557,14 @@ class BaseEnsemble:
         # Create a DataFrame from the dictionary, then reindex
         meta_input_df = pd.DataFrame([meta_features])
         if hasattr(self.meta_feature_scaler, "feature_names_in_"):
-            missing_cols = list(set(self.meta_feature_scaler.feature_names_in_) - set(meta_input_df.columns))
+            missing_cols = list(
+                set(self.meta_feature_scaler.feature_names_in_)
+                - set(meta_input_df.columns)
+            )
             if missing_cols:
-                self.logger.warning(f"Missing meta features at inference: {missing_cols}")
+                self.logger.warning(
+                    f"Missing meta features at inference: {missing_cols}"
+                )
             meta_input_df = meta_input_df.reindex(
                 columns=self.meta_feature_scaler.feature_names_in_,
             ).fillna(0)
@@ -633,6 +648,9 @@ class BaseEnsemble:
             "n_estimators": trial.suggest_int("n_estimators", 50, 500),
             "learning_rate": trial.suggest_float("learning_rate", 1e-3, 0.2, log=True),
             "num_leaves": trial.suggest_int("num_leaves", 20, 300),
+            # Encourage robustness with higher feature counts via subsampling
+            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 0.95),
+            "subsample": trial.suggest_float("subsample", 0.6, 0.95),
         }
 
         # Use regularization config if available, otherwise use default optuna suggestions
@@ -747,69 +765,94 @@ class BaseEnsemble:
         default_return=pd.DataFrame(),
         context="historical prediction",
     )
-    def get_prediction_on_historical_data(self, historical_features: pd.DataFrame) -> pd.DataFrame:
+    def get_prediction_on_historical_data(
+        self, historical_features: pd.DataFrame
+    ) -> pd.DataFrame:
         """Get predictions for historical data with comprehensive error handling."""
         try:
             if not self.trained:
-                self.logger.warning(f"{self.ensemble_name}: Ensemble not trained, returning empty DataFrame")
+                self.logger.warning(
+                    f"{self.ensemble_name}: Ensemble not trained, returning empty DataFrame"
+                )
                 return pd.DataFrame()
-                
+
             if historical_features.empty:
-                self.logger.warning(f"{self.ensemble_name}: Empty historical features provided")
+                self.logger.warning(
+                    f"{self.ensemble_name}: Empty historical features provided"
+                )
                 return pd.DataFrame()
-                
+
             # SR context features are expected upstream (step4 unified S/R system)
-            
+
             # Apply feature normalization
             historical_features = self.normalize_non_price_features(historical_features)
-            
+
             # Ensure all expected features are present
             all_expected_features = list(
-                set(self.sequence_features + self.flat_features + self.order_flow_features),
+                set(
+                    self.sequence_features
+                    + self.flat_features
+                    + self.order_flow_features
+                ),
             )
             for col in all_expected_features:
                 if col not in historical_features.columns:
                     historical_features[col] = 0.0
-                    
+
             # Get meta features
             meta_features = self._get_meta_features(historical_features, is_live=False)
-            
+
             if not isinstance(meta_features, pd.DataFrame) or meta_features.empty:
-                self.logger.warning(f"{self.ensemble_name}: Empty meta features generated")
+                self.logger.warning(
+                    f"{self.ensemble_name}: Empty meta features generated"
+                )
                 return pd.DataFrame()
-                
+
             # Ensure meta features have correct columns
             if hasattr(self.meta_feature_scaler, "feature_names_in_"):
-                missing_cols = list(set(self.meta_feature_scaler.feature_names_in_) - set(meta_features.columns))
+                missing_cols = list(
+                    set(self.meta_feature_scaler.feature_names_in_)
+                    - set(meta_features.columns)
+                )
                 if missing_cols:
-                    self.logger.warning(f"Missing meta features for historical prediction: {missing_cols}")
+                    self.logger.warning(
+                        f"Missing meta features for historical prediction: {missing_cols}"
+                    )
                 meta_features = meta_features.reindex(
                     columns=self.meta_feature_scaler.feature_names_in_,
                 ).fillna(0)
-                
+
             # Transform and predict
             meta_input_scaled = self.meta_feature_scaler.transform(meta_features)
             meta_input_pca = self.pca.transform(meta_input_scaled)
-            
+
             # Get predictions for all rows
             predictions = []
             for i in range(len(meta_input_pca)):
                 try:
-                    pred_result = self._get_meta_prediction(meta_input_pca[i:i+1])
-                    predictions.append({
-                        "prediction": pred_result["prediction"],
-                        "confidence": pred_result["confidence"]
-                    })
+                    pred_result = self._get_meta_prediction(meta_input_pca[i : i + 1])
+                    predictions.append(
+                        {
+                            "prediction": pred_result["prediction"],
+                            "confidence": pred_result["confidence"],
+                        }
+                    )
                 except Exception as e:
-                    self.logger.warning(f"{self.ensemble_name}: Error predicting row {i}: {e}")
+                    self.logger.warning(
+                        f"{self.ensemble_name}: Error predicting row {i}: {e}"
+                    )
                     predictions.append({"prediction": "HOLD", "confidence": 0.0})
-                    
+
             result_df = pd.DataFrame(predictions, index=historical_features.index)
-            self.logger.info(f"{self.ensemble_name}: Generated predictions for {len(result_df)} historical samples")
+            self.logger.info(
+                f"{self.ensemble_name}: Generated predictions for {len(result_df)} historical samples"
+            )
             return result_df
-            
+
         except Exception as e:
-            self.logger.error(f"{self.ensemble_name}: Error in historical prediction: {e}")
+            self.logger.error(
+                f"{self.ensemble_name}: Error in historical prediction: {e}"
+            )
             return pd.DataFrame()
 
     @handle_errors(
@@ -822,12 +865,12 @@ class BaseEnsemble:
         try:
             issues = []
             status = "healthy"
-            
+
             # Check training status
             if not self.trained:
                 issues.append("Ensemble not trained")
                 status = "unhealthy"
-                
+
             # Check base models
             if not self.models:
                 issues.append("No base models available")
@@ -837,31 +880,31 @@ class BaseEnsemble:
                     if model is None:
                         issues.append(f"Base model '{model_name}' is None")
                         status = "degraded"
-                        
+
             # Check meta-learner
             if not self.meta_learner:
                 issues.append("No meta-learner available")
                 status = "unhealthy"
-                
+
             # Check scalers and encoders
             if not self.meta_feature_scaler:
                 issues.append("No meta-feature scaler available")
                 status = "unhealthy"
-                
+
             if not self.label_encoder:
                 issues.append("No label encoder available")
                 status = "unhealthy"
-                
+
             # Check PCA
             if not self.pca:
                 issues.append("No PCA transformer available")
                 status = "degraded"
-                
+
             # Check configuration
             if not self.config:
                 issues.append("No configuration available")
                 status = "degraded"
-                
+
             health_report = {
                 "status": status,
                 "ensemble_name": self.ensemble_name,
@@ -872,25 +915,29 @@ class BaseEnsemble:
                 "has_encoder": self.label_encoder is not None,
                 "has_pca": self.pca is not None,
                 "issues": issues,
-                "timestamp": pd.Timestamp.now().isoformat()
+                "timestamp": pd.Timestamp.now().isoformat(),
             }
-            
+
             if status == "healthy":
                 self.logger.info(f"{self.ensemble_name}: Ensemble health check passed")
             elif status == "degraded":
-                self.logger.warning(f"{self.ensemble_name}: Ensemble health check shows degraded status: {issues}")
+                self.logger.warning(
+                    f"{self.ensemble_name}: Ensemble health check shows degraded status: {issues}"
+                )
             else:
-                self.logger.error(f"{self.ensemble_name}: Ensemble health check failed: {issues}")
-                
+                self.logger.error(
+                    f"{self.ensemble_name}: Ensemble health check failed: {issues}"
+                )
+
             return health_report
-            
+
         except Exception as e:
             self.logger.error(f"{self.ensemble_name}: Error during health check: {e}")
             return {
                 "status": "error",
                 "ensemble_name": self.ensemble_name,
                 "issues": [f"Health check error: {e}"],
-                "timestamp": pd.Timestamp.now().isoformat()
+                "timestamp": pd.Timestamp.now().isoformat(),
             }
 
     @handle_errors(
@@ -1360,178 +1407,244 @@ class BaseEnsemble:
     def normalize_non_price_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Normalize non-price series using relative/normalized changes and rolling z-scores.
-        
+
         Implements the comprehensive normalization strategy:
         - Volume: log1p + first-difference, pct_change, rolling z-score
         - Spreads: convert to bps, rolling z-score, changes
         - Liquidity: relative normalization, log-transform, percentiles
         - Order flow: bounded normalization, changes
         - VWAP: deviations from mid, rolling z-score
-        
+
         Args:
             df: DataFrame with features to normalize
-            
+
         Returns:
             DataFrame with normalized features added
         """
         try:
             normalized_df = df.copy()
-            
+
             # 1. Volume normalization
             if "volume" in df.columns:
                 # Log1p + first-difference for stationarity
                 normalized_df["volume_log_diff"] = np.log1p(df["volume"]).diff()
-                
+
                 # Percentage change
                 normalized_df["volume_pct_change"] = df["volume"].pct_change()
-                
+
                 # Rolling z-score of log volume
                 log_volume = np.log1p(df["volume"])
                 normalized_df["volume_z_score"] = self._calculate_rolling_z_score(
                     log_volume, self.normalization_windows["medium"]
                 )
-                
+
                 # Volume relative to rolling turnover (if available)
                 if "volume_ma_ratio" not in df.columns:
                     volume_ma_20 = df["volume"].rolling(window=20, min_periods=1).mean()
-                    normalized_df["volume_ma_ratio"] = df["volume"] / (volume_ma_20 + 1e-8)
-            
+                    normalized_df["volume_ma_ratio"] = df["volume"] / (
+                        volume_ma_20 + 1e-8
+                    )
+
             # 2. Spread and microstructure normalization
-            spread_features = ["spread_liquidity", "price_impact", "kyle_lambda", "amihud_illiquidity"]
+            spread_features = [
+                "spread_liquidity",
+                "price_impact",
+                "kyle_lambda",
+                "amihud_illiquidity",
+            ]
             for feature in spread_features:
                 if feature in df.columns:
                     # Convert to bps if not already (assuming raw values)
                     if feature in ["spread_liquidity", "price_impact"]:
                         # These might already be in bps, but ensure they're properly scaled
                         normalized_df[f"{feature}_bps"] = df[feature] * 1e4
-                    
+
                     # Rolling z-score
-                    normalized_df[f"{feature}_z_score"] = self._calculate_rolling_z_score(
-                        df[feature], self.normalization_windows["medium"]
+                    normalized_df[f"{feature}_z_score"] = (
+                        self._calculate_rolling_z_score(
+                            df[feature], self.normalization_windows["medium"]
+                        )
                     )
-                    
-                    # Changes
-                    normalized_df[f"{feature}_change"] = df[feature].diff()
+
+                    # Changes - use percentage change to avoid perfect correlation with base features
                     normalized_df[f"{feature}_pct_change"] = df[feature].pct_change()
-            
+                    # Use standard difference for better predictive power while avoiding perfect correlation
+                    normalized_df[f"{feature}_change"] = df[feature].diff().fillna(0)
+
             # 3. Liquidity depth normalization
-            liquidity_features = ["volume_liquidity", "liquidity_percentile", "liquidity_stress", "liquidity_health"]
+            liquidity_features = [
+                "volume_liquidity",
+                "liquidity_percentile",
+                "liquidity_health",
+            ]
             for feature in liquidity_features:
                 if feature in df.columns:
                     # Log-transform heavy-tailed metrics
-                    if feature in ["volume_liquidity", "liquidity_stress"]:
+                    if feature in ["volume_liquidity"]:
                         normalized_df[f"{feature}_log"] = np.log1p(np.abs(df[feature]))
-                    
+
                     # Rolling z-score
-                    normalized_df[f"{feature}_z_score"] = self._calculate_rolling_z_score(
-                        df[feature], self.normalization_windows["medium"]
+                    normalized_df[f"{feature}_z_score"] = (
+                        self._calculate_rolling_z_score(
+                            df[feature], self.normalization_windows["medium"]
+                        )
                     )
-                    
-                    # Changes for non-bounded features
-                    if feature not in ["liquidity_percentile"]:  # Percentiles are already bounded
-                        normalized_df[f"{feature}_change"] = df[feature].diff()
-            
+
+                    # Changes for non-bounded features - use standard difference for better predictive power
+                    if feature not in [
+                        "liquidity_percentile"
+                    ]:  # Percentiles are already bounded
+                        normalized_df[f"{feature}_change"] = (
+                            df[feature].diff().fillna(0)
+                        )
+
             # 4. Order flow imbalance normalization
-            ofi_features = ["order_flow_imbalance", "Order_Flow_Imbalance", "Buy_Sell_Pressure_Ratio"]
+            ofi_features = [
+                "order_flow_imbalance",
+                "Order_Flow_Imbalance",
+                "Buy_Sell_Pressure_Ratio",
+            ]
             for feature in ofi_features:
                 if feature in df.columns:
                     # Ensure bounded to [-1, 1]
                     normalized_df[f"{feature}_bounded"] = np.clip(df[feature], -1, 1)
-                    
+
                     # Rolling z-score of bounded values
-                    normalized_df[f"{feature}_z_score"] = self._calculate_rolling_z_score(
-                        normalized_df[f"{feature}_bounded"], self.normalization_windows["medium"]
+                    normalized_df[f"{feature}_z_score"] = (
+                        self._calculate_rolling_z_score(
+                            normalized_df[f"{feature}_bounded"],
+                            self.normalization_windows["medium"],
+                        )
                     )
-                    
+
                     # Short-horizon changes (avoid over-differencing bounded ratios)
-                    normalized_df[f"{feature}_change_1"] = normalized_df[f"{feature}_bounded"].diff(1)
-                    normalized_df[f"{feature}_change_3"] = normalized_df[f"{feature}_bounded"].diff(3)
-            
+                    normalized_df[f"{feature}_change_1"] = normalized_df[
+                        f"{feature}_bounded"
+                    ].diff(1)
+                    normalized_df[f"{feature}_change_3"] = normalized_df[
+                        f"{feature}_bounded"
+                    ].diff(3)
+
             # 5. VWAP normalization
             if "vwap" in df.columns and "close" in df.columns:
                 # VWAP deviation from mid price
                 mid_price = df["close"]
-                normalized_df["vwap_deviation"] = (df["vwap"] - mid_price) / (mid_price + 1e-8)
-                
-                # Rolling z-score of VWAP deviation
-                normalized_df["vwap_deviation_z_score"] = self._calculate_rolling_z_score(
-                    normalized_df["vwap_deviation"], self.normalization_windows["medium"]
+                normalized_df["vwap_deviation"] = (df["vwap"] - mid_price) / (
+                    mid_price + 1e-8
                 )
-            
+
+                # Rolling z-score of VWAP deviation
+                normalized_df["vwap_deviation_z_score"] = (
+                    self._calculate_rolling_z_score(
+                        normalized_df["vwap_deviation"],
+                        self.normalization_windows["medium"],
+                    )
+                )
+
             # 6. Large order ratio normalization (already bounded)
             if "large_order_ratio" in df.columns:
                 # Clip to [0, 1] and rolling z-score
-                normalized_df["large_order_ratio_bounded"] = np.clip(df["large_order_ratio"], 0, 1)
-                
-                normalized_df["large_order_ratio_z_score"] = self._calculate_rolling_z_score(
-                    normalized_df["large_order_ratio_bounded"], self.normalization_windows["medium"]
+                normalized_df["large_order_ratio_bounded"] = np.clip(
+                    df["large_order_ratio"], 0, 1
                 )
-            
+
+                normalized_df["large_order_ratio_z_score"] = (
+                    self._calculate_rolling_z_score(
+                        normalized_df["large_order_ratio_bounded"],
+                        self.normalization_windows["medium"],
+                    )
+                )
+
             # 7. Funding rate normalization
             if "funding_rate" in df.columns:
                 # Funding rates are already in percentage form, normalize with rolling z-score
                 normalized_df["funding_rate_z_score"] = self._calculate_rolling_z_score(
                     df["funding_rate"], self.normalization_windows["medium"]
                 )
-                
-                # Funding rate changes
-                normalized_df["funding_rate_change"] = df["funding_rate"].diff()
-                normalized_df["funding_rate_acceleration"] = normalized_df["funding_rate_change"].diff()
-            
+
+                # Funding rate changes - use multi-period difference to reduce correlation
+                normalized_df["funding_rate_change"] = (
+                    df["funding_rate"].diff(3).fillna(0)
+                )
+                normalized_df["funding_rate_acceleration"] = (
+                    normalized_df["funding_rate_change"].diff(2).fillna(0)
+                )
+
             # 8. Volatility normalization
-            volatility_features = ["realized_volatility", "parkinson_volatility", "garman_klass_volatility"]
+            volatility_features = [
+                "realized_volatility",
+                "parkinson_volatility",
+                "garman_klass_volatility",
+            ]
             for feature in volatility_features:
                 if feature in df.columns:
                     # Log-transform for heavy-tailed volatility
                     normalized_df[f"{feature}_log"] = np.log1p(df[feature])
-                    
+
                     # Rolling z-score
-                    normalized_df[f"{feature}_z_score"] = self._calculate_rolling_z_score(
-                        normalized_df[f"{feature}_log"], self.normalization_windows["medium"]
+                    normalized_df[f"{feature}_z_score"] = (
+                        self._calculate_rolling_z_score(
+                            normalized_df[f"{feature}_log"],
+                            self.normalization_windows["medium"],
+                        )
                     )
-                    
-                    # Volatility changes
-                    normalized_df[f"{feature}_change"] = df[feature].diff()
+
+                    # Volatility changes - use percentage change to avoid perfect correlation
                     normalized_df[f"{feature}_pct_change"] = df[feature].pct_change()
-            
+                    # Use multi-period difference for change to reduce correlation
+                    normalized_df[f"{feature}_change"] = df[feature].diff(3).fillna(0)
+
             # 9. Momentum normalization
-            momentum_features = ["momentum_5", "momentum_10", "momentum_20", "momentum_50"]
+            momentum_features = [
+                "momentum_5",
+                "momentum_10",
+                "momentum_20",
+                "momentum_50",
+            ]
             for feature in momentum_features:
                 if feature in df.columns:
                     # Rolling z-score of momentum
-                    normalized_df[f"{feature}_z_score"] = self._calculate_rolling_z_score(
-                        df[feature], self.normalization_windows["medium"]
+                    normalized_df[f"{feature}_z_score"] = (
+                        self._calculate_rolling_z_score(
+                            df[feature], self.normalization_windows["medium"]
+                        )
                     )
-                    
-                    # Momentum acceleration
-                    normalized_df[f"{feature}_acceleration"] = df[feature].diff()
-            
+
+                    # Momentum acceleration - use multi-period difference to reduce correlation
+                    normalized_df[f"{feature}_acceleration"] = (
+                        df[feature].diff(3).fillna(0)
+                    )
+
             # 10. Winsorize outliers before final scaling
             self._winsorize_features(normalized_df)
-            
+
             # 11. Final cleanup: handle any remaining NaN values
             normalized_df = normalized_df.fillna(0)
-            
-            self.logger.info(f"Applied comprehensive feature normalization to {len(normalized_df.columns)} features")
+
+            self.logger.info(
+                f"Applied comprehensive feature normalization to {len(normalized_df.columns)} features"
+            )
             return normalized_df
-            
+
         except Exception as e:
             self.logger.error(f"Error in feature normalization: {e}", exc_info=True)
             return df  # Return original if normalization fails
-    
+
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
         default_return=pd.Series(dtype=float),
         context="rolling z-score calculation",
     )
-    def _calculate_rolling_z_score(self, series: pd.Series, window: int = 60) -> pd.Series:
+    def _calculate_rolling_z_score(
+        self, series: pd.Series, window: int = 60
+    ) -> pd.Series:
         """
         Calculate rolling z-score with proper handling of infinite values.
-        
+
         Args:
             series: Input series
             window: Rolling window size
-            
+
         Returns:
             Series with rolling z-scores
         """
@@ -1554,28 +1667,28 @@ class BaseEnsemble:
     def _winsorize_features(self, df: pd.DataFrame, percentile: float = 0.01) -> None:
         """
         Winsorize outliers in the DataFrame to improve numerical stability.
-        
+
         Args:
             df: DataFrame to winsorize
             percentile: Percentile to clip at (default 1%)
         """
         try:
             for col in df.columns:
-                if df[col].dtype in ['float64', 'float32', 'int64', 'int32']:
+                if df[col].dtype in ["float64", "float32", "int64", "int32"]:
                     # Skip binary/categorical features
                     if df[col].nunique() <= 2:
                         continue
-                    
+
                     # Handle NaN values first
                     if df[col].isna().any():
                         df[col] = df[col].fillna(df[col].median())
-                    
+
                     # Calculate percentiles
                     lower_percentile = df[col].quantile(percentile)
                     upper_percentile = df[col].quantile(1 - percentile)
-                    
+
                     # Clip outliers
                     df[col] = np.clip(df[col], lower_percentile, upper_percentile)
-                    
+
         except Exception as e:
             self.logger.warning(f"Error in winsorization: {e}")

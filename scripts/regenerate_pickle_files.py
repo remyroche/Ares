@@ -145,7 +145,7 @@ def main():
 
     data_cache_dir = "data_cache"
     if not os.path.exists(data_cache_dir):
-        print(missing("Data cache directory not found: {data_cache_dir}")))
+        print(missing("Data cache directory not found: {data_cache_dir}"))
         return False
 
     # Find consolidated CSV files
@@ -154,7 +154,7 @@ def main():
         consolidated_files.extend(Path(data_cache_dir).glob(pattern))
 
     if not consolidated_files:
-        print(warning("No consolidated CSV files found in {data_cache_dir}")))
+        print(warning("No consolidated CSV files found in {data_cache_dir}"))
         return False
 
     print(f"📁 Found {len(consolidated_files)} consolidated CSV files")

@@ -1,0 +1,4 @@
+Performance Report for _execute_comprehensive_pipeline
+==================================================
+Total execution time: 233.96s
+Memory usage: 1484.39 MB

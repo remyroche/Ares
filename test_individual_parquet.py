@@ -37,7 +37,9 @@ def load_individual_parquet_files(
     if os.environ.get("BLANK_TRAINING_MODE", "0") == "1":
         # Use the provided max_files parameter instead of defaulting to 10
         parquet_files = parquet_files[:max_files]
-        print(f"📊 Blank mode: Loading {len(parquet_files)} most recent files (max_files={max_files})")
+        print(
+            f"📊 Blank mode: Loading {len(parquet_files)} most recent files (max_files={max_files})"
+        )
 
     print(f"📁 Loading {len(parquet_files)} individual parquet files from: {base_dir}")
 

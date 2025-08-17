@@ -1,0 +1,168 @@
+# src/config/regime_mapping_config.yaml
+
+# Configuration for regime detection and expert selection using composite_cluster_id
+
+regime_mapping:
+  # Map HMM composite cluster IDs to regime ensemble names
+  # This mapping should be consistent with how the ensembles were trained in Step 5
+  # Extended to support 10-20 regimes for more granular market analysis
+  cluster_to_regime:
+    # Core Trend Regimes (0-4)
+    0: "STRONG_BULL_TREND"      # Cluster 0 -> Strong Bull Trend Ensemble
+    1: "MODERATE_BULL_TREND"    # Cluster 1 -> Moderate Bull Trend Ensemble
+    2: "WEAK_BULL_TREND"        # Cluster 2 -> Weak Bull Trend Ensemble
+    3: "STRONG_BEAR_TREND"      # Cluster 3 -> Strong Bear Trend Ensemble
+    4: "MODERATE_BEAR_TREND"    # Cluster 4 -> Moderate Bear Trend Ensemble
+    
+    # Sideways/Range Regimes (5-8)
+    5: "TIGHT_SIDEWAYS_RANGE"   # Cluster 5 -> Tight Sideways Range Ensemble
+    6: "WIDE_SIDEWAYS_RANGE"    # Cluster 6 -> Wide Sideways Range Ensemble
+    7: "ASCENDING_SIDEWAYS"     # Cluster 7 -> Ascending Sideways Ensemble
+    8: "DESCENDING_SIDEWAYS"    # Cluster 8 -> Descending Sideways Ensemble
+    
+    # Volatility Regimes (9-12)
+    9: "HIGH_VOLATILITY_BULL"   # Cluster 9 -> High Volatility Bull Ensemble
+    10: "HIGH_VOLATILITY_BEAR"  # Cluster 10 -> High Volatility Bear Ensemble
+    11: "LOW_VOLATILITY_RANGE"  # Cluster 11 -> Low Volatility Range Ensemble
+    12: "EXTREME_VOLATILITY"    # Cluster 12 -> Extreme Volatility Ensemble
+    
+    # Transition Regimes (13-16)
+    13: "BULL_TO_BEAR_TRANSITION"    # Cluster 13 -> Bull to Bear Transition Ensemble
+    14: "BEAR_TO_BULL_TRANSITION"    # Cluster 14 -> Bear to Bull Transition Ensemble
+    15: "TREND_TO_SIDEWAYS"          # Cluster 15 -> Trend to Sideways Ensemble
+    16: "SIDEWAYS_TO_TREND"          # Cluster 16 -> Sideways to Trend Ensemble
+    
+    # Specialized Regimes (17-19)
+    17: "ACCUMULATION_PHASE"         # Cluster 17 -> Accumulation Phase Ensemble
+    18: "DISTRIBUTION_PHASE"         # Cluster 18 -> Distribution Phase Ensemble
+    19: "BREAKOUT_PREPARATION"       # Cluster 19 -> Breakout Preparation Ensemble
+  
+  # Regime descriptions for logging and debugging
+  regime_descriptions:
+    # Rare/Unclassifiable Conditions
+    RARE_MARKET_CONDITIONS: "Rare or unclassifiable market conditions, transitional periods, or unique market behavior"
+    
+    # Core Trend Regimes
+    STRONG_BULL_TREND: "Strong uptrending market with high momentum and low volatility"
+    MODERATE_BULL_TREND: "Moderate uptrending market with steady momentum"
+    WEAK_BULL_TREND: "Weak uptrending market with low momentum, potential reversal"
+    STRONG_BEAR_TREND: "Strong downtrending market with high momentum and low volatility"
+    MODERATE_BEAR_TREND: "Moderate downtrending market with steady momentum"
+    
+    # Sideways/Range Regimes
+    TIGHT_SIDEWAYS_RANGE: "Tight range-bound market with low volatility"
+    WIDE_SIDEWAYS_RANGE: "Wide range-bound market with moderate volatility"
+    ASCENDING_SIDEWAYS: "Sideways market with slight upward bias"
+    DESCENDING_SIDEWAYS: "Sideways market with slight downward bias"
+    
+    # Volatility Regimes
+    HIGH_VOLATILITY_BULL: "High volatility bull market with large price swings"
+    HIGH_VOLATILITY_BEAR: "High volatility bear market with large price swings"
+    LOW_VOLATILITY_RANGE: "Low volatility range-bound market"
+    EXTREME_VOLATILITY: "Extreme volatility with unpredictable price movements"
+    
+    # Transition Regimes
+    BULL_TO_BEAR_TRANSITION: "Transition from bull to bear market"
+    BEAR_TO_BULL_TRANSITION: "Transition from bear to bull market"
+    TREND_TO_SIDEWAYS: "Transition from trending to sideways market"
+    SIDEWAYS_TO_TREND: "Transition from sideways to trending market"
+    
+    # Specialized Regimes
+    ACCUMULATION_PHASE: "Accumulation phase with smart money buying"
+    DISTRIBUTION_PHASE: "Distribution phase with smart money selling"
+    BREAKOUT_PREPARATION: "Market preparing for a breakout"
+
+# Confidence thresholds for regime detection and expert selection
+confidence_thresholds:
+  min_regime_confidence: 0.6      # Minimum confidence to consider regime detection valid
+  min_expert_confidence: 0.5      # Minimum confidence to consider expert prediction valid
+  min_transition_confidence: 0.7  # Minimum confidence for regime transition signals
+  min_event_confidence: 0.6       # Minimum confidence for event-driven signals
+
+# Integration settings for Step 9.5 and Step 10
+integration:
+  use_step9_5: true               # Enable Step 9.5 (HMM-LM Generalist) integration
+  use_step10: true                # Enable Step 10 (Event Transition Modeling) integration
+  
+  # Step 9.5 integration weights
+  step9_5_weights:
+    regime_transition_weight: 0.4  # Weight for regime transition predictions
+    expert_prediction_weight: 0.6  # Weight for regime expert predictions
+  
+  # Step 10 integration settings
+  step10_settings:
+    favorable_path_classes: ["beginning_of_trend", "continuation"]
+    unfavorable_path_classes: ["reversal", "end_of_trend"]
+    max_execution_delay: 30        # Maximum bars to wait for optimal timing
+
+# Regime expert ensemble settings
+ensemble_settings:
+  model_storage_dir: "checkpoints/analyst_models/ensembles"
+  auto_load_models: true          # Automatically load trained models
+  model_cache_ttl: 300            # Cache TTL in seconds (5 minutes)
+  
+  # Ensemble-specific settings
+  bull_trend_ensemble:
+    name: "BullTrendEnsemble"
+    description: "Specialized ensemble for bullish market conditions"
+    
+  bear_trend_ensemble:
+    name: "BearTrendEnsemble" 
+    description: "Specialized ensemble for bearish market conditions"
+    
+  sideways_range_ensemble:
+    name: "SidewaysRangeEnsemble"
+    description: "Specialized ensemble for sideways market conditions"
+    
+  volatile_regime_ensemble:
+    name: "VolatileRegimeEnsemble"
+    description: "Specialized ensemble for volatile market conditions"
+
+# Decision making settings
+decision_making:
+  # Two-tier decision system settings
+  two_tier:
+    strategic_weight: 0.7          # Weight for strategic (regime expert) decisions
+    tactical_weight: 0.3           # Weight for tactical (timing) decisions
+    
+  # Final decision thresholds
+  final_thresholds:
+    min_combined_confidence: 0.65  # Minimum combined confidence for execution
+    max_uncertainty: 0.3           # Maximum uncertainty allowed
+    
+  # Decision reasons and actions
+  decision_reasons:
+    insufficient_confidence: "HOLD"
+    regime_transition_imminent: "HOLD"
+    optimal_timing: "DELAY"
+    favorable_conditions: "EXECUTE"
+    unfavorable_conditions: "HOLD"
+
+# Monitoring and logging settings
+monitoring:
+  continuous_monitoring_interval: 60  # Seconds between regime checks
+  regime_change_detection:
+    min_change_duration: 5        # Minimum bars for regime change confirmation
+    change_confidence_threshold: 0.8  # Confidence threshold for regime change
+  
+  logging:
+    log_regime_changes: true
+    log_expert_predictions: true
+    log_integration_decisions: true
+    log_final_decisions: true
+
+# Performance optimization settings
+performance:
+  cache_regime_predictions: true
+  cache_ttl: 300                  # Cache TTL in seconds
+  parallel_processing: true       # Enable parallel processing where possible
+  batch_size: 32                  # Batch size for model predictions
+
+# Transition handling configuration
+transition_config:
+  transition_intensity_threshold: 0.3
+  min_combined_intensity: 0.6
+  max_regimes_to_consider: 3
+  step9_5_weight: 0.4
+  step10_weight: 0.3
+  regime_expert_weight: 0.3

@@ -40,7 +40,9 @@ class PathTargetEngineer:
             onset_window_bars=int(pcfg.get("onset_window_bars", 8)),
         )
 
-    def compute_path_class(self, sample: dict[str, Any], klines_df: pd.DataFrame) -> str:
+    def compute_path_class(
+        self, sample: dict[str, Any], klines_df: pd.DataFrame
+    ) -> str:
         # Inputs
         y_states: pd.DataFrame = sample["Y_post_states"]
         y_rets: np.ndarray = sample["Y_post_returns"]
@@ -51,17 +53,26 @@ class PathTargetEngineer:
         # Detect early flip
         onset = min(self.cfg.onset_window_bars, len(regimes))
         first_regime = regimes[0] if regimes else "SIDEWAYS"
-        any_flip_early = any(r != first_regime for r in regimes[:onset]) if regimes else False
+        any_flip_early = (
+            any(r != first_regime for r in regimes[:onset]) if regimes else False
+        )
         # Basic rules
         if self.cfg.enable_beginning_of_trend:
             # Flip early + decent cumulative move → beginning
             if any_flip_early and abs(cumr) >= self.cfg.return_threshold:
                 return "beginning_of_trend"
         # continuation: no flip and decent same-direction persistence
-        if regimes and all(r == first_regime for r in regimes) and abs(cumr) >= self.cfg.return_threshold:
+        if (
+            regimes
+            and all(r == first_regime for r in regimes)
+            and abs(cumr) >= self.cfg.return_threshold
+        ):
             return "continuation"
         # reversal: flip within window with sufficient move
-        if any(r != first_regime for r in regimes) and abs(cumr) >= self.cfg.return_threshold:
+        if (
+            any(r != first_regime for r in regimes)
+            and abs(cumr) >= self.cfg.return_threshold
+        ):
             return "reversal"
         # otherwise
         return "end_of_trend"

@@ -443,7 +443,9 @@ class ErrorDetectionSystem:
             self.logger.info("Error detection tables created successfully")
 
         except Exception:
-            self.logger.exception(failed("Failed to create error detection tables: {e}"))
+            self.logger.exception(
+                failed("Failed to create error detection tables: {e}")
+            )
             raise
 
     async def _load_alert_rules(self) -> None:
@@ -1029,7 +1031,9 @@ This indicates a potential system issue requiring investigation.
             return None
 
         except Exception:
-            self.logger.exception(failed("Failed to detect anomaly for {metric_name}: {e}"))
+            self.logger.exception(
+                failed("Failed to detect anomaly for {metric_name}: {e}")
+            )
             return None
 
     async def _classify_anomaly_type(
@@ -1211,7 +1215,9 @@ Potential Causes:
             )
 
         except Exception:
-            self.logger.exception(failed("Failed to collect system health metrics: {e}"))
+            self.logger.exception(
+                failed("Failed to collect system health metrics: {e}")
+            )
             # Return basic metrics
             return SystemHealthMetrics(
                 timestamp=datetime.now(),
@@ -1576,7 +1582,9 @@ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             self.logger.info("Error Detection System cleanup completed")
 
         except Exception:
-            self.logger.exception(failed("Failed to cleanup Error Detection System: {e}"))
+            self.logger.exception(
+                failed("Failed to cleanup Error Detection System: {e}")
+            )
 
 
 # Setup function for integration

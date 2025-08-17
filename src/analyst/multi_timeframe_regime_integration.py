@@ -24,7 +24,7 @@ import pandas as pd
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.analyst.meta_labeling_system import MetaLabelingSystem
+from src.analyst.meta_labeling_system import CompositeHMMRegimeSystem
 from src.analyst.regime_runtime import get_current_regime_info
 from src.config import CONFIG
 from src.training.steps.analyst_training_components.regime_specific_tpsl_optimizer import (
@@ -62,8 +62,8 @@ class MultiTimeframeRegimeIntegration:
         self.logger = system_logger.getChild("MultiTimeframeRegimeIntegration")
         self.print = self.logger.info
 
-        # Initialize Meta-Labeling system (strategic level)
-        self.meta_labeling_system = MetaLabelingSystem(config)
+        # Initialize Composite HMM Regime system (strategic level)
+        self.meta_labeling_system = CompositeHMMRegimeSystem(config)
 
         # Initialize regime-specific TP/SL optimizer
         self.regime_tpsl_optimizer = RegimeSpecificTPSLOptimizer(config)
@@ -124,7 +124,9 @@ class MultiTimeframeRegimeIntegration:
 
         self.logger.info("🚀 Initialized MultiTimeframeRegimeIntegration")
         self.logger.info(f"📊 Active timeframes: {self.active_timeframes}")
-        self.logger.info(f"⏰ Strategic timeframe: {self.analysis_timeframe} (regime context)")
+        self.logger.info(
+            f"⏰ Strategic timeframe: {self.analysis_timeframe} (regime context)"
+        )
 
     @handle_specific_errors(
         error_handlers={
@@ -172,21 +174,15 @@ class MultiTimeframeRegimeIntegration:
 
     async def _initialize_meta_label_system(self) -> bool:
         """
-        Initialize the MetaLabelingSystem.
+        Meta-labeling system removed - using only HMM market regimes.
 
         Returns:
-            bool: True if initialization successful, False otherwise
+            bool: True (always succeeds since system is removed)
         """
-        try:
-            ok = await self.meta_labeling_system.initialize()
-            if ok:
-                self.logger.info("✅ Meta-Labeling system initialized for regime context")
-                return True
-            self.print(failed("Meta-Labeling system failed to initialize"))
-            return False
-        except Exception:
-            self.print(initialization_error("Error initializing Meta-Labeling system: {e}"))
-            return False
+        self.logger.info(
+            "ℹ️ Meta-labeling system removed - using only HMM market regimes for labeling"
+        )
+        return True
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -229,10 +225,21 @@ class MultiTimeframeRegimeIntegration:
                 cluster_id = int(labels.get("HMM_COMPOSITE_CLUSTER", -1))
                 # Fetch runtime calibrated signals
                 try:
-                    rr = get_current_regime_info(self.exchange, self.symbol, self.analysis_timeframe)
+                    rr = get_current_regime_info(
+                        self.exchange, self.symbol, self.analysis_timeframe
+                    )
                 except Exception:
-                    rr = {"cluster_id": cluster_id, "intensities": {}, "p_emerge": {}, "exit_hazard": None}
-                confidence = float(rr.get("intensities", {}).get(cluster_id, 0.0)) if cluster_id >= 0 else 0.0
+                    rr = {
+                        "cluster_id": cluster_id,
+                        "intensities": {},
+                        "p_emerge": {},
+                        "exit_hazard": None,
+                    }
+                confidence = (
+                    float(rr.get("intensities", {}).get(cluster_id, 0.0))
+                    if cluster_id >= 0
+                    else 0.0
+                )
                 info = {
                     "method": "hmm_composite",
                     "timeframe": self.analysis_timeframe,
@@ -244,7 +251,9 @@ class MultiTimeframeRegimeIntegration:
                 }
 
                 # Update cache
-                self.current_regime = f"CLUSTER_{cluster_id}" if cluster_id >= 0 else "SIDEWAYS_RANGE"
+                self.current_regime = (
+                    f"CLUSTER_{cluster_id}" if cluster_id >= 0 else "SIDEWAYS_RANGE"
+                )
                 self.regime_confidence = confidence
                 self.regime_info = info
                 self.last_regime_update = datetime.now()
@@ -386,46 +395,127 @@ class MultiTimeframeRegimeIntegration:
         # Define timeframe-specific adjustments based on meta-label regime
         adjustments = {
             "1m": {
-                "STRONG_TREND_CONTINUATION": {"volatility_multiplier": 1.5, "momentum_threshold": 0.85},
-                "EXHAUSTION_REVERSAL": {"volatility_multiplier": 1.4, "momentum_threshold": 0.6},
-                "RANGE_MEAN_REVERSION": {"volatility_multiplier": 0.9, "momentum_threshold": 0.45},
-                "BREAKOUT_SUCCESS": {"volatility_multiplier": 1.6, "momentum_threshold": 0.9},
-                "BREAKOUT_FAILURE": {"volatility_multiplier": 1.2, "momentum_threshold": 0.55},
-                "MOMENTUM_IGNITION": {"volatility_multiplier": 1.8, "momentum_threshold": 0.95},
-                "VOLATILITY_COMPRESSION": {"volatility_multiplier": 0.8, "momentum_threshold": 0.4},
-                "VOLATILITY_EXPANSION": {"volatility_multiplier": 1.7, "momentum_threshold": 0.85},
+                "STRONG_TREND_CONTINUATION": {
+                    "volatility_multiplier": 1.5,
+                    "momentum_threshold": 0.85,
+                },
+                "EXHAUSTION_REVERSAL": {
+                    "volatility_multiplier": 1.4,
+                    "momentum_threshold": 0.6,
+                },
+                "RANGE_MEAN_REVERSION": {
+                    "volatility_multiplier": 0.9,
+                    "momentum_threshold": 0.45,
+                },
+                "BREAKOUT_SUCCESS": {
+                    "volatility_multiplier": 1.6,
+                    "momentum_threshold": 0.9,
+                },
+                "BREAKOUT_FAILURE": {
+                    "volatility_multiplier": 1.2,
+                    "momentum_threshold": 0.55,
+                },
+                "MOMENTUM_IGNITION": {
+                    "volatility_multiplier": 1.8,
+                    "momentum_threshold": 0.95,
+                },
+                "VOLATILITY_COMPRESSION": {
+                    "volatility_multiplier": 0.8,
+                    "momentum_threshold": 0.4,
+                },
+                "VOLATILITY_EXPANSION": {
+                    "volatility_multiplier": 1.7,
+                    "momentum_threshold": 0.85,
+                },
                 "SR_TOUCH": {"volatility_multiplier": 1.1, "momentum_threshold": 0.6},
                 "SR_BOUNCE": {"volatility_multiplier": 1.2, "momentum_threshold": 0.65},
                 "SR_BREAK": {"volatility_multiplier": 1.4, "momentum_threshold": 0.8},
-                "IGNITION_BAR": {"volatility_multiplier": 2.0, "momentum_threshold": 0.95},
+                "IGNITION_BAR": {
+                    "volatility_multiplier": 2.0,
+                    "momentum_threshold": 0.95,
+                },
             },
             "5m": {
-                "STRONG_TREND_CONTINUATION": {"volatility_multiplier": 1.3, "momentum_threshold": 0.75},
-                "EXHAUSTION_REVERSAL": {"volatility_multiplier": 1.25, "momentum_threshold": 0.55},
-                "RANGE_MEAN_REVERSION": {"volatility_multiplier": 0.95, "momentum_threshold": 0.5},
-                "BREAKOUT_SUCCESS": {"volatility_multiplier": 1.4, "momentum_threshold": 0.8},
-                "BREAKOUT_FAILURE": {"volatility_multiplier": 1.15, "momentum_threshold": 0.5},
-                "MOMENTUM_IGNITION": {"volatility_multiplier": 1.6, "momentum_threshold": 0.9},
-                "VOLATILITY_COMPRESSION": {"volatility_multiplier": 0.85, "momentum_threshold": 0.45},
-                "VOLATILITY_EXPANSION": {"volatility_multiplier": 1.5, "momentum_threshold": 0.8},
+                "STRONG_TREND_CONTINUATION": {
+                    "volatility_multiplier": 1.3,
+                    "momentum_threshold": 0.75,
+                },
+                "EXHAUSTION_REVERSAL": {
+                    "volatility_multiplier": 1.25,
+                    "momentum_threshold": 0.55,
+                },
+                "RANGE_MEAN_REVERSION": {
+                    "volatility_multiplier": 0.95,
+                    "momentum_threshold": 0.5,
+                },
+                "BREAKOUT_SUCCESS": {
+                    "volatility_multiplier": 1.4,
+                    "momentum_threshold": 0.8,
+                },
+                "BREAKOUT_FAILURE": {
+                    "volatility_multiplier": 1.15,
+                    "momentum_threshold": 0.5,
+                },
+                "MOMENTUM_IGNITION": {
+                    "volatility_multiplier": 1.6,
+                    "momentum_threshold": 0.9,
+                },
+                "VOLATILITY_COMPRESSION": {
+                    "volatility_multiplier": 0.85,
+                    "momentum_threshold": 0.45,
+                },
+                "VOLATILITY_EXPANSION": {
+                    "volatility_multiplier": 1.5,
+                    "momentum_threshold": 0.8,
+                },
                 "SR_TOUCH": {"volatility_multiplier": 1.05, "momentum_threshold": 0.55},
                 "SR_BOUNCE": {"volatility_multiplier": 1.1, "momentum_threshold": 0.6},
                 "SR_BREAK": {"volatility_multiplier": 1.3, "momentum_threshold": 0.75},
-                "IGNITION_BAR": {"volatility_multiplier": 1.8, "momentum_threshold": 0.9},
+                "IGNITION_BAR": {
+                    "volatility_multiplier": 1.8,
+                    "momentum_threshold": 0.9,
+                },
             },
             "15m": {
-                "STRONG_TREND_CONTINUATION": {"volatility_multiplier": 1.15, "momentum_threshold": 0.65},
-                "EXHAUSTION_REVERSAL": {"volatility_multiplier": 1.1, "momentum_threshold": 0.5},
-                "RANGE_MEAN_REVERSION": {"volatility_multiplier": 1.0, "momentum_threshold": 0.5},
-                "BREAKOUT_SUCCESS": {"volatility_multiplier": 1.25, "momentum_threshold": 0.7},
-                "BREAKOUT_FAILURE": {"volatility_multiplier": 1.05, "momentum_threshold": 0.5},
-                "MOMENTUM_IGNITION": {"volatility_multiplier": 1.5, "momentum_threshold": 0.85},
-                "VOLATILITY_COMPRESSION": {"volatility_multiplier": 0.9, "momentum_threshold": 0.5},
-                "VOLATILITY_EXPANSION": {"volatility_multiplier": 1.35, "momentum_threshold": 0.7},
+                "STRONG_TREND_CONTINUATION": {
+                    "volatility_multiplier": 1.15,
+                    "momentum_threshold": 0.65,
+                },
+                "EXHAUSTION_REVERSAL": {
+                    "volatility_multiplier": 1.1,
+                    "momentum_threshold": 0.5,
+                },
+                "RANGE_MEAN_REVERSION": {
+                    "volatility_multiplier": 1.0,
+                    "momentum_threshold": 0.5,
+                },
+                "BREAKOUT_SUCCESS": {
+                    "volatility_multiplier": 1.25,
+                    "momentum_threshold": 0.7,
+                },
+                "BREAKOUT_FAILURE": {
+                    "volatility_multiplier": 1.05,
+                    "momentum_threshold": 0.5,
+                },
+                "MOMENTUM_IGNITION": {
+                    "volatility_multiplier": 1.5,
+                    "momentum_threshold": 0.85,
+                },
+                "VOLATILITY_COMPRESSION": {
+                    "volatility_multiplier": 0.9,
+                    "momentum_threshold": 0.5,
+                },
+                "VOLATILITY_EXPANSION": {
+                    "volatility_multiplier": 1.35,
+                    "momentum_threshold": 0.7,
+                },
                 "SR_TOUCH": {"volatility_multiplier": 1.0, "momentum_threshold": 0.55},
                 "SR_BOUNCE": {"volatility_multiplier": 1.05, "momentum_threshold": 0.6},
                 "SR_BREAK": {"volatility_multiplier": 1.2, "momentum_threshold": 0.7},
-                "IGNITION_BAR": {"volatility_multiplier": 1.6, "momentum_threshold": 0.85},
+                "IGNITION_BAR": {
+                    "volatility_multiplier": 1.6,
+                    "momentum_threshold": 0.85,
+                },
             },
         }
 
@@ -525,9 +615,12 @@ class MultiTimeframeRegimeIntegration:
             "current_regime": self.current_regime,
             "regime_confidence": self.regime_confidence,
             "last_regime_update": self.last_regime_update,
-            "meta_label_system_initialized": getattr(self.meta_labeling_system, "is_initialized", False),
+            "meta_label_system_initialized": getattr(
+                self.meta_labeling_system, "is_initialized", False
+            ),
             "candidate_labels": self.candidate_labels,
             "strategic_timeframe": self.analysis_timeframe,
-            "regime_cache_duration_minutes": self.regime_cache_duration.total_seconds() / 60,
+            "regime_cache_duration_minutes": self.regime_cache_duration.total_seconds()
+            / 60,
             "regime_tpsl_optimizer_stats": self.regime_tpsl_optimizer.get_regime_statistics(),
         }

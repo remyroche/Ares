@@ -18,15 +18,19 @@ from src.utils.warning_symbols import (
 )
 from src.training.steps.unified_data_loader import get_unified_data_loader
 from src.utils.decorators import guard_dataframe_nulls
+from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 
 
 class TacticianSpecialistTrainingStep:
-    """Step 9: Tactician Specialist Models Training (LightGBM + Calibrated Logistic Regression)."""
+    """Step 9: Tactician Specialist Models Training with S/R Level Integration."""
 
     def __init__(self, config: dict[str, Any]):
         self.config = config
         self.logger = system_logger
         self.models = {}
+
+        # Initialize SRBreakoutPredictor for S/R level integration
+        self.sr_predictor = SRBreakoutPredictor(config)
 
     @handle_errors(
         exceptions=(Exception,),
@@ -36,9 +40,211 @@ class TacticianSpecialistTrainingStep:
     async def initialize(self) -> None:
         """Initialize the tactician specialist training step."""
         self.logger.info("Initializing Tactician Specialist Training Step...")
+
+        # Initialize SRBreakoutPredictor for S/R level integration
+        try:
+            sr_init_success = await self.sr_predictor.initialize()
+            if sr_init_success:
+                self.logger.info(
+                    "✅ SRBreakoutPredictor initialized for S/R level integration"
+                )
+            else:
+                self.logger.warning(
+                    "⚠️ Failed to initialize SRBreakoutPredictor, continuing without S/R analysis"
+                )
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error initializing SRBreakoutPredictor: {e}")
+
         self.logger.info(
             "Tactician Specialist Training Step initialized successfully",
         )
+
+    async def _enhance_training_data_with_sr_context(
+        self, labeled_data: pd.DataFrame, symbol: str, timeframe: str
+    ) -> pd.DataFrame:
+        """
+        Enhance training data with S/R context and outcome predictions using HMM-aware multi-timeframe analysis.
+
+        Args:
+            labeled_data: Original labeled training data
+            symbol: Trading symbol
+            timeframe: Timeframe (now supports multiple timeframes)
+
+        Returns:
+            pd.DataFrame: Enhanced training data with S/R features
+        """
+        try:
+            if labeled_data.empty:
+                return labeled_data
+
+            self.logger.info(
+                f"🔄 Enhancing training data with HMM-aware S/R context for {timeframe}..."
+            )
+
+            # Add S/R context features
+            enhanced_data = labeled_data.copy()
+
+            # Check if we have OHLCV data for S/R analysis
+            required_cols = ["open", "high", "low", "close", "volume"]
+            if not all(col in enhanced_data.columns for col in required_cols):
+                self.logger.warning(
+                    "⚠️ Missing OHLCV columns for S/R analysis, skipping enhancement"
+                )
+                return enhanced_data
+
+            # Adaptive sampling based on timeframe
+            # Longer timeframes need fewer samples due to lower frequency
+            timeframe_minutes = self._get_timeframe_minutes(timeframe)
+            sample_interval = max(1, len(enhanced_data) // (1000 // timeframe_minutes))
+            sample_indices = enhanced_data.index[::sample_interval]
+
+            sr_features = {
+                "sr_proximity": [],
+                "sr_outcome": [],
+                "sr_confidence": [],
+                "breakout_probability": [],
+                "rebounce_probability": [],
+                "consolidation_probability": [],
+                "hmm_regime_confidence": [],
+                "multi_timeframe_sr_score": [],
+            }
+
+            for idx in sample_indices:
+                try:
+                    row = enhanced_data.loc[idx]
+                    current_price = row["close"]
+
+                    # Adaptive market context based on timeframe
+                    # Longer timeframes need more historical context
+                    lookback_bars = min(200, max(50, timeframe_minutes * 2))
+                    market_slice = enhanced_data.loc[:idx].tail(lookback_bars)
+
+                    if len(market_slice) < 20:
+                        # Default values if insufficient data
+                        sr_features["sr_proximity"].append(0.0)
+                        sr_features["sr_outcome"].append("consolidation")
+                        sr_features["sr_confidence"].append(0.5)
+                        sr_features["breakout_probability"].append(0.33)
+                        sr_features["rebounce_probability"].append(0.33)
+                        sr_features["consolidation_probability"].append(0.34)
+                        sr_features["hmm_regime_confidence"].append(0.5)
+                        sr_features["multi_timeframe_sr_score"].append(0.5)
+                        continue
+
+                    # Get HMM-aware S/R context and outcome prediction
+                    sr_context = await self.sr_predictor.get_sr_context(
+                        market_slice, current_price
+                    )
+                    sr_outcome = await self.sr_predictor.predict_sr_outcome(
+                        market_slice, current_price, sr_context
+                    )
+
+                    # Extract HMM regime information if available
+                    hmm_confidence = 0.5
+                    if "composite_cluster_id" in row:
+                        # Use HMM cluster confidence
+                        hmm_confidence = row.get("composite_cluster_confidence", 0.5)
+                    elif "hmm_cluster_confidence" in row:
+                        hmm_confidence = row.get("hmm_cluster_confidence", 0.5)
+
+                    # Extract features
+                    is_near_sr = sr_outcome.get("is_near_sr_level", False)
+                    sr_features["sr_proximity"].append(1.0 if is_near_sr else 0.0)
+                    sr_features["sr_outcome"].append(
+                        sr_outcome.get("outcome", "consolidation")
+                    )
+                    sr_features["sr_confidence"].append(
+                        sr_outcome.get("confidence", 0.5)
+                    )
+
+                    probabilities = sr_outcome.get("probabilities", {})
+                    sr_features["breakout_probability"].append(
+                        probabilities.get("breakout", 0.33)
+                    )
+                    sr_features["rebounce_probability"].append(
+                        probabilities.get("rebounce", 0.33)
+                    )
+                    sr_features["consolidation_probability"].append(
+                        probabilities.get("consolidation", 0.34)
+                    )
+                    sr_features["hmm_regime_confidence"].append(hmm_confidence)
+
+                    # Multi-timeframe S/R score (combines S/R confidence with HMM regime confidence)
+                    sr_conf = sr_outcome.get("confidence", 0.5)
+                    multi_tf_score = sr_conf * 0.6 + hmm_confidence * 0.4
+                    sr_features["multi_timeframe_sr_score"].append(multi_tf_score)
+
+                except Exception as e:
+                    self.logger.debug(
+                        f"Error processing S/R features for index {idx}: {e}"
+                    )
+                    # Default values on error
+                    sr_features["sr_proximity"].append(0.0)
+                    sr_features["sr_outcome"].append("consolidation")
+                    sr_features["sr_confidence"].append(0.5)
+                    sr_features["breakout_probability"].append(0.33)
+                    sr_features["rebounce_probability"].append(0.33)
+                    sr_features["consolidation_probability"].append(0.34)
+                    sr_features["hmm_regime_confidence"].append(0.5)
+                    sr_features["multi_timeframe_sr_score"].append(0.5)
+
+            # Interpolate S/R features to all data points
+            for feature_name, values in sr_features.items():
+                if len(values) > 1:
+                    # Create series with sampled values
+                    feature_series = pd.Series(values, index=sample_indices)
+
+                    # Interpolate to all data points
+                    full_feature = (
+                        feature_series.reindex(enhanced_data.index)
+                        .interpolate(method="linear")
+                        .fillna(0.5)
+                    )
+                    enhanced_data[f"sr_{feature_name}"] = full_feature
+                else:
+                    # Use constant value if only one sample
+                    enhanced_data[f"sr_{feature_name}"] = values[0] if values else 0.5
+
+            # Enhanced sample weights using HMM regime information
+            enhanced_data["sr_sample_weight"] = (
+                enhanced_data["sr_proximity"] * 0.3
+                + enhanced_data["hmm_regime_confidence"] * 0.4
+                + 0.3
+            )
+
+            self.logger.info(
+                f"✅ Enhanced training data with HMM-aware S/R context for {timeframe}: {len(enhanced_data)} samples"
+            )
+            return enhanced_data
+
+        except Exception as e:
+            self.logger.error(
+                f"❌ Error enhancing training data with HMM-aware S/R context: {e}"
+            )
+            return labeled_data
+
+    def _get_timeframe_minutes(self, timeframe: str) -> int:
+        """
+        Convert timeframe string to minutes for adaptive processing.
+        Step9 only supports 1m and 5m timeframes.
+
+        Args:
+            timeframe: Timeframe string (only "1m" or "5m" supported)
+
+        Returns:
+            int: Number of minutes
+        """
+        timeframe = timeframe.lower()
+        if timeframe == "1m":
+            return 1
+        elif timeframe == "5m":
+            return 5
+        else:
+            # Default to 1 minute if unsupported timeframe
+            self.logger.warning(
+                f"Unsupported timeframe '{timeframe}' for Step9, defaulting to 1m"
+            )
+            return 1
 
     @handle_errors(
         exceptions=(Exception,),
@@ -77,7 +283,9 @@ class TacticianSpecialistTrainingStep:
                 f"{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.pkl"
             )
 
-            if os.path.exists(labeled_file_parquet) or os.path.exists(labeled_file_pickle):
+            if os.path.exists(labeled_file_parquet) or os.path.exists(
+                labeled_file_pickle
+            ):
                 if os.path.exists(labeled_file_parquet):
                     # Prefer dataset scan if labeled partition exists
                     try:
@@ -88,10 +296,18 @@ class TacticianSpecialistTrainingStep:
                         pdm = ParquetDatasetManager(logger=self.logger)
                         part_base = os.path.join(data_dir, "parquet", "labeled")
                         if os.path.isdir(part_base):
+                            # Validate timeframe for Step9 (only 1m and 5m supported)
+                            current_timeframe = training_input.get("timeframe", "1m")
+                            if current_timeframe not in ["1m", "5m"]:
+                                self.logger.warning(
+                                    f"Step9 only supports 1m and 5m timeframes, got: {current_timeframe}"
+                                )
+                                current_timeframe = "1m"  # Default to 1m
+
                             filters = [
                                 ("exchange", "==", exchange),
                                 ("symbol", "==", symbol),
-                                ("timeframe", "==", training_input.get("timeframe", "1m")),
+                                ("timeframe", "==", current_timeframe),
                                 ("split", "==", "train"),
                             ]
                             # Reader shortcut: prefer materialized projection if available
@@ -115,7 +331,7 @@ class TacticianSpecialistTrainingStep:
                                     (
                                         "timeframe",
                                         "==",
-                                        training_input.get("timeframe", "1m"),
+                                        current_timeframe,
                                     ),
                                     ("split", "==", "train"),
                                 ]
@@ -125,54 +341,82 @@ class TacticianSpecialistTrainingStep:
                                     filters=proj_filters,
                                     columns=cols,
                                     cache_dir="data_cache/projections",
-                                    cache_key_prefix=f"proj_features_{training_input.get('model_name','default')}_{exchange}_{symbol}_{training_input.get('timeframe','1m')}_train",
+                                    cache_key_prefix=f"proj_features_{training_input.get('model_name','default')}_{exchange}_{symbol}_{current_timeframe}_train",
                                     snapshot_version="v1",
                                     ttl_seconds=3600,
                                     batch_size=131072,
                                     arrow_transform=lambda tbl: (
-                                        (lambda _pa, pc: (
-                                            tbl.set_column(
-                                                tbl.schema.get_field_index("timestamp"),
-                                                "timestamp",
-                                                pc.cast(tbl.column("timestamp"), _pa.int64()),
+                                        (
+                                            lambda _pa, pc: (
+                                                tbl.set_column(
+                                                    tbl.schema.get_field_index(
+                                                        "timestamp"
+                                                    ),
+                                                    "timestamp",
+                                                    pc.cast(
+                                                        tbl.column("timestamp"),
+                                                        _pa.int64(),
+                                                    ),
+                                                )
+                                                if (
+                                                    "timestamp" in tbl.schema.names
+                                                    and not _pa.types.is_int64(
+                                                        tbl.schema.field(
+                                                            "timestamp"
+                                                        ).type
+                                                    )
+                                                )
+                                                else tbl
                                             )
-                                            if (
-                                                "timestamp" in tbl.schema.names
-                                                and not _pa.types.is_int64(tbl.schema.field("timestamp").type)
-                                            )
-                                            else tbl
-                                        ))(
+                                        )(
                                             __import__("pyarrow"),
                                             __import__("pyarrow.compute"),
                                         )
                                     ),
                                 )
                             else:
-                                cache_key = f"labeled_{exchange}_{symbol}_{training_input.get('timeframe','1m')}_train"
+                                cache_key = f"labeled_{exchange}_{symbol}_{current_timeframe}_train"
+                                cols = ["timestamp", *feat_cols, label_col]
                                 from src.utils.logger import heartbeat
-                                with heartbeat(self.logger, name="Step9 load_labeled_projection", interval_seconds=60.0):
+
+                                with heartbeat(
+                                    self.logger,
+                                    name="Step9 load_labeled_projection",
+                                    interval_seconds=60.0,
+                                ):
                                     labeled_data = pdm.cached_projection(
                                         base_dir=part_base,
                                         filters=filters,
-                                        columns=[],
+                                        columns=cols,
                                         cache_dir="data_cache/projections",
                                         cache_key_prefix=cache_key,
                                         snapshot_version="v1",
                                         ttl_seconds=3600,
                                         batch_size=131072,
                                         arrow_transform=lambda tbl: (
-                                            (lambda _pa, pc: (
-                                                tbl.set_column(
-                                                    tbl.schema.get_field_index("timestamp"),
-                                                    "timestamp",
-                                                    pc.cast(tbl.column("timestamp"), _pa.int64()),
+                                            (
+                                                lambda _pa, pc: (
+                                                    tbl.set_column(
+                                                        tbl.schema.get_field_index(
+                                                            "timestamp"
+                                                        ),
+                                                        "timestamp",
+                                                        pc.cast(
+                                                            tbl.column("timestamp"),
+                                                            _pa.int64(),
+                                                        ),
+                                                    )
+                                                    if (
+                                                        "timestamp" in tbl.schema.names
+                                                        and not _pa.types.is_int64(
+                                                            tbl.schema.field(
+                                                                "timestamp"
+                                                            ).type
+                                                        )
+                                                    )
+                                                    else tbl
                                                 )
-                                                if (
-                                                    "timestamp" in tbl.schema.names
-                                                    and not _pa.types.is_int64(tbl.schema.field("timestamp").type)
-                                                )
-                                                else tbl
-                                            ))(
+                                            )(
                                                 __import__("pyarrow"),
                                                 __import__("pyarrow.compute"),
                                             )
@@ -198,13 +442,21 @@ class TacticianSpecialistTrainingStep:
                                     ):
                                         labeled_data = pd.read_parquet(
                                             labeled_file_parquet,
-                                            columns=["timestamp", *feat_cols, label_col],
+                                            columns=[
+                                                "timestamp",
+                                                *feat_cols,
+                                                label_col,
+                                            ],
                                         )
                                 else:
                                     with log_io_operation(
-                                        self.logger, "read_parquet", labeled_file_parquet
+                                        self.logger,
+                                        "read_parquet",
+                                        labeled_file_parquet,
                                     ):
-                                        labeled_data = pd.read_parquet(labeled_file_parquet)
+                                        labeled_data = pd.read_parquet(
+                                            labeled_file_parquet
+                                        )
                                 try:
                                     log_dataframe_overview(
                                         self.logger, labeled_data, name="labeled_data"
@@ -261,20 +513,30 @@ class TacticianSpecialistTrainingStep:
             # Integrate engineered features from Step 3 if available
             try:
                 feat_dir = data_dir
-                feat_train = os.path.join(feat_dir, f"{exchange}_{symbol}_features_train.pkl")
-                feat_val = os.path.join(feat_dir, f"{exchange}_{symbol}_features_validation.pkl")
-                feat_test = os.path.join(feat_dir, f"{exchange}_{symbol}_features_test.pkl")
+                feat_train = os.path.join(
+                    feat_dir, f"{exchange}_{symbol}_features_train.pkl"
+                )
+                feat_val = os.path.join(
+                    feat_dir, f"{exchange}_{symbol}_features_validation.pkl"
+                )
+                feat_test = os.path.join(
+                    feat_dir, f"{exchange}_{symbol}_features_test.pkl"
+                )
                 # Choose appropriate split by inferring from labeled_data
                 if isinstance(labeled_data, pd.DataFrame) and not labeled_data.empty:
                     # Align by timestamp if present; else index length heuristic
                     feat_path = None
                     if "split" in labeled_data.columns:
                         split_name = str(labeled_data["split"].mode().iloc[0]).lower()
-                        if split_name.startswith("train") and os.path.exists(feat_train):
+                        if split_name.startswith("train") and os.path.exists(
+                            feat_train
+                        ):
                             feat_path = feat_train
                         elif split_name.startswith("val") and os.path.exists(feat_val):
                             feat_path = feat_val
-                        elif split_name.startswith("test") and os.path.exists(feat_test):
+                        elif split_name.startswith("test") and os.path.exists(
+                            feat_test
+                        ):
                             feat_path = feat_test
                     if feat_path is None:
                         # default to train features for augmentation when unknown
@@ -284,9 +546,19 @@ class TacticianSpecialistTrainingStep:
                             feat_df = pickle.load(f)
                         if isinstance(feat_df, pd.DataFrame) and not feat_df.empty:
                             # Drop any raw OHLCV in features to avoid duplication
-                            feat_df = feat_df.drop(columns=[c for c in ["open","high","low","close","volume"] if c in feat_df.columns], errors="ignore")
+                            feat_df = feat_df.drop(
+                                columns=[
+                                    c
+                                    for c in ["open", "high", "low", "close", "volume"]
+                                    if c in feat_df.columns
+                                ],
+                                errors="ignore",
+                            )
                             # Align on timestamp when available
-                            if "timestamp" in labeled_data.columns and "timestamp" in feat_df.columns:
+                            if (
+                                "timestamp" in labeled_data.columns
+                                and "timestamp" in feat_df.columns
+                            ):
                                 merged = labeled_data.merge(
                                     feat_df, on="timestamp", how="left"
                                 )
@@ -299,29 +571,74 @@ class TacticianSpecialistTrainingStep:
                                 f"✅ Augmented tactician labeled data with engineered features: +{feat_df.shape[1]} cols"
                             )
             except Exception as _afe:
-                self.logger.warning(f"Unable to augment tactician data with engineered features: {_afe}")
+                self.logger.warning(
+                    f"Unable to augment tactician data with engineered features: {_afe}"
+                )
 
             # Convert to DataFrame if needed
             if not isinstance(labeled_data, pd.DataFrame):
                 labeled_data = pd.DataFrame(labeled_data)
 
-            # Merge 1m meta-labels from Step 2/4 if present (columns like '1m_<LABEL>')
+            # Merge HMM cluster information and timeframe-specific labels
             try:
-                step4_train = f"{data_dir}/{exchange}_{symbol}_labeled_train.pkl"
-                if os.path.exists(step4_train):
-                    with open(step4_train, "rb") as f:
-                        step4_df = pickle.load(f)
-                    one_m_cols = [c for c in getattr(step4_df, 'columns', []) if isinstance(c, str) and c.startswith('1m_')]
-                    if one_m_cols and 'timestamp' in step4_df.columns:
-                        # Ensure timestamp present in labeled_data for join
-                        if 'timestamp' not in labeled_data.columns and isinstance(labeled_data.index, pd.DatetimeIndex):
-                            labeled_data = labeled_data.copy()
-                            labeled_data['timestamp'] = labeled_data.index
-                        if 'timestamp' in labeled_data.columns:
-                            labeled_data = labeled_data.merge(step4_df[['timestamp', *one_m_cols]], on='timestamp', how='left')
-                            self.logger.info(f"Merged {len(one_m_cols)} 1m meta-label columns into tactician dataset")
+                # Try to load HMM composite data for the current timeframe
+                current_timeframe = training_input.get("timeframe", "1m")
+                if current_timeframe not in ["1m", "5m"]:
+                    self.logger.warning(
+                        f"Step9 only supports 1m and 5m timeframes, got: {current_timeframe}"
+                    )
+                    current_timeframe = "1m"  # Default to 1m
+
+                # Load HMM composite data for the current timeframe
+                hmm_data_path = f"{data_dir}/{exchange}_{symbol}_hmm_composite_clusters_{current_timeframe}.parquet"
+                if os.path.exists(hmm_data_path):
+                    hmm_data = pd.read_parquet(hmm_data_path)
+
+                    # Merge HMM cluster information
+                    if (
+                        "timestamp" in hmm_data.columns
+                        and "timestamp" in labeled_data.columns
+                    ):
+                        hmm_cols = [
+                            c
+                            for c in hmm_data.columns
+                            if c.startswith(("composite_cluster", "hmm_"))
+                        ]
+                        if hmm_cols:
+                            labeled_data = labeled_data.merge(
+                                hmm_data[["timestamp", *hmm_cols]],
+                                on="timestamp",
+                                how="left",
+                            )
+                            self.logger.info(
+                                f"Merged {len(hmm_cols)} HMM cluster columns for {current_timeframe}"
+                            )
+
+                # Also try to merge 1m meta-labels if available (for 1m timeframe)
+                if current_timeframe == "1m":
+                    step4_train = f"{data_dir}/{exchange}_{symbol}_labeled_train.pkl"
+                    if os.path.exists(step4_train):
+                        with open(step4_train, "rb") as f:
+                            step4_df = pickle.load(f)
+                        one_m_cols = [
+                            c
+                            for c in getattr(step4_df, "columns", [])
+                            if isinstance(c, str) and c.startswith("1m_")
+                        ]
+                        if one_m_cols and "timestamp" in step4_df.columns:
+                            if "timestamp" in labeled_data.columns:
+                                labeled_data = labeled_data.merge(
+                                    step4_df[["timestamp", *one_m_cols]],
+                                    on="timestamp",
+                                    how="left",
+                                )
+                                self.logger.info(
+                                    f"Merged {len(one_m_cols)} 1m meta-label columns into tactician dataset"
+                                )
             except Exception as _merr:
-                self.logger.warning(f"Skipping 1m meta-label merge: {_merr}")
+                self.logger.warning(
+                    f"Skipping HMM cluster and meta-label merge: {_merr}"
+                )
 
             try:
                 shape = getattr(labeled_data, "shape", None)
@@ -339,10 +656,10 @@ class TacticianSpecialistTrainingStep:
             # Use labeled_data downstream
             # Mandatory: augment features with SR model signals
             try:
-                # Load SR models
-                sr_models_dir = os.path.join(data_dir, "enhanced_analyst_models", "SR")
+                # Load SR models from HMM-based training
+                sr_models_dir = os.path.join(data_dir, "enhanced_hmm_models", "SR")
                 if not os.path.isdir(sr_models_dir):
-                    sr_models_dir = os.path.join(data_dir, "analyst_models", "SR")
+                    sr_models_dir = os.path.join(data_dir, "hmm_models", "SR")
                 sr_models: dict[str, Any] = {}
                 if os.path.isdir(sr_models_dir):
                     for mf in os.listdir(sr_models_dir):
@@ -351,29 +668,51 @@ class TacticianSpecialistTrainingStep:
                             try:
                                 if mf.endswith(".joblib"):
                                     import joblib
-                                    sr_models[mf.replace(".joblib", "")] = joblib.load(mp)
+
+                                    sr_models[mf.replace(".joblib", "")] = joblib.load(
+                                        mp
+                                    )
                                 else:
                                     with open(mp, "rb") as f:
-                                        sr_models[mf.replace(".pkl", "")] = pickle.load(f)
+                                        sr_models[mf.replace(".pkl", "")] = pickle.load(
+                                            f
+                                        )
                             except Exception:
                                 continue
                 # Compute SR predictions as features
                 if sr_models:
+
                     def _ensure_numeric(df: pd.DataFrame) -> pd.DataFrame:
                         obj_cols = df.select_dtypes(include=["object"]).columns.tolist()
                         if obj_cols:
                             df = df.drop(columns=obj_cols)
-                        dt_cols = df.select_dtypes(include=["datetime", "datetime64", "datetime64[ns]"]).columns.tolist()
+                        dt_cols = df.select_dtypes(
+                            include=["datetime", "datetime64", "datetime64[ns]"]
+                        ).columns.tolist()
                         if dt_cols:
                             df = df.drop(columns=dt_cols)
                         return df
+
                     # Decorate post-definition to preserve closure
-                    _ensure_numeric = guard_dataframe_nulls(mode="warn", arg_index=0)(_ensure_numeric)
-                    X_all = _ensure_numeric(labeled_data.drop(columns=[c for c in ["label"] if c in labeled_data.columns], errors="ignore")).select_dtypes(include=[np.number])
+                    _ensure_numeric = guard_dataframe_nulls(mode="warn", arg_index=0)(
+                        _ensure_numeric
+                    )
+                    X_all = _ensure_numeric(
+                        labeled_data.drop(
+                            columns=[c for c in ["label"] if c in labeled_data.columns],
+                            errors="ignore",
+                        )
+                    ).select_dtypes(include=[np.number])
                     for name, model in sr_models.items():
                         try:
                             # Some models may require matching columns; use intersection
-                            cols = [c for c in getattr(model, "feature_names_in_", X_all.columns) if c in X_all.columns]
+                            cols = [
+                                c
+                                for c in getattr(
+                                    model, "feature_names_in_", X_all.columns
+                                )
+                                if c in X_all.columns
+                            ]
                             if not cols:
                                 continue
                             proba = model.predict_proba(X_all[cols])
@@ -384,15 +723,21 @@ class TacticianSpecialistTrainingStep:
                                 labeled_data[f"sr_sig_{name}_p1"] = proba.reshape(-1)
                         except Exception:
                             continue
-                    self.logger.info(f"✅ Augmented tactician features with {len(sr_models)} SR model signals")
+                    self.logger.info(
+                        f"✅ Augmented tactician features with {len(sr_models)} SR model signals"
+                    )
                 else:
-                    self.logger.warning("No SR models found; tactician SR augmentation skipped")
+                    self.logger.warning(
+                        "No SR models found; tactician SR augmentation skipped"
+                    )
             except Exception as _e:
                 self.logger.warning(f"Tactician SR signal augmentation failed: {_e}")
 
             # Optionally drop raw S/R features to reduce redundancy (keep SR signals)
             try:
-                drop_raw_sr = bool(self.config.get("tactician", {}).get("drop_raw_sr_features", False))
+                drop_raw_sr = bool(
+                    self.config.get("tactician", {}).get("drop_raw_sr_features", False)
+                )
                 if drop_raw_sr:
                     sr_raw_cols = [
                         "dist_to_support_pct",
@@ -416,13 +761,44 @@ class TacticianSpecialistTrainingStep:
                     present = [c for c in sr_raw_cols if c in labeled_data.columns]
                     if present:
                         labeled_data = labeled_data.drop(columns=present)
-                        self.logger.info(f"🔧 Dropped raw SR features from tactician training: {present}")
+                        self.logger.info(
+                            f"🔧 Dropped raw SR features from tactician training: {present}"
+                        )
             except Exception as _ed:
                 self.logger.warning(f"Unable to drop raw SR features: {_ed}")
 
+            # Enhance training data with HMM-aware S/R context and outcome predictions
+            try:
+                # Validate timeframe for Step9 (only 1m and 5m supported)
+                current_timeframe = training_input.get("timeframe", "1m")
+                if current_timeframe not in ["1m", "5m"]:
+                    self.logger.warning(
+                        f"Step9 only supports 1m and 5m timeframes, got: {current_timeframe}"
+                    )
+                    current_timeframe = "1m"  # Default to 1m
+
+                enhanced_labeled_data = (
+                    await self._enhance_training_data_with_sr_context(
+                        labeled_data,
+                        symbol,
+                        current_timeframe,
+                    )
+                )
+                labeled_data = enhanced_labeled_data
+                self.logger.info(
+                    f"✅ Enhanced tactician labeled data with HMM-aware S/R context for {current_timeframe}: {len(labeled_data)} samples"
+                )
+            except Exception as _e:
+                self.logger.warning(
+                    f"Failed to enhance training data with HMM-aware S/R context: {_e}"
+                )
+
             # Train tactician specialist models
             from src.utils.logger import heartbeat
-            with heartbeat(self.logger, name="Step9 train_tactician_models", interval_seconds=60.0):
+
+            with heartbeat(
+                self.logger, name="Step9 train_tactician_models", interval_seconds=60.0
+            ):
                 training_results = await self._train_tactician_models(
                     labeled_data,
                     training_input,
@@ -731,7 +1107,7 @@ class TacticianSpecialistTrainingStep:
 
             # Calibrate the model
             calibrated_model = CalibratedClassifierCV(
-                base_estimator=base_model,
+                estimator=base_model,
                 cv=5,
                 method="isotonic",
             )
@@ -786,13 +1162,23 @@ class TacticianSpecialistTrainingStep:
 
                 def _objective(trial: optuna.Trial) -> float:
                     params = dict(
-                        n_estimators=trial.suggest_int("n_estimators", 100, 600, step=100),
+                        n_estimators=trial.suggest_int(
+                            "n_estimators", 100, 600, step=100
+                        ),
                         max_depth=trial.suggest_int("max_depth", 3, 8),
-                        learning_rate=trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
+                        learning_rate=trial.suggest_float(
+                            "learning_rate", 0.01, 0.2, log=True
+                        ),
                         subsample=trial.suggest_float("subsample", 0.6, 1.0),
-                        colsample_bytree=trial.suggest_float("colsample_bytree", 0.6, 1.0),
-                        reg_alpha=trial.suggest_float("reg_alpha", 1e-8, 1e-1, log=True),
-                        reg_lambda=trial.suggest_float("reg_lambda", 1e-8, 1e-1, log=True),
+                        colsample_bytree=trial.suggest_float(
+                            "colsample_bytree", 0.6, 1.0
+                        ),
+                        reg_alpha=trial.suggest_float(
+                            "reg_alpha", 1e-8, 1e-1, log=True
+                        ),
+                        reg_lambda=trial.suggest_float(
+                            "reg_lambda", 1e-8, 1e-1, log=True
+                        ),
                     )
                     model = xgb.XGBClassifier(
                         **params,
@@ -802,7 +1188,11 @@ class TacticianSpecialistTrainingStep:
                         verbosity=0,
                     )
                     # Time-aware CV with purged/embargoed folds and financial surrogate
-                    cv = PurgedKFoldTime(n_splits=3, purge=pd.Timedelta(minutes=15), embargo=pd.Timedelta(minutes=10))
+                    cv = PurgedKFoldTime(
+                        n_splits=3,
+                        purge=pd.Timedelta(minutes=15),
+                        embargo=pd.Timedelta(minutes=10),
+                    )
                     scores = []
                     for tr_idx, va_idx in cv.split(X_train):
                         Xs, Xv = X_train.iloc[tr_idx], X_train.iloc[va_idx]
@@ -865,7 +1255,7 @@ class TacticianSpecialistTrainingStep:
 
             # Train with validation set
             eval_set = [(X_test, y_test)]
-            model.fit(X_train, y_train, eval_set=eval_set, verbose=False)
+            model.fit(X_train, y_train, eval_set=eval_set)
 
             # Evaluate model
             y_pred = model.predict(X_test)
@@ -910,14 +1300,20 @@ class TacticianSpecialistTrainingStep:
             def _objective(trial: optuna.Trial) -> float:
                 params = dict(
                     iterations=trial.suggest_int("iterations", 200, 800, step=100),
-                    learning_rate=trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
+                    learning_rate=trial.suggest_float(
+                        "learning_rate", 0.01, 0.2, log=True
+                    ),
                     depth=trial.suggest_int("depth", 4, 10),
                     l2_leaf_reg=trial.suggest_float("l2_leaf_reg", 1.0, 10.0),
                     random_seed=42,
                     verbose=False,
                 )
                 model = CatBoostClassifier(**params)
-                cv = PurgedKFoldTime(n_splits=3, purge=pd.Timedelta(minutes=15), embargo=pd.Timedelta(minutes=10))
+                cv = PurgedKFoldTime(
+                    n_splits=3,
+                    purge=pd.Timedelta(minutes=15),
+                    embargo=pd.Timedelta(minutes=10),
+                )
                 scores = []
                 for tr_idx, va_idx in cv.split(X_train):
                     Xs, Xv = X_train.iloc[tr_idx], X_train.iloc[va_idx]
@@ -936,7 +1332,9 @@ class TacticianSpecialistTrainingStep:
             acc = accuracy_score(y_test, y_pred)
             feature_importance = {}
             try:
-                feature_importance = dict(zip(X_train.columns, model.get_feature_importance(), strict=False))
+                feature_importance = dict(
+                    zip(X_train.columns, model.get_feature_importance(), strict=False)
+                )
             except Exception:
                 pass
             return {
@@ -1009,7 +1407,91 @@ class TacticianSpecialistTrainingStep:
             raise
 
 
+# Import training pipeline decorators for comprehensive security and troubleshooting
+from src.utils.training_pipeline_decorators import (
+    validate_step_prerequisites,
+    secure_data_processing,
+    prevent_data_leakage,
+    resource_monitor,
+    memory_efficient,
+    debug_training_step,
+    circuit_breaker_protection,
+    validate_step_output,
+    quality_gate,
+    deterministic_seed,
+    idempotent_step,
+    artifact_write_lock,
+    nan_inf_and_constant_guard,
+    artifact_versioning,
+    time_budget_watchdog,
+)
+
+
 # For backward compatibility with existing step structure
+@deterministic_seed(42)
+@idempotent_step(step_key="step9_tactician_specialist_training")
+@artifact_write_lock()
+@nan_inf_and_constant_guard()
+@artifact_versioning("1.0")
+@time_budget_watchdog(soft_timeout_seconds=5400.0)
+@validate_step_prerequisites(
+    required_directories=["data/training", "models"],
+    min_memory_gb=8.0,
+    min_disk_gb=5.0,
+    required_packages=["pandas", "numpy", "sklearn", "lightgbm", "catboost"],
+    data_quality_checks={
+        "min_rows": 1000,
+        "required_columns": ["timestamp", "features", "targets"],
+    },
+    context="Tactician Specialist Training",
+)
+@secure_data_processing(
+    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True
+)
+@prevent_data_leakage(
+    temporal_validation=True,
+    feature_leakage_detection=True,
+    cross_validation_isolation=True,
+    lookahead_bias_prevention=True,
+)
+@resource_monitor(
+    memory_threshold_gb=16.0,
+    cpu_threshold_percent=90.0,
+    disk_threshold_gb=10.0,
+    monitor_interval=60.0,
+    auto_cleanup=True,
+)
+@memory_efficient(
+    chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=25
+)
+@debug_training_step(
+    log_intermediate_results=True,
+    save_debug_artifacts=True,
+    performance_profiling=True,
+    error_context_preservation=True,
+)
+@circuit_breaker_protection(
+    failure_threshold=3,
+    recovery_timeout=300.0,
+    expected_exception=Exception,
+    monitor_interval=60.0,
+)
+@validate_step_output(
+    required_files=["models/{exchange}_{symbol}_tactician_specialist.pkl"],
+    data_quality_checks={
+        "min_rows": 100,
+        "required_columns": ["predictions", "probabilities"],
+    },
+    performance_thresholds={"training_time_minutes": 120.0, "memory_usage_gb": 8.0},
+    format_validation=True,
+)
+@quality_gate(
+    model_performance_thresholds={"accuracy": 0.6, "f1_score": 0.5},
+    data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
+    convergence_checks=True,
+    overfitting_detection=True,
+    validation_score_requirements={"cross_validation_score": 0.6},
+)
 async def run_step(
     symbol: str,
     exchange: str = "BINANCE",

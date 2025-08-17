@@ -42,7 +42,11 @@ class MultiTaskRandomForest:
     def __init__(self, config: dict[str, Any], horizons: List[int]) -> None:
         self.logger = system_logger.getChild("MultiTaskRandomForest")
         tm = (config or {}).get("TRANSITION_MODELING", {})
-        mt = tm.get("multitask_rf", {}) if isinstance(tm.get("multitask_rf", {}), dict) else {}
+        mt = (
+            tm.get("multitask_rf", {})
+            if isinstance(tm.get("multitask_rf", {}), dict)
+            else {}
+        )
         self.cfg = MTRFConfig(
             enabled=bool(mt.get("enabled", True)),
             n_estimators=int(mt.get("n_estimators", 400)),
@@ -68,7 +72,9 @@ class MultiTaskRandomForest:
 
     def _cap(self, X: pd.DataFrame, y: pd.Series) -> Tuple[pd.DataFrame, pd.Series]:
         if len(X) > self.cfg.max_train_samples:
-            return X.iloc[-self.cfg.max_train_samples :], y.iloc[-self.cfg.max_train_samples :]
+            return X.iloc[-self.cfg.max_train_samples :], y.iloc[
+                -self.cfg.max_train_samples :
+            ]
         return X, y
 
     def _best_f1_threshold(self, y_true: np.ndarray, y_score: np.ndarray) -> float:
@@ -99,9 +105,12 @@ class MultiTaskRandomForest:
         # 1) Path class (multiclass)
         y_pc = pd.Series([str(s.get("path_class", "end_of_trend")) for s in samples])
         X_pc, y_pc = self._cap(X, y_pc)
-        Xtr, Xva, ytr, yva = train_test_split(
-            X_pc, y_pc, test_size=0.2, random_state=self.cfg.random_state, shuffle=False
-        )
+        # FIXED: Use time-based split to prevent lookahead bias
+        split_idx = int(len(X_pc) * 0.8)
+        Xtr = X_pc.iloc[:split_idx]
+        Xva = X_pc.iloc[split_idx:]
+        ytr = y_pc.iloc[:split_idx]
+        yva = y_pc.iloc[split_idx:]
         pc_model = RandomForestClassifier(
             n_estimators=self.cfg.n_estimators,
             max_depth=self.cfg.max_depth,
@@ -114,7 +123,9 @@ class MultiTaskRandomForest:
         # Eval
         pc_pred = pc_model.predict(Xva)
         results["path_class"] = {
-            "report": classification_report(yva, pc_pred, output_dict=True, zero_division=0),
+            "report": classification_report(
+                yva, pc_pred, output_dict=True, zero_division=0
+            ),
             "classes": list(pc_model.classes_),
         }
         # Reliability + thresholds per class (one-vs-rest)
@@ -142,9 +153,12 @@ class MultiTaskRandomForest:
             if y.nunique() < 2:
                 continue
             Xh, yh = self._cap(X, y)
-            Xtr, Xva, ytr, yva = train_test_split(
-                Xh, yh, test_size=0.2, random_state=self.cfg.random_state, shuffle=False
-            )
+            # FIXED: Use time-based split to prevent lookahead bias
+            split_idx = int(len(Xh) * 0.8)
+            Xtr = Xh.iloc[:split_idx]
+            Xva = Xh.iloc[split_idx:]
+            ytr = yh.iloc[:split_idx]
+            yva = yh.iloc[split_idx:]
             clf = RandomForestClassifier(
                 n_estimators=self.cfg.n_estimators,
                 max_depth=self.cfg.max_depth,
@@ -155,13 +169,21 @@ class MultiTaskRandomForest:
             clf.fit(Xtr, ytr)
             self.models[head] = clf
             y_pred = clf.predict(Xva)
-            results[head] = {"report": classification_report(yva, y_pred, output_dict=True, zero_division=0)}
+            results[head] = {
+                "report": classification_report(
+                    yva, y_pred, output_dict=True, zero_division=0
+                )
+            }
             try:
                 p1 = clf.predict_proba(Xva)[:, 1]
                 mean_p = float(np.clip(np.mean(p1), 1e-6, 1.0))
                 mean_y = float(np.mean(yva.values))
-                reliability[head] = {"positive_scale": float(np.clip(mean_y / mean_p, 0.5, 1.5))}
-                thresholds[head] = float(self._best_f1_threshold(yva.values.astype(int), p1))
+                reliability[head] = {
+                    "positive_scale": float(np.clip(mean_y / mean_p, 0.5, 1.5))
+                }
+                thresholds[head] = float(
+                    self._best_f1_threshold(yva.values.astype(int), p1)
+                )
             except Exception:
                 pass
 
@@ -171,10 +193,15 @@ class MultiTaskRandomForest:
             for s in samples:
                 y_states = s.get("Y_post_states")
                 if isinstance(y_states, pd.DataFrame) and "regime" in y_states.columns:
-                    vals = [str(v) for v in y_states["regime"].tolist() if isinstance(v, (str, int))]
+                    vals = [
+                        str(v)
+                        for v in y_states["regime"].tolist()
+                        if isinstance(v, (str, int))
+                    ]
                     if vals:
                         # majority label
                         from collections import Counter
+
                         regimes.append(Counter(vals).most_common(1)[0][0])
                     else:
                         regimes.append("SIDEWAYS")
@@ -183,9 +210,12 @@ class MultiTaskRandomForest:
             y_nr = pd.Series(regimes)
             if y_nr.nunique() >= 2:
                 X_nr, y_nr = self._cap(X, y_nr)
-                Xtr, Xva, ytr, yva = train_test_split(
-                    X_nr, y_nr, test_size=0.2, random_state=self.cfg.random_state, shuffle=False
-                )
+                # FIXED: Use time-based split to prevent lookahead bias
+                split_idx = int(len(X_nr) * 0.8)
+                Xtr = X_nr.iloc[:split_idx]
+                Xva = X_nr.iloc[split_idx:]
+                ytr = y_nr.iloc[:split_idx]
+                yva = y_nr.iloc[split_idx:]
                 nr_model = RandomForestClassifier(
                     n_estimators=self.cfg.n_estimators,
                     max_depth=self.cfg.max_depth,
@@ -196,7 +226,9 @@ class MultiTaskRandomForest:
                 nr_model.fit(Xtr, ytr)
                 self.models["next_regime"] = nr_model
                 results["next_regime"] = {
-                    "report": classification_report(yva, nr_model.predict(Xva), output_dict=True, zero_division=0),
+                    "report": classification_report(
+                        yva, nr_model.predict(Xva), output_dict=True, zero_division=0
+                    ),
                     "classes": list(nr_model.classes_),
                 }
                 # thresholds are not used for multiclass here; reliability scale
@@ -224,9 +256,12 @@ class MultiTaskRandomForest:
             if y.nunique() < 2:
                 continue
             Xh, yh = self._cap(X, y)
-            Xtr, Xva, ytr, yva = train_test_split(
-                Xh, yh, test_size=0.2, random_state=self.cfg.random_state, shuffle=False
-            )
+            # FIXED: Use time-based split to prevent lookahead bias
+            split_idx = int(len(Xh) * 0.8)
+            Xtr = Xh.iloc[:split_idx]
+            Xva = Xh.iloc[split_idx:]
+            ytr = yh.iloc[:split_idx]
+            yva = yh.iloc[split_idx:]
             clf = RandomForestClassifier(
                 n_estimators=self.cfg.n_estimators,
                 max_depth=self.cfg.max_depth,
@@ -237,13 +272,21 @@ class MultiTaskRandomForest:
             clf.fit(Xtr, ytr)
             self.models[head] = clf
             y_pred = clf.predict(Xva)
-            results[head] = {"report": classification_report(yva, y_pred, output_dict=True, zero_division=0)}
+            results[head] = {
+                "report": classification_report(
+                    yva, y_pred, output_dict=True, zero_division=0
+                )
+            }
             try:
                 p1 = clf.predict_proba(Xva)[:, 1]
                 mean_p = float(np.clip(np.mean(p1), 1e-6, 1.0))
                 mean_y = float(np.mean(yva.values))
-                reliability[head] = {"positive_scale": float(np.clip(mean_y / mean_p, 0.5, 1.5))}
-                thresholds[head] = float(self._best_f1_threshold(yva.values.astype(int), p1))
+                reliability[head] = {
+                    "positive_scale": float(np.clip(mean_y / mean_p, 0.5, 1.5))
+                }
+                thresholds[head] = float(
+                    self._best_f1_threshold(yva.values.astype(int), p1)
+                )
             except Exception:
                 pass
 
@@ -255,7 +298,12 @@ class MultiTaskRandomForest:
                 if y.empty:
                     continue
                 Xh, yh = self._cap(X, y)
-                Xtr, Xva, ytr, yva = train_test_split(Xh, yh, test_size=0.2, random_state=self.cfg.random_state, shuffle=False)
+                # FIXED: Use time-based split to prevent lookahead bias
+                split_idx = int(len(Xh) * 0.8)
+                Xtr = Xh.iloc[:split_idx]
+                Xva = Xh.iloc[split_idx:]
+                ytr = yh.iloc[:split_idx]
+                yva = yh.iloc[split_idx:]
                 reg = RandomForestRegressor(
                     n_estimators=max(200, self.cfg.n_estimators // 2),
                     max_depth=self.cfg.max_depth,
@@ -305,10 +353,15 @@ class MultiTaskRandomForest:
                 json.dump(self.reliability_, f, indent=2)
         except Exception as e:
             self.logger.warning(f"Failed to save reliability: {e}")
-        return {"models": saved, "meta_path": os.path.join(models_dir, f"{prefix}_meta.json")}
+        return {
+            "models": saved,
+            "meta_path": os.path.join(models_dir, f"{prefix}_meta.json"),
+        }
 
     @staticmethod
-    def load(models_dir: str, prefix: str = "rolling_mtrf") -> tuple[Dict[str, Any], Dict[str, Any], List[str]]:
+    def load(
+        models_dir: str, prefix: str = "rolling_mtrf"
+    ) -> tuple[Dict[str, Any], Dict[str, Any], List[str]]:
         models: Dict[str, Any] = {}
         # Load models
         for fname in os.listdir(models_dir):
@@ -340,7 +393,11 @@ class MultiTaskRandomForest:
                 feature_names = list(meta.get("feature_names", []))
         except Exception:
             pass
-        return models, {"thresholds": thresholds, "reliability": reliability}, feature_names
+        return (
+            models,
+            {"thresholds": thresholds, "reliability": reliability},
+            feature_names,
+        )
 
     def predict(self, X: pd.DataFrame) -> Dict[str, Any]:
         out: Dict[str, Any] = {}
@@ -349,10 +406,14 @@ class MultiTaskRandomForest:
                 if hasattr(model, "predict_proba"):
                     proba = model.predict_proba(X)
                     classes = getattr(model, "classes_", [])
-                    out[name] = {str(c): proba[:, i].tolist() for i, c in enumerate(classes)}
+                    out[name] = {
+                        str(c): proba[:, i].tolist() for i, c in enumerate(classes)
+                    }
                 else:
                     out[name] = model.predict(X).tolist()
             except Exception as e:
-                self.logger.warning(f"Prediction failed for model '{name}': {e}", exc_info=True)
+                self.logger.warning(
+                    f"Prediction failed for model '{name}': {e}", exc_info=True
+                )
                 out[name] = []
         return out

@@ -99,25 +99,40 @@ class RegimePredictiveEnsembles:
             f"Orchestrator: Starting training for all ensembles for asset {asset} (prefix: {model_path_prefix})...",
         )
 
-        if (
-            "Market_Regime_Label" not in prepared_data.columns
-            or "target" not in prepared_data.columns
-        ):
+        # HMM COMPOSITE CLUSTERS ONLY - NO FALLBACKS
+        if "composite_cluster_id" in prepared_data.columns:
+            self.logger.info("🎯 Using HMM composite regime data for ensemble training (PARAMOUNT)")
+            regime_column = "composite_cluster_id"
+            regime_prefix = "hmm_composite_"
+        else:
             self.logger.error(
-                "Prepared data is missing 'Market_Regime_Label' or 'target' column. Halting training.",
+                "🚨 HMM composite_cluster_id column is missing from prepared data. Halting training.",
+            )
+            self.logger.error("   HMM composite clusters are paramount - no fallbacks allowed")
+            self.logger.error("   Please ensure step3_hmm_regime_discovery completed successfully")
+            return
+
+        if "target" not in prepared_data.columns:
+            self.logger.error(
+                "Prepared data is missing 'target' column. Halting training.",
             )
             return
 
         # Prepare data for global meta-learner training
         meta_learner_data = []  # To store inputs for the global meta-learner
 
-        for regime_key, ensemble_instance in self.regime_ensembles.items():
+        # Get unique regimes
+        unique_regimes = prepared_data[regime_column].unique()
+        self.logger.info(
+            f"📊 Found {len(unique_regimes)} unique regimes: {unique_regimes}"
+        )
+
+        for regime_id in unique_regimes:
+            regime_key = f"{regime_prefix}{regime_id}"
             self.logger.info(f"--- Processing ensemble for {regime_key} ---")
 
             # Filter data for the current regime
-            regime_data = prepared_data[
-                prepared_data["Market_Regime_Label"] == regime_key
-            ]
+            regime_data = prepared_data[prepared_data[regime_column] == regime_id]
 
             if regime_data.empty or len(regime_data["target"].unique()) < 2:
                 self.logger.warning(
@@ -125,8 +140,23 @@ class RegimePredictiveEnsembles:
                 )
                 continue
 
+            # Get or create ensemble instance for this regime
+            if regime_key not in self.regime_ensembles:
+                self.logger.info(f"🆕 Creating new ensemble instance for {regime_key}")
+                # Create a new ensemble instance for this HMM composite regime
+                if regime_id == 0:  # Assuming regime 0 is bullish
+                    ensemble_instance = BullTrendEnsemble(self.config, regime_key)
+                elif regime_id == 1:  # Assuming regime 1 is bearish
+                    ensemble_instance = BearTrendEnsemble(self.config, regime_key)
+                else:
+                    # For other regimes, use a generic ensemble
+                    ensemble_instance = VolatileRegimeEnsemble(self.config, regime_key)
+                self.regime_ensembles[regime_key] = ensemble_instance
+
+            ensemble_instance = self.regime_ensembles[regime_key]
+
             historical_features = regime_data.drop(
-                columns=["target", "Market_Regime_Label"],
+                columns=["target", regime_column],
                 errors="ignore",
             )
             historical_targets = regime_data["target"]
@@ -215,14 +245,63 @@ class RegimePredictiveEnsembles:
         Gets a prediction by identifying the current regime and delegating to the
         appropriate trained ensemble. The final prediction is made by the global meta-learner.
         """
-        primary_regime = self.get_current_regime(current_features)
+        # Get comprehensive regime information
+        regime_info = self.get_current_regime_info(current_features)
+        primary_regime = regime_info["regime_name"]
+        current_expert = regime_info["expert"]
+        cluster_id = regime_info["cluster_id"]
+        confidence = regime_info["confidence"]
 
         # Collect predictions and confidences from all individual ensembles
         ensemble_predictions_for_meta = {}
         ensemble_confidences_for_meta = {}
         combined_base_predictions = {}  # To return all base model predictions
 
+        # First, get prediction from the current regime expert
+        if current_expert is not None:
+            try:
+                prediction_output = current_expert.get_prediction(
+                    current_features,
+                    **kwargs,
+                )
+
+                # Store the primary expert's prediction
+                ensemble_predictions_for_meta[primary_regime] = prediction_output.get(
+                    "prediction",
+                    "HOLD",
+                )
+                ensemble_confidences_for_meta[primary_regime] = prediction_output.get(
+                    "confidence",
+                    confidence,  # Use intensity confidence as fallback
+                )
+
+                # Get detailed base predictions from the primary expert
+                if hasattr(current_expert, "_get_meta_features"):
+                    base_preds_dict = current_expert._get_meta_features(
+                        current_features,
+                        is_live=True,
+                        **kwargs,
+                    )
+                    for model_name, pred_value in base_preds_dict.items():
+                        unique_model_name = f"{primary_regime}_{model_name}"
+                        combined_base_predictions[unique_model_name] = pred_value
+
+                self.logger.info(
+                    f"Primary expert ({primary_regime}) prediction: {prediction_output.get('prediction', 'HOLD')} (confidence: {prediction_output.get('confidence', confidence):.3f})"
+                )
+
+            except Exception as e:
+                self.logger.error(
+                    f"Error getting prediction from {primary_regime} expert: {e}"
+                )
+                ensemble_predictions_for_meta[primary_regime] = "HOLD"
+                ensemble_confidences_for_meta[primary_regime] = 0.0
+
+        # Load and get predictions from other ensembles for meta-learner
         for regime_key, ensemble_instance in self.regime_ensembles.items():
+            if regime_key == primary_regime:
+                continue  # Skip primary expert as we already processed it
+
             if not ensemble_instance.trained:
                 # Attempt to load the final model if not already loaded (e.g., at startup)
                 final_model_file_name = os.path.join(
@@ -373,7 +452,9 @@ class RegimePredictiveEnsembles:
 
             # Optional PCA after scaling to reduce dimensionality (fit on train only)
             if self.global_meta_config.get("use_pca", False):
-                n_components = min(self.global_meta_config.get("pca_components", 16), X_train.shape[1])
+                n_components = min(
+                    self.global_meta_config.get("pca_components", 16), X_train.shape[1]
+                )
                 pca = PCA(n_components=n_components)
                 X_train = pca.fit_transform(X_train)
                 X_val = pca.transform(X_val)
@@ -536,13 +617,136 @@ class RegimePredictiveEnsembles:
             )
 
     def get_current_regime(self, current_features: pd.DataFrame) -> str:
-        """Determines the most recent market regime from the feature data."""
-        if (
-            not current_features.empty
-            and "Market_Regime_Label" in current_features.columns
-        ):
-            return current_features["Market_Regime_Label"].iloc[-1]
-        return "UNKNOWN"
+        """
+        Determines the current market regime from composite_cluster_id.
+        HMM composite clusters are paramount - no fallbacks allowed.
+        """
+        if current_features.empty:
+            return "UNKNOWN"
+
+        # HMM COMPOSITE CLUSTERS ONLY - NO FALLBACKS
+        if "composite_cluster_id" in current_features.columns:
+            cluster_id = current_features["composite_cluster_id"].iloc[-1]
+            return self._map_cluster_to_regime(cluster_id)
+        else:
+            self.logger.error("🚨 HMM composite_cluster_id column is missing from current features")
+            self.logger.error("   HMM composite clusters are paramount - no fallbacks allowed")
+            return "UNKNOWN"
+
+    def _map_cluster_to_regime(self, cluster_id: int, timeframe: str = "1m") -> str:
+        """
+        Maps HMM composite cluster IDs to regime ensemble names.
+        Uses dynamic regime mapping based on Step 1.7 results.
+        """
+        # Try to use dynamic regime mapper if available
+        if hasattr(self, "dynamic_mapper") and self.dynamic_mapper:
+            return self.dynamic_mapper.map_cluster_to_regime(cluster_id, timeframe)
+
+        # Fallback to static mapping if dynamic mapper not available
+        fallback_mapping = {
+            -1: "RARE_MARKET_CONDITIONS",  # Rare or unclassifiable market conditions
+            0: "STRONG_BULL_TREND",
+            1: "MODERATE_BULL_TREND",
+            2: "WEAK_BULL_TREND",
+            3: "STRONG_BEAR_TREND",
+            4: "MODERATE_BEAR_TREND",
+            5: "TIGHT_SIDEWAYS_RANGE",
+            6: "WIDE_SIDEWAYS_RANGE",
+            7: "ASCENDING_SIDEWAYS",
+            8: "DESCENDING_SIDEWAYS",
+            9: "HIGH_VOLATILITY_BULL",
+            10: "HIGH_VOLATILITY_BEAR",
+            11: "LOW_VOLATILITY_RANGE",
+            12: "EXTREME_VOLATILITY",
+            13: "BULL_TO_BEAR_TRANSITION",
+            14: "BEAR_TO_BULL_TRANSITION",
+            15: "TREND_TO_SIDEWAYS",
+            16: "SIDEWAYS_TO_TREND",
+            17: "ACCUMULATION_PHASE",
+            18: "DISTRIBUTION_PHASE",
+            19: "BREAKOUT_PREPARATION",
+        }
+
+        regime = fallback_mapping.get(cluster_id, f"UNKNOWN_REGIME_{cluster_id}")
+        self.logger.debug(f"Mapped cluster_id {cluster_id} to regime {regime}")
+        return regime
+
+    def get_regime_expert(self, cluster_id: int) -> Any:
+        """
+        Get the appropriate regime expert based on composite_cluster_id.
+        Returns the ensemble instance for the given cluster.
+        """
+        regime_name = self._map_cluster_to_regime(cluster_id)
+
+        if regime_name in self.regime_ensembles:
+            ensemble = self.regime_ensembles[regime_name]
+
+            # Ensure the ensemble is loaded
+            if not ensemble.trained:
+                final_model_file_name = os.path.join(
+                    self.model_storage_dir,
+                    f"final_{regime_name.lower()}_ensemble.joblib",
+                )
+                if not ensemble.load_model(final_model_file_name):
+                    self.logger.warning(
+                        f"Could not load final model for {regime_name}. Returning None."
+                    )
+                    return None
+
+            return ensemble
+        else:
+            self.logger.warning(f"No ensemble found for regime {regime_name}")
+            return None
+
+    def get_current_regime_info(self, current_features: pd.DataFrame) -> dict[str, Any]:
+        """
+        Get comprehensive current regime information including cluster ID and expert.
+        HMM composite clusters are paramount - no fallbacks allowed.
+        """
+        if current_features.empty:
+            return {
+                "cluster_id": -1,
+                "regime_name": "UNKNOWN",
+                "expert": None,
+                "confidence": 0.0,
+            }
+
+        # HMM COMPOSITE CLUSTERS ONLY - NO FALLBACKS
+        if "composite_cluster_id" not in current_features.columns:
+            self.logger.error("🚨 HMM composite_cluster_id column is missing from current features")
+            self.logger.error("   HMM composite clusters are paramount - no fallbacks allowed")
+            return {
+                "cluster_id": -1,
+                "regime_name": "UNKNOWN",
+                "expert": None,
+                "confidence": 0.0,
+            }
+
+        # Get cluster ID
+        cluster_id = int(current_features["composite_cluster_id"].iloc[-1])
+
+        # Map to regime name
+        regime_name = self._map_cluster_to_regime(cluster_id)
+
+        # Get the expert
+        expert = self.get_regime_expert(cluster_id)
+
+        # Get confidence from intensity if available
+        confidence = 0.0
+        if "intensity_cluster_" + str(cluster_id) in current_features.columns:
+            confidence = float(
+                current_features[f"intensity_cluster_{cluster_id}"].iloc[-1]
+            )
+
+        return {
+            "cluster_id": cluster_id,
+            "regime_name": regime_name,
+            "expert": expert,
+            "confidence": confidence,
+            "timestamp": current_features.index[-1]
+            if not current_features.empty
+            else None,
+        }
 
     def save_model(self, ensemble_instance: Any, path: str):
         """Saves a trained ensemble instance to a file."""

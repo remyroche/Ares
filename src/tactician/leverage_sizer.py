@@ -19,8 +19,8 @@ from src.utils.warning_symbols import (
 
 class LeverageSizer:
     """
-    Simplified leverage sizer that uses ML confidence scores, liquidation risk model,
-    and market health analysis to set leverage between 10x and 100x.
+    Simplified leverage sizer that uses ML confidence scores and liquidation risk model
+    to set leverage between 10x and 100x.
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
@@ -56,7 +56,7 @@ class LeverageSizer:
         )
         self.confidence_threshold: float = get_parameter_value(
             "position_sizing_parameters.leverage_confidence_threshold",
-            0.7,
+            0.6,  # More aggressive: lowered from 0.7 to 0.6
         )
         self.risk_tolerance: float = get_parameter_value(
             "position_sizing_parameters.risk_tolerance",
@@ -67,11 +67,7 @@ class LeverageSizer:
         self.ml_weight: float = self.leverage_config.get("ml_weight", 0.5)
         self.liquidation_risk_weight: float = self.leverage_config.get(
             "liquidation_risk_weight",
-            0.3,
-        )
-        self.market_health_weight: float = self.leverage_config.get(
-            "market_health_weight",
-            0.2,
+            0.5,  # Increased from 0.3 since market_health_weight is removed
         )
 
         self.is_initialized: bool = False
@@ -141,27 +137,26 @@ class LeverageSizer:
     )
     async def calculate_leverage(
         self,
-        ml_predictions: dict[str, Any],
+        price_target_confidences: dict[str, float],
+        adversarial_confidences: dict[str, float],
         liquidation_risk_analysis: dict[str, Any] | None = None,
-        market_health_analysis: dict[str, Any] | None = None,
         current_price: float = 0.0,
         target_direction: str = "long",
-        analyst_confidence: float = 0.5,
-        tactician_confidence: float = 0.5,
         symbol: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | None:
         """
-        Calculate leverage using ML confidence scores, liquidation risk analysis, and market health.
+        Calculate leverage using ML confidence scores and liquidation risk analysis.
 
         Args:
-            ml_predictions: ML confidence predictions from ml_confidence_predictor
-            liquidation_risk_analysis: Liquidation risk analysis from liquidation_risk_model
-            market_health_analysis: Market health analysis from market_health_analyzer
+            price_target_confidences: ML confidence predictions for price targets
+            adversarial_confidences: ML confidence predictions for adverse movements
+            liquidation_risk_analysis: Liquidation risk analysis results
             current_price: Current market price
-            target_direction: Target direction ("long" or "short")
+            target_direction: Target trading direction ("long" or "short")
+            symbol: Trading symbol for symbol-specific limits
 
         Returns:
-            dict[str, Any]: Leverage sizing analysis
+            dict: Leverage analysis results
         """
         if not self.is_initialized:
             self.print(initialization_error("Leverage sizer not initialized"))
@@ -171,12 +166,12 @@ class LeverageSizer:
 
         try:
             # Extract ML confidence scores
-            price_target_confidences = ml_predictions.get(
-                "price_target_confidences",
-                {},
-            )
-            adversarial_confidences = ml_predictions.get("adversarial_confidences", {})
-            directional_confidence = ml_predictions.get("directional_confidence", {})
+            # price_target_confidences = ml_predictions.get(
+            #     "price_target_confidences",
+            #     {},
+            # )
+            # adversarial_confidences = ml_predictions.get("adversarial_confidences", {})
+            # directional_confidence = ml_predictions.get("directional_confidence", {})
 
             # Calculate base leverage from ML confidence
             ml_leverage = self._calculate_ml_leverage(
@@ -189,24 +184,17 @@ class LeverageSizer:
                 liquidation_risk_analysis,
             )
 
-            # Get market health leverage adjustment
-            market_health_leverage = self._extract_market_health_leverage(
-                market_health_analysis,
-            )
-
-            # Calculate weighted leverage
+            # Calculate weighted leverage (ML + Liquidation only)
             final_leverage = self._calculate_weighted_leverage(
                 ml_leverage,
                 liquidation_leverage,
-                market_health_leverage,
             )
 
-            # Apply hard risk guardrails based on liquidation and market stress
+            # Apply hard risk guardrails based on liquidation proximity
             final_leverage = self._apply_leverage_guards(
                 final_leverage,
                 current_price=current_price,
                 liquidation_risk_analysis=liquidation_risk_analysis,
-                market_health_analysis=market_health_analysis,
             )
 
             # Enforce symbol-specific leverage caps and include margin mode
@@ -228,18 +216,16 @@ class LeverageSizer:
                 "symbol": symbol,
                 "ml_leverage": ml_leverage,
                 "liquidation_leverage": liquidation_leverage,
-                "market_health_leverage": market_health_leverage,
                 "final_leverage": final_leverage,
                 "per_symbol_max_leverage": per_symbol_max,
                 "margin_mode": margin_mode,
                 "price_target_confidences": price_target_confidences,
                 "adversarial_confidences": adversarial_confidences,
-                "directional_confidence": directional_confidence,
+                "directional_confidence": {},  # This line was removed from the new_code, so it's removed here.
                 "leverage_reason": self._generate_leverage_reason(
                     final_leverage,
                     ml_leverage,
                     liquidation_leverage,
-                    market_health_leverage,
                     price_target_confidences,
                     adversarial_confidences,
                 ),
@@ -293,10 +279,12 @@ class LeverageSizer:
 
             # Calculate leverage based on confidence and risk
             # Higher confidence and lower risk = higher leverage
-            confidence_factor = avg_confidence / self.confidence_threshold
+            # More aggressive: 100x leverage at 0.9 confidence instead of 1.0
+            confidence_factor = (avg_confidence / 0.9) if avg_confidence <= 0.9 else 1.0
             risk_factor = 1.0 - avg_adverse_risk
 
             # Base leverage calculation (10x to 100x range)
+            # More aggressive scaling: 100x leverage achievable at 0.9 confidence
             ml_leverage = (
                 self.min_leverage
                 + (self.max_leverage - self.min_leverage)
@@ -305,7 +293,10 @@ class LeverageSizer:
             )
 
             # Apply risk tolerance adjustment
-            risk_adjusted_leverage = ml_leverage * (1.0 - self.risk_tolerance)
+            # More aggressive: reduce risk tolerance impact for higher leverage
+            risk_adjusted_leverage = ml_leverage * (
+                1.0 - self.risk_tolerance * 0.9
+            )  # 10% less conservative
             return max(
                 self.min_leverage,
                 min(self.max_leverage, risk_adjusted_leverage),
@@ -354,9 +345,8 @@ class LeverageSizer:
         *,
         current_price: float,
         liquidation_risk_analysis: dict[str, Any] | None,
-        market_health_analysis: dict[str, Any] | None,
     ) -> float:
-        """Apply hard guardrails to leverage based on liquidation proximity and market stress."""
+        """Apply hard guardrails to leverage based on liquidation proximity."""
         try:
             adjusted = proposed_leverage
 
@@ -379,223 +369,16 @@ class LeverageSizer:
                             proposed_leverage * risk_scale,
                         )
 
-            # Guard 2: Market stress clamp
-            if market_health_analysis:
-                stress = market_health_analysis.get("stress_analysis", {})
-                stress_level = float(stress.get("stress_level", 0.5))  # 0..1
-                # In high stress, reduce leverage using gentle caps
-                if stress_level >= 0.8:
-                    adjusted = min(
-                        adjusted,
-                        max(self.min_leverage, self.max_leverage * 0.2),
-                    )
-                elif stress_level >= 0.6:
-                    adjusted = min(adjusted, self.max_leverage * 0.35)
-                elif stress_level >= 0.4:
-                    adjusted = min(adjusted, self.max_leverage * 0.6)
-
             # Clamp to global bounds and return
             return max(self.min_leverage, min(self.max_leverage, adjusted))
         except Exception:
             self.print(error("Error applying leverage guards: {e}"))
             return max(self.min_leverage, min(self.max_leverage, proposed_leverage))
 
-    def _extract_market_health_leverage(
-        self,
-        market_health_analysis: dict[str, Any] | None,
-    ) -> float:
-        """Extract leverage adjustment from market health analysis."""
-        try:
-            if not market_health_analysis:
-                return self.min_leverage
-
-            # Get volatility analysis
-            volatility_analysis = market_health_analysis.get("volatility_analysis", {})
-            current_volatility = volatility_analysis.get("current_volatility", 0.02)
-            historical_volatility = volatility_analysis.get(
-                "historical_volatility",
-                0.02,
-            )
-            volatility_regime = volatility_analysis.get("volatility_regime", "normal")
-
-            # Get liquidity analysis
-            liquidity_analysis = market_health_analysis.get("liquidity_analysis", {})
-            liquidity_score = liquidity_analysis.get("liquidity_score", 0.5)
-            bid_ask_spread = liquidity_analysis.get("bid_ask_spread", 0.001)
-            market_depth = liquidity_analysis.get("market_depth", 0.5)
-
-            # Get market stress analysis
-            stress_analysis = market_health_analysis.get("stress_analysis", {})
-            stress_level = stress_analysis.get("stress_level", 0.5)
-            stress_regime = stress_analysis.get("stress_regime", "normal")
-
-            # Calculate volatility factor with regime consideration
-            volatility_factor = self._calculate_volatility_factor(
-                current_volatility,
-                historical_volatility,
-                volatility_regime,
-            )
-
-            # Calculate liquidity factor with multiple indicators
-            liquidity_factor = self._calculate_liquidity_factor(
-                liquidity_score,
-                bid_ask_spread,
-                market_depth,
-            )
-
-            # Calculate stress factor with regime consideration
-            stress_factor = self._calculate_stress_factor(stress_level, stress_regime)
-
-            # Combine factors with weighted average
-            market_health_factor = (
-                volatility_factor * 0.4  # Volatility has highest weight
-                + liquidity_factor * 0.35  # Liquidity is second most important
-                + stress_factor * 0.25  # Stress is least important
-            )
-
-            # Calculate market health leverage
-            market_health_leverage = (
-                self.min_leverage
-                + (self.max_leverage - self.min_leverage) * market_health_factor
-            )
-
-            return max(
-                self.min_leverage,
-                min(self.max_leverage, market_health_leverage),
-            )
-
-        except Exception:
-            self.print(error("Error extracting market health leverage: {e}"))
-            return self.min_leverage
-
-    def _calculate_volatility_factor(
-        self,
-        current_vol: float,
-        historical_vol: float,
-        regime: str,
-    ) -> float:
-        """Calculate volatility factor with regime consideration."""
-        try:
-            # Define volatility thresholds
-            low_vol_threshold = 0.01  # 1%
-            normal_vol_threshold = 0.03  # 3%
-            high_vol_threshold = 0.05  # 5%
-            extreme_vol_threshold = 0.08  # 8%
-
-            # Calculate volatility ratio (current vs historical)
-            vol_ratio = current_vol / max(historical_vol, 0.001)
-
-            # Base factor based on current volatility
-            if current_vol <= low_vol_threshold:
-                base_factor = 1.0  # Full leverage in low volatility
-            elif current_vol <= normal_vol_threshold:
-                base_factor = 0.9  # Slight reduction
-            elif current_vol <= high_vol_threshold:
-                base_factor = 0.7  # Moderate reduction
-            elif current_vol <= extreme_vol_threshold:
-                base_factor = 0.4  # Significant reduction
-            else:
-                base_factor = 0.2  # Extreme reduction
-
-            # Adjust based on volatility regime
-            if regime == "low_volatility":
-                base_factor *= 1.1  # Increase leverage in low vol regime
-            elif regime == "high_volatility":
-                base_factor *= 0.8  # Decrease leverage in high vol regime
-            elif regime == "extreme_volatility":
-                base_factor *= 0.5  # Significant decrease in extreme vol
-
-            # Adjust based on volatility ratio (current vs historical)
-            if vol_ratio > 1.5:  # Current vol is 50% higher than historical
-                base_factor *= 0.8
-            elif vol_ratio < 0.7:  # Current vol is 30% lower than historical
-                base_factor *= 1.1
-
-            return max(0.1, min(1.0, base_factor))
-
-        except Exception:
-            self.print(error("Error calculating volatility factor: {e}"))
-            return 0.5
-
-    def _calculate_liquidity_factor(
-        self,
-        liquidity_score: float,
-        bid_ask_spread: float,
-        market_depth: float,
-    ) -> float:
-        """Calculate liquidity factor with multiple indicators."""
-        try:
-            # Define liquidity thresholds
-            tight_spread = 0.0005  # 0.05%
-            normal_spread = 0.001  # 0.1%
-            wide_spread = 0.002  # 0.2%
-
-            # Calculate spread factor
-            if bid_ask_spread <= tight_spread:
-                spread_factor = 1.0
-            elif bid_ask_spread <= normal_spread:
-                spread_factor = 0.9
-            elif bid_ask_spread <= wide_spread:
-                spread_factor = 0.7
-            else:
-                spread_factor = 0.5
-
-            # Calculate depth factor
-            depth_factor = market_depth  # Direct use of market depth score
-
-            # Calculate overall liquidity factor
-            liquidity_factor = (
-                liquidity_score * 0.4 + spread_factor * 0.4 + depth_factor * 0.2
-            )
-
-            return max(0.1, min(1.0, liquidity_factor))
-
-        except Exception:
-            self.print(error("Error calculating liquidity factor: {e}"))
-            return 0.5
-
-    def _calculate_stress_factor(self, stress_level: float, regime: str) -> float:
-        """Calculate stress factor with regime consideration."""
-        try:
-            # Define stress thresholds
-            low_stress = 0.2
-            normal_stress = 0.5
-            high_stress = 0.7
-            extreme_stress = 0.9
-
-            # Base factor based on stress level
-            if stress_level <= low_stress:
-                base_factor = 1.0  # Full leverage in low stress
-            elif stress_level <= normal_stress:
-                base_factor = 0.9  # Slight reduction
-            elif stress_level <= high_stress:
-                base_factor = 0.7  # Moderate reduction
-            elif stress_level <= extreme_stress:
-                base_factor = 0.4  # Significant reduction
-            else:
-                base_factor = 0.2  # Extreme reduction
-
-            # Adjust based on stress regime
-            if regime == "low_stress":
-                base_factor *= 1.1  # Increase leverage in low stress
-            elif regime == "high_stress":
-                base_factor *= 0.8  # Decrease leverage in high stress
-            elif regime == "extreme_stress":
-                base_factor *= 0.5  # Significant decrease in extreme stress
-            elif regime == "crisis":
-                base_factor *= 0.3  # Minimal leverage in crisis
-
-            return max(0.1, min(1.0, base_factor))
-
-        except Exception:
-            self.print(error("Error calculating stress factor: {e}"))
-            return 0.5
-
     def _calculate_weighted_leverage(
         self,
         ml_leverage: float,
         liquidation_leverage: float,
-        market_health_leverage: float,
     ) -> float:
         """Calculate weighted leverage using component indicators."""
         try:
@@ -603,12 +386,7 @@ class LeverageSizer:
             weighted_leverage = (
                 ml_leverage * self.ml_weight
                 + liquidation_leverage * self.liquidation_risk_weight
-                + market_health_leverage * self.market_health_weight
-            ) / (
-                self.ml_weight
-                + self.liquidation_risk_weight
-                + self.market_health_weight
-            )
+            ) / (self.ml_weight + self.liquidation_risk_weight)
 
             return max(self.min_leverage, min(self.max_leverage, weighted_leverage))
 
@@ -621,7 +399,6 @@ class LeverageSizer:
         final_leverage: float,
         ml_leverage: float,
         liquidation_leverage: float,
-        market_health_leverage: float,
         price_target_confidences: dict[str, float],
         adversarial_confidences: dict[str, float],
     ) -> str:

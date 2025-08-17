@@ -13,7 +13,9 @@ from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
 
-@handle_errors(exceptions=(Exception,), default_return={}, context="compute_mutual_information")
+@handle_errors(
+    exceptions=(Exception,), default_return={}, context="compute_mutual_information"
+)
 def compute_mutual_information(
     X: pd.DataFrame,
     y: pd.Series,
@@ -37,7 +39,9 @@ def compute_mutual_information(
     if task == "classification":
         from sklearn.feature_selection import mutual_info_classif
 
-        mi = mutual_info_classif(Xn.fillna(0.0), y.astype(int), random_state=random_state)
+        mi = mutual_info_classif(
+            Xn.fillna(0.0), y.astype(int), random_state=random_state
+        )
     else:
         from sklearn.feature_selection import mutual_info_regression
 
@@ -45,7 +49,11 @@ def compute_mutual_information(
     return {c: float(v) for c, v in zip(Xn.columns, mi)}
 
 
-@handle_errors(exceptions=(Exception,), default_return=0.0, context="compute_mutual_information_pair")
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=0.0,
+    context="compute_mutual_information_pair",
+)
 def compute_mutual_information_pair(
     Xi: pd.Series,
     Xj: pd.Series,
@@ -54,12 +62,16 @@ def compute_mutual_information_pair(
     random_state: int = 42,
 ) -> float:
     """Compute MI(y; [Xi, Xj]) for complementarity checks."""
-    X = pd.DataFrame({"Xi": Xi.astype(float).fillna(0.0), "Xj": Xj.astype(float).fillna(0.0)})
+    X = pd.DataFrame(
+        {"Xi": Xi.astype(float).fillna(0.0), "Xj": Xj.astype(float).fillna(0.0)}
+    )
     mi_map = compute_mutual_information(X, y, task=task, random_state=random_state)
     return float(sum(mi_map.values()))
 
 
-@handle_errors(exceptions=(Exception,), default_return={}, context="compute_shap_importance")
+@handle_errors(
+    exceptions=(Exception,), default_return={}, context="compute_shap_importance"
+)
 def compute_shap_importance(
     X: pd.DataFrame,
     y: pd.Series,
@@ -83,9 +95,13 @@ def compute_shap_importance(
 
     if model is None:
         if task == "classification":
-            model = LGBMClassifier(n_estimators=200, max_depth=-1, learning_rate=0.05, subsample=0.8)
+            model = LGBMClassifier(
+                n_estimators=200, max_depth=-1, learning_rate=0.05, subsample=0.8
+            )
         else:
-            model = LGBMRegressor(n_estimators=200, max_depth=-1, learning_rate=0.05, subsample=0.8)
+            model = LGBMRegressor(
+                n_estimators=200, max_depth=-1, learning_rate=0.05, subsample=0.8
+            )
         model.fit(Xn, y)
 
     explainer = shap.TreeExplainer(model)
@@ -102,7 +118,16 @@ def compute_shap_importance(
     return {c: float(v) for c, v in zip(Xn.columns, mean_abs)}
 
 
-@handle_errors(exceptions=(Exception,), default_return={"sharpe_base": 0.0, "sharpe_gated": 0.0, "delta_sharpe": 0.0, "coverage": 0.0}, context="evaluate_sharpe_lift")
+@handle_errors(
+    exceptions=(Exception,),
+    default_return={
+        "sharpe_base": 0.0,
+        "sharpe_gated": 0.0,
+        "delta_sharpe": 0.0,
+        "coverage": 0.0,
+    },
+    context="evaluate_sharpe_lift",
+)
 def evaluate_sharpe_lift(
     returns_series: pd.Series,
     gating_series: pd.Series,
@@ -120,10 +145,12 @@ def evaluate_sharpe_lift(
     base_excess = r - risk_free_rate
     gated_r = r[g == 1]
     gated_excess = gated_r - risk_free_rate
+
     def _sharpe(x: pd.Series) -> float:
         mu = float(x.mean())
         sd = float(x.std(ddof=1))
         return (mu / sd) if sd > 1e-12 else 0.0
+
     sr_base = _sharpe(base_excess)
     sr_gated = _sharpe(gated_excess) if len(gated_excess) > 1 else 0.0
     return {
@@ -167,10 +194,16 @@ class MetaLabelRelevanceEvaluator:
             col = f"intensity_{name}"
             if col in df.columns:
                 thr = float(thresholds.get(name, 0.5))
-                gating[name] = (pd.to_numeric(df[col], errors="coerce").fillna(0.0) >= thr).astype(int)
+                gating[name] = (
+                    pd.to_numeric(df[col], errors="coerce").fillna(0.0) >= thr
+                ).astype(int)
         return pd.DataFrame(gating, index=df.index)
 
-    @handle_errors(exceptions=(Exception,), default_return={"active_labels": [], "inactive_labels": []}, context="evaluate_from_frame")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={"active_labels": [], "inactive_labels": []},
+        context="evaluate_from_frame",
+    )
     def evaluate_from_frame(
         self,
         df: pd.DataFrame,
@@ -181,16 +214,26 @@ class MetaLabelRelevanceEvaluator:
     ) -> dict[str, Any]:
         # Prepare target returns
         if returns_col not in df.columns:
-            return {"active_labels": label_names, "inactive_labels": [], "reason": "no_returns"}
+            return {
+                "active_labels": label_names,
+                "inactive_labels": [],
+                "reason": "no_returns",
+            }
         y = pd.to_numeric(df[returns_col], errors="coerce").fillna(0.0)
         # Build binary gating per label
         G = self._gating_from_intensity(df, label_names, thresholds)
         if G.empty:
-            return {"active_labels": label_names, "inactive_labels": [], "reason": "no_gating"}
+            return {
+                "active_labels": label_names,
+                "inactive_labels": [],
+                "reason": "no_gating",
+            }
 
         # Univariate MI and Sharpe lift
         mi_scores = compute_mutual_information(G, y, task="regression")
-        sharpe_lifts = {name: evaluate_sharpe_lift(y, G[name], risk_free_rate) for name in G.columns}
+        sharpe_lifts = {
+            name: evaluate_sharpe_lift(y, G[name], risk_free_rate) for name in G.columns
+        }
 
         # Pairwise complementarity (limited by max_pairs if set)
         labels = list(G.columns)
@@ -202,9 +245,15 @@ class MetaLabelRelevanceEvaluator:
                     break
                 li, lj = labels[i], labels[j]
                 # MI synergy approx
-                mi_pair = compute_mutual_information(pd.DataFrame({li: G[li], lj: G[lj]}), y, task="regression")
+                mi_pair = compute_mutual_information(
+                    pd.DataFrame({li: G[li], lj: G[lj]}), y, task="regression"
+                )
                 mi_pair_sum = sum(mi_pair.values()) if mi_pair else 0.0
-                synergy_mi = mi_pair_sum - float(mi_scores.get(li, 0.0)) - float(mi_scores.get(lj, 0.0))
+                synergy_mi = (
+                    mi_pair_sum
+                    - float(mi_scores.get(li, 0.0))
+                    - float(mi_scores.get(lj, 0.0))
+                )
                 # Sharpe lift for pair gating intersection
                 g_pair = ((G[li] == 1) & (G[lj] == 1)).astype(int)
                 sr_pair = evaluate_sharpe_lift(y, g_pair, risk_free_rate)
@@ -219,7 +268,14 @@ class MetaLabelRelevanceEvaluator:
         inactive: set[str] = set()
         for name in labels:
             mi_ok = float(mi_scores.get(name, 0.0)) >= self.mi_threshold
-            sr_ok = float(sharpe_lifts.get(name, {"delta_sharpe": 0.0}).get("delta_sharpe", 0.0)) > self.sharpe_min_delta
+            sr_ok = (
+                float(
+                    sharpe_lifts.get(name, {"delta_sharpe": 0.0}).get(
+                        "delta_sharpe", 0.0
+                    )
+                )
+                > self.sharpe_min_delta
+            )
             if mi_ok or sr_ok:
                 active.add(name)
                 continue
@@ -245,15 +301,30 @@ class MetaLabelRelevanceEvaluator:
 
         result = {
             "mi_scores": {k: float(v) for k, v in mi_scores.items()},
-            "sharpe_lifts": {k: float(v.get("delta_sharpe", 0.0)) for k, v in sharpe_lifts.items()},
+            "sharpe_lifts": {
+                k: float(v.get("delta_sharpe", 0.0)) for k, v in sharpe_lifts.items()
+            },
             "pair_results": pair_results,
             "active_labels": sorted(active),
             "inactive_labels": sorted(inactive),
         }
         try:
             with open(os.path.join(self.artifacts_dir, "active_labels.json"), "w") as f:
-                json.dump({"active_labels": result["active_labels"], "inactive_labels": result["inactive_labels"]}, f, indent=2)
-            self.logger.info({"msg": "active_labels_persisted", "active": len(result["active_labels"]), "inactive": len(result["inactive_labels"])})
+                json.dump(
+                    {
+                        "active_labels": result["active_labels"],
+                        "inactive_labels": result["inactive_labels"],
+                    },
+                    f,
+                    indent=2,
+                )
+            self.logger.info(
+                {
+                    "msg": "active_labels_persisted",
+                    "active": len(result["active_labels"]),
+                    "inactive": len(result["inactive_labels"]),
+                }
+            )
         except Exception as _pe:
             self.logger.warning(f"Active labels persistence skipped: {_pe}")
         return result

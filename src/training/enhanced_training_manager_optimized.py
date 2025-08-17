@@ -140,7 +140,9 @@ class CachedBacktester:
 
         if cache_key in self.cache:
             try:
-                self.logger.info(f"Backtest cache hit: score={float(self.cache[cache_key]):.4f}")
+                self.logger.info(
+                    f"Backtest cache hit: score={float(self.cache[cache_key]):.4f}"
+                )
             except Exception as e:
                 self.logger.warning(f"Failed to log cache hit info: {e}")
             return self.cache[cache_key]
@@ -472,7 +474,9 @@ class AdaptiveSampler:
         """Update trial history with new result."""
         self.trial_history.append({"params": params, "score": score})
         try:
-            best = max(self.trial_history, key=lambda x: x.get("score", float("-inf"))).get("score", None)
+            best = max(
+                self.trial_history, key=lambda x: x.get("score", float("-inf"))
+            ).get("score", None)
             self.logger.info(
                 {
                     "msg": "sampler_update",
@@ -1226,7 +1230,10 @@ class ParquetDatasetManager:
             if metadata:
                 try:
                     schema_with_meta = table.schema.with_metadata(
-                        {str(k): (str(v) if v is not None else "") for k, v in metadata.items()}
+                        {
+                            str(k): (str(v) if v is not None else "")
+                            for k, v in metadata.items()
+                        }
                     )
                     table = table.cast(schema_with_meta)
                 except Exception:
@@ -1260,7 +1267,9 @@ class ParquetDatasetManager:
                 f"✅ Partitioned dataset written to {base_dir} with partitions={partition_cols or []}"
             )
         except Exception as e:
-            self.logger.error(f"❌ Failed to write partitioned dataset to {base_dir}: {e}")
+            self.logger.error(
+                f"❌ Failed to write partitioned dataset to {base_dir}: {e}"
+            )
             raise
 
     def materialize_projection(
@@ -1279,12 +1288,19 @@ class ParquetDatasetManager:
         try:
             os.makedirs(output_dir, exist_ok=True)
             dataset = ds.dataset(base_dir, format="parquet")
-            scanner = dataset.scanner(columns=columns, filter=self._build_filter(filters), batch_size=batch_size)
+            scanner = dataset.scanner(
+                columns=columns,
+                filter=self._build_filter(filters),
+                batch_size=batch_size,
+            )
             table = scanner.to_table()
             if metadata:
                 try:
                     schema_with_meta = table.schema.with_metadata(
-                        {str(k): (str(v) if v is not None else "") for k, v in metadata.items()}
+                        {
+                            str(k): (str(v) if v is not None else "")
+                            for k, v in metadata.items()
+                        }
                     )
                     table = table.cast(schema_with_meta)
                 except Exception:
@@ -1295,7 +1311,11 @@ class ParquetDatasetManager:
                 format="parquet",
                 basename_template="part-{i}.parquet",
                 existing_data_behavior="overwrite_or_ignore",
-                partitioning=(ds.partitioning(partition_cols, flavor="hive") if partition_cols else None),
+                partitioning=(
+                    ds.partitioning(partition_cols, flavor="hive")
+                    if partition_cols
+                    else None
+                ),
                 max_rows_per_file=5_000_000,
                 min_rows_per_group=128_000,
                 max_rows_per_group=1_048_576,
@@ -1304,7 +1324,9 @@ class ParquetDatasetManager:
                 f"✅ Materialized projection to {output_dir} (columns={columns}, filters={filters})"
             )
         except Exception as e:
-            self.logger.error(f"❌ Failed to materialize projection to {output_dir}: {e}")
+            self.logger.error(
+                f"❌ Failed to materialize projection to {output_dir}: {e}"
+            )
             raise
 
     @staticmethod

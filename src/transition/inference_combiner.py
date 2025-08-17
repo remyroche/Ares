@@ -13,8 +13,10 @@ from src.utils.logger import system_logger
 @dataclass
 class EnsembleConfig:
     weights: Dict[str, float]
-    macro_thresholds: Dict[str, Dict[str, Dict[str, float]]]  # regime -> timeframe -> {class: thr}
-    timeframe_thresholds: Dict[str, Dict[str, float]]        # timeframe -> {class: thr}
+    macro_thresholds: Dict[
+        str, Dict[str, Dict[str, float]]
+    ]  # regime -> timeframe -> {class: thr}
+    timeframe_thresholds: Dict[str, Dict[str, float]]  # timeframe -> {class: thr}
     reliability_path: str | None
 
 
@@ -27,17 +29,23 @@ class TransitionInferenceCombiner:
     def __init__(self, config: dict[str, Any]) -> None:
         self.logger = system_logger.getChild("TransitionInferenceCombiner")
         tm = (config or {}).get("TRANSITION_MODELING", {})
-        ens = (tm.get("timeframe_ensemble", {}) or {})
-        inf = (tm.get("inference", {}) or {})
-        seq = (tm.get("seq2seq", {}) or {})
-        artifact_dir = str(seq.get("artifact_dir_models", "checkpoints/transition_models"))
+        ens = tm.get("timeframe_ensemble", {}) or {}
+        inf = tm.get("inference", {}) or {}
+        seq = tm.get("seq2seq", {}) or {}
+        artifact_dir = str(
+            seq.get("artifact_dir_models", "checkpoints/transition_models")
+        )
         self.cfg = EnsembleConfig(
-            weights=ens.get("weights", {"1m": 0.3, "5m": 0.3, "15m": 0.25, "30m": 0.15}),
+            weights=ens.get(
+                "weights", {"1m": 0.3, "5m": 0.3, "15m": 0.25, "30m": 0.15}
+            ),
             macro_thresholds=inf.get("macro_regime_thresholds", {}),
             timeframe_thresholds=inf.get("path_class_thresholds", {}),
             reliability_path=os.path.join(artifact_dir, "reliability.json"),
         )
-        self.reliability: Dict[str, Dict[str, float]] = self._load_reliability(self.cfg.reliability_path)
+        self.reliability: Dict[str, Dict[str, float]] = self._load_reliability(
+            self.cfg.reliability_path
+        )
 
     def _load_reliability(self, path: str | None) -> Dict[str, Dict[str, float]]:
         try:
@@ -46,7 +54,11 @@ class TransitionInferenceCombiner:
                     data = json.load(f)
                 # Expecting {timeframe: {path_class: scale}}
                 if isinstance(data, dict):
-                    return {str(tf): {str(k): float(v) for k, v in d.items()} for tf, d in data.items() if isinstance(d, dict)}
+                    return {
+                        str(tf): {str(k): float(v) for k, v in d.items()}
+                        for tf, d in data.items()
+                        if isinstance(d, dict)
+                    }
         except Exception as e:
             self.logger.warning(f"Failed to load transition reliability: {e}")
         return {}
@@ -105,7 +117,11 @@ class TransitionInferenceCombiner:
             allow, trigger = True, "continuation"
         if bot >= thr_bot and bot >= cont:
             allow, trigger = True, "beginning_of_trend"
-        return {"allow_trade": allow, "trigger": trigger, "thresholds": {"continuation": thr_cont, "beginning_of_trend": thr_bot}}
+        return {
+            "allow_trade": allow,
+            "trigger": trigger,
+            "thresholds": {"continuation": thr_cont, "beginning_of_trend": thr_bot},
+        }
 
     def exit_bias(
         self,
@@ -119,9 +135,17 @@ class TransitionInferenceCombiner:
           - exit_flag True if reversal>0.40 or exit_bias>0
         """
         # Reliability-adjusted 1m
-        r_cont = self._apply_reliability("1m", "continuation", float(path_probs_1m.get("continuation", 0.0)))
-        r_bot = self._apply_reliability("1m", "beginning_of_trend", float(path_probs_1m.get("beginning_of_trend", 0.0)))
-        r_rev = self._apply_reliability("1m", "reversal", float(path_probs_1m.get("reversal", 0.0)))
+        r_cont = self._apply_reliability(
+            "1m", "continuation", float(path_probs_1m.get("continuation", 0.0))
+        )
+        r_bot = self._apply_reliability(
+            "1m",
+            "beginning_of_trend",
+            float(path_probs_1m.get("beginning_of_trend", 0.0)),
+        )
+        r_rev = self._apply_reliability(
+            "1m", "reversal", float(path_probs_1m.get("reversal", 0.0))
+        )
         favorable = max(r_cont, r_bot)
         adverse = r_rev
         bias = adverse - favorable

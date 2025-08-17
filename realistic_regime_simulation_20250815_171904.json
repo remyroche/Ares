@@ -1,0 +1,157 @@
+{
+  "timestamp": "20250815_171904",
+  "results": [
+    {
+      "similarity_threshold": 0.85,
+      "frequency_threshold": 0.005,
+      "original_regimes": 100,
+      "final_regimes": 86,
+      "regimes_merged": 14,
+      "merge_ratio": 14.000000000000002,
+      "top_5_concentration": 10.959999999999999,
+      "top_10_concentration": 20.62,
+      "top_20_concentration": 38.019999999999996,
+      "high_freq_regimes": 76,
+      "low_freq_regimes": 10,
+      "concentration_score": 43.3428
+    },
+    {
+      "similarity_threshold": 0.85,
+      "frequency_threshold": 0.01,
+      "original_regimes": 100,
+      "final_regimes": 69,
+      "regimes_merged": 31,
+      "merge_ratio": 31.0,
+      "top_5_concentration": 19.419999999999998,
+      "top_10_concentration": 31.490000000000006,
+      "top_20_concentration": 50.61,
+      "high_freq_regimes": 50,
+      "low_freq_regimes": 19,
+      "concentration_score": 66.2991
+    },
+    {
+      "similarity_threshold": 0.85,
+      "frequency_threshold": 0.015,
+      "original_regimes": 100,
+      "final_regimes": 67,
+      "regimes_merged": 33,
+      "merge_ratio": 33.0,
+      "top_5_concentration": 29.049999999999997,
+      "top_10_concentration": 44.01,
+      "top_20_concentration": 62.59000000000001,
+      "high_freq_regimes": 23,
+      "low_freq_regimes": 44,
+      "concentration_score": 83.24470000000002
+    },
+    {
+      "similarity_threshold": 0.9,
+      "frequency_threshold": 0.005,
+      "original_regimes": 100,
+      "final_regimes": 86,
+      "regimes_merged": 14,
+      "merge_ratio": 14.000000000000002,
+      "top_5_concentration": 10.959999999999999,
+      "top_10_concentration": 20.62,
+      "top_20_concentration": 38.019999999999996,
+      "high_freq_regimes": 76,
+      "low_freq_regimes": 10,
+      "concentration_score": 43.3428
+    },
+    {
+      "similarity_threshold": 0.9,
+      "frequency_threshold": 0.01,
+      "original_regimes": 100,
+      "final_regimes": 69,
+      "regimes_merged": 31,
+      "merge_ratio": 31.0,
+      "top_5_concentration": 19.419999999999998,
+      "top_10_concentration": 31.490000000000006,
+      "top_20_concentration": 50.61,
+      "high_freq_regimes": 50,
+      "low_freq_regimes": 19,
+      "concentration_score": 66.2991
+    },
+    {
+      "similarity_threshold": 0.9,
+      "frequency_threshold": 0.015,
+      "original_regimes": 100,
+      "final_regimes": 67,
+      "regimes_merged": 33,
+      "merge_ratio": 33.0,
+      "top_5_concentration": 29.049999999999997,
+      "top_10_concentration": 44.01,
+      "top_20_concentration": 62.59000000000001,
+      "high_freq_regimes": 23,
+      "low_freq_regimes": 44,
+      "concentration_score": 83.24470000000002
+    },
+    {
+      "similarity_threshold": 0.95,
+      "frequency_threshold": 0.005,
+      "original_regimes": 100,
+      "final_regimes": 86,
+      "regimes_merged": 14,
+      "merge_ratio": 14.000000000000002,
+      "top_5_concentration": 10.959999999999999,
+      "top_10_concentration": 20.62,
+      "top_20_concentration": 38.019999999999996,
+      "high_freq_regimes": 76,
+      "low_freq_regimes": 10,
+      "concentration_score": 43.3428
+    },
+    {
+      "similarity_threshold": 0.95,
+      "frequency_threshold": 0.01,
+      "original_regimes": 100,
+      "final_regimes": 69,
+      "regimes_merged": 31,
+      "merge_ratio": 31.0,
+      "top_5_concentration": 19.419999999999998,
+      "top_10_concentration": 31.490000000000006,
+      "top_20_concentration": 50.61,
+      "high_freq_regimes": 50,
+      "low_freq_regimes": 19,
+      "concentration_score": 66.2991
+    },
+    {
+      "similarity_threshold": 0.95,
+      "frequency_threshold": 0.015,
+      "original_regimes": 100,
+      "final_regimes": 68,
+      "regimes_merged": 32,
+      "merge_ratio": 32.0,
+      "top_5_concentration": 29.049999999999997,
+      "top_10_concentration": 43.15,
+      "top_20_concentration": 61.51000000000001,
+      "high_freq_regimes": 23,
+      "low_freq_regimes": 45,
+      "concentration_score": 81.19320000000002
+    }
+  ],
+  "analysis": {
+    "best_configuration": {
+      "similarity_threshold": 0.85,
+      "frequency_threshold": 0.015,
+      "original_regimes": 100.0,
+      "final_regimes": 67.0,
+      "regimes_merged": 33.0,
+      "merge_ratio": 33.0,
+      "top_5_concentration": 29.049999999999997,
+      "top_10_concentration": 44.01,
+      "top_20_concentration": 62.59000000000001,
+      "high_freq_regimes": 23.0,
+      "low_freq_regimes": 44.0,
+      "concentration_score": 83.24470000000002
+    },
+    "similarity_analysis": {
+      "0.85": 64.29553333333334,
+      "0.9": 64.29553333333334,
+      "0.95": 63.611700000000006
+    },
+    "frequency_analysis": {
+      "0.005": 43.34279999999999,
+      "0.01": 66.2991,
+      "0.015": 82.56086666666668
+    }
+  }
+}

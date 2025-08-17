@@ -974,6 +974,19 @@ class EnhancedOrderManager:
                     # Force filled status if fully executed
                     if order_state.remaining_quantity <= 0:
                         order_state.status = OrderStatus.FILLED
+                    # Log to dedicated trades log
+                    try:
+                        from src.utils.comprehensive_logger import (
+                            get_comprehensive_logger,
+                        )
+
+                        cl = get_comprehensive_logger()
+                        if cl:
+                            cl.log_trade(
+                                f"FILLED {order_request.side.name} {simulated_fill_qty:.6f} {order_request.symbol} @ ${simulated_price:.4f} order_id={order_id}"
+                            )
+                    except Exception:
+                        pass
             else:
                 if not self.exchange_client:
                     self.logger.error(
@@ -1258,6 +1271,20 @@ class EnhancedOrderManager:
                                     OrderStatus.REJECTED,
                                     OrderStatus.EXPIRED,
                                 ):
+                                    # If filled, log to dedicated trades log
+                                    if status is OrderStatus.FILLED:
+                                        try:
+                                            from src.utils.comprehensive_logger import (
+                                                get_comprehensive_logger,
+                                            )
+
+                                            cl = get_comprehensive_logger()
+                                            if cl:
+                                                cl.log_trade(
+                                                    f"FILLED {state.side.name} {state.executed_quantity:.6f} {state.symbol} @ ${state.price or 0.0:.4f} order_id={oid}"
+                                                )
+                                        except Exception:
+                                            pass
                                     async with self._lock:
                                         self.order_history.append(state)
                                         self.active_orders.pop(oid, None)

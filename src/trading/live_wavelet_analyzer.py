@@ -146,7 +146,9 @@ class LiveWaveletAnalyzer:
         """Pre-compute wavelet coefficients for efficiency."""
         try:
             # Create a dummy signal for coefficient computation
-            dummy_signal = np.random.randn(self.sliding_window_size).astype(np.float32, copy=False)
+            dummy_signal = np.random.randn(self.sliding_window_size).astype(
+                np.float32, copy=False
+            )
 
             # Pre-compute DWT coefficients structure
             self.wavelet_obj = pywt.Wavelet(self.wavelet_type)

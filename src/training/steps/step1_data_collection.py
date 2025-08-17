@@ -1,5 +1,6 @@
 import asyncio
 import glob
+import json
 import os
 import pickle
 import sys
@@ -832,6 +833,70 @@ def consolidate_files(
     return combined_df
 
 
+# Import training pipeline decorators for comprehensive security and troubleshooting
+from src.utils.training_pipeline_decorators import (
+    validate_step_prerequisites,
+    secure_data_processing,
+    prevent_data_leakage,
+    resource_monitor,
+    memory_efficient,
+    debug_training_step,
+    circuit_breaker_protection,
+    validate_step_output,
+    quality_gate,
+)
+
+
+@validate_step_prerequisites(
+    required_directories=["data_cache"],
+    min_memory_gb=4.0,
+    min_disk_gb=5.0,
+    required_packages=["pandas", "numpy", "ccxt"],
+    data_quality_checks={
+        "min_rows": 10000,
+        "required_columns": ["timestamp", "open", "high", "low", "close", "volume"],
+    },
+    context="Data Collection",
+)
+@secure_data_processing(
+    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True
+)
+@prevent_data_leakage(temporal_validation=True, lookahead_bias_prevention=True)
+@resource_monitor(
+    memory_threshold_gb=8.0,
+    cpu_threshold_percent=80.0,
+    disk_threshold_gb=10.0,
+    monitor_interval=30.0,
+    auto_cleanup=True,
+)
+@memory_efficient(
+    chunk_size=50000, streaming_processing=True, memory_pool=True, cleanup_frequency=100
+)
+@debug_training_step(
+    log_intermediate_results=True,
+    save_debug_artifacts=True,
+    performance_profiling=True,
+    error_context_preservation=True,
+)
+@circuit_breaker_protection(
+    failure_threshold=5,
+    recovery_timeout=180.0,
+    expected_exception=Exception,
+    monitor_interval=30.0,
+)
+@validate_step_output(
+    required_files=["data_cache/{exchange}_{symbol}_klines.parquet"],
+    data_quality_checks={
+        "min_rows": 10000,
+        "required_columns": ["timestamp", "open", "high", "low", "close", "volume"],
+    },
+    performance_thresholds={"collection_time_minutes": 60.0},
+    format_validation=True,
+)
+@quality_gate(
+    data_quality_metrics={"completeness": 0.95, "consistency": 0.9},
+    validation_score_requirements={"data_integrity": 0.8},
+)
 @handle_errors(
     exceptions=(Exception,),
     default_return=(None, None, None),
@@ -902,16 +967,16 @@ async def run_step(
                     "   Blank training run: Limiting data download to recent data only",
                 )
                 # Temporarily override the config lookback for blank runs
-                original_lookback = CONFIG["MODEL_TRAINING"]["data_retention_days"]
-                CONFIG["MODEL_TRAINING"]["data_retention_days"] = min(
+                original_lookback = CONFIG["DATA_CONFIG"]["default_lookback_days"]
+                CONFIG["DATA_CONFIG"]["default_lookback_days"] = min(
                     lookback_days,
                     30,
                 )  # Max 30 days for blank runs
                 logger.info(
-                    f"   Temporarily set data_retention_days to {CONFIG['MODEL_TRAINING']['data_retention_days']} for blank run",
+                    f"   Temporarily set default_lookback_days to {CONFIG['DATA_CONFIG']['default_lookback_days']} for blank run",
                 )
                 print(
-                    f"   Temporarily set data_retention_days to {CONFIG['MODEL_TRAINING']['data_retention_days']} for blank run",
+                    f"   Temporarily set default_lookback_days to {CONFIG['DATA_CONFIG']['default_lookback_days']} for blank run",
                 )
 
             download_success = await download_all_data_with_consolidation(
@@ -922,9 +987,9 @@ async def run_step(
 
             # Restore original config if we modified it
             if lookback_days and lookback_days <= 60:
-                CONFIG["MODEL_TRAINING"]["data_retention_days"] = original_lookback
-                logger.info(f"   Restored data_retention_days to {original_lookback}")
-                print(f"   Restored data_retention_days to {original_lookback}")
+                CONFIG["DATA_CONFIG"]["default_lookback_days"] = original_lookback
+                logger.info(f"   Restored default_lookback_days to {original_lookback}")
+                print(f"   Restored default_lookback_days to {original_lookback}")
 
             logger.info(
                 f"   download_all_data_with_consolidation completed: {download_success}",
@@ -1306,6 +1371,65 @@ async def run_step(
         logger.info(f"   - Futures: {len(futures_df)} rows")
         logger.info(f"💾 Final training artifact saved to: {pickle_path}")
         logger.info("=" * 80)
+
+        # Create checkpoint for step1_data_collection
+        try:
+            checkpoint_dir = Path("checkpoints")
+            checkpoint_dir.mkdir(exist_ok=True)
+            
+            # Create namespaced checkpoint directory
+            ns_dir = checkpoint_dir / exchange_name / symbol / "1m"
+            ns_dir.mkdir(parents=True, exist_ok=True)
+            
+            checkpoint_data = {
+                "timestamp": datetime.now().isoformat(),
+                "step_name": "step1_data_collection",
+                "status": "completed",
+                "symbol": symbol,
+                "exchange": exchange_name,
+                "timeframe": "1m",
+                "data_summary": {
+                    "klines_rows": len(klines_df),
+                    "agg_trades_rows": len(agg_trades_df),
+                    "futures_rows": len(futures_df),
+                    "pickle_path": pickle_path
+                },
+                "duration_seconds": total_duration,
+                "errors": []
+            }
+            
+            # Save individual step checkpoint
+            step_checkpoint_file = checkpoint_dir / "step1_data_collection.json"
+            with open(step_checkpoint_file, "w") as f:
+                json.dump(checkpoint_data, f, indent=2)
+            
+            # Also save to centralized training progress file
+            centralized_checkpoint_file = ns_dir / "training_progress.json"
+            centralized_data = {
+                "timestamp": datetime.now().isoformat(),
+                "current_step": "step1_data_collection",
+                "pipeline_state": {
+                    "data_collection": {
+                        "status": "SUCCESS",
+                        "completed": True,
+                        "data_summary": checkpoint_data["data_summary"]
+                    }
+                },
+                "symbol": symbol,
+                "exchange": exchange_name,
+                "timeframe": "1m"
+            }
+            
+            with open(centralized_checkpoint_file, "w") as f:
+                json.dump(centralized_data, f, indent=2)
+            
+            logger.info(f"💾 Checkpoint created for step1_data_collection: {step_checkpoint_file}")
+            logger.info(f"💾 Centralized checkpoint updated: {centralized_checkpoint_file}")
+            print(f"💾 Checkpoint created for step1_data_collection")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to create checkpoint for step1_data_collection: {e}")
+            print(f"⚠️ Failed to create checkpoint for step1_data_collection: {e}")
 
         # Run data collection quality analysis
         logger.info("🔍 Running data collection quality analysis...")

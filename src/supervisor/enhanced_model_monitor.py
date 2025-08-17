@@ -245,7 +245,9 @@ class EnhancedModelMonitor:
             self.logger.info("🔍 Drift detection initialized")
 
         except Exception:
-            self.logger.exception(initialization_error("Error initializing drift detection: {e}"))
+            self.logger.exception(
+                initialization_error("Error initializing drift detection: {e}")
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -261,7 +263,9 @@ class EnhancedModelMonitor:
             self.logger.info("📈 Feature importance tracking initialized")
 
         except Exception:
-            self.logger.exception(initialization_error("Error initializing feature tracking: {e}"))
+            self.logger.exception(
+                initialization_error("Error initializing feature tracking: {e}")
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -277,7 +281,9 @@ class EnhancedModelMonitor:
             self.logger.info("🎯 Ensemble monitoring initialized")
 
         except Exception:
-            self.logger.exception(initialization_error("Error initializing ensemble monitoring: {e}"))
+            self.logger.exception(
+                initialization_error("Error initializing ensemble monitoring: {e}")
+            )
 
     @handle_specific_errors(
         error_handlers={
@@ -304,7 +310,9 @@ class EnhancedModelMonitor:
             return True
 
         except Exception:
-            self.logger.exception(failed("❌ Failed to start Enhanced Model Monitor: {e}"))
+            self.logger.exception(
+                failed("❌ Failed to start Enhanced Model Monitor: {e}")
+            )
             return False
 
     @handle_errors(

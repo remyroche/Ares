@@ -923,13 +923,12 @@ class EnhancedCoarseOptimizer:
 
         try:
             X_selected = X[features]
-            X_train, X_val, y_train, y_val = train_test_split(
-                X_selected,
-                y,
-                test_size=0.2,
-                random_state=42,
-                stratify=y,
-            )
+            # FIXED: Use time-based split to prevent lookahead bias
+            split_idx = int(len(X_selected) * 0.8)
+            X_train = X_selected.iloc[:split_idx]
+            X_val = X_selected.iloc[split_idx:]
+            y_train = y.iloc[:split_idx]
+            y_val = y.iloc[split_idx:]
 
             n_classes = len(y.unique())
             self.logger.info(

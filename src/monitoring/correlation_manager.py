@@ -101,7 +101,9 @@ class CorrelationManager:
             return True
 
         except Exception:
-            self.logger.exception(failed("❌ Correlation Manager initialization failed: {e}"))
+            self.logger.exception(
+                failed("❌ Correlation Manager initialization failed: {e}")
+            )
             return False
 
     @handle_errors(
@@ -163,7 +165,9 @@ class CorrelationManager:
         """
         try:
             if correlation_id not in self.correlation_requests:
-                self.logger.warning(missing("Correlation ID not found: {correlation_id}"))
+                self.logger.warning(
+                    missing("Correlation ID not found: {correlation_id}")
+                )
                 return
 
             correlation_request = self.correlation_requests[correlation_id]

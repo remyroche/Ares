@@ -5,6 +5,8 @@ feature_selection:
   # VIF (Variance Inflation Factor) threshold - higher values are more permissive
   # This threshold is used for remaining features after PCA combination
   vif_threshold: 10.0
+  # Optional distinct VIF threshold for Step 2 (if different policy is desired)
+  vif_threshold_step2: 20.0
   
   # PCA combination settings for highly collinear features
   pca_combination:
@@ -29,21 +31,33 @@ feature_selection:
   
   # Correlation threshold for removing highly correlated features
   correlation_threshold: 0.98
+
+  # Cluster-based correlation pruning (reduces redundancy while keeping a representative)
+  cluster_corr_threshold: 0.95
+  # Maximum fraction of features to remove via cluster correlation pruning
+  cluster_corr_max_removal_fraction: 0.5
+
+  # Global safety cap for total removal at this stage (correlation + VIF)
+  max_total_removal_fraction: 0.5
   
   # Maximum percentage of features to remove in a single step
-  # Increased from 0.3 to 0.7 to allow removal of problematic features
-  max_removal_percentage: 0.7
+  # Optimized to allow reasonable feature removal while preventing over-aggressive filtering
+  max_removal_percentage: 0.1
   
   # Whether to enable each selection method
   enable_constant_removal: true
   enable_correlation_removal: true
-  enable_vif_removal: true
+  enable_vif_removal: true  # Re-enabled with new intelligent removal approach
   enable_mutual_info_removal: true
   enable_importance_removal: true
   
   # Safety checks
   enable_safety_checks: true
   return_original_on_failure: true
+  
+  # Optimized removal settings
+  # Allow small feature removals (up to this percentage) even if above max_removal_percentage
+  small_removal_allowance: 0.05  # 5% allowance for small beneficial removals
   
   # Emergency override for perfect multicollinearity
   # These settings will ALWAYS remove problematic features regardless of safety thresholds

@@ -244,68 +244,12 @@ class FeatureIntegrationManager:
             )
             liquidity_features["liquidity_percentile"] = liquidity_percentile
 
-            # Liquidity stress calculation
-            liquidity_features["liquidity_stress"] = self._calculate_liquidity_stress(
-                liquidity_features,
-            )
-
             # Convert to DataFrame
             return pd.DataFrame(liquidity_features)
 
         except Exception as e:
             self.print(error("Error adding liquidity features: {e}"))
             return pd.DataFrame()
-
-    def _calculate_liquidity_stress(
-        self,
-        liquidity_features: dict[str, pd.Series],
-    ) -> pd.Series:
-        """Calculate liquidity stress score."""
-        try:
-            stress_factors = []
-
-            # Volume-based stress
-            volume_liquidity = liquidity_features.get(
-                "volume_liquidity",
-                pd.Series(1.0),
-            )
-            volume_stress = pd.Series(0.1, index=volume_liquidity.index)
-            volume_stress[volume_liquidity < 0.5] = 0.8
-            volume_stress[(volume_liquidity >= 0.5) & (volume_liquidity < 0.8)] = 0.4
-            stress_factors.append(volume_stress)
-
-            # Price impact stress
-            price_impact = liquidity_features.get("price_impact", pd.Series(0.0))
-            impact_stress = pd.Series(0.1, index=price_impact.index)
-            impact_stress[price_impact > 0.001] = 0.9
-            impact_stress[(price_impact > 0.0005) & (price_impact <= 0.001)] = 0.5
-            stress_factors.append(impact_stress)
-
-            # Amihud illiquidity stress
-            amihud_illiquidity = liquidity_features.get(
-                "amihud_illiquidity",
-                pd.Series(0.0),
-            )
-            amihud_stress = pd.Series(0.1, index=amihud_illiquidity.index)
-            amihud_stress[amihud_illiquidity > 0.01] = 0.9
-            amihud_stress[
-                (amihud_illiquidity > 0.005) & (amihud_illiquidity <= 0.01)
-            ] = 0.5
-            stress_factors.append(amihud_stress)
-
-            # Calculate average stress score
-            if stress_factors:
-                stress_df = pd.concat(stress_factors, axis=1)
-                return stress_df.mean(axis=1)
-
-            return pd.Series(
-                0.0,
-                index=liquidity_features.get("volume_liquidity", pd.Series()).index,
-            )
-
-        except Exception as e:
-            self.print(error("Error calculating liquidity stress: {e}"))
-            return pd.Series(0.0)
 
     def _select_optimal_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Select optimal features using correlation analysis and PCA."""

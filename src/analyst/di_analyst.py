@@ -15,7 +15,7 @@ import pandas as pd
 from src.analyst.dual_model_system import DualModelSystem
 from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
 from src.analyst.liquidation_risk_model import LiquidationRiskModel
-from src.analyst.market_health_analyzer import MarketHealthAnalyzer
+
 from src.core.injectable_base import AnalystBase
 from src.interfaces.base_interfaces import (
     AnalysisResult,
@@ -65,7 +65,6 @@ class DIAnalyst(AnalystBase, IAnalyst):
 
         # Analysis components (will be initialized later)
         self.dual_model_system: DualModelSystem | None = None
-        self.market_health_analyzer: MarketHealthAnalyzer | None = None
         self.liquidation_risk_model: LiquidationRiskModel | None = None
         self.feature_engineering_orchestrator: FeatureEngineeringOrchestrator | None = (
             None
@@ -98,13 +97,6 @@ class DIAnalyst(AnalystBase, IAnalyst):
                 self.analyst_config.get("dual_model_system", {}),
             )
             await self.dual_model_system.initialize()
-
-        # Market Health Analyzer
-        if self.analyst_config.get("enable_market_health_analysis", True):
-            self.market_health_analyzer = MarketHealthAnalyzer(
-                self.analyst_config.get("market_health_analyzer", {}),
-            )
-            await self.market_health_analyzer.initialize()
 
         # Liquidation Risk Model
         if self.analyst_config.get("enable_liquidation_risk_analysis", True):

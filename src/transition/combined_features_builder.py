@@ -35,7 +35,11 @@ class CombinedFeaturesConfig:
 class CombinedFeaturesBuilder:
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.logger = system_logger.getChild("CombinedFeaturesBuilder")
-        cf = (config or {}).get("combined_features", {}) if isinstance(config, dict) else {}
+        cf = (
+            (config or {}).get("combined_features", {})
+            if isinstance(config, dict)
+            else {}
+        )
         self.cfg = CombinedFeaturesConfig(
             volatility_threshold=float(cf.get("volatility_threshold", 0.02))
         )
@@ -48,7 +52,9 @@ class CombinedFeaturesBuilder:
         rsi = 100 - (100 / (1 + rs))
         return rsi.replace([np.inf, -np.inf], np.nan).fillna(50.0)
 
-    def _macd(self, close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> tuple[pd.Series, pd.Series, pd.Series]:
+    def _macd(
+        self, close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9
+    ) -> tuple[pd.Series, pd.Series, pd.Series]:
         ema_fast = close.ewm(span=fast, adjust=False).mean()
         ema_slow = close.ewm(span=slow, adjust=False).mean()
         macd = ema_fast - ema_slow
@@ -56,7 +62,9 @@ class CombinedFeaturesBuilder:
         macd_hist = macd - macd_signal
         return macd, macd_signal, macd_hist
 
-    def _bb(self, close: pd.Series, window: int = 20, k: float = 2.0) -> tuple[pd.Series, pd.Series]:
+    def _bb(
+        self, close: pd.Series, window: int = 20, k: float = 2.0
+    ) -> tuple[pd.Series, pd.Series]:
         sma = close.rolling(window, min_periods=1).mean()
         std = close.rolling(window, min_periods=1).std()
         upper = sma + k * std
@@ -65,7 +73,9 @@ class CombinedFeaturesBuilder:
         pos = (close - lower) / (upper - lower).replace(0, np.nan)
         return pos.fillna(0.5), width.replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
-    def _atr(self, high: pd.Series, low: pd.Series, close: pd.Series, window: int = 14) -> pd.Series:
+    def _atr(
+        self, high: pd.Series, low: pd.Series, close: pd.Series, window: int = 14
+    ) -> pd.Series:
         high_low = high - low
         high_close = (high - close.shift()).abs()
         low_close = (low - close.shift()).abs()
@@ -74,19 +84,28 @@ class CombinedFeaturesBuilder:
 
     def build(self, ohlcv: pd.DataFrame) -> pd.DataFrame:
         if ohlcv is None or ohlcv.empty:
-            return pd.DataFrame(columns=REQUIRED_FEATURES, index=pd.Index([], name=getattr(ohlcv, 'index', None)))
+            return pd.DataFrame(
+                columns=REQUIRED_FEATURES,
+                index=pd.Index([], name=getattr(ohlcv, "index", None)),
+            )
         df = ohlcv.copy()
         df["log_returns"] = np.log(df["close"] / df["close"].shift(1))
         df["volatility_20"] = df["log_returns"].rolling(20, min_periods=2).std()
         if "volume" in df.columns:
             vol_ma = df["volume"].rolling(20, min_periods=1).mean()
-            df["volume_ratio"] = (df["volume"] / vol_ma).replace([np.inf, -np.inf], np.nan)
+            df["volume_ratio"] = (df["volume"] / vol_ma).replace(
+                [np.inf, -np.inf], np.nan
+            )
         else:
             df["volume_ratio"] = 1.0
         rsi = self._rsi(df["close"], 14)
-        macd, macd_sig, macd_hist = self._macd(df["close"]) 
-        bb_pos, bb_width = self._bb(df["close"]) 
-        atr = self._atr(df["high"], df["low"], df["close"]) if set(["high","low"]).issubset(df.columns) else pd.Series(0.0, index=df.index)
+        macd, macd_sig, macd_hist = self._macd(df["close"])
+        bb_pos, bb_width = self._bb(df["close"])
+        atr = (
+            self._atr(df["high"], df["low"], df["close"])
+            if set(["high", "low"]).issubset(df.columns)
+            else pd.Series(0.0, index=df.index)
+        )
         df["rsi"] = rsi
         df["macd"] = macd
         df["macd_signal"] = macd_sig
@@ -94,9 +113,16 @@ class CombinedFeaturesBuilder:
         df["bb_position"] = bb_pos
         df["bb_width"] = bb_width
         df["atr"] = atr
-        df["volatility_regime"] = (df["volatility_20"] > self.cfg.volatility_threshold).astype(int)
+        df["volatility_regime"] = (
+            df["volatility_20"] > self.cfg.volatility_threshold
+        ).astype(int)
         df["volatility_acceleration"] = df["volatility_20"].diff()
-        out = df[REQUIRED_FEATURES].replace([np.inf, -np.inf], np.nan).fillna(method="ffill").fillna(0.0)
+        out = (
+            df[REQUIRED_FEATURES]
+            .replace([np.inf, -np.inf], np.nan)
+            .fillna(method="ffill")
+            .fillna(0.0)
+        )
         return out
 
     def save_parquet(self, features_df: pd.DataFrame, path: str) -> None:

@@ -38,6 +38,7 @@ class ComprehensiveLogger:
         self.system_logger = None
         self.error_logger = None
         self.trade_logger = None
+        self.backtest_logger = None
         self.performance_logger = None
         self.global_logger = None  # Global logger for all logs
 
@@ -81,11 +82,14 @@ class ComprehensiveLogger:
 
         # Setup trade logger
         if self.log_config.get("enable_trade_logging", True):
+            trade_path = self.log_dir / f"ares_trades_{timestamp}.log"
             self.trade_logger = self._create_logger(
                 "AresTrades",
-                self.log_dir / f"ares_trades_{timestamp}.log",
+                trade_path,
                 "INFO",
             )
+            # Expose path for external usage
+            self._trades_log_path = trade_path
 
         # Setup performance logger
         if self.log_config.get("enable_performance_logging", True):
@@ -94,6 +98,17 @@ class ComprehensiveLogger:
                 self.log_dir / f"ares_performance_{timestamp}.log",
                 "INFO",
             )
+
+        # Setup backtest logger (dedicated per-run backtesting log)
+        if self.log_config.get("enable_backtest_logging", True):
+            backtest_path = self.log_dir / f"ares_backtest_{timestamp}.log"
+            self.backtest_logger = self._create_logger(
+                "AresBacktest",
+                backtest_path,
+                "INFO",
+            )
+            # Expose path for external usage
+            self._backtest_log_path = backtest_path
 
         # Persist timestamp for unified log path computation
         self._timestamp = timestamp
@@ -157,7 +172,10 @@ class ComprehensiveLogger:
             logging.captureWarnings(True)
 
             # Resolve path and handler
-            full_log_path = self.log_dir / f"ares_full_{getattr(self, '_timestamp', datetime.now().strftime('%Y%m%d_%H%M%S'))}.log"
+            full_log_path = (
+                self.log_dir
+                / f"ares_full_{getattr(self, '_timestamp', datetime.now().strftime('%Y%m%d_%H%M%S'))}.log"
+            )
             full_handler = logging.handlers.RotatingFileHandler(
                 full_log_path,
                 maxBytes=self.log_config.get("max_file_size", 10 * 1024 * 1024),
@@ -176,7 +194,7 @@ class ComprehensiveLogger:
             # Avoid duplicate handler attachment
             if not any(
                 isinstance(h, logging.handlers.RotatingFileHandler)
-                and getattr(h, 'baseFilename', None) == str(full_log_path)
+                and getattr(h, "baseFilename", None) == str(full_log_path)
                 for h in root_logger.handlers
             ):
                 root_logger.addHandler(full_handler)
@@ -189,7 +207,7 @@ class ComprehensiveLogger:
             legacy_logger = logging.getLogger("AresTradingSystem")
             if not any(
                 isinstance(h, logging.handlers.RotatingFileHandler)
-                and getattr(h, 'baseFilename', None) == str(full_log_path)
+                and getattr(h, "baseFilename", None) == str(full_log_path)
                 for h in legacy_logger.handlers
             ):
                 legacy_logger.addHandler(full_handler)
@@ -216,6 +234,10 @@ class ComprehensiveLogger:
         """Get the trade logger."""
         return self.trade_logger
 
+    def get_backtest_logger(self) -> logging.Logger | None:
+        """Get the backtest logger."""
+        return self.backtest_logger
+
     def get_performance_logger(self) -> logging.Logger | None:
         """Get the performance logger."""
         return self.performance_logger
@@ -237,7 +259,33 @@ class ComprehensiveLogger:
     def get_full_log_path(self) -> str | None:
         """Return the absolute path to the unified full-run log file, if set."""
         try:
-            return str(self._full_log_path) if getattr(self, "_full_log_path", None) else None
+            return (
+                str(self._full_log_path)
+                if getattr(self, "_full_log_path", None)
+                else None
+            )
+        except Exception:
+            return None
+
+    def get_trades_log_path(self) -> str | None:
+        """Return the absolute path to the trades log file, if set."""
+        try:
+            return (
+                str(self._trades_log_path)
+                if getattr(self, "_trades_log_path", None)
+                else None
+            )
+        except Exception:
+            return None
+
+    def get_backtest_log_path(self) -> str | None:
+        """Return the absolute path to the backtest log file, if set."""
+        try:
+            return (
+                str(self._backtest_log_path)
+                if getattr(self, "_backtest_log_path", None)
+                else None
+            )
         except Exception:
             return None
 
@@ -288,6 +336,15 @@ class ComprehensiveLogger:
             self.system_logger.info(f"[TRADE] {message}")
         if self.global_logger:
             self.global_logger.info(f"[TRADE] {message}")
+
+    def log_backtest(self, message: str):
+        """Log backtesting information to a dedicated backtest log as well as system/global logs."""
+        if self.backtest_logger:
+            self.backtest_logger.info(message)
+        if self.system_logger:
+            self.system_logger.info(f"[BACKTEST] {message}")
+        if self.global_logger:
+            self.global_logger.info(f"[BACKTEST] {message}")
 
     def log_performance(self, message: str):
         """Log performance information."""

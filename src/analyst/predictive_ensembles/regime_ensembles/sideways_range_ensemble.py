@@ -68,7 +68,9 @@ class SidewaysRangeEnsemble(BaseEnsemble):
         X_flat = df[self.flat_features].fillna(0)
         X_of = df[self.order_flow_features].fillna(0)
         meta_label_cols = [
-            c for c in df.columns if any(
+            c
+            for c in df.columns
+            if any(
                 c.startswith(prefix) and c.endswith(suffix)
                 for suffix in [
                     "STRONG_TREND_CONTINUATION",
@@ -102,7 +104,9 @@ class SidewaysRangeEnsemble(BaseEnsemble):
                 except Exception:
                     meta[col] = 0
             if meta_label_cols:
-                self.logger.info(f"SidewaysRangeEnsemble meta-learner live features include meta-labels: {meta_label_cols}")
+                self.logger.info(
+                    f"SidewaysRangeEnsemble meta-learner live features include meta-labels: {meta_label_cols}"
+                )
             return meta
         meta_df = pd.DataFrame(index=df.index)
         if self.models.get("clustering"):
@@ -122,5 +126,7 @@ class SidewaysRangeEnsemble(BaseEnsemble):
         meta_df = meta_df.join(X_flat)
         if meta_label_cols:
             meta_df = meta_df.join(df[meta_label_cols].astype(float))
-            self.logger.info(f"SidewaysRangeEnsemble meta-learner train features include meta-labels: {meta_label_cols}")
+            self.logger.info(
+                f"SidewaysRangeEnsemble meta-learner train features include meta-labels: {meta_label_cols}"
+            )
         return meta_df.fillna(0)

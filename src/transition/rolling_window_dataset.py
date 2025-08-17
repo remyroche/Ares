@@ -28,6 +28,7 @@ FEATURE_POOL_COLUMNS = [
     "volatility_acceleration",
 ]
 
+
 @dataclass
 class RollingWindowConfig:
     pre_window: int
@@ -49,7 +50,9 @@ class RollingWindowDatasetBuilder:
     - Onset-of-trend style target: any of {beginning_of_trend} within next K bars
     """
 
-    def __init__(self, config: dict[str, Any], exchange: str = "UNKNOWN", symbol: str = "UNKNOWN") -> None:
+    def __init__(
+        self, config: dict[str, Any], exchange: str = "UNKNOWN", symbol: str = "UNKNOWN"
+    ) -> None:
         self.config = config
         self.logger = system_logger.getChild("RollingWindowDatasetBuilder")
         tm = (config or {}).get("TRANSITION_MODELING", {})
@@ -62,7 +65,9 @@ class RollingWindowDatasetBuilder:
             include_direction_horizons=list(rcfg.get("direction_horizons", [5, 15])),
             max_samples=int(rcfg.get("max_samples", 0)) or None,
         )
-        self.state_builder = StateSequenceBuilder(config, exchange=exchange, symbol=symbol)
+        self.state_builder = StateSequenceBuilder(
+            config, exchange=exchange, symbol=symbol
+        )
         self.path_target = PathTargetEngineer(config)
 
     async def initialize(self) -> bool:
@@ -80,7 +85,9 @@ class RollingWindowDatasetBuilder:
                 out[f"std_{col}"] = float(np.nanstd(s.values))
         return out
 
-    def build(self, klines_df: pd.DataFrame, combined_df: pd.DataFrame) -> dict[str, Any]:
+    def build(
+        self, klines_df: pd.DataFrame, combined_df: pd.DataFrame
+    ) -> dict[str, Any]:
         if klines_df is None or combined_df is None or len(klines_df) == 0:
             return {"samples": [], "numeric_feature_names": []}
 
@@ -115,8 +122,8 @@ class RollingWindowDatasetBuilder:
         for t in range(loop_start, end + 1):
             pre_slice = slice(t - pre, t)
             post_slice = slice(t + 1, t + 1 + post)
-            X_states = states_df.iloc[pre_slice][["hmm_state_id","regime"]].copy()
-            Y_states = states_df.iloc[post_slice][["hmm_state_id","regime"]].copy()
+            X_states = states_df.iloc[pre_slice][["hmm_state_id", "regime"]].copy()
+            Y_states = states_df.iloc[post_slice][["hmm_state_id", "regime"]].copy()
             seq_num = combined_df.iloc[pre_slice]
             rf_feats = self._rf_pooled_features(seq_num)
             # Post returns and simple horizons
@@ -141,16 +148,18 @@ class RollingWindowDatasetBuilder:
                     dir_targets[f"direction_up_{H}"] = 0
                     dir_targets[f"return_{H}"] = 0.0
             # Assemble sample (onset/end filled in second pass)
-            samples.append({
-                "t_index": t,
-                "t0_time": klines_df.index[t],
-                "path_class": pc,
-                "X_pre_states": X_states,
-                "Y_post_states": Y_states,
-                "Y_post_returns": y_rets.copy(),
-                "rf_features": rf_feats,
-                **dir_targets,
-            })
+            samples.append(
+                {
+                    "t_index": t,
+                    "t0_time": klines_df.index[t],
+                    "path_class": pc,
+                    "X_pre_states": X_states,
+                    "Y_post_states": Y_states,
+                    "Y_post_returns": y_rets.copy(),
+                    "rf_features": rf_feats,
+                    **dir_targets,
+                }
+            )
             # No break; recent windowing handled by loop_start
 
         # Second pass: derive onset/end targets off path_classes
@@ -159,8 +168,18 @@ class RollingWindowDatasetBuilder:
         for s in samples:
             t = int(s.get("t_index", 0))
             # Onset of trend (beginning_of_trend within K bars)
-            s["onset_beginning"] = int(any(pc == "beginning_of_trend" for pc in path_classes[t : min(N, t + K + 1)]))
+            s["onset_beginning"] = int(
+                any(
+                    pc == "beginning_of_trend"
+                    for pc in path_classes[t : min(N, t + K + 1)]
+                )
+            )
             # End of trend (end_of_trend or reversal within J bars)
-            s["end_trend"] = int(any(pc in ("end_of_trend", "reversal") for pc in path_classes[t : min(N, t + J + 1)]))
+            s["end_trend"] = int(
+                any(
+                    pc in ("end_of_trend", "reversal")
+                    for pc in path_classes[t : min(N, t + J + 1)]
+                )
+            )
 
         return {"samples": samples, "numeric_feature_names": numeric_cols}

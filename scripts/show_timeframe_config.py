@@ -122,7 +122,7 @@ def show_timeframe_details(timeframe: str):
     timeframes = CONFIG.get("TIMEFRAMES", {})
 
     if timeframe not in timeframes:
-        print(missing("Timeframe '{timeframe}' not found in configuration")))
+        print(missing("Timeframe '{timeframe}' not found in configuration"))
         return
 
     info = timeframes[timeframe]

@@ -1,0 +1,112 @@
+================================================================================
+REGIME CALCULATION INVESTIGATION REPORT
+================================================================================
+
+🔍 REGIME FEATURE ANALYSIS:
+----------------------------------------
+📊 TREND_REGIME:
+   - Unique values: 1
+   - Variance: 0.000000
+   - Value counts: {0.0: 1000}
+   - Issues: Only one unique value - zero variance, Low variability: only 1 unique values, Too many zeros: 1000 out of 1000
+
+📊 VOLATILITY_REGIME:
+   - Unique values: 2
+   - Variance: 0.156521
+   - Value counts: {0: 806, 1: 194}
+   - Issues: Low variability: only 2 unique values, Too many zeros: 806 out of 1000
+
+📊 VOLUME_REGIME:
+   - Unique values: 3
+   - Variance: 0.403299
+   - Value counts: {0: 740, 1: 172, 2: 88}
+   - ✅ No issues detected
+
+💡 RECOMMENDATIONS:
+----------------------------------------
+1. Fix trend_regime: Only one unique value - zero variance, Low variability: only 1 unique values, Too many zeros: 1000 out of 1000
+2. Fix volatility_regime: Low variability: only 2 unique values, Too many zeros: 806 out of 1000
+3. Improve regime calculation logic to handle edge cases
+4. Add validation to ensure regime features have sufficient variability
+5. Consider using different binning strategies for regime classification
+6. Add fallback mechanisms when qcut fails due to duplicates
+
+🔧 FIXED CALCULATION CODE:
+----------------------------------------
+# TREND_REGIME FIX:
+
+def calculate_trend_regime_fixed(price_data: pd.DataFrame) -> pd.Series:
+    """Calculate trend regime with improved logic."""
+    close = price_data["close"]
+    sma_short = close.rolling(window=10).mean()
+    sma_long = close.rolling(window=30).mean()
+    trend_strength = (sma_short - sma_long)
+    
+    # Handle edge cases
+    if trend_strength.isna().all() or trend_strength.std() == 0:
+        return pd.Series(np.zeros(len(close)), index=close.index)
+    
+    # Use more robust binning
+    try:
+        # Try qcut first
+        trend_bins = pd.qcut(trend_strength.fillna(0), q=5, labels=False, duplicates="drop")
+        if trend_bins.nunique() < 3:
+            # Fallback to cut if qcut produces too few bins
+            trend_bins = pd.cut(trend_strength.fillna(0), bins=5, labels=False, include_lowest=True)
+    except Exception:
+        # Final fallback
+        trend_bins = pd.Series(np.zeros(len(close)), index=close.index)
+    
+    return trend_bins.fillna(0).astype(int)
+
+
+# VOLATILITY_REGIME FIX:
+
+def calculate_volatility_regime_fixed(price_data: pd.DataFrame) -> pd.Series:
+    """Calculate volatility regime with improved logic."""
+    close = price_data["close"]
+    vol = close.pct_change().rolling(window=20).std()
+    
+    # Handle edge cases
+    if vol.isna().all() or vol.std() == 0:
+        return pd.Series(np.zeros(len(close)), index=close.index)
+    
+    # Use more robust binning
+    try:
+        # Try qcut first
+        vol_bins = pd.qcut(vol.fillna(0), q=5, labels=False, duplicates="drop")
+        if vol_bins.nunique() < 3:
+            # Fallback to cut if qcut produces too few bins
+            vol_bins = pd.cut(vol.fillna(0), bins=5, labels=False, include_lowest=True)
+    except Exception:
+        # Final fallback
+        vol_bins = pd.Series(np.zeros(len(close)), index=close.index)
+    
+    return vol_bins.fillna(0).astype(int)
+
+
+# VOLUME_REGIME FIX:
+
+def calculate_volume_regime_fixed(volume_data: pd.DataFrame) -> pd.Series:
+    """Calculate volume regime with improved logic."""
+    volume = volume_data["volume"]
+    vol_ma = volume.rolling(window=20).mean()
+    volume_ratio = (volume / vol_ma.replace(0, np.nan)).fillna(0)
+    
+    # Handle edge cases
+    if volume_ratio.isna().all() or volume_ratio.std() == 0:
+        return pd.Series(np.zeros(len(volume)), index=volume.index)
+    
+    # Use more robust binning
+    try:
+        # Try qcut first
+        volreg_bins = pd.qcut(volume_ratio, q=5, labels=False, duplicates="drop")
+        if volreg_bins.nunique() < 3:
+            # Fallback to cut if qcut produces too few bins
+            volreg_bins = pd.cut(volume_ratio, bins=5, labels=False, include_lowest=True)
+    except Exception:
+        # Final fallback
+        volreg_bins = pd.Series(np.zeros(len(volume)), index=volume.index)
+    
+    return volreg_bins.fillna(0).astype(int)
+

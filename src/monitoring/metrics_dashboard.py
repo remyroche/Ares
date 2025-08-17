@@ -208,7 +208,9 @@ class MetricsDashboard:
             return True
 
         except Exception:
-            self.logger.exception(failed("❌ Metrics Dashboard initialization failed: {e}"))
+            self.logger.exception(
+                failed("❌ Metrics Dashboard initialization failed: {e}")
+            )
             return False
 
     @handle_errors(
@@ -226,7 +228,9 @@ class MetricsDashboard:
             self.logger.info("Metric storage initialized")
 
         except Exception:
-            self.logger.exception(initialization_error("Error initializing metric storage: {e}"))
+            self.logger.exception(
+                initialization_error("Error initializing metric storage: {e}")
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -432,7 +436,9 @@ class MetricsDashboard:
                     )
                     return
                 except Exception:
-                    self.logger.warning(warning("Falling back to default system metrics: {e}"))
+                    self.logger.warning(
+                        warning("Falling back to default system metrics: {e}")
+                    )
 
             # Fallback sample metrics
             self.system_health_metrics = SystemHealthMetrics(

@@ -38,7 +38,12 @@ from src.utils.warning_symbols import (
     initialization_error,
     execution_error,
 )
-from src.utils.decorators import enforce_ndarray, guard_array_nan_inf, with_tracing_span, guard_dataframe_nulls
+from src.utils.decorators import (
+    enforce_ndarray,
+    guard_array_nan_inf,
+    with_tracing_span,
+    guard_dataframe_nulls,
+)
 
 
 @dataclass
@@ -375,10 +380,23 @@ class ParallelBacktester:
         else:
             self.n_workers = config.max_workers
 
-        self.executor = ProcessPoolExecutor(max_workers=self.n_workers)
+        self.executor = None
         self.logger.info(
             f"Initialized parallel backtester with {self.n_workers} workers",
         )
+
+    def _get_executor(self):
+        """Get or create ProcessPoolExecutor with proper cleanup."""
+        if self.executor is None:
+            self.executor = ProcessPoolExecutor(max_workers=self.n_workers)
+        return self.executor
+
+    def cleanup(self):
+        """Clean up resources properly."""
+        if self.executor is not None:
+            self.executor.shutdown(wait=True)
+            self.executor = None
+            self.logger.info("ProcessPoolExecutor cleaned up")
 
     def evaluate_batch(
         self,
@@ -391,9 +409,10 @@ class ParallelBacktester:
         data_pickle = pickle.dumps(market_data)
 
         # Submit batch for parallel evaluation
+        executor = self._get_executor()
         futures = []
         for params in param_batch:
-            future = self.executor.submit(
+            future = executor.submit(
                 self._evaluate_single_params,
                 data_pickle,
                 params,
@@ -846,11 +865,11 @@ class MemoryEfficientData:
         for col in df.select_dtypes(include=["int64"]).columns:
             df[col] = pd.to_numeric(df[col], downcast="integer")
 
-       # Reduce noise: move to debug and include shape
+        # Reduce noise: move to debug and include shape
         try:
             self.logger.debug(f"Optimized DataFrame memory usage: shape={df.shape}")
         except Exception:
-           pass
+            pass
         return df
 
     def get_subset(self, start_idx: int, end_idx: int) -> np.ndarray:

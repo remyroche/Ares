@@ -104,7 +104,7 @@ class ExchangeConfig:
 class ModelTrainingConfig:
     """Model training configuration settings."""
 
-    lookback_days: int = 180  # Increased for BLANK mode
+    lookback_days: int = 180  # Exactly 6 months for consistent data range
     training_split: float = 0.8
     validation_split: float = 0.1
     test_split: float = 0.1

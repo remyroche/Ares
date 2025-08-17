@@ -204,7 +204,9 @@ class ParquetDatasetManager:
             )
 
     @guard_dataframe_nulls(mode="warn", arg_index=1)
-    @with_tracing_span("ParquetDatasetManager.enforce_schema", log_args=False, log_result_len_only=True)
+    @with_tracing_span(
+        "ParquetDatasetManager.enforce_schema", log_args=False, log_result_len_only=True
+    )
     def enforce_schema(self, df: pd.DataFrame, schema_name: str) -> pd.DataFrame:
         """Standardize dtypes for known schemas to avoid costly inference and mismatches.
 
@@ -1303,9 +1305,11 @@ class UnifiedDataConverter:
             # Ensure timestamp is in the right format
             if "timestamp" in klines_data.columns:
                 klines_data = klines_data.copy()
+                # Convert to datetime first
                 klines_data["timestamp"] = pd.to_datetime(
                     klines_data["timestamp"], utc=True
                 )
+                # Convert to milliseconds (divide by 10^6 for nanoseconds to milliseconds)
                 klines_data["timestamp"] = (
                     klines_data["timestamp"].astype(np.int64) // 10**6
                 )
@@ -1316,7 +1320,7 @@ class UnifiedDataConverter:
             klines_data["month"] = ts.dt.month.astype("int8")
             klines_data["day"] = ts.dt.day.astype("int8")
 
-            # Get date range
+            # Get date range from actual data timestamps
             min_date = start_date if start_date else ts.min().date()
             max_date = ts.max().date()
             total_days = (max_date - min_date).days + 1
@@ -1749,15 +1753,31 @@ class UnifiedDataConverter:
     ) -> bool:
         """Write daily partition to unified dataset."""
         try:
+            # Use actual timestamp data to determine the correct partition path
+            if "timestamp" in daily_data.columns and not daily_data.empty:
+                # Convert timestamp to datetime to get the actual date
+                actual_ts = pd.to_datetime(daily_data["timestamp"], unit="ms", utc=True)
+                actual_date = actual_ts.iloc[0].date()
+
+                # Use the actual date from the data, not the target_date
+                partition_year = actual_date.year
+                partition_month = actual_date.month
+                partition_day = actual_date.day
+            else:
+                # Fallback to target_date if no timestamp data
+                partition_year = target_date.year
+                partition_month = target_date.month
+                partition_day = target_date.day
+
             # Create partition directory structure
             partition_path = os.path.join(
                 base_dir,
                 f"exchange={exchange.upper()}",
                 f"symbol={symbol}",
                 f"timeframe={timeframe}",
-                f"year={target_date.year}",
-                f"month={target_date.month:02d}",
-                f"day={target_date.day:02d}",
+                f"year={partition_year}",
+                f"month={partition_month:02d}",
+                f"day={partition_day:02d}",
             )
 
             os.makedirs(partition_path, exist_ok=True)
@@ -2015,7 +2035,7 @@ class UnifiedDataConverter:
     async def _load_klines_data(
         self, symbol: str, exchange: str, timeframe: str
     ) -> Optional[pd.DataFrame]:
-        """Load klines data from existing consolidated files."""
+        """Load klines data from existing consolidated files or create from aggtrades."""
         try:
             # Always check data_cache first (where the data actually is)
             data_cache_dir = "data_cache"
@@ -2072,6 +2092,19 @@ class UnifiedDataConverter:
                     self.logger.info(f"   ✅ Loaded {len(df)} klines rows")
                     return df
 
+            # If no klines data found, try to create it from aggtrades
+            self.logger.info(
+                f"🔄 No klines data found, attempting to create from aggtrades..."
+            )
+            klines_df = await self._create_klines_from_aggtrades(
+                symbol, exchange, timeframe
+            )
+            if klines_df is not None and not klines_df.empty:
+                self.logger.info(
+                    f"✅ Successfully created klines data from aggtrades: {len(klines_df)} rows"
+                )
+                return klines_df
+
             self.logger.warning(
                 f"⚠️ No klines data found for {exchange}_{symbol}_{timeframe}"
             )
@@ -2079,6 +2112,140 @@ class UnifiedDataConverter:
 
         except Exception as e:
             self.logger.error(f"❌ Failed to load klines data: {e}")
+            return None
+
+    async def _create_klines_from_aggtrades(
+        self, symbol: str, exchange: str, timeframe: str
+    ) -> Optional[pd.DataFrame]:
+        """Create klines data from individual aggtrades files."""
+        try:
+            self.logger.info(
+                f"🔄 Creating klines from aggtrades for {exchange}_{symbol}_{timeframe}"
+            )
+
+            # Find all aggtrades files for this symbol/exchange
+            aggtrades_pattern = f"aggtrades_{exchange}_{symbol}_*.parquet"
+            aggtrades_files = glob.glob(os.path.join("data_cache", aggtrades_pattern))
+
+            if not aggtrades_files:
+                self.logger.warning(
+                    f"⚠️ No aggtrades files found matching pattern: {aggtrades_pattern}"
+                )
+                return None
+
+            self.logger.info(f"📁 Found {len(aggtrades_files)} aggtrades files")
+
+            # Load and combine all aggtrades files
+            all_aggtrades = []
+            for file_path in sorted(aggtrades_files):
+                try:
+                    df = pd.read_parquet(file_path)
+                    if not df.empty:
+                        all_aggtrades.append(df)
+                        self.logger.debug(
+                            f"📊 Loaded {len(df)} rows from {os.path.basename(file_path)}"
+                        )
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to load {file_path}: {e}")
+                    continue
+
+            if not all_aggtrades:
+                self.logger.error("❌ No valid aggtrades data found")
+                return None
+
+            # Combine all aggtrades data
+            combined_aggtrades = pd.concat(all_aggtrades, ignore_index=True)
+            self.logger.info(
+                f"📊 Combined {len(combined_aggtrades)} total aggtrades rows"
+            )
+
+            # Convert aggtrades to klines format
+            klines_df = self._convert_aggtrades_to_klines(combined_aggtrades, timeframe)
+
+            if klines_df is not None and not klines_df.empty:
+                # Save the consolidated klines data for future use
+                output_path = os.path.join(
+                    "data_cache",
+                    f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet",
+                )
+                klines_df.to_parquet(output_path, index=False)
+                self.logger.info(f"💾 Saved consolidated klines to: {output_path}")
+
+            return klines_df
+
+        except Exception as e:
+            self.logger.error(f"❌ Failed to create klines from aggtrades: {e}")
+            return None
+
+    def _convert_aggtrades_to_klines(
+        self, aggtrades_df: pd.DataFrame, timeframe: str
+    ) -> Optional[pd.DataFrame]:
+        """Convert aggtrades data to klines format."""
+        try:
+            # Ensure we have the required columns
+            required_columns = ["timestamp", "price", "quantity"]
+            if not all(col in aggtrades_df.columns for col in required_columns):
+                self.logger.error(
+                    f"❌ Missing required columns. Available: {list(aggtrades_df.columns)}"
+                )
+                return None
+
+            # Convert timestamp to datetime if needed
+            if aggtrades_df["timestamp"].dtype == "int64":
+                aggtrades_df["timestamp"] = pd.to_datetime(
+                    aggtrades_df["timestamp"], unit="ms"
+                )
+            else:
+                aggtrades_df["timestamp"] = pd.to_datetime(aggtrades_df["timestamp"])
+
+            # Ensure timezone awareness
+            if aggtrades_df["timestamp"].dt.tz is None:
+                aggtrades_df["timestamp"] = aggtrades_df["timestamp"].dt.tz_localize(
+                    "UTC"
+                )
+
+            # Sort by timestamp
+            aggtrades_df = aggtrades_df.sort_values("timestamp").reset_index(drop=True)
+
+            # Resample to the target timeframe
+            aggtrades_df.set_index("timestamp", inplace=True)
+
+            # Define resampling rules based on timeframe
+            if timeframe == "1m":
+                rule = "1T"  # 1 minute
+            elif timeframe == "5m":
+                rule = "5T"  # 5 minutes
+            elif timeframe == "15m":
+                rule = "15T"  # 15 minutes
+            elif timeframe == "30m":
+                rule = "30T"  # 30 minutes
+            elif timeframe == "1h":
+                rule = "1H"  # 1 hour
+            else:
+                self.logger.error(f"❌ Unsupported timeframe: {timeframe}")
+                return None
+
+            # Resample and aggregate
+            resampled = (
+                aggtrades_df.resample(rule)
+                .agg({"price": ["first", "last", "min", "max"], "quantity": "sum"})
+                .dropna()
+            )
+
+            # Flatten column names
+            resampled.columns = ["open", "close", "low", "high", "volume"]
+            resampled.reset_index(inplace=True)
+
+            # Keep timestamp in datetime format (don't convert to milliseconds here)
+            # The main processing will handle the conversion to milliseconds
+
+            self.logger.info(
+                f"✅ Converted aggtrades to {timeframe} klines: {len(resampled)} rows"
+            )
+            return resampled
+
+        except Exception as e:
+            self.logger.error(f"❌ Failed to convert aggtrades to klines: {e}")
             return None
 
     async def _fill_missing_values(self, unified: pd.DataFrame) -> pd.DataFrame:

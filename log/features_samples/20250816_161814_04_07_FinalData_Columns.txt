@@ -1,0 +1,22 @@
+Stage: FinalData | Step: 04_07 | Columns: 20
+NaN_total=0 | Inf_total=0
+sma_5: float64
+sma_20: float64
+ema_12: float64
+ema_26: float64
+price_momentum_20: float64
+volatility_5: float64
+volume_ma_5: float64
+volume_ma_20: float64
+volume_momentum: float64
+high_low_ratio: float64
+close_open_ratio: float64
+body_size: float64
+upper_shadow: float64
+lower_shadow: float64
+rsi: float64
+macd: float64
+macd_signal: float64
+macd_histogram: float64
+close_returns: float64
+label: int8

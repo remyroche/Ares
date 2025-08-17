@@ -1,578 +1,550 @@
 """
-Enhanced Error Handling and Recovery Strategies for Ares Trading Bot.
+Enhanced Error Handling for Training Steps with Comprehensive Logging and Recovery.
 
-This module provides advanced error handling patterns, automatic recovery strategies,
-circuit breaker pattern, and comprehensive type safety with 100% type hint coverage.
+This module provides specialized error handling for training steps with:
+- Detailed step-by-step logging
+- Progress tracking
+- Recovery strategies
+- Performance monitoring
+- Validation integration
 """
 
 import asyncio
 import functools
 import logging
 import time
-from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable
+import traceback
+from contextlib import contextmanager
 from dataclasses import dataclass, field
-from enum import Enum, auto
-from typing import Any, TypeVar, cast
+from enum import Enum
+from functools import wraps
+from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union
 
-import numpy as np
+import pandas as pd
 
-from src.utils.warning_symbols import (
-    failed,
-    warning,
-)
-
-# Type variables for generic functions
+# Type variables
 T = TypeVar("T")
-R = TypeVar("R")
 F = TypeVar("F", bound=Callable[..., Any])
 
 
-class CircuitState(Enum):
-    """Circuit breaker states."""
+class StepStatus(Enum):
+    """Status of training step execution."""
 
-    CLOSED = auto()  # Normal operation
-    OPEN = auto()  # Failing, reject requests
-    HALF_OPEN = auto()  # Testing if service is recovered
-
-
-@dataclass
-class CircuitBreakerConfig:
-    """Configuration for circuit breaker pattern."""
-
-    failure_threshold: int = 5
-    recovery_timeout: float = 60.0
-    expected_exception: type[Exception] = Exception
-    monitor_interval: float = 10.0
+    NOT_STARTED = "not_started"
+    IN_PROGRESS = "in_progress"
+    SUCCESS = "success"
+    FAILED = "failed"
+    RECOVERED = "recovered"
+    SKIPPED = "skipped"
 
 
 @dataclass
-class RecoveryStrategy(ABC):
-    """Abstract base class for recovery strategies."""
+class StepExecutionContext:
+    """Context for step execution with detailed tracking."""
 
-    @abstractmethod
-    async def execute(self, context: dict[str, Any]) -> Any | None:
-        """Execute the recovery strategy."""
+    step_name: str
+    start_time: float = field(default_factory=time.time)
+    end_time: Optional[float] = None
+    status: StepStatus = StepStatus.NOT_STARTED
+    error: Optional[Exception] = None
+    error_traceback: Optional[str] = None
+    recovery_attempts: int = 0
+    max_recovery_attempts: int = 3
+    performance_metrics: Dict[str, Any] = field(default_factory=dict)
+    validation_results: Dict[str, Any] = field(default_factory=dict)
+    progress_messages: List[str] = field(default_factory=list)
 
-    @abstractmethod
-    def can_handle(self, error: Exception) -> bool:
-        """Check if this strategy can handle the given error."""
+    def add_progress(self, message: str) -> None:
+        """Add a progress message with timestamp."""
+        timestamp = time.strftime("%H:%M:%S")
+        self.progress_messages.append(f"[{timestamp}] {message}")
 
+    def set_error(self, error: Exception) -> None:
+        """Set error details."""
+        self.error = error
+        self.error_traceback = traceback.format_exc()
+        self.status = StepStatus.FAILED
+        self.end_time = time.time()
 
-@dataclass
-class RetryStrategy(RecoveryStrategy):
-    """Retry strategy with exponential backoff."""
+    def mark_success(self) -> None:
+        """Mark step as successful."""
+        self.status = StepStatus.SUCCESS
+        self.end_time = time.time()
 
-    max_retries: int = 3
-    base_delay: float = 1.0
-    max_delay: float = 60.0
-    backoff_factor: float = 2.0
-    jitter: bool = True
+    def mark_recovered(self) -> None:
+        """Mark step as recovered."""
+        self.status = StepStatus.RECOVERED
+        self.end_time = time.time()
 
-    async def execute(self, context: dict[str, Any]) -> Any | None:
-        """Execute retry strategy."""
-        operation = context.get("operation")
-        args = context.get("args", ())
-        kwargs = context.get("kwargs", {})
-
-        if not operation:
-            return None
-
-        for attempt in range(self.max_retries + 1):
-            try:
-                if asyncio.iscoroutinefunction(operation):
-                    return await operation(*args, **kwargs)
-                return operation(*args, **kwargs)
-            except Exception:
-                if attempt == self.max_retries:
-                    raise
-
-                delay = min(
-                    self.base_delay * (self.backoff_factor**attempt),
-                    self.max_delay,
-                )
-
-                if self.jitter:
-                    delay *= 0.5 + np.random.random() * 0.5
-
-                await asyncio.sleep(delay)
-
-        return None
-
-    def can_handle(self, error: Exception) -> bool:
-        """Retry can handle any exception."""
-        return True
+    def get_duration(self) -> float:
+        """Get execution duration in seconds."""
+        end_time = self.end_time or time.time()
+        return end_time - self.start_time
 
 
-@dataclass
-class FallbackStrategy(RecoveryStrategy):
-    """Fallback strategy with multiple fallback operations."""
+class TrainingStepErrorHandler:
+    """Enhanced error handler specifically for training steps."""
 
-    fallback_operations: list[Callable[..., Any]] = field(default_factory=list)
+    def __init__(self, logger: Optional[logging.Logger] = None):
+        self.logger = logger or logging.getLogger(__name__)
+        self.execution_contexts: Dict[str, StepExecutionContext] = {}
+        self.global_start_time = time.time()
 
-    async def execute(self, context: dict[str, Any]) -> Any | None:
-        """Execute fallback strategy."""
-        args = context.get("args", ())
-        kwargs = context.get("kwargs", {})
+    def get_context(self, step_name: str) -> StepExecutionContext:
+        """Get or create execution context for a step."""
+        if step_name not in self.execution_contexts:
+            self.execution_contexts[step_name] = StepExecutionContext(step_name)
+        return self.execution_contexts[step_name]
 
-        for i, operation in enumerate(self.fallback_operations):
-            try:
-                if asyncio.iscoroutinefunction(operation):
-                    return await operation(*args, **kwargs)
-                return operation(*args, **kwargs)
-            except Exception:
-                if i == len(self.fallback_operations) - 1:
-                    raise
-                continue
+    def log_step_start(self, step_name: str, **kwargs) -> None:
+        """Log step start with context."""
+        context = self.get_context(step_name)
+        context.status = StepStatus.IN_PROGRESS
+        context.add_progress(f"🚀 Starting {step_name}")
 
-        return None
+        # Log key parameters
+        if kwargs:
+            param_str = ", ".join(
+                [f"{k}={v}" for k, v in kwargs.items() if v is not None]
+            )
+            context.add_progress(f"Parameters: {param_str}")
 
-    def can_handle(self, error: Exception) -> bool:
-        """Fallback can handle any exception."""
-        return True
+        self.logger.info(f"🚀 Step {step_name} started")
+        if kwargs:
+            self.logger.info(f"📋 {step_name} parameters: {param_str}")
 
+    def log_step_progress(
+        self, step_name: str, message: str, level: str = "info"
+    ) -> None:
+        """Log step progress with context."""
+        context = self.get_context(step_name)
+        context.add_progress(message)
 
-@dataclass
-class GracefulDegradationStrategy(RecoveryStrategy):
-    """Graceful degradation strategy."""
+        log_method = getattr(self.logger, level, self.logger.info)
+        log_method(f"📊 {step_name}: {message}")
 
-    default_return: Any = None
-    error_types: list[type[Exception]] = field(default_factory=list)
+    def log_step_success(self, step_name: str, result: Any = None) -> None:
+        """Log step success with context."""
+        context = self.get_context(step_name)
+        context.mark_success()
+        duration = context.get_duration()
 
-    async def execute(self, context: dict[str, Any]) -> Any | None:
-        """Execute graceful degradation."""
-        return self.default_return
+        context.add_progress(f"✅ Completed successfully in {duration:.2f}s")
+        self.logger.info(
+            f"✅ Step {step_name} completed successfully in {duration:.2f}s"
+        )
 
-    def can_handle(self, error: Exception) -> bool:
-        """Check if this strategy can handle the error."""
-        if not self.error_types:
-            return True
-        return any(isinstance(error, error_type) for error_type in self.error_types)
-
-
-class CircuitBreaker:
-    """Circuit breaker pattern implementation."""
-
-    def __init__(self, config: CircuitBreakerConfig) -> None:
-        self.config = config
-        self.state = CircuitState.CLOSED
-        self.failure_count = 0
-        self.last_failure_time = 0.0
-        self.logger = logging.getLogger(f"{__name__}.CircuitBreaker")
-
-    async def call(
-        self,
-        operation: Callable[..., T],
-        *args: Any,
-        **kwargs: Any,
-    ) -> T | None:
-        """Execute operation with circuit breaker protection."""
-        if self.state == CircuitState.OPEN:
-            if time.time() - self.last_failure_time > self.config.recovery_timeout:
-                self.state = CircuitState.HALF_OPEN
-                self.logger.info("Circuit breaker transitioning to HALF_OPEN")
+        if result is not None:
+            if isinstance(result, dict):
+                result_summary = {k: v for k, v in result.items() if v is not None}
+                context.add_progress(f"Results: {result_summary}")
+                self.logger.info(f"📊 {step_name} results: {result_summary}")
             else:
-                self.print(warning("Circuit breaker is OPEN, rejecting request"))
-                return None
+                context.add_progress(f"Result: {result}")
+                self.logger.info(f"📊 {step_name} result: {result}")
 
-        try:
-            if asyncio.iscoroutinefunction(operation):
-                result = await operation(*args, **kwargs)
-            else:
-                result = operation(*args, **kwargs)
+    def log_step_error(
+        self, step_name: str, error: Exception, recovery_attempt: bool = False
+    ) -> None:
+        """Log step error with context."""
+        context = self.get_context(step_name)
+        context.set_error(error)
 
-            if self.state == CircuitState.HALF_OPEN:
-                self.state = CircuitState.CLOSED
-                self.failure_count = 0
-                self.logger.info("Circuit breaker recovered, transitioning to CLOSED")
+        if recovery_attempt:
+            context.recovery_attempts += 1
+            context.add_progress(
+                f"🔄 Recovery attempt {context.recovery_attempts}/{context.max_recovery_attempts}"
+            )
+            self.logger.warning(
+                f"🔄 {step_name} recovery attempt {context.recovery_attempts}/{context.max_recovery_attempts}: {error}"
+            )
+        else:
+            context.add_progress(f"❌ Failed: {error}")
+            self.logger.error(f"❌ Step {step_name} failed: {error}")
+            self.logger.error(
+                f"📋 {step_name} error traceback:\n{context.error_traceback}"
+            )
 
-            return result
+    def log_step_recovery(self, step_name: str, recovery_method: str) -> None:
+        """Log step recovery with context."""
+        context = self.get_context(step_name)
+        context.mark_recovered()
+        context.add_progress(f"🔄 Recovered using: {recovery_method}")
+        self.logger.info(f"🔄 Step {step_name} recovered using: {recovery_method}")
 
-        except self.config.expected_exception:
-            self.failure_count += 1
-            self.last_failure_time = time.time()
+    def log_step_skip(self, step_name: str, reason: str) -> None:
+        """Log step skip with context."""
+        context = self.get_context(step_name)
+        context.status = StepStatus.SKIPPED
+        context.add_progress(f"⏭️ Skipped: {reason}")
+        self.logger.info(f"⏭️ Step {step_name} skipped: {reason}")
 
-            if self.failure_count >= self.config.failure_threshold:
-                self.state = CircuitState.OPEN
-                self.logger.exception(
-                    f"Circuit breaker opened after {self.failure_count} failures",
-                )
-
-            raise
-
-
-class ErrorRecoveryManager:
-    """Manages automatic error recovery strategies."""
-
-    def __init__(self) -> None:
-        self.strategies: list[RecoveryStrategy] = []
-        self.circuit_breakers: dict[str, CircuitBreaker] = {}
-        self.logger = logging.getLogger(f"{__name__}.ErrorRecoveryManager")
-
-    def add_strategy(self, strategy: RecoveryStrategy) -> None:
-        """Add a recovery strategy."""
-        self.strategies.append(strategy)
-
-    def add_circuit_breaker(self, name: str, config: CircuitBreakerConfig) -> None:
-        """Add a circuit breaker."""
-        self.circuit_breakers[name] = CircuitBreaker(config)
-
-    async def execute_with_recovery(
-        self,
-        operation: Callable[..., T],
-        *args: Any,
-        **kwargs: Any,
-    ) -> T | None:
-        """Execute operation with automatic recovery."""
-        try:
-            return await self._execute_operation(operation, *args, **kwargs)
-        except Exception as e:
-            return await self._attempt_recovery(e, operation, *args, **kwargs)
-
-    async def _execute_operation(
-        self,
-        operation: Callable[..., T],
-        *args: Any,
-        **kwargs: Any,
-    ) -> T:
-        """Execute the operation."""
-        if asyncio.iscoroutinefunction(operation):
-            return await operation(*args, **kwargs)
-        return operation(*args, **kwargs)
-
-    async def _attempt_recovery(
-        self,
-        error: Exception,
-        operation: Callable[..., T],
-        *args: Any,
-        **kwargs: Any,
-    ) -> T | None:
-        """Attempt recovery using available strategies."""
-        context = {
-            "operation": operation,
-            "args": args,
-            "kwargs": kwargs,
-            "error": error,
+    def get_step_summary(self, step_name: str) -> Dict[str, Any]:
+        """Get comprehensive summary for a step."""
+        context = self.get_context(step_name)
+        return {
+            "step_name": step_name,
+            "status": context.status.value,
+            "duration": context.get_duration(),
+            "error": str(context.error) if context.error else None,
+            "recovery_attempts": context.recovery_attempts,
+            "progress_messages": context.progress_messages,
+            "performance_metrics": context.performance_metrics,
+            "validation_results": context.validation_results,
         }
 
-        for strategy in self.strategies:
-            if strategy.can_handle(error):
-                try:
-                    self.logger.info(
-                        f"Attempting recovery with {type(strategy).__name__}",
+    def get_all_summaries(self) -> Dict[str, Dict[str, Any]]:
+        """Get summaries for all steps."""
+        return {name: self.get_step_summary(name) for name in self.execution_contexts}
+
+    def print_execution_summary(self) -> None:
+        """Print comprehensive execution summary."""
+        total_duration = time.time() - self.global_start_time
+        self.logger.info("=" * 80)
+        self.logger.info("📊 TRAINING EXECUTION SUMMARY")
+        self.logger.info("=" * 80)
+
+        successful_steps = 0
+        failed_steps = 0
+        recovered_steps = 0
+        skipped_steps = 0
+
+        for step_name, context in self.execution_contexts.items():
+            status_emoji = {
+                StepStatus.SUCCESS: "✅",
+                StepStatus.FAILED: "❌",
+                StepStatus.RECOVERED: "🔄",
+                StepStatus.SKIPPED: "⏭️",
+                StepStatus.IN_PROGRESS: "🔄",
+                StepStatus.NOT_STARTED: "⏳",
+            }.get(context.status, "❓")
+
+            duration_str = (
+                f"{context.get_duration():.2f}s" if context.end_time else "running"
+            )
+            self.logger.info(
+                f"{status_emoji} {step_name}: {context.status.value} ({duration_str})"
+            )
+
+            if context.status == StepStatus.SUCCESS:
+                successful_steps += 1
+            elif context.status == StepStatus.FAILED:
+                failed_steps += 1
+            elif context.status == StepStatus.RECOVERED:
+                recovered_steps += 1
+            elif context.status == StepStatus.SKIPPED:
+                skipped_steps += 1
+
+        self.logger.info("-" * 80)
+        self.logger.info(f"📈 Total execution time: {total_duration:.2f}s")
+        self.logger.info(f"✅ Successful: {successful_steps}")
+        self.logger.info(f"❌ Failed: {failed_steps}")
+        self.logger.info(f"🔄 Recovered: {recovered_steps}")
+        self.logger.info(f"⏭️ Skipped: {skipped_steps}")
+        self.logger.info("=" * 80)
+
+
+# Global error handler instance
+_global_handler = TrainingStepErrorHandler()
+
+
+def get_training_error_handler() -> TrainingStepErrorHandler:
+    """Get the global training error handler."""
+    return _global_handler
+
+
+def training_step_error_handler(
+    step_name: str,
+    exceptions: tuple[Type[Exception], ...] = (Exception,),
+    default_return: Optional[T] = None,
+    enable_recovery: bool = True,
+    max_recovery_attempts: int = 3,
+    log_performance: bool = True,
+    validate_output: bool = True,
+) -> Callable[[F], F]:
+    """
+    Enhanced error handling decorator for training steps.
+
+    Args:
+        step_name: Name of the training step
+        exceptions: Tuple of exceptions to catch
+        default_return: Default return value on failure
+        enable_recovery: Whether to enable recovery strategies
+        max_recovery_attempts: Maximum number of recovery attempts
+        log_performance: Whether to log performance metrics
+        validate_output: Whether to validate step output
+    """
+
+    def decorator(func: F) -> F:
+        @functools.wraps(func)
+        async def async_wrapper(*args: Any, **kwargs: Any) -> T:
+            handler = get_training_error_handler()
+            context = handler.get_context(step_name)
+            context.max_recovery_attempts = max_recovery_attempts
+
+            # Extract key parameters for logging
+            key_params = {}
+            if "symbol" in kwargs:
+                key_params["symbol"] = kwargs["symbol"]
+            if "exchange" in kwargs:
+                key_params["exchange"] = kwargs["exchange"]
+            if "timeframe" in kwargs:
+                key_params["timeframe"] = kwargs["timeframe"]
+
+            handler.log_step_start(step_name, **key_params)
+
+            try:
+                # Execute the function
+                start_time = time.time()
+                result = await func(*args, **kwargs)
+                execution_time = time.time() - start_time
+
+                # Log performance metrics
+                if log_performance:
+                    context.performance_metrics["execution_time"] = execution_time
+                    context.performance_metrics["memory_usage"] = (
+                        "N/A"  # Could be enhanced
                     )
-                    result = await strategy.execute(context)
-                    if result is not None:
-                        self.logger.info(
-                            f"Recovery successful with {type(strategy).__name__}",
+                    handler.log_step_progress(
+                        step_name, f"Performance: {execution_time:.2f}s execution time"
+                    )
+
+                # Validate output if enabled
+                if validate_output and result is not None:
+                    validation_result = _validate_step_output(step_name, result)
+                    context.validation_results = validation_result
+                    if validation_result.get("valid", True):
+                        handler.log_step_progress(step_name, "Output validation passed")
+                    else:
+                        handler.log_step_progress(
+                            step_name,
+                            f"Output validation warnings: {validation_result.get('warnings', [])}",
                         )
-                        return result
-                except Exception as e:
-                    self.print(failed(f"Recovery strategy failed: {e}"))
-                    continue
 
-        self.print(failed("All recovery strategies failed for error: {error}"))
-        return None
+                handler.log_step_success(step_name, result)
+                return result
 
+            except exceptions as e:
+                handler.log_step_error(step_name, e)
 
-class EnhancedErrorHandler:
-    """Enhanced error handler with comprehensive type safety."""
+                # Attempt recovery if enabled
+                if (
+                    enable_recovery
+                    and context.recovery_attempts < max_recovery_attempts
+                ):
+                    recovery_result = await _attempt_recovery(
+                        step_name, func, args, kwargs, e
+                    )
+                    if recovery_result is not None:
+                        handler.log_step_recovery(step_name, "automatic recovery")
+                        return recovery_result
 
-    def __init__(self, logger: logging.Logger | None = None) -> None:
-        self.logger = logger or logging.getLogger(__name__)
-        self.recovery_manager = ErrorRecoveryManager()
+                return default_return
 
-    def handle_errors(
-        self,
-        exceptions: tuple[type[Exception], ...] = (Exception,),
-        default_return: T | None = None,
-        context: str = "",
-        *,
-        log_errors: bool = True,
-        reraise: bool = False,
-        recovery_strategies: list[RecoveryStrategy] | None = None,
-    ) -> Callable[[F], F]:
-        """Enhanced error handling decorator."""
+        @functools.wraps(func)
+        def sync_wrapper(*args: Any, **kwargs: Any) -> T:
+            handler = get_training_error_handler()
+            context = handler.get_context(step_name)
+            context.max_recovery_attempts = max_recovery_attempts
 
-        def decorator(func: F) -> F:
-            @functools.wraps(func)
-            async def async_wrapper(*args: Any, **kwargs: Any) -> T | None:
-                try:
-                    result = await func(*args, **kwargs)
-                    return cast("T | None", result)
-                except exceptions as e:
-                    if log_errors:
-                        self.logger.exception(
-                            f"Error in {context}.{func.__name__}: {e}",
+            # Extract key parameters for logging
+            key_params = {}
+            if "symbol" in kwargs:
+                key_params["symbol"] = kwargs["symbol"]
+            if "exchange" in kwargs:
+                key_params["exchange"] = kwargs["exchange"]
+            if "timeframe" in kwargs:
+                key_params["timeframe"] = kwargs["timeframe"]
+
+            handler.log_step_start(step_name, **key_params)
+
+            try:
+                # Execute the function
+                start_time = time.time()
+                result = func(*args, **kwargs)
+                execution_time = time.time() - start_time
+
+                # Log performance metrics
+                if log_performance:
+                    context.performance_metrics["execution_time"] = execution_time
+                    handler.log_step_progress(
+                        step_name, f"Performance: {execution_time:.2f}s execution time"
+                    )
+
+                # Validate output if enabled
+                if validate_output and result is not None:
+                    validation_result = _validate_step_output(step_name, result)
+                    context.validation_results = validation_result
+                    if validation_result.get("valid", True):
+                        handler.log_step_progress(step_name, "Output validation passed")
+                    else:
+                        handler.log_step_progress(
+                            step_name,
+                            f"Output validation warnings: {validation_result.get('warnings', [])}",
                         )
-                        try:
-                            from .prometheus_metrics import metrics
 
-                            metrics.step_failure_counter.labels(
-                                step_name=context or func.__name__,
-                                error_type=type(e).__name__,
-                            ).inc()
-                        except Exception as e:
-                            self.logger.warning(
-                                f"Failed to increment Prometheus metrics: {e}",
-                            )
+                handler.log_step_success(step_name, result)
+                return result
 
-                    if recovery_strategies:
-                        for strategy in recovery_strategies:
-                            if strategy.can_handle(e):
-                                try:
-                                    recovery_result = await strategy.execute(
-                                        {
-                                            "operation": func,
-                                            "args": args,
-                                            "kwargs": kwargs,
-                                            "error": e,
-                                        },
-                                    )
-                                    if recovery_result is not None:
-                                        return cast("T | None", recovery_result)
-                                except Exception as e:
-                                    self.logger.exception(
-                                        f"Recovery failed: {e}",
-                                    )
+            except exceptions as e:
+                handler.log_step_error(step_name, e)
 
-                    if reraise:
-                        raise
-                    return default_return
-
-            @functools.wraps(func)
-            def sync_wrapper(*args: Any, **kwargs: Any) -> T | None:
-                try:
-                    result = func(*args, **kwargs)
-                    return cast("T | None", result)
-                except exceptions as e:
-                    if log_errors:
-                        self.logger.exception(
-                            f"Error in {context}.{func.__name__}: {e}",
+                # Attempt recovery if enabled
+                if (
+                    enable_recovery
+                    and context.recovery_attempts < max_recovery_attempts
+                ):
+                    # For sync functions, we need to handle recovery differently
+                    try:
+                        recovery_result = _attempt_sync_recovery(
+                            step_name, func, args, kwargs, e
                         )
-                        try:
-                            from .prometheus_metrics import metrics
-
-                            metrics.step_failure_counter.labels(
-                                step_name=context or func.__name__,
-                                error_type=type(e).__name__,
-                            ).inc()
-                        except Exception as e:
-                            self.logger.warning(
-                                f"Failed to increment Prometheus metrics: {e}",
-                            )
-
-                    if recovery_strategies:
-                        for strategy in recovery_strategies:
-                            if strategy.can_handle(e):
-                                try:
-                                    # For sync functions, we need to handle recovery differently
-                                    if hasattr(strategy, "execute"):
-                                        # Create async context for sync recovery
-                                        async def run_recovery() -> Any | None:
-                                            return await strategy.execute(
-                                                {
-                                                    "operation": func,
-                                                    "args": args,
-                                                    "kwargs": kwargs,
-                                                    "error": e,
-                                                },
-                                            )
-
-                                        loop = asyncio.get_event_loop()
-                                        recovery_result = loop.run_until_complete(
-                                            run_recovery(),
-                                        )
-                                        if recovery_result is not None:
-                                            return cast("T | None", recovery_result)
-                                except Exception as e:
-                                    self.logger.exception(
-                                        f"Recovery failed: {e}",
-                                    )
-
-                    if reraise:
-                        raise
-                    return default_return
-
-            if asyncio.iscoroutinefunction(func):
-                return cast("F", async_wrapper)
-            return cast("F", sync_wrapper)
-
-        return decorator
-
-    def handle_specific_errors(
-        self,
-        error_handlers: dict[type[Exception], tuple[Any, str]],
-        default_return: T | None = None,
-        context: str = "",
-        *,
-        log_errors: bool = True,
-    ) -> Callable[[F], F]:
-        """Handle specific error types with type safety."""
-
-        def decorator(func: F) -> F:
-            @functools.wraps(func)
-            async def async_wrapper(*args: Any, **kwargs: Any) -> T | None:
-                try:
-                    result = await func(*args, **kwargs)
-                    return cast("T | None", result)
-                except Exception as e:
-                    error_type = type(e)
-                    if error_type in error_handlers:
-                        return_value, message = error_handlers[error_type]
-                        if log_errors:
-                            self.logger.exception(
-                                f"{message} in {context}.{func.__name__}: {e}",
-                            )
-                        return cast("T | None", return_value)
-
-                    if log_errors:
-                        self.logger.exception(
-                            f"Unexpected error in {context}.{func.__name__}: {e}",
+                        if recovery_result is not None:
+                            handler.log_step_recovery(step_name, "automatic recovery")
+                            return recovery_result
+                    except Exception as recovery_error:
+                        handler.log_step_error(
+                            step_name, recovery_error, recovery_attempt=True
                         )
-                    return default_return
 
-            @functools.wraps(func)
-            def sync_wrapper(*args: Any, **kwargs: Any) -> T | None:
-                try:
-                    result = func(*args, **kwargs)
-                    return cast("T | None", result)
-                except Exception as e:
-                    error_type = type(e)
-                    if error_type in error_handlers:
-                        return_value, message = error_handlers[error_type]
-                        if log_errors:
-                            self.logger.exception(
-                                f"{message} in {context}.{func.__name__}: {e}",
-                            )
-                        return cast("T | None", return_value)
+                return default_return
 
-                    if log_errors:
-                        self.logger.exception(
-                            f"Unexpected error in {context}.{func.__name__}: {e}",
-                        )
-                    return default_return
+        if asyncio.iscoroutinefunction(func):
+            return cast(F, async_wrapper)
+        return cast(F, sync_wrapper)
 
-            if asyncio.iscoroutinefunction(func):
-                return cast("F", async_wrapper)
-            return cast("F", sync_wrapper)
-
-        return decorator
+    return decorator
 
 
-# Global enhanced error handler instance
-enhanced_error_handler = EnhancedErrorHandler()
+def _validate_step_output(step_name: str, result: Any) -> Dict[str, Any]:
+    """Validate step output based on step type."""
+    validation_result = {"valid": True, "warnings": []}
+
+    if step_name.startswith("step1_7"):
+        # Validate HMM regime discovery output
+        if isinstance(result, bool):
+            if not result:
+                validation_result["warnings"].append(
+                    "Step returned False - may indicate failure"
+                )
+        elif isinstance(result, dict):
+            if "status" in result and result["status"] != "SUCCESS":
+                validation_result["warnings"].append(
+                    f"Status indicates failure: {result['status']}"
+                )
+
+    elif step_name.startswith("step5"):
+        # Validate model training output
+        if isinstance(result, bool):
+            if not result:
+                validation_result["warnings"].append(
+                    "Training step returned False - may indicate failure"
+                )
+        elif isinstance(result, dict):
+            if "models" in result and not result["models"]:
+                validation_result["warnings"].append("No models were trained")
+
+    elif step_name.startswith("step6"):
+        # Validate enhancement output
+        if isinstance(result, bool):
+            if not result:
+                validation_result["warnings"].append(
+                    "Enhancement step returned False - may indicate failure"
+                )
+
+    return validation_result
 
 
-# Convenience functions with full type hints
-def handle_enhanced_errors(
-    exceptions: tuple[type[Exception], ...] = (Exception,),
-    default_return: T | None = None,
-    context: str = "",
-    *,
-    log_errors: bool = True,
-    reraise: bool = False,
-    recovery_strategies: list[RecoveryStrategy] | None = None,
-) -> Callable[[F], F]:
-    """Enhanced error handling decorator with recovery strategies."""
-    return enhanced_error_handler.handle_errors(
-        exceptions=exceptions,
-        default_return=default_return,
-        context=context,
-        log_errors=log_errors,
-        reraise=reraise,
-        recovery_strategies=recovery_strategies,
-    )
+async def _attempt_recovery(
+    step_name: str, func: Callable, args: tuple, kwargs: dict, error: Exception
+) -> Optional[Any]:
+    """Attempt recovery for async functions."""
+    handler = get_training_error_handler()
+    context = handler.get_context(step_name)
+
+    # Simple recovery strategies based on step type
+    if step_name.startswith("step1_7"):
+        # For HMM regime discovery, try with different parameters
+        handler.log_step_progress(
+            step_name, "Attempting recovery with reduced complexity"
+        )
+        recovery_kwargs = kwargs.copy()
+        recovery_kwargs["target_num_clusters"] = min(
+            kwargs.get("target_num_clusters", 20), 10
+        )
+        recovery_kwargs["min_combination_frequency"] = max(
+            kwargs.get("min_combination_frequency", 0.003), 0.01
+        )
+
+        try:
+            return await func(*args, **recovery_kwargs)
+        except Exception as recovery_error:
+            handler.log_step_error(step_name, recovery_error, recovery_attempt=True)
+
+    elif step_name.startswith("step5"):
+        # For model training, try with simpler models
+        handler.log_step_progress(
+            step_name, "Attempting recovery with simplified training"
+        )
+        # This would need to be implemented based on the specific training step
+
+    return None
 
 
-def handle_enhanced_specific_errors(
-    error_handlers: dict[type[Exception], tuple[Any, str]],
-    default_return: T | None = None,
-    context: str = "",
-    *,
-    log_errors: bool = True,
-) -> Callable[[F], F]:
-    """Enhanced specific error handling decorator."""
-    return enhanced_error_handler.handle_specific_errors(
-        error_handlers=error_handlers,
-        default_return=default_return,
-        context=context,
-        log_errors=log_errors,
-    )
+def _attempt_sync_recovery(
+    step_name: str, func: Callable, args: tuple, kwargs: dict, error: Exception
+) -> Optional[Any]:
+    """Attempt recovery for sync functions."""
+    handler = get_training_error_handler()
+    context = handler.get_context(step_name)
+
+    # Similar recovery strategies for sync functions
+    if step_name.startswith("step1_7"):
+        handler.log_step_progress(
+            step_name, "Attempting recovery with reduced complexity"
+        )
+        recovery_kwargs = kwargs.copy()
+        recovery_kwargs["target_num_clusters"] = min(
+            kwargs.get("target_num_clusters", 20), 10
+        )
+        recovery_kwargs["min_combination_frequency"] = max(
+            kwargs.get("min_combination_frequency", 0.003), 0.01
+        )
+
+        try:
+            return func(*args, **recovery_kwargs)
+        except Exception as recovery_error:
+            handler.log_step_error(step_name, recovery_error, recovery_attempt=True)
+
+    return None
 
 
-# Type-safe utility functions
-def safe_operation(
-    operation: Callable[..., T],
-    *args: Any,
-    **kwargs: Any,
-) -> T | None:
-    """Execute operation safely with type hints."""
+@contextmanager
+def step_progress_tracker(step_name: str):
+    """Context manager for tracking step progress."""
+    handler = get_training_error_handler()
     try:
-        return operation(*args, **kwargs)
+        handler.log_step_progress(step_name, "Starting sub-operation")
+        yield handler
+        handler.log_step_progress(step_name, "Sub-operation completed")
     except Exception as e:
-        logging.getLogger(__name__).exception(f"Operation failed: {e}")
-        return None
+        handler.log_step_progress(step_name, f"Sub-operation failed: {e}")
+        raise
 
 
-async def safe_async_operation(
-    operation: Callable[..., Awaitable[T]],
-    *args: Any,
-    **kwargs: Any,
-) -> T | None:
-    """Execute async operation safely with type hints."""
-    try:
-        return await operation(*args, **kwargs)
-    except Exception as e:
-        logging.getLogger(__name__).exception(f"Async operation failed: {e}")
-        return None
+def log_step_data_info(step_name: str, data: Any, data_name: str = "data") -> None:
+    """Log information about data being processed in a step."""
+    handler = get_training_error_handler()
 
-
-def create_circuit_breaker(
-    name: str,
-    failure_threshold: int = 5,
-    recovery_timeout: float = 60.0,
-    expected_exception: type[Exception] = Exception,
-) -> CircuitBreaker:
-    """Create a circuit breaker with type hints."""
-    config = CircuitBreakerConfig(
-        failure_threshold=failure_threshold,
-        recovery_timeout=recovery_timeout,
-        expected_exception=expected_exception,
-    )
-    return CircuitBreaker(config)
-
-
-def create_retry_strategy(
-    max_retries: int = 3,
-    base_delay: float = 1.0,
-    max_delay: float = 60.0,
-    backoff_factor: float = 2.0,
-    jitter: bool = True,
-) -> RetryStrategy:
-    """Create a retry strategy with type hints."""
-    return RetryStrategy(
-        max_retries=max_retries,
-        base_delay=base_delay,
-        max_delay=max_delay,
-        backoff_factor=backoff_factor,
-        jitter=jitter,
-    )
-
-
-def create_fallback_strategy(
-    fallback_operations: list[Callable[..., Any]],
-) -> FallbackStrategy:
-    """Create a fallback strategy with type hints."""
-    return FallbackStrategy(fallback_operations=fallback_operations)
-
-
-def create_graceful_degradation_strategy(
-    default_return: Any = None,
-    error_types: list[type[Exception]] | None = None,
-) -> GracefulDegradationStrategy:
-    """Create a graceful degradation strategy with type hints."""
-    return GracefulDegradationStrategy(
-        default_return=default_return,
-        error_types=error_types or [],
-    )
+    if isinstance(data, pd.DataFrame):
+        info_msg = f"{data_name}: shape={data.shape}, columns={len(data.columns)}, memory={data.memory_usage(deep=True).sum() / 1024 / 1024:.2f}MB"
+        handler.log_step_progress(step_name, info_msg)
+    elif isinstance(data, dict):
+        info_msg = f"{data_name}: {len(data)} keys, types={list(data.keys())}"
+        handler.log_step_progress(step_name, info_msg)
+    elif isinstance(data, (list, tuple)):
+        info_msg = f"{data_name}: length={len(data)}, type={type(data).__name__}"
+        handler.log_step_progress(step_name, info_msg)
+    else:
+        info_msg = f"{data_name}: type={type(data).__name__}, value={str(data)[:100]}"
+        handler.log_step_progress(step_name, info_msg)

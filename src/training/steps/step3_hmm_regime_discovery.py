@@ -1,4 +1,4 @@
-# src/training/steps/step1_7_hmm_regime_discovery.py
+# src/training/steps/step3_hmm_regime_discovery.py
 
 import os
 import json
@@ -158,7 +158,7 @@ def _select_block_features(full_df: pd.DataFrame, block: str, max_features: int)
 @handle_errors(
     exceptions=(Exception,),
     default_return=(None, None),
-    context="step1_7_hmm_regime_discovery._fit_block_hmm",
+    context="step3_hmm_regime_discovery._fit_block_hmm",
 )
 def _fit_block_hmm(X: pd.DataFrame, n_states: int, random_state: int = 42) -> Tuple[Optional[GMMHMM], Optional[StandardScaler]]:
     """Fit HMM model for a specific block with enhanced error handling."""
@@ -187,7 +187,7 @@ def _fit_block_hmm(X: pd.DataFrame, n_states: int, random_state: int = 42) -> Tu
 @handle_errors(
     exceptions=(Exception,),
     default_return=(np.array([]), np.array([])),
-    context="step1_7_hmm_regime_discovery._posteriors",
+    context="step3_hmm_regime_discovery._posteriors",
 )
 def _posteriors(model: GMMHMM, scaler: StandardScaler, X: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
     """Get posterior probabilities and state predictions."""
@@ -322,7 +322,7 @@ def _name_states(block: str, medians: Dict[int, Dict[str, float]]) -> Dict[int, 
 @handle_errors(
     exceptions=(Exception,),
     default_return=None,
-    context="step1_7_hmm_regime_discovery._persist_dataframe",
+    context="step3_hmm_regime_discovery._persist_dataframe",
 )
 def _persist_dataframe(df: pd.DataFrame, path: str) -> None:
     """Persist DataFrame to parquet file with enhanced error handling."""
@@ -338,7 +338,7 @@ def _persist_dataframe(df: pd.DataFrame, path: str) -> None:
 @handle_errors(
     exceptions=(Exception,),
     default_return=None,
-    context="step1_7_hmm_regime_discovery._persist_json",
+    context="step3_hmm_regime_discovery._persist_json",
 )
 def _persist_json(obj: Dict[str, Any], path: str) -> None:
     """Persist JSON object to file with enhanced error handling."""
@@ -352,7 +352,7 @@ def _persist_json(obj: Dict[str, Any], path: str) -> None:
         raise
 
 
-@handle_errors(exceptions=(Exception,), default_return=False, context="step1_7_hmm_regime_discovery")
+@handle_errors(exceptions=(Exception,), default_return=False, context="step3_hmm_regime_discovery")
 async def run_step(
     symbol: str,
     exchange: str = "BINANCE",
@@ -362,18 +362,12 @@ async def run_step(
     **kwargs: Any,
 ) -> bool:
     """
-    Step 1_7: HMM regime discovery via block HMMs and composite clustering.
+    Step 3: HMM regime discovery via block HMMs and composite clustering.
     Uses vectorized advanced features (excluding candlestick pattern features).
     Outputs per-timeframe block states/posteriors, combination IDs, and composite cluster IDs.
-    
-    Enhanced with:
-    - Comprehensive logging for troubleshooting and efficiency monitoring
-    - Thorough error handling using decorators
-    - Proper data usage (scaling, normalization, returns vs prices)
-    - Complete type hints throughout
     """
-    logger = system_logger.getChild("Step1_7.HMMRegimeDiscovery")
-    logger.info("🚀 Step 1_7: HMM Regime Discovery — vectorized features only (no candles)")
+    logger = system_logger.getChild("Step3.HMMRegimeDiscovery")
+    logger.info("🚀 Step 3: HMM Regime Discovery — vectorized features only (no candles)")
 
     # Load data per timeframe
     loader = UnifiedDataLoader({})
@@ -383,7 +377,6 @@ async def run_step(
     any_success = False
     for tf in TIMEFRAMES:
         logger.info(f"🔄 Processing timeframe: {tf}")
-        
         try:
             df = await loader.load_unified_data(
                 symbol=symbol,
@@ -395,7 +388,7 @@ async def run_step(
             if df is None or df.empty:
                 logger.warning(f"⚠️ No unified data for {exchange}_{symbol}_{tf}; skipping")
                 continue
-                
+
             # Ensure datetime index
             if "timestamp" in df.columns and not isinstance(df.index, pd.DatetimeIndex):
                 df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
@@ -462,19 +455,19 @@ async def run_step(
                 X_blk = block_features.get(blk.name)
                 if X_blk is None or X_blk.empty:
                     continue
-                    
+
                 logger.info(f"🧩 Training HMM for block='{blk.name}' n_states={blk.n_states} features={list(X_blk.columns)}")
-                
+
                 model, scaler = _fit_block_hmm(X_blk, blk.n_states)
                 if model is None or scaler is None:
                     logger.error(f"❌ Failed to fit HMM for block '{blk.name}'")
                     continue
-                    
+
                 states, gamma = _posteriors(model, scaler, X_blk)
                 if len(states) == 0 or len(gamma) == 0:
                     logger.error(f"❌ Failed to compute posteriors for block '{blk.name}'")
                     continue
-                    
+
                 block_models[blk.name] = model
                 block_scalers[blk.name] = scaler
                 block_states[blk.name] = states
@@ -625,5 +618,6 @@ async def run_step(
             logger.error(f"❌ Error processing timeframe {tf}: {e}")
             continue
 
-    logger.info("✅ Step 1_7: HMM Regime Discovery completed" if any_success else "⚠️ Step 1_7 produced no outputs")
+    logger.info("✅ Step 3: HMM Regime Discovery completed" if any_success else "⚠️ Step 3 produced no outputs")
     return any_success
+

@@ -80,7 +80,7 @@ async def classify_regimes(self, historical_klines: pd.DataFrame) -> Dict[str, A
     """
 ```
 
-### 2. HMM Regime Discovery Step (`src/training/steps/step1_7_hmm_regime_discovery.py`)
+### 2. HMM Regime Discovery Step (`src/training/steps/step3_hmm_regime_discovery.py`)
 
 #### Key Enhancements:
 
@@ -114,7 +114,7 @@ async def classify_regimes(self, historical_klines: pd.DataFrame) -> Dict[str, A
 #### Key Functions Enhanced:
 
 ```python
-@handle_errors(exceptions=(Exception,), default_return=(None, None), context="step1_7_hmm_regime_discovery._fit_block_hmm")
+@handle_errors(exceptions=(Exception,), default_return=(None, None), context="step3_hmm_regime_discovery._fit_block_hmm")
 def _fit_block_hmm(X: pd.DataFrame, n_states: int, random_state: int = 42) -> Tuple[Optional[GMMHMM], Optional[StandardScaler]]:
     """
     Fit HMM model for a specific block with enhanced error handling.
@@ -136,7 +136,7 @@ def _robust_scale(df: pd.DataFrame) -> pd.DataFrame:
     - Proper NaN handling
     """
 
-@handle_errors(exceptions=(Exception,), default_return=False, context="step1_7_hmm_regime_discovery")
+@handle_errors(exceptions=(Exception,), default_return=False, context="step3_hmm_regime_discovery")
 async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data/training", 
                    timeframe: str = "1m", lookback_days: Optional[int] = None, **kwargs: Any) -> bool:
     """

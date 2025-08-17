@@ -1,4 +1,4 @@
-# src/training/steps/step1_7_hmm_regime_discovery_validator.py
+# src/training/steps/step3_hmm_regime_discovery_validator.py
 
 import os
 import pandas as pd
@@ -15,7 +15,7 @@ def _exists(path: str) -> bool:
 
 
 def run_validator(training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
-	logger = system_logger.getChild("Step1_7.Validator")
+	logger = system_logger.getChild("Step3.Validator")
 	symbol = training_input.get("symbol", "ETHUSDT")
 	exchange = training_input.get("exchange", "BINANCE")
 	data_dir = training_input.get("data_dir", "data/training")
@@ -48,7 +48,8 @@ def run_validator(training_input: dict[str, Any], pipeline_state: dict[str, Any]
 		"messages": messages,
 	}
 	if passed:
-		logger.info("✅ Step 1_7 validation passed for at least one timeframe")
+		logger.info("✅ Step 3 validation passed for at least one timeframe")
 	else:
-		logger.warning("⚠️ Step 1_7 validation did not find valid artifacts")
+		logger.warning("⚠️ Step 3 validation did not find valid artifacts")
 	return status
+

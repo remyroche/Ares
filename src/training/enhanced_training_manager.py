@@ -1089,56 +1089,8 @@ class EnhancedTrainingManager:
                     "result": {"message": "Using pre-consolidated data"},
                 }
 
-            # Step 1_7: HMM Regime Discovery (block HMMs + composite clustering)
-            self._heartbeat("Step 1_7: HMM Regime Discovery")
-            step_start_1_7 = time.time()
-            try:
-                from src.training.steps import step1_7_hmm_regime_discovery as _step1_7
-                step1_7_success = await _step1_7.run_step(
-                    symbol=symbol,
-                    exchange=exchange,
-                    data_dir=data_dir,
-                    timeframe=timeframe,
-                    lookback_days=self.lookback_days,
-                )
-            except Exception as e:
-                self.logger.error(f"❌ Error in Step 1_7: {e}")
-                step1_7_success = False
-
-            if not step1_7_success:
-                self._log_step_completion(
-                    "Step 1_7: HMM Regime Discovery",
-                    step_start_1_7,
-                    step_times,
-                    success=False,
-                )
-                # Non-fatal: proceed but warn
-                self.logger.warning("⚠️ Proceeding without Step 1_7 artifacts (no-fatal)")
-            else:
-                self._log_step_completion(
-                    "Step 1_7: HMM Regime Discovery",
-                    step_start_1_7,
-                    step_times,
-                    success=True,
-                )
-
-            pipeline_state["hmm_regime_discovery"] = {
-                "status": "SUCCESS" if step1_7_success else "FAILED",
-                "success": bool(step1_7_success),
-                "completed": bool(step1_7_success),
-            }
-            self._save_checkpoint("step1_7_hmm_regime_discovery", pipeline_state)
-            step_times["step1_7_hmm_regime_discovery"] = time.time() - step_start_1_7
-
-            # Run validator for Step 1_7
-            try:
-                await self._run_step_validator(
-                    "step1_7_hmm_regime_discovery", training_input, pipeline_state
-                )
-            except Exception as e:
-                self.logger.warning(
-                    f"Validator for step1_7_hmm_regime_discovery failed but is non-fatal: {e}"
-                )
+            # Step 3 HMM Regimes now runs AFTER Step 2; keep here only if needed before Step 2
+            # (We execute it after Step 2 below.)
 
             # Step 2: Processing, meta-labeling, feature engineering (or legacy regime classification)
             self._heartbeat("Step 2: Processing & Labeling")
@@ -1204,6 +1156,57 @@ class EnhancedTrainingManager:
 
             # Save checkpoint after step 2
             self._save_checkpoint("step2_processing_labeling", pipeline_state)
+
+            # Step 3: HMM Regime Discovery (moved here to run after Step 2)
+            self._heartbeat("Step 3: HMM Regime Discovery")
+            step_start_hmm3 = time.time()
+            try:
+                from src.training.steps import step3_hmm_regime_discovery as _step3_hmm
+                step3_hmm_success = await _step3_hmm.run_step(
+                    symbol=symbol,
+                    exchange=exchange,
+                    data_dir=data_dir,
+                    timeframe=timeframe,
+                    lookback_days=self.lookback_days,
+                )
+            except Exception as e:
+                self.logger.error(f"❌ Error in Step 3 HMM Regime Discovery: {e}")
+                step3_hmm_success = False
+
+            if not step3_hmm_success:
+                self._log_step_completion(
+                    "Step 3: HMM Regime Discovery",
+                    step_start_hmm3,
+                    step_times,
+                    success=False,
+                )
+                # Non-fatal: proceed but warn
+                self.logger.warning("⚠️ Proceeding without Step 3 HMM artifacts (non-fatal)")
+            else:
+                self._log_step_completion(
+                    "Step 3: HMM Regime Discovery",
+                    step_start_hmm3,
+                    step_times,
+                    success=True,
+                )
+
+            pipeline_state["hmm_regime_discovery"] = {
+                "status": "SUCCESS" if step3_hmm_success else "FAILED",
+                "success": bool(step3_hmm_success),
+                "completed": bool(step3_hmm_success),
+            }
+            self._save_checkpoint("step3_hmm_regime_discovery", pipeline_state)
+            step_times["step3_hmm_regime_discovery"] = time.time() - step_start_hmm3
+
+            # Run validator for Step 3 HMM
+            try:
+                await self._run_step_validator(
+                    "step3_hmm_regime_discovery", training_input, pipeline_state
+                )
+            except Exception as e:
+                self.logger.warning(
+                    f"Validator for step3_hmm_regime_discovery failed but is non-fatal: {e}"
+                )
 
             # Step 3: Feature Engineering
             self._heartbeat("Step 3: Feature Engineering")

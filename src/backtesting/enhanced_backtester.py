@@ -34,6 +34,15 @@ from src.utils.warning_symbols import (
     initialization_error,
     execution_error,
 )
+from src.utils.trading_decorators import (
+    comprehensive_trade_decorator,
+    track_trade,
+    monitor_performance,
+    validate_trade_parameters,
+    get_trade_tracker,
+    TradeSide,
+    ExecutionMode
+)
 
 
 class EnhancedBacktester:
@@ -76,6 +85,9 @@ class EnhancedBacktester:
         self.performance_metrics: dict[str, Any] = {}
         self.equity_curve: list[float] = []
         self.drawdown_curve: list[float] = []
+        
+        # Trade tracking
+        self.trade_tracker = get_trade_tracker()
 
     @handle_specific_errors(
         error_handlers={
@@ -219,13 +231,15 @@ class EnhancedBacktester:
                 initialization_error("Error initializing detailed reporting: {e}")
             )
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False, "Invalid backtest parameters"),
-            AttributeError: (False, "Missing backtest components"),
-        },
-        default_return=False,
-        context="backtest execution",
+    @comprehensive_trade_decorator(
+        enable_error_handling=True,
+        enable_tracking=True,
+        enable_performance_monitoring=True,
+        enable_validation=True,
+        enable_rate_limiting=False,  # Not needed for backtesting
+        enable_circuit_breaker=True,
+        retry_attempts=3,
+        alert_threshold_ms=5000.0  # 5 seconds for backtesting
     )
     async def run_backtest(
         self,
@@ -270,13 +284,13 @@ class EnhancedBacktester:
                 symbol = row.get("symbol", "UNKNOWN")
 
                 if signal != 0 and price > 0:
-                    # Execute trade
+                    # Execute trade with comprehensive tracking
                     trade_result = await self._execute_backtest_trade(
                         symbol=symbol,
                         signal=signal,
                         price=price,
                         timestamp=timestamp,
-                        trade_metadata=trade_metadata,
+                        trade_metadata=trade_metadata or {},
                     )
 
                     if trade_result:
@@ -322,10 +336,11 @@ class EnhancedBacktester:
             self.print(error("Error running backtest: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="backtest trade execution",
+    @track_trade(
+        capture_model_data=True,
+        capture_regime_data=True,
+        capture_market_conditions=True,
+        capture_risk_metrics=True
     )
     async def _execute_backtest_trade(
         self,
@@ -340,6 +355,15 @@ class EnhancedBacktester:
             if trade_metadata is None:
                 trade_metadata = {}
 
+            # Extract trade metadata for tracking
+            model_weights = trade_metadata.get('model_weights', {})
+            model_confidences = trade_metadata.get('model_confidences', {})
+            regime_analysis = trade_metadata.get('regime_analysis', {})
+            hmm_regime = trade_metadata.get('hmm_regime', '')
+            support_resistance = trade_metadata.get('support_resistance_levels', {})
+            market_conditions = trade_metadata.get('market_conditions', {})
+            risk_metrics = trade_metadata.get('risk_metrics', {})
+
             # Calculate position size
             position_size = self.portfolio_value * self.max_position_size
             quantity = position_size / price
@@ -351,7 +375,13 @@ class EnhancedBacktester:
                     quantity=quantity,
                     price=price,
                     timestamp=timestamp,
-                    trade_metadata=trade_metadata,
+                    model_weights=model_weights,
+                    model_confidences=model_confidences,
+                    regime_analysis=regime_analysis,
+                    hmm_regime=hmm_regime,
+                    support_resistance_levels=support_resistance,
+                    market_conditions=market_conditions,
+                    risk_metrics=risk_metrics
                 )
             if signal == -1:  # Sell signal
                 return await self._execute_sell_trade(
@@ -359,7 +389,13 @@ class EnhancedBacktester:
                     quantity=quantity,
                     price=price,
                     timestamp=timestamp,
-                    trade_metadata=trade_metadata,
+                    model_weights=model_weights,
+                    model_confidences=model_confidences,
+                    regime_analysis=regime_analysis,
+                    hmm_regime=hmm_regime,
+                    support_resistance_levels=support_resistance,
+                    market_conditions=market_conditions,
+                    risk_metrics=risk_metrics
                 )
 
             return None
@@ -368,10 +404,11 @@ class EnhancedBacktester:
             self.print(error("Error executing backtest trade: {e}"))
             return None
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="buy trade execution",
+    @track_trade(
+        capture_model_data=True,
+        capture_regime_data=True,
+        capture_market_conditions=True,
+        capture_risk_metrics=True
     )
     async def _execute_buy_trade(
         self,
@@ -379,7 +416,13 @@ class EnhancedBacktester:
         quantity: float,
         price: float,
         timestamp: datetime,
-        trade_metadata: dict[str, Any],
+        model_weights: dict[str, float],
+        model_confidences: dict[str, float],
+        regime_analysis: dict[str, Any],
+        hmm_regime: str,
+        support_resistance_levels: dict[str, float],
+        market_conditions: dict[str, Any],
+        risk_metrics: dict[str, float]
     ) -> dict[str, Any] | None:
         """Execute a buy trade during backtesting."""
         try:
@@ -420,8 +463,10 @@ class EnhancedBacktester:
             position["avg_price"] = new_avg_price
             position["total_cost"] = new_total_cost
 
-            # Record trade
+            # Create trade record with comprehensive tracking data
+            trade_id = f"BUY_{symbol}_{timestamp.strftime('%Y%m%d_%H%M%S')}"
             trade_record = {
+                "trade_id": trade_id,
                 "timestamp": timestamp,
                 "symbol": symbol,
                 "side": "BUY",
@@ -431,6 +476,14 @@ class EnhancedBacktester:
                 "commission": commission,
                 "slippage": slippage,
                 "portfolio_value_after": self.portfolio_value,
+                "execution_mode": ExecutionMode.BACKTEST.value,
+                "model_weights": model_weights,
+                "model_confidences": model_confidences,
+                "regime_analysis": regime_analysis,
+                "hmm_regime": hmm_regime,
+                "support_resistance_levels": support_resistance_levels,
+                "market_conditions": market_conditions,
+                "risk_metrics": risk_metrics
             }
             self.trade_history.append(trade_record)
 
@@ -445,7 +498,15 @@ class EnhancedBacktester:
                     total_cost=total_cost,
                     commission=commission,
                     slippage=slippage,
-                    trade_metadata=trade_metadata,
+                    trade_metadata={
+                        "model_weights": model_weights,
+                        "model_confidences": model_confidences,
+                        "regime_analysis": regime_analysis,
+                        "hmm_regime": hmm_regime,
+                        "support_resistance_levels": support_resistance_levels,
+                        "market_conditions": market_conditions,
+                        "risk_metrics": risk_metrics
+                    },
                 )
 
             return trade_record
@@ -454,10 +515,11 @@ class EnhancedBacktester:
             self.print(error("Error executing buy trade: {e}"))
             return None
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="sell trade execution",
+    @track_trade(
+        capture_model_data=True,
+        capture_regime_data=True,
+        capture_market_conditions=True,
+        capture_risk_metrics=True
     )
     async def _execute_sell_trade(
         self,
@@ -465,7 +527,13 @@ class EnhancedBacktester:
         quantity: float,
         price: float,
         timestamp: datetime,
-        trade_metadata: dict[str, Any],
+        model_weights: dict[str, float],
+        model_confidences: dict[str, float],
+        regime_analysis: dict[str, Any],
+        hmm_regime: str,
+        support_resistance_levels: dict[str, float],
+        market_conditions: dict[str, Any],
+        risk_metrics: dict[str, float]
     ) -> dict[str, Any] | None:
         """Execute a sell trade during backtesting."""
         try:
@@ -521,8 +589,10 @@ class EnhancedBacktester:
                 else 0
             )
 
-            # Record trade
+            # Create trade record with comprehensive tracking data
+            trade_id = f"SELL_{symbol}_{timestamp.strftime('%Y%m%d_%H%M%S')}"
             trade_record = {
+                "trade_id": trade_id,
                 "timestamp": timestamp,
                 "symbol": symbol,
                 "side": "SELL",
@@ -535,6 +605,14 @@ class EnhancedBacktester:
                 "pnl": pnl,
                 "pnl_percentage": pnl_percentage,
                 "portfolio_value_after": self.portfolio_value,
+                "execution_mode": ExecutionMode.BACKTEST.value,
+                "model_weights": model_weights,
+                "model_confidences": model_confidences,
+                "regime_analysis": regime_analysis,
+                "hmm_regime": hmm_regime,
+                "support_resistance_levels": support_resistance_levels,
+                "market_conditions": market_conditions,
+                "risk_metrics": risk_metrics
             }
             self.trade_history.append(trade_record)
 

@@ -1,6 +1,7 @@
 # src/training/enhanced_training_manager.py
 
 import asyncio
+import importlib
 import pandas as pd
 import time
 import psutil
@@ -1005,6 +1006,47 @@ class EnhancedTrainingManager:
             # Initialize optimized tools before pipeline execution
             await self._initialize_optimized_tools()
 
+            # Helper to execute a pipeline step with common boilerplate
+            async def _execute_pipeline_step(
+                *,
+                human_name: str,
+                module_name: str,
+                run_kwargs: dict[str, Any],
+                checkpoint_name: str,
+                validator_step_name: str | None = None,
+                fatal_on_failure: bool = True,
+            ) -> bool:
+                self._heartbeat(human_name)
+                step_start = time.time()
+                success = False
+                try:
+                    module = importlib.import_module(f"src.training.steps.{module_name}")
+                    run_step = getattr(module, "run_step", None)
+                    if not callable(run_step):
+                        raise AttributeError(f"run_step not found in {module_name}")
+                    success = bool(await run_step(**run_kwargs))
+                except Exception as e:
+                    self.logger.error(f"❌ Error in {human_name}: {e}")
+                    success = False
+
+                self._log_step_completion(human_name, step_start, step_times, success=success)
+                if not success and fatal_on_failure:
+                    return False
+
+                # Update and checkpoint state regardless; caller can decide fatality
+                self._save_checkpoint(checkpoint_name, pipeline_state)
+                step_times[checkpoint_name] = time.time() - step_start
+
+                # Run validator if provided
+                if validator_step_name:
+                    try:
+                        await self._run_step_validator(validator_step_name, training_input, pipeline_state)
+                    except Exception as e:
+                        self.logger.warning(
+                            f"Validator for {validator_step_name} failed but is non-fatal: {e}"
+                        )
+                return True
+
             # Check for existing checkpoint
             checkpoint = self._load_checkpoint()
             if checkpoint:
@@ -1157,55 +1199,29 @@ class EnhancedTrainingManager:
             # Save checkpoint after step 2
             self._save_checkpoint("step2_processing_labeling", pipeline_state)
 
-            # Step 3: HMM Regime Discovery (moved here to run after Step 2)
-            self._heartbeat("Step 3: HMM Regime Discovery")
-            step_start_hmm3 = time.time()
-            try:
-                from src.training.steps import step3_hmm_regime_discovery as _step3_hmm
-                step3_hmm_success = await _step3_hmm.run_step(
-                    symbol=symbol,
-                    exchange=exchange,
-                    data_dir=data_dir,
-                    timeframe=timeframe,
-                    lookback_days=self.lookback_days,
-                )
-            except Exception as e:
-                self.logger.error(f"❌ Error in Step 3 HMM Regime Discovery: {e}")
-                step3_hmm_success = False
-
-            if not step3_hmm_success:
-                self._log_step_completion(
-                    "Step 3: HMM Regime Discovery",
-                    step_start_hmm3,
-                    step_times,
-                    success=False,
-                )
+            # Step 3: HMM Regime Discovery (after Step 2) — fatal on failure
+            ok = await _execute_pipeline_step(
+                human_name="Step 3: HMM Regime Discovery",
+                module_name="step3_hmm_regime_discovery",
+                run_kwargs={
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "data_dir": data_dir,
+                    "timeframe": timeframe,
+                    "lookback_days": self.lookback_days,
+                },
+                checkpoint_name="step3_hmm_regime_discovery",
+                validator_step_name="step3_hmm_regime_discovery",
+                fatal_on_failure=True,
+            )
+            if not ok:
                 return False
-            else:
-                self._log_step_completion(
-                    "Step 3: HMM Regime Discovery",
-                    step_start_hmm3,
-                    step_times,
-                    success=True,
-                )
 
             pipeline_state["hmm_regime_discovery"] = {
-                "status": "SUCCESS" if step3_hmm_success else "FAILED",
-                "success": bool(step3_hmm_success),
-                "completed": bool(step3_hmm_success),
+                "status": "SUCCESS",
+                "success": True,
+                "completed": True,
             }
-            self._save_checkpoint("step3_hmm_regime_discovery", pipeline_state)
-            step_times["step3_hmm_regime_discovery"] = time.time() - step_start_hmm3
-
-            # Run validator for Step 3 HMM
-            try:
-                await self._run_step_validator(
-                    "step3_hmm_regime_discovery", training_input, pipeline_state
-                )
-            except Exception as e:
-                self.logger.warning(
-                    f"Validator for step3_hmm_regime_discovery failed but is non-fatal: {e}"
-                )
 
             # Feature engineering is handled in Step 2; no separate Step 3 Feature Engineering
 

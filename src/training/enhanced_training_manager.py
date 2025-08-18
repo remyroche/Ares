@@ -198,6 +198,36 @@ class EnhancedTrainingManager:
             "step6_hmm_based_training": [
                 "data/training/{exchange}_{symbol}_{timeframe}_hmm_models.pkl",
             ],
+            "step6_5_unified_regime_intelligence": [
+                "data/training/{exchange}_{symbol}_{timeframe}_unified_intelligence.parquet",
+            ],
+            "step7_analyst_enhancement": [
+                "data/training/{exchange}_{symbol}_{timeframe}_analyst_models.pkl",
+            ],
+            "step8_tactician_labeling": [
+                "data/training/{exchange}_{symbol}_{timeframe}_tactician_labels.parquet",
+            ],
+            "step9_tactician_specialist_training": [
+                "data/training/{exchange}_{symbol}_{timeframe}_specialist_models.pkl",
+            ],
+            "step10_confidence_calibration": [
+                "data/training/{exchange}_{symbol}_{timeframe}_calibration_results.pkl",
+            ],
+            "step11_final_parameters_optimization": [
+                "data/training/{exchange}_{symbol}_{timeframe}_optimization_results.json",
+            ],
+            "step12_walk_forward_validation": [
+                "data/training/{exchange}_{symbol}_{timeframe}_walk_forward_results.json",
+            ],
+            "step13_monte_carlo_validation": [
+                "data/training/{exchange}_{symbol}_{timeframe}_monte_carlo_results.json",
+            ],
+            "step14_ab_testing": [
+                "data/training/{exchange}_{symbol}_{timeframe}_ab_test_results.json",
+            ],
+            "step15_saving": [
+                "data/training/{exchange}_{symbol}_{timeframe}_final_models.pkl",
+            ],
         }
 
     async def _execute_pipeline_step(
@@ -272,7 +302,6 @@ class EnhancedTrainingManager:
                     step_validation = await self._run_step_validator(step_name, training_input, pipeline_state)
                     if step_validation and step_validation.get("validation_passed", False):
                         self.logger.info(f"🎉 {step_display_name} completed successfully and validation passed")
-                        print(f"🎉 {step_display_name} completed successfully and validation passed")
                     else:
                         if is_fatal:
                             self.logger.error(f"❌ {step_display_name} validation failed - stopping pipeline")
@@ -297,37 +326,6 @@ class EnhancedTrainingManager:
                 return False
             else:
                 return True  # Continue pipeline for non-fatal steps
-            "step6_5_unified_regime_intelligence": [
-                "data/training/{exchange}_{symbol}_{timeframe}_unified_intelligence.parquet",
-            ],
-            "step7_analyst_enhancement": [
-                "data/training/{exchange}_{symbol}_{timeframe}_analyst_models.pkl",
-            ],
-            "step8_tactician_labeling": [
-                "data/training/{exchange}_{symbol}_{timeframe}_tactician_labels.parquet",
-            ],
-            "step9_tactician_specialist_training": [
-                "data/training/{exchange}_{symbol}_{timeframe}_specialist_models.pkl",
-            ],
-            "step10_confidence_calibration": [
-                "data/training/{exchange}_{symbol}_{timeframe}_calibration_results.pkl",
-            ],
-            "step11_final_parameters_optimization": [
-                "data/training/{exchange}_{symbol}_{timeframe}_optimization_results.json",
-            ],
-            "step12_walk_forward_validation": [
-                "data/training/{exchange}_{symbol}_{timeframe}_walk_forward_results.json",
-            ],
-            "step13_monte_carlo_validation": [
-                "data/training/{exchange}_{symbol}_{timeframe}_monte_carlo_results.json",
-            ],
-            "step14_ab_testing": [
-                "data/training/{exchange}_{symbol}_{timeframe}_ab_test_results.json",
-            ],
-            "step15_saving": [
-                "data/training/{exchange}_{symbol}_{timeframe}_final_models.pkl",
-            ],
-        }
 
         # Define artifact patterns for clearing (includes all artifacts, not just critical ones)
         self.ARTIFACT_PATTERNS = {

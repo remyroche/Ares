@@ -9,6 +9,7 @@ import hashlib
 import inspect
 from typing import Any, Dict, List, Optional, Callable, Union, Tuple
 from datetime import datetime, timedelta
+from collections import OrderedDict
 import pandas as pd
 import numpy as np
 import asyncio
@@ -96,20 +97,21 @@ class DataQualityCache:
     """Cache for data quality validation results to avoid redundant checks."""
 
     def __init__(self, max_size: int = 100):
-        self.cache = {}
+        self.cache = OrderedDict()
         self.max_size = max_size
         self.logger = system_logger.getChild("DataQualityCache")
 
     def _generate_cache_key(self, data: pd.DataFrame, method_name: str) -> str:
         """Generate cache key for data quality validation."""
         try:
-            # Create a more stable hash based on data shape and column names
+            # Use pandas hash for more accurate cache key based on data content
+            data_hash = pd.util.hash_pandas_object(data, index=True).sum()
+            return f"{data_hash}_{method_name}"
+        except Exception:
+            # Fallback to simple hash based on shape and columns
             data_signature = f"{data.shape[0]}_{data.shape[1]}_{'_'.join(sorted(data.columns))}"
             data_hash = hashlib.md5(data_signature.encode()).hexdigest()
             return f"{data_hash}_{method_name}"
-        except Exception:
-            # Fallback to simple hash
-            return f"{hash(str(data.shape))}_{method_name}"
 
     def get(self, data: pd.DataFrame, method_name: str) -> Optional[Dict[str, Any]]:
         """Get cached validation result."""
@@ -165,6 +167,26 @@ def extract_data_from_args(args: tuple, kwargs: dict) -> Optional[pd.DataFrame]:
     return None
 
 
+def update_data_in_args_kwargs(data: pd.DataFrame, args: tuple, kwargs: dict) -> tuple:
+    """Update DataFrame in args and kwargs, returning new args and kwargs."""
+    new_args = list(args)
+    new_kwargs = kwargs.copy()
+    
+    # Update DataFrame in positional arguments
+    for i, arg in enumerate(new_args):
+        if isinstance(arg, pd.DataFrame):
+            new_args[i] = data
+            return tuple(new_args), new_kwargs
+    
+    # Update DataFrame in keyword arguments
+    for key, value in new_kwargs.items():
+        if isinstance(value, pd.DataFrame):
+            new_kwargs[key] = data
+            break
+    
+    return tuple(new_args), new_kwargs
+
+
 def validate_constant_features(func):
     """Decorator to detect and remove constant features."""
     @functools.wraps(func)
@@ -184,17 +206,7 @@ def validate_constant_features(func):
                 data = data.drop(columns=constant_features)
                 
                 # Update the data in args/kwargs
-                for i, arg in enumerate(args):
-                    if isinstance(arg, pd.DataFrame):
-                        args = list(args)
-                        args[i] = data
-                        args = tuple(args)
-                        break
-                else:
-                    for key, value in kwargs.items():
-                        if isinstance(value, pd.DataFrame):
-                            kwargs[key] = data
-                            break
+                args, kwargs = update_data_in_args_kwargs(data, args, kwargs)
         
         return func(self, *args, **kwargs)
     return wrapper
@@ -219,17 +231,7 @@ def validate_low_variance_features(func):
                 data = data.drop(columns=low_variance_features)
                 
                 # Update the data in args/kwargs
-                for i, arg in enumerate(args):
-                    if isinstance(arg, pd.DataFrame):
-                        args = list(args)
-                        args[i] = data
-                        args = tuple(args)
-                        break
-                else:
-                    for key, value in kwargs.items():
-                        if isinstance(value, pd.DataFrame):
-                            kwargs[key] = data
-                            break
+                args, kwargs = update_data_in_args_kwargs(data, args, kwargs)
         
         return func(self, *args, **kwargs)
     return wrapper
@@ -257,17 +259,7 @@ def validate_data_completeness(func):
                     data = data.fillna(method='ffill').fillna(method='bfill')
                 
                 # Update the data in args/kwargs
-                for i, arg in enumerate(args):
-                    if isinstance(arg, pd.DataFrame):
-                        args = list(args)
-                        args[i] = data
-                        args = tuple(args)
-                        break
-                else:
-                    for key, value in kwargs.items():
-                        if isinstance(value, pd.DataFrame):
-                            kwargs[key] = data
-                            break
+                args, kwargs = update_data_in_args_kwargs(data, args, kwargs)
         
         return func(self, *args, **kwargs)
     return wrapper
@@ -302,17 +294,7 @@ def validate_datetime_index(func):
                     data.index = pd.date_range(start='2020-01-01', periods=len(data), freq='1min')
                 
                 # Update the data in args/kwargs
-                for i, arg in enumerate(args):
-                    if isinstance(arg, pd.DataFrame):
-                        args = list(args)
-                        args[i] = data
-                        args = tuple(args)
-                        break
-                else:
-                    for key, value in kwargs.items():
-                        if isinstance(value, pd.DataFrame):
-                            kwargs[key] = data
-                            break
+                args, kwargs = update_data_in_args_kwargs(data, args, kwargs)
         
         return func(self, *args, **kwargs)
     return wrapper
@@ -333,7 +315,14 @@ def validate_multi_timeframe_alignment(func):
             # Check for regular intervals
             time_diffs = data.index.to_series().diff().dropna()
             if len(time_diffs) > 0:
-                expected_interval = time_diffs.mode().iloc[0]
+                modes = time_diffs.mode()
+                if modes.empty:
+                    # Handle case with no mode, use median
+                    expected_interval = time_diffs.median()
+                    system_logger.warning("Could not determine a single mode for time intervals, using median.")
+                else:
+                    expected_interval = modes.iloc[0]
+                
                 irregular_intervals = time_diffs[time_diffs != expected_interval]
                 irregular_ratio = len(irregular_intervals) / len(time_diffs)
                 
@@ -371,17 +360,17 @@ def validate_hmm_data_requirements(func):
     return wrapper
 
 
-def validate_data_structure(func):
+def validate_data_structure(expected_columns: int = 19):
     """Decorator to validate data structure and completeness."""
-    @functools.wraps(func)
-    def wrapper(self, *args, **kwargs):
-        data = extract_data_from_args(args, kwargs)
-        
-        if data is not None and not data.empty:
-            # Check column count consistency
-            expected_columns = 19  # Based on expected column count
-            if len(data.columns) != expected_columns:
-                system_logger.warning(f"Column count mismatch: expected {expected_columns}, got {len(data.columns)}")
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(self, *args, **kwargs):
+            data = extract_data_from_args(args, kwargs)
+            
+            if data is not None and not data.empty:
+                # Check column count consistency
+                if len(data.columns) != expected_columns:
+                    system_logger.warning(f"Column count mismatch: expected {expected_columns}, got {len(data.columns)}")
             
             # Check for data completeness
             completeness_ratio = 1 - (data.isnull().sum().sum() / (len(data) * len(data.columns)))
@@ -395,7 +384,8 @@ def validate_data_structure(func):
                     system_logger.warning(f"Large price range detected: {price_range:.2%}")
         
         return func(self, *args, **kwargs)
-    return wrapper
+        return wrapper
+    return decorator
 
 
 def optimize_memory_usage(func):
@@ -411,17 +401,7 @@ def optimize_memory_usage(func):
             optimized_data = _memory_optimizer.optimize_dataframe_memory(data.copy())
             
             # Update the data in args/kwargs
-            for i, arg in enumerate(args):
-                if isinstance(arg, pd.DataFrame):
-                    args = list(args)
-                    args[i] = optimized_data
-                    args = tuple(args)
-                    break
-            else:
-                for key, value in kwargs.items():
-                    if isinstance(value, pd.DataFrame):
-                        kwargs[key] = optimized_data
-                        break
+            args, kwargs = update_data_in_args_kwargs(optimized_data, args, kwargs)
         
         # Execute function
         result = func(self, *args, **kwargs)

@@ -13,7 +13,7 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from src.training.steps.step1_7_hmm_regime_discovery import run_step
+from src.training.steps.step3_hmm_regime_discovery import run_step
 from src.utils.logger import system_logger
 
 
@@ -55,7 +55,7 @@ async def run_30m_hmm_step():
             )
 
             # Verify artifacts were created
-            from src.training.steps.step1_7_hmm_regime_discovery import (
+            from src.training.steps.step3_hmm_regime_discovery import (
                 validate_required_artifacts,
             )
 

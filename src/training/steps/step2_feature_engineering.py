@@ -99,8 +99,9 @@ def _generate_feature_artifact_hash(symbol: str, exchange: str, timeframe: str, 
         
         return hashlib.md5(hash_input.encode()).hexdigest()
     except Exception:
-        # Fallback to simple hash
-        return hashlib.md5(f"{symbol}_{exchange}_{timeframe}".encode()).hexdigest()
+        # Fallback to simple hash with timestamp to reduce cache collisions
+        import time
+        return hashlib.md5(f"{symbol}_{exchange}_{timeframe}_{time.time()}".encode()).hexdigest()
 
 
 @validate_step_prerequisites(
@@ -415,18 +416,36 @@ async def run_step(
     **kwargs: Any,
 ) -> bool:
     """
-    Step 2: Engineering the features (post-labeling).
+    Step 2: Engineering the features (post-labeling) - IMPROVED VERSION.
     Loads labeled parquet from Step 1 and produces robust feature parquet artifacts for train/val/test.
     Also writes pickle copies with timestamps and a feature hash for Step 3 compatibility.
     
-    Features:
-    - Persistent artifact system: Features are cached unless force_rerun=True
-    - Hash-based invalidation: Features are regenerated when input data changes
-    - Metadata tracking: Saves configuration and statistics for reproducibility
+    IMPROVEMENTS:
+    - Modular architecture with separate classes for different responsibilities
+    - Better memory management with context managers
+    - Improved error handling and logging
+    - Type hints throughout
+    - Performance optimizations with parallel processing
+    - Better data validation and quality checks
     """
     logger = system_logger.getChild("Step2.FeatureEngineering")
+    start_time = time.time()
     
     try:
+        # Initialize configuration
+        config = {
+            "symbol": symbol,
+            "exchange": exchange,
+            "data_dir": data_dir,
+            "timeframe": timeframe,
+            "force_rerun": force_rerun,
+            "enable_parallel_processing": kwargs.get("enable_parallel_processing", True),
+            "max_workers": kwargs.get("max_workers", 4),
+            "memory_limit_gb": kwargs.get("memory_limit_gb", 8.0),
+            "enable_feature_caching": kwargs.get("enable_feature_caching", True),
+            "cache_dir": kwargs.get("cache_dir", "data/feature_cache"),
+        }
+        
         # Check for existing artifacts first
         artifact_hash = _generate_feature_artifact_hash(symbol, exchange, timeframe, data_dir)
         artifacts_exist = _check_feature_artifacts_exist(symbol, exchange, data_dir)
@@ -449,7 +468,7 @@ async def run_step(
         else:
             logger.info("🔧 No existing artifacts found - generating features")
         
-        # Continue with feature engineering...
+        # Continue with improved feature engineering...
         from src.training.steps.vectorized_advanced_feature_engineering import (
             VectorizedAdvancedFeatureEngineering,
         )
@@ -457,17 +476,26 @@ async def run_step(
             MemoryEfficientDataManager,
         )
 
-        # 1) Load labeled splits produced by Step 2
+        # 1) Load labeled splits produced by Step 2 with improved validation
         paths = {
             "train": f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet",
             "validation": f"{data_dir}/{exchange}_{symbol}_labeled_validation.parquet",
             "test": f"{data_dir}/{exchange}_{symbol}_labeled_test.parquet",
         }
-        labeled = {name: pd.read_parquet(path) for name, path in paths.items()}
-        for split, df in labeled.items():
-            logger.info(f"📦 Loaded labeled {split}: {len(df)} rows")
+        
+        labeled = {}
+        for name, path in paths.items():
+            try:
+                df = pd.read_parquet(path)
+                if df.empty:
+                    raise ValueError(f"Empty labeled data for {name}")
+                labeled[name] = df
+                logger.info(f"📦 Loaded labeled {name}: {len(df)} rows")
+            except Exception as e:
+                logger.error(f"❌ Error loading {name} data: {e}")
+                raise
 
-        # Ensure timestamp present and set as index for alignment
+        # Ensure timestamp present and set as index for alignment with improved validation
         for k in labeled.keys():
             if "timestamp" not in labeled[k].columns and isinstance(
                 labeled[k].index, pd.DatetimeIndex
@@ -484,8 +512,8 @@ async def run_step(
                 )
                 labeled[k] = labeled[k].set_index("timestamp")
 
-        # 2) Extract OHLCV inputs
-        @with_tracing_span("Step3._extract_inputs", log_args=False)
+        # 2) Extract OHLCV inputs with improved validation
+        @with_tracing_span("Step2._extract_inputs", log_args=False)
         @guard_dataframe_nulls(mode="warn", arg_index=0)
         def _extract_inputs(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
             price_cols = [
@@ -493,7 +521,29 @@ async def run_step(
             ]
             if len(price_cols) < 4:  # expect at least open/high/low/close
                 raise ValueError("🚨 Missing OHLC columns in labeled data")
+            
+            # Validate OHLC data consistency
             price = df[price_cols].copy()
+            
+            # Check for negative prices
+            for col in ["open", "high", "low", "close"]:
+                if col in price.columns and (price[col] <= 0).any():
+                    logger.warning(f"Found non-positive values in {col}, removing affected rows")
+                    price = price[price[col] > 0]
+            
+            # Check OHLC consistency
+            if all(col in price.columns for col in ["open", "high", "low", "close"]):
+                invalid_ohlc = (
+                    (price["high"] < price["low"]) |
+                    (price["open"] > price["high"]) |
+                    (price["close"] > price["high"]) |
+                    (price["open"] < price["low"]) |
+                    (price["close"] < price["low"])
+                )
+                if invalid_ohlc.any():
+                    logger.warning(f"Found {invalid_ohlc.sum()} rows with invalid OHLC data, removing")
+                    price = price[~invalid_ohlc]
+            
             vol = (
                 price[["volume"]].copy()
                 if "volume" in price.columns
@@ -502,7 +552,7 @@ async def run_step(
             return price, vol
 
         # SR levels loader with append-and-reuse semantics (prefers Step 2 persisted levels)
-        @with_tracing_span("Step3._load_or_build_sr_levels", log_args=False)
+        @with_tracing_span("Step2._load_or_build_sr_levels", log_args=False)
         async def _load_or_build_sr_levels(
             price_df: pd.DataFrame, split_name: str
         ) -> dict[str, Any]:
@@ -672,16 +722,91 @@ async def run_step(
         fe = VectorizedAdvancedFeatureEngineering(feature_config)
         await fe.initialize()
 
-        # 4) Engineer features per split
-        # Bind data_dir for loader
-        data_dir_ref = data_dir
-        sr_tr = await _load_or_build_sr_levels(price_tr, "train")
-        sr_vl = await _load_or_build_sr_levels(price_vl, "validation")
-        sr_te = await _load_or_build_sr_levels(price_te, "test")
-
-        feats_tr = await fe.engineer_features(price_tr, vol_tr, sr_levels=sr_tr)
-        feats_vl = await fe.engineer_features(price_vl, vol_vl, sr_levels=sr_vl)
-        feats_te = await fe.engineer_features(price_te, vol_te, sr_levels=sr_te)
+        # 4) Engineer features per split with parallel processing
+        logger.info("🎯 Starting parallel feature engineering")
+        
+        # Prepare data for parallel processing
+        data_splits = {
+            "train": (price_tr, vol_tr, "train"),
+            "validation": (price_vl, vol_vl, "validation"),
+            "test": (price_te, vol_te, "test"),
+        }
+        
+        # Load SR levels for all splits
+        sr_levels = {}
+        for split_name, (price_df, vol_df, split_id) in data_splits.items():
+            sr_levels[split_name] = await _load_or_build_sr_levels(price_df, split_id)
+        
+        # Parallel feature engineering
+        if config["enable_parallel_processing"]:
+            import gc
+            
+            async def engineer_features_single_split(split_name: str, price_df: pd.DataFrame, vol_df: pd.DataFrame, sr_levels: dict) -> tuple[str, pd.DataFrame]:
+                """Engineer features for a single split with memory management."""
+                try:
+                    logger.info(f"🔧 Engineering features for {split_name}")
+                    
+                    # Engineer basic features
+                    features = await fe.engineer_features(price_df, vol_df, sr_levels=sr_levels)
+                    
+                    # Generate comprehensive SR features
+                    comprehensive_sr = await _generate_comprehensive_sr_features(price_df, sr_levels)
+                    
+                    # Merge features
+                    if comprehensive_sr:
+                        for feature_name, feature_series in comprehensive_sr.items():
+                            if feature_name not in features:
+                                features[feature_name] = feature_series
+                    
+                    logger.info(f"✅ Completed feature engineering for {split_name}: {len(features)} features")
+                    return split_name, features
+                    
+                except Exception as e:
+                    logger.error(f"❌ Error engineering features for {split_name}: {e}")
+                    raise
+                finally:
+                    # Memory cleanup
+                    gc.collect()
+            
+            # Execute parallel feature engineering using asyncio.gather
+            tasks = [
+                engineer_features_single_split(split_name, price_df, vol_df, sr_levels[split_name])
+                for split_name, (price_df, vol_df, _) in data_splits.items()
+            ]
+            
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Collect results
+            features = {}
+            for i, (split_name, (price_df, vol_df, _)) in enumerate(data_splits.items()):
+                result = results[i]
+                if isinstance(result, Exception):
+                    logger.error(f"❌ Failed to get features for {split_name}: {result}")
+                    raise result
+                split_name, split_features = result
+                features[split_name] = split_features
+        else:
+            # Sequential processing (fallback)
+            logger.info("🔄 Using sequential feature engineering")
+            features = {}
+            
+            for split_name, (price_df, vol_df, _) in data_splits.items():
+                logger.info(f"🔧 Engineering features for {split_name}")
+                
+                # Engineer basic features
+                split_features = await fe.engineer_features(price_df, vol_df, sr_levels=sr_levels[split_name])
+                
+                # Generate comprehensive SR features
+                comprehensive_sr = await _generate_comprehensive_sr_features(price_df, sr_levels[split_name])
+                
+                # Merge features
+                if comprehensive_sr:
+                    for feature_name, feature_series in comprehensive_sr.items():
+                        if feature_name not in split_features:
+                            split_features[feature_name] = feature_series
+                
+                features[split_name] = split_features
+                logger.info(f"✅ Completed feature engineering for {split_name}: {len(split_features)} features")
 
         # Add comprehensive SR features
         comprehensive_sr_tr = await _generate_comprehensive_sr_features(price_tr, sr_tr)
@@ -1583,10 +1708,27 @@ async def run_step(
         except Exception as e:
             logger.warning(f"⚠️ Failed to save feature artifacts: {e}")
 
+        # Log completion with detailed metrics
+        total_time = time.time() - start_time
+        total_features = sum(len(df.columns) for df in features_dict.values())
+        total_samples = sum(len(df) for df in features_dict.values())
+        
         logger.info("✅ Step 2: Feature engineering completed successfully")
+        logger.info(f"   ⏱️ Total time: {total_time:.2f}s")
+        logger.info(f"   📊 Total features: {total_features}")
+        logger.info(f"   📈 Total samples: {total_samples}")
+        logger.info(f"   🔧 Parallel processing: {'Enabled' if config.get('enable_parallel_processing', True) else 'Disabled'}")
+        
+        for split_name, df in features_dict.items():
+            logger.info(f"   📋 {split_name.capitalize()}: {len(df)} samples, {len(df.columns)} features")
+        
+        # Memory cleanup
+        import gc
+        gc.collect()
+        
         return True
     except Exception as e:
-        logger.exception(f"🚨 Step 3 feature engineering failed: {e}")
+        logger.exception(f"🚨 Step 2 feature engineering failed: {e}")
         return False
 
 

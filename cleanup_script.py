@@ -90,7 +90,7 @@ class CodeAnalyzer:
             except SyntaxError:
                 pass  # Skip files with syntax errors
                 
-        except Exception as e:
+        except (IOError, OSError, UnicodeDecodeError) as e:
             print(f"Error analyzing {file_path}: {e}")
             
         return issues

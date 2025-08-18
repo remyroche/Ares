@@ -233,17 +233,57 @@ class FeatureSelectionManager:
     def _stage5_domain_specific_selection(self, features_df: pd.DataFrame, target: pd.Series) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """Stage 5: Domain-specific feature selection for financial data."""
         # Define feature categories and their importance weights
+        # Note: Removed non-semantic categories (regime, lagged, normalized)
         feature_categories = {
-            "momentum": ["momentum", "rsi", "macd", "cci", "roc"],
-            "volatility": ["volatility", "atr", "parkinson", "garman_klass"],
-            "liquidity": ["liquidity", "volume", "bid_ask", "market_depth"],
-            "microstructure": ["microstructure", "order_flow", "trade_frequency"],
-            "wavelet": ["wavelet", "dwt", "cwt"],
-            "sr_distance": ["sr_distance", "support", "resistance"],
-            "regime": ["regime", "cluster", "intensity", "state"],
-            "interaction": ["_x_", "_div_", "_ratio_"],
-            "lagged": ["_lag_", "_shift_"],
-            "normalized": ["_norm", "_z_score", "_standardized"]
+            # Momentum/Trend indicators
+            "momentum": [
+                "momentum", "mom", "rsi", "macd", "cci", "roc", "willr", "stoch",
+                "adx", "dmi", "kama", "tema", "dema", "hma", "wma", "vwma", "zlema",
+                "ichimoku", "psar", "trix", "cmo", "tsi", "ppo", "pmo", "uo",
+                "linreg", "lin_reg", "sma", "ema", "ma_", "moving_avg", "trend"
+            ],
+            # Volatility/range measures
+            "volatility": [
+                "volatility", "atr", "true_range", "truerange", "natr", "parkinson",
+                "garman", "gk_vol", "garman_klass", "roll", "rvol", "realized_vol",
+                "hv", "hist_vol", "historical_vol", "variance", "std", "bbands",
+                "boll", "bollinger", "donch", "donchian", "keltner", "chop",
+                "choppiness", "park_vol"
+            ],
+            # Liquidity/volume features
+            "liquidity": [
+                "liquidity", "volume", "tick_volume", "obv", "cmf", "mfi", "vwap",
+                "pvi", "nvi", "efi", "delta_volume"
+            ],
+            # Microstructure/order book features
+            "microstructure": [
+                "microstructure", "order_flow", "orderflow", "ofi", "imbalance",
+                "quote_imbalance", "spread", "bid_ask", "depth", "orderbook", "book",
+                "microprice", "trade_count", "trade_frequency"
+            ],
+            # Wavelet/transform domain features
+            "wavelet": ["wavelet", "dwt", "cwt", "wt_"],
+            # Support/Resistance contextual features (sr_ prefix and related terms)
+            "sr_distance": [
+                "sr_", "sr_distance", "support", "resistance", "proximity",
+                "breakout_probability", "rebounce_probability", "consolidation_probability",
+                "sr_confidence", "multi_timeframe_sr_score"
+            ],
+            # Statistical descriptors
+            "statistical": [
+                "autocorr", "autocorrelation", "correl", "correlation", "entropy",
+                "fractal", "hurst", "hjorth", "hj_", "kurtosis", "kurt", "skew",
+                "skewness", "zscore", "z_score"
+            ],
+            # Candlestick pattern features
+            "candlestick": [
+                "cdl", "candlestick", "doji", "hammer", "engulf", "harami",
+                "marubozu", "piercing", "shooting_star", "hanging_man",
+                "three_black_crows", "three_white_soldiers", "morning_star", "evening_star",
+                "dark_cloud"
+            ],
+            # Explicit interaction/composite features
+            "interaction": ["_x_", "_div_", "_ratio_", "_over_", "_cross_", "interaction"]
         }
         
         # Calculate category importance scores
@@ -310,10 +350,10 @@ class FeatureSelectionManager:
             "microstructure": [],
             "wavelet": [],
             "sr_distance": [],
-            "regime": [],
+            "statistical": [],
+            "candlestick": [],
             "interaction": [],
-            "lagged": [],
-            "normalized": [],
+            "transform": [],
             "other": []
         }
         
@@ -321,35 +361,61 @@ class FeatureSelectionManager:
             feature_lower = feature.lower()
             categorized = False
             
-            if any(keyword in feature_lower for keyword in ["momentum", "rsi", "macd", "cci", "roc"]):
+            if any(keyword in feature_lower for keyword in [
+                "momentum", "mom", "rsi", "macd", "cci", "roc", "willr", "stoch",
+                "adx", "dmi", "kama", "tema", "dema", "hma", "wma", "vwma", "zlema",
+                "ichimoku", "psar", "trix", "cmo", "tsi", "ppo", "pmo", "uo",
+                "linreg", "lin_reg", "sma", "ema", "ma_", "moving_avg", "trend"
+            ]):
                 categories["momentum"].append(feature)
                 categorized = True
-            elif any(keyword in feature_lower for keyword in ["volatility", "atr", "parkinson", "garman_klass"]):
+            elif any(keyword in feature_lower for keyword in [
+                "volatility", "atr", "true_range", "truerange", "natr", "parkinson",
+                "garman", "gk_vol", "garman_klass", "roll", "rvol", "realized_vol",
+                "hv", "hist_vol", "historical_vol", "variance", "std", "bbands",
+                "boll", "bollinger", "donch", "donchian", "keltner", "chop",
+                "choppiness", "park_vol"
+            ]):
                 categories["volatility"].append(feature)
                 categorized = True
-            elif any(keyword in feature_lower for keyword in ["liquidity", "volume", "bid_ask", "market_depth"]):
+            elif any(keyword in feature_lower for keyword in [
+                "liquidity", "volume", "tick_volume", "obv", "cmf", "mfi", "vwap",
+                "pvi", "nvi", "efi", "delta_volume"
+            ]):
                 categories["liquidity"].append(feature)
                 categorized = True
-            elif any(keyword in feature_lower for keyword in ["microstructure", "order_flow", "trade_frequency"]):
+            elif any(keyword in feature_lower for keyword in [
+                "microstructure", "order_flow", "orderflow", "ofi", "imbalance",
+                "quote_imbalance", "spread", "bid_ask", "depth", "orderbook", "book",
+                "microprice", "trade_count", "trade_frequency"
+            ]):
                 categories["microstructure"].append(feature)
                 categorized = True
-            elif any(keyword in feature_lower for keyword in ["wavelet", "dwt", "cwt"]):
+            elif any(keyword in feature_lower for keyword in ["wavelet", "dwt", "cwt", "wt_"]):
                 categories["wavelet"].append(feature)
                 categorized = True
-            elif any(keyword in feature_lower for keyword in ["sr_distance", "support", "resistance"]):
+            elif any(keyword in feature_lower for keyword in [
+                "sr_", "sr_distance", "support", "resistance", "proximity",
+                "breakout_probability", "rebounce_probability", "consolidation_probability",
+                "sr_confidence", "multi_timeframe_sr_score"
+            ]):
                 categories["sr_distance"].append(feature)
                 categorized = True
-            elif any(keyword in feature_lower for keyword in ["regime", "cluster", "intensity", "state"]):
-                categories["regime"].append(feature)
+            elif any(keyword in feature_lower for keyword in ["cdl", "candlestick", "doji", "hammer", "engulf", "harami", "marubozu", "piercing", "shooting_star", "hanging_man", "three_black_crows", "three_white_soldiers", "morning_star", "evening_star", "dark_cloud"]):
+                categories["candlestick"].append(feature)
                 categorized = True
-            elif any(keyword in feature_lower for keyword in ["_x_", "_div_", "_ratio_"]):
+            elif any(keyword in feature_lower for keyword in [
+                "autocorr", "autocorrelation", "correl", "correlation", "entropy",
+                "fractal", "hurst", "hjorth", "hj_", "kurtosis", "kurt", "skew",
+                "skewness", "zscore", "z_score"
+            ]):
+                categories["statistical"].append(feature)
+                categorized = True
+            elif any(keyword in feature_lower for keyword in ["_x_", "_div_", "_ratio_", "_over_", "_cross_", "interaction"]):
                 categories["interaction"].append(feature)
                 categorized = True
-            elif any(keyword in feature_lower for keyword in ["_lag_", "_shift_"]):
-                categories["lagged"].append(feature)
-                categorized = True
-            elif any(keyword in feature_lower for keyword in ["_norm", "_z_score", "_standardized"]):
-                categories["normalized"].append(feature)
+            elif any(keyword in feature_lower for keyword in ["fft", "fourier", "dct", "cosine", "sine", "transform_"]):
+                categories["transform"].append(feature)
                 categorized = True
             
             if not categorized:

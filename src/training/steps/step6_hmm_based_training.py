@@ -27,10 +27,22 @@ from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 import lightgbm as lgb
 
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors
 from src.utils.warning_symbols import error, failed, success
-from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
-from src.utils.data_quality_decorators import validate_feature_engineering_with_lookahead_bias_detection
+from src.utils.centralized_decorators import (
+    handle_errors,
+    guard_dataframe_nulls,
+    with_tracing_span,
+    validate_feature_engineering_with_lookahead_bias_detection,
+    # Advanced decorators
+    performance_monitor,
+    model_validation,
+    pipeline_checkpoint,
+    intelligent_caching,
+    adaptive_resource_allocation,
+    comprehensive_validation,
+    PerformanceLevel,
+    ValidationLevel,
+)
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 
 # Suppress warnings
@@ -4945,6 +4957,43 @@ from src.utils.training_pipeline_decorators import (
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")
 @time_budget_watchdog(soft_timeout_seconds=7200.0)
+@performance_monitor(
+    enable_profiling=True,
+    enable_memory_tracking=True,
+    enable_cpu_tracking=True,
+    save_profile_data=True,
+    level=PerformanceLevel.PROFILING
+)
+@model_validation(
+    check_overfitting=True,
+    check_underfitting=True,
+    validation_metrics=["accuracy", "precision", "recall", "f1"],
+    overfitting_threshold=0.1,
+    underfitting_threshold=0.6
+)
+@pipeline_checkpoint(
+    save_intermediate_results=True,
+    checkpoint_frequency=500,
+    enable_rollback=True
+)
+@intelligent_caching(
+    cache_intermediate_results=True,
+    cache_validation_data=True,
+    cache_model_artifacts=True,
+    cache_ttl_hours=24
+)
+@adaptive_resource_allocation(
+    dynamic_memory_allocation=True,
+    adaptive_batch_sizes=True,
+    resource_scaling_threshold=0.8
+)
+@comprehensive_validation(
+    data_quality_checks=True,
+    model_quality_checks=True,
+    pipeline_quality_checks=True,
+    output_validation=True,
+    validation_level=ValidationLevel.WARNING
+)
 @validate_step_prerequisites(
     required_directories=["data/training", "models"],
     min_memory_gb=8.0,

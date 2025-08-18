@@ -34,8 +34,30 @@ from src.utils.error_handler import (
     clean_dataframe,
 )
 
-# Import the auto-fix decorator for data quality issues
-from src.training.steps.raw_data_quality_checker import auto_fix_data_quality_issues
+# Import decorators from centralized module
+from src.utils.centralized_decorators import (
+    auto_fix_data_quality_issues,
+    deterministic_seed,
+    idempotent_step,
+    artifact_write_lock,
+    nan_inf_and_constant_guard,
+    artifact_versioning,
+    time_budget_watchdog,
+    validate_step_prerequisites,
+    secure_data_processing,
+    prevent_data_leakage,
+    resource_monitor,
+    memory_efficient,
+    debug_training_step,
+    circuit_breaker_protection,
+    validate_step_output,
+    quality_gate,
+    validate_data_quality,
+    validate_feature_engineering_pipeline,
+    validate_hmm_regime_discovery,
+    with_tracing_span,
+    guard_dataframe_nulls,
+)
 
 # Data loading
 from src.training.steps.unified_data_loader import UnifiedDataLoader
@@ -1429,7 +1451,9 @@ def _fit_block_hmm_robust(
         return None, None
 
 
-@handle_errors(exceptions=(ValueError, TypeError, np.linalg.LinAlgError), default_return=np.array([]), context="step3_hmm_regime_discovery._posteriors")
+@with_tracing_span("step3._posteriors", log_args=False)
+@guard_dataframe_nulls(mode="warn", arg_index=1)
+@handle_errors(exceptions=(Exception,), default_return=np.array([]), context="step3_hmm_regime_discovery._posteriors")
 def _posteriors(model: GMMHMM, X: np.ndarray) -> np.ndarray:
     """
     Get posterior probabilities with enhanced NaN/Inf guards.
@@ -1470,6 +1494,7 @@ def _posteriors(model: GMMHMM, X: np.ndarray) -> np.ndarray:
         return np.full((n_samples, n_states), 1.0/n_states)
 
 
+@with_tracing_span("step3._build_combination_profiles", log_args=False)
 @handle_data_processing_errors(default_return=(pd.Series(dtype=str), pd.DataFrame()))
 def _build_combination_profiles(
     block_states: Dict[str, np.ndarray], block_posteriors: Dict[str, np.ndarray]
@@ -1497,6 +1522,7 @@ def _build_combination_profiles(
     return combination_keys, profile_df
 
 
+@with_tracing_span("step3._cluster_combinations", log_args=False)
 @handle_data_processing_errors(default_return=pd.Series([-1] * 1000))
 def _cluster_combinations(
     profile_df: pd.DataFrame, min_cluster_size: int = 5
@@ -1985,6 +2011,65 @@ from src.utils.training_pipeline_decorators import (
 )
 
 
+@deterministic_seed(42)
+@idempotent_step(step_key="step3_hmm_regime_discovery")
+@artifact_write_lock()
+@nan_inf_and_constant_guard()
+@artifact_versioning("1.0")
+@time_budget_watchdog(soft_timeout_seconds=7200.0)
+@validate_step_prerequisites(
+    required_directories=["data/training", "models"],
+    min_memory_gb=16.0,
+    min_disk_gb=10.0,
+    required_packages=["pandas", "numpy", "sklearn", "hmmlearn"],
+    data_quality_checks={
+        "min_rows": 1000,
+        "required_columns": ["timestamp", "features", "targets"],
+    }
+)
+@secure_data_processing(
+    backup_before=True,
+    integrity_checks=True,
+    memory_cleanup=True,
+    data_validation=True
+)
+@prevent_data_leakage(
+    temporal_validation=True,
+    feature_leakage_detection=True,
+    cross_validation_isolation=True,
+    lookahead_bias_prevention=True
+)
+@resource_monitor(
+    memory_threshold_gb=32.0,
+    cpu_threshold_percent=90.0,
+    disk_threshold_gb=10.0,
+    auto_cleanup=True
+)
+@memory_efficient(
+    chunk_size=1000,
+    streaming_processing=True,
+    memory_pool=True,
+    cleanup_frequency=10
+)
+@debug_training_step(
+    log_intermediate_results=True,
+    save_debug_artifacts=True,
+    performance_profiling=True
+)
+@circuit_breaker_protection(
+    failure_threshold=3,
+    recovery_timeout=300.0
+)
+@validate_step_output(
+    required_files=["hmm_states.parquet", "hmm_posteriors.parquet"],
+    data_quality_checks={"check_output_completeness": True}
+)
+@quality_gate(
+    model_performance_thresholds={"min_data_points": 1000},
+    data_quality_metrics={"completeness_threshold": 0.95}
+)
+@auto_fix_data_quality_issues
+@validate_hmm_regime_discovery
 @monitor_pipeline_step(
     PipelineStage.FEATURE_ENGINEERING,
     validation_level=PipelineValidationLevel.STRICT,

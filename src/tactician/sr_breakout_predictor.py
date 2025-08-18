@@ -154,6 +154,28 @@ class SRBreakoutPredictor:
         # Unified regime classifier for S/R levels
         self.regime_classifier: UnifiedRegimeClassifier | None = None
 
+        # Feature calculation parameters
+        self.feature_config: dict[str, Any] = self.sr_config.get("feature_calculation", {})
+        self.enable_comprehensive_features: bool = self.feature_config.get(
+            "enable_comprehensive_features", True
+        )
+        self.strength_score_weights: dict[str, float] = self.feature_config.get(
+            "strength_score_weights", {
+                "touch_count": 0.3,
+                "total_volume": 0.2,
+                "level_age": 0.2,
+                "bounce_rate": 0.2,
+                "isolation_score": 0.1
+            }
+        )
+        self.clarity_factor_weights: dict[str, float] = self.feature_config.get(
+            "clarity_factor_weights", {
+                "significance_score": 0.4,
+                "isolation_score": 0.3,
+                "sharpness_score": 0.3
+            }
+        )
+
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid SR breakout predictor configuration"),
@@ -2040,6 +2062,602 @@ class SRBreakoutPredictor:
         except Exception as e:
             self.logger.error(f"Error calculating momentum strength: {e}")
             return 0.0
+
+    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
+        """Calculate RSI indicator."""
+        try:
+            delta = prices.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs))
+            return rsi
+        except Exception as e:
+            self.logger.error(f"Error calculating RSI: {e}")
+            return pd.Series(50, index=prices.index)
+
+    def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
+        """Calculate MACD indicator."""
+        try:
+            ema_fast = prices.ewm(span=fast).mean()
+            ema_slow = prices.ewm(span=slow).mean()
+            macd = ema_fast - ema_slow
+            signal_line = macd.ewm(span=signal).mean()
+            return macd - signal_line
+        except Exception as e:
+            self.logger.error(f"Error calculating MACD: {e}")
+            return pd.Series(0, index=prices.index)
+
+    async def get_sr_context(self, market_data: pd.DataFrame, current_price: float) -> dict[str, Any]:
+        """Get S/R context for the current market situation."""
+        try:
+            # Detect S/R levels
+            sr_levels = self.detect_enhanced_sr_levels(market_data)
+            
+            # Find nearest levels
+            nearest_support = current_price * 0.95  # Default
+            nearest_resistance = current_price * 1.05  # Default
+            
+            if sr_levels.get("support_levels"):
+                support_prices = [level.get("price", 0) for level in sr_levels["support_levels"] if level.get("price", 0) < current_price]
+                if support_prices:
+                    nearest_support = max(support_prices)
+                    
+            if sr_levels.get("resistance_levels"):
+                resistance_prices = [level.get("price", float('inf')) for level in sr_levels["resistance_levels"] if level.get("price", 0) > current_price]
+                if resistance_prices:
+                    nearest_resistance = min(resistance_prices)
+            
+            # Calculate basic probabilities
+            support_distance = (current_price - nearest_support) / current_price
+            resistance_distance = (nearest_resistance - current_price) / current_price
+            
+            # Simple probability calculation
+            breakout_prob = 1.0 / (1.0 + resistance_distance * 100)
+            bounce_prob = 1.0 / (1.0 + support_distance * 100)
+            
+            return {
+                "nearest_support": nearest_support,
+                "nearest_resistance": nearest_resistance,
+                "support_strength": 0.5,  # Default
+                "resistance_strength": 0.5,  # Default
+                "breakout_probability": breakout_prob,
+                "bounce_probability": bounce_prob,
+                "pivot_levels": {},
+                "hvn_levels": {},
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error getting S/R context: {e}")
+            return {
+                "nearest_support": current_price * 0.95,
+                "nearest_resistance": current_price * 1.05,
+                "support_strength": 0.5,
+                "resistance_strength": 0.5,
+                "breakout_probability": 0.5,
+                "bounce_probability": 0.5,
+                "pivot_levels": {},
+                "hvn_levels": {},
+            }
+
+    async def predict_breakout(self, market_data: pd.DataFrame, current_price: float) -> dict[str, Any]:
+        """Predict breakout direction and probability."""
+        try:
+            sr_context = await self.get_sr_context(market_data, current_price)
+            
+            breakout_prob = sr_context.get("breakout_probability", 0.5)
+            bounce_prob = sr_context.get("bounce_probability", 0.5)
+            
+            # Determine direction
+            if breakout_prob > bounce_prob:
+                direction = "up"
+                confidence = breakout_prob
+            else:
+                direction = "down"
+                confidence = bounce_prob
+                
+            return {
+                "direction": direction,
+                "confidence": confidence,
+                "breakout_probability": breakout_prob,
+                "bounce_probability": bounce_prob,
+                "sr_context": sr_context,
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error predicting breakout: {e}")
+            return {
+                "direction": "neutral",
+                "confidence": 0.5,
+                "breakout_probability": 0.5,
+                "bounce_probability": 0.5,
+                "sr_context": {},
+            }
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="comprehensive SR feature calculation",
+    )
+    def calculate_comprehensive_sr_features(
+        self, price_data: pd.DataFrame, sr_levels: dict[str, Any] | None = None
+    ) -> dict[str, pd.Series]:
+        """
+        Calculate comprehensive S/R features for HMM regime discovery.
+        
+        This method generates all the SR features mentioned in the requirements:
+        - distance_to_resistance & distance_to_support
+        - normalized_distance_to_resistance & normalized_distance_to_support
+        - sr_proximity_score
+        - strength_score
+        - clarity_factor
+        - directional_pressure
+        - sr_score
+        - delta_sr_score
+        
+        Args:
+            price_data: OHLCV price data
+            sr_levels: Pre-calculated S/R levels (optional)
+            
+        Returns:
+            Dictionary containing comprehensive SR features
+        """
+        try:
+            if not self.is_initialized:
+                self.logger.error("❌ SR breakout predictor not initialized")
+                return {}
+
+            features = {}
+            close = price_data["close"].astype(float)
+            high = price_data["high"].astype(float)
+            low = price_data["low"].astype(float)
+            volume = price_data["volume"].astype(float)
+
+            # Generate S/R levels if not provided
+            if sr_levels is None:
+                sr_levels = self.detect_enhanced_sr_levels(price_data)
+
+            if not sr_levels or not sr_levels.get("support_levels") or not sr_levels.get("resistance_levels"):
+                self.logger.warning("⚠️ No S/R levels available, generating basic features")
+                return self._generate_basic_sr_features(price_data)
+
+            # 1. Basic distance features
+            distance_features = self._calculate_distance_features(close, sr_levels)
+            features.update(distance_features)
+
+            # 2. Normalized distance features
+            normalized_features = self._calculate_normalized_distance_features(close, sr_levels)
+            features.update(normalized_features)
+
+            # 3. SR proximity score
+            proximity_features = self._calculate_sr_proximity_features(close, sr_levels)
+            features.update(proximity_features)
+
+            # 4. Strength score
+            strength_features = self._calculate_strength_score_features(price_data, sr_levels)
+            features.update(strength_features)
+
+            # 5. Clarity factor
+            clarity_features = self._calculate_clarity_factor_features(price_data, sr_levels)
+            features.update(clarity_features)
+
+            # 6. Directional pressure
+            directional_features = self._calculate_directional_pressure_features(close, sr_levels)
+            features.update(directional_features)
+
+            # 7. SR Score
+            sr_score_features = self._calculate_sr_score_features(close, sr_levels)
+            features.update(sr_score_features)
+
+            # 8. Delta SR Score (change from previous period)
+            delta_features = self._calculate_delta_sr_score_features(sr_score_features)
+            features.update(delta_features)
+
+            # 9. Isolation score
+            isolation_features = self._calculate_isolation_score_features(sr_levels)
+            features.update(isolation_features)
+
+            self.logger.info(f"✅ Generated {len(features)} comprehensive SR features")
+            return features
+
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating comprehensive SR features: {e}")
+            return self._generate_basic_sr_features(price_data)
+
+    def _generate_basic_sr_features(self, price_data: pd.DataFrame) -> dict[str, pd.Series]:
+        """Generate basic SR features as fallback when no S/R levels are available."""
+        try:
+            features = {}
+            close = price_data["close"].astype(float)
+            
+            # Calculate basic support/resistance using rolling min/max
+            rolling_window = min(20, len(close) // 4)
+            if rolling_window < 5:
+                rolling_window = 5
+                
+            support_level = close.rolling(rolling_window).min()
+            resistance_level = close.rolling(rolling_window).max()
+            
+            # Basic distance features
+            features["distance_to_support"] = close - support_level
+            features["distance_to_resistance"] = resistance_level - close
+            
+            # Normalized by current price
+            features["normalized_distance_to_support"] = features["distance_to_support"] / close
+            features["normalized_distance_to_resistance"] = features["distance_to_resistance"] / close
+            
+            # Basic proximity score
+            total_distance = features["distance_to_support"] + features["distance_to_resistance"]
+            features["sr_proximity_score"] = 1.0 / (1.0 + total_distance / close)
+            
+            # Basic strength score (constant for fallback)
+            features["strength_score"] = pd.Series(0.5, index=close.index)
+            
+            # Basic SR score
+            features["sr_score"] = pd.Series(0.0, index=close.index)
+            features["delta_sr_score"] = pd.Series(0.0, index=close.index)
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error generating basic SR features: {e}")
+            return {}
+
+    def _calculate_distance_features(
+        self, close: pd.Series, sr_levels: dict[str, Any]
+    ) -> dict[str, pd.Series]:
+        """Calculate basic distance features."""
+        try:
+            features = {}
+            
+            # Get nearest support and resistance levels
+            support_levels = sr_levels.get("support_levels", [])
+            resistance_levels = sr_levels.get("resistance_levels", [])
+            
+            # Calculate distances to nearest levels
+            support_distances = []
+            resistance_distances = []
+            
+            for price in close:
+                if pd.isna(price):
+                    support_distances.append(np.nan)
+                    resistance_distances.append(np.nan)
+                    continue
+                    
+                # Find nearest support
+                if support_levels:
+                    support_prices = [level.get("price", 0) for level in support_levels if level.get("price", 0) < price]
+                    if support_prices:
+                        nearest_support = max(support_prices)  # Closest support below price
+                        support_distances.append(price - nearest_support)
+                    else:
+                        support_distances.append(price * 0.1)  # Default distance
+                else:
+                    support_distances.append(price * 0.1)
+                    
+                # Find nearest resistance
+                if resistance_levels:
+                    resistance_prices = [level.get("price", float('inf')) for level in resistance_levels if level.get("price", 0) > price]
+                    if resistance_prices:
+                        nearest_resistance = min(resistance_prices)  # Closest resistance above price
+                        resistance_distances.append(nearest_resistance - price)
+                    else:
+                        resistance_distances.append(price * 0.1)  # Default distance
+                else:
+                    resistance_distances.append(price * 0.1)
+            
+            features["distance_to_support"] = pd.Series(support_distances, index=close.index)
+            features["distance_to_resistance"] = pd.Series(resistance_distances, index=close.index)
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating distance features: {e}")
+            return {}
+
+    def _calculate_normalized_distance_features(
+        self, close: pd.Series, sr_levels: dict[str, Any]
+    ) -> dict[str, pd.Series]:
+        """Calculate normalized distance features by volatility."""
+        try:
+            features = {}
+            
+            # Calculate volatility (ATR-like measure)
+            high = close.rolling(14).max()
+            low = close.rolling(14).min()
+            volatility = (high - low) / close
+            
+            # Get distance features
+            distance_features = self._calculate_distance_features(close, sr_levels)
+            
+            if "distance_to_support" in distance_features and "distance_to_resistance" in distance_features:
+                # Normalize by volatility
+                support_dist = distance_features["distance_to_support"]
+                resistance_dist = distance_features["distance_to_resistance"]
+                
+                # Avoid division by zero
+                volatility_safe = volatility.replace(0, volatility.mean())
+                
+                features["normalized_distance_to_support"] = support_dist / (close * volatility_safe)
+                features["normalized_distance_to_resistance"] = resistance_dist / (close * volatility_safe)
+                
+                # Clip to reasonable range
+                features["normalized_distance_to_support"] = features["normalized_distance_to_support"].clip(-10, 10)
+                features["normalized_distance_to_resistance"] = features["normalized_distance_to_resistance"].clip(-10, 10)
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating normalized distance features: {e}")
+            return {}
+
+    def _calculate_sr_proximity_features(
+        self, close: pd.Series, sr_levels: dict[str, Any]
+    ) -> dict[str, pd.Series]:
+        """Calculate SR proximity score."""
+        try:
+            features = {}
+            
+            # Get distance features
+            distance_features = self._calculate_distance_features(close, sr_levels)
+            
+            if "distance_to_support" in distance_features and "distance_to_resistance" in distance_features:
+                support_dist = distance_features["distance_to_support"]
+                resistance_dist = distance_features["distance_to_resistance"]
+                
+                # Calculate proximity score using exponential decay
+                # Closer to levels = higher score
+                support_proximity = np.exp(-support_dist / (close * 0.02))  # 2% scale
+                resistance_proximity = np.exp(-resistance_dist / (close * 0.02))
+                
+                # Combined proximity score
+                sr_proximity_score = (support_proximity + resistance_proximity) / 2
+                
+                features["sr_proximity_score"] = sr_proximity_score.fillna(0)
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating SR proximity features: {e}")
+            return {}
+
+    def _calculate_strength_score_features(
+        self, price_data: pd.DataFrame, sr_levels: dict[str, Any]
+    ) -> dict[str, pd.Series]:
+        """Calculate strength score using the enhanced formula."""
+        try:
+            features = {}
+            
+            # Get level metadata
+            support_levels = sr_levels.get("support_levels", [])
+            resistance_levels = sr_levels.get("resistance_levels", [])
+            
+            # Calculate strength scores for each level
+            support_strengths = []
+            resistance_strengths = []
+            
+            for level in support_levels + resistance_levels:
+                # Extract level properties
+                touch_count = level.get("touches", 1)
+                total_volume = level.get("volume", 1.0)
+                level_age = level.get("age", 1)
+                bounce_rate = level.get("bounce_rate", 0.5)
+                isolation_score = level.get("isolation_score", 0.5)
+                
+                # Calculate strength score using the formula
+                strength_score = (
+                    self.strength_score_weights["touch_count"] * np.log(max(touch_count, 1)) +
+                    self.strength_score_weights["total_volume"] * np.log(max(total_volume, 1)) +
+                    self.strength_score_weights["level_age"] * np.log(max(level_age, 1)) +
+                    self.strength_score_weights["bounce_rate"] * bounce_rate +
+                    self.strength_score_weights["isolation_score"] * isolation_score
+                )
+                
+                if level in support_levels:
+                    support_strengths.append(strength_score)
+                else:
+                    resistance_strengths.append(strength_score)
+            
+            # Create time series of strength scores
+            # For simplicity, use the average strength of nearby levels
+            close = price_data["close"]
+            support_strength_series = pd.Series(np.mean(support_strengths) if support_strengths else 0.5, index=close.index)
+            resistance_strength_series = pd.Series(np.mean(resistance_strengths) if resistance_strengths else 0.5, index=close.index)
+            
+            # Combined strength score
+            strength_score = (support_strength_series + resistance_strength_series) / 2
+            
+            features["strength_score"] = strength_score
+            features["support_strength"] = support_strength_series
+            features["resistance_strength"] = resistance_strength_series
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating strength score features: {e}")
+            return {"strength_score": pd.Series(0.5, index=price_data.index)}
+
+    def _calculate_clarity_factor_features(
+        self, price_data: pd.DataFrame, sr_levels: dict[str, Any]
+    ) -> dict[str, pd.Series]:
+        """Calculate clarity factor."""
+        try:
+            features = {}
+            
+            # Get level metadata
+            support_levels = sr_levels.get("support_levels", [])
+            resistance_levels = sr_levels.get("resistance_levels", [])
+            
+            # Calculate clarity factors for each level
+            support_clarity = []
+            resistance_clarity = []
+            
+            for level in support_levels + resistance_levels:
+                # Extract level properties
+                significance_score = level.get("strength", 0.5)
+                isolation_score = level.get("isolation_score", 0.5)
+                sharpness_score = level.get("sharpness_score", 0.5)
+                
+                # Calculate clarity factor
+                clarity_factor = (
+                    self.clarity_factor_weights["significance_score"] * significance_score +
+                    self.clarity_factor_weights["isolation_score"] * isolation_score +
+                    self.clarity_factor_weights["sharpness_score"] * sharpness_score
+                )
+                
+                if level in support_levels:
+                    support_clarity.append(clarity_factor)
+                else:
+                    resistance_clarity.append(clarity_factor)
+            
+            # Create time series
+            close = price_data["close"]
+            support_clarity_series = pd.Series(np.mean(support_clarity) if support_clarity else 0.5, index=close.index)
+            resistance_clarity_series = pd.Series(np.mean(resistance_clarity) if resistance_clarity else 0.5, index=close.index)
+            
+            features["support_clarity_factor"] = support_clarity_series
+            features["resistance_clarity_factor"] = resistance_clarity_series
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating clarity factor features: {e}")
+            return {}
+
+    def _calculate_directional_pressure_features(
+        self, close: pd.Series, sr_levels: dict[str, Any]
+    ) -> dict[str, pd.Series]:
+        """Calculate directional pressure."""
+        try:
+            features = {}
+            
+            # Get normalized distance features
+            normalized_features = self._calculate_normalized_distance_features(close, sr_levels)
+            
+            if "normalized_distance_to_support" in normalized_features and "normalized_distance_to_resistance" in normalized_features:
+                ndrs = normalized_features["normalized_distance_to_resistance"]
+                ndss = normalized_features["normalized_distance_to_support"]
+                
+                # Calculate directional pressure
+                # Positive = bullish pressure, Negative = bearish pressure
+                denominator = ndrs + ndss
+                denominator = denominator.replace(0, 1e-8)  # Avoid division by zero
+                
+                directional_pressure = (ndrs - ndss) / denominator
+                
+                # Clip to reasonable range
+                directional_pressure = directional_pressure.clip(-1, 1)
+                
+                features["directional_pressure"] = directional_pressure.fillna(0)
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating directional pressure features: {e}")
+            return {}
+
+    def _calculate_sr_score_features(
+        self, close: pd.Series, sr_levels: dict[str, Any]
+    ) -> dict[str, pd.Series]:
+        """Calculate SR score."""
+        try:
+            features = {}
+            
+            # Get directional pressure and strength score
+            directional_features = self._calculate_directional_pressure_features(close, sr_levels)
+            strength_features = self._calculate_strength_score_features(pd.DataFrame({"close": close}), sr_levels)
+            
+            if "directional_pressure" in directional_features and "strength_score" in strength_features:
+                directional_pressure = directional_features["directional_pressure"]
+                strength_score = strength_features["strength_score"]
+                
+                # Calculate SR score
+                sr_score = directional_pressure * strength_score
+                
+                # Clip to [-1, 1] range
+                sr_score = sr_score.clip(-1, 1)
+                
+                features["sr_score"] = sr_score.fillna(0)
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating SR score features: {e}")
+            return {"sr_score": pd.Series(0.0, index=close.index)}
+
+    def _calculate_delta_sr_score_features(
+        self, sr_score_features: dict[str, pd.Series]
+    ) -> dict[str, pd.Series]:
+        """Calculate delta SR score (change from previous period)."""
+        try:
+            features = {}
+            
+            if "sr_score" in sr_score_features:
+                sr_score = sr_score_features["sr_score"]
+                
+                # Calculate delta (change from previous period)
+                delta_sr_score = sr_score.diff()
+                
+                # Fill first value with 0
+                delta_sr_score = delta_sr_score.fillna(0)
+                
+                features["delta_sr_score"] = delta_sr_score
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating delta SR score features: {e}")
+            return {"delta_sr_score": pd.Series(0.0, index=sr_score_features.get("sr_score", pd.Series()).index)}
+
+    def _calculate_isolation_score_features(
+        self, sr_levels: dict[str, Any]
+    ) -> dict[str, pd.Series]:
+        """Calculate isolation score."""
+        try:
+            features = {}
+            
+            # Get all levels
+            support_levels = sr_levels.get("support_levels", [])
+            resistance_levels = sr_levels.get("resistance_levels", [])
+            all_levels = support_levels + resistance_levels
+            
+            if not all_levels:
+                return {"isolation_score": pd.Series(0.5, index=pd.DatetimeIndex([]))}
+            
+            # Calculate isolation scores for each level
+            isolation_scores = []
+            
+            for i, level in enumerate(all_levels):
+                level_price = level.get("price", 0)
+                
+                # Find other levels within 2 ATR range
+                nearby_levels = 0
+                for j, other_level in enumerate(all_levels):
+                    if i != j:
+                        other_price = other_level.get("price", 0)
+                        price_diff = abs(level_price - other_price) / level_price
+                        
+                        # Consider levels within 2% as nearby (simplified ATR approximation)
+                        if price_diff < 0.02:
+                            nearby_levels += 1
+                
+                # Calculate isolation score (fewer nearby levels = higher isolation)
+                max_nearby = len(all_levels) - 1
+                isolation_score = 1.0 - (nearby_levels / max_nearby) if max_nearby > 0 else 1.0
+                isolation_scores.append(isolation_score)
+            
+            # Create time series (use average isolation score)
+            avg_isolation = np.mean(isolation_scores) if isolation_scores else 0.5
+            
+            # Create a series with the same length as the data
+            # This is a simplified approach - in practice, you'd want to calculate this dynamically
+            features["isolation_score"] = pd.Series(avg_isolation, index=pd.DatetimeIndex([]))
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating isolation score features: {e}")
+            return {"isolation_score": pd.Series(0.5, index=pd.DatetimeIndex([]))}
 
 
 @handle_errors(

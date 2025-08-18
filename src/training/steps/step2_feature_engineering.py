@@ -19,6 +19,9 @@ from src.training.steps.raw_data_quality_checker import auto_fix_data_quality_is
 # Import feature selection manager
 from src.training.feature_selection_manager import FeatureSelectionManager
 
+# Import SR breakout predictor for comprehensive SR features
+from src.tactician.sr_breakout_predictor import setup_sr_breakout_predictor
+
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
     validate_step_prerequisites,
@@ -591,6 +594,50 @@ async def run_step(
             except Exception:
                 return {"support_levels": [], "resistance_levels": []}
 
+        @with_tracing_span("Step2._generate_comprehensive_sr_features", log_args=False)
+        async def _generate_comprehensive_sr_features(
+            price_df: pd.DataFrame, sr_levels: dict[str, Any]
+        ) -> dict[str, pd.Series]:
+            """
+            Generate comprehensive SR features using the SRBreakoutPredictor.
+            
+            This function adds the following comprehensive SR features:
+            - distance_to_resistance & distance_to_support
+            - normalized_distance_to_resistance & normalized_distance_to_support
+            - sr_proximity_score
+            - strength_score
+            - clarity_factor
+            - directional_pressure
+            - sr_score
+            - delta_sr_score
+            - isolation_score
+            """
+            try:
+                # Initialize SR breakout predictor
+                sr_predictor = await setup_sr_breakout_predictor(config)
+                if not sr_predictor:
+                    logger.warning("⚠️ Failed to initialize SR breakout predictor, using basic features")
+                    return {}
+                
+                # Generate comprehensive SR features
+                comprehensive_features = sr_predictor.calculate_comprehensive_sr_features(
+                    price_df, sr_levels
+                )
+                
+                if comprehensive_features:
+                    logger.info(f"✅ Generated {len(comprehensive_features)} comprehensive SR features")
+                    # Log feature names for debugging
+                    feature_names = list(comprehensive_features.keys())
+                    logger.info(f"🔍 Comprehensive SR features: {feature_names}")
+                else:
+                    logger.warning("⚠️ No comprehensive SR features generated")
+                
+                return comprehensive_features
+                
+            except Exception as e:
+                logger.error(f"❌ Error generating comprehensive SR features: {e}")
+                return {}
+
         price_tr, vol_tr = _extract_inputs(labeled["train"])
         price_vl, vol_vl = _extract_inputs(labeled["validation"])
         price_te, vol_te = _extract_inputs(labeled["test"])
@@ -635,6 +682,27 @@ async def run_step(
         feats_tr = await fe.engineer_features(price_tr, vol_tr, sr_levels=sr_tr)
         feats_vl = await fe.engineer_features(price_vl, vol_vl, sr_levels=sr_vl)
         feats_te = await fe.engineer_features(price_te, vol_te, sr_levels=sr_te)
+
+        # Add comprehensive SR features
+        comprehensive_sr_tr = await _generate_comprehensive_sr_features(price_tr, sr_tr)
+        comprehensive_sr_vl = await _generate_comprehensive_sr_features(price_vl, sr_vl)
+        comprehensive_sr_te = await _generate_comprehensive_sr_features(price_te, sr_te)
+
+        # Merge comprehensive SR features with existing features
+        if comprehensive_sr_tr:
+            for feature_name, feature_series in comprehensive_sr_tr.items():
+                if feature_name not in feats_tr:
+                    feats_tr[feature_name] = feature_series
+                    
+        if comprehensive_sr_vl:
+            for feature_name, feature_series in comprehensive_sr_vl.items():
+                if feature_name not in feats_vl:
+                    feats_vl[feature_name] = feature_series
+                    
+        if comprehensive_sr_te:
+            for feature_name, feature_series in comprehensive_sr_te.items():
+                if feature_name not in feats_te:
+                    feats_te[feature_name] = feature_series
 
         X_tr = pd.DataFrame(feats_tr).reindex(price_tr.index)
         X_vl = pd.DataFrame(feats_vl).reindex(price_vl.index)

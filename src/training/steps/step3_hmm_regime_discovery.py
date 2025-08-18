@@ -411,9 +411,10 @@ BLOCKS: List[BlockConfig] = [
     BlockConfig("volume", 5, 4),  # 5 states for volume patterns
     # Features: volume_*, vwap_*, volume_zscore, volume_ratio_*, trade_*
     
-    # 4. SUPPORT_RESISTANCE BLOCK - Distance to levels (ESSENTIAL)
+    # 4. SUPPORT_RESISTANCE BLOCK - Comprehensive SR features (ESSENTIAL)
     BlockConfig("support_resistance", 3, 2),  # 3 states for SR patterns
-    # Features: distance_to_*, normalized_distance_to_*, sr_*
+    # Features: distance_to_*, normalized_distance_to_*, sr_proximity_score, strength_score,
+    # clarity_factor, directional_pressure, sr_score, delta_sr_score, isolation_score
 ]
 
 # Timeframes to train on - process all timeframes, resampling from 1m when needed
@@ -1149,7 +1150,11 @@ def _assign_block(feature_name: str) -> str:
     # 4. SUPPORT_RESISTANCE BLOCK - Distance to levels (ESSENTIAL)
     sr_patterns = [
         "support", "resistance", "sr_", "distance_to_", "normalized_distance_to_",
-        "level", "pivot", "fibonacci", "fib", "retracement", "extension"
+        "level", "pivot", "fibonacci", "fib", "retracement", "extension",
+        # Add comprehensive SR feature patterns
+        "sr_proximity_score", "strength_score", "clarity_factor", "directional_pressure",
+        "sr_score", "delta_sr_score", "isolation_score", "support_strength", "resistance_strength",
+        "support_clarity_factor", "resistance_clarity_factor"
     ]
     
     for pattern in sr_patterns:

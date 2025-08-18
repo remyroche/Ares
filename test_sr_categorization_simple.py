@@ -22,7 +22,7 @@ def categorize_features_simple(feature_names):
         categorized = False
         
         # Interaction features (check first to avoid conflicts)
-        elif any(keyword in feature_lower for keyword in [
+        if any(keyword in feature_lower for keyword in [
             "_x_", "_div_", "_ratio_", "_over_", "_cross_", "interaction",
             "momentum_x_", "volatility_x_", "volume_x_", "regime_x_",
             "momentum_div_", "volatility_div_", "volume_div_"
@@ -30,72 +30,166 @@ def categorize_features_simple(feature_names):
             categories["interaction"].append(feature)
             categorized = True
         
-        # Momentum indicators
-        elif any(keyword in feature_lower for keyword in [
-            "momentum", "mom", "rsi", "macd", "cci", "roc", "willr", "stoch",
-            "adx", "dmi", "kama", "tema", "dema", "hma", "wma", "vwma", "zlema",
-            "ichimoku", "psar", "trix", "cmo", "tsi", "ppo", "pmo", "uo",
-            "linreg", "lin_reg", "sma", "ema", "ma_", "moving_avg", "trend"
-        ]):
-            categories["momentum"].append(feature)
-            categorized = True
+        # Momentum indicators (including multi-timeframe and derivative forms)
+        if not categorized:
+            momentum_base_tokens = [
+                "momentum", "mom", "rsi", "macd", "cci", "roc", "willr", "stoch",
+                "adx", "dmi", "kama", "tema", "dema", "hma", "wma", "vwma", "zlema",
+                "ichimoku", "psar", "trix", "cmo", "tsi", "ppo", "pmo", "uo",
+                "linreg", "lin_reg", "sma", "ema", "ma_", "moving_avg", "trend",
+                "bb_position", "bb_upper", "bb_lower", "bb_width", "bb_percent"
+            ]
+            derivative_tokens = [
+                "_diff", "diff_", "_delta", "delta_", "_accel", "accel_",
+                "acceleration", "_slope", "slope_", "_change", "change_", "_norm", "norm_"
+            ]
+            has_momentum_base = any(token in feature_lower for token in momentum_base_tokens)
+            has_derivative_with_anchor = (
+                any(token in feature_lower for token in derivative_tokens)
+                and any(anchor in feature_lower for anchor in [
+                    "momentum", "roc", "rsi", "macd", "stoch", "cci", "willr", "trend", "bb"
+                ])
+            )
+            if has_momentum_base or has_derivative_with_anchor:
+                categories["momentum"].append(feature)
+                categorized = True
         
-        # Volatility measures
-        elif any(keyword in feature_lower for keyword in [
-            "volatility", "atr", "true_range", "truerange", "natr", "parkinson",
-            "garman", "gk_vol", "garman_klass", "roll", "rvol", "realized_vol",
-            "hv", "hist_vol", "historical_vol", "variance", "std", "bbands",
-            "boll", "bollinger", "donch", "donchian", "keltner", "chop",
-            "choppiness", "park_vol"
-        ]):
-            categories["volatility"].append(feature)
-            categorized = True
+        # Volatility measures (including multi-timeframe and derivative forms)
+        if not categorized:
+            volatility_base_tokens = [
+                "volatility", "atr", "true_range", "truerange", "natr", "parkinson",
+                "garman", "gk_vol", "garman_klass", "roll", "rvol", "realized_vol",
+                "hv", "hist_vol", "historical_vol", "variance", "std", "bbands",
+                "boll", "bollinger", "donch", "donchian", "keltner", "chop",
+                "choppiness", "park_vol", "vol_", "volatility_"
+            ]
+            derivative_tokens = [
+                "_diff", "diff_", "_delta", "delta_", "_accel", "accel_",
+                "acceleration", "_slope", "slope_", "_change", "change_", "_norm", "norm_"
+            ]
+            has_volatility_base = any(token in feature_lower for token in volatility_base_tokens)
+            has_derivative_with_anchor = (
+                any(token in feature_lower for token in derivative_tokens)
+                and any(anchor in feature_lower for anchor in [
+                    "volatility", "atr", "true_range", "variance", "std", "bbands", "bollinger"
+                ])
+            )
+            if has_volatility_base or has_derivative_with_anchor:
+                categories["volatility"].append(feature)
+                categorized = True
         
-        # Volume features
-        elif any(keyword in feature_lower for keyword in [
-            "volume", "tick_volume", "obv", "cmf", "mfi", "vwap",
-            "pvi", "nvi", "efi", "delta_volume", "volume_ratio", "volume_ma", 
-            "volume_change", "volume_sma", "volume_momentum", "volume_weighted",
-            "volume_velocity", "volume_acceleration", "volume_price"
-        ]):
-            categories["volume"].append(feature)
-            categorized = True
+        # Volume features (including multi-timeframe and derivative forms)
+        if not categorized:
+            volume_base_tokens = [
+                "volume", "tick_volume", "obv", "cmf", "mfi", "vwap",
+                "pvi", "nvi", "efi", "delta_volume", "volume_ratio", "volume_ma", 
+                "volume_change", "volume_sma", "volume_momentum", "volume_weighted",
+                "volume_velocity", "volume_acceleration", "volume_price", "volume_"
+            ]
+            derivative_tokens = [
+                "_diff", "diff_", "_delta", "delta_", "_accel", "accel_",
+                "acceleration", "_slope", "slope_", "_change", "change_", "_norm", "norm_"
+            ]
+            has_volume_base = any(token in feature_lower for token in volume_base_tokens)
+            has_derivative_with_anchor = (
+                any(token in feature_lower for token in derivative_tokens)
+                and any(anchor in feature_lower for anchor in [
+                    "volume", "obv", "cmf", "mfi", "vwap", "volume_ratio", "volume_ma"
+                ])
+            )
+            if has_volume_base or has_derivative_with_anchor:
+                categories["volume"].append(feature)
+                categorized = True
         
-        # Liquidity features (spread, bid-ask, etc.)
-        elif any(keyword in feature_lower for keyword in [
-            "liquidity", "spread", "bid_ask", "bidask", "quote_imbalance"
-        ]):
-            categories["liquidity"].append(feature)
-            categorized = True
+        # Liquidity features (including multi-timeframe and derivative forms)
+        if not categorized:
+            liquidity_base_tokens = [
+                "liquidity", "spread", "bid_ask", "bidask", "quote_imbalance",
+                "liquidity_", "spread_", "bid_", "ask_", "quote_"
+            ]
+            derivative_tokens = [
+                "_diff", "diff_", "_delta", "delta_", "_accel", "accel_",
+                "acceleration", "_slope", "slope_", "_change", "change_", "_norm", "norm_"
+            ]
+            has_liquidity_base = any(token in feature_lower for token in liquidity_base_tokens)
+            has_derivative_with_anchor = (
+                any(token in feature_lower for token in derivative_tokens)
+                and any(anchor in feature_lower for anchor in [
+                    "liquidity", "spread", "bid_ask", "quote_imbalance"
+                ])
+            )
+            if has_liquidity_base or has_derivative_with_anchor:
+                categories["liquidity"].append(feature)
+                categorized = True
         
-        # Microstructure/order book features
-        elif any(keyword in feature_lower for keyword in [
-            "microstructure", "order_flow", "orderflow", "ofi", "imbalance",
-            "quote_imbalance", "spread", "bid_ask", "depth", "orderbook", "book",
-            "microprice", "trade_count", "trade_frequency"
-        ]):
-            categories["microstructure"].append(feature)
-            categorized = True
+        # Microstructure features (including multi-timeframe and derivative forms)
+        if not categorized:
+            microstructure_base_tokens = [
+                "microstructure", "order_flow", "orderflow", "ofi", "imbalance",
+                "quote_imbalance", "depth", "orderbook", "book", "microprice", 
+                "trade_count", "trade_frequency", "order_", "flow_", "imbalance_"
+            ]
+            derivative_tokens = [
+                "_diff", "diff_", "_delta", "delta_", "_accel", "accel_",
+                "acceleration", "_slope", "slope_", "_change", "change_", "_norm", "norm_"
+            ]
+            has_microstructure_base = any(token in feature_lower for token in microstructure_base_tokens)
+            has_derivative_with_anchor = (
+                any(token in feature_lower for token in derivative_tokens)
+                and any(anchor in feature_lower for anchor in [
+                    "order_flow", "imbalance", "microstructure", "trade_count"
+                ])
+            )
+            if has_microstructure_base or has_derivative_with_anchor:
+                categories["microstructure"].append(feature)
+                categorized = True
         
-        # Regime features
-        elif any(keyword in feature_lower for keyword in [
-            "regime", "cluster", "state", "composite", "hmm"
-        ]):
-            categories["regime"].append(feature)
-            categorized = True
+        # Regime features (including multi-timeframe and derivative forms)
+        if not categorized:
+            regime_base_tokens = [
+                "regime", "cluster", "state", "composite", "hmm", "regime_",
+                "cluster_", "state_", "hmm_", "composite_"
+            ]
+            derivative_tokens = [
+                "_diff", "diff_", "_delta", "delta_", "_accel", "accel_",
+                "acceleration", "_slope", "slope_", "_change", "change_", "_norm", "norm_"
+            ]
+            has_regime_base = any(token in feature_lower for token in regime_base_tokens)
+            has_derivative_with_anchor = (
+                any(token in feature_lower for token in derivative_tokens)
+                and any(anchor in feature_lower for anchor in [
+                    "regime", "cluster", "state", "hmm", "composite"
+                ])
+            )
+            if has_regime_base or has_derivative_with_anchor:
+                categories["regime"].append(feature)
+                categorized = True
         
-        # Support/Resistance features
-        elif any(keyword in feature_lower for keyword in [
-            "sr_distance", "support_level", "resistance_level", "proximity",
-            "multi_timeframe_sr_score", "sr_proximity", "sr_outcome",
-            "normalized_distance",
-            "sr_proximity_score", "strength_score", "clarity_factor", "directional_pressure",
-            "sr_score", "delta_sr_score", "isolation_score", "sr_level", "sr_breakout",
-            "sr_rebounce", "sr_consolidation", "sr_breakout_prob", "sr_rebounce_prob",
-            "sr_consolidation_prob", "sr_multi_timeframe"
-        ]):
-            categories["sr_features"].append(feature)
-            categorized = True
+        # Support/Resistance features (including multi-timeframe and derivative forms)
+        if not categorized:
+            sr_base_tokens = [
+                "sr_distance", "support_level", "resistance_level", "proximity",
+                "multi_timeframe_sr_score", "sr_proximity", "sr_outcome",
+                "normalized_distance", "sr_proximity_score", "strength_score", 
+                "clarity_factor", "directional_pressure", "sr_score", "delta_sr_score", 
+                "isolation_score", "sr_level", "sr_breakout", "sr_rebounce", 
+                "sr_consolidation", "sr_breakout_prob", "sr_rebounce_prob",
+                "sr_consolidation_prob", "sr_multi_timeframe", "sr_", "support_", "resistance_"
+            ]
+            derivative_tokens = [
+                "_diff", "diff_", "_delta", "delta_", "_accel", "accel_",
+                "acceleration", "_slope", "slope_", "_change", "change_", "_norm", "norm_"
+            ]
+            has_sr_base = any(token in feature_lower for token in sr_base_tokens)
+            has_derivative_with_anchor = (
+                any(token in feature_lower for token in derivative_tokens)
+                and any(anchor in feature_lower for anchor in [
+                    "sr_", "support", "resistance", "proximity", "distance"
+                ])
+            )
+            if has_sr_base or has_derivative_with_anchor:
+                categories["sr_features"].append(feature)
+                categorized = True
         
 
         
@@ -136,9 +230,29 @@ def test_sr_feature_categorization():
         "momentum_x_volume", "volatility_div_liquidity", "rsi_ratio_volume",
         "regime_x_momentum", "volume_x_volatility",
         
-        # Other features (should not be categorized as SR)
-        "rsi_14", "macd_12_26", "momentum_strength",
-        "volatility_garman_klass", "order_flow_imbalance", "hmm_state_0"
+        # Momentum features (including derivatives and multi-timeframe)
+        "rsi_14", "rsi_diff_1", "rsi_accel_3", "rsi_norm_20",
+        "macd_12_26", "macd_signal", "macd_histogram", "macd_diff_1",
+        "momentum_strength", "momentum_diff_1", "momentum_accel_3",
+        "bb_position", "bb_upper", "bb_lower", "bb_width",
+        "sma_20", "ema_12", "ema_26", "sma_diff_5_20",
+        
+        # Volatility features (including derivatives)
+        "volatility_garman_klass", "atr_14", "atr_diff_1", "atr_norm_20",
+        "realized_vol_20", "volatility_diff_1", "volatility_accel_3",
+        "bbands_std", "bbands_width", "bbands_position",
+        
+        # Liquidity features
+        "spread_1m", "bid_ask_spread", "liquidity_ratio", "quote_imbalance",
+        "spread_diff_1", "liquidity_norm_20",
+        
+        # Microstructure features
+        "order_flow_imbalance", "trade_frequency", "order_flow_diff_1",
+        "imbalance_norm_20", "trade_count", "trade_count_diff_1",
+        
+        # Regime features
+        "hmm_state_0", "regime_1", "cluster_0", "composite_regime",
+        "hmm_state_diff_1", "regime_norm_20"
     ]
     
     # Test categorization

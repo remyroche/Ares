@@ -127,18 +127,64 @@ class AnalystEnsembleCreationStep:
     ) -> Dict[str, Any]:
         """Create ensemble from loaded models."""
         try:
-            ensemble_result = {
-                "ensemble_models": ensemble_models,
-                "ensemble_weights": {},
-                "ensemble_metadata": {
-                    "symbol": symbol,
-                    "exchange": exchange,
-                    "created_at": pd.Timestamp.now().isoformat(),
-                    "model_count": sum(
-                        len(models) for models in ensemble_models.values()
-                    ),
-                },
-            }
+            # Apply model-specific pruning for ensemble creation
+            try:
+                from src.training.model_specific_pruning import ModelSpecificPruning
+                pruning_manager = ModelSpecificPruning(self.config)
+                
+                # Get sample data for pruning (if available)
+                sample_data = self._get_sample_data_for_pruning(data_dir, symbol, exchange)
+                if sample_data is not None:
+                    features_df, target = sample_data
+                    
+                    pruned_features, pruning_metadata = await pruning_manager.prune_for_step7_ensemble(
+                        features_df, target
+                    )
+                    
+                    logger.info(f"✅ Applied ensemble-specific pruning: {features_df.shape[1]} -> {pruned_features.shape[1]} features")
+                    
+                    # Store pruning metadata
+                    ensemble_result = {
+                        "ensemble_models": ensemble_models,
+                        "ensemble_weights": {},
+                        "ensemble_metadata": {
+                            "symbol": symbol,
+                            "exchange": exchange,
+                            "created_at": pd.Timestamp.now().isoformat(),
+                            "model_count": sum(
+                                len(models) for models in ensemble_models.values()
+                            ),
+                            "pruning_metadata": pruning_metadata,
+                        },
+                    }
+                else:
+                    ensemble_result = {
+                        "ensemble_models": ensemble_models,
+                        "ensemble_weights": {},
+                        "ensemble_metadata": {
+                            "symbol": symbol,
+                            "exchange": exchange,
+                            "created_at": pd.Timestamp.now().isoformat(),
+                            "model_count": sum(
+                                len(models) for models in ensemble_models.values()
+                            ),
+                        },
+                    }
+                    
+            except Exception as e:
+                logger.warning(f"⚠️ Model-specific pruning failed: {e}")
+                ensemble_result = {
+                    "ensemble_models": ensemble_models,
+                    "ensemble_weights": {},
+                    "ensemble_metadata": {
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "created_at": pd.Timestamp.now().isoformat(),
+                        "model_count": sum(
+                            len(models) for models in ensemble_models.values()
+                        ),
+                    },
+                }
 
             # Assign equal weights to all models for now
             for regime, models in ensemble_models.items():
@@ -154,6 +200,25 @@ class AnalystEnsembleCreationStep:
         except Exception as e:
             logger.error(f"❌ Error creating ensemble: {e}")
             return {}
+    
+    def _get_sample_data_for_pruning(self, data_dir: str, symbol: str, exchange: str) -> Optional[Tuple[pd.DataFrame, pd.Series]]:
+        """Get sample data for pruning from existing features."""
+        try:
+            # Try to load sample features from Step 2
+            sample_file = f"{data_dir}/{exchange}_{symbol}_features_train.parquet"
+            if os.path.exists(sample_file):
+                features_df = pd.read_parquet(sample_file)
+                
+                # Create dummy target
+                target = pd.Series([0] * len(features_df), index=features_df.index)
+                
+                return features_df, target
+            
+            return None
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to get sample data for pruning: {e}")
+            return None
 
     def _create_placeholder_ensemble(
         self, symbol: str, exchange: str, data_dir: str, training_input: Dict[str, Any]

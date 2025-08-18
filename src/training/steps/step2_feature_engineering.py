@@ -13,6 +13,8 @@ import hashlib
 import shutil
 from src.utils.decorators import with_tracing_span, guard_dataframe_nulls
 
+# Import the auto-fix decorator for data quality issues
+from src.training.steps.raw_data_quality_checker import auto_fix_data_quality_issues
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
@@ -397,6 +399,7 @@ def _save_feature_artifacts(
     data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     validation_score_requirements={"feature_quality": 0.7},
 )
+@auto_fix_data_quality_issues
 async def run_step(
     symbol: str,
     exchange: str = "BINANCE",

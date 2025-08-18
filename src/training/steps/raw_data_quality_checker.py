@@ -12,6 +12,8 @@ from datetime import datetime, timedelta
 import warnings
 import asyncio
 import functools
+import os
+import glob
 
 warnings.filterwarnings("ignore")
 
@@ -265,6 +267,13 @@ class RawDataQualityChecker:
                 "check_data_type_consistency": True,  # Ensure consistent data types
                 "check_index_alignment": True,  # Check price and volume index alignment
             },
+            # Enhanced preprocessing configuration
+            "preprocessing": {
+                "max_forward_fill_seconds": 10,  # Maximum gap to forward-fill
+                "auto_fix_irregular_intervals": True,  # Automatically fix irregular intervals
+                "download_missing_data": True,  # Download missing data for large gaps
+                "preserve_original_data": True,  # Preserve original data accuracy
+            },
         }
 
     @log_validation_progress
@@ -304,6 +313,7 @@ class RawDataQualityChecker:
             "detailed_analysis": {},
             "data_downloaded": False,
             "download_summary": {},
+            "preprocessing_applied": {},
         }
 
         try:
@@ -339,6 +349,11 @@ class RawDataQualityChecker:
                 results["validation_passed"] = False
                 return results, data
 
+            # Check for irregular intervals and auto-fix if enabled
+            if self.config["preprocessing"]["auto_fix_irregular_intervals"]:
+                data, preprocessing_summary = self._auto_fix_irregular_intervals(data, symbol, exchange, results)
+                results["preprocessing_applied"] = preprocessing_summary
+
             # Check for large gaps and optionally download missing data
             if auto_download_missing:
                 data, download_summary = self._handle_missing_data_download(data, symbol, exchange, results)
@@ -360,13 +375,653 @@ class RawDataQualityChecker:
                 for issue in results["critical_issues"]:
                     self.logger.error(f"   {critical(issue)}")
 
-            return results
+            return results, data
 
         except Exception as e:
             self.logger.error(f"Error during raw data validation: {e}")
             results["validation_passed"] = False
             results["critical_issues"].append(f"Validation error: {str(e)}")
-            return results
+            return results, data
+
+    def _auto_fix_irregular_intervals(
+        self, 
+        data: pd.DataFrame, 
+        symbol: str, 
+        exchange: str, 
+        results: Dict[str, Any]
+    ) -> tuple[pd.DataFrame, Dict[str, Any]]:
+        """
+        Automatically fix irregular intervals using the enhanced preprocessing strategy.
+        
+        Args:
+            data: Raw market data
+            symbol: Trading symbol
+            exchange: Exchange name
+            results: Validation results
+            
+        Returns:
+            Tuple of (fixed_data, preprocessing_summary)
+        """
+        preprocessing_summary = {
+            "method": "enhanced_preprocessing",
+            "original_shape": data.shape,
+            "irregular_intervals_fixed": False,
+            "gaps_filled": 0,
+            "data_downloaded": False,
+            "quality_improvement": 0.0,
+        }
+        
+        try:
+            # Check if irregular intervals are detected
+            time_diffs = data.index.to_series().diff().dropna()
+            if len(time_diffs) == 0:
+                return data, preprocessing_summary
+            
+            # Determine expected interval
+            expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
+            expected_interval_seconds = expected_interval.total_seconds()
+            
+            # Check for irregular intervals
+            tolerance_percentage = 0.15  # 15% tolerance
+            tolerance_seconds = expected_interval_seconds * tolerance_percentage
+            irregular_intervals = time_diffs[
+                abs(time_diffs - expected_interval) > pd.Timedelta(seconds=tolerance_seconds)
+            ]
+            irregular_ratio = len(irregular_intervals) / len(time_diffs)
+            
+            # Only apply preprocessing if irregular intervals are significant
+            if irregular_ratio > 0.01:  # More than 1% irregular intervals
+                self.logger.info(f"🔧 Auto-fixing irregular intervals (ratio: {irregular_ratio:.3f})")
+                
+                # Apply enhanced preprocessing
+                fixed_data = self.enhanced_preprocess_market_data(
+                    data=data,
+                    symbol=symbol,
+                    exchange=exchange,
+                    expected_interval_seconds=int(expected_interval_seconds),
+                    max_forward_fill_seconds=self.config["preprocessing"]["max_forward_fill_seconds"],
+                    download_missing_data=self.config["preprocessing"]["download_missing_data"]
+                )
+                
+                # Update preprocessing summary
+                preprocessing_summary.update({
+                    "irregular_intervals_fixed": True,
+                    "final_shape": fixed_data.shape,
+                    "irregular_ratio_before": irregular_ratio,
+                    "expected_interval_seconds": expected_interval_seconds,
+                })
+                
+                # Check quality improvement
+                if len(fixed_data) > len(data):
+                    preprocessing_summary["gaps_filled"] = len(fixed_data) - len(data)
+                
+                # Re-validate the fixed data
+                fixed_results = self._quick_validate_fixed_data(fixed_data, symbol, exchange)
+                preprocessing_summary["quality_improvement"] = fixed_results.get("data_quality_score", 0) - results.get("data_quality_score", 0)
+                
+                self.logger.info(f"✅ Auto-fix completed. Quality improvement: {preprocessing_summary['quality_improvement']:.3f}")
+                
+                return fixed_data, preprocessing_summary
+            else:
+                self.logger.info(f"✅ No irregular intervals detected (ratio: {irregular_ratio:.3f})")
+                return data, preprocessing_summary
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error in auto-fix irregular intervals: {e}")
+            preprocessing_summary["error"] = str(e)
+            return data, preprocessing_summary
+
+    def _quick_validate_fixed_data(self, data: pd.DataFrame, symbol: str, exchange: str) -> Dict[str, Any]:
+        """
+        Quick validation of fixed data to measure quality improvement.
+        
+        Args:
+            data: Fixed market data
+            symbol: Trading symbol
+            exchange: Exchange name
+            
+        Returns:
+            Quick validation results
+        """
+        try:
+            # Quick quality check
+            time_diffs = data.index.to_series().diff().dropna()
+            if len(time_diffs) == 0:
+                return {"data_quality_score": 0.0}
+            
+            expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
+            tolerance_percentage = 0.15
+            tolerance_seconds = expected_interval.total_seconds() * tolerance_percentage
+            irregular_intervals = time_diffs[
+                abs(time_diffs - expected_interval) > pd.Timedelta(seconds=tolerance_seconds)
+            ]
+            irregular_ratio = len(irregular_intervals) / len(time_diffs)
+            
+            # Calculate quality score based on regularity
+            quality_score = max(0.0, 1.0 - irregular_ratio * 10)  # Penalize irregular intervals
+            
+            return {
+                "data_quality_score": quality_score,
+                "irregular_ratio": irregular_ratio,
+                "total_intervals": len(time_diffs),
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in quick validation: {e}")
+            return {"data_quality_score": 0.0}
+
+    def enhanced_preprocess_market_data(
+        self, 
+        data: pd.DataFrame, 
+        symbol: str, 
+        exchange: str,
+        expected_interval_seconds: int = 60,
+        max_forward_fill_seconds: int = 10,
+        download_missing_data: bool = True
+    ) -> pd.DataFrame:
+        """
+        Enhanced preprocessing with intelligent gap handling.
+        
+        Strategy:
+        1. Resample to expected intervals
+        2. Re-add original data to preserve accuracy
+        3. Forward-fill if missing values are less than max_forward_fill_seconds
+        4. Download missing data for gaps > max_forward_fill_seconds
+        
+        Args:
+            data: Raw market data
+            symbol: Trading symbol
+            exchange: Exchange name
+            expected_interval_seconds: Expected interval in seconds (default: 60 for 1-minute)
+            max_forward_fill_seconds: Maximum gap to forward-fill (default: 10 seconds)
+            download_missing_data: Whether to download missing data for large gaps
+            
+        Returns:
+            Preprocessed data with intelligent gap handling
+        """
+        self.logger.info(f"🔧 Enhanced preprocessing for {exchange} {symbol}")
+        self.logger.info(f"   Expected interval: {expected_interval_seconds}s")
+        self.logger.info(f"   Max forward-fill: {max_forward_fill_seconds}s")
+        self.logger.info(f"   Download missing: {download_missing_data}")
+        
+        # Step 1: Handle duplicate timestamps
+        if data.index.duplicated().any():
+            duplicates = data.index.duplicated().sum()
+            self.logger.warning(f"⚠️ Found {duplicates} duplicate timestamps, removing duplicates")
+            data = data[~data.index.duplicated(keep='last')]
+        
+        # Step 2: Resample to expected intervals
+        freq = f"{expected_interval_seconds}S"
+        self.logger.info(f"🔧 Step 1: Resampling to {freq} intervals")
+        
+        # Resample and get the last value for each interval
+        resampled = data.resample(freq).last()
+        
+        # Step 3: Re-add original data to preserve accuracy
+        self.logger.info("🔧 Step 2: Re-adding original data to preserve accuracy")
+        
+        # Create a combined dataset with original data taking precedence
+        combined_data = resampled.copy()
+        
+        # For each original timestamp, find the corresponding resampled interval
+        for orig_time, orig_row in data.iterrows():
+            # Find the resampled interval that contains this timestamp
+            resampled_time = orig_time.floor(freq)
+            if resampled_time in combined_data.index:
+                # Original data takes precedence
+                combined_data.loc[resampled_time] = orig_row
+        
+        # Step 4: Analyze gaps and handle them intelligently
+        self.logger.info("🔧 Step 3: Analyzing gaps and applying intelligent handling")
+        
+        # Calculate time differences
+        time_diffs = combined_data.index.to_series().diff().dropna()
+        gaps = time_diffs[time_diffs > pd.Timedelta(seconds=expected_interval_seconds)]
+        
+        if len(gaps) > 0:
+            self.logger.info(f"🔍 Found {len(gaps)} gaps in the data")
+            
+            # Categorize gaps
+            small_gaps = gaps[gaps <= pd.Timedelta(seconds=max_forward_fill_seconds)]
+            large_gaps = gaps[gaps > pd.Timedelta(seconds=max_forward_fill_seconds)]
+            
+            self.logger.info(f"   Small gaps (≤{max_forward_fill_seconds}s): {len(small_gaps)}")
+            self.logger.info(f"   Large gaps (>{max_forward_fill_seconds}s): {len(large_gaps)}")
+            
+            # Step 4a: Forward-fill small gaps
+            if len(small_gaps) > 0:
+                self.logger.info("🔧 Step 4a: Forward-filling small gaps")
+                combined_data = combined_data.fillna(method='ffill')
+            
+            # Step 4b: Download missing data for large gaps
+            if len(large_gaps) > 0 and download_missing_data:
+                self.logger.info("🔧 Step 4b: Downloading missing data for large gaps")
+                combined_data = self._download_and_fill_missing_data(
+                    combined_data, symbol, exchange, large_gaps
+                )
+            elif len(large_gaps) > 0:
+                self.logger.warning(f"⚠️ {len(large_gaps)} large gaps remain unfilled (download disabled)")
+        
+        # Step 5: Final forward-fill for any remaining small gaps
+        remaining_nulls = combined_data.isnull().sum().sum()
+        if remaining_nulls > 0:
+            self.logger.info(f"🔧 Step 5: Final forward-fill for {remaining_nulls} remaining nulls")
+            combined_data = combined_data.fillna(method='ffill')
+        
+        # Log final results
+        final_gaps = combined_data.index.to_series().diff().dropna()
+        final_large_gaps = final_gaps[final_gaps > pd.Timedelta(seconds=expected_interval_seconds)]
+        
+        self.logger.info(f"✅ Enhanced preprocessing completed:")
+        self.logger.info(f"   Original shape: {data.shape}")
+        self.logger.info(f"   Final shape: {combined_data.shape}")
+        self.logger.info(f"   Remaining large gaps: {len(final_large_gaps)}")
+        self.logger.info(f"   Data completeness: {combined_data.notna().sum().sum() / combined_data.size:.3f}")
+        
+        return combined_data
+    
+    def _download_and_fill_missing_data(
+        self, 
+        data: pd.DataFrame, 
+        symbol: str, 
+        exchange: str, 
+        gaps: pd.Series
+    ) -> pd.DataFrame:
+        """
+        Download missing data for large gaps using existing data download functions.
+        
+        Args:
+            data: Current data with gaps
+            symbol: Trading symbol
+            exchange: Exchange name
+            gaps: Series of time differences representing gaps
+            
+        Returns:
+            Data with downloaded missing data filled in
+        """
+        self.logger.info(f"🔧 Downloading missing data for {len(gaps)} large gaps")
+        
+        try:
+            # Import the unified data downloader
+            from src.training.steps.data_downloader import download_all_data_with_consolidation
+            
+            # Determine the timeframe from the data
+            timeframe = self._determine_timeframe_from_data(data)
+            self.logger.info(f"🔍 Detected timeframe: {timeframe}")
+            
+            # Download data for each gap period
+            for i, (gap_start, gap_duration) in enumerate(gaps.items()):
+                gap_end = gap_start + gap_duration
+                
+                self.logger.info(f"🔧 Downloading gap {i+1}/{len(gaps)}: {gap_start} to {gap_end}")
+                
+                try:
+                    # Use the unified downloader to download data for this gap period
+                    success = asyncio.run(download_all_data_with_consolidation(
+                        symbol=symbol,
+                        exchange_name=exchange,
+                        interval=timeframe
+                    ))
+                    
+                    if success:
+                        # Load the downloaded data and filter for the gap period
+                        gap_data = self._load_and_filter_downloaded_data(
+                            symbol, exchange, timeframe, gap_start, gap_end
+                        )
+                        
+                        if gap_data is not None and not gap_data.empty:
+                            # Fill the gap in the main dataset
+                            data = self._fill_gap_in_dataset(data, gap_data, gap_start, gap_end)
+                            self.logger.info(f"✅ Filled gap with {len(gap_data)} data points")
+                        else:
+                            self.logger.warning(f"⚠️ No data found for gap {i+1} after download")
+                    else:
+                        self.logger.warning(f"⚠️ Download failed for gap {i+1}")
+                        
+                except Exception as e:
+                    self.logger.error(f"❌ Error downloading data for gap {i+1}: {e}")
+                    continue
+            
+            return data
+            
+        except ImportError:
+            self.logger.warning("⚠️ Data downloader not available, skipping data download")
+            return data
+        except Exception as e:
+            self.logger.error(f"❌ Error in data download process: {e}")
+            return data
+    
+    def _determine_timeframe_from_data(self, data: pd.DataFrame) -> str:
+        """
+        Determine the timeframe from the data intervals.
+        
+        Args:
+            data: Market data with datetime index
+            
+        Returns:
+            Timeframe string (e.g., '1m', '5m', '15m', '1h')
+        """
+        if len(data) < 2:
+            return "1m"  # Default to 1 minute
+        
+        # Calculate time differences
+        time_diffs = data.index.to_series().diff().dropna()
+        if len(time_diffs) == 0:
+            return "1m"
+        
+        # Get the most common interval
+        most_common_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
+        
+        # Convert to seconds
+        interval_seconds = most_common_interval.total_seconds()
+        
+        # Map to timeframe string
+        if interval_seconds <= 60:
+            return "1m"
+        elif interval_seconds <= 300:
+            return "5m"
+        elif interval_seconds <= 900:
+            return "15m"
+        elif interval_seconds <= 1800:
+            return "30m"
+        elif interval_seconds <= 3600:
+            return "1h"
+        elif interval_seconds <= 14400:
+            return "4h"
+        elif interval_seconds <= 86400:
+            return "1d"
+        else:
+            return "1d"  # Default to daily
+    
+    def _load_and_filter_downloaded_data(
+        self, 
+        symbol: str, 
+        exchange: str, 
+        timeframe: str, 
+        start_time: datetime, 
+        end_time: datetime
+    ) -> Optional[pd.DataFrame]:
+        """
+        Load downloaded data and filter for the specific gap period.
+        
+        Args:
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframe: Data timeframe
+            start_time: Gap start time
+            end_time: Gap end time
+            
+        Returns:
+            Filtered data for the gap period or None if not found
+        """
+        try:
+            # Look for data files in common locations
+            possible_paths = [
+                f"data_cache/klines_{exchange}_{symbol}_{timeframe}_*.csv",
+                f"data/{symbol}_{timeframe}.csv",
+                f"backtesting/data_cache/klines_{exchange}_{symbol}_{timeframe}_*.csv",
+                f"data_cache/{symbol}_{timeframe}.csv"
+            ]
+            
+            for pattern in possible_paths:
+                files = glob.glob(pattern)
+                if files:
+                    # Sort files by modification time (newest first)
+                    files.sort(key=os.path.getmtime, reverse=True)
+                    
+                    for file_path in files:
+                        try:
+                            self.logger.info(f"🔍 Loading data from: {file_path}")
+                            
+                            # Load the data
+                            if file_path.endswith('.csv'):
+                                data = pd.read_csv(file_path, index_col=0, parse_dates=True)
+                            elif file_path.endswith('.parquet'):
+                                data = pd.read_parquet(file_path)
+                            else:
+                                continue
+                            
+                            if data.empty:
+                                continue
+                            
+                            # Filter for the gap period
+                            gap_data = data[
+                                (data.index >= start_time) & 
+                                (data.index <= end_time)
+                            ]
+                            
+                            if not gap_data.empty:
+                                self.logger.info(f"✅ Found {len(gap_data)} records for gap period")
+                                return gap_data
+                            else:
+                                self.logger.debug(f"⚠️ No data found in {file_path} for gap period")
+                                
+                        except Exception as e:
+                            self.logger.debug(f"⚠️ Error loading {file_path}: {e}")
+                            continue
+            
+            self.logger.warning(f"⚠️ No data files found for {symbol} {timeframe} on {exchange}")
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error loading downloaded data: {e}")
+            return None
+    
+    def _fill_gap_in_dataset(
+        self, 
+        main_data: pd.DataFrame, 
+        gap_data: pd.DataFrame, 
+        gap_start: datetime, 
+        gap_end: datetime
+    ) -> pd.DataFrame:
+        """
+        Fill a gap in the main dataset with downloaded data.
+        
+        Args:
+            main_data: Main dataset with gaps
+            gap_data: Downloaded data to fill the gap
+            gap_start: Gap start time
+            gap_end: Gap end time
+            
+        Returns:
+            Main dataset with gap filled
+        """
+        try:
+            # Create a copy of the main data
+            filled_data = main_data.copy()
+            
+            # Remove any existing data in the gap period from the main dataset
+            gap_mask = (filled_data.index >= gap_start) & (filled_data.index <= gap_end)
+            filled_data = filled_data[~gap_mask]
+            
+            # Add the downloaded gap data
+            filled_data = pd.concat([filled_data, gap_data])
+            
+            # Sort by index to maintain chronological order
+            filled_data = filled_data.sort_index()
+            
+            # Remove any duplicate timestamps (keep the downloaded data)
+            filled_data = filled_data[~filled_data.index.duplicated(keep='last')]
+            
+            self.logger.info(f"✅ Gap filled: {len(main_data)} -> {len(filled_data)} records")
+            return filled_data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error filling gap in dataset: {e}")
+            return main_data
+
+    def fix_irregular_intervals_automatically(
+        self, 
+        data: pd.DataFrame, 
+        symbol: str, 
+        exchange: str
+    ) -> pd.DataFrame:
+        """
+        Automatically fix irregular intervals that are causing data quality warnings.
+        This is specifically designed to address the warnings you're seeing.
+        
+        Args:
+            data: Raw market data with irregular intervals
+            symbol: Trading symbol
+            exchange: Exchange name
+            
+        Returns:
+            Fixed data with regular intervals
+        """
+        self.logger.info(f"🔧 Auto-fixing irregular intervals for {exchange} {symbol}")
+        
+        # Analyze current interval issues
+        time_diffs = data.index.to_series().diff().dropna()
+        if len(time_diffs) == 0:
+            self.logger.info("✅ No time differences found - data is already regular")
+            return data
+        
+        # Determine expected interval
+        expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
+        expected_interval_seconds = expected_interval.total_seconds()
+        
+        # Check for irregular intervals
+        tolerance_percentage = 0.15
+        tolerance_seconds = expected_interval_seconds * tolerance_percentage
+        irregular_intervals = time_diffs[
+            abs(time_diffs - expected_interval) > pd.Timedelta(seconds=tolerance_seconds)
+        ]
+        irregular_ratio = len(irregular_intervals) / len(time_diffs)
+        
+        self.logger.info(f"🔍 Interval analysis:")
+        self.logger.info(f"   Expected interval: {expected_interval}")
+        self.logger.info(f"   Irregular intervals: {len(irregular_intervals)} ({irregular_ratio:.3f})")
+        self.logger.info(f"   Tolerance: ±{tolerance_seconds:.1f}s")
+        
+        if irregular_ratio > 0.01:  # More than 1% irregular intervals
+            self.logger.info("🔧 Applying enhanced preprocessing to fix irregular intervals")
+            
+            # Apply the enhanced preprocessing
+            fixed_data = self.enhanced_preprocess_market_data(
+                data=data,
+                symbol=symbol,
+                exchange=exchange,
+                expected_interval_seconds=int(expected_interval_seconds),
+                max_forward_fill_seconds=self.config["preprocessing"]["max_forward_fill_seconds"],
+                download_missing_data=self.config["preprocessing"]["download_missing_data"]
+            )
+            
+            # Verify the fix
+            fixed_time_diffs = fixed_data.index.to_series().diff().dropna()
+            if len(fixed_time_diffs) > 0:
+                fixed_expected_interval = fixed_time_diffs.mode().iloc[0] if len(fixed_time_diffs.mode()) > 0 else fixed_time_diffs.median()
+                fixed_irregular_intervals = fixed_time_diffs[
+                    abs(fixed_time_diffs - fixed_expected_interval) > pd.Timedelta(seconds=tolerance_seconds)
+                ]
+                fixed_irregular_ratio = len(fixed_irregular_intervals) / len(fixed_time_diffs)
+                
+                self.logger.info(f"✅ Fix verification:")
+                self.logger.info(f"   Before: {irregular_ratio:.3f} irregular intervals")
+                self.logger.info(f"   After: {fixed_irregular_ratio:.3f} irregular intervals")
+                self.logger.info(f"   Improvement: {irregular_ratio - fixed_irregular_ratio:.3f}")
+                
+                if fixed_irregular_ratio < 0.001:  # Less than 0.1% irregular intervals
+                    self.logger.info("✅ Irregular intervals successfully fixed!")
+                else:
+                    self.logger.warning(f"⚠️ Some irregular intervals remain: {fixed_irregular_ratio:.3f}")
+            
+            return fixed_data
+        else:
+            self.logger.info("✅ No significant irregular intervals detected")
+            return data
+
+    def validate_and_fix_data_quality_issues(
+        self, 
+        data: pd.DataFrame, 
+        symbol: str, 
+        exchange: str
+    ) -> tuple[pd.DataFrame, Dict[str, Any]]:
+        """
+        Comprehensive validation and automatic fixing of data quality issues.
+        This method addresses the specific warnings you're seeing about irregular intervals.
+        
+        Args:
+            data: Raw market data
+            symbol: Trading symbol
+            exchange: Exchange name
+            
+        Returns:
+            Tuple of (fixed_data, validation_results)
+        """
+        self.logger.info(f"🔍 Comprehensive data quality validation and fixing for {exchange} {symbol}")
+        
+        # Step 1: Initial validation
+        initial_results, _ = self.validate_raw_data(data, symbol, exchange, auto_download_missing=False)
+        
+        # Step 2: Check for irregular interval issues
+        time_diffs = data.index.to_series().diff().dropna()
+        if len(time_diffs) > 0:
+            expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
+            tolerance_percentage = 0.15
+            tolerance_seconds = expected_interval.total_seconds() * tolerance_percentage
+            irregular_intervals = time_diffs[
+                abs(time_diffs - expected_interval) > pd.Timedelta(seconds=tolerance_seconds)
+            ]
+            irregular_ratio = len(irregular_intervals) / len(time_diffs)
+            
+            # Calculate coefficient of variation
+            time_diffs_seconds = time_diffs.dt.total_seconds()
+            mean_interval = time_diffs_seconds.mean()
+            std_interval = time_diffs_seconds.std()
+            cv = std_interval / mean_interval if mean_interval > 0 else 0
+            
+            self.logger.info(f"🔍 Interval analysis:")
+            self.logger.info(f"   Irregular ratio: {irregular_ratio:.3f}")
+            self.logger.info(f"   Coefficient of variation: {cv:.3f}")
+            self.logger.info(f"   Expected interval: {expected_interval}")
+            
+            # Step 3: Auto-fix if issues are detected
+            if irregular_ratio > 0.01 or cv > 0.2:  # Thresholds that trigger warnings
+                self.logger.info("🔧 Auto-fixing irregular interval issues...")
+                
+                fixed_data = self.fix_irregular_intervals_automatically(data, symbol, exchange)
+                
+                # Step 4: Re-validate the fixed data
+                fixed_results, _ = self.validate_raw_data(fixed_data, symbol, exchange, auto_download_missing=False)
+                
+                # Step 5: Compare results
+                quality_improvement = fixed_results.get("data_quality_score", 0) - initial_results.get("data_quality_score", 0)
+                
+                self.logger.info(f"✅ Quality improvement: {quality_improvement:.3f}")
+                
+                # Add preprocessing summary to results
+                fixed_results["preprocessing_summary"] = {
+                    "irregular_ratio_before": irregular_ratio,
+                    "cv_before": cv,
+                    "quality_improvement": quality_improvement,
+                    "fixes_applied": ["irregular_intervals"],
+                    "original_shape": data.shape,
+                    "fixed_shape": fixed_data.shape,
+                }
+                
+                return fixed_data, fixed_results
+            else:
+                self.logger.info("✅ No irregular interval issues detected")
+                initial_results["preprocessing_summary"] = {
+                    "irregular_ratio": irregular_ratio,
+                    "cv": cv,
+                    "quality_improvement": 0.0,
+                    "fixes_applied": [],
+                    "original_shape": data.shape,
+                    "fixed_shape": data.shape,
+                }
+                return data, initial_results
+        else:
+            self.logger.info("✅ No time differences found")
+            initial_results["preprocessing_summary"] = {
+                "irregular_ratio": 0.0,
+                "cv": 0.0,
+                "quality_improvement": 0.0,
+                "fixes_applied": [],
+                "original_shape": data.shape,
+                "fixed_shape": data.shape,
+            }
+            return data, initial_results
 
     def _validate_data_structure(
         self, data: pd.DataFrame, results: Dict[str, Any]
@@ -1049,423 +1704,6 @@ class RawDataQualityChecker:
             self.logger.warning(f"⚠️ Unknown preprocessing method: {method}, returning original data")
             return data
 
-    def enhanced_preprocess_market_data(
-        self, 
-        data: pd.DataFrame, 
-        symbol: str, 
-        exchange: str,
-        expected_interval_seconds: int = 60,
-        max_forward_fill_seconds: int = 10,
-        download_missing_data: bool = True
-    ) -> pd.DataFrame:
-        """
-        Enhanced preprocessing with intelligent gap handling and data downloading.
-        
-        Strategy:
-        1. Resample to expected intervals
-        2. Re-add original data to preserve accuracy
-        3. Forward-fill if missing values are less than max_forward_fill_seconds
-        4. Download missing data for gaps > max_forward_fill_seconds
-        
-        Args:
-            data: Raw market data
-            symbol: Trading symbol
-            exchange: Exchange name
-            expected_interval_seconds: Expected interval in seconds (default: 60 for 1-minute)
-            max_forward_fill_seconds: Maximum gap to forward-fill (default: 10 seconds)
-            download_missing_data: Whether to download missing data for large gaps
-            
-        Returns:
-            Preprocessed data with intelligent gap handling
-        """
-        self.logger.info(f"🔧 Enhanced preprocessing for {exchange} {symbol}")
-        self.logger.info(f"   Expected interval: {expected_interval_seconds}s")
-        self.logger.info(f"   Max forward-fill: {max_forward_fill_seconds}s")
-        self.logger.info(f"   Download missing: {download_missing_data}")
-        
-        # Step 1: Handle duplicate timestamps
-        if data.index.duplicated().any():
-            duplicates = data.index.duplicated().sum()
-            self.logger.warning(f"⚠️ Found {duplicates} duplicate timestamps, removing duplicates")
-            data = data[~data.index.duplicated(keep='last')]
-        
-        # Step 2: Resample to expected intervals
-        freq = f"{expected_interval_seconds}S"
-        self.logger.info(f"🔧 Step 1: Resampling to {freq} intervals")
-        
-        # Resample and get the last value for each interval
-        resampled = data.resample(freq).last()
-        
-        # Step 3: Re-add original data to preserve accuracy
-        self.logger.info("🔧 Step 2: Re-adding original data to preserve accuracy")
-        
-        # Create a combined dataset with original data taking precedence
-        combined_data = resampled.copy()
-        
-        # For each original timestamp, find the corresponding resampled interval
-        for orig_time, orig_row in data.iterrows():
-            # Find the resampled interval that contains this timestamp
-            resampled_time = orig_time.floor(freq)
-            if resampled_time in combined_data.index:
-                # Original data takes precedence
-                combined_data.loc[resampled_time] = orig_row
-        
-        # Step 4: Analyze gaps and handle them intelligently
-        self.logger.info("🔧 Step 3: Analyzing gaps and applying intelligent handling")
-        
-        # Calculate time differences
-        time_diffs = combined_data.index.to_series().diff().dropna()
-        gaps = time_diffs[time_diffs > pd.Timedelta(seconds=expected_interval_seconds)]
-        
-        if len(gaps) > 0:
-            self.logger.info(f"🔍 Found {len(gaps)} gaps in the data")
-            
-            # Categorize gaps
-            small_gaps = gaps[gaps <= pd.Timedelta(seconds=max_forward_fill_seconds)]
-            large_gaps = gaps[gaps > pd.Timedelta(seconds=max_forward_fill_seconds)]
-            
-            self.logger.info(f"   Small gaps (≤{max_forward_fill_seconds}s): {len(small_gaps)}")
-            self.logger.info(f"   Large gaps (>{max_forward_fill_seconds}s): {len(large_gaps)}")
-            
-            # Step 4a: Forward-fill small gaps
-            if len(small_gaps) > 0:
-                self.logger.info("🔧 Step 4a: Forward-filling small gaps")
-                combined_data = combined_data.fillna(method='ffill')
-            
-            # Step 4b: Download missing data for large gaps
-            if len(large_gaps) > 0 and download_missing_data:
-                self.logger.info("🔧 Step 4b: Downloading missing data for large gaps")
-                combined_data = self._download_and_fill_missing_data(
-                    combined_data, symbol, exchange, large_gaps
-                )
-            elif len(large_gaps) > 0:
-                self.logger.warning(f"⚠️ {len(large_gaps)} large gaps remain unfilled (download disabled)")
-        
-        # Step 5: Final forward-fill for any remaining small gaps
-        remaining_nulls = combined_data.isnull().sum().sum()
-        if remaining_nulls > 0:
-            self.logger.info(f"🔧 Step 5: Final forward-fill for {remaining_nulls} remaining nulls")
-            combined_data = combined_data.fillna(method='ffill')
-        
-        # Log final results
-        final_gaps = combined_data.index.to_series().diff().dropna()
-        final_large_gaps = final_gaps[final_gaps > pd.Timedelta(seconds=expected_interval_seconds)]
-        
-        self.logger.info(f"✅ Enhanced preprocessing completed:")
-        self.logger.info(f"   Original shape: {data.shape}")
-        self.logger.info(f"   Final shape: {combined_data.shape}")
-        self.logger.info(f"   Remaining large gaps: {len(final_large_gaps)}")
-        self.logger.info(f"   Data completeness: {combined_data.notna().sum().sum() / combined_data.size:.3f}")
-        
-        return combined_data
-    
-    def _download_and_fill_missing_data(
-        self, 
-        data: pd.DataFrame, 
-        symbol: str, 
-        exchange: str, 
-        gaps: pd.Series
-    ) -> pd.DataFrame:
-        """
-        Download missing data for large gaps using existing data download functions.
-        
-        Args:
-            data: Current data with gaps
-            symbol: Trading symbol
-            exchange: Exchange name
-            gaps: Series of time differences representing gaps
-            
-        Returns:
-            Data with downloaded missing data filled in
-        """
-        self.logger.info(f"🔧 Downloading missing data for {len(gaps)} large gaps")
-        
-        try:
-            # Import the unified data downloader
-            from src.training.steps.data_downloader import download_all_data_with_consolidation
-            
-            # Get the time range of the data
-            start_time = data.index.min()
-            end_time = data.index.max()
-            
-            # Identify specific gap periods
-            gap_periods = []
-            for gap_start, gap_duration in gaps.items():
-                gap_end = gap_start + gap_duration
-                gap_periods.append((gap_start, gap_end))
-            
-            self.logger.info(f"🔍 Identified {len(gap_periods)} gap periods to download")
-            
-            # Determine the timeframe from the data
-            timeframe = self._determine_timeframe_from_data(data)
-            self.logger.info(f"🔍 Detected timeframe: {timeframe}")
-            
-            # Download data for each gap period
-            for i, (gap_start, gap_end) in enumerate(gap_periods):
-                self.logger.info(f"🔧 Downloading gap {i+1}/{len(gap_periods)}: {gap_start} to {gap_end}")
-                
-                try:
-                    # Use the unified downloader to download data for this gap period
-                    # Note: The unified downloader downloads full historical data, so we'll need to filter
-                    success = asyncio.run(download_all_data_with_consolidation(
-                        symbol=symbol,
-                        exchange_name=exchange,
-                        interval=timeframe
-                    ))
-                    
-                    if success:
-                        # Load the downloaded data and filter for the gap period
-                        gap_data = self._load_and_filter_downloaded_data(
-                            symbol, exchange, timeframe, gap_start, gap_end
-                        )
-                        
-                        if gap_data is not None and not gap_data.empty:
-                            # Fill the gap in the main dataset
-                            data = self._fill_gap_in_dataset(data, gap_data, gap_start, gap_end)
-                            self.logger.info(f"✅ Filled gap with {len(gap_data)} data points")
-                        else:
-                            self.logger.warning(f"⚠️ No data found for gap {i+1} after download")
-                    else:
-                        self.logger.warning(f"⚠️ Download failed for gap {i+1}")
-                        
-                except Exception as e:
-                    self.logger.error(f"❌ Error downloading data for gap {i+1}: {e}")
-                    continue
-            
-            return data
-            
-        except ImportError:
-            self.logger.warning("⚠️ Data downloader not available, skipping data download")
-            return data
-        except Exception as e:
-            self.logger.error(f"❌ Error in data download process: {e}")
-            return data
-    
-    def _determine_timeframe_from_data(self, data: pd.DataFrame) -> str:
-        """
-        Determine the timeframe from the data intervals.
-        
-        Args:
-            data: Market data with datetime index
-            
-        Returns:
-            Timeframe string (e.g., '1m', '5m', '15m', '1h')
-        """
-        if len(data) < 2:
-            return "1m"  # Default to 1 minute
-        
-        # Calculate time differences
-        time_diffs = data.index.to_series().diff().dropna()
-        if len(time_diffs) == 0:
-            return "1m"
-        
-        # Get the most common interval
-        most_common_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
-        
-        # Convert to seconds
-        interval_seconds = most_common_interval.total_seconds()
-        
-        # Map to timeframe string
-        if interval_seconds <= 60:
-            return "1m"
-        elif interval_seconds <= 300:
-            return "5m"
-        elif interval_seconds <= 900:
-            return "15m"
-        elif interval_seconds <= 1800:
-            return "30m"
-        elif interval_seconds <= 3600:
-            return "1h"
-        elif interval_seconds <= 14400:
-            return "4h"
-        elif interval_seconds <= 86400:
-            return "1d"
-        else:
-            return "1d"  # Default to daily
-    
-    def _load_and_filter_downloaded_data(
-        self, 
-        symbol: str, 
-        exchange: str, 
-        timeframe: str, 
-        start_time: datetime, 
-        end_time: datetime
-    ) -> Optional[pd.DataFrame]:
-        """
-        Load downloaded data and filter for the specific gap period.
-        
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Data timeframe
-            start_time: Gap start time
-            end_time: Gap end time
-            
-        Returns:
-            Filtered data for the gap period or None if not found
-        """
-        try:
-            # Look for data files in common locations
-            possible_paths = [
-                f"data_cache/klines_{exchange}_{symbol}_{timeframe}_*.csv",
-                f"data/{symbol}_{timeframe}.csv",
-                f"backtesting/data_cache/klines_{exchange}_{symbol}_{timeframe}_*.csv",
-                f"data_cache/{symbol}_{timeframe}.csv"
-            ]
-            
-            import glob
-            import os
-            
-            for pattern in possible_paths:
-                files = glob.glob(pattern)
-                if files:
-                    # Sort files by modification time (newest first)
-                    files.sort(key=os.path.getmtime, reverse=True)
-                    
-                    for file_path in files:
-                        try:
-                            self.logger.info(f"🔍 Loading data from: {file_path}")
-                            
-                            # Load the data
-                            if file_path.endswith('.csv'):
-                                data = pd.read_csv(file_path, index_col=0, parse_dates=True)
-                            elif file_path.endswith('.parquet'):
-                                data = pd.read_parquet(file_path)
-                            else:
-                                continue
-                            
-                            if data.empty:
-                                continue
-                            
-                            # Filter for the gap period
-                            gap_data = data[
-                                (data.index >= start_time) & 
-                                (data.index <= end_time)
-                            ]
-                            
-                            if not gap_data.empty:
-                                self.logger.info(f"✅ Found {len(gap_data)} records for gap period")
-                                return gap_data
-                            else:
-                                self.logger.debug(f"⚠️ No data found in {file_path} for gap period")
-                                
-                        except Exception as e:
-                            self.logger.debug(f"⚠️ Error loading {file_path}: {e}")
-                            continue
-            
-            self.logger.warning(f"⚠️ No data files found for {symbol} {timeframe} on {exchange}")
-            return None
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error loading downloaded data: {e}")
-            return None
-    
-    def _fill_gap_in_dataset(
-        self, 
-        main_data: pd.DataFrame, 
-        gap_data: pd.DataFrame, 
-        gap_start: datetime, 
-        gap_end: datetime
-    ) -> pd.DataFrame:
-        """
-        Fill a gap in the main dataset with downloaded data.
-        
-        Args:
-            main_data: Main dataset with gaps
-            gap_data: Downloaded data to fill the gap
-            gap_start: Gap start time
-            gap_end: Gap end time
-            
-        Returns:
-            Main dataset with gap filled
-        """
-        try:
-            # Create a copy of the main data
-            filled_data = main_data.copy()
-            
-            # Remove any existing data in the gap period from the main dataset
-            gap_mask = (filled_data.index >= gap_start) & (filled_data.index <= gap_end)
-            filled_data = filled_data[~gap_mask]
-            
-            # Add the downloaded gap data
-            filled_data = pd.concat([filled_data, gap_data])
-            
-            # Sort by index to maintain chronological order
-            filled_data = filled_data.sort_index()
-            
-            # Remove any duplicate timestamps (keep the downloaded data)
-            filled_data = filled_data[~filled_data.index.duplicated(keep='last')]
-            
-            self.logger.info(f"✅ Gap filled: {len(main_data)} -> {len(filled_data)} records")
-            return filled_data
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error filling gap in dataset: {e}")
-            return main_data
-    
-    def download_missing_data_for_timeframe(
-        self, 
-        symbol: str, 
-        exchange: str, 
-        timeframe: str, 
-        start_time: datetime, 
-        end_time: datetime
-    ) -> Optional[pd.DataFrame]:
-        """
-        Download missing data for a specific timeframe and time range.
-        
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Data timeframe (1m, 5m, 15m, 30m, 1h, 4h, 1d)
-            start_time: Start time for data download
-            end_time: End time for data download
-            
-        Returns:
-            Downloaded data or None if failed
-        """
-        self.logger.info(f"🔧 Downloading {timeframe} data for {symbol} on {exchange}")
-        self.logger.info(f"   Time range: {start_time} to {end_time}")
-        
-        try:
-            # Use the unified downloader
-            from src.training.steps.data_downloader import download_all_data_with_consolidation
-            
-            # Download the data
-            success = asyncio.run(download_all_data_with_consolidation(
-                symbol=symbol,
-                exchange_name=exchange,
-                interval=timeframe
-            ))
-            
-            if success:
-                # Load the downloaded data
-                downloaded_data = self._load_downloaded_data(symbol, exchange, timeframe)
-                
-                if downloaded_data is not None and not downloaded_data.empty:
-                    # Filter for the requested time range
-                    filtered_data = downloaded_data[
-                        (downloaded_data.index >= start_time) & 
-                        (downloaded_data.index <= end_time)
-                    ]
-                    
-                    if not filtered_data.empty:
-                        self.logger.info(f"✅ Successfully downloaded {len(filtered_data)} records")
-                        return filtered_data
-                    else:
-                        self.logger.warning(f"⚠️ No data found in downloaded data for requested time range")
-                        return None
-                else:
-                    self.logger.warning(f"⚠️ No data found after download")
-                    return None
-            else:
-                self.logger.error(f"❌ Download failed for {timeframe} data")
-                return None
-                
-        except Exception as e:
-            self.logger.error(f"❌ Error downloading {timeframe} data: {e}")
-            return None
-    
     def _handle_missing_data_download(
         self, 
         data: pd.DataFrame, 
@@ -1900,3 +2138,155 @@ def validate_raw_data_quality(
     checker = RawDataQualityChecker(config)
     results, _ = checker.validate_raw_data(data, symbol, exchange, auto_download_missing=auto_download_missing)
     return results
+
+
+def fix_irregular_intervals_automatically(
+    data: pd.DataFrame,
+    symbol: str,
+    exchange: str,
+    config: Optional[Dict[str, Any]] = None
+) -> pd.DataFrame:
+    """
+    Convenience function to automatically fix irregular intervals that are causing data quality warnings.
+    
+    Args:
+        data: Raw market data with irregular intervals
+        symbol: Trading symbol
+        exchange: Exchange name
+        config: Optional configuration
+        
+    Returns:
+        Fixed data with regular intervals
+    """
+    checker = RawDataQualityChecker(config)
+    return checker.fix_irregular_intervals_automatically(data, symbol, exchange)
+
+
+def validate_and_fix_data_quality_issues(
+    data: pd.DataFrame,
+    symbol: str,
+    exchange: str,
+    config: Optional[Dict[str, Any]] = None
+) -> tuple[pd.DataFrame, Dict[str, Any]]:
+    """
+    Convenience function for comprehensive validation and automatic fixing of data quality issues.
+    
+    Args:
+        data: Raw market data
+        symbol: Trading symbol
+        exchange: Exchange name
+        config: Optional configuration
+        
+    Returns:
+        Tuple of (fixed_data, validation_results)
+    """
+    checker = RawDataQualityChecker(config)
+    return checker.validate_and_fix_data_quality_issues(data, symbol, exchange)
+
+
+def enhanced_preprocess_market_data(
+    data: pd.DataFrame,
+    symbol: str,
+    exchange: str,
+    expected_interval_seconds: int = 60,
+    max_forward_fill_seconds: int = 10,
+    download_missing_data: bool = True,
+    config: Optional[Dict[str, Any]] = None
+) -> pd.DataFrame:
+    """
+    Convenience function for enhanced preprocessing with intelligent gap handling.
+    
+    Args:
+        data: Raw market data
+        symbol: Trading symbol
+        exchange: Exchange name
+        expected_interval_seconds: Expected interval in seconds (default: 60 for 1-minute)
+        max_forward_fill_seconds: Maximum gap to forward-fill (default: 10 seconds)
+        download_missing_data: Whether to download missing data for large gaps
+        config: Optional configuration
+        
+    Returns:
+        Preprocessed data with intelligent gap handling
+    """
+    checker = RawDataQualityChecker(config)
+    return checker.enhanced_preprocess_market_data(
+        data, symbol, exchange, expected_interval_seconds, max_forward_fill_seconds, download_missing_data
+    )
+
+
+# Decorator for automatic data quality fixing
+def auto_fix_data_quality_issues(func):
+    """
+    Decorator that automatically fixes data quality issues before calling the decorated function.
+    This is specifically designed to address the irregular interval warnings you're seeing.
+    
+    Usage:
+        @auto_fix_data_quality_issues
+        def analyze_patterns(data, symbol, exchange):
+            # Your analysis code here
+            pass
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # Find the data argument (usually the first argument)
+        data = None
+        symbol = kwargs.get('symbol', 'UNKNOWN')
+        exchange = kwargs.get('exchange', 'UNKNOWN')
+        
+        # Look for DataFrame in args
+        for arg in args:
+            if isinstance(arg, pd.DataFrame):
+                data = arg
+                break
+        
+        # If no data found in args, look in kwargs
+        if data is None:
+            for key, value in kwargs.items():
+                if isinstance(value, pd.DataFrame):
+                    data = value
+                    break
+        
+        if data is not None and not data.empty:
+            # Check for irregular intervals
+            time_diffs = data.index.to_series().diff().dropna()
+            if len(time_diffs) > 0:
+                expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
+                tolerance_percentage = 0.15
+                tolerance_seconds = expected_interval.total_seconds() * tolerance_percentage
+                irregular_intervals = time_diffs[
+                    abs(time_diffs - expected_interval) > pd.Timedelta(seconds=tolerance_seconds)
+                ]
+                irregular_ratio = len(irregular_intervals) / len(time_diffs)
+                
+                # Calculate coefficient of variation
+                time_diffs_seconds = time_diffs.dt.total_seconds()
+                mean_interval = time_diffs_seconds.mean()
+                std_interval = time_diffs_seconds.std()
+                cv = std_interval / mean_interval if mean_interval > 0 else 0
+                
+                # Auto-fix if issues are detected
+                if irregular_ratio > 0.01 or cv > 0.2:
+                    logger = system_logger.getChild("AutoFixDecorator")
+                    logger.info(f"🔧 Auto-fixing irregular intervals for {func.__name__} (ratio: {irregular_ratio:.3f}, CV: {cv:.3f})")
+                    
+                    fixed_data = fix_irregular_intervals_automatically(data, symbol, exchange)
+                    
+                    # Replace the data argument with fixed data
+                    if isinstance(args[0], pd.DataFrame):
+                        # Data is the first positional argument
+                        new_args = (fixed_data,) + args[1:]
+                    else:
+                        # Data is in kwargs
+                        new_kwargs = kwargs.copy()
+                        for key, value in kwargs.items():
+                            if isinstance(value, pd.DataFrame):
+                                new_kwargs[key] = fixed_data
+                                break
+                        return func(*args, **new_kwargs)
+                    
+                    return func(*new_args, **kwargs)
+        
+        # If no issues detected or no data found, call original function
+        return func(*args, **kwargs)
+    
+    return wrapper

@@ -22,7 +22,7 @@ from src.utils.error_handler import handle_errors
 logger = system_logger.getChild("Step3.HMMRegimeDiscovery.Validator")
 
 
-@handle_errors(exceptions=(Exception,), default_return=False)
+@handle_errors(exceptions=(ValueError, TypeError, KeyError, OSError), default_return=False)
 async def run_validator(
     training_input: Dict[str, Any], pipeline_state: Dict[str, Any]
 ) -> Dict[str, Any]:

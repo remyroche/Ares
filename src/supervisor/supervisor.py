@@ -30,7 +30,7 @@ class CircuitBreaker:
         self.last_failure_time = None
         self.state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
 
-    @handle_errors(exceptions=(Exception,), default_return=None)
+    @handle_errors(exceptions=(ValueError, TypeError, AttributeError, RuntimeError), default_return=None)
     async def call(self, func: callable, *args, **kwargs):
         """Execute function with circuit breaker protection."""
         if self.state == "OPEN":
@@ -66,7 +66,7 @@ class OnlineLearningManager:
         self.min_weight: float = config.get("min_weight", 0.1)
         self.max_weight: float = config.get("max_weight", 0.8)
 
-    @handle_errors(exceptions=(Exception,), default_return=None)
+    @handle_errors(exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError), default_return=None)
     async def update_model_performance(self, model_id: str, performance: float) -> None:
         """Update model performance and recalculate weights."""
         try:
@@ -86,7 +86,7 @@ class OnlineLearningManager:
         except Exception:
             self.print(error("Error updating model performance: {e}"))
 
-    @handle_errors(exceptions=(Exception,), default_return=None)
+    @handle_errors(exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError), default_return=None)
     async def _recalculate_weights(self) -> None:
         """Recalculate model weights based on performance."""
         try:

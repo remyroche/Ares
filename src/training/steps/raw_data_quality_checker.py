@@ -2054,7 +2054,14 @@ class RawDataQualityChecker:
         # Check for regular intervals
         time_diffs = data.index.to_series().diff().dropna()
         if len(time_diffs) > 0:
-            expected_interval = time_diffs.mode().iloc[0]
+            modes = time_diffs.mode()
+            if modes.empty:
+                # Handle case with no mode, use median
+                expected_interval = time_diffs.median()
+                self.logger.warning("Could not determine a single mode for time intervals, using median.")
+            else:
+                expected_interval = modes.iloc[0]
+            
             irregular_intervals = time_diffs[time_diffs != expected_interval]
             irregular_ratio = len(irregular_intervals) / len(time_diffs)
             
@@ -2076,11 +2083,15 @@ class RawDataQualityChecker:
         if len(data) > 100:
             # Check for price continuity
             price_cols = ['open', 'high', 'low', 'close']
+            # Configurable thresholds for price change detection
+            large_change_threshold = self.config.get("multi_timeframe", {}).get("large_change_threshold", 0.1)  # 10% change
+            large_change_ratio_threshold = self.config.get("multi_timeframe", {}).get("large_change_ratio_threshold", 0.01)  # 1% of data points
+            
             for col in price_cols:
                 if col in data.columns:
                     price_changes = data[col].pct_change().abs()
-                    large_changes = price_changes[price_changes > 0.1]  # More than 10% change
-                    if len(large_changes) > len(data) * 0.01:  # More than 1% of data points
+                    large_changes = price_changes[price_changes > large_change_threshold]
+                    if len(large_changes) > len(data) * large_change_ratio_threshold:
                         results["warnings"].append(f"High price volatility detected in {col} column")
         
         return True

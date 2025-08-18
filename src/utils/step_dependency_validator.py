@@ -94,6 +94,11 @@ class StepDependencyValidator:
                 self.logger.info(f"✅ Force rerun enabled for {step_name}, skipping dependency validation")
                 return {"valid": True, "reason": "Force rerun enabled"}
             
+            # If no dependencies, validation passes
+            if not required_steps:
+                self.logger.info(f"✅ {step_name} has no dependencies")
+                return {"valid": True, "reason": "No dependencies"}
+            
             # Check each required step
             failed_prerequisites = []
             for required_step in required_steps:

@@ -59,6 +59,13 @@ from src.utils.training_pipeline_decorators import (
     validate_step_output,
     quality_gate,
 )
+from src.utils.trading_decorators import (
+    comprehensive_model_decorator,
+    track_model_performance,
+    monitor_performance,
+    retry_with_backoff,
+    get_trade_tracker
+)
 
 
 @dataclass
@@ -332,14 +339,17 @@ class RayModelTrainer:
         overfitting_detection=True,
         validation_score_requirements={"cross_validation_score": 0.6},
     )
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False, "Invalid training parameters"),
-            AttributeError: (False, "Missing training components"),
-            KeyError: (False, "Missing required training data"),
-        },
-        default_return=False,
-        context="model training",
+    @comprehensive_model_decorator(
+        enable_error_handling=True,
+        enable_tracking=True,
+        enable_performance_monitoring=True,
+        enable_retry=True,
+        model_name="RayModelTrainer",
+        capture_predictions=True,
+        capture_feature_importance=True,
+        capture_confidence=True,
+        retry_attempts=3,
+        alert_threshold_ms=30000.0  # 30 seconds for model training
     )
     def train_models(
         self,
@@ -626,8 +636,17 @@ class RayModelTrainer:
             self.print(failed("❌ Ray-based model training failed: {e}"))
             return {}
 
-    @guard_dataframe_nulls(mode="warn", arg_index=2)
-    @with_tracing_span("RayModelTrainer._train_single_model_remote", log_args=False)
+    @track_model_performance(
+        model_name="SingleModel",
+        capture_predictions=True,
+        capture_feature_importance=True,
+        capture_confidence=True
+    )
+    @monitor_performance(
+        alert_threshold_ms=15000.0,  # 15 seconds for single model training
+        log_slow_operations=True,
+        capture_memory_usage=True
+    )
     def _train_single_model_remote(
         self,
         model_config: ModelConfig,

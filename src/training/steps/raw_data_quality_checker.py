@@ -2013,7 +2013,7 @@ class RawDataQualityChecker:
             preprocessed_data = self.preprocess_irregular_intervals(data, method)
             
             # Validate the preprocessed data
-            preprocessed_validation, _ = self.validate_raw_data(preprocessed_data, symbol, exchange)
+            preprocessed_validation, preprocessed_data = self.validate_raw_data(preprocessed_data, symbol, exchange)
             
             # Update validation results with preprocessing info
             validation_results["preprocessing_applied"] = {

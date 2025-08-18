@@ -156,6 +156,149 @@ class EnhancedTrainingManager:
         self.enhanced_training_results: dict[str, Any] = {}
         self.enhanced_training_history: list[dict[str, Any]] = []
 
+        # Define pipeline step order as class constant
+        self.STEP_ORDER = [
+            "step1_data_collection",
+            "step2_feature_engineering", 
+            "step3_hmm_regime_discovery",
+            "step4_processing_labeling",
+            "step5_regime_data_splitting",
+            "step6_hmm_based_training",
+            "step6_5_unified_regime_intelligence",
+            "step7_analyst_enhancement",
+            "step8_tactician_labeling",
+            "step9_tactician_specialist_training",
+            "step10_confidence_calibration",
+            "step11_final_parameters_optimization",
+            "step12_walk_forward_validation",
+            "step13_monte_carlo_validation",
+            "step14_ab_testing",
+            "step15_saving",
+        ]
+
+        # Define critical artifact patterns for each step
+        self.CRITICAL_ARTIFACTS = {
+            "step1_data_collection": [
+                "data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet",
+                "data_cache/klines_{exchange}_{symbol}_1m_consolidated.parquet",
+            ],
+            "step2_feature_engineering": [
+                "data/training/{exchange}_{symbol}_{timeframe}_engineered_features.parquet",
+            ],
+            "step3_hmm_regime_discovery": [
+                "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.parquet",
+            ],
+            "step4_processing_labeling": [
+                "data/training/{exchange}_{symbol}_{timeframe}_labeled_validation.parquet",
+            ],
+            "step5_regime_data_splitting": [
+                "data/training/{exchange}_{symbol}_{timeframe}_regime_splits_train.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_regime_splits_validation.parquet",
+            ],
+            "step6_hmm_based_training": [
+                "data/training/{exchange}_{symbol}_{timeframe}_hmm_models.pkl",
+            ],
+            "step6_5_unified_regime_intelligence": [
+                "data/training/{exchange}_{symbol}_{timeframe}_unified_intelligence.parquet",
+            ],
+            "step7_analyst_enhancement": [
+                "data/training/{exchange}_{symbol}_{timeframe}_analyst_models.pkl",
+            ],
+            "step8_tactician_labeling": [
+                "data/training/{exchange}_{symbol}_{timeframe}_tactician_labels.parquet",
+            ],
+            "step9_tactician_specialist_training": [
+                "data/training/{exchange}_{symbol}_{timeframe}_specialist_models.pkl",
+            ],
+            "step10_confidence_calibration": [
+                "data/training/{exchange}_{symbol}_{timeframe}_calibration_results.pkl",
+            ],
+            "step11_final_parameters_optimization": [
+                "data/training/{exchange}_{symbol}_{timeframe}_optimization_results.json",
+            ],
+            "step12_walk_forward_validation": [
+                "data/training/{exchange}_{symbol}_{timeframe}_walk_forward_results.json",
+            ],
+            "step13_monte_carlo_validation": [
+                "data/training/{exchange}_{symbol}_{timeframe}_monte_carlo_results.json",
+            ],
+            "step14_ab_testing": [
+                "data/training/{exchange}_{symbol}_{timeframe}_ab_test_results.json",
+            ],
+            "step15_saving": [
+                "data/training/{exchange}_{symbol}_{timeframe}_final_models.pkl",
+            ],
+        }
+
+        # Define artifact patterns for clearing (includes all artifacts, not just critical ones)
+        self.ARTIFACT_PATTERNS = {
+            "step1_data_collection": [
+                "data_cache/klines_{exchange}_{symbol}_*_consolidated.*",
+                "data_cache/aggtrades_{exchange}_{symbol}_consolidated.*",
+            ],
+            "step2_feature_engineering": [
+                "data/training/{exchange}_{symbol}_{timeframe}_engineered_features.*",
+                "data/training/{exchange}_{symbol}_{timeframe}_feature_metadata.*",
+            ],
+            "step3_hmm_regime_discovery": [
+                "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_hmm_*.parquet",
+                "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.*",
+                "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_regime_*.json",
+            ],
+            "step4_processing_labeling": [
+                "data/training/{exchange}_{symbol}_{timeframe}_labeled_*.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_processing_*.json",
+            ],
+            "step5_regime_data_splitting": [
+                "data/training/{exchange}_{symbol}_{timeframe}_regime_splits_*.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_split_metadata.*",
+            ],
+            "step6_hmm_based_training": [
+                "data/training/{exchange}_{symbol}_{timeframe}_hmm_models_*.pkl",
+                "data/training/{exchange}_{symbol}_{timeframe}_training_results_*.json",
+            ],
+            "step6_5_unified_regime_intelligence": [
+                "data/training/{exchange}_{symbol}_{timeframe}_unified_intelligence_*.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_intelligence_*.json",
+            ],
+            "step7_analyst_enhancement": [
+                "data/training/{exchange}_{symbol}_{timeframe}_analyst_*.pkl",
+                "data/training/{exchange}_{symbol}_{timeframe}_analyst_*.json",
+            ],
+            "step8_tactician_labeling": [
+                "data/training/{exchange}_{symbol}_{timeframe}_tactician_labels_*.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_tactician_*.json",
+            ],
+            "step9_tactician_specialist_training": [
+                "data/training/{exchange}_{symbol}_{timeframe}_specialist_*.pkl",
+                "data/training/{exchange}_{symbol}_{timeframe}_specialist_*.json",
+            ],
+            "step10_confidence_calibration": [
+                "data/training/{exchange}_{symbol}_{timeframe}_calibration_*.pkl",
+                "data/training/{exchange}_{symbol}_{timeframe}_calibration_*.json",
+            ],
+            "step11_final_parameters_optimization": [
+                "data/training/{exchange}_{symbol}_{timeframe}_optimization_*.json",
+                "data/training/{exchange}_{symbol}_{timeframe}_best_params_*.json",
+            ],
+            "step12_walk_forward_validation": [
+                "data/training/{exchange}_{symbol}_{timeframe}_walk_forward_*.json",
+                "data/training/{exchange}_{symbol}_{timeframe}_validation_*.parquet",
+            ],
+            "step13_monte_carlo_validation": [
+                "data/training/{exchange}_{symbol}_{timeframe}_monte_carlo_*.json",
+                "data/training/{exchange}_{symbol}_{timeframe}_mc_results_*.parquet",
+            ],
+            "step14_ab_testing": [
+                "data/training/{exchange}_{symbol}_{timeframe}_ab_test_*.json",
+                "data/training/{exchange}_{symbol}_{timeframe}_ab_results_*.parquet",
+            ],
+            "step15_saving": [
+                "data/training/{exchange}_{symbol}_{timeframe}_final_models_*.pkl",
+                "data/training/{exchange}_{symbol}_{timeframe}_final_results_*.json",
+            ],
+        }
+
         # Configuration
         self.enhanced_training_config: dict[str, Any] = self.config.get(
             "enhanced_training_manager",
@@ -1242,27 +1385,9 @@ class EnhancedTrainingManager:
 
             # Determine whether Step 2 should run based on requested start_step
             start_step_key = training_input.get("start_step", "step1_data_collection")
-            step_order = [
-                "step1_data_collection",
-                "step2_feature_engineering",
-                "step3_hmm_regime_discovery",
-                "step4_processing_labeling",
-                "step5_regime_data_splitting",
-                "step6_hmm_based_training",
-                "step6_5_unified_regime_intelligence",
-                "step7_analyst_enhancement",
-                "step8_tactician_labeling",
-                "step9_tactician_specialist_training",
-                "step10_confidence_calibration",
-                "step11_final_parameters_optimization",
-                "step12_walk_forward_validation",
-                "step13_monte_carlo_validation",
-                "step14_ab_testing",
-                "step15_saving",
-            ]
             def _should_run(step_name: str) -> bool:
                 try:
-                    return step_order.index(step_name) >= step_order.index(start_step_key)
+                    return self.STEP_ORDER.index(step_name) >= self.STEP_ORDER.index(start_step_key)
                 except ValueError:
                     # If unknown step names are provided, default to running to be safe
                     return True
@@ -3583,35 +3708,15 @@ class EnhancedTrainingManager:
         try:
             self.logger.info(f"🧹 Clearing artifacts from {start_step} onward")
             
-            # Define step order to know which steps come after start_step
-            step_order = [
-                "step1_data_collection",
-                "step2_feature_engineering", 
-                "step3_hmm_regime_discovery",
-                "step4_processing_labeling",
-                "step5_regime_data_splitting",
-                "step6_hmm_based_training",
-                "step6_5_unified_regime_intelligence",
-                "step7_analyst_enhancement",
-                "step8_tactician_labeling",
-                "step9_tactician_specialist_training",
-                "step10_confidence_calibration",
-                "step11_final_parameters_optimization",
-                "step12_walk_forward_validation",
-                "step13_monte_carlo_validation",
-                "step14_ab_testing",
-                "step15_saving",
-            ]
-            
-            # Find the index of the starting step
+            # Find the index of the starting step using class constant
             try:
-                start_index = step_order.index(start_step)
+                start_index = self.STEP_ORDER.index(start_step)
             except ValueError:
                 self.logger.warning(f"⚠️ Unknown step {start_step}, clearing all artifacts")
                 start_index = 0
             
             # Clear artifacts for the starting step and all subsequent steps
-            steps_to_clear = step_order[start_index:]
+            steps_to_clear = self.STEP_ORDER[start_index:]
             
             for step in steps_to_clear:
                 await self._clear_step_artifacts(step, symbol, exchange, timeframe)
@@ -3641,29 +3746,9 @@ class EnhancedTrainingManager:
             True if previous step artifacts exist, False otherwise
         """
         try:
-            # Define step order to find the previous step
-            step_order = [
-                "step1_data_collection",
-                "step2_feature_engineering", 
-                "step3_hmm_regime_discovery",
-                "step4_processing_labeling",
-                "step5_regime_data_splitting",
-                "step6_hmm_based_training",
-                "step6_5_unified_regime_intelligence",
-                "step7_analyst_enhancement",
-                "step8_tactician_labeling",
-                "step9_tactician_specialist_training",
-                "step10_confidence_calibration",
-                "step11_final_parameters_optimization",
-                "step12_walk_forward_validation",
-                "step13_monte_carlo_validation",
-                "step14_ab_testing",
-                "step15_saving",
-            ]
-            
-            # Find the index of the current step
+            # Find the index of the current step using class constant
             try:
-                current_index = step_order.index(step_name)
+                current_index = self.STEP_ORDER.index(step_name)
             except ValueError:
                 self.logger.warning(f"⚠️ Unknown step {step_name}, skipping artifact verification")
                 return True
@@ -3673,64 +3758,10 @@ class EnhancedTrainingManager:
                 return True
             
             # Get the previous step
-            previous_step = step_order[current_index - 1]
+            previous_step = self.STEP_ORDER[current_index - 1]
             
-            # Define critical artifact patterns for each step
-            critical_artifacts = {
-                "step1_data_collection": [
-                    f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet",
-                    f"data_cache/klines_{exchange}_{symbol}_1m_consolidated.parquet",
-                ],
-                "step2_feature_engineering": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_engineered_features.parquet",
-                ],
-                "step3_hmm_regime_discovery": [
-                    f"data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.parquet",
-                ],
-                "step4_processing_labeling": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_labeled_validation.parquet",
-                ],
-                "step5_regime_data_splitting": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_regime_splits_train.parquet",
-                    f"data/training/{exchange}_{symbol}_{timeframe}_regime_splits_validation.parquet",
-                ],
-                "step6_hmm_based_training": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_hmm_models.pkl",
-                ],
-                "step6_5_unified_regime_intelligence": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_unified_intelligence.parquet",
-                ],
-                "step7_analyst_enhancement": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_analyst_models.pkl",
-                ],
-                "step8_tactician_labeling": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_tactician_labels.parquet",
-                ],
-                "step9_tactician_specialist_training": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_specialist_models.pkl",
-                ],
-                "step10_confidence_calibration": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_calibration_results.pkl",
-                ],
-                "step11_final_parameters_optimization": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_optimization_results.json",
-                ],
-                "step12_walk_forward_validation": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_walk_forward_results.json",
-                ],
-                "step13_monte_carlo_validation": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_monte_carlo_results.json",
-                ],
-                "step14_ab_testing": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_ab_test_results.json",
-                ],
-                "step15_saving": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_final_models.pkl",
-                ],
-            }
-            
-            # Get critical artifacts for the previous step
-            previous_artifacts = critical_artifacts.get(previous_step, [])
+            # Get critical artifacts for the previous step using class constant
+            previous_artifacts = self.CRITICAL_ARTIFACTS.get(previous_step, [])
             
             if not previous_artifacts:
                 self.logger.warning(f"⚠️ No critical artifacts defined for {previous_step}")
@@ -3776,77 +3807,8 @@ class EnhancedTrainingManager:
             from pathlib import Path
             import glob
             
-            # Define artifact patterns for each step
-            artifact_patterns = {
-                "step1_data_collection": [
-                    f"data_cache/klines_{exchange}_{symbol}_*_consolidated.*",
-                    f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.*",
-                ],
-                "step2_feature_engineering": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_engineered_features.*",
-                    f"data/training/{exchange}_{symbol}_{timeframe}_feature_metadata.*",
-                ],
-                "step3_hmm_regime_discovery": [
-                    f"data/hmm_regimes/{exchange}_{symbol}_{timeframe}_hmm_*.parquet",
-                    f"data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.*",
-                    f"data/hmm_regimes/{exchange}_{symbol}_{timeframe}_regime_*.json",
-                ],
-                "step4_processing_labeling": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_labeled_*.parquet",
-                    f"data/training/{exchange}_{symbol}_{timeframe}_processing_*.json",
-                ],
-                "step5_regime_data_splitting": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_regime_splits_*.parquet",
-                    f"data/training/{exchange}_{symbol}_{timeframe}_split_metadata.*",
-                ],
-                "step6_hmm_based_training": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_hmm_models_*.pkl",
-                    f"data/training/{exchange}_{symbol}_{timeframe}_training_results_*.json",
-                ],
-                "step6_5_unified_regime_intelligence": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_unified_intelligence_*.parquet",
-                    f"data/training/{exchange}_{symbol}_{timeframe}_intelligence_*.json",
-                ],
-                "step7_analyst_enhancement": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_analyst_*.pkl",
-                    f"data/training/{exchange}_{symbol}_{timeframe}_analyst_*.json",
-                ],
-                "step8_tactician_labeling": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_tactician_labels_*.parquet",
-                    f"data/training/{exchange}_{symbol}_{timeframe}_tactician_*.json",
-                ],
-                "step9_tactician_specialist_training": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_specialist_*.pkl",
-                    f"data/training/{exchange}_{symbol}_{timeframe}_specialist_*.json",
-                ],
-                "step10_confidence_calibration": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_calibration_*.pkl",
-                    f"data/training/{exchange}_{symbol}_{timeframe}_calibration_*.json",
-                ],
-                "step11_final_parameters_optimization": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_optimization_*.json",
-                    f"data/training/{exchange}_{symbol}_{timeframe}_best_params_*.json",
-                ],
-                "step12_walk_forward_validation": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_walk_forward_*.json",
-                    f"data/training/{exchange}_{symbol}_{timeframe}_validation_*.parquet",
-                ],
-                "step13_monte_carlo_validation": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_monte_carlo_*.json",
-                    f"data/training/{exchange}_{symbol}_{timeframe}_mc_results_*.parquet",
-                ],
-                "step14_ab_testing": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_ab_test_*.json",
-                    f"data/training/{exchange}_{symbol}_{timeframe}_ab_results_*.parquet",
-                ],
-                "step15_saving": [
-                    f"data/training/{exchange}_{symbol}_{timeframe}_final_models_*.pkl",
-                    f"data/training/{exchange}_{symbol}_{timeframe}_final_results_*.json",
-                ],
-            }
-            
-            # Get patterns for this step
-            patterns = artifact_patterns.get(step_name, [])
+            # Get patterns for this step using class constant
+            patterns = self.ARTIFACT_PATTERNS.get(step_name, [])
             
             cleared_count = 0
             for pattern in patterns:

@@ -103,11 +103,26 @@ async def test_backtesting_decorators():
     print(f"Total trades tracked: {len(tracker.trades)}")
     print(f"Performance history: {len(tracker.performance_history)}")
     
-    # Add assertions to verify behavior
+    # Add comprehensive assertions to verify behavior
     assert len(tracker.trades) > 0, "Expected trades to be tracked"
     assert len(tracker.performance_history) > 0, "Expected performance history to be recorded"
+    
+    # Verify backtest results
     final_value = results.get('performance_metrics', {}).get('final_value', 0)
     assert final_value > 0, f"Expected final portfolio value to be positive, got {final_value}"
+    assert final_value >= 10000, f"Expected final portfolio value to be at least initial balance, got {final_value}"
+    
+    # Verify trade data structure
+    if tracker.trades:
+        latest_trade = tracker.trades[-1]
+        assert 'symbol' in latest_trade, "Trade should have symbol"
+        assert 'side' in latest_trade, "Trade should have side"
+        assert 'price' in latest_trade, "Trade should have price"
+        assert 'quantity' in latest_trade, "Trade should have quantity"
+        assert 'model_weights' in latest_trade, "Trade should have model weights"
+        assert 'hmm_regime' in latest_trade, "Trade should have HMM regime"
+        assert 'support_resistance_levels' in latest_trade, "Trade should have support/resistance levels"
+        assert 'risk_metrics' in latest_trade, "Trade should have risk metrics"
     
     if tracker.trades:
         latest_trade = tracker.trades[-1]
@@ -245,10 +260,28 @@ async def test_paper_trading_decorators():
     trade_history = trader.get_trade_history()
     print(f"Trade history: {len(trade_history)} trades")
     
-    # Add assertions to verify behavior
+    # Add comprehensive assertions to verify behavior
     assert buy_result is True, "Expected buy trade to succeed"
     assert sell_result is True, "Expected sell trade to succeed"
     assert len(trade_history) >= 2, f"Expected at least 2 trades, got {len(trade_history)}"
+    
+    # Verify trade history structure
+    if trade_history:
+        latest_trade = trade_history[-1]
+        assert 'symbol' in latest_trade, "Trade should have symbol"
+        assert 'side' in latest_trade, "Trade should have side"
+        assert 'price' in latest_trade, "Trade should have price"
+        assert 'quantity' in latest_trade, "Trade should have quantity"
+        assert 'execution_mode' in latest_trade, "Trade should have execution mode"
+        assert 'model_weights' in latest_trade, "Trade should have model weights"
+        assert 'hmm_regime' in latest_trade, "Trade should have HMM regime"
+        
+        # Verify execution mode is correct
+        assert latest_trade['execution_mode'] == ExecutionMode.PAPER.value, f"Expected PAPER execution mode, got {latest_trade['execution_mode']}"
+        
+        # Verify model weights are present
+        assert isinstance(latest_trade['model_weights'], dict), "Model weights should be a dictionary"
+        assert len(latest_trade['model_weights']) > 0, "Model weights should not be empty"
     
     if trade_history:
         latest_trade = trade_history[-1]
@@ -299,6 +332,14 @@ async def test_model_training_decorators():
     print("  - Error handling with retries")
     print("  - Memory usage monitoring")
     
+    # Add assertions to verify decorator setup
+    assert hasattr(trainer, 'train_models'), "Model trainer should have train_models method"
+    assert hasattr(trainer, '_train_single_model_remote'), "Model trainer should have _train_single_model_remote method"
+    
+    # Verify decorators are applied (check for wrapper attributes)
+    assert hasattr(trainer.train_models, '__wrapped__'), "train_models should be decorated"
+    assert hasattr(trainer._train_single_model_remote, '__wrapped__'), "_train_single_model_remote should be decorated"
+    
     print("\n" + "="*50 + "\n")
 
 
@@ -326,6 +367,12 @@ async def test_ensemble_manager_decorators():
     print("  - Error handling with retries")
     print("  - Memory usage monitoring")
     
+    # Add assertions to verify decorator setup
+    assert hasattr(ensemble_manager, 'create_ensembles'), "Ensemble manager should have create_ensembles method"
+    
+    # Verify decorators are applied (check for wrapper attributes)
+    assert hasattr(ensemble_manager.create_ensembles, '__wrapped__'), "create_ensembles should be decorated"
+    
     print("\n" + "="*50 + "\n")
 
 
@@ -339,10 +386,19 @@ async def test_trade_tracker():
     print(f"  Total trades tracked: {len(tracker.trades)}")
     print(f"  Performance history: {len(tracker.performance_history)}")
     
+    # Add assertions to verify trade tracker functionality
+    assert isinstance(tracker.trades, list), "Trades should be a list"
+    assert isinstance(tracker.performance_history, list), "Performance history should be a list"
+    
     if tracker.trades:
         print(f"\nSample trade data structure:")
         sample_trade = tracker.trades[0]
         print(json.dumps(sample_trade, indent=2, default=str))
+        
+        # Verify sample trade structure
+        required_fields = ['symbol', 'side', 'price', 'quantity', 'timestamp']
+        for field in required_fields:
+            assert field in sample_trade, f"Sample trade should have {field} field"
     
     print("\n" + "="*50 + "\n")
 

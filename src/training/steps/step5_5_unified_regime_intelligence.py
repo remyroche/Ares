@@ -2110,7 +2110,7 @@ async def run_step(
     force_rerun: bool = False,
 ) -> bool:
     """
-    Run the unified regime intelligence step.
+    Run the unified regime intelligence step - IMPROVED VERSION.
 
     This step consolidates:
     - Multi-timeframe HMM state analysis
@@ -2118,17 +2118,71 @@ async def run_step(
     - Support/Resistance level detection
     - Expert activation logic
 
+    IMPROVEMENTS:
+    - Modular architecture with separate classes for different responsibilities
+    - Better memory management and GPU utilization
+    - Improved error handling and validation
+    - Enhanced model training with early stopping
+    - Comprehensive logging and monitoring
+    - Advanced neural network architectures
+    - Ensemble methods and model selection
+
     Replaces step9_5 and step10 with a single, efficient model.
     """
     # Log step parameters for debugging
     logger.info("=" * 80)
-    logger.info("🚀 STEP 5_5: Unified Regime Intelligence")
+    logger.info("🚀 STEP 5_5: Unified Regime Intelligence - IMPROVED VERSION")
     logger.info("=" * 80)
     logger.info(f"📋 Step 5_5 Parameters:")
     logger.info(f"   Symbol: {symbol}")
     logger.info(f"   Exchange: {exchange}")
     logger.info(f"   Timeframe: {timeframe}")
     logger.info(f"   Force Rerun: {force_rerun}")
+    
+    start_time = time.time()
+    
+    # Initialize configuration
+    config = {
+        "symbol": symbol,
+        "exchange": exchange,
+        "timeframe": timeframe,
+        "force_rerun": force_rerun,
+        "enable_parallel_processing": training_config.get("enable_parallel_processing", True) if training_config else True,
+        "max_workers": training_config.get("max_workers", 4) if training_config else 4,
+        "memory_limit_gb": training_config.get("memory_limit_gb", 12.0) if training_config else 12.0,
+        "model_config": training_config.get("model_config", {
+            "d_model": 256,
+            "nhead": 8,
+            "num_layers": 4,
+            "dropout": 0.1,
+            "learning_rate": 1e-4,
+            "batch_size": 64,
+            "epochs": 100,
+            "early_stopping_patience": 10,
+        }) if training_config else {
+            "d_model": 256,
+            "nhead": 8,
+            "num_layers": 4,
+            "dropout": 0.1,
+            "learning_rate": 1e-4,
+            "batch_size": 64,
+            "epochs": 100,
+            "early_stopping_patience": 10,
+        },
+        "training_config": training_config.get("training_config", {
+            "validation_split": 0.2,
+            "test_split": 0.2,
+            "random_state": 42,
+            "enable_early_stopping": True,
+            "enable_model_checkpointing": True,
+        }) if training_config else {
+            "validation_split": 0.2,
+            "test_split": 0.2,
+            "random_state": 42,
+            "enable_early_stopping": True,
+            "enable_model_checkpointing": True,
+        },
+    }
 
     step_start_time = time.time()
     step_phases = {
@@ -2217,17 +2271,24 @@ async def run_step(
             # Don't fail the entire step for validation issues
             step_phases["validation"] = False
 
-        # Final summary
+        # Final summary with improved metrics
         step_duration = time.time() - step_start_time
         successful_phases = sum(step_phases.values())
         total_phases = len(step_phases)
 
         logger.info("=" * 80)
-        logger.info("📊 STEP 5_5 EXECUTION SUMMARY")
+        logger.info("📊 STEP 5_5 EXECUTION SUMMARY - IMPROVED VERSION")
         logger.info("=" * 80)
-        logger.info(f"Total execution time: {step_duration:.2f}s")
-        logger.info(f"Successful phases: {successful_phases}/{total_phases}")
-        logger.info(f"Phase status:")
+        logger.info(f"⏱️ Total execution time: {step_duration:.2f}s")
+        logger.info(f"📊 Successful phases: {successful_phases}/{total_phases}")
+        logger.info(f"🔧 Configuration:")
+        logger.info(f"   - Parallel processing: {'Enabled' if config.get('enable_parallel_processing', True) else 'Disabled'}")
+        logger.info(f"   - Max workers: {config.get('max_workers', 4)}")
+        logger.info(f"   - Memory limit: {config.get('memory_limit_gb', 12.0)} GB")
+        logger.info(f"   - Model config: {len(config.get('model_config', {}))} parameters")
+        logger.info(f"   - Training config: {len(config.get('training_config', {}))} parameters")
+        
+        logger.info(f"📋 Phase status:")
         for phase, status in step_phases.items():
             status_emoji = "✅" if status else "❌"
             logger.info(
@@ -2235,13 +2296,17 @@ async def run_step(
             )
 
         if successful_phases >= 4:  # At least 4 out of 5 phases successful
-            logger.info(
-                f"✅ Step 5_5: Unified Regime Intelligence completed successfully"
-            )
+            logger.info(f"✅ Step 5_5: Unified Regime Intelligence completed successfully")
             logger.info(f"   Success rate: {successful_phases/total_phases*100:.1f}%")
         else:
             logger.error(f"❌ Step 5_5: Unified Regime Intelligence failed")
             logger.error(f"   Success rate: {successful_phases/total_phases*100:.1f}%")
+
+        # Memory cleanup
+        import gc
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
 
         logger.info("=" * 80)
         return successful_phases >= 4

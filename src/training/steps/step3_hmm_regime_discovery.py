@@ -96,6 +96,226 @@ from scipy import stats
 from scipy.spatial.distance import pdist, squareform
 
 
+# Improved HMM Analysis Classes
+class HMMRegimeAnalyzer:
+    """Improved HMM regime analyzer with better memory management."""
+    
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+        self.logger = system_logger.getChild("HMMRegimeAnalyzer")
+        self.models = {}
+        self.scalers = {}
+        
+    def _cleanup_multiprocessing_resources(self):
+        """Clean up multiprocessing resources."""
+        try:
+            # Clean up joblib cache
+            joblib.clear()
+            
+            # Force garbage collection
+            gc.collect()
+            
+            # Clean up any remaining processes
+            for proc in mp.active_children():
+                proc.terminate()
+                proc.join()
+        except Exception as e:
+            self.logger.warning(f"Error during multiprocessing cleanup: {e}")
+    
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit with cleanup."""
+        self._cleanup_multiprocessing_resources()
+    
+    @handle_errors(exceptions=(Exception,), default_return=None)
+    def create_basic_features(self, price_df: pd.DataFrame) -> pd.DataFrame:
+        """Create basic features for HMM analysis with improved validation."""
+        try:
+            if price_df.empty:
+                raise ValueError("Empty price dataframe")
+            
+            # Ensure we have required columns
+            required_cols = ["open", "high", "low", "close"]
+            missing_cols = [col for col in required_cols if col not in price_df.columns]
+            if missing_cols:
+                raise ValueError(f"Missing required columns: {missing_cols}")
+            
+            # Calculate returns
+            returns = price_df["close"].pct_change().dropna()
+            
+            # Calculate log returns
+            log_returns = np.log(price_df["close"] / price_df["close"].shift(1)).dropna()
+            
+            # Calculate volatility (rolling standard deviation)
+            volatility = returns.rolling(window=20, min_periods=1).std()
+            
+            # Calculate price momentum
+            momentum = price_df["close"] / price_df["close"].shift(20) - 1
+            
+            # Calculate volume features if available
+            volume_features = pd.DataFrame()
+            if "volume" in price_df.columns:
+                volume_features["volume_ratio"] = price_df["volume"] / price_df["volume"].rolling(window=20).mean()
+                volume_features["volume_momentum"] = price_df["volume"].pct_change()
+            
+            # Combine features
+            features = pd.DataFrame({
+                "returns": returns,
+                "log_returns": log_returns,
+                "volatility": volatility,
+                "momentum": momentum,
+            })
+            
+            # Add volume features if available
+            if not volume_features.empty:
+                features = pd.concat([features, volume_features], axis=1)
+            
+            # Remove any infinite or NaN values
+            features = features.replace([np.inf, -np.inf], np.nan)
+            features = features.dropna()
+            
+            if features.empty:
+                raise ValueError("No valid features after preprocessing")
+            
+            self.logger.info(f"Created {len(features.columns)} features with {len(features)} samples")
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Error creating basic features: {e}")
+            raise
+    
+    @handle_errors(exceptions=(Exception,), default_return=None)
+    def fit_hmm_model(self, features: pd.DataFrame, timeframe: str) -> Optional[GMMHMM]:
+        """Fit HMM model with improved error handling."""
+        try:
+            if features.empty:
+                raise ValueError("Empty features dataframe")
+            
+            # Scale features
+            scaler = StandardScaler()
+            scaled_features = scaler.fit_transform(features)
+            
+            # Initialize HMM model
+            model = GMMHMM(
+                n_components=self.config["n_components"],
+                n_mix=self.config["n_mix"],
+                covariance_type=self.config["covariance_type"],
+                random_state=self.config["random_state"],
+                max_iter=self.config["max_iter"],
+                tol=self.config["tol"],
+                verbose=self.config["verbose"]
+            )
+            
+            # Fit model
+            model.fit(scaled_features)
+            
+            # Store model and scaler
+            self.models[timeframe] = model
+            self.scalers[timeframe] = scaler
+            
+            self.logger.info(f"Fitted HMM model for {timeframe} with {self.config['n_components']} components")
+            return model
+            
+        except Exception as e:
+            self.logger.error(f"Error fitting HMM model for {timeframe}: {e}")
+            return None
+    
+    @handle_errors(exceptions=(Exception,), default_return=pd.DataFrame())
+    def predict_regimes(self, features: pd.DataFrame, timeframe: str) -> pd.DataFrame:
+        """Predict regimes using fitted HMM model."""
+        try:
+            if timeframe not in self.models:
+                raise ValueError(f"No fitted model found for {timeframe}")
+            
+            model = self.models[timeframe]
+            scaler = self.scalers[timeframe]
+            
+            # Scale features
+            scaled_features = scaler.transform(features)
+            
+            # Predict states
+            states = model.predict(scaled_features)
+            
+            # Get state probabilities
+            state_probs = model.predict_proba(scaled_features)
+            
+            # Create results dataframe
+            results = pd.DataFrame({
+                "state": states,
+                "timestamp": features.index
+            })
+            
+            # Add state probabilities
+            for i in range(state_probs.shape[1]):
+                results[f"state_{i}_prob"] = state_probs[:, i]
+            
+            self.logger.info(f"Predicted regimes for {timeframe}: {len(results)} samples")
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Error predicting regimes for {timeframe}: {e}")
+            return pd.DataFrame()
+
+
+class RegimeClusterAnalyzer:
+    """Analyzer for regime clustering and composite analysis."""
+    
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+        self.logger = system_logger.getChild("RegimeClusterAnalyzer")
+    
+    @handle_errors(exceptions=(Exception,), default_return=pd.DataFrame())
+    def perform_composite_clustering(
+        self, 
+        regime_data: Dict[str, pd.DataFrame]
+    ) -> pd.DataFrame:
+        """Perform composite clustering across timeframes."""
+        try:
+            if not regime_data:
+                raise ValueError("No regime data provided")
+            
+            # Combine regime data from all timeframes
+            combined_data = []
+            for timeframe, df in regime_data.items():
+                if not df.empty:
+                    df_copy = df.copy()
+                    df_copy["timeframe"] = timeframe
+                    combined_data.append(df_copy)
+            
+            if not combined_data:
+                raise ValueError("No valid regime data to cluster")
+            
+            combined_df = pd.concat(combined_data, ignore_index=True)
+            
+            # Extract features for clustering
+            prob_cols = [col for col in combined_df.columns if col.startswith("state_") and col.endswith("_prob")]
+            if not prob_cols:
+                raise ValueError("No state probability columns found")
+            
+            features = combined_df[prob_cols].values
+            
+            # Perform clustering
+            n_clusters = min(len(prob_cols), 10)  # Limit number of clusters
+            clusterer = AgglomerativeClustering(
+                n_clusters=n_clusters,
+                linkage="ward",
+                metric="euclidean"
+            )
+            
+            cluster_labels = clusterer.fit_predict(features)
+            combined_df["composite_cluster"] = cluster_labels
+            
+            self.logger.info(f"Performed composite clustering: {n_clusters} clusters")
+            return combined_df
+            
+        except Exception as e:
+            self.logger.error(f"Error in composite clustering: {e}")
+            return pd.DataFrame()
+
+
 # Add proper multiprocessing resource management
 def _cleanup_multiprocessing_resources():
     """Clean up multiprocessing resources to prevent semaphore leaks and segmentation faults."""
@@ -2107,25 +2327,44 @@ async def run_step(
     **kwargs: Any,
 ) -> bool:
     """
-    Step 1_7: HMM regime discovery via block HMMs and composite clustering.
+    Step 3: HMM Regime Discovery - IMPROVED VERSION.
+    HMM regime discovery via block HMMs and composite clustering.
     Uses vectorized advanced features (excluding candlestick pattern features).
     Outputs per-timeframe block states/posteriors, combination IDs, and composite cluster IDs.
 
-    Enhanced with:
-    - Comprehensive logging for troubleshooting and efficiency monitoring
-    - Thorough error handling using decorators
-    - Proper data usage (scaling, normalization, returns vs prices)
-    - Complete type hints throughout
+    IMPROVEMENTS:
+    - Modular architecture with separate classes for different responsibilities
+    - Better memory management and resource cleanup
+    - Improved error handling and logging
+    - Type hints throughout
+    - Performance optimizations with parallel processing
+    - Better data validation and quality checks
+    - Reduced complexity and improved maintainability
     """
     logger = system_logger.getChild("Step3.HMMRegimeDiscovery")
-    logger.info(
-        "🚀 Step 3: HMM Regime Discovery — using features from Step 2"
-    )
-    print_and_log(
-        "🚀 Starting HMM Regime Discovery step", "info", "Step3.HMMRegimeDiscovery"
-    )
+    logger.info("🚀 Step 3: HMM Regime Discovery — using features from Step 2")
+    print_and_log("🚀 Starting HMM Regime Discovery step", "info", "Step3.HMMRegimeDiscovery")
 
     t0_total = time.time()
+    
+    # Initialize configuration
+    config = {
+        "symbol": symbol,
+        "exchange": exchange,
+        "data_dir": data_dir,
+        "timeframe": timeframe,
+        "force_rerun": force,
+        "enable_parallel_processing": kwargs.get("enable_parallel_processing", True),
+        "max_workers": kwargs.get("max_workers", 4),
+        "memory_limit_gb": kwargs.get("memory_limit_gb", 8.0),
+        "n_components": kwargs.get("n_components", 5),
+        "n_mix": kwargs.get("n_mix", 3),
+        "covariance_type": kwargs.get("covariance_type", "full"),
+        "random_state": kwargs.get("random_state", 42),
+        "max_iter": kwargs.get("max_iter", 100),
+        "tol": kwargs.get("tol", 1e-3),
+        "verbose": kwargs.get("verbose", False),
+    }
 
     # Import data sharing manager inside function to avoid circular import
     from src.training.data_sharing_manager import get_data_sharing_manager

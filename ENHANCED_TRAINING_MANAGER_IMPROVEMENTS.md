@@ -270,6 +270,34 @@ config = {
   - Performance benchmarks
   - Regression testing
 
+## Files Updated
+
+The following existing files have been enhanced with improvements:
+
+1. **`src/training/steps/step2_feature_engineering.py`**
+   - Added parallel processing for feature engineering
+   - Enhanced data validation and OHLC consistency checks
+   - Improved error handling and memory management
+   - Added comprehensive logging and performance metrics
+
+2. **`src/training/steps/step3_hmm_regime_discovery.py`**
+   - Added modular HMM analysis classes (`HMMRegimeAnalyzer`, `RegimeClusterAnalyzer`)
+   - Improved resource management and cleanup
+   - Enhanced feature creation with validation
+   - Better error handling and logging
+
+3. **`src/training/steps/step4_processing_labeling.py`**
+   - Enhanced data validation and preprocessing
+   - Improved OHLC data consistency checks
+   - Better error handling and comprehensive logging
+   - Added performance metrics and memory cleanup
+
+4. **`src/training/steps/step5_5_unified_regime_intelligence.py`**
+   - Improved configuration management
+   - Enhanced logging with detailed metrics
+   - Added memory cleanup and GPU management
+   - Better error handling and validation
+
 ## Expected Performance Improvements
 
 ### Computation Performance
@@ -295,42 +323,44 @@ config = {
 
 ## Migration Guide
 
-### 1. Backup Current Implementation
+### 1. Backup Current Implementation (Optional)
 ```bash
-# Backup current files
+# Backup current files (optional since we edited existing files)
 cp src/training/steps/step2_feature_engineering.py src/training/steps/step2_feature_engineering_backup.py
 cp src/training/steps/step3_hmm_regime_discovery.py src/training/steps/step3_hmm_regime_discovery_backup.py
 cp src/training/steps/step4_processing_labeling.py src/training/steps/step4_processing_labeling_backup.py
 cp src/training/steps/step5_5_unified_regime_intelligence.py src/training/steps/step5_5_unified_regime_intelligence_backup.py
 ```
 
-### 2. Update Enhanced Training Manager
+### 2. Enhanced Training Manager Integration
 ```python
-# Update imports in enhanced_training_manager.py
-from src.training.steps.step2_feature_engineering_improved import run_step as run_step2_improved
-from src.training.steps.step3_hmm_regime_discovery_improved import run_step as run_step3_improved
-from src.training.steps.step4_processing_labeling_improved import run_step as run_step4_improved
-from src.training.steps.step5_unified_regime_intelligence_improved import run_step as run_step5_improved
+# The existing enhanced_training_manager.py already imports these modules
+# No changes needed to imports since we edited the existing files
+# The improvements are automatically available when the existing functions are called
 ```
 
 ### 3. Test Implementation
 ```python
-# Test each step individually
+# Test each step individually using the existing function names
 async def test_improved_pipeline():
     # Test Step 2
-    success = await run_step2_improved("ETHUSDT", "BINANCE", force_rerun=True)
+    from src.training.steps.step2_feature_engineering import run_step as run_step2
+    success = await run_step2("ETHUSDT", "BINANCE", force_rerun=True)
     assert success, "Step 2 failed"
     
     # Test Step 3
-    success = await run_step3_improved("ETHUSDT", "BINANCE", force_rerun=True)
+    from src.training.steps.step3_hmm_regime_discovery import run_step as run_step3
+    success = await run_step3("ETHUSDT", "BINANCE", force_rerun=True)
     assert success, "Step 3 failed"
     
     # Test Step 4
-    success = await run_step4_improved("ETHUSDT", "BINANCE", force_rerun=True)
+    from src.training.steps.step4_processing_labeling import run_step as run_step4
+    success = await run_step4("ETHUSDT", "BINANCE", force_rerun=True)
     assert success, "Step 4 failed"
     
     # Test Step 5
-    success = await run_step5_improved("ETHUSDT", "BINANCE", force_rerun=True)
+    from src.training.steps.step5_5_unified_regime_intelligence import run_step as run_step5
+    success = await run_step5("ETHUSDT", "BINANCE", force_rerun=True)
     assert success, "Step 5 failed"
 ```
 

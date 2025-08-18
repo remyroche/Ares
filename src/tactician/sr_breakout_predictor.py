@@ -32,6 +32,14 @@ class SRBreakoutPredictor:
     - Traditional pivot points (fallback)
     - ATR-based activation ranges
     """
+    
+    # Configuration constants for better maintainability
+    STRENGTH_SCORE_WEIGHTS = (0.5, 0.3, 0.2)  # (avg_strength, level_density, volume_factor)
+    FALLBACK_DISTANCE_RATIO = 0.1  # 10% fallback distance
+    FALLBACK_STRENGTH = 0.3  # Default strength for fallback levels
+    ATR_MULTIPLIER = 0.02  # ATR multiplier for fallback
+    VOLUME_NORMALIZATION_FACTOR = 10000.0  # Volume normalization factor
+    LEVEL_DENSITY_NORMALIZATION = 10.0  # Level density normalization factor
 
     def __init__(self, config: dict[str, Any]) -> None:
         """
@@ -2308,8 +2316,8 @@ class SRBreakoutPredictor:
                     nearest_support_distance = support_distances[nearest_support_idx]
                     nearest_support_strength = support_levels[nearest_support_idx].get("strength", 0.5)
                 else:
-                    nearest_support_distance = current_price * 0.1  # 10% fallback
-                    nearest_support_strength = 0.3
+                    nearest_support_distance = current_price * self.FALLBACK_DISTANCE_RATIO
+                    nearest_support_strength = self.FALLBACK_STRENGTH
                 
                 if len(resistance_prices) > 0:
                     resistance_distances = abs(resistance_prices - current_price)
@@ -2317,11 +2325,11 @@ class SRBreakoutPredictor:
                     nearest_resistance_distance = resistance_distances[nearest_resistance_idx]
                     nearest_resistance_strength = resistance_levels[nearest_resistance_idx].get("strength", 0.5)
                 else:
-                    nearest_resistance_distance = current_price * 0.1  # 10% fallback
-                    nearest_resistance_strength = 0.3
+                    nearest_resistance_distance = current_price * self.FALLBACK_DISTANCE_RATIO
+                    nearest_resistance_strength = self.FALLBACK_STRENGTH
                 
                 # Calculate normalized distances (by ATR)
-                current_atr = atr.iloc[i] if i < len(atr) and not pd.isna(atr.iloc[i]) else current_price * 0.02
+                current_atr = atr.iloc[i] if i < len(atr) and not pd.isna(atr.iloc[i]) else current_price * self.ATR_MULTIPLIER
                 normalized_distance_to_support = nearest_support_distance / current_atr if current_atr > 0 else 0
                 normalized_distance_to_resistance = nearest_resistance_distance / current_atr if current_atr > 0 else 0
                 
@@ -2389,16 +2397,17 @@ class SRBreakoutPredictor:
             
             # Level density factor (more levels = higher strength)
             total_levels = support_count + resistance_count
-            level_density = min(total_levels / 10.0, 1.0)  # Normalize to 0-1
+            level_density = min(total_levels / self.LEVEL_DENSITY_NORMALIZATION, 1.0)  # Normalize to 0-1
             
             # Volume factor (higher volume = stronger levels)
-            volume_factor = min(volume / 10000.0, 1.0)  # Normalize to 0-1
+            volume_factor = min(volume / self.VOLUME_NORMALIZATION_FACTOR, 1.0)  # Normalize to 0-1
             
             # Combine factors with weights
+            w1, w2, w3 = self.STRENGTH_SCORE_WEIGHTS
             strength_score = (
-                avg_strength * 0.5 +      # 50% weight to level strength
-                level_density * 0.3 +     # 30% weight to level density
-                volume_factor * 0.2       # 20% weight to volume
+                avg_strength * w1 +       # Weight to level strength
+                level_density * w2 +      # Weight to level density
+                volume_factor * w3        # Weight to volume
             )
             
             return float(np.clip(strength_score, 0.0, 1.0))

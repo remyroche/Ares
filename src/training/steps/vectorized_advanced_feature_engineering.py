@@ -74,6 +74,14 @@ FEATURE_OPTIMIZATION_CONFIG = {
     "joblib_memory_compress": 3,  # Compression level
 }
 
+# SR Distance Calculator Configuration
+SR_DISTANCE_CONFIG = {
+    "PRICE_RANGE_WINDOW": 20,
+    "MIN_PRICE_RANGE": 0.001,
+    "DEFAULT_DISTANCE": 0.0,
+    "NORMALIZATION_EPSILON": 1e-8
+}
+
 
 class OptimizedResampler:
     """
@@ -1159,7 +1167,7 @@ class VectorizedSRDistanceCalculator:
     async def calculate_sr_distances(
         self, price_data: pd.DataFrame, sr_levels: Dict[str, Any] | None
     ) -> Dict[str, Any]:
-        """Calculate distances to support/resistance levels."""
+        """Calculate distances to support/resistance levels using vectorized operations."""
         try:
             features = {}
 
@@ -1168,7 +1176,7 @@ class VectorizedSRDistanceCalculator:
             if sr_levels is None or not isinstance(sr_levels, dict):
                 return features
 
-            # Calculate distances to nearest levels
+            # Calculate distances to nearest levels using vectorized operations
             for level_type in ["support", "resistance"]:
                 if level_type in sr_levels:
                     level_prices = sr_levels[level_type]
@@ -1179,27 +1187,30 @@ class VectorizedSRDistanceCalculator:
                     else:
                         level_prices = np.array([float(level_prices)])
 
-                    # Find nearest level for each price
-                    distances = []
-                    for price in close:
-                        if not pd.isna(price):
-                            level_distances = abs(level_prices - price)
-                            min_distance = level_distances.min()
-                            distances.append(min_distance)
-                        else:
-                            distances.append(np.nan)
+                    # Vectorized distance calculation
+                    # Reshape arrays for broadcasting: (n_prices, 1) - (1, n_levels) = (n_prices, n_levels)
+                    prices_reshaped = close.values.reshape(-1, 1)
+                    levels_reshaped = level_prices.reshape(1, -1)
+                    
+                    # Calculate all distances at once using broadcasting
+                    all_distances = np.abs(prices_reshaped - levels_reshaped)
+                    
+                    # Find minimum distance for each price point
+                    min_distances = np.min(all_distances, axis=1)
+                    
+                    # Handle NaN values
+                    min_distances = np.where(np.isnan(min_distances), SR_DISTANCE_CONFIG["DEFAULT_DISTANCE"], min_distances)
+                    
+                    distance_series = pd.Series(min_distances, index=close.index)
+                    features[f"distance_to_{level_type}"] = distance_series
 
-                    distance_series = pd.Series(distances, index=close.index)
-                    features[f"distance_to_{level_type}"] = distance_series.fillna(0)
-
-                    # Normalized distance
-                    price_range = close.rolling(20).max() - close.rolling(20).min()
-                    normalized_distance = distance_series / price_range.replace(
-                        0, np.nan
-                    )
-                    features[f"normalized_distance_to_{level_type}"] = (
-                        normalized_distance.fillna(0)
-                    )
+                    # Normalized distance using vectorized operations
+                    price_range = close.rolling(SR_DISTANCE_CONFIG["PRICE_RANGE_WINDOW"]).max() - close.rolling(SR_DISTANCE_CONFIG["PRICE_RANGE_WINDOW"]).min()
+                    price_range = price_range.replace(0, np.nan)
+                    
+                    # Vectorized normalization
+                    normalized_distance = distance_series / (price_range + SR_DISTANCE_CONFIG["NORMALIZATION_EPSILON"])
+                    features[f"normalized_distance_to_{level_type}"] = normalized_distance.fillna(0)
 
             return features
 

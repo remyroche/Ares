@@ -16,8 +16,8 @@ from src.utils.decorators import with_tracing_span, guard_dataframe_nulls
 # Import the auto-fix decorator for data quality issues
 from src.training.steps.raw_data_quality_checker import auto_fix_data_quality_issues
 
-# Import feature selection manager
-from src.training.feature_selection_manager import FeatureSelectionManager
+# Import optimized feature selection manager
+from src.training.optimized_feature_selection_manager import OptimizedFeatureSelectionManager
 
 # Import SR breakout predictor for comprehensive SR features
 from src.tactician.sr_breakout_predictor import setup_sr_breakout_predictor
@@ -1498,10 +1498,10 @@ async def run_step(
         except Exception as e:
             logger.warning(f"⚠️ Pickle compatibility write skipped: {e}")
 
-        # Apply feature selection to reduce features to target count
+        # Apply optimized feature selection to reduce features to target count
         try:
-            # Initialize feature selection manager
-            feature_selection_manager = FeatureSelectionManager(config)
+            # Initialize optimized feature selection manager
+            optimized_feature_selection = OptimizedFeatureSelectionManager(config)
             
             # Perform feature selection ONLY on the training data using the real target
             # Get the actual target labels from the labeled data
@@ -1510,21 +1510,41 @@ async def run_step(
             else:
                 train_target = labeled["train"]["target"].reindex(X_tr.index)
                 
-                logger.info("Applying feature selection on the training set...")
-                X_tr, selection_metadata = feature_selection_manager.select_features_step2(
-                    X_tr, train_target, symbol, exchange, data_dir
+                logger.info("🚀 Applying optimized feature selection on the training set...")
+                X_tr, selection_metadata = optimized_feature_selection.select_features_optimized(
+                    X_tr, train_target, model_type="general", step_name="step2"
                 )
                 
                 selected_features = list(X_tr.columns)
-                logger.info(f"✅ Feature selection completed: {len(selected_features)} features selected from training data.")
+                logger.info(f"✅ Optimized feature selection completed: {len(selected_features)} features selected from training data.")
+                
+                # Log performance metrics
+                if "performance_metrics" in selection_metadata:
+                    perf_metrics = selection_metadata["performance_metrics"]
+                    logger.info(f"📊 Performance metrics:")
+                    logger.info(f"   - VIF calculation time: {perf_metrics.get('vif_calculation_time', 0):.2f}s")
+                    logger.info(f"   - SHAP calculation time: {perf_metrics.get('shap_calculation_time', 0):.2f}s")
+                    logger.info(f"   - Correlation analysis time: {perf_metrics.get('correlation_analysis_time', 0):.2f}s")
+                    logger.info(f"   - Total selection time: {selection_metadata.get('total_time', 0):.2f}s")
+                
+                # Log feature category distribution
+                if "feature_categories" in selection_metadata:
+                    category_dist = selection_metadata["feature_categories"]
+                    logger.info(f"📊 Feature category distribution:")
+                    for category, features in category_dist.items():
+                        if features:
+                            logger.info(f"   - {category}: {len(features)} features")
                 
                 # Apply the same feature selection to validation and test sets
                 X_vl = X_vl[selected_features]
                 X_te = X_te[selected_features]
-                logger.info("Applied selected features to validation and test sets.")
+                logger.info("✅ Applied selected features to validation and test sets.")
+                
+                # Save selection metadata
+                optimized_feature_selection.save_selection_metadata(selection_metadata, symbol, exchange, data_dir)
             
         except Exception as e:
-            logger.warning(f"⚠️ Feature selection failed, using original features: {e}")
+            logger.warning(f"⚠️ Optimized feature selection failed, using original features: {e}")
         
         # Save feature artifacts for persistence
         try:

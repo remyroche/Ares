@@ -126,7 +126,15 @@ class HMMBasedTrainingStep:
             "orderflow_p_state_4",
         ]
 
-        # All available features - let ML models handle feature selection
+        # Initialize optimized feature selection manager
+        self.optimized_feature_selection = None
+        try:
+            from src.training.optimized_feature_selection_manager import OptimizedFeatureSelectionManager
+            self.optimized_feature_selection = OptimizedFeatureSelectionManager(config)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to initialize optimized feature selection: {e}")
+        
+        # All available features - will be optimized by feature selection
         # Note: These should be returns-based features, not raw data
         self.all_features = [
             # Technical indicators (already returns-based or normalized)
@@ -260,7 +268,7 @@ class HMMBasedTrainingStep:
             self.logger.error(f"❌ Failed to get available features: {e}")
             return []
     
-    def _apply_model_specific_pruning(
+    def _apply_optimized_feature_selection(
         self, 
         features_df: pd.DataFrame, 
         target: pd.Series,
@@ -268,7 +276,7 @@ class HMMBasedTrainingStep:
         architecture: str
     ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """
-        Apply model-specific feature pruning for Step 6 models.
+        Apply optimized feature selection for Step 6 models.
         
         Args:
             features_df: Input features DataFrame
@@ -277,25 +285,41 @@ class HMMBasedTrainingStep:
             architecture: Model architecture (CNN, TCN, Transformer, LightGBM)
             
         Returns:
-            Tuple of (pruned_features_df, pruning_metadata)
+            Tuple of (optimized_features_df, selection_metadata)
         """
         try:
-            from src.training.model_specific_pruning import ModelSpecificPruning
+            if self.optimized_feature_selection is None:
+                self.logger.warning("⚠️ Optimized feature selection not available, using original features")
+                return features_df, {"error": "optimized_feature_selection_not_available"}
             
-            # Initialize model-specific pruning
-            pruning_manager = ModelSpecificPruning(self.config)
+            # Determine model type for feature selection
+            if architecture in ["CNN", "TCN", "Transformer"]:
+                model_type = "neural_networks"
+            elif architecture == "LightGBM":
+                model_type = "ensemble_models"
+            else:
+                model_type = "general"
             
-            # Apply pruning based on model architecture
-            pruned_df, pruning_metadata = pruning_manager.prune_for_step6_hmm_models(
-                features_df, target, timeframe, architecture
+            # Apply optimized feature selection
+            optimized_features, selection_metadata = self.optimized_feature_selection.select_features_optimized(
+                features_df, target, model_type=model_type, step_name="step6_hmm"
             )
             
-            self.logger.info(f"✅ Model-specific pruning for {timeframe} {architecture}: {len(features_df.columns)} -> {len(pruned_df.columns)} features")
-            return pruned_df, pruning_metadata
+            self.logger.info(f"✅ Optimized feature selection for {timeframe} {architecture}: {len(features_df.columns)} -> {len(optimized_features.columns)} features")
+            
+            # Log performance metrics
+            if "performance_metrics" in selection_metadata:
+                perf_metrics = selection_metadata["performance_metrics"]
+                self.logger.info(f"📊 Feature selection performance for {architecture}:")
+                self.logger.info(f"   - VIF calculation: {perf_metrics.get('vif_calculation_time', 0):.2f}s")
+                self.logger.info(f"   - SHAP analysis: {perf_metrics.get('shap_calculation_time', 0):.2f}s")
+                self.logger.info(f"   - Total time: {selection_metadata.get('total_time', 0):.2f}s")
+            
+            return optimized_features, selection_metadata
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Model-specific pruning failed, using original features: {e}")
-            return features_df, {"pruning_failed": True, "error": str(e)}
+            self.logger.warning(f"⚠️ Optimized feature selection failed, using original features: {e}")
+            return features_df, {"selection_failed": True, "error": str(e)}
 
     @handle_errors(
         exceptions=(Exception,),
@@ -1279,14 +1303,14 @@ class HMMBasedTrainingStep:
             X = data[feature_columns]
             y = data["target"]
             
-            # Apply model-specific feature pruning
-            X_pruned, pruning_metadata = self._apply_model_specific_pruning(
+            # Apply optimized feature selection based on model architecture
+            X_optimized, feature_selection_metadata = self._apply_optimized_feature_selection(
                 X, y, timeframe, architecture
             )
             
-            # Update feature columns after pruning
-            feature_columns = list(X_pruned.columns)
-            X = X_pruned
+            # Update feature columns after optimization
+            feature_columns = list(X_optimized.columns)
+            X = X_optimized
 
             # Perform regime-aware time series split
             (

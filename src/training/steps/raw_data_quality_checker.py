@@ -1792,7 +1792,7 @@ class RawDataQualityChecker:
                 
                 # Re-validate the updated data
                 self.logger.info("🔍 Re-validating data after download...")
-                updated_results, _ = self.validate_raw_data(updated_data, symbol, exchange, auto_download_missing=False)
+                updated_results, updated_data = self.validate_raw_data(updated_data, symbol, exchange, auto_download_missing=False)
                 
                 # Update quality score
                 results["data_quality_score"] = updated_results["data_quality_score"]

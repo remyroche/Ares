@@ -1,89 +1,113 @@
-# Import mapping for step files
-# Only import files that actually exist to avoid import errors
+"""
+Training steps module with explicit imports.
+
+This module provides access to all training step classes and functions
+with explicit imports to avoid namespace pollution.
+"""
+
+# Import specific classes from each step module
+try:
+    from .step1_data_collection import DataCollectionStep
+except ImportError:
+    DataCollectionStep = None
 
 try:
-    from .step1_data_collection import *
+    from .step2_feature_engineering import FeatureEngineeringStep
 except ImportError:
-    pass
+    FeatureEngineeringStep = None
 
 try:
-    from .step2_feature_engineering import *
+    from .step3_hmm_regime_discovery import HMMRegimeDiscoveryStep
 except ImportError:
-    pass
+    HMMRegimeDiscoveryStep = None
 
 try:
-    from .step3_hmm_regime_discovery import *
+    from .step4_processing_labeling import ProcessingLabelingStep
 except ImportError:
-    pass
+    ProcessingLabelingStep = None
 
 try:
-    from .step4_processing_labeling import *
+    from .step4_market_regime_classification import MarketRegimeClassificationStep
 except ImportError:
-    pass
+    MarketRegimeClassificationStep = None
 
 try:
-    from .step4_market_regime_classification import *
+    from .step5_regime_data_splitting import RegimeDataSplittingStep
 except ImportError:
-    pass
+    RegimeDataSplittingStep = None
 
 try:
-    from .step5_regime_data_splitting import *
+    from .step6_hmm_based_training import HMMBasedTrainingStep
 except ImportError:
-    pass
-
-# step4_8_regime_forecasting deprecated; forecasting artifacts are emitted by step6_hmm_based_training
+    HMMBasedTrainingStep = None
 
 try:
-    from .step6_hmm_based_training import *
+    from .step5_5_unified_regime_intelligence import UnifiedRegimeIntelligenceStep
 except ImportError:
-    pass
+    UnifiedRegimeIntelligenceStep = None
 
 try:
-    from .step5_5_unified_regime_intelligence import *
+    from .step7_analyst_enhancement import AnalystEnhancementStep
 except ImportError:
-    pass
+    AnalystEnhancementStep = None
 
 try:
-    from .step7_analyst_enhancement import *
+    from .step8_tactician_labeling import TacticianLabelingStep
 except ImportError:
-    pass
+    TacticianLabelingStep = None
 
 try:
-    from .step8_tactician_labeling import *
+    from .step9_tactician_specialist_training import TacticianSpecialistTrainingStep
 except ImportError:
-    pass
+    TacticianSpecialistTrainingStep = None
 
 try:
-    from .step9_tactician_specialist_training import *
+    from .step10_confidence_calibration import ConfidenceCalibrationStep
 except ImportError:
-    pass
+    ConfidenceCalibrationStep = None
 
 try:
-    from .step10_confidence_calibration import *
+    from .step11_final_parameters_optimization import FinalParametersOptimizationStep
 except ImportError:
-    pass
+    FinalParametersOptimizationStep = None
 
 try:
-    from .step11_final_parameters_optimization import *
+    from .step12_walk_forward_validation import WalkForwardValidationStep
 except ImportError:
-    pass
+    WalkForwardValidationStep = None
 
 try:
-    from .step12_walk_forward_validation import *
+    from .step13_monte_carlo_validation import MonteCarloValidationStep
 except ImportError:
-    pass
+    MonteCarloValidationStep = None
 
 try:
-    from .step13_monte_carlo_validation import *
+    from .step14_ab_testing import ABTestingStep
 except ImportError:
-    pass
+    ABTestingStep = None
 
 try:
-    from .step14_ab_testing import *
+    from .step15_saving import SavingStep
 except ImportError:
-    pass
+    SavingStep = None
 
-try:
-    from .step15_saving import *
-except ImportError:
-    pass
+# Define __all__ to control what gets exported
+__all__ = [
+    "DataCollectionStep",
+    "FeatureEngineeringStep", 
+    "HMMRegimeDiscoveryStep",
+    "ProcessingLabelingStep",
+    "MarketRegimeClassificationStep",
+    "RegimeDataSplittingStep",
+    "HMMBasedTrainingStep",
+    "UnifiedRegimeIntelligenceStep",
+    "AnalystEnhancementStep",
+    "TacticianLabelingStep",
+    "TacticianSpecialistTrainingStep",
+    "ConfidenceCalibrationStep",
+    "FinalParametersOptimizationStep",
+    "WalkForwardValidationStep",
+    "MonteCarloValidationStep",
+    "ABTestingStep",
+    "SavingStep",
+]

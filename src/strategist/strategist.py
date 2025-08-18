@@ -797,15 +797,24 @@ class Strategist:
                 "max_drawdown": float(self.risk_config.get("max_daily_loss", 0.02)),
             }
 
+            # Import constants
+            from src.config.constants import (
+                BEAR_STOP_LOSS_MULTIPLIER,
+                BEAR_TAKE_PROFIT_MULTIPLIER,
+                BULL_TAKE_PROFIT_MULTIPLIER,
+                SIDEWAYS_STOP_LOSS_MULTIPLIER,
+                SIDEWAYS_TAKE_PROFIT_MULTIPLIER,
+            )
+            
             # Adjust based on regime
             if regime == "BEAR":
-                risk_params["stop_loss_percentage"] *= 0.8  # Tighter stop loss
-                risk_params["take_profit_percentage"] *= 0.7  # Lower take profit
+                risk_params["stop_loss_percentage"] *= BEAR_STOP_LOSS_MULTIPLIER  # Tighter stop loss
+                risk_params["take_profit_percentage"] *= BEAR_TAKE_PROFIT_MULTIPLIER  # Lower take profit
             elif regime == "BULL":
-                risk_params["take_profit_percentage"] *= 1.3  # Higher take profit
+                risk_params["take_profit_percentage"] *= BULL_TAKE_PROFIT_MULTIPLIER  # Higher take profit
             elif regime == "SIDEWAYS":
-                risk_params["stop_loss_percentage"] *= 0.6  # Very tight stop loss
-                risk_params["take_profit_percentage"] *= 0.5  # Lower take profit
+                risk_params["stop_loss_percentage"] *= SIDEWAYS_STOP_LOSS_MULTIPLIER  # Very tight stop loss
+                risk_params["take_profit_percentage"] *= SIDEWAYS_TAKE_PROFIT_MULTIPLIER  # Lower take profit
 
             # Note: Volatility-based position sizing handled by tactician/position_sizer.py
             # This provides basic risk parameters for the tactician to use
@@ -891,13 +900,10 @@ class Strategist:
             float: Position size adjustment multiplier
         """
         try:
-            regime_adjustments = {
-                "BULL": 1.2,  # Increase position size in bullish regime
-                "BEAR": 0.8,  # Decrease position size in bearish regime
-                "SIDEWAYS": 1.0,  # No adjustment in sideways regime
-                # Legacy S/R/Candle code removed: 0.5,  # Significantly reduce position size
-                # Legacy S/R/Candle code removed: 1.1,  # Slight increase for SR action
-            }
+            # Import constants
+            from src.config.constants import DEFAULT_REGIME_ADJUSTMENTS
+            
+            regime_adjustments = DEFAULT_REGIME_ADJUSTMENTS
 
             return regime_adjustments.get(regime, 1.0)
 
@@ -937,9 +943,12 @@ class Strategist:
                 "timeframe": "1m",
             }
 
+            # Import constants
+            from src.config.constants import DEFAULT_MIN_CONFIDENCE_THRESHOLD
+            
             # Generate long entry conditions based on ML confidence
             for increase_level, confidence in confidence_scores.items():
-                if confidence >= 0.7:  # High confidence threshold
+                if confidence >= DEFAULT_MIN_CONFIDENCE_THRESHOLD:  # High confidence threshold
                     entry_signals["long_conditions"].append(
                         {
                             "type": "ml_high_confidence",
@@ -951,7 +960,7 @@ class Strategist:
 
             # Generate short entry conditions based on adversarial confidences
             for decrease_level, probability in adversarial_confidences.items():
-                if probability >= 0.7:  # High probability threshold
+                if probability >= DEFAULT_MIN_CONFIDENCE_THRESHOLD:  # High probability threshold
                     entry_signals["short_conditions"].append(
                         {
                             "type": "ml_high_probability_decrease",

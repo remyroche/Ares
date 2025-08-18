@@ -127,23 +127,31 @@ class AnalystEnsembleCreationStep:
     ) -> Dict[str, Any]:
         """Create ensemble from loaded models."""
         try:
-            # Apply model-specific pruning for ensemble creation
+            # Apply optimized feature selection for ensemble creation
             try:
-                from src.training.model_specific_pruning import ModelSpecificPruning
-                pruning_manager = ModelSpecificPruning(self.config)
+                from src.training.optimized_feature_selection_manager import OptimizedFeatureSelectionManager
+                optimized_feature_selection = OptimizedFeatureSelectionManager(self.config)
                 
-                # Get sample data for pruning (if available)
-                sample_data = self._get_sample_data_for_pruning(data_dir, symbol, exchange)
+                # Get sample data for feature selection (if available)
+                sample_data = self._get_sample_data_for_feature_selection(data_dir, symbol, exchange)
                 if sample_data is not None:
                     features_df, target = sample_data
                     
-                    pruned_features, pruning_metadata = pruning_manager.prune_for_step7_ensemble(
-                        features_df, target
+                    optimized_features, selection_metadata = optimized_feature_selection.select_features_optimized(
+                        features_df, target, model_type="ensemble_models", step_name="step7_ensemble"
                     )
                     
-                    logger.info(f"✅ Applied ensemble-specific pruning: {features_df.shape[1]} -> {pruned_features.shape[1]} features")
+                    logger.info(f"✅ Applied optimized feature selection for ensemble: {features_df.shape[1]} -> {optimized_features.shape[1]} features")
                     
-                    # Store pruning metadata
+                    # Log performance metrics
+                    if "performance_metrics" in selection_metadata:
+                        perf_metrics = selection_metadata["performance_metrics"]
+                        logger.info(f"📊 Ensemble feature selection performance:")
+                        logger.info(f"   - VIF calculation: {perf_metrics.get('vif_calculation_time', 0):.2f}s")
+                        logger.info(f"   - SHAP analysis: {perf_metrics.get('shap_calculation_time', 0):.2f}s")
+                        logger.info(f"   - Total time: {selection_metadata.get('total_time', 0):.2f}s")
+                    
+                    # Store selection metadata
                     ensemble_result = {
                         "ensemble_models": ensemble_models,
                         "ensemble_weights": {},
@@ -154,7 +162,7 @@ class AnalystEnsembleCreationStep:
                             "model_count": sum(
                                 len(models) for models in ensemble_models.values()
                             ),
-                            "pruning_metadata": pruning_metadata,
+                            "feature_selection_metadata": selection_metadata,
                         },
                     }
                 else:
@@ -172,7 +180,7 @@ class AnalystEnsembleCreationStep:
                     }
                     
             except Exception as e:
-                logger.warning(f"⚠️ Model-specific pruning failed: {e}")
+                logger.warning(f"⚠️ Optimized feature selection failed: {e}")
                 ensemble_result = {
                     "ensemble_models": ensemble_models,
                     "ensemble_weights": {},
@@ -201,8 +209,8 @@ class AnalystEnsembleCreationStep:
             logger.error(f"❌ Error creating ensemble: {e}")
             return {}
     
-    def _get_sample_data_for_pruning(self, data_dir: str, symbol: str, exchange: str) -> Optional[Tuple[pd.DataFrame, pd.Series]]:
-        """Get sample data for pruning from existing features."""
+    def _get_sample_data_for_feature_selection(self, data_dir: str, symbol: str, exchange: str) -> Optional[Tuple[pd.DataFrame, pd.Series]]:
+        """Get sample data for feature selection from existing features."""
         try:
             # Try to load sample features and labels from Step 2 artifacts
             features_file = f"{data_dir}/{exchange}_{symbol}_features_train.parquet"
@@ -230,7 +238,7 @@ class AnalystEnsembleCreationStep:
             return None
             
         except Exception as e:
-            logger.warning(f"⚠️ Failed to get sample data for pruning: {e}")
+            logger.warning(f"⚠️ Failed to get sample data for feature selection: {e}")
             return None
 
     def _create_placeholder_ensemble(

@@ -14,6 +14,13 @@ from src.utils.warning_symbols import (
     invalid,
     warning,
 )
+from src.utils.trading_decorators import (
+    comprehensive_model_decorator,
+    track_model_performance,
+    monitor_performance,
+    retry_with_backoff,
+    get_trade_tracker
+)
 
 
 class EnsembleManager:
@@ -50,6 +57,9 @@ class EnsembleManager:
             "enable_ensemble_optimization",
             True,
         )
+        
+        # Trade tracking
+        self.trade_tracker = get_trade_tracker()
 
     @handle_specific_errors(
         error_handlers={
@@ -141,14 +151,17 @@ class EnsembleManager:
             self.print(failed(error_msg))
             raise
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False, "Invalid ensemble parameters"),
-            AttributeError: (False, "Missing ensemble components"),
-            KeyError: (False, "Missing required ensemble data"),
-        },
-        default_return=False,
-        context="ensemble creation",
+    @comprehensive_model_decorator(
+        enable_error_handling=True,
+        enable_tracking=True,
+        enable_performance_monitoring=True,
+        enable_retry=True,
+        model_name="EnsembleManager",
+        capture_predictions=True,
+        capture_feature_importance=True,
+        capture_confidence=True,
+        retry_attempts=3,
+        alert_threshold_ms=20000.0  # 20 seconds for ensemble creation
     )
     async def create_ensembles(
         self,

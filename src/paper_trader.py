@@ -20,6 +20,15 @@ from src.utils.warning_symbols import (
     invalid,
     validation_error,
 )
+from src.utils.trading_decorators import (
+    comprehensive_trade_decorator,
+    track_trade,
+    monitor_performance,
+    validate_trade_parameters,
+    get_trade_tracker,
+    TradeSide,
+    ExecutionMode
+)
 
 
 class PaperTrader:
@@ -51,6 +60,9 @@ class PaperTrader:
         self.max_position_size: float = self.trader_config.get("max_position_size", 0.1)
         self.commission_rate: float = self.trader_config.get("commission_rate", 0.001)
         self.slippage_rate: float = self.trader_config.get("slippage_rate", 0.0005)
+        
+        # Trade tracking
+        self.trade_tracker = get_trade_tracker()
 
     @handle_specific_errors(
         error_handlers={
@@ -188,14 +200,15 @@ class PaperTrader:
                 initialization_error(f"Error initializing trading state: {e}"),
             )
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False, "Invalid trade parameters"),
-            AttributeError: (False, "Missing trade components"),
-            KeyError: (False, "Missing required trade data"),
-        },
-        default_return=False,
-        context="buy order execution",
+    @comprehensive_trade_decorator(
+        enable_error_handling=True,
+        enable_tracking=True,
+        enable_performance_monitoring=True,
+        enable_validation=True,
+        enable_rate_limiting=False,  # Not needed for paper trading
+        enable_circuit_breaker=True,
+        retry_attempts=3,
+        alert_threshold_ms=3000.0
     )
     async def execute_buy_order(
         self,
@@ -203,6 +216,13 @@ class PaperTrader:
         quantity: float,
         price: float,
         timestamp: datetime,
+        model_weights: dict[str, float] = None,
+        model_confidences: dict[str, float] = None,
+        regime_analysis: dict[str, Any] = None,
+        hmm_regime: str = '',
+        support_resistance_levels: dict[str, float] = None,
+        market_conditions: dict[str, Any] = None,
+        risk_metrics: dict[str, float] = None
     ) -> bool:
         """
         Execute a buy order.
@@ -257,8 +277,10 @@ class PaperTrader:
             position["avg_price"] = new_avg_price
             position["total_cost"] = new_total_cost
 
-            # Record trade
+            # Create trade record with comprehensive tracking data
+            trade_id = f"BUY_{symbol}_{timestamp.strftime('%Y%m%d_%H%M%S')}"
             trade_record = {
+                "trade_id": trade_id,
                 "timestamp": timestamp,
                 "symbol": symbol,
                 "side": "BUY",
@@ -268,6 +290,14 @@ class PaperTrader:
                 "commission": commission,
                 "slippage": slippage,
                 "balance_after": self.balance,
+                "execution_mode": ExecutionMode.PAPER.value,
+                "model_weights": model_weights or {},
+                "model_confidences": model_confidences or {},
+                "regime_analysis": regime_analysis or {},
+                "hmm_regime": hmm_regime,
+                "support_resistance_levels": support_resistance_levels or {},
+                "market_conditions": market_conditions or {},
+                "risk_metrics": risk_metrics or {}
             }
             self.trade_history.append(trade_record)
 
@@ -280,14 +310,15 @@ class PaperTrader:
             self.logger.exception(execution_error(f"Error executing buy order: {e}"))
             return False
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False, "Invalid trade parameters"),
-            AttributeError: (False, "Missing trade components"),
-            KeyError: (False, "Missing required trade data"),
-        },
-        default_return=False,
-        context="sell order execution",
+    @comprehensive_trade_decorator(
+        enable_error_handling=True,
+        enable_tracking=True,
+        enable_performance_monitoring=True,
+        enable_validation=True,
+        enable_rate_limiting=False,  # Not needed for paper trading
+        enable_circuit_breaker=True,
+        retry_attempts=3,
+        alert_threshold_ms=3000.0
     )
     async def execute_sell_order(
         self,
@@ -295,6 +326,13 @@ class PaperTrader:
         quantity: float,
         price: float,
         timestamp: datetime,
+        model_weights: dict[str, float] = None,
+        model_confidences: dict[str, float] = None,
+        regime_analysis: dict[str, Any] = None,
+        hmm_regime: str = '',
+        support_resistance_levels: dict[str, float] = None,
+        market_conditions: dict[str, Any] = None,
+        risk_metrics: dict[str, float] = None
     ) -> bool:
         """
         Execute a sell order.
@@ -356,8 +394,10 @@ class PaperTrader:
             if new_quantity <= 0:
                 del self.positions[symbol]
 
-            # Record trade
+            # Create trade record with comprehensive tracking data
+            trade_id = f"SELL_{symbol}_{timestamp.strftime('%Y%m%d_%H%M%S')}"
             trade_record = {
+                "trade_id": trade_id,
                 "timestamp": timestamp,
                 "symbol": symbol,
                 "side": "SELL",
@@ -368,6 +408,14 @@ class PaperTrader:
                 "slippage": slippage,
                 "net_proceeds": net_proceeds,
                 "balance_after": self.balance,
+                "execution_mode": ExecutionMode.PAPER.value,
+                "model_weights": model_weights or {},
+                "model_confidences": model_confidences or {},
+                "regime_analysis": regime_analysis or {},
+                "hmm_regime": hmm_regime,
+                "support_resistance_levels": support_resistance_levels or {},
+                "market_conditions": market_conditions or {},
+                "risk_metrics": risk_metrics or {}
             }
             self.trade_history.append(trade_record)
 

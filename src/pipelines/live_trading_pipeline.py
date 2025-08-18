@@ -27,6 +27,17 @@ from src.utils.warning_symbols import (
     missing,
     warning,
 )
+from src.utils.trading_decorators import (
+    comprehensive_trade_decorator,
+    track_trade,
+    monitor_performance,
+    validate_trade_parameters,
+    rate_limit,
+    circuit_breaker,
+    get_trade_tracker,
+    TradeSide,
+    ExecutionMode
+)
 
 
 class LiveTradingPipeline:
@@ -71,6 +82,9 @@ class LiveTradingPipeline:
         # Execution runtime components
         self.order_manager: EnhancedOrderManager | None = None
         self.exchange_client = None
+        
+        # Trade tracking
+        self.trade_tracker = get_trade_tracker()
 
     @handle_specific_errors(
         error_handlers={
@@ -339,14 +353,16 @@ class LiveTradingPipeline:
         except Exception:
             self.print(initialization_error("Error initializing risk management: {e}"))
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False, "Invalid trading parameters"),
-            AttributeError: (False, "Missing trading components"),
-            KeyError: (False, "Missing required trading data"),
-        },
-        default_return=False,
-        context="trading execution",
+    @comprehensive_trade_decorator(
+        enable_error_handling=True,
+        enable_tracking=True,
+        enable_performance_monitoring=True,
+        enable_validation=True,
+        enable_rate_limiting=True,
+        enable_circuit_breaker=True,
+        max_calls=50,
+        time_window=60.0,
+        alert_threshold_ms=2000.0
     )
     async def execute_trading(self, market_data: dict[str, Any]) -> bool:
         """
@@ -531,10 +547,11 @@ class LiveTradingPipeline:
             self.print(error("Error performing signal generation: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="order execution",
+    @track_trade(
+        capture_model_data=True,
+        capture_regime_data=True,
+        capture_market_conditions=True,
+        capture_risk_metrics=True
     )
     async def _perform_order_execution(
         self,

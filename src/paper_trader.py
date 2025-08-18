@@ -216,13 +216,7 @@ class PaperTrader:
         quantity: float,
         price: float,
         timestamp: datetime,
-        model_weights: dict[str, float] = None,
-        model_confidences: dict[str, float] = None,
-        regime_analysis: dict[str, Any] = None,
-        hmm_regime: str = '',
-        support_resistance_levels: dict[str, float] = None,
-        market_conditions: dict[str, Any] = None,
-        risk_metrics: dict[str, float] = None
+        trade_context: TradeContext = None
     ) -> bool:
         """
         Execute a buy order.
@@ -291,13 +285,13 @@ class PaperTrader:
                 "slippage": slippage,
                 "balance_after": self.balance,
                 "execution_mode": ExecutionMode.PAPER.value,
-                "model_weights": model_weights or {},
-                "model_confidences": model_confidences or {},
-                "regime_analysis": regime_analysis or {},
-                "hmm_regime": hmm_regime,
-                "support_resistance_levels": support_resistance_levels or {},
-                "market_conditions": market_conditions or {},
-                "risk_metrics": risk_metrics or {}
+                "model_weights": trade_context.model_weights if trade_context else {},
+                "model_confidences": trade_context.model_confidences if trade_context else {},
+                "regime_analysis": trade_context.regime_analysis if trade_context else {},
+                "hmm_regime": trade_context.hmm_regime if trade_context else "",
+                "support_resistance_levels": trade_context.support_resistance_levels if trade_context else {},
+                "market_conditions": trade_context.market_conditions if trade_context else {},
+                "risk_metrics": trade_context.risk_metrics if trade_context else {}
             }
             self.trade_history.append(trade_record)
 
@@ -326,13 +320,7 @@ class PaperTrader:
         quantity: float,
         price: float,
         timestamp: datetime,
-        model_weights: dict[str, float] = None,
-        model_confidences: dict[str, float] = None,
-        regime_analysis: dict[str, Any] = None,
-        hmm_regime: str = '',
-        support_resistance_levels: dict[str, float] = None,
-        market_conditions: dict[str, Any] = None,
-        risk_metrics: dict[str, float] = None
+        trade_context: TradeContext = None
     ) -> bool:
         """
         Execute a sell order.
@@ -409,13 +397,13 @@ class PaperTrader:
                 "net_proceeds": net_proceeds,
                 "balance_after": self.balance,
                 "execution_mode": ExecutionMode.PAPER.value,
-                "model_weights": model_weights or {},
-                "model_confidences": model_confidences or {},
-                "regime_analysis": regime_analysis or {},
-                "hmm_regime": hmm_regime,
-                "support_resistance_levels": support_resistance_levels or {},
-                "market_conditions": market_conditions or {},
-                "risk_metrics": risk_metrics or {}
+                "model_weights": trade_context.model_weights if trade_context else {},
+                "model_confidences": trade_context.model_confidences if trade_context else {},
+                "regime_analysis": trade_context.regime_analysis if trade_context else {},
+                "hmm_regime": trade_context.hmm_regime if trade_context else "",
+                "support_resistance_levels": trade_context.support_resistance_levels if trade_context else {},
+                "market_conditions": trade_context.market_conditions if trade_context else {},
+                "risk_metrics": trade_context.risk_metrics if trade_context else {}
             }
             self.trade_history.append(trade_record)
 

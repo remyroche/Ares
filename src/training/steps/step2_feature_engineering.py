@@ -16,6 +16,9 @@ from src.utils.decorators import with_tracing_span, guard_dataframe_nulls
 # Import the auto-fix decorator for data quality issues
 from src.training.steps.raw_data_quality_checker import auto_fix_data_quality_issues
 
+# Import feature selection manager
+from src.training.feature_selection_manager import FeatureSelectionManager
+
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
     validate_step_prerequisites,
@@ -1431,6 +1434,34 @@ async def run_step(
         except Exception as e:
             logger.warning(f"⚠️ Pickle compatibility write skipped: {e}")
 
+        # Apply feature selection to reduce features to target count
+        try:
+            # Initialize feature selection manager
+            feature_selection_manager = FeatureSelectionManager(config)
+            
+            # Perform feature selection ONLY on the training data using the real target
+            # Get the actual target labels from the labeled data
+            if "target" not in labeled["train"].columns:
+                logger.warning("⚠️ Target column 'target' not found in training data, skipping feature selection")
+            else:
+                train_target = labeled["train"]["target"].reindex(X_tr.index)
+                
+                logger.info("Applying feature selection on the training set...")
+                X_tr, selection_metadata = feature_selection_manager.select_features_step2(
+                    X_tr, train_target, symbol, exchange, data_dir
+                )
+                
+                selected_features = list(X_tr.columns)
+                logger.info(f"✅ Feature selection completed: {len(selected_features)} features selected from training data.")
+                
+                # Apply the same feature selection to validation and test sets
+                X_vl = X_vl[selected_features]
+                X_te = X_te[selected_features]
+                logger.info("Applied selected features to validation and test sets.")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Feature selection failed, using original features: {e}")
+        
         # Save feature artifacts for persistence
         try:
             features_dict = {

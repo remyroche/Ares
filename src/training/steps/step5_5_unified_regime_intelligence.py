@@ -1185,6 +1185,27 @@ class UnifiedRegimeIntelligenceStep:
     async def _train_model(self, train_data: Dict[str, Any]) -> bool:
         """Train the unified regime intelligence model."""
         try:
+            # Apply model-specific pruning for Step 6.5
+            if "features" in train_data and len(train_data["features"]) > 0:
+                from src.training.model_specific_pruning import ModelSpecificPruning
+                pruning_manager = ModelSpecificPruning(self.config)
+                
+                # Convert features to DataFrame for pruning
+                features_df = pd.DataFrame(train_data["features"].numpy())
+                # Use real target labels for pruning, not a dummy target.
+                # The target should be available in `train_data`.
+                if "target" not in train_data:
+                    raise ValueError("Target labels are required for feature pruning but not found in train_data.")
+                target_series = pd.Series(train_data["target"].numpy())
+                
+                pruned_features, pruning_metadata = pruning_manager.prune_for_step6_5_unified_regime(
+                    features_df, target_series
+                )
+                
+                # Update features with pruned version
+                train_data["features"] = torch.FloatTensor(pruned_features.values)
+                self.logger.info(f"✅ Applied model-specific pruning: {features_df.shape[1]} -> {pruned_features.shape[1]} features")
+            
             # Split data
             num_samples = train_data["num_sequences"]
             split_idx = int(num_samples * (1 - self.validation_split))

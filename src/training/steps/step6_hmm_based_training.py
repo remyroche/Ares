@@ -296,71 +296,39 @@ class HMMBasedTrainingStep:
             Tuple of (optimized_features_df, optimization_metadata)
         """
         try:
-            if self.enhanced_lm_optimizer is not None:
-                # Use enhanced LM optimizer for comprehensive optimization
-                self.logger.info(f"🔄 Applying enhanced LM optimization for {timeframe} {architecture}")
-                
-                # Determine model type
-                model_type = "classification" if target.dtype == 'object' or len(target.unique()) < 10 else "regression"
-                
-                # Apply comprehensive optimization
-                optimization_results = await self.enhanced_lm_optimizer.optimize_lm_model(
-                    step_name="step6",
-                    features_df=features_df,
-                    target=target,
-                    model_type=model_type,
-                    architecture=architecture
-                )
-                
-                if optimization_results and "feature_selection" in optimization_results:
-                    # Extract optimized features from results
-                    optimized_features = features_df  # Will be updated based on optimization results
-                    
-                    self.logger.info(f"✅ Enhanced optimization completed for {timeframe} {architecture}")
-                    self.logger.info(f"📊 Optimization metrics:")
-                    self.logger.info(f"   - Feature selection: {optimization_results.get('feature_selection', {}).get('final_features', len(features_df.columns))} features")
-                    self.logger.info(f"   - Regularization: {optimization_results.get('regularization', {})}")
-                    self.logger.info(f"   - Hyperparameter optimization: {optimization_results.get('hyperparameter_optimization', {})}")
-                    
-                    return optimized_features, optimization_results
-                else:
-                    self.logger.warning("⚠️ Enhanced optimization failed, falling back to basic feature selection")
+            # Enhanced LM optimizer is required - no fallbacks
+            if self.enhanced_lm_optimizer is None:
+                raise RuntimeError("Enhanced LM optimizer is required but not initialized")
             
-            # Fallback to basic optimized feature selection
-            if self.optimized_feature_selection is not None:
-                self.logger.info(f"🔄 Applying basic feature selection for {timeframe} {architecture}")
-                
-                # Determine model type for feature selection
-                if architecture in ["CNN", "TCN", "Transformer"]:
-                    model_type = "neural_networks"
-                elif architecture == "LightGBM":
-                    model_type = "ensemble_models"
-                else:
-                    model_type = "general"
-                
-                # Apply optimized feature selection
-                optimized_features, selection_metadata = self.optimized_feature_selection.select_features_optimized(
-                    features_df, target, model_type=model_type, step_name="step6_hmm"
-                )
-                
-                self.logger.info(f"✅ Basic feature selection for {timeframe} {architecture}: {len(features_df.columns)} -> {len(optimized_features.columns)} features")
-                
-                # Log performance metrics
-                if "performance_metrics" in selection_metadata:
-                    perf_metrics = selection_metadata["performance_metrics"]
-                    self.logger.info(f"📊 Feature selection performance for {architecture}:")
-                    self.logger.info(f"   - VIF calculation: {perf_metrics.get('vif_calculation_time', 0):.2f}s")
-                    self.logger.info(f"   - SHAP analysis: {perf_metrics.get('shap_calculation_time', 0):.2f}s")
-                    self.logger.info(f"   - Total time: {selection_metadata.get('total_time', 0):.2f}s")
-                
-                return optimized_features, selection_metadata
-            else:
-                self.logger.warning("⚠️ No optimization available, using original features")
-                return features_df, {"error": "no_optimization_available"}
+            # Use enhanced LM optimizer for comprehensive optimization
+            self.logger.info(f"🔄 Applying enhanced LM optimization for {timeframe} {architecture}")
+            
+            # Determine model type
+            model_type = "classification" if target.dtype == 'object' or len(target.unique()) < 10 else "regression"
+            
+            # Apply comprehensive optimization
+            optimization_results = await self.enhanced_lm_optimizer.optimize_lm_model(
+                step_name="step6",
+                features_df=features_df,
+                target=target,
+                model_type=model_type,
+                architecture=architecture
+            )
+            
+            # Extract optimized features from results
+            optimized_features = features_df  # Will be updated based on optimization results
+            
+            self.logger.info(f"✅ Enhanced optimization completed for {timeframe} {architecture}")
+            self.logger.info(f"📊 Optimization metrics:")
+            self.logger.info(f"   - Feature selection: {optimization_results.get('feature_selection', {}).get('final_features', len(features_df.columns))} features")
+            self.logger.info(f"   - Regularization: {optimization_results.get('regularization', {})}")
+            self.logger.info(f"   - Hyperparameter optimization: {optimization_results.get('hyperparameter_optimization', {})}")
+            
+            return optimized_features, optimization_results
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Optimization failed, using original features: {e}")
-            return features_df, {"optimization_failed": True, "error": str(e)}
+            self.logger.error(f"❌ Enhanced optimization failed for {timeframe} {architecture}: {e}")
+            raise RuntimeError(f"Enhanced optimization failed for {timeframe} {architecture}: {e}")
 
     @handle_errors(
         exceptions=(Exception,),

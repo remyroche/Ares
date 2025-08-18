@@ -1149,7 +1149,9 @@ def _assign_block(feature_name: str) -> str:
     # 4. SUPPORT_RESISTANCE BLOCK - Distance to levels (ESSENTIAL)
     sr_patterns = [
         "support", "resistance", "sr_", "distance_to_", "normalized_distance_to_",
-        "level", "pivot", "fibonacci", "fib", "retracement", "extension"
+        "level", "pivot", "fibonacci", "fib", "retracement", "extension",
+        "proximity_score", "strength_score", "clarity_factor", "directional_pressure",
+        "sr_score", "delta_sr_score"
     ]
     
     for pattern in sr_patterns:
@@ -1158,6 +1160,105 @@ def _assign_block(feature_name: str) -> str:
 
     # Default to exclude any other features not explicitly categorized
     return "exclude"
+
+
+def _generate_fallback_sr_features(full_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Generate fallback support/resistance features when none are available.
+    
+    This function creates basic SR features using price data to ensure the SR block
+    always has features to work with.
+    """
+    try:
+        if full_df.empty:
+            return pd.DataFrame()
+        
+        # Check if we have OHLCV data
+        required_cols = ["open", "high", "low", "close", "volume"]
+        if not all(col in full_df.columns for col in required_cols):
+            logger.warning("⚠️ Missing OHLCV columns for fallback SR features")
+            return pd.DataFrame()
+        
+        close = full_df["close"].astype(float)
+        high = full_df["high"].astype(float)
+        low = full_df["low"].astype(float)
+        volume = full_df["volume"].astype(float)
+        
+        # Calculate basic SR levels using rolling windows
+        window_size = min(100, len(close) // 4)  # Use 25% of data or 100 periods, whichever is smaller
+        if window_size < 10:
+            window_size = 10
+        
+        # Generate support and resistance levels
+        support_level = low.rolling(window=window_size, min_periods=1).min()
+        resistance_level = high.rolling(window=window_size, min_periods=1).max()
+        
+        # Calculate ATR for normalization
+        tr1 = high - low
+        tr2 = np.abs(high - close.shift(1))
+        tr3 = np.abs(low - close.shift(1))
+        true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr = true_range.rolling(window=14, min_periods=1).mean()
+        
+        # Generate comprehensive SR features
+        features = {}
+        
+        # Basic distance features
+        features["distance_to_support"] = (close - support_level).abs()
+        features["distance_to_resistance"] = (resistance_level - close).abs()
+        
+        # Normalized distances
+        features["normalized_distance_to_support"] = features["distance_to_support"] / close
+        features["normalized_distance_to_resistance"] = features["distance_to_resistance"] / close
+        
+        # ATR-normalized distances
+        features["atr_normalized_distance_to_support"] = features["distance_to_support"] / (atr + 0.001)
+        features["atr_normalized_distance_to_resistance"] = features["distance_to_resistance"] / (atr + 0.001)
+        
+        # Proximity score (market congestion indicator)
+        total_distance = features["distance_to_support"] + features["distance_to_resistance"]
+        features["sr_proximity_score"] = 1.0 / (1.0 + total_distance / close * 10)
+        
+        # Strength scores (based on volume and price action)
+        volume_ratio = volume / volume.rolling(window=20, min_periods=1).mean()
+        features["support_strength_score"] = np.clip(volume_ratio * 0.5 + 0.3, 0.1, 1.0)
+        features["resistance_strength_score"] = np.clip(volume_ratio * 0.5 + 0.3, 0.1, 1.0)
+        
+        # Clarity factor (simplified version)
+        price_volatility = close.pct_change().rolling(window=20, min_periods=1).std()
+        features["clarity_factor"] = np.clip(1.0 - price_volatility * 10, 0.1, 1.0)
+        
+        # Directional pressure
+        ndrs = features["normalized_distance_to_resistance"]
+        ndss = features["normalized_distance_to_support"]
+        features["directional_pressure"] = (ndrs - ndss) / (ndrs + ndss + 0.001)
+        
+        # SR score
+        features["sr_score"] = features["directional_pressure"] * features["clarity_factor"]
+        
+        # Delta SR score
+        features["delta_sr_score"] = features["sr_score"].diff().fillna(0)
+        
+        # Enhanced clarity features
+        features["normalized_distance_to_resistance_clarity"] = (
+            features["normalized_distance_to_resistance"] / (features["resistance_strength_score"] + 0.1)
+        )
+        features["normalized_distance_to_support_clarity"] = (
+            features["normalized_distance_to_support"] / (features["support_strength_score"] + 0.1)
+        )
+        
+        # Create DataFrame
+        result_df = pd.DataFrame(features, index=full_df.index)
+        
+        # Fill any remaining NaN values
+        result_df = result_df.fillna(0)
+        
+        logger.info(f"✅ Generated {len(result_df.columns)} fallback SR features: {list(result_df.columns)}")
+        return result_df
+        
+    except Exception as e:
+        logger.error(f"❌ Error generating fallback SR features: {e}")
+        return pd.DataFrame()
 
 
 @handle_data_processing_errors(default_return=pd.DataFrame())
@@ -1182,6 +1283,17 @@ def _select_block_features(
 
     if not cols:
         logger.warning(f"⚠️ No features found for {block} block")
+        
+        # Special handling for support_resistance block - generate fallback features
+        if block == "support_resistance":
+            logger.info("🔄 Generating fallback SR features for support_resistance block")
+            fallback_features = _generate_fallback_sr_features(full_df)
+            if fallback_features:
+                logger.info(f"✅ Generated {len(fallback_features.columns)} fallback SR features")
+                return fallback_features
+            else:
+                logger.warning("⚠️ Failed to generate fallback SR features")
+        
         return pd.DataFrame(index=full_df.index)
     X = full_df[cols].copy()
     # Drop constant columns

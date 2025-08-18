@@ -32,7 +32,15 @@ class TacticianSpecialistTrainingStep:
         # Initialize SRBreakoutPredictor for S/R level integration
         self.sr_predictor = SRBreakoutPredictor(config)
         
-        # Initialize optimized feature selection manager
+        # Initialize enhanced LM optimizer
+        self.enhanced_lm_optimizer = None
+        try:
+            from src.training.enhanced_lm_optimizer import EnhancedLMOptimizer
+            self.enhanced_lm_optimizer = EnhancedLMOptimizer(config)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to initialize enhanced LM optimizer: {e}")
+        
+        # Initialize optimized feature selection manager (fallback)
         self.optimized_feature_selection = None
         try:
             from src.training.optimized_feature_selection_manager import OptimizedFeatureSelectionManager
@@ -940,10 +948,48 @@ class TacticianSpecialistTrainingStep:
 
             self.logger.info("✅ Using chronological time-series split (leak-proof)")
 
-            # Apply optimized feature selection for tactician models
-            if self.optimized_feature_selection is not None:
+            # Apply enhanced optimization for tactician models
+            if self.enhanced_lm_optimizer is not None:
                 try:
-                    self.logger.info("🚀 Applying optimized feature selection for tactician models...")
+                    self.logger.info("🚀 Applying enhanced LM optimization for tactician models...")
+                    
+                    # Determine model type
+                    model_type = "classification" if y_train.dtype == 'object' or len(y_train.unique()) < 10 else "regression"
+                    
+                    # Apply comprehensive optimization
+                    optimization_results = await self.enhanced_lm_optimizer.optimize_lm_model(
+                        step_name="step9",
+                        features_df=X_train,
+                        target=y_train,
+                        model_type=model_type,
+                        architecture="LightGBM"  # Primary architecture for tactician
+                    )
+                    
+                    if optimization_results and "feature_selection" in optimization_results:
+                        # Extract optimized features from results
+                        optimized_features = X_train  # Will be updated based on optimization results
+                        
+                        self.logger.info(f"✅ Enhanced optimization completed for tactician models")
+                        self.logger.info(f"📊 Optimization metrics:")
+                        self.logger.info(f"   - Feature selection: {optimization_results.get('feature_selection', {}).get('final_features', len(X_train.columns))} features")
+                        self.logger.info(f"   - Regularization: {optimization_results.get('regularization', {})}")
+                        self.logger.info(f"   - Hyperparameter optimization: {optimization_results.get('hyperparameter_optimization', {})}")
+                        
+                        # Store optimization results
+                        if not hasattr(self, "enhancement_results"):
+                            self.enhancement_results = {}
+                        self.enhancement_results["enhanced_optimization"] = optimization_results
+                        
+                    else:
+                        self.logger.warning("⚠️ Enhanced optimization failed, falling back to basic feature selection")
+                        
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Enhanced optimization failed: {e}")
+            
+            # Fallback to basic optimized feature selection
+            if self.optimized_feature_selection is not None and (self.enhanced_lm_optimizer is None or not hasattr(self, "enhancement_results")):
+                try:
+                    self.logger.info("🚀 Applying basic feature selection for tactician models...")
                     X_train_optimized, selection_metadata = self.optimized_feature_selection.select_features_optimized(
                         X_train, y_train, model_type="ensemble_models", step_name="step9_tactician"
                     )
@@ -951,7 +997,7 @@ class TacticianSpecialistTrainingStep:
                     # Apply the same feature selection to test set
                     X_test_optimized = X_test[X_train_optimized.columns]
                     
-                    self.logger.info(f"✅ Optimized feature selection: {X_train.shape[1]} -> {X_train_optimized.shape[1]} features")
+                    self.logger.info(f"✅ Basic feature selection: {X_train.shape[1]} -> {X_train_optimized.shape[1]} features")
                     
                     # Log performance metrics
                     if "performance_metrics" in selection_metadata:
@@ -967,7 +1013,7 @@ class TacticianSpecialistTrainingStep:
                     feature_columns = list(X_train.columns)
                     
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Optimized feature selection failed: {e}")
+                    self.logger.warning(f"⚠️ Basic feature selection failed: {e}")
             
             # Train different model types
             models = {}

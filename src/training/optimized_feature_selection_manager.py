@@ -64,7 +64,9 @@ class OptimizedFeatureSelectionManager:
             "vif_calculation_time": 0.0,
             "shap_calculation_time": 0.0,
             "correlation_analysis_time": 0.0,
-            "total_selection_time": 0.0
+            "total_selection_time": 0.0,
+            "vectorized_operations_time": 0.0,
+            "matrix_operations_time": 0.0
         }
         
     def _load_config(self):
@@ -790,3 +792,175 @@ class OptimizedFeatureSelectionManager:
             self.logger.info(f"💾 Optimized feature selection metadata saved: {metadata_file}")
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to save feature selection metadata: {e}")
+    
+    def apply_vectorized_operations(self, features_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Apply vectorized operations for efficient feature processing.
+        
+        Args:
+            features_df: Input features DataFrame
+            
+        Returns:
+            Processed features DataFrame with vectorized operations
+        """
+        try:
+            start_time = time.time()
+            self.logger.info("🔄 Applying vectorized operations for feature processing...")
+            
+            # Create a copy to avoid modifying original
+            processed_df = features_df.copy()
+            
+            # Vectorized operations for feature engineering
+            # 1. Rolling statistics (vectorized)
+            numeric_cols = processed_df.select_dtypes(include=[np.number]).columns
+            for col in numeric_cols:
+                # Rolling mean and std (vectorized)
+                processed_df[f"{col}_rolling_mean_5"] = processed_df[col].rolling(window=5, min_periods=1).mean()
+                processed_df[f"{col}_rolling_std_5"] = processed_df[col].rolling(window=5, min_periods=1).std()
+                
+                # Rolling mean and std (vectorized)
+                processed_df[f"{col}_rolling_mean_10"] = processed_df[col].rolling(window=10, min_periods=1).mean()
+                processed_df[f"{col}_rolling_std_10"] = processed_df[col].rolling(window=10, min_periods=1).std()
+            
+            # 2. Lag features (vectorized)
+            for col in numeric_cols:
+                processed_df[f"{col}_lag_1"] = processed_df[col].shift(1)
+                processed_df[f"{col}_lag_5"] = processed_df[col].shift(5)
+            
+            # 3. Difference features (vectorized)
+            for col in numeric_cols:
+                processed_df[f"{col}_diff_1"] = processed_df[col].diff(1)
+                processed_df[f"{col}_diff_5"] = processed_df[col].diff(5)
+            
+            # 4. Z-score normalization (vectorized)
+            for col in numeric_cols:
+                mean_val = processed_df[col].mean()
+                std_val = processed_df[col].std()
+                if std_val > 0:
+                    processed_df[f"{col}_zscore"] = (processed_df[col] - mean_val) / std_val
+            
+            # 5. Percentile ranks (vectorized)
+            for col in numeric_cols:
+                processed_df[f"{col}_percentile_rank"] = processed_df[col].rank(pct=True)
+            
+            # 6. Interaction features (vectorized)
+            if len(numeric_cols) >= 2:
+                # Create interaction features between top correlated features
+                corr_matrix = processed_df[numeric_cols].corr().abs()
+                high_corr_pairs = []
+                
+                for i in range(len(numeric_cols)):
+                    for j in range(i+1, len(numeric_cols)):
+                        if corr_matrix.iloc[i, j] > 0.7:  # High correlation threshold
+                            high_corr_pairs.append((numeric_cols[i], numeric_cols[j]))
+                
+                # Create interaction features for highly correlated pairs
+                for col1, col2 in high_corr_pairs[:10]:  # Limit to top 10 interactions
+                    processed_df[f"{col1}_x_{col2}"] = processed_df[col1] * processed_df[col2]
+                    processed_df[f"{col1}_div_{col2}"] = processed_df[col1] / (processed_df[col2] + 1e-8)
+            
+            # Fill NaN values with forward fill then backward fill
+            processed_df = processed_df.fillna(method='ffill').fillna(method='bfill').fillna(0)
+            
+            vectorized_time = time.time() - start_time
+            self.performance_metrics["vectorized_operations_time"] = vectorized_time
+            
+            self.logger.info(f"✅ Vectorized operations completed in {vectorized_time:.2f}s")
+            self.logger.info(f"📊 Features: {len(features_df.columns)} -> {len(processed_df.columns)}")
+            
+            return processed_df
+            
+        except Exception as e:
+            self.logger.error(f"❌ Vectorized operations failed: {e}")
+            return features_df
+    
+    def apply_matrix_operations(self, features_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Apply efficient matrix operations for feature processing.
+        
+        Args:
+            features_df: Input features DataFrame
+            
+        Returns:
+            Processed features DataFrame with matrix operations
+        """
+        try:
+            start_time = time.time()
+            self.logger.info("🔄 Applying matrix operations for feature processing...")
+            
+            # Convert to numpy array for matrix operations
+            numeric_cols = features_df.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) == 0:
+                return features_df
+            
+            # Extract numeric data
+            X = features_df[numeric_cols].values
+            
+            # 1. Matrix-based correlation analysis
+            corr_matrix = np.corrcoef(X.T)
+            
+            # 2. Matrix-based covariance analysis
+            cov_matrix = np.cov(X.T)
+            
+            # 3. Matrix-based PCA for dimensionality reduction
+            if X.shape[1] > 50:  # Only apply PCA if we have many features
+                # Standardize the data
+                X_std = (X - np.mean(X, axis=0)) / np.std(X, axis=0)
+                
+                # Compute covariance matrix
+                cov_matrix = np.cov(X_std.T)
+                
+                # Compute eigenvalues and eigenvectors
+                eigenvals, eigenvecs = np.linalg.eigh(cov_matrix)
+                
+                # Sort eigenvalues and eigenvectors
+                idx = eigenvals.argsort()[::-1]
+                eigenvals = eigenvals[idx]
+                eigenvecs = eigenvecs[:, idx]
+                
+                # Select top components explaining 95% of variance
+                explained_var_ratio = eigenvals / np.sum(eigenvals)
+                cumulative_var_ratio = np.cumsum(explained_var_ratio)
+                n_components = np.argmax(cumulative_var_ratio >= 0.95) + 1
+                
+                # Project data onto principal components
+                X_pca = X_std @ eigenvecs[:, :n_components]
+                
+                # Create new feature names
+                pca_feature_names = [f"pca_component_{i+1}" for i in range(n_components)]
+                
+                # Create DataFrame with PCA features
+                pca_df = pd.DataFrame(X_pca, columns=pca_feature_names, index=features_df.index)
+                
+                # Combine with original features
+                result_df = pd.concat([features_df, pca_df], axis=1)
+                
+                self.logger.info(f"📊 PCA reduced features from {X.shape[1]} to {n_components} components")
+            else:
+                result_df = features_df
+            
+            # 4. Matrix-based feature scaling
+            if len(numeric_cols) > 0:
+                # Min-max scaling
+                X_min = np.min(X, axis=0)
+                X_max = np.max(X, axis=0)
+                X_scaled = (X - X_min) / (X_max - X_min + 1e-8)
+                
+                # Create scaled features
+                scaled_cols = [f"{col}_scaled" for col in numeric_cols]
+                scaled_df = pd.DataFrame(X_scaled, columns=scaled_cols, index=features_df.index)
+                
+                # Combine with result
+                result_df = pd.concat([result_df, scaled_df], axis=1)
+            
+            matrix_time = time.time() - start_time
+            self.performance_metrics["matrix_operations_time"] = matrix_time
+            
+            self.logger.info(f"✅ Matrix operations completed in {matrix_time:.2f}s")
+            self.logger.info(f"📊 Features: {len(features_df.columns)} -> {len(result_df.columns)}")
+            
+            return result_df
+            
+        except Exception as e:
+            self.logger.error(f"❌ Matrix operations failed: {e}")
+            return features_df

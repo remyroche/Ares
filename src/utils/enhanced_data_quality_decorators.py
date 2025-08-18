@@ -33,6 +33,34 @@ class EnhancedDataQualityDecorators:
         return None
     
     @staticmethod
+    def update_data_in_args_kwargs(modified_data: Any, args: tuple, kwargs: dict) -> tuple:
+        """Update DataFrame in original args/kwargs with modified data."""
+        # Update DataFrame in positional arguments
+        new_args = list(args)
+        found = False
+        for i, arg in enumerate(new_args):
+            if hasattr(arg, 'shape') and arg is not modified_data:
+                # Check if this is the original DataFrame (by comparing shape and columns)
+                if hasattr(modified_data, 'shape') and hasattr(arg, 'shape'):
+                    if arg.shape[0] == modified_data.shape[0]:  # Same number of rows
+                        new_args[i] = modified_data
+                        found = True
+                        break
+        
+        # Update DataFrame in keyword arguments if not found in args
+        if not found:
+            for key, value in kwargs.items():
+                if hasattr(value, 'shape') and value is not modified_data:
+                    # Check if this is the original DataFrame
+                    if hasattr(modified_data, 'shape') and hasattr(value, 'shape'):
+                        if value.shape[0] == modified_data.shape[0]:  # Same number of rows
+                            kwargs[key] = modified_data
+                            found = True
+                            break
+        
+        return tuple(new_args), kwargs
+    
+    @staticmethod
     def validate_constant_features(func):
         """Decorator to detect and remove constant features."""
         @functools.wraps(func)
@@ -47,13 +75,16 @@ class EnhancedDataQualityDecorators:
                 
                 if hasattr(numeric_data, 'columns'):
                     for col in numeric_data.columns:
-                        if hasattr(data, 'nunique') and data[col].nunique() <= 1:
+                        if hasattr(data[col], 'nunique') and data[col].nunique() <= 1:
                             constant_features.append(col)
                 
                 if constant_features:
                     system_logger.warning(f"Found {len(constant_features)} constant features: {constant_features}")
                     if hasattr(data, 'drop'):
-                        data = data.drop(columns=constant_features)
+                        modified_data = data.drop(columns=constant_features)
+                        # Update the data in args/kwargs
+                        args, kwargs = EnhancedDataQualityDecorators.update_data_in_args_kwargs(modified_data, args, kwargs)
+                        data = modified_data
             
             return func(self, *args, **kwargs)
         return wrapper
@@ -79,7 +110,10 @@ class EnhancedDataQualityDecorators:
                 if low_variance_features:
                     system_logger.warning(f"Found {len(low_variance_features)} low variance features: {low_variance_features}")
                     if hasattr(data, 'drop'):
-                        data = data.drop(columns=low_variance_features)
+                        modified_data = data.drop(columns=low_variance_features)
+                        # Update the data in args/kwargs
+                        args, kwargs = EnhancedDataQualityDecorators.update_data_in_args_kwargs(modified_data, args, kwargs)
+                        data = modified_data
             
             return func(self, *args, **kwargs)
         return wrapper
@@ -100,7 +134,10 @@ class EnhancedDataQualityDecorators:
                         
                         # Handle missing data
                         if hasattr(data, 'fillna'):
-                            data = data.fillna(method='ffill').fillna(method='bfill')
+                            modified_data = data.fillna(method='ffill').fillna(method='bfill')
+                            # Update the data in args/kwargs
+                            args, kwargs = EnhancedDataQualityDecorators.update_data_in_args_kwargs(modified_data, args, kwargs)
+                            data = modified_data
             
             return func(self, *args, **kwargs)
         return wrapper
@@ -117,27 +154,32 @@ class EnhancedDataQualityDecorators:
                 if not isinstance(data.index, pd.DatetimeIndex):
                     system_logger.warning("Data does not have datetime index, attempting to fix...")
                     
+                    modified_data = data.copy()
                     # Try to create datetime index from existing columns
-                    if hasattr(data, 'columns'):
-                        datetime_columns = [col for col in data.columns if 'time' in col.lower() or 'date' in col.lower()]
+                    if hasattr(modified_data, 'columns'):
+                        datetime_columns = [col for col in modified_data.columns if 'time' in col.lower() or 'date' in col.lower()]
                         
                         if datetime_columns:
                             datetime_col = datetime_columns[0]
                             try:
                                 if hasattr(pd, 'to_datetime'):
-                                    data.index = pd.to_datetime(data[datetime_col])
-                                    if hasattr(data, 'drop'):
-                                        data = data.drop(columns=[datetime_col])
+                                    modified_data.index = pd.to_datetime(modified_data[datetime_col])
+                                    if hasattr(modified_data, 'drop'):
+                                        modified_data = modified_data.drop(columns=[datetime_col])
                                     system_logger.info(f"Created datetime index from column: {datetime_col}")
                             except Exception as e:
                                 system_logger.error(f"Failed to create datetime index: {e}")
                                 # Create synthetic datetime index
                                 if hasattr(pd, 'date_range'):
-                                    data.index = pd.date_range(start='2020-01-01', periods=len(data), freq='1min')
+                                    modified_data.index = pd.date_range(start='2020-01-01', periods=len(modified_data), freq='1min')
                         else:
                             # Create synthetic datetime index
                             if hasattr(pd, 'date_range'):
-                                data.index = pd.date_range(start='2020-01-01', periods=len(data), freq='1min')
+                                modified_data.index = pd.date_range(start='2020-01-01', periods=len(modified_data), freq='1min')
+                    
+                    # Update the data in args/kwargs
+                    args, kwargs = EnhancedDataQualityDecorators.update_data_in_args_kwargs(modified_data, args, kwargs)
+                    data = modified_data
             
             return func(self, *args, **kwargs)
         return wrapper

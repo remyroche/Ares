@@ -1192,10 +1192,14 @@ class UnifiedRegimeIntelligenceStep:
                 
                 # Convert features to DataFrame for pruning
                 features_df = pd.DataFrame(train_data["features"].numpy())
-                dummy_target = pd.Series([0] * len(features_df))  # Dummy target for pruning
+                # Use real target labels for pruning, not a dummy target.
+                # The target should be available in `train_data`.
+                if "target" not in train_data:
+                    raise ValueError("Target labels are required for feature pruning but not found in train_data.")
+                target_series = pd.Series(train_data["target"].numpy())
                 
                 pruned_features, pruning_metadata = await pruning_manager.prune_for_step6_5_unified_regime(
-                    features_df, dummy_target
+                    features_df, target_series
                 )
                 
                 # Update features with pruned version

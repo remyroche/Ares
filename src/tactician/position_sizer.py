@@ -267,11 +267,25 @@ class PositionSizer:
 
             avg_adverse_risk = sum(adverse_risks) / len(adverse_risks)
 
-            # Kelly criterion: f = (bp - q) / b
+            # CORRECT Kelly criterion: f = (bp - q) / b
             # where b = odds received, p = probability of win, q = probability of loss
-            # For our case: b = 1 (1:1 odds), p = avg_confidence, q = avg_adverse_risk
-            kelly_fraction = avg_confidence - avg_adverse_risk
-
+            # For our case: b = 1 (1:1 odds), so f = p - q
+            # where p = avg_confidence (probability of win)
+            # and q = avg_adverse_risk (probability of loss)
+            
+            # Ensure probabilities are valid (0 <= p, q <= 1 and p + q <= 1)
+            p = max(0.0, min(1.0, avg_confidence))
+            q = max(0.0, min(1.0, avg_adverse_risk))
+            
+            # If p + q > 1, normalize them
+            if p + q > 1.0:
+                total = p + q
+                p = p / total
+                q = q / total
+            
+            # Calculate Kelly fraction
+            kelly_fraction = p - q
+            
             # Apply Kelly multiplier for conservative sizing
             kelly_position_size = kelly_fraction * self.kelly_multiplier
 
@@ -281,8 +295,11 @@ class PositionSizer:
                 min(self.max_position_size, kelly_position_size),
             )
 
-        except Exception:
-            self.print(error("Error calculating Kelly position size: {e}"))
+        except (ValueError, TypeError, KeyError) as e:
+            self.logger.error(f"Error calculating Kelly position size: {e}")
+            return self.min_position_size
+        except ZeroDivisionError as e:
+            self.logger.error(f"Division by zero in Kelly calculation: {e}")
             return self.min_position_size
 
     def _calculate_ml_position_size(
@@ -338,8 +355,11 @@ class PositionSizer:
                 min(self.max_position_size, base_position_size),
             )
 
-        except Exception:
-            self.print(error("Error calculating ML position size: {e}"))
+        except (ValueError, TypeError, KeyError) as e:
+            self.logger.error(f"Error calculating ML position size: {e}")
+            return self.min_position_size
+        except ZeroDivisionError as e:
+            self.logger.error(f"Division by zero in ML position calculation: {e}")
             return self.min_position_size
 
     def _calculate_weighted_position_size(

@@ -400,16 +400,19 @@ class Strategist:
             )
             df_1h = df_1h.reset_index().rename(columns={"index": "timestamp"})
 
-            # Use same rules as training
-            from src.analyst.simple_regime_rules import classify_last
-
-            regime, confidence = classify_last(df_1h)
-            additional_info = {"method": "EMA21_EMA55_ADX", "timeframe": "1h"}
-
+            # Use robust HMM-based unified regime classifier
+            from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
+            
+            # Initialize the unified regime classifier
+            regime_classifier = UnifiedRegimeClassifier(self.config)
+            
+            # Predict regime using the robust HMM classifier
+            regime, confidence, additional_info = regime_classifier.predict_regime(df_1h)
+            
             regime_info = {
                 "regime": regime,
                 "confidence": confidence,
-                "system_status": {"classifier_version": "ema_adx_rules_v1"},
+                "system_status": {"classifier_version": "unified_hmm_classifier_v1"},
                 "timestamp": datetime.utcnow().isoformat(),
                 "additional_info": additional_info,
             }
@@ -417,8 +420,14 @@ class Strategist:
                 f"🎯 Market regime classified as: {regime} (confidence: {confidence:.2f})",
             )
             return regime_info
-        except Exception as e:
-            self.print(error(f"Error classifying market regime: {e}"))
+        except (ValueError, TypeError, KeyError) as e:
+            self.logger.error(f"Error classifying market regime: {e}")
+            return None
+        except pd.errors.EmptyDataError as e:
+            self.logger.error(f"Empty data error in regime classification: {e}")
+            return None
+        except pd.errors.ParserError as e:
+            self.logger.error(f"Data parsing error in regime classification: {e}")
             return None
 
     @handle_errors(

@@ -141,11 +141,13 @@ def _select_block_features(full_df: pd.DataFrame, block: str, max_features: int)
     const_cols = nunique[nunique <= 1].index.tolist()
     if const_cols:
         X = X.drop(columns=const_cols, errors="ignore")
+    # Correlation prune (slightly less aggressive for momentum to preserve diversity)
     if X.shape[1] <= max_features:
         return X.fillna(0)
-    # Correlation prune
-    drop_cols = _corr_prune(X, thr=0.95)
+    correlation_threshold = 0.98 if block == "momentum" else 0.95
+    drop_cols = _corr_prune(X, thr=correlation_threshold)
     X = X.drop(columns=drop_cols, errors="ignore")
+    # If still too many features, continue selection
     if X.shape[1] <= max_features:
         return X.fillna(0)
     # Unsupervised heuristic: choose features with highest variance (post robust scale)
@@ -184,6 +186,89 @@ def _fit_block_hmm(X: pd.DataFrame, n_states: int, random_state: int = 42) -> Tu
         return None, None
 
 
+def _fit_block_hmm_robust(
+    X: pd.DataFrame, n_states: int, block_name: str = "unknown"
+) -> Tuple[Optional[GMMHMM], Optional[StandardScaler]]:
+    """
+    Robust HMM training with NaN handling and multiple attempts.
+    """
+    try:
+        # Prepare array
+        arr = X.values.astype(float)
+
+        # Fill NaNs per column with median; if all-NaN, use 0
+        arr_clean = arr.copy()
+        for i in range(arr_clean.shape[1]):
+            col = arr_clean[:, i]
+            mask = ~np.isnan(col)
+            if mask.any():
+                med = np.median(col[mask])
+                col[~mask] = med
+            else:
+                col[:] = 0.0
+            arr_clean[:, i] = col
+
+        # Remove constant features
+        variances = np.var(arr_clean, axis=0)
+        keep_mask = variances > 1e-8
+        if not np.any(keep_mask):
+            system_logger.error(f"All features constant for block {block_name}")
+            return None, None
+        arr_clean = arr_clean[:, keep_mask]
+
+        # Scale
+        scaler = StandardScaler()
+        arr_scaled = scaler.fit_transform(arr_clean)
+        # Clip extremes
+        arr_scaled = np.clip(arr_scaled, -10, 10)
+
+        best_model: Optional[GMMHMM] = None
+        best_score = -1.0
+
+        seeds = [42, 123, 456, 789]
+        for seed in seeds:
+            try:
+                model = GMMHMM(
+                    n_components=n_states,
+                    n_mix=2,
+                    covariance_type="diag",
+                    n_iter=300,
+                    tol=1e-4,
+                    random_state=seed,
+                    init_params="stmcw",
+                    params="stmcw",
+                )
+                model.fit(arr_scaled)
+
+                states = model.predict(arr_scaled)
+                uniq, counts = np.unique(states, return_counts=True)
+                ratios = counts / max(1, len(states))
+
+                # Quality score
+                score = 0.0
+                if len(uniq) == n_states:
+                    score += 1.0
+                if np.all(ratios >= 0.05):
+                    score += 1.0
+                if np.max(ratios) <= 0.8:
+                    score += 1.0
+                score += float(1.0 - np.std(ratios))
+
+                if score > best_score:
+                    best_score = score
+                    best_model = model
+            except Exception as e:
+                system_logger.warning(f"Block {block_name} seed {seed} failed: {e}")
+                continue
+
+        if best_model is None:
+            return None, None
+        return best_model, scaler
+    except Exception as e:
+        system_logger.error(f"Robust HMM fit error for block {block_name}: {e}")
+        return None, None
+
+
 @handle_errors(
     exceptions=(Exception,),
     default_return=(np.array([]), np.array([])),
@@ -193,6 +278,7 @@ def _posteriors(model: GMMHMM, scaler: StandardScaler, X: pd.DataFrame) -> Tuple
     """Get posterior probabilities and state predictions."""
     try:
         arr = X.values.astype(float)
+        arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
         arr_scaled = scaler.transform(arr)
         # score_samples returns (logprob, posteriors)
         logprob, gamma = model.score_samples(arr_scaled)
@@ -458,7 +544,11 @@ async def run_step(
 
                 logger.info(f"🧩 Training HMM for block='{blk.name}' n_states={blk.n_states} features={list(X_blk.columns)}")
 
-                model, scaler = _fit_block_hmm(X_blk, blk.n_states)
+                # Prefer robust fitting
+                model, scaler = _fit_block_hmm_robust(X_blk, blk.n_states, blk.name)
+                if model is None or scaler is None:
+                    # fallback to simple fit
+                    model, scaler = _fit_block_hmm(X_blk, blk.n_states)
                 if model is None or scaler is None:
                     logger.error(f"❌ Failed to fit HMM for block '{blk.name}'")
                     continue

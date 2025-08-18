@@ -2249,7 +2249,7 @@ class SRBreakoutPredictor:
             features.update(directional_features)
 
             # 7. SR Score
-            sr_score_features = self._calculate_sr_score_features(close, sr_levels)
+            sr_score_features = self._calculate_sr_score_features(price_data, sr_levels)
             features.update(sr_score_features)
 
             # 8. Delta SR Score (change from previous period)
@@ -2465,50 +2465,72 @@ class SRBreakoutPredictor:
                         "is_support": level in support_levels
                     })
             
-            # Calculate dynamic strength scores for each price point
+            # Vectorized strength score calculation
             strength_scores = np.zeros(len(close))
             support_strengths = np.zeros(len(close))
             resistance_strengths = np.zeros(len(close))
             
-            for i, current_price in enumerate(close.values):
-                if pd.isna(current_price):
-                    strength_scores[i] = 0.5
-                    support_strengths[i] = 0.5
-                    resistance_strengths[i] = 0.5
-                    continue
+            # Handle NaN values
+            valid_mask = ~pd.isna(close.values)
+            valid_prices = close.values[valid_mask]
+            valid_indices = np.where(valid_mask)[0]
+            
+            if len(valid_prices) > 0 and len(level_properties) > 0:
+                # Extract level properties as arrays for vectorized operations
+                level_prices_array = np.array([prop["price"] for prop in level_properties])
+                level_touch_counts = np.array([prop["touch_count"] for prop in level_properties])
+                level_volumes = np.array([prop["total_volume"] for prop in level_properties])
+                level_ages = np.array([prop["level_age"] for prop in level_properties])
+                level_bounce_rates = np.array([prop["bounce_rate"] for prop in level_properties])
+                level_isolation_scores = np.array([prop["isolation_score"] for prop in level_properties])
+                level_flip_bonuses = np.array([prop["flip_confirmation_bonus"] for prop in level_properties])
+                level_is_support = np.array([prop["is_support"] for prop in level_properties])
                 
-                # Find nearest support and resistance levels
-                nearest_support_strength = 0.5
-                nearest_resistance_strength = 0.5
+                # Calculate distances matrix: (valid_prices, level_properties)
+                distances_matrix = np.abs(valid_prices.reshape(-1, 1) - level_prices_array.reshape(1, -1)) / valid_prices.reshape(-1, 1)
                 
-                for prop in level_properties:
-                    distance = abs(current_price - prop["price"]) / current_price
-                    
-                    # Consider levels within 5% as relevant
-                    if distance < 0.05:
-                        # Calculate base strength score using the formula
-                        base_strength = (
-                            self.strength_score_weights["touch_count"] * np.log(max(prop["touch_count"], 1)) +
-                            self.strength_score_weights["total_volume"] * np.log(max(prop["total_volume"], 1)) +
-                            self.strength_score_weights["level_age"] * np.log(max(prop["level_age"], 1)) +
-                            self.strength_score_weights["bounce_rate"] * prop["bounce_rate"] +
-                            self.strength_score_weights["isolation_score"] * prop["isolation_score"]
-                        )
-                        
-                        # Apply flip confirmation bonus
-                        strength_score = base_strength * (1.0 + prop["flip_confirmation_bonus"])
-                        
-                        # Weight by distance (closer levels have more influence)
-                        weight = 1.0 / (1.0 + distance * 20)  # Exponential decay
-                        
-                        if prop["is_support"]:
-                            nearest_support_strength = max(nearest_support_strength, strength_score * weight)
-                        else:
-                            nearest_resistance_strength = max(nearest_resistance_strength, strength_score * weight)
+                # Create relevance mask (levels within 5%)
+                relevance_mask = distances_matrix < 0.05
                 
-                support_strengths[i] = nearest_support_strength
-                resistance_strengths[i] = nearest_resistance_strength
-                strength_scores[i] = (nearest_support_strength + nearest_resistance_strength) / 2
+                # Calculate base strength scores for all levels
+                base_strengths = (
+                    self.strength_score_weights["touch_count"] * np.log(np.maximum(level_touch_counts, 1)) +
+                    self.strength_score_weights["total_volume"] * np.log(np.maximum(level_volumes, 1)) +
+                    self.strength_score_weights["level_age"] * np.log(np.maximum(level_ages, 1)) +
+                    self.strength_score_weights["bounce_rate"] * level_bounce_rates +
+                    self.strength_score_weights["isolation_score"] * level_isolation_scores
+                )
+                
+                # Apply flip confirmation bonus
+                strength_scores_all = base_strengths * (1.0 + level_flip_bonuses)
+                
+                # Calculate distance weights
+                distance_weights = 1.0 / (1.0 + distances_matrix * 20)  # Exponential decay
+                
+                # Apply relevance mask and calculate weighted strengths
+                weighted_strengths = strength_scores_all * distance_weights
+                weighted_strengths[~relevance_mask] = 0  # Set irrelevant levels to 0
+                
+                # Separate support and resistance strengths
+                support_mask = level_is_support.reshape(1, -1)
+                resistance_mask = ~level_is_support.reshape(1, -1)
+                
+                support_strengths_matrix = weighted_strengths * support_mask
+                resistance_strengths_matrix = weighted_strengths * resistance_mask
+                
+                # Find maximum strength for each price point
+                max_support_strengths = np.max(support_strengths_matrix, axis=1)
+                max_resistance_strengths = np.max(resistance_strengths_matrix, axis=1)
+                
+                # Fill results for valid indices
+                support_strengths[valid_indices] = np.maximum(max_support_strengths, 0.5)
+                resistance_strengths[valid_indices] = np.maximum(max_resistance_strengths, 0.5)
+                strength_scores[valid_indices] = (support_strengths[valid_indices] + resistance_strengths[valid_indices]) / 2
+            
+            # Fill NaN values with default strength scores
+            strength_scores[~valid_mask] = 0.5
+            support_strengths[~valid_mask] = 0.5
+            resistance_strengths[~valid_mask] = 0.5
             
             features["strength_score"] = pd.Series(strength_scores, index=close.index)
             features["support_strength"] = pd.Series(support_strengths, index=close.index)
@@ -2557,17 +2579,15 @@ class SRBreakoutPredictor:
             return {}
 
     def _calculate_sr_score_features(
-        self, close: pd.Series, sr_levels: dict[str, Any]
+        self, price_data: pd.DataFrame, sr_levels: dict[str, Any]
     ) -> dict[str, pd.Series]:
         """Calculate SR score using vectorized operations."""
         try:
             features = {}
+            close = price_data["close"].astype(float)
             
             # Get directional pressure and strength score
             directional_features = self._calculate_directional_pressure_features(close, sr_levels)
-            
-            # Create price_data DataFrame efficiently
-            price_data = pd.DataFrame({"close": close})
             strength_features = self._calculate_strength_score_features(price_data, sr_levels)
             
             if "directional_pressure" in directional_features and "strength_score" in strength_features:
@@ -2586,7 +2606,7 @@ class SRBreakoutPredictor:
             
         except Exception as e:
             self.logger.error(f"❌ Error calculating SR score features: {e}")
-            return {"sr_score": pd.Series(0.0, index=close.index)}
+            return {"sr_score": pd.Series(0.0, index=price_data.index)}
 
     def _calculate_delta_sr_score_features(
         self, sr_score_features: dict[str, pd.Series]
@@ -2634,33 +2654,38 @@ class SRBreakoutPredictor:
             if len(level_prices) == 0:
                 return {"isolation_score": pd.Series(0.5, index=close.index)}
             
-            # Calculate dynamic isolation scores for each price point
+            # Vectorized isolation score calculation
             isolation_scores = np.zeros(len(close))
             
-            # For each price point, find the nearest level and calculate its isolation
-            for i, current_price in enumerate(close.values):
-                if pd.isna(current_price):
-                    isolation_scores[i] = 0.5
-                    continue
+            # Handle NaN values
+            valid_mask = ~pd.isna(close.values)
+            valid_prices = close.values[valid_mask]
+            valid_indices = np.where(valid_mask)[0]
+            
+            if len(valid_prices) > 0 and len(level_prices) > 0:
+                # Calculate distances matrix: (valid_prices, level_prices)
+                distances_matrix = np.abs(valid_prices.reshape(-1, 1) - level_prices.reshape(1, -1))
                 
-                # Find nearest level to current price
-                distances = np.abs(level_prices - current_price)
-                nearest_idx = np.argmin(distances)
-                nearest_level_price = level_prices[nearest_idx]
+                # Find nearest level for each valid price
+                nearest_indices = np.argmin(distances_matrix, axis=1)
+                nearest_level_prices = level_prices[nearest_indices]
                 
-                # Calculate isolation of the nearest level
-                nearby_levels = 0
-                for j, other_price in enumerate(level_prices):
-                    if j != nearest_idx:
-                        price_diff = abs(nearest_level_price - other_price) / nearest_level_price
-                        # Consider levels within 2% as nearby (simplified ATR approximation)
-                        if price_diff < 0.02:
-                            nearby_levels += 1
-                
-                # Calculate isolation score (fewer nearby levels = higher isolation)
-                max_nearby = len(level_prices) - 1
-                isolation_score = 1.0 - (nearby_levels / max_nearby) if max_nearby > 0 else 1.0
-                isolation_scores[i] = isolation_score
+                # Calculate isolation for each nearest level
+                for i, (valid_idx, nearest_level_price) in enumerate(zip(valid_indices, nearest_level_prices)):
+                    # Calculate distances from nearest level to all other levels
+                    level_distances = np.abs(level_prices - nearest_level_price) / nearest_level_price
+                    
+                    # Count nearby levels (within 2%)
+                    nearby_mask = level_distances < 0.02
+                    nearby_count = np.sum(nearby_mask) - 1  # Subtract 1 to exclude the level itself
+                    
+                    # Calculate isolation score
+                    max_nearby = len(level_prices) - 1
+                    isolation_score = 1.0 - (nearby_count / max_nearby) if max_nearby > 0 else 1.0
+                    isolation_scores[valid_idx] = isolation_score
+            
+            # Fill NaN values with default isolation score
+            isolation_scores[~valid_mask] = 0.5
             
             features["isolation_score"] = pd.Series(isolation_scores, index=close.index)
             
@@ -2803,42 +2828,61 @@ class SRBreakoutPredictor:
                         "is_support": level in support_levels
                     })
             
-            # Calculate dynamic clarity factors for each price point
+            # Vectorized clarity factor calculation
             support_clarity_scores = np.zeros(len(close))
             resistance_clarity_scores = np.zeros(len(close))
             
-            for i, current_price in enumerate(close.values):
-                if pd.isna(current_price):
-                    support_clarity_scores[i] = 0.5
-                    resistance_clarity_scores[i] = 0.5
-                    continue
+            # Handle NaN values
+            valid_mask = ~pd.isna(close.values)
+            valid_prices = close.values[valid_mask]
+            valid_indices = np.where(valid_mask)[0]
+            
+            if len(valid_prices) > 0 and len(level_properties) > 0:
+                # Extract level properties as arrays for vectorized operations
+                level_prices_array = np.array([prop["price"] for prop in level_properties])
+                level_significance_scores = np.array([prop["significance_score"] for prop in level_properties])
+                level_isolation_scores = np.array([prop["isolation_score"] for prop in level_properties])
+                level_sharpness_scores = np.array([prop["sharpness_score"] for prop in level_properties])
+                level_is_support = np.array([prop["is_support"] for prop in level_properties])
                 
-                # Find nearest support and resistance levels
-                nearest_support_clarity = 0.5
-                nearest_resistance_clarity = 0.5
+                # Calculate distances matrix: (valid_prices, level_properties)
+                distances_matrix = np.abs(valid_prices.reshape(-1, 1) - level_prices_array.reshape(1, -1)) / valid_prices.reshape(-1, 1)
                 
-                for prop in level_properties:
-                    distance = abs(current_price - prop["price"]) / current_price
-                    
-                    # Consider levels within 5% as relevant
-                    if distance < 0.05:
-                        # Calculate clarity factor
-                        clarity_factor = (
-                            self.clarity_factor_weights["significance_score"] * prop["significance_score"] +
-                            self.clarity_factor_weights["isolation_score"] * prop["isolation_score"] +
-                            self.clarity_factor_weights["sharpness_score"] * prop["sharpness_score"]
-                        )
-                        
-                        # Weight by distance (closer levels have more influence)
-                        weight = 1.0 / (1.0 + distance * 20)  # Exponential decay
-                        
-                        if prop["is_support"]:
-                            nearest_support_clarity = max(nearest_support_clarity, clarity_factor * weight)
-                        else:
-                            nearest_resistance_clarity = max(nearest_resistance_clarity, clarity_factor * weight)
+                # Create relevance mask (levels within 5%)
+                relevance_mask = distances_matrix < 0.05
                 
-                support_clarity_scores[i] = nearest_support_clarity
-                resistance_clarity_scores[i] = nearest_resistance_clarity
+                # Calculate clarity factors for all levels
+                clarity_factors = (
+                    self.clarity_factor_weights["significance_score"] * level_significance_scores +
+                    self.clarity_factor_weights["isolation_score"] * level_isolation_scores +
+                    self.clarity_factor_weights["sharpness_score"] * level_sharpness_scores
+                )
+                
+                # Calculate distance weights
+                distance_weights = 1.0 / (1.0 + distances_matrix * 20)  # Exponential decay
+                
+                # Apply relevance mask and calculate weighted clarity factors
+                weighted_clarity = clarity_factors * distance_weights
+                weighted_clarity[~relevance_mask] = 0  # Set irrelevant levels to 0
+                
+                # Separate support and resistance clarity factors
+                support_mask = level_is_support.reshape(1, -1)
+                resistance_mask = ~level_is_support.reshape(1, -1)
+                
+                support_clarity_matrix = weighted_clarity * support_mask
+                resistance_clarity_matrix = weighted_clarity * resistance_mask
+                
+                # Find maximum clarity factor for each price point
+                max_support_clarity = np.max(support_clarity_matrix, axis=1)
+                max_resistance_clarity = np.max(resistance_clarity_matrix, axis=1)
+                
+                # Fill results for valid indices
+                support_clarity_scores[valid_indices] = np.maximum(max_support_clarity, 0.5)
+                resistance_clarity_scores[valid_indices] = np.maximum(max_resistance_clarity, 0.5)
+            
+            # Fill NaN values with default clarity factors
+            support_clarity_scores[~valid_mask] = 0.5
+            resistance_clarity_scores[~valid_mask] = 0.5
             
             features["support_clarity_factor"] = pd.Series(support_clarity_scores, index=close.index)
             features["resistance_clarity_factor"] = pd.Series(resistance_clarity_scores, index=close.index)

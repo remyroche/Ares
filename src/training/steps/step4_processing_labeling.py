@@ -22,10 +22,35 @@ from src.training.enhanced_training_manager_optimized import (
     MemoryEfficientDataManager,
 )
 
-# Import the auto-fix decorator for data quality issues
-from src.training.steps.raw_data_quality_checker import auto_fix_data_quality_issues
+# Import decorators from centralized module
+from src.utils.centralized_decorators import (
+    auto_fix_data_quality_issues,
+    deterministic_seed,
+    idempotent_step,
+    artifact_write_lock,
+    nan_inf_and_constant_guard,
+    artifact_versioning,
+    time_budget_watchdog,
+    validate_step_prerequisites,
+    secure_data_processing,
+    prevent_data_leakage,
+    resource_monitor,
+    memory_efficient,
+    debug_training_step,
+    circuit_breaker_protection,
+    validate_step_output,
+    quality_gate,
+    handle_errors,
+    validate_data_quality,
+    validate_feature_engineering_pipeline,
+    with_tracing_span,
+    guard_dataframe_nulls,
+)
 
 
+@with_tracing_span("step4._build_sr_levels", log_args=False)
+@guard_dataframe_nulls(mode="warn", arg_index=0)
+@handle_errors(exceptions=(Exception,), default_return={"support_levels": [], "resistance_levels": []})
 async def _build_sr_levels(price_df: pd.DataFrame) -> dict[str, Any]:
     try:
         lows = price_df["low"].astype(float)
@@ -61,6 +86,8 @@ async def _build_sr_levels(price_df: pd.DataFrame) -> dict[str, Any]:
         return {"support_levels": [], "resistance_levels": []}
 
 
+@with_tracing_span("step4._persist_sr_levels", log_args=False)
+@handle_errors(exceptions=(Exception,), default_return=None)
 def _persist_sr_levels(
     config: dict[str, Any], sr_levels: dict[str, Any], asof_ts: pd.Timestamp
 ) -> None:
@@ -138,7 +165,61 @@ def _persist_sr_levels(
         _logger.warning(f"⚠️ Persist SR levels skipped: {e}")
 
 
+@deterministic_seed(42)
+@idempotent_step(step_key="step4_processing_labeling")
+@artifact_write_lock()
+@nan_inf_and_constant_guard()
+@artifact_versioning("1.0")
+@time_budget_watchdog(soft_timeout_seconds=1800.0)
+@validate_step_prerequisites(
+    required_directories=["data/training"],
+    min_memory_gb=8.0,
+    min_disk_gb=5.0,
+    data_quality_checks={"check_data_completeness": True}
+)
+@secure_data_processing(
+    backup_before=True,
+    integrity_checks=True,
+    memory_cleanup=True,
+    data_validation=True
+)
+@prevent_data_leakage(
+    temporal_validation=True,
+    feature_leakage_detection=True,
+    cross_validation_isolation=True,
+    lookahead_bias_prevention=True
+)
+@resource_monitor(
+    memory_threshold_gb=16.0,
+    cpu_threshold_percent=90.0,
+    disk_threshold_gb=10.0,
+    auto_cleanup=True
+)
+@memory_efficient(
+    chunk_size=1000,
+    streaming_processing=True,
+    memory_pool=True,
+    cleanup_frequency=10
+)
+@debug_training_step(
+    log_intermediate_results=True,
+    save_debug_artifacts=True,
+    performance_profiling=True
+)
+@circuit_breaker_protection(
+    failure_threshold=3,
+    recovery_timeout=300.0
+)
+@validate_step_output(
+    required_files=["labeled_train.parquet", "labeled_validation.parquet", "labeled_test.parquet"],
+    data_quality_checks={"check_output_completeness": True}
+)
+@quality_gate(
+    model_performance_thresholds={"min_data_points": 100},
+    data_quality_metrics={"completeness_threshold": 0.95}
+)
 @auto_fix_data_quality_issues
+@handle_errors(exceptions=(Exception,), default_return=False, context="step4_processing_labeling")
 async def run_step(
     symbol: str,
     exchange_name: str = "BINANCE",

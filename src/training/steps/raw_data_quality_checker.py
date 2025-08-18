@@ -1792,7 +1792,7 @@ class RawDataQualityChecker:
                 
                 # Re-validate the updated data
                 self.logger.info("🔍 Re-validating data after download...")
-                updated_results = self.validate_raw_data(updated_data, symbol, exchange, auto_download_missing=False)
+                updated_results, _ = self.validate_raw_data(updated_data, symbol, exchange, auto_download_missing=False)
                 
                 # Update quality score
                 results["data_quality_score"] = updated_results["data_quality_score"]
@@ -1940,7 +1940,7 @@ class RawDataQualityChecker:
         Returns:
             Comprehensive data quality report
         """
-        validation_results = self.validate_raw_data(data, symbol, exchange)
+        validation_results, _ = self.validate_raw_data(data, symbol, exchange)
         
         # Add additional analysis
         time_diffs = data.index.to_series().diff().dropna()
@@ -1981,7 +1981,7 @@ class RawDataQualityChecker:
             Tuple of (preprocessed_data, validation_results)
         """
         # First, validate the raw data
-        validation_results = self.validate_raw_data(data, symbol, exchange)
+        validation_results, _ = self.validate_raw_data(data, symbol, exchange)
         
         # Check if preprocessing is needed
         needs_preprocessing = False
@@ -2013,7 +2013,7 @@ class RawDataQualityChecker:
             preprocessed_data = self.preprocess_irregular_intervals(data, method)
             
             # Validate the preprocessed data
-            preprocessed_validation = self.validate_raw_data(preprocessed_data, symbol, exchange)
+            preprocessed_validation, _ = self.validate_raw_data(preprocessed_data, symbol, exchange)
             
             # Update validation results with preprocessing info
             validation_results["preprocessing_applied"] = {

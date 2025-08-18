@@ -2712,7 +2712,7 @@ class AdvancedFeatureEngineering:
         except Exception:
             return pd.Series(index=price_data.index, dtype=float)
 
-    @handle_errors(exceptions=(Exception,), default_return={})
+    @handle_errors(exceptions=(ValueError, TypeError, KeyError, pd.errors.EmptyDataError), default_return={})
     async def _generate_feature_blocks(
         self,
         price_data: pd.DataFrame,

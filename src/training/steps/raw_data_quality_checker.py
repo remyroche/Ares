@@ -1981,7 +1981,7 @@ class RawDataQualityChecker:
             Tuple of (preprocessed_data, validation_results)
         """
         # First, validate the raw data
-        validation_results = self.validate_raw_data(data, symbol, exchange)
+        validation_results, _ = self.validate_raw_data(data, symbol, exchange)
         
         # Check if preprocessing is needed
         needs_preprocessing = False

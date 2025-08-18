@@ -1940,7 +1940,7 @@ class RawDataQualityChecker:
         Returns:
             Comprehensive data quality report
         """
-        validation_results = self.validate_raw_data(data, symbol, exchange)
+        validation_results, _ = self.validate_raw_data(data, symbol, exchange
         
         # Add additional analysis
         time_diffs = data.index.to_series().diff().dropna()

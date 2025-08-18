@@ -958,7 +958,7 @@ class TacticianSpecialistTrainingStep:
             model_type = "classification" if y_train.dtype == 'object' or len(y_train.unique()) < 10 else "regression"
             
             # Apply comprehensive optimization
-            optimization_results = await self.enhanced_lm_optimizer.optimize_lm_model(
+            optimization_results, optimized_features = await self.enhanced_lm_optimizer.optimize_lm_model(
                 step_name="step9",
                 features_df=X_train,
                 target=y_train,
@@ -966,8 +966,10 @@ class TacticianSpecialistTrainingStep:
                 architecture="LightGBM"  # Primary architecture for tactician
             )
             
-            # Extract optimized features from results
-            optimized_features = X_train  # Will be updated based on optimization results
+            # Use optimized features directly from the optimizer
+            X_train = optimized_features
+            X_test = X_test[optimized_features.columns]  # Apply same feature selection to test set
+            self.logger.info(f"✅ Applied feature selection: {len(X_train.columns)} features selected")
             
             self.logger.info(f"✅ Enhanced optimization completed for tactician models")
             self.logger.info(f"📊 Optimization metrics:")

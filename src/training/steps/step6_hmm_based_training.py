@@ -307,7 +307,7 @@ class HMMBasedTrainingStep:
             model_type = "classification" if target.dtype == 'object' or len(target.unique()) < 10 else "regression"
             
             # Apply comprehensive optimization
-            optimization_results = await self.enhanced_lm_optimizer.optimize_lm_model(
+            optimization_results, optimized_features = await self.enhanced_lm_optimizer.optimize_lm_model(
                 step_name="step6",
                 features_df=features_df,
                 target=target,
@@ -315,8 +315,8 @@ class HMMBasedTrainingStep:
                 architecture=architecture
             )
             
-            # Extract optimized features from results
-            optimized_features = features_df  # Will be updated based on optimization results
+            # Use optimized features directly from the optimizer
+            self.logger.info(f"✅ Applied feature selection: {len(features_df.columns)} -> {len(optimized_features.columns)} features")
             
             self.logger.info(f"✅ Enhanced optimization completed for {timeframe} {architecture}")
             self.logger.info(f"📊 Optimization metrics:")

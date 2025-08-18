@@ -313,6 +313,13 @@ class AresLauncher:
             if target_file.exists():
                 target_file.unlink()
                 self.logger.info(f"🗑️  Cleared checkpoint: {target_file}")
+            
+            # Also clear any individual step checkpoint files
+            for checkpoint_file in ns_dir.glob("*.json"):
+                if checkpoint_file.name != "training_progress.json":
+                    checkpoint_file.unlink()
+                    self.logger.info(f"🗑️  Cleared step checkpoint: {checkpoint_file}")
+                    
         except (OSError, IOError) as e:
             self.logger.warning(f"Failed to clear checkpoint: {e}")
 
@@ -325,17 +332,25 @@ class AresLauncher:
                     f"Cannot clear progress: step '{start_step}' is not in available steps"
                 )
                 return
-            # Per artifact policy: only clear the selected start step when forcing
-            # Do NOT proactively clear artifacts from previous steps, and do not
-            # clear later steps here; they will be overwritten as needed.
-            if orchestrator.clear_progress(start_step):
-                self.logger.info(
-                    f"🧹 Cleared progress for '{start_step}' only (force)"
-                )
-            else:
-                self.logger.warning(
-                    f"⚠️ Failed to clear progress for '{start_step}'"
-                )
+            
+            # Find the index of the starting step
+            try:
+                start_index = steps.index(start_step)
+            except ValueError:
+                self.logger.warning(f"⚠️ Unknown step {start_step}, clearing all progress")
+                start_index = 0
+            
+            # Clear progress for the starting step and all subsequent steps
+            steps_to_clear = steps[start_index:]
+            
+            for step in steps_to_clear:
+                if orchestrator.clear_progress(step):
+                    self.logger.info(f"🧹 Cleared progress for '{step}' (force)")
+                else:
+                    self.logger.warning(f"⚠️ Failed to clear progress for '{step}'")
+            
+            self.logger.info(f"✅ Cleared progress for {len(steps_to_clear)} steps: {steps_to_clear}")
+            
         except (OSError, IOError) as e:
             self.logger.warning(
                 f"Failed clearing progress from step '{start_step}': {e}"

@@ -156,6 +156,149 @@ class EnhancedTrainingManager:
         self.enhanced_training_results: dict[str, Any] = {}
         self.enhanced_training_history: list[dict[str, Any]] = []
 
+        # Define pipeline step order as class constant
+        self.STEP_ORDER = [
+            "step1_data_collection",
+            "step2_feature_engineering", 
+            "step3_hmm_regime_discovery",
+            "step4_processing_labeling",
+            "step5_regime_data_splitting",
+            "step6_hmm_based_training",
+            "step6_5_unified_regime_intelligence",
+            "step7_analyst_enhancement",
+            "step8_tactician_labeling",
+            "step9_tactician_specialist_training",
+            "step10_confidence_calibration",
+            "step11_final_parameters_optimization",
+            "step12_walk_forward_validation",
+            "step13_monte_carlo_validation",
+            "step14_ab_testing",
+            "step15_saving",
+        ]
+
+        # Define critical artifact patterns for each step
+        self.CRITICAL_ARTIFACTS = {
+            "step1_data_collection": [
+                "data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet",
+                "data_cache/klines_{exchange}_{symbol}_1m_consolidated.parquet",
+            ],
+            "step2_feature_engineering": [
+                "data/training/{exchange}_{symbol}_{timeframe}_engineered_features.parquet",
+            ],
+            "step3_hmm_regime_discovery": [
+                "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.parquet",
+            ],
+            "step4_processing_labeling": [
+                "data/training/{exchange}_{symbol}_{timeframe}_labeled_validation.parquet",
+            ],
+            "step5_regime_data_splitting": [
+                "data/training/{exchange}_{symbol}_{timeframe}_regime_splits_train.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_regime_splits_validation.parquet",
+            ],
+            "step6_hmm_based_training": [
+                "data/training/{exchange}_{symbol}_{timeframe}_hmm_models.pkl",
+            ],
+            "step6_5_unified_regime_intelligence": [
+                "data/training/{exchange}_{symbol}_{timeframe}_unified_intelligence.parquet",
+            ],
+            "step7_analyst_enhancement": [
+                "data/training/{exchange}_{symbol}_{timeframe}_analyst_models.pkl",
+            ],
+            "step8_tactician_labeling": [
+                "data/training/{exchange}_{symbol}_{timeframe}_tactician_labels.parquet",
+            ],
+            "step9_tactician_specialist_training": [
+                "data/training/{exchange}_{symbol}_{timeframe}_specialist_models.pkl",
+            ],
+            "step10_confidence_calibration": [
+                "data/training/{exchange}_{symbol}_{timeframe}_calibration_results.pkl",
+            ],
+            "step11_final_parameters_optimization": [
+                "data/training/{exchange}_{symbol}_{timeframe}_optimization_results.json",
+            ],
+            "step12_walk_forward_validation": [
+                "data/training/{exchange}_{symbol}_{timeframe}_walk_forward_results.json",
+            ],
+            "step13_monte_carlo_validation": [
+                "data/training/{exchange}_{symbol}_{timeframe}_monte_carlo_results.json",
+            ],
+            "step14_ab_testing": [
+                "data/training/{exchange}_{symbol}_{timeframe}_ab_test_results.json",
+            ],
+            "step15_saving": [
+                "data/training/{exchange}_{symbol}_{timeframe}_final_models.pkl",
+            ],
+        }
+
+        # Define artifact patterns for clearing (includes all artifacts, not just critical ones)
+        self.ARTIFACT_PATTERNS = {
+            "step1_data_collection": [
+                "data_cache/klines_{exchange}_{symbol}_*_consolidated.*",
+                "data_cache/aggtrades_{exchange}_{symbol}_consolidated.*",
+            ],
+            "step2_feature_engineering": [
+                "data/training/{exchange}_{symbol}_{timeframe}_engineered_features.*",
+                "data/training/{exchange}_{symbol}_{timeframe}_feature_metadata.*",
+            ],
+            "step3_hmm_regime_discovery": [
+                "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_hmm_*.parquet",
+                "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.*",
+                "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_regime_*.json",
+            ],
+            "step4_processing_labeling": [
+                "data/training/{exchange}_{symbol}_{timeframe}_labeled_*.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_processing_*.json",
+            ],
+            "step5_regime_data_splitting": [
+                "data/training/{exchange}_{symbol}_{timeframe}_regime_splits_*.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_split_metadata.*",
+            ],
+            "step6_hmm_based_training": [
+                "data/training/{exchange}_{symbol}_{timeframe}_hmm_models_*.pkl",
+                "data/training/{exchange}_{symbol}_{timeframe}_training_results_*.json",
+            ],
+            "step6_5_unified_regime_intelligence": [
+                "data/training/{exchange}_{symbol}_{timeframe}_unified_intelligence_*.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_intelligence_*.json",
+            ],
+            "step7_analyst_enhancement": [
+                "data/training/{exchange}_{symbol}_{timeframe}_analyst_*.pkl",
+                "data/training/{exchange}_{symbol}_{timeframe}_analyst_*.json",
+            ],
+            "step8_tactician_labeling": [
+                "data/training/{exchange}_{symbol}_{timeframe}_tactician_labels_*.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_tactician_*.json",
+            ],
+            "step9_tactician_specialist_training": [
+                "data/training/{exchange}_{symbol}_{timeframe}_specialist_*.pkl",
+                "data/training/{exchange}_{symbol}_{timeframe}_specialist_*.json",
+            ],
+            "step10_confidence_calibration": [
+                "data/training/{exchange}_{symbol}_{timeframe}_calibration_*.pkl",
+                "data/training/{exchange}_{symbol}_{timeframe}_calibration_*.json",
+            ],
+            "step11_final_parameters_optimization": [
+                "data/training/{exchange}_{symbol}_{timeframe}_optimization_*.json",
+                "data/training/{exchange}_{symbol}_{timeframe}_best_params_*.json",
+            ],
+            "step12_walk_forward_validation": [
+                "data/training/{exchange}_{symbol}_{timeframe}_walk_forward_*.json",
+                "data/training/{exchange}_{symbol}_{timeframe}_validation_*.parquet",
+            ],
+            "step13_monte_carlo_validation": [
+                "data/training/{exchange}_{symbol}_{timeframe}_monte_carlo_*.json",
+                "data/training/{exchange}_{symbol}_{timeframe}_mc_results_*.parquet",
+            ],
+            "step14_ab_testing": [
+                "data/training/{exchange}_{symbol}_{timeframe}_ab_test_*.json",
+                "data/training/{exchange}_{symbol}_{timeframe}_ab_results_*.parquet",
+            ],
+            "step15_saving": [
+                "data/training/{exchange}_{symbol}_{timeframe}_final_models_*.pkl",
+                "data/training/{exchange}_{symbol}_{timeframe}_final_results_*.json",
+            ],
+        }
+
         # Configuration
         self.enhanced_training_config: dict[str, Any] = self.config.get(
             "enhanced_training_manager",
@@ -481,6 +624,11 @@ class EnhancedTrainingManager:
         """
         try:
             self.logger.info(f"🔍 Validating dependencies for {step_name}")
+            
+            # If force_rerun is True, we're starting from this step, so skip dependency validation
+            if force_rerun:
+                self.logger.info(f"✅ Force rerun enabled for {step_name}, skipping dependency validation")
+                return True
             
             # Use StepDependencyValidator to check prerequisites
             # Use the correct checkpoint directory that matches where checkpoints are saved
@@ -1139,6 +1287,14 @@ class EnhancedTrainingManager:
             else:
                 self.logger.info("🚀 Starting fresh training...")
 
+            # Handle force_rerun: clear artifacts from starting step and subsequent steps
+            if self.force_rerun:
+                self.logger.info(f"🧹 Force rerun enabled - clearing artifacts from {start_step} and subsequent steps")
+                await self._clear_artifacts_from_step_onward(start_step, symbol, exchange, timeframe)
+                # Clear the checkpoint to ensure fresh start
+                self._clear_checkpoint()
+                self.logger.info(f"✅ Cleared artifacts and checkpoints from {start_step} onward")
+
             # Enhanced logging setup
             self.logger.info("=" * 100)
             self.logger.info("🚀 COMPREHENSIVE 15-STEP TRAINING PIPELINE START")
@@ -1229,27 +1385,9 @@ class EnhancedTrainingManager:
 
             # Determine whether Step 2 should run based on requested start_step
             start_step_key = training_input.get("start_step", "step1_data_collection")
-            step_order = [
-                "step1_data_collection",
-                "step2_feature_engineering",
-                "step3_hmm_regime_discovery",
-                "step4_processing_labeling",
-                "step5_regime_data_splitting",
-                "step6_hmm_based_training",
-                "step6_5_unified_regime_intelligence",
-                "step7_analyst_enhancement",
-                "step8_tactician_labeling",
-                "step9_tactician_specialist_training",
-                "step10_confidence_calibration",
-                "step11_final_parameters_optimization",
-                "step12_walk_forward_validation",
-                "step13_monte_carlo_validation",
-                "step14_ab_testing",
-                "step15_saving",
-            ]
             def _should_run(step_name: str) -> bool:
                 try:
-                    return step_order.index(step_name) >= step_order.index(start_step_key)
+                    return self.STEP_ORDER.index(step_name) >= self.STEP_ORDER.index(start_step_key)
                 except ValueError:
                     # If unknown step names are provided, default to running to be safe
                     return True
@@ -1266,9 +1404,14 @@ class EnhancedTrainingManager:
                     "reason": f"start_step={start_step_key}",
                 }
             else:
+                # Verify previous step artifacts BEFORE execution
+                if not await self.verify_previous_step_artifacts("step2_feature_engineering", symbol, exchange, timeframe):
+                    self.logger.error("❌ Previous step artifacts not found, stopping pipeline")
+                    return False
+                
                 # Validate step dependencies BEFORE execution
                 if not await self.validate_step_dependencies("step2_feature_engineering", pipeline_state, self.force_rerun):
-                    self.logger.error("❌ Step 2 dependencies not met, skipping")
+                    self.logger.error("❌ Step 2 dependencies not met, stopping pipeline")
                     return False
             
             step_start_2 = time.time()
@@ -1329,38 +1472,41 @@ class EnhancedTrainingManager:
             self._save_checkpoint("step2_feature_engineering", pipeline_state)
             step_times["step2_feature_engineering"] = time.time() - step_start_2
 
-            # Run validator for Step 2 (AFTER execution, for verification only)
-            # Run validator only if Step 2 was executed (not skipped above)
-            if _should_run("step2_feature_engineering"):
-                try:
-                    step2_validation = await self._run_step_validator(
-                        "step2_feature_engineering", training_input, pipeline_state
-                    )
-                    if step2_validation and step2_validation.get("validation_passed", False):
-                        # Explicit success notice when validation passes
-                        self.logger.info(
-                            "🎉 Step 2: Feature Engineering completed successfully and validation passed"
+                            # Run validator for Step 2 (AFTER execution, for verification only)
+                # Run validator only if Step 2 was executed (not skipped above)
+                if _should_run("step2_feature_engineering"):
+                    try:
+                        step2_validation = await self._run_step_validator(
+                            "step2_feature_engineering", training_input, pipeline_state
                         )
-                        print(
-                            "🎉 Step 2: Feature Engineering completed successfully and validation passed"
-                        )
-                except Exception as e:
-                    self.logger.warning(
-                        f"Validator for step2_feature_engineering failed but is non-fatal: {e}"
-                    )
-                    step2_validation = {"validation_passed": False, "error": str(e)}
-                # Gate progression (validation is now informational, not blocking)
-                if not step2_validation or not bool(step2_validation.get("validation_passed", False)):
-                    self.logger.warning("⚠️ Step 2 validation failed but proceeding (validation is informational)")
+                        if step2_validation and step2_validation.get("validation_passed", False):
+                            # Explicit success notice when validation passes
+                            self.logger.info(
+                                "🎉 Step 2: Feature Engineering completed successfully and validation passed"
+                            )
+                            print(
+                                "🎉 Step 2: Feature Engineering completed successfully and validation passed"
+                            )
+                        else:
+                            self.logger.error("❌ Step 2 validation failed - stopping pipeline")
+                            return False
+                    except Exception as e:
+                        self.logger.error(f"❌ Step 2 validator failed: {e} - stopping pipeline")
+                        return False
             # If step2 was skipped, proceed directly
             self.logger.info("➡️ Proceeding to Step 3: HMM Regime Discovery")
 
             # Step 3: HMM Regime Discovery (block HMMs + composite clustering)
             self._heartbeat("Step 3: HMM Regime Discovery")
             
+            # Verify previous step artifacts BEFORE execution
+            if not await self.verify_previous_step_artifacts("step3_hmm_regime_discovery", symbol, exchange, timeframe):
+                self.logger.error("❌ Previous step artifacts not found, stopping pipeline")
+                return False
+            
             # Validate step dependencies BEFORE execution
             if not await self.validate_step_dependencies("step3_hmm_regime_discovery", pipeline_state, self.force_rerun):
-                self.logger.error("❌ Step 3 dependencies not met, skipping")
+                self.logger.error("❌ Step 3 dependencies not met, stopping pipeline")
                 return False
             
             step_start_3 = time.time()
@@ -1416,14 +1562,12 @@ class EnhancedTrainingManager:
                     print(
                         "🎉 Step 3: HMM Regime Discovery completed successfully and validation passed"
                     )
+                else:
+                    self.logger.error("❌ Step 3 validation failed - stopping pipeline")
+                    return False
             except Exception as e:
-                self.logger.warning(
-                    f"Validator for step3_hmm_regime_discovery failed but is non-fatal: {e}"
-                )
-                step3_validation = {"validation_passed": False, "error": str(e)}
-            # Gate progression (validation is now informational, not blocking)
-            if not step3_validation or not bool(step3_validation.get("validation_passed", False)):
-                self.logger.warning("⚠️ Step 3 validation failed but proceeding (validation is informational)")
+                self.logger.error(f"❌ Step 3 validator failed: {e} - stopping pipeline")
+                return False
             self.logger.info("➡️ Proceeding to Step 4: Processing & Labeling")
 
             # Step 4: Processing & Labeling (market regime classification deprecated)
@@ -3543,6 +3687,150 @@ class EnhancedTrainingManager:
                 self.logger.info(f"Loaded label reliability from {path}")
         except Exception as e:
             self.logger.warning(f"Failed to load label reliability: {e}")
+
+    async def _clear_artifacts_from_step_onward(
+        self, 
+        start_step: str, 
+        symbol: str, 
+        exchange: str, 
+        timeframe: str
+    ) -> None:
+        """
+        Clear artifacts from the specified step and all subsequent steps.
+        Preserves artifacts from previous steps.
+        
+        Args:
+            start_step: Step to start clearing from
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframe: Timeframe
+        """
+        try:
+            self.logger.info(f"🧹 Clearing artifacts from {start_step} onward")
+            
+            # Find the index of the starting step using class constant
+            try:
+                start_index = self.STEP_ORDER.index(start_step)
+            except ValueError:
+                self.logger.warning(f"⚠️ Unknown step {start_step}, clearing all artifacts")
+                start_index = 0
+            
+            # Clear artifacts for the starting step and all subsequent steps
+            steps_to_clear = self.STEP_ORDER[start_index:]
+            
+            for step in steps_to_clear:
+                await self._clear_step_artifacts(step, symbol, exchange, timeframe)
+                
+            self.logger.info(f"✅ Cleared artifacts for {len(steps_to_clear)} steps: {steps_to_clear}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error clearing artifacts: {e}")
+
+    async def verify_previous_step_artifacts(
+        self,
+        step_name: str,
+        symbol: str,
+        exchange: str,
+        timeframe: str
+    ) -> bool:
+        """
+        Verify that artifacts from the previous step exist before starting a step.
+        
+        Args:
+            step_name: Name of the current step
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframe: Timeframe
+            
+        Returns:
+            True if previous step artifacts exist, False otherwise
+        """
+        try:
+            # Find the index of the current step using class constant
+            try:
+                current_index = self.STEP_ORDER.index(step_name)
+            except ValueError:
+                self.logger.warning(f"⚠️ Unknown step {step_name}, skipping artifact verification")
+                return True
+            
+            # If this is the first step, no previous artifacts to verify
+            if current_index == 0:
+                return True
+            
+            # Get the previous step
+            previous_step = self.STEP_ORDER[current_index - 1]
+            
+            # Get critical artifacts for the previous step using class constant
+            previous_artifacts = self.CRITICAL_ARTIFACTS.get(previous_step, [])
+            
+            if not previous_artifacts:
+                self.logger.warning(f"⚠️ No critical artifacts defined for {previous_step}")
+                return True
+            
+            # Check if at least one critical artifact exists
+            from pathlib import Path
+            artifacts_found = []
+            for artifact_pattern in previous_artifacts:
+                if Path(artifact_pattern).exists():
+                    artifacts_found.append(artifact_pattern)
+            
+            if artifacts_found:
+                self.logger.info(f"✅ Found previous step artifacts for {previous_step}: {artifacts_found}")
+                return True
+            else:
+                self.logger.error(f"❌ Missing critical artifacts from {previous_step}")
+                self.logger.error(f"   Expected artifacts: {previous_artifacts}")
+                self.logger.error(f"   Cannot proceed with {step_name} without previous step artifacts")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error verifying previous step artifacts for {step_name}: {e}")
+            return False
+
+    async def _clear_step_artifacts(
+        self, 
+        step_name: str, 
+        symbol: str, 
+        exchange: str, 
+        timeframe: str
+    ) -> None:
+        """
+        Clear artifacts for a specific step.
+        
+        Args:
+            step_name: Name of the step
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframe: Timeframe
+        """
+        try:
+            from pathlib import Path
+            import glob
+            
+            # Get patterns for this step using class constant
+            patterns = self.ARTIFACT_PATTERNS.get(step_name, [])
+            
+            cleared_count = 0
+            for pattern in patterns:
+                # Find files matching the pattern
+                matching_files = glob.glob(pattern)
+                for file_path in matching_files:
+                    try:
+                        Path(file_path).unlink()
+                        cleared_count += 1
+                        self.logger.debug(f"   🗑️ Cleared: {file_path}")
+                    except FileNotFoundError:
+                        pass  # File doesn't exist, which is fine
+                    except Exception as e:
+                        self.logger.warning(f"   ⚠️ Could not delete {file_path}: {e}")
+            
+            if cleared_count > 0:
+                self.logger.info(f"   🧹 Cleared {cleared_count} artifacts for {step_name}")
+            else:
+                self.logger.debug(f"   ℹ️ No artifacts found for {step_name}")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error clearing artifacts for {step_name}: {e}")
 
 
 @handle_errors(

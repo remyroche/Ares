@@ -82,8 +82,11 @@ def calculate_correct_kelly_position_size(
             min(max_position_size, kelly_position_size),
         )
 
-    except Exception as e:
+    except (ValueError, TypeError, KeyError) as e:
         print(f"Error calculating Kelly position size: {e}")
+        return min_position_size
+    except ZeroDivisionError as e:
+        print(f"Division by zero in Kelly calculation: {e}")
         return min_position_size
 
 
@@ -147,8 +150,18 @@ def calculate_enhanced_kelly_position_size(
             "account_balance": account_balance,
         }
         
-    except Exception as e:
+    except (ValueError, TypeError, KeyError) as e:
         print(f"Error calculating enhanced Kelly position size: {e}")
+        return {
+            "base_kelly_size": min_position_size,
+            "volatility_adjustment": 1.0,
+            "balance_adjustment": 1.0,
+            "final_position_size": min_position_size,
+            "market_volatility": market_volatility,
+            "account_balance": account_balance,
+        }
+    except ZeroDivisionError as e:
+        print(f"Division by zero in enhanced Kelly calculation: {e}")
         return {
             "base_kelly_size": min_position_size,
             "volatility_adjustment": 1.0,

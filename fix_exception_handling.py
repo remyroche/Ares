@@ -4,6 +4,7 @@ Exception Handling Fix Script for Ares Trading Bot
 This script helps identify and fix overly broad exception handling.
 """
 
+import os
 import re
 import ast
 from pathlib import Path
@@ -215,7 +216,7 @@ class ExceptionHandlerFixer:
             "                f.write(content)",
             "            print(f'Fixed exceptions in: {file_path}')",
             "",
-            "    except Exception as e:",
+            "    except (IOError, OSError, UnicodeDecodeError) as e:",
             "        print(f'Error fixing {file_path}: {e}')",
             "",
             "def main():",
@@ -304,5 +305,4 @@ def main():
 
 
 if __name__ == "__main__":
-    import os
     main()

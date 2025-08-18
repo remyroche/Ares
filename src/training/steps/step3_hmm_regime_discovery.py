@@ -34,6 +34,9 @@ from src.utils.error_handler import (
     clean_dataframe,
 )
 
+# Import the auto-fix decorator for data quality issues
+from src.training.steps.raw_data_quality_checker import auto_fix_data_quality_issues
+
 # Data loading
 from src.training.steps.unified_data_loader import UnifiedDataLoader
 # Import moved inside function to avoid circular import
@@ -5139,6 +5142,7 @@ async def _calculate_and_integrate_hmm_features(
 
 
 # Enhanced version for the enhanced training manager
+@auto_fix_data_quality_issues
 async def run_step_enhanced(
     symbol: str,
     exchange: str = "BINANCE",

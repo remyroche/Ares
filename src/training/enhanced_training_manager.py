@@ -37,6 +37,9 @@ from src.utils.logger import system_logger
 from src.utils.validator_orchestrator import validator_orchestrator
 from src.utils.step_dependency_validator import step_dependency_validator
 
+# Import the auto-fix decorator for data quality issues
+from src.training.steps.raw_data_quality_checker import auto_fix_data_quality_issues
+
 # Import multi-timeframe training manager
 from src.training.steps.multi_timeframe_training.multi_timeframe_training_manager import (
     MultiTimeframeTrainingManager,

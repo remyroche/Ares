@@ -13,6 +13,9 @@ from src.utils.logger import system_logger
 from src.utils.warning_symbols import failed
 from src.training.steps.unified_data_loader import get_unified_data_loader
 
+# Import the auto-fix decorator for data quality issues
+from src.training.steps.raw_data_quality_checker import auto_fix_data_quality_issues
+
 
 class RegimeDataSplittingStep:
     """Step 4: Data Splitting for Training - HMM composite clusters only."""
@@ -224,6 +227,7 @@ from src.utils.training_pipeline_decorators import (
     data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     validation_score_requirements={"splitting_accuracy": 0.8},
 )
+@auto_fix_data_quality_issues
 async def run_step(
     symbol: str,
     exchange: str,

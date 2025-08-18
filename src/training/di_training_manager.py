@@ -126,7 +126,7 @@ class DITrainingManager(InjectableBase):
         step_classes = [
             "step1_data_collection",
             "step2_data_validation",
-            "step3_feature_engineering",
+            "step3_hmm_regime_discovery",
             "step4_data_preprocessing",
             "step5_model_training",
             "step6_model_validation",
@@ -271,7 +271,7 @@ class DITrainingManager(InjectableBase):
             pipeline_steps = [
                 "step1_data_collection",
                 "step2_data_validation",
-                "step3_feature_engineering",
+                "step3_hmm_regime_discovery",
                 "step4_data_preprocessing",
                 "step5_model_training",
                 "step6_model_validation",
@@ -316,7 +316,7 @@ class DITrainingManager(InjectableBase):
             # Execute subset of steps for incremental training
             incremental_steps = [
                 "step1_data_collection",
-                "step3_feature_engineering",
+                "step3_hmm_regime_discovery",
                 "step5_model_training",
                 "step6_model_validation",
                 "step9_model_evaluation",

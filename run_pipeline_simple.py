@@ -26,7 +26,7 @@ async def main():
     # Configuration
     symbol = "ETHUSDT"
     exchange = "BINANCE"
-    start_step = "step1_7_hmm_regime_discovery"
+    start_step = "step3_hmm_regime_discovery"
     data_dir = "data/training"
 
     print(f"🚀 Starting pipeline from {start_step} for {symbol} on {exchange}")

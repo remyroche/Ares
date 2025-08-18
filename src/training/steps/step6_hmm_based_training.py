@@ -1354,10 +1354,10 @@ class HMMBasedTrainingStep:
                     f"❌ Regime-specific models are required for the system to function properly"
                 )
                 self.logger.error(
-                    f"💡 Please run step1_7_hmm_regime_discovery first to create regime splits"
+                    f"💡 Please run step3_hmm_regime_discovery first to create regime splits"
                 )
                 raise ValueError(
-                    f"Missing regime splits for {timeframe}. Run step1_7_hmm_regime_discovery first."
+                    f"Missing regime splits for {timeframe}. Run step3_hmm_regime_discovery first."
                 )
 
             architecture = self.model_architectures[timeframe]

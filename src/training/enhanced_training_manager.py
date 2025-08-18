@@ -198,6 +198,105 @@ class EnhancedTrainingManager:
             "step6_hmm_based_training": [
                 "data/training/{exchange}_{symbol}_{timeframe}_hmm_models.pkl",
             ],
+        }
+
+    async def _execute_pipeline_step(
+        self,
+        step_name: str,
+        step_function: callable,
+        step_args: dict[str, Any],
+        step_times: dict[str, float],
+        pipeline_state: dict[str, Any],
+        training_input: dict[str, Any],
+        is_fatal: bool = False,
+        step_description: str = "",
+    ) -> bool:
+        """
+        Reusable helper to standardize step execution with timing, checkpointing, validation, and error handling.
+        
+        Args:
+            step_name: Name of the step (e.g., "step3_hmm_regime_discovery")
+            step_function: Function to execute the step
+            step_args: Arguments to pass to the step function
+            step_times: Dictionary to store step timing
+            pipeline_state: Current pipeline state
+            training_input: Training input parameters
+            is_fatal: Whether step failure should stop the pipeline
+            step_description: Human-readable description for logging
+            
+        Returns:
+            True if step completed successfully, False otherwise
+        """
+        step_start_time = time.time()
+        step_display_name = step_description or step_name
+        
+        try:
+            self.logger.info(f"🚀 Starting {step_display_name}")
+            self._heartbeat(step_display_name)
+            
+            # Verify previous step artifacts BEFORE execution
+            if not await self.verify_previous_step_artifacts(step_name, step_args.get("symbol"), step_args.get("exchange"), step_args.get("timeframe")):
+                self.logger.error(f"❌ Previous step artifacts not found for {step_display_name}, stopping pipeline")
+                return False
+            
+            # Validate step dependencies BEFORE execution
+            if not await self.validate_step_dependencies(step_name, pipeline_state, step_args.get("force_rerun", False)):
+                self.logger.error(f"❌ Step dependencies not met for {step_display_name}, stopping pipeline")
+                return False
+            
+            # Execute the step
+            step_success = await step_function(**step_args)
+            
+            if not step_success:
+                self._log_step_completion(step_display_name, step_start_time, step_times, success=False)
+                if is_fatal:
+                    self.logger.error(f"❌ {step_display_name} failed - stopping pipeline")
+                    return False
+                else:
+                    self.logger.warning(f"⚠️ {step_display_name} failed - continuing pipeline")
+                    return True  # Continue pipeline for non-fatal steps
+            else:
+                self._log_step_completion(step_display_name, step_start_time, step_times, success=True)
+                
+                # Update pipeline state
+                pipeline_state[step_name.replace("step", "").replace("_", "")] = {
+                    "status": "SUCCESS",
+                    "success": True,
+                    "completed": True,
+                }
+                self._save_checkpoint(step_name, pipeline_state)
+                step_times[step_name] = time.time() - step_start_time
+                
+                # Run validator for step (AFTER execution, for verification only)
+                try:
+                    step_validation = await self._run_step_validator(step_name, training_input, pipeline_state)
+                    if step_validation and step_validation.get("validation_passed", False):
+                        self.logger.info(f"🎉 {step_display_name} completed successfully and validation passed")
+                        print(f"🎉 {step_display_name} completed successfully and validation passed")
+                    else:
+                        if is_fatal:
+                            self.logger.error(f"❌ {step_display_name} validation failed - stopping pipeline")
+                            return False
+                        else:
+                            self.logger.warning(f"⚠️ {step_display_name} validation failed - continuing pipeline")
+                            return True
+                except Exception as e:
+                    if is_fatal:
+                        self.logger.error(f"❌ {step_display_name} validator failed: {e} - stopping pipeline")
+                        return False
+                    else:
+                        self.logger.warning(f"⚠️ {step_display_name} validator failed: {e} - continuing pipeline")
+                        return True
+                
+                return True
+                
+        except Exception as e:
+            self._log_step_completion(step_display_name, step_start_time, step_times, success=False)
+            self.logger.error(f"❌ Error in {step_display_name}: {e}")
+            if is_fatal:
+                return False
+            else:
+                return True  # Continue pipeline for non-fatal steps
             "step6_5_unified_regime_intelligence": [
                 "data/training/{exchange}_{symbol}_{timeframe}_unified_intelligence.parquet",
             ],
@@ -1493,80 +1592,30 @@ class EnhancedTrainingManager:
                     except Exception as e:
                         self.logger.error(f"❌ Step 2 validator failed: {e} - stopping pipeline")
                         return False
-            # If step2 was skipped, proceed directly
-            self.logger.info("➡️ Proceeding to Step 3: HMM Regime Discovery")
-
-            # Step 3: HMM Regime Discovery (block HMMs + composite clustering)
-            self._heartbeat("Step 3: HMM Regime Discovery")
+            # Step 3: HMM Regime Discovery (block HMMs + composite clustering) - Fatal on failure
+            from src.training.steps import step3_hmm_regime_discovery as _step3
             
-            # Verify previous step artifacts BEFORE execution
-            if not await self.verify_previous_step_artifacts("step3_hmm_regime_discovery", symbol, exchange, timeframe):
-                self.logger.error("❌ Previous step artifacts not found, stopping pipeline")
-                return False
-            
-            # Validate step dependencies BEFORE execution
-            if not await self.validate_step_dependencies("step3_hmm_regime_discovery", pipeline_state, self.force_rerun):
-                self.logger.error("❌ Step 3 dependencies not met, stopping pipeline")
-                return False
-            
-            step_start_3 = time.time()
-            try:
-                from src.training.steps import step3_hmm_regime_discovery as _step3
-
-                step3_success = await _step3.run_step_enhanced(
-                    symbol=symbol,
-                    exchange=exchange,
-                    data_dir=data_dir,
-                    timeframe=timeframe,
-                    lookback_days=self.lookback_days,
-                    force_rerun=self.force_rerun,
-                )
-            except Exception as e:
-                self.logger.error(f"❌ Error in Step 3: {e}")
-                step3_success = False
-
-            if not step3_success:
-                self._log_step_completion(
-                    "Step 3: HMM Regime Discovery",
-                    step_start_3,
-                    step_times,
-                    success=False,
-                )
-                self.logger.error("❌ Step 3 failed - stopping pipeline")
-                return False
-            else:
-                self._log_step_completion(
-                    "Step 3: HMM Regime Discovery",
-                    step_start_3,
-                    step_times,
-                    success=True,
-                )
-
-            pipeline_state["hmm_regime_discovery"] = {
-                "status": "SUCCESS" if step3_success else "FAILED",
-                "success": bool(step3_success),
-                "completed": bool(step3_success),
+            step3_args = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "data_dir": data_dir,
+                "timeframe": timeframe,
+                "lookback_days": self.lookback_days,
+                "force_rerun": self.force_rerun,
             }
-            self._save_checkpoint("step3_hmm_regime_discovery", pipeline_state)
-            step_times["step3_hmm_regime_discovery"] = time.time() - step_start_3
-
-            # Run validator for Step 3 (AFTER execution, for verification only)
-            try:
-                step3_validation = await self._run_step_validator(
-                    "step3_hmm_regime_discovery", training_input, pipeline_state
-                )
-                if step3_validation and step3_validation.get("validation_passed", False):
-                    self.logger.info(
-                        "🎉 Step 3: HMM Regime Discovery completed successfully and validation passed"
-                    )
-                    print(
-                        "🎉 Step 3: HMM Regime Discovery completed successfully and validation passed"
-                    )
-                else:
-                    self.logger.error("❌ Step 3 validation failed - stopping pipeline")
-                    return False
-            except Exception as e:
-                self.logger.error(f"❌ Step 3 validator failed: {e} - stopping pipeline")
+            
+            step3_success = await self._execute_pipeline_step(
+                step_name="step3_hmm_regime_discovery",
+                step_function=_step3.run_step_enhanced,
+                step_args=step3_args,
+                step_times=step_times,
+                pipeline_state=pipeline_state,
+                training_input=training_input,
+                is_fatal=True,  # Step 3 is now fatal on failure
+                step_description="Step 3: HMM Regime Discovery",
+            )
+            
+            if not step3_success:
                 return False
             self.logger.info("➡️ Proceeding to Step 4: Processing & Labeling")
 
@@ -1574,6 +1623,8 @@ class EnhancedTrainingManager:
             self._heartbeat("Step 4: Processing & Labeling")
 
             should_run_step4 = _should_run("step4_processing_labeling")
+            step_start_4 = time.time()  # Define step_start_4 here to avoid NameError
+            
             if not should_run_step4:
                 self.logger.info(
                     f"⏭️ Skipping Step 4: Processing & Labeling (starting from '{start_step_key}')"

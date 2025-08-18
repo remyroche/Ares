@@ -1,4 +1,4 @@
-# src/training/steps/step1_7_hmm_regime_discovery.py
+# src/training/steps/step3_hmm_regime_discovery.py
 
 import os
 import json
@@ -100,24 +100,18 @@ def _cleanup_multiprocessing_resources():
                         try:
                             child.terminate()
                             child.join(timeout=1)
-                        except:
+                        except Exception:
                             pass
 
-        # Clear joblib cache if available
-        try:
-            from joblib import Memory
-
-            memory = Memory(location=None, verbose=0)
-            memory.clear()
-        except:
-            pass
-
     except Exception as e:
-        system_logger.warning(f"Warning during multiprocessing cleanup: {e}")
+        system_logger.warning(f"Cleanup warning: {e}")
 
 
-# Register cleanup function to run on exit
+# Register cleanup function
 atexit.register(_cleanup_multiprocessing_resources)
+
+# Configure logging
+logger = system_logger.getChild("Step3.HMMRegimeDiscovery")
 
 
 def _signal_handler(signum, frame):
@@ -241,10 +235,6 @@ class CompositeModelMetrics:
 
     # Feature coverage
     missing_features_by_cluster: Dict[int, List[str]]
-
-
-# Enhanced logging setup
-logger = system_logger.getChild("Step1_7.HMMRegimeDiscovery")
 
 
 def log_with_context(message: str, level: str = "info", context: str = "", **kwargs):
@@ -1198,71 +1188,40 @@ def _select_block_features(
     nunique = X.nunique(dropna=True)
     const_cols = nunique[nunique <= 1].index.tolist()
     if const_cols:
-        X = X.drop(columns=const_cols, errors="ignore")
-    
-    # For momentum block, use less aggressive correlation pruning to preserve diversity
+        logger.info(f"📊 Dropping {len(const_cols)} constant columns: {const_cols}")
+        X = X.drop(columns=const_cols)
+
+    if X.empty:
+        logger.warning(f"⚠️ No features remaining for {block} block after dropping constants")
+        return pd.DataFrame(index=full_df.index)
+
+    # Apply correlation pruning with block-specific thresholds
     if block == "momentum":
-        # Use higher correlation threshold for momentum to preserve more features
-        correlation_threshold = 0.98  # Less aggressive than 0.95
-        logger.info(f"🎯 Using less aggressive correlation pruning for momentum block (threshold: {correlation_threshold})")
+        correlation_threshold = 0.98  # Less aggressive for momentum block to preserve diversity
     else:
-        correlation_threshold = 0.95
+        correlation_threshold = 0.95  # Standard threshold for other blocks
     
-    if X.shape[1] <= max_features:
-        return X.fillna(0)
-    # Correlation prune
-    drop_cols = _corr_prune(X, thr=correlation_threshold)
-    X = X.drop(columns=drop_cols, errors="ignore")
-    logger.info(f"📊 After correlation pruning: {len(X.columns)} features remaining for {block} block")
+    logger.info(f"🔧 Using correlation threshold {correlation_threshold} for {block} block")
     
+    to_drop = _corr_prune(X, correlation_threshold)
+    if to_drop:
+        logger.info(f"📊 Dropping {len(to_drop)} highly correlated columns: {to_drop}")
+        X = X.drop(columns=to_drop)
 
-    
-    if X.shape[1] <= max_features:
-        return X.fillna(0)
-    # Unsupervised heuristic: choose features with highest variance (post robust scale)
-    Xr = _robust_scale(X)
-    var = Xr.var().sort_values(ascending=False)
-    keep = list(var.head(max_features).index)
-    logger.info(f"📊 Final feature selection for {block} block: {len(keep)} features")
-    return Xr[keep].fillna(0)
+    if X.empty:
+        logger.warning(f"⚠️ No features remaining for {block} block after correlation pruning")
+        return pd.DataFrame(index=full_df.index)
 
+    # Limit to max_features if specified
+    if max_features and len(X.columns) > max_features:
+        # Select features with highest variance
+        variances = X.var()
+        top_features = variances.nlargest(max_features).index.tolist()
+        logger.info(f"📊 Limiting to top {max_features} features by variance: {top_features}")
+        X = X[top_features]
 
-def _fit_block_hmm(
-    X: pd.DataFrame, n_states: int, random_state: int = 42
-) -> Tuple[Optional[GMMHMM], Optional[StandardScaler]]:
-    """
-    Fit HMM model for a specific block with enhanced error handling and multiple training attempts.
-
-    This function implements robust HMM training with:
-    1. Multiple training attempts with different random seeds
-    2. State distribution quality validation
-    3. Automatic retraining if quality is poor
-    4. Enhanced feature scaling and normalization
-    """
-    try:
-        # Use GMMHMM with diagonal covariances, 2 mixtures per state to approximate heavy tails
-        model = GMMHMM(
-            n_components=n_states,
-            n_mix=2,
-            covariance_type="diag",
-            n_iter=200,
-            tol=1e-3,
-            random_state=random_state,
-        )
-        # hmmlearn expects 2D array
-        arr = X.values.astype(float)
-
-        # Handle NaN values before scaling
-        arr_clean = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
-
-        # Scale for stability using StandardScaler (after robust scaling)
-        scaler = StandardScaler()
-        arr_scaled = scaler.fit_transform(arr_clean)
-        model.fit(arr_scaled)
-        return model, scaler
-    except Exception as e:
-        system_logger.error(f"Error fitting HMM for block: {e}")
-        return None, None
+    logger.info(f"✅ Final {block} block: {len(X.columns)} features")
+    return X
 
 
 def _fit_block_hmm_robust(
@@ -1305,10 +1264,8 @@ def _fit_block_hmm_robust(
                     f"🚨 Block {block_name}: Features with NaN values: {', '.join(nan_features[:10])}"
                 )
 
-        # 2. Handle NaN values with more sophisticated approach
+        # 2. Handle NaN values with column-wise median imputation
         arr_clean = arr.copy()
-
-        # For each feature, fill NaN with median of non-NaN values
         for i in range(arr_clean.shape[1]):
             col_data = arr_clean[:, i]
             non_nan_mask = ~np.isnan(col_data)
@@ -1345,54 +1302,6 @@ def _fit_block_hmm_robust(
 
         arr_clean = arr_clean[:, non_constant_mask]
         feature_names = X.columns[non_constant_mask].tolist()
-
-        # Special validation for microstructure block
-        if block_name == "microstructure":
-            # Check for NaN values in microstructure features
-            nan_mask = np.isnan(arr_clean)
-            if nan_mask.any():
-                nan_count = nan_mask.sum()
-                nan_percentage = (nan_count / arr_clean.size) * 100
-                system_logger.error(
-                    f"🚨 CRITICAL: Microstructure block contains {nan_count} NaN values ({nan_percentage:.2f}%)"
-                )
-                system_logger.error(
-                    f"🚨 This will cause HMM startprob_ to contain NaN values"
-                )
-
-                # Log which features have NaN values
-                for i, col in enumerate(feature_names):
-                    if nan_mask[:, i].any():
-                        nan_count_col = nan_mask[:, i].sum()
-                        nan_percentage_col = (nan_count_col / len(arr_clean)) * 100
-                        system_logger.error(
-                            f"🚨 Feature '{col}' has {nan_count_col} NaN values ({nan_percentage_col:.2f}%)"
-                        )
-
-                # Try to fix by filling NaN with median values
-                system_logger.warning(
-                    f"🚨 Attempting to fix NaN values in microstructure block..."
-                )
-                for i in range(arr_clean.shape[1]):
-                    col_data = arr_clean[:, i]
-                    non_nan_mask = ~np.isnan(col_data)
-                    if non_nan_mask.any():
-                        median_val = np.median(col_data[non_nan_mask])
-                        arr_clean[~non_nan_mask, i] = median_val
-                    else:
-                        arr_clean[:, i] = 0.0
-
-                # Verify fix
-                nan_mask_after = np.isnan(arr_clean)
-                if nan_mask_after.any():
-                    system_logger.error(
-                        f"🚨 CRITICAL: NaN values still present after fix attempt"
-                    )
-                    return None, None
-                else:
-                    system_logger.info(
-                        f"✅ Successfully fixed NaN values in microstructure block"
-                    )
 
         # 5. Robust scaling with outlier handling
         scaler = StandardScaler()
@@ -1435,44 +1344,16 @@ def _fit_block_hmm_robust(
         for attempt, seed in enumerate(training_seeds):
             try:
                 # Create HMM model with current seed and enhanced initialization
-                # For momentum block, ensure we use all 6 states by adjusting parameters
-                if block_name == "momentum" and n_states == 6:
-                    # Use more aggressive parameters for momentum to ensure all 6 states are used
-                    model = GMMHMM(
-                        n_components=n_states,
-                        n_mix=3,  # Increased mixtures for better state separation
-                        covariance_type="diag",
-                        n_iter=500,  # More iterations for better convergence
-                        tol=1e-5,  # Tighter tolerance
-                        random_state=seed,
-                        init_params="stmcw",  # Initialize all parameters
-                        params="stmcw",  # Update all parameters
-                    )
-                else:
-                    model = GMMHMM(
-                        n_components=n_states,
-                        n_mix=2,
-                        covariance_type="diag",
-                        n_iter=300,  # Increased iterations for better convergence
-                        tol=1e-4,  # Tighter tolerance
-                        random_state=seed,
-                        init_params="stmcw",  # Initialize all parameters
-                        params="stmcw",  # Update all parameters
-                    )
-
-                # Validate model parameters before fitting
-                if hasattr(model, "startprob_") and np.any(np.isnan(model.startprob_)):
-                    system_logger.warning(
-                        f"🚨 Block {block_name} attempt {attempt + 1}: Invalid startprob_ detected, skipping"
-                    )
-                    if block_name == "microstructure":
-                        system_logger.error(
-                            f"🚨 CRITICAL: Microstructure block startprob_ contains NaN - this indicates input data issues"
-                        )
-                        system_logger.error(
-                            f"🚨 This usually means the microstructure features contain NaN values"
-                        )
-                    continue
+                model = GMMHMM(
+                    n_components=n_states,
+                    n_mix=2,
+                    covariance_type="diag",
+                    n_iter=300,  # Increased iterations for better convergence
+                    tol=1e-4,  # Tighter tolerance
+                    random_state=seed,
+                    init_params="stmcw",  # Initialize all parameters
+                    params="stmcw",  # Update all parameters
+                )
 
                 # Fit the model with additional error handling
                 try:
@@ -1483,84 +1364,40 @@ def _fit_block_hmm_robust(
                     )
                     continue
 
-                # Validate model after fitting
-                if hasattr(model, "startprob_") and np.any(np.isnan(model.startprob_)):
-                    system_logger.warning(
-                        f"🚨 Block {block_name} attempt {attempt + 1}: startprob_ contains NaN after fitting"
-                    )
-                    continue
-
                 # Get state predictions
                 try:
                     states = model.predict(arr_scaled)
                 except Exception as predict_error:
                     system_logger.warning(
-                        f"�� Block {block_name} attempt {attempt + 1} prediction failed: {predict_error}"
+                        f"🚨 Block {block_name} attempt {attempt + 1} prediction failed: {predict_error}"
                     )
                     continue
 
-                unique_states, state_counts = np.unique(states, return_counts=True)
-
                 # Calculate state distribution
-                total_samples = len(states)
-                state_ratios = state_counts / total_samples
+                unique_states, state_counts = np.unique(states, return_counts=True)
+                state_distribution = state_counts / len(states)
 
-                # Quality validation
-                quality_score = 0
+                # Calculate quality score based on state coverage and balance
+                min_state_coverage = np.min(state_distribution)
+                max_state_coverage = np.max(state_distribution)
+                
+                # Quality score: higher is better
+                # Reward good state coverage and penalize dominance
+                quality_score = min_state_coverage - (max_state_coverage - 1/n_states)
 
-                # 1. Check if all requested states are found
-                if len(unique_states) == n_states:
-                    quality_score += 1
-
-                # 2. Check minimum state ratio (no state should be too small)
-                min_ratio_ok = np.all(state_ratios >= min_state_ratio)
-                if min_ratio_ok:
-                    quality_score += 1
-
-                # 3. Check maximum dominant state ratio (no state should dominate)
-                max_ratio_ok = np.max(state_ratios) <= max_dominant_state_ratio
-                if max_ratio_ok:
-                    quality_score += 1
-
-                # 4. Check state distribution balance (prefer more balanced distributions)
-                balance_score = 1.0 - np.std(state_ratios)  # Lower std = more balanced
-                quality_score += balance_score
-
-                # 5. Check model convergence (log likelihood should be reasonable)
-                try:
-                    log_likelihood = model.score(arr_scaled)
-                    if not np.isnan(log_likelihood) and not np.isinf(log_likelihood):
-                        quality_score += 0.5
-                except:
-                    pass
-
-                # Log attempt details
-                system_logger.debug(
-                    f"Block {block_name} attempt {attempt + 1}/{len(training_seeds)} "
-                    f"(seed={seed}): states={len(unique_states)}/{n_states}, "
-                    f"quality={quality_score:.2f}, "
-                    f"state_ratios={state_ratios.tolist()}"
-                )
-
-                # Update best model if quality is better
+                # Check if this is the best model so far
                 if quality_score > best_quality_score:
                     best_quality_score = quality_score
                     best_model = model
                     best_scaler = scaler
-                    best_state_distribution = {
-                        "unique_states": len(unique_states),
-                        "state_counts": state_counts.tolist(),
-                        "state_ratios": state_ratios.tolist(),
-                        "quality_score": quality_score,
-                    }
+                    best_state_distribution = state_distribution
 
-                # Early termination if we have excellent quality
-                if quality_score >= 4.0:
                     system_logger.info(
-                        f"Block {block_name}: Excellent quality achieved on attempt {attempt + 1} "
-                        f"(quality={quality_score:.2f})"
+                        f"✅ Block {block_name} attempt {attempt + 1}: New best model "
+                        f"(quality_score={quality_score:.4f}, "
+                        f"min_coverage={min_state_coverage:.3f}, "
+                        f"max_coverage={max_state_coverage:.3f})"
                     )
-                    break
 
             except Exception as e:
                 system_logger.warning(
@@ -1568,126 +1405,64 @@ def _fit_block_hmm_robust(
                 )
                 continue
 
-        # Validate final result
+        # Validate final model
         if best_model is None:
-            system_logger.error(
-                f"🚨 All training attempts failed for block {block_name}"
-            )
+            system_logger.error(f"🚨 Block {block_name}: All training attempts failed")
             return None, None
 
-        # Final validation of best model
-        if hasattr(best_model, "startprob_") and np.any(
-            np.isnan(best_model.startprob_)
-        ):
-            system_logger.error(
-                f"🚨 Block {block_name}: Best model has invalid startprob_"
-            )
-            return None, None
-
-        # Log final result
-        if best_state_distribution:
-            system_logger.info(
-                f"✅ Block {block_name} final result: "
-                f"states={best_state_distribution['unique_states']}/{n_states}, "
-                f"quality={best_quality_score:.2f}, "
-                f"state_ratios={best_state_distribution['state_ratios']}"
-            )
-            
-            # For momentum block, if we still don't have all 6 states, log a warning
-            if block_name == "momentum" and best_state_distribution['unique_states'] < n_states:
-                system_logger.warning(
-                    f"⚠️ Momentum block configured for {n_states} states but only found "
-                    f"{best_state_distribution['unique_states']} states. "
-                    f"This may indicate insufficient data diversity or feature engineering issues."
-                )
-
-        # Additional validation for momentum block specifically
-        if block_name == "momentum" and best_state_distribution:
-            # For momentum block, ensure we get all 6 states
-            if best_state_distribution['unique_states'] < n_states:
-                system_logger.warning(
-                    f"🚨 Momentum block only found {best_state_distribution['unique_states']}/{n_states} states. "
-                    f"Retraining with more aggressive parameters..."
-                )
-                
-                # Retrain with more aggressive parameters
-                aggressive_model = GMMHMM(
-                    n_components=n_states,
-                    n_mix=4,  # Even more mixtures
-                    covariance_type="diag",
-                    n_iter=1000,  # Many more iterations
-                    tol=1e-6,  # Very tight tolerance
-                    random_state=42,  # Fixed seed for consistency
-                    init_params="stmcw",
-                    params="stmcw",
-                )
-                
-                try:
-                    aggressive_model.fit(arr_scaled)
-                    aggressive_states = aggressive_model.predict(arr_scaled)
-                    aggressive_unique_states = len(np.unique(aggressive_states))
-                    
-                    if aggressive_unique_states >= n_states:
-                        system_logger.info(
-                            f"✅ Aggressive retraining successful: {aggressive_unique_states}/{n_states} states found"
-                        )
-                        best_model = aggressive_model
-                        best_scaler = scaler  # Keep the same scaler
-                        best_state_distribution = {
-                            "unique_states": aggressive_unique_states,
-                            "state_counts": np.bincount(aggressive_states).tolist(),
-                            "state_ratios": (np.bincount(aggressive_states) / len(aggressive_states)).tolist(),
-                            "quality_score": best_quality_score,
-                        }
-                    else:
-                        system_logger.warning(
-                            f"🚨 Aggressive retraining still only found {aggressive_unique_states}/{n_states} states"
-                        )
-                except Exception as e:
-                    system_logger.warning(f"🚨 Aggressive retraining failed: {e}")
-            unique_states_found = best_state_distribution["unique_states"]
-            max_state_ratio = max(best_state_distribution["state_ratios"])
-
-            if unique_states_found < 3 or max_state_ratio > 0.9:
-                system_logger.warning(
-                    f"⚠️ Momentum block quality warning: "
-                    f"states={unique_states_found}/{n_states}, "
-                    f"max_ratio={max_state_ratio:.3f} "
-                    f"(considering feature engineering improvements)"
-                )
+        # Log final model quality
+        system_logger.info(
+            f"🎉 Block {block_name}: Best model selected "
+            f"(quality_score={best_quality_score:.4f}, "
+            f"state_distribution={best_state_distribution})"
+        )
 
         return best_model, best_scaler
 
     except Exception as e:
-        system_logger.error(
-            f"🚨 Error in robust HMM fitting for block {block_name}: {e}"
-        )
+        system_logger.error(f"🚨 Block {block_name}: Critical error in _fit_block_hmm_robust: {e}")
         return None, None
 
 
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=(None, None),
-    context="step1_7_hmm_regime_discovery._posteriors",
-)
-def _posteriors(
-    model: GMMHMM, scaler: StandardScaler, X: pd.DataFrame
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Get posterior probabilities and state predictions."""
+@handle_errors(exceptions=(Exception,), default_return=np.array([]), context="step3_hmm_regime_discovery._posteriors")
+def _posteriors(model: GMMHMM, X: np.ndarray) -> np.ndarray:
+    """
+    Get posterior probabilities with enhanced NaN/Inf guards.
+    
+    Args:
+        model: Fitted HMM model
+        X: Input data (2D array)
+        
+    Returns:
+        Posterior probabilities array
+    """
     try:
-        arr = X.values.astype(float)
-
-        # Handle NaN values before scaling
-        arr_clean = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
-
-        arr_scaled = scaler.transform(arr_clean)
-        # score_samples returns (logprob, posteriors)
-        logprob, gamma = model.score_samples(arr_scaled)
-        states = model.predict(arr_scaled)
-        return states.astype(int), gamma
+        # Guard against NaN/Inf in input data
+        if np.any(np.isnan(X)) or np.any(np.isinf(X)):
+            system_logger.warning("🚨 Input data contains NaN/Inf values, cleaning...")
+            X = np.nan_to_num(X, nan=0.0, posinf=1e6, neginf=-1e6)
+        
+        # Get posterior probabilities
+        posteriors = model.predict_proba(X)
+        
+        # Guard against NaN/Inf in output
+        if np.any(np.isnan(posteriors)) or np.any(np.isinf(posteriors)):
+            system_logger.warning("🚨 Posterior probabilities contain NaN/Inf, cleaning...")
+            posteriors = np.nan_to_num(posteriors, nan=0.0, posinf=1.0, neginf=0.0)
+            
+            # Ensure probabilities sum to 1
+            row_sums = posteriors.sum(axis=1, keepdims=True)
+            row_sums = np.where(row_sums == 0, 1, row_sums)  # Avoid division by zero
+            posteriors = posteriors / row_sums
+        
+        return posteriors
+        
     except Exception as e:
-        system_logger.error(f"Error computing posteriors: {e}")
-        return np.array([]), np.array([])
+        system_logger.error(f"🚨 Error in _posteriors: {e}")
+        # Return uniform probabilities as fallback
+        n_samples = X.shape[0]
+        n_states = model.n_components
+        return np.full((n_samples, n_states), 1.0/n_states)
 
 
 @handle_data_processing_errors(default_return=(pd.Series(dtype=str), pd.DataFrame()))
@@ -2012,7 +1787,7 @@ def _name_states(block: str, medians: Dict[int, Dict[str, float]]) -> Dict[int, 
 @handle_errors(
     exceptions=(Exception,),
     default_return=None,
-    context="step1_7_hmm_regime_discovery._persist_dataframe",
+    context="step3_hmm_regime_discovery._persist_dataframe",
 )
 def _persist_dataframe(df: pd.DataFrame, path: str) -> None:
     """Persist DataFrame to parquet file with enhanced error handling."""
@@ -2028,7 +1803,7 @@ def _persist_dataframe(df: pd.DataFrame, path: str) -> None:
 @handle_errors(
     exceptions=(Exception,),
     default_return=None,
-    context="step1_7_hmm_regime_discovery._persist_json",
+    context="step3_hmm_regime_discovery._persist_json",
 )
 def _persist_json(obj: Dict[str, Any], path: str) -> None:
     """Persist JSON object to file with enhanced error handling."""
@@ -2144,8 +1919,8 @@ def _process_single_block(
             )
 
         # Compute posteriors
-        states, gamma = _posteriors(model, scaler, X_blk)
-        if len(states) == 0 or len(gamma) == 0:
+        gamma = _posteriors(model, X_blk.values)
+        if len(gamma) == 0:
             return (
                 blk.name,
                 False,
@@ -2153,6 +1928,9 @@ def _process_single_block(
                 f"failed to compute posteriors for block {blk.name}",
                 time.time() - blk_start_time,
             )
+        
+        # Get state predictions
+        states = model.predict(X_blk.values)
 
         # Compute state feature medians
         state_medians = _state_feature_medians(X_blk, states)
@@ -2227,7 +2005,7 @@ from src.utils.training_pipeline_decorators import (
 @handle_errors(
     exceptions=(Exception,),
     default_return=False,
-    context="step1_7_hmm_regime_discovery",
+    context="step3_hmm_regime_discovery",
 )
 async def run_step(
     symbol: str,
@@ -2746,12 +2524,15 @@ async def run_step(
                             config_hash,
                         )
 
-                    states, gamma = _posteriors(model, scaler, X_blk)
-                    if len(states) == 0 or len(gamma) == 0:
+                    gamma = _posteriors(model, X_blk.values)
+                    if len(gamma) == 0:
                         logger.error(
                             f"❌ Failed to compute posteriors for block '{blk.name}'"
                         )
                         continue
+                    
+                    # Get state predictions
+                    states = model.predict(X_blk.values)
 
                     block_models[blk.name] = model
                     block_scalers[blk.name] = scaler
@@ -5264,11 +5045,14 @@ async def run_step_enhanced(
                     logger.error(f"❌ Failed to train HMM for block '{blk_name}'")
                     continue
                 
-                # Get states and posteriors
-                states, gamma = _posteriors(model, scaler, X_blk)
-                if len(states) == 0 or len(gamma) == 0:
+                # Get posteriors
+                gamma = _posteriors(model, X_blk.values)
+                if len(gamma) == 0:
                     logger.error(f"❌ Failed to get posteriors for block '{blk_name}'")
                     continue
+                
+                # Get state predictions
+                states = model.predict(X_blk.values)
                 
                 # Store results
                 block_models[blk_name] = model

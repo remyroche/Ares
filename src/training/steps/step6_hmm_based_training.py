@@ -138,7 +138,15 @@ class HMMBasedTrainingStep:
             "orderflow_p_state_4",
         ]
 
-        # Initialize optimized feature selection manager
+        # Initialize enhanced LM optimizer
+        self.enhanced_lm_optimizer = None
+        try:
+            from src.training.enhanced_lm_optimizer import EnhancedLMOptimizer
+            self.enhanced_lm_optimizer = EnhancedLMOptimizer(config)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to initialize enhanced LM optimizer: {e}")
+        
+        # Initialize optimized feature selection manager (fallback)
         self.optimized_feature_selection = None
         try:
             from src.training.optimized_feature_selection_manager import OptimizedFeatureSelectionManager
@@ -280,7 +288,7 @@ class HMMBasedTrainingStep:
             self.logger.error(f"❌ Failed to get available features: {e}")
             return []
     
-    def _apply_optimized_feature_selection(
+    def _apply_enhanced_optimization(
         self, 
         features_df: pd.DataFrame, 
         target: pd.Series,
@@ -288,7 +296,7 @@ class HMMBasedTrainingStep:
         architecture: str
     ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """
-        Apply optimized feature selection for Step 6 models.
+        Apply enhanced optimization for Step 6 models including feature selection, regularization, and hyperparameter optimization.
         
         Args:
             features_df: Input features DataFrame
@@ -297,41 +305,42 @@ class HMMBasedTrainingStep:
             architecture: Model architecture (CNN, TCN, Transformer, LightGBM)
             
         Returns:
-            Tuple of (optimized_features_df, selection_metadata)
+            Tuple of (optimized_features_df, optimization_metadata)
         """
         try:
-            if self.optimized_feature_selection is None:
-                self.logger.warning("⚠️ Optimized feature selection not available, using original features")
-                return features_df, {"error": "optimized_feature_selection_not_available"}
+            # Enhanced LM optimizer is required - no fallbacks
+            if self.enhanced_lm_optimizer is None:
+                raise RuntimeError("Enhanced LM optimizer is required but not initialized")
             
-            # Determine model type for feature selection
-            if architecture in ["CNN", "TCN", "Transformer"]:
-                model_type = "neural_networks"
-            elif architecture == "LightGBM":
-                model_type = "ensemble_models"
-            else:
-                model_type = "general"
+            # Use enhanced LM optimizer for comprehensive optimization
+            self.logger.info(f"🔄 Applying enhanced LM optimization for {timeframe} {architecture}")
             
-            # Apply optimized feature selection
-            optimized_features, selection_metadata = self.optimized_feature_selection.select_features_optimized(
-                features_df, target, model_type=model_type, step_name="step6_hmm"
+            # Determine model type
+            model_type = "classification" if target.dtype == 'object' or len(target.unique()) < 10 else "regression"
+            
+            # Apply comprehensive optimization
+            optimization_results, optimized_features = await self.enhanced_lm_optimizer.optimize_lm_model(
+                step_name="step6",
+                features_df=features_df,
+                target=target,
+                model_type=model_type,
+                architecture=architecture
             )
             
-            self.logger.info(f"✅ Optimized feature selection for {timeframe} {architecture}: {len(features_df.columns)} -> {len(optimized_features.columns)} features")
+            # Use optimized features directly from the optimizer
+            self.logger.info(f"✅ Applied feature selection: {len(features_df.columns)} -> {len(optimized_features.columns)} features")
             
-            # Log performance metrics
-            if "performance_metrics" in selection_metadata:
-                perf_metrics = selection_metadata["performance_metrics"]
-                self.logger.info(f"📊 Feature selection performance for {architecture}:")
-                self.logger.info(f"   - VIF calculation: {perf_metrics.get('vif_calculation_time', 0):.2f}s")
-                self.logger.info(f"   - SHAP analysis: {perf_metrics.get('shap_calculation_time', 0):.2f}s")
-                self.logger.info(f"   - Total time: {selection_metadata.get('total_time', 0):.2f}s")
+            self.logger.info(f"✅ Enhanced optimization completed for {timeframe} {architecture}")
+            self.logger.info(f"📊 Optimization metrics:")
+            self.logger.info(f"   - Feature selection: {optimization_results.get('feature_selection', {}).get('final_features', len(features_df.columns))} features")
+            self.logger.info(f"   - Regularization: {optimization_results.get('regularization', {})}")
+            self.logger.info(f"   - Hyperparameter optimization: {optimization_results.get('hyperparameter_optimization', {})}")
             
-            return optimized_features, selection_metadata
+            return optimized_features, optimization_results
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Optimized feature selection failed, using original features: {e}")
-            return features_df, {"selection_failed": True, "error": str(e)}
+            self.logger.error(f"❌ Enhanced optimization failed for {timeframe} {architecture}: {e}")
+            raise RuntimeError(f"Enhanced optimization failed for {timeframe} {architecture}: {e}")
 
     @handle_errors(
         exceptions=(Exception,),
@@ -1315,8 +1324,8 @@ class HMMBasedTrainingStep:
             X = data[feature_columns]
             y = data["target"]
             
-            # Apply optimized feature selection based on model architecture
-            X_optimized, feature_selection_metadata = self._apply_optimized_feature_selection(
+            # Apply enhanced optimization based on model architecture
+            X_optimized, optimization_metadata = await self._apply_enhanced_optimization(
                 X, y, timeframe, architecture
             )
             

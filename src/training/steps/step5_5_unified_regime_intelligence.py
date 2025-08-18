@@ -52,6 +52,14 @@ warnings.filterwarnings("ignore")
 
 logger = system_logger.getChild("Step5_5_UnifiedRegimeIntelligence")
 
+# Import enhanced LM optimizer
+try:
+    from src.training.enhanced_lm_optimizer import EnhancedLMOptimizer
+    ENHANCED_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    ENHANCED_OPTIMIZER_AVAILABLE = False
+    logger.warning("⚠️ Enhanced LM optimizer not available, using basic optimization")
+
 
 class MultiTimeframeHMMEncoder(nn.Module):
     """Multi-timeframe HMM state encoder using attention mechanisms."""
@@ -227,6 +235,16 @@ class UnifiedRegimeIntelligenceStep:
         self.n_trials = self.hpo_config.get("n_trials", 20)
         self.hpo_timeout = self.hpo_config.get("timeout", 900)
         self.hpo_pruning = self.hpo_config.get("pruning_enabled", True)
+        
+        # Initialize enhanced LM optimizer
+        self.enhanced_lm_optimizer = None
+        if ENHANCED_OPTIMIZER_AVAILABLE:
+            try:
+                self.enhanced_lm_optimizer = EnhancedLMOptimizer(config)
+                # Note: initialize() will be called later in an async context
+                self.logger.info("✅ Enhanced LM optimizer created for step6_5")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to create enhanced LM optimizer: {e}")
 
         # Device selection
         self.device_str = self._safe_get_device()
@@ -317,7 +335,36 @@ class UnifiedRegimeIntelligenceStep:
         try:
             self.logger.info("🚀 Starting Unified Regime Intelligence training...")
 
-            # Optional: short HPO to refine a few hyperparameters
+            # Enhanced optimization for step6_5
+            if self.enhanced_lm_optimizer is None:
+                raise RuntimeError("Enhanced LM optimizer is required but not initialized")
+            
+            # Initialize the optimizer if not already done
+            if not hasattr(self.enhanced_lm_optimizer, 'initialization_status'):
+                await self.enhanced_lm_optimizer.initialize()
+            
+            self.logger.info("🔧 Enhanced LM optimization enabled: starting comprehensive optimization...")
+            
+            # Prepare data for optimization
+            optimization_data = await self._prepare_optimization_data(data)
+            if not optimization_data:
+                raise RuntimeError("Failed to prepare optimization data")
+            
+            optimization_results, optimized_features = await self.enhanced_lm_optimizer.optimize_lm_model(
+                step_name="step6_5",
+                features_df=optimization_data["features"],
+                target=optimization_data["target"],
+                model_type="classification",
+                architecture="Transformer"
+            )
+            
+            self.logger.info("✅ Enhanced optimization completed for step6_5")
+            # Store optimization results
+            if not hasattr(self, "enhancement_results"):
+                self.enhancement_results = {}
+            self.enhancement_results["enhanced_optimization"] = optimization_results
+            
+            # Check if HPO is enabled
             if self.hpo_enabled:
                 self.logger.info("🔧 HPO enabled: starting short optimization...")
                 hpo_results = await self._run_hyperparameter_optimization()
@@ -369,6 +416,54 @@ class UnifiedRegimeIntelligenceStep:
         except Exception as e:
             self.logger.error(f"🚨 Training failed: {e}")
             return False
+
+    async def _prepare_optimization_data(
+        self, data: Dict[str, pd.DataFrame]
+    ) -> Optional[Dict[str, Any]]:
+        """Prepare data for enhanced optimization."""
+        try:
+            # Load HMM composite data for each timeframe
+            hmm_data = {}
+            for tf in self.timeframes:
+                hmm_file = f"data/BINANCE_ETHUSDT_hmm_composite_clusters_{tf}.parquet"
+                if os.path.exists(hmm_file):
+                    hmm_data[tf] = pd.read_parquet(hmm_file)
+                    self.logger.info(
+                        f"📦 Loaded HMM data for optimization: {tf}: {len(hmm_data[tf])} rows"
+                    )
+
+            if not hmm_data:
+                self.logger.error("🚨 No HMM data found for optimization")
+                return None
+
+            # Use the first timeframe for optimization
+            tf = self.timeframes[0]
+            tf_data = hmm_data[tf]
+            
+            # Prepare features and target
+            feature_columns = [col for col in tf_data.columns if col not in ["composite_cluster_id", "timestamp"]]
+            features = tf_data[feature_columns].fillna(0)
+            target = tf_data["composite_cluster_id"].fillna(-1)
+            
+            # Remove noise cluster (-1) from target
+            valid_mask = target != -1
+            features = features[valid_mask]
+            target = target[valid_mask]
+            
+            if len(features) == 0:
+                self.logger.error("🚨 No valid data for optimization")
+                return None
+                
+            self.logger.info(f"📊 Prepared optimization data: {len(features)} samples, {len(features.columns)} features")
+            
+            return {
+                "features": features,
+                "target": target
+            }
+            
+        except Exception as e:
+            self.logger.error(f"🚨 Failed to prepare optimization data: {e}")
+            return None
 
     async def _prepare_training_data(
         self, data: Dict[str, pd.DataFrame]

@@ -261,9 +261,19 @@ class ConfigurationManager:
             self.logger.info("✅ Configuration Manager initialized successfully")
             return True
 
+        except (ValueError, KeyError) as e:
+            self.logger.exception(
+                f"❌ Configuration Manager initialization failed - Invalid configuration: {e}",
+            )
+            return False
+        except (OSError, IOError) as e:
+            self.logger.exception(
+                f"❌ Configuration Manager initialization failed - File system error: {e}",
+            )
+            return False
         except Exception as e:
             self.logger.exception(
-                f"❌ Configuration Manager initialization failed: {e}",
+                f"❌ Configuration Manager initialization failed - Unexpected error: {e}",
             )
             return False
 
@@ -278,9 +288,14 @@ class ConfigurationManager:
             # Configuration manager specific settings are already loaded
             self.logger.info("✅ Configuration manager configuration loaded")
 
+        except (ValueError, KeyError) as e:
+            self.logger.exception(
+                f"❌ Failed to load configuration manager configuration - Invalid config: {e}",
+            )
+            raise
         except Exception as e:
             self.logger.exception(
-                f"❌ Failed to load configuration manager configuration: {e}",
+                f"❌ Failed to load configuration manager configuration - Unexpected error: {e}",
             )
             raise
 
@@ -304,8 +319,11 @@ class ConfigurationManager:
 
             return True
 
-        except Exception:
-            self.print(failed("Configuration validation failed: {e}"))
+        except (ValueError, TypeError) as e:
+            self.print(failed(f"Configuration validation failed - Invalid value: {e}"))
+            return False
+        except Exception as e:
+            self.print(failed(f"Configuration validation failed - Unexpected error: {e}"))
             return False
 
     @handle_errors(

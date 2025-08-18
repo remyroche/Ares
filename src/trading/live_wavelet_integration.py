@@ -74,9 +74,19 @@ class LiveWaveletIntegration:
             self.logger.info("✅ Live Wavelet Integration initialized successfully")
             return True
 
+        except (ImportError, ModuleNotFoundError) as e:
+            self.logger.exception(
+                f"❌ Error initializing Live Wavelet Integration - Missing dependencies: {e}",
+            )
+            return False
+        except (ValueError, AttributeError) as e:
+            self.logger.exception(
+                f"❌ Error initializing Live Wavelet Integration - Configuration error: {e}",
+            )
+            return False
         except Exception as e:
             self.logger.exception(
-                f"❌ Error initializing Live Wavelet Integration: {e}",
+                f"❌ Error initializing Live Wavelet Integration - Unexpected error: {e}",
             )
             return False
 
@@ -142,8 +152,11 @@ class LiveWaveletIntegration:
             log.info("Wavelet signal processed")
             return results
 
-        except Exception:
-            self.print(error("Error processing market data: {e}"))
+        except (ValueError, KeyError) as e:
+            self.print(error(f"Error processing market data - Invalid data: {e}"))
+            return None
+        except Exception as e:
+            self.print(error(f"Error processing market data - Unexpected error: {e}"))
             return None
 
     def _extract_price_data(
@@ -169,8 +182,11 @@ class LiveWaveletIntegration:
                 )
             return None
 
-        except Exception:
-            self.print(error("Error extracting price data: {e}"))
+        except (KeyError, ValueError) as e:
+            self.print(error(f"Error extracting price data - Invalid data structure: {e}"))
+            return None
+        except Exception as e:
+            self.print(error(f"Error extracting price data - Unexpected error: {e}"))
             return None
 
     def _extract_volume_data(
@@ -185,8 +201,11 @@ class LiveWaveletIntegration:
                 return pd.DataFrame({"volume": [market_data["volume"]]})
             return None
 
-        except Exception:
-            self.print(error("Error extracting volume data: {e}"))
+        except (KeyError, ValueError) as e:
+            self.print(error(f"Error extracting volume data - Invalid data structure: {e}"))
+            return None
+        except Exception as e:
+            self.print(error(f"Error extracting volume data - Unexpected error: {e}"))
             return None
 
     def _validate_signal(self, signal: WaveletSignal) -> bool:
@@ -207,8 +226,11 @@ class LiveWaveletIntegration:
 
             return True
 
-        except Exception:
-            self.print(error("Error validating signal: {e}"))
+        except (AttributeError, TypeError) as e:
+            self.print(error(f"Error validating signal - Invalid signal object: {e}"))
+            return False
+        except Exception as e:
+            self.print(error(f"Error validating signal - Unexpected error: {e}"))
             return False
 
     def _create_analysis_results(
@@ -249,8 +271,11 @@ class LiveWaveletIntegration:
                 },
             }
 
-        except Exception:
-            self.print(error("Error creating analysis results: {e}"))
+        except (AttributeError, KeyError) as e:
+            self.print(error(f"Error creating analysis results - Invalid signal data: {e}"))
+            return {}
+        except Exception as e:
+            self.print(error(f"Error creating analysis results - Unexpected error: {e}"))
             return {}
 
     def _combine_with_existing_signals(

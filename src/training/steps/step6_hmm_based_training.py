@@ -259,6 +259,43 @@ class HMMBasedTrainingStep:
         except Exception as e:
             self.logger.error(f"❌ Failed to get available features: {e}")
             return []
+    
+    def _apply_model_specific_pruning(
+        self, 
+        features_df: pd.DataFrame, 
+        target: pd.Series,
+        timeframe: str,
+        architecture: str
+    ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """
+        Apply model-specific feature pruning for Step 6 models.
+        
+        Args:
+            features_df: Input features DataFrame
+            target: Target variable series
+            timeframe: Timeframe (1m, 5m, 15m, 30m)
+            architecture: Model architecture (CNN, TCN, Transformer, LightGBM)
+            
+        Returns:
+            Tuple of (pruned_features_df, pruning_metadata)
+        """
+        try:
+            from src.training.model_specific_pruning import ModelSpecificPruning
+            
+            # Initialize model-specific pruning
+            pruning_manager = ModelSpecificPruning(self.config)
+            
+            # Apply pruning based on model architecture
+            pruned_df, pruning_metadata = pruning_manager.prune_for_step6_hmm_models(
+                features_df, target, timeframe, architecture
+            )
+            
+            self.logger.info(f"✅ Model-specific pruning for {timeframe} {architecture}: {len(features_df.columns)} -> {len(pruned_df.columns)} features")
+            return pruned_df, pruning_metadata
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Model-specific pruning failed, using original features: {e}")
+            return features_df, {"pruning_failed": True, "error": str(e)}
 
     @handle_errors(
         exceptions=(Exception,),
@@ -1241,6 +1278,15 @@ class HMMBasedTrainingStep:
             ]
             X = data[feature_columns]
             y = data["target"]
+            
+            # Apply model-specific feature pruning
+            X_pruned, pruning_metadata = self._apply_model_specific_pruning(
+                X, y, timeframe, architecture
+            )
+            
+            # Update feature columns after pruning
+            feature_columns = list(X_pruned.columns)
+            X = X_pruned
 
             # Perform regime-aware time series split
             (

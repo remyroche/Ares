@@ -932,56 +932,79 @@ class TacticianSpecialistTrainingStep:
 
             self.logger.info("✅ Using chronological time-series split (leak-proof)")
 
-            # Train different model types
+            # Apply model-specific pruning for each model type
+            from src.training.model_specific_pruning import ModelSpecificPruning
+            pruning_manager = ModelSpecificPruning(self.config)
+            
+            # Train different model types with pruning
             models = {}
 
-            # 1. LightGBM
+            # 1. LightGBM (ensemble model)
+            self.logger.info("Pruning features for ensemble models...")
+            X_train_ens, X_test_ens = X_train.copy(), X_test.copy()
+            X_train_ens, ens_pruning_metadata = pruning_manager.prune_for_step9_tactician(
+                X_train_ens, y_train, "lightgbm"  # Use a representative ensemble model type
+            )
+            X_test_ens = X_test_ens[X_train_ens.columns]  # Ensure same features
+            
             models["lightgbm"] = await self._train_lightgbm(
-                X_train,
-                X_test,
+                X_train_ens,
+                X_test_ens,
                 y_train,
                 y_test,
                 symbol,
                 exchange,
             )
+            models["lightgbm"]["pruning_metadata"] = ens_pruning_metadata
 
-            # 2. Calibrated Logistic Regression
+            # 2. Calibrated Logistic Regression (linear model)
+            self.logger.info("Pruning features for linear models...")
+            X_train_log, X_test_log = X_train.copy(), X_test.copy()
+            X_train_log, log_pruning_metadata = pruning_manager.prune_for_step9_tactician(
+                X_train_log, y_train, "calibrated_logistic"
+            )
+            X_test_log = X_test_log[X_train_log.columns]  # Ensure same features
+            
             models["calibrated_logistic"] = await self._train_calibrated_logistic(
-                X_train,
-                X_test,
+                X_train_log,
+                X_test_log,
                 y_train,
                 y_test,
                 symbol,
                 exchange,
             )
+            models["calibrated_logistic"]["pruning_metadata"] = log_pruning_metadata
 
-            # 3. XGBoost (additional model)
+            # 3. XGBoost (ensemble model) - reuse ensemble pruning
             models["xgboost"] = await self._train_xgboost(
-                X_train,
-                X_test,
+                X_train_ens,
+                X_test_ens,
                 y_train,
                 y_test,
                 symbol,
                 exchange,
             )
+            models["xgboost"]["pruning_metadata"] = ens_pruning_metadata
 
-            # 3b. CatBoost (HPO)
+            # 3b. CatBoost (HPO) - ensemble model - reuse ensemble pruning
             try:
-                best_cb = await self._hpo_catboost(X_train, X_test, y_train, y_test)
+                best_cb = await self._hpo_catboost(X_train_ens, X_test_ens, y_train, y_test)
                 if best_cb:
+                    best_cb["pruning_metadata"] = ens_pruning_metadata
                     models["catboost"] = best_cb
             except Exception:
                 pass
 
-            # 4. Random Forest (additional model)
+            # 4. Random Forest (ensemble model) - reuse ensemble pruning
             models["random_forest"] = await self._train_random_forest(
-                X_train,
-                X_test,
+                X_train_ens,
+                X_test_ens,
                 y_train,
                 y_test,
                 symbol,
                 exchange,
             )
+            models["random_forest"]["pruning_metadata"] = ens_pruning_metadata
 
             self.logger.info(f"Trained {len(models)} tactician models")
 

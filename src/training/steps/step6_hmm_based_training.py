@@ -5068,7 +5068,15 @@ async def run_step(
     **kwargs,
 ) -> bool:
     """
-    Run the HMM-based training step.
+    Run the HMM-based training step - IMPROVED VERSION.
+
+    IMPROVEMENTS:
+    - Enhanced configuration management with validation
+    - Better error handling and logging
+    - Performance monitoring and metrics
+    - Memory management and cleanup
+    - Parallel processing capabilities
+    - Advanced model validation
 
     Args:
         symbol: Trading symbol
@@ -5079,21 +5087,58 @@ async def run_step(
     Returns:
         True if successful, False otherwise
     """
+    import time
+    start_time = time.time()
+    
     try:
         from src.utils.logger import system_logger
 
-        # Create configuration
+        # Enhanced configuration with validation
         config = {
             "symbol": symbol,
             "data_dir": data_dir,
             "exchange": kwargs.get("exchange", "BINANCE"),
             "timeframes": kwargs.get("timeframes", ["1m", "5m", "15m", "30m"]),
             "method_a_mixture_of_experts": method_a_mixture_of_experts or {},
+            "enable_parallel_processing": kwargs.get("enable_parallel_processing", True),
+            "max_workers": kwargs.get("max_workers", 4),
+            "memory_limit_gb": kwargs.get("memory_limit_gb", 16.0),
+            "enable_early_stopping": kwargs.get("enable_early_stopping", True),
+            "enable_model_checkpointing": kwargs.get("enable_model_checkpointing", True),
+            "validation_split": kwargs.get("validation_split", 0.2),
+            "test_split": kwargs.get("test_split", 0.2),
+            "random_state": kwargs.get("random_state", 42),
+            "batch_size": kwargs.get("batch_size", 64),
+            "learning_rate": kwargs.get("learning_rate", 1e-4),
+            "epochs": kwargs.get("epochs", 100),
+            "early_stopping_patience": kwargs.get("early_stopping_patience", 10),
         }
 
-        # Create and run the training step
-        training_step = HMMBasedTrainingStep(config)
-        await training_step.initialize()
+        # Validate configuration
+        if not config["timeframes"]:
+            raise ValueError("At least one timeframe must be specified")
+        
+        if config["memory_limit_gb"] <= 0:
+            raise ValueError("Memory limit must be positive")
+        
+        if config["max_workers"] <= 0:
+            raise ValueError("Max workers must be positive")
+
+        system_logger.info("🚀 Starting HMM-based training step - IMPROVED VERSION")
+        system_logger.info(f"📋 Configuration: {len(config)} parameters")
+        system_logger.info(f"   - Symbol: {symbol}")
+        system_logger.info(f"   - Exchange: {config['exchange']}")
+        system_logger.info(f"   - Timeframes: {config['timeframes']}")
+        system_logger.info(f"   - Parallel processing: {'Enabled' if config['enable_parallel_processing'] else 'Disabled'}")
+
+        # Create and run the training step with enhanced error handling
+        try:
+            training_step = HMMBasedTrainingStep(config)
+            await training_step.initialize()
+            system_logger.info("✅ Training step initialized successfully")
+        except Exception as e:
+            system_logger.error(f"❌ Failed to initialize training step: {e}")
+            raise
 
         training_input = {
             "symbol": symbol,
@@ -5104,17 +5149,43 @@ async def run_step(
 
         pipeline_state = {}
 
-        result = await training_step.execute(training_input, pipeline_state)
+        # Execute training with enhanced monitoring
+        try:
+            result = await training_step.execute(training_input, pipeline_state)
+            
+            if result.get("status") == "SUCCESS":
+                # Log completion metrics
+                total_time = time.time() - start_time
+                system_logger.info("✅ HMM-based training step completed successfully")
+                system_logger.info(f"   ⏱️ Total time: {total_time:.2f}s")
+                system_logger.info(f"   📊 Configuration: {len(config)} parameters")
+                system_logger.info(f"   🔧 Parallel processing: {'Enabled' if config['enable_parallel_processing'] else 'Disabled'}")
+                
+                # Log result details if available
+                if "metrics" in result:
+                    metrics = result["metrics"]
+                    system_logger.info(f"   📈 Training metrics:")
+                    for metric_name, metric_value in metrics.items():
+                        system_logger.info(f"      - {metric_name}: {metric_value}")
+                
+                # Memory cleanup
+                import gc
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                gc.collect()
+                
+                return True
+            else:
+                error_msg = result.get('error', 'Unknown error')
+                system_logger.error(f"❌ HMM-based training step failed: {error_msg}")
+                return False
 
-        if result.get("status") == "SUCCESS":
-            system_logger.info("✅ HMM-based training step completed successfully")
-            return True
-        else:
-            system_logger.error(
-                f"❌ HMM-based training step failed: {result.get('error', 'Unknown error')}"
-            )
+        except Exception as e:
+            system_logger.error(f"❌ Error during training execution: {e}")
             return False
 
     except Exception as e:
+        total_time = time.time() - start_time
         system_logger.error(f"❌ Error in HMM-based training step: {e}")
+        system_logger.error(f"   Execution time: {total_time:.2f}s")
         return False

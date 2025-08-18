@@ -706,10 +706,20 @@ async def integrate_with_existing_backtester():
             )
             print(f"Trade {i+1}: {result}")
     
-    # Add assertions to verify behavior
+    # Add comprehensive assertions to verify behavior
     tracker = get_trade_tracker()
     assert len(tracker.trades) > 0, "Expected trades to be tracked"
     assert len(tracker.performance_history) > 0, "Expected performance history to be recorded"
+    
+    # Verify trade data structure
+    if tracker.trades:
+        latest_trade = tracker.trades[-1]
+        assert 'symbol' in latest_trade, "Trade should have symbol"
+        assert 'side' in latest_trade, "Trade should have side"
+        assert 'price' in latest_trade, "Trade should have price"
+        assert 'quantity' in latest_trade, "Trade should have quantity"
+        assert 'model_weights' in latest_trade, "Trade should have model weights"
+        assert 'hmm_regime' in latest_trade, "Trade should have HMM regime"
     
     # Get trade tracking data
     tracker = get_trade_tracker()

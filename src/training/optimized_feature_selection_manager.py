@@ -87,12 +87,13 @@ class OptimizedFeatureSelectionManager:
             "enable_matrix_vif": True,
             "enable_balanced_selection": True,
             "feature_categories": {
-                "momentum": 0.25,
-                "volatility": 0.20,
-                "liquidity": 0.20,
-                "microstructure": 0.15,
+                "momentum": 0.20,
+                "volatility": 0.15,
+                "liquidity": 0.15,
+                "microstructure": 0.10,
                 "regime": 0.10,
-                "interaction": 0.10
+                "sr_features": 0.15,
+                "interaction": 0.15
             }
         }
         
@@ -494,11 +495,14 @@ class OptimizedFeatureSelectionManager:
     def _optimize_for_neural_networks(self, features_df: pd.DataFrame, target: pd.Series) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """Optimize features for neural networks."""
         # Neural networks benefit from diverse, non-linear features
-        # Keep interaction features and normalized features
+        # Keep interaction features, normalized features, and SR features
         interaction_features = [col for col in features_df.columns if "_x_" in col or "_div_" in col]
         normalized_features = [col for col in features_df.columns if "_norm" in col or "_z_score" in col]
+        sr_features = [col for col in features_df.columns if any(keyword in col.lower() for keyword in [
+            "sr_", "support", "resistance", "breakout", "proximity", "sr_distance"
+        ])]
         
-        preferred_features = list(set(interaction_features + normalized_features))
+        preferred_features = list(set(interaction_features + normalized_features + sr_features))
         remaining_features = [col for col in features_df.columns if col not in preferred_features]
         
         # Add remaining features based on importance
@@ -515,6 +519,7 @@ class OptimizedFeatureSelectionManager:
             "optimization": "neural_networks",
             "interaction_features": len(interaction_features),
             "normalized_features": len(normalized_features),
+            "sr_features": len(sr_features),
             "features_after_stage": len(features_df.columns)
         }
         
@@ -588,6 +593,7 @@ class OptimizedFeatureSelectionManager:
             "liquidity": [],
             "microstructure": [],
             "regime": [],
+            "sr_features": [],
             "interaction": [],
             "other": []
         }
@@ -639,6 +645,20 @@ class OptimizedFeatureSelectionManager:
                 "regime", "cluster", "state", "composite", "hmm"
             ]):
                 categories["regime"].append(feature)
+                categorized = True
+            
+            # Support/Resistance features
+            elif any(keyword in feature_lower for keyword in [
+                "sr_", "sr_distance", "support", "resistance", "proximity",
+                "breakout_probability", "rebounce_probability", "consolidation_probability",
+                "sr_confidence", "multi_timeframe_sr_score", "sr_proximity", "sr_outcome",
+                "sr_", "distance_to_resistance", "distance_to_support", "normalized_distance",
+                "sr_proximity_score", "strength_score", "clarity_factor", "directional_pressure",
+                "sr_score", "delta_sr_score", "isolation_score", "sr_level", "sr_breakout",
+                "sr_rebounce", "sr_consolidation", "sr_breakout_prob", "sr_rebounce_prob",
+                "sr_consolidation_prob", "sr_confidence_score", "sr_multi_timeframe"
+            ]):
+                categories["sr_features"].append(feature)
                 categorized = True
             
             # Interaction features

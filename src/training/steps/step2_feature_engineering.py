@@ -16,6 +16,9 @@ from src.utils.decorators import with_tracing_span, guard_dataframe_nulls
 # Import the auto-fix decorator for data quality issues
 from src.training.steps.raw_data_quality_checker import auto_fix_data_quality_issues
 
+# Import feature selection manager
+from src.training.feature_selection_manager import FeatureSelectionManager
+
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
     validate_step_prerequisites,
@@ -1433,8 +1436,6 @@ async def run_step(
 
         # Apply feature selection to reduce features to target count
         try:
-            from src.training.feature_selection_manager import FeatureSelectionManager
-            
             # Initialize feature selection manager
             feature_selection_manager = FeatureSelectionManager(config)
             
@@ -1446,7 +1447,7 @@ async def run_step(
                 train_target = labeled["train"]["target"].reindex(X_tr.index)
                 
                 logger.info("Applying feature selection on the training set...")
-                X_tr, selection_metadata = await feature_selection_manager.select_features_step2(
+                X_tr, selection_metadata = feature_selection_manager.select_features_step2(
                     X_tr, train_target, symbol, exchange, data_dir
                 )
                 

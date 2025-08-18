@@ -54,7 +54,7 @@ class FeatureSelectionManager:
         default_return=(pd.DataFrame(), {}),
         context="feature selection step2"
     )
-    async def select_features_step2(
+    def select_features_step2(
         self, 
         features_df: pd.DataFrame, 
         target: pd.Series,
@@ -116,7 +116,7 @@ class FeatureSelectionManager:
             }
             
             # Save selection metadata
-            await self._save_selection_metadata(selection_metadata, symbol, exchange, data_dir)
+            self._save_selection_metadata(selection_metadata, symbol, exchange, data_dir)
             
             self.logger.info(f"✅ Feature selection completed: {len(features_df.columns)} features selected")
             return features_df, selection_metadata
@@ -357,7 +357,7 @@ class FeatureSelectionManager:
         
         return categories
     
-    async def _save_selection_metadata(self, metadata: Dict[str, Any], symbol: str, exchange: str, data_dir: str):
+    def _save_selection_metadata(self, metadata: Dict[str, Any], symbol: str, exchange: str, data_dir: str):
         """Save feature selection metadata."""
         try:
             metadata_file = f"{data_dir}/{exchange}_{symbol}_feature_selection_metadata.json"

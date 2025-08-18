@@ -57,7 +57,7 @@ async def test_feature_selection_manager():
     feature_selection_manager = FeatureSelectionManager(config)
     
     # Test feature selection
-    selected_features, metadata = await feature_selection_manager.select_features_step2(
+    selected_features, metadata = feature_selection_manager.select_features_step2(
         features_df, target, "ETHUSDT", "BINANCE", "data/test"
     )
     
@@ -111,7 +111,7 @@ async def test_model_specific_pruning():
     pruning_results = {}
     
     # Test neural network pruning
-    nn_features, nn_metadata = await pruning_manager.prune_for_neural_networks(
+    nn_features, nn_metadata = pruning_manager.prune_for_neural_networks(
         features_df, target, "CNN"
     )
     pruning_results["neural_network"] = {
@@ -121,7 +121,7 @@ async def test_model_specific_pruning():
     }
     
     # Test linear model pruning
-    linear_features, linear_metadata = await pruning_manager.prune_for_linear_models(
+    linear_features, linear_metadata = pruning_manager.prune_for_linear_models(
         features_df, target, "LogisticRegression"
     )
     pruning_results["linear_model"] = {
@@ -131,7 +131,7 @@ async def test_model_specific_pruning():
     }
     
     # Test ensemble model pruning
-    ensemble_features, ensemble_metadata = await pruning_manager.prune_for_ensemble_models(
+    ensemble_features, ensemble_metadata = pruning_manager.prune_for_ensemble_models(
         features_df, target, "LightGBM"
     )
     pruning_results["ensemble_model"] = {
@@ -141,7 +141,7 @@ async def test_model_specific_pruning():
     }
     
     # Test Step 6 specific pruning
-    step6_features, step6_metadata = await pruning_manager.prune_for_step6_hmm_models(
+    step6_features, step6_metadata = pruning_manager.prune_for_step6_hmm_models(
         features_df, target, "1m", "CNN"
     )
     pruning_results["step6_cnn"] = {

@@ -260,7 +260,7 @@ class HMMBasedTrainingStep:
             self.logger.error(f"❌ Failed to get available features: {e}")
             return []
     
-    async def _apply_model_specific_pruning(
+    def _apply_model_specific_pruning(
         self, 
         features_df: pd.DataFrame, 
         target: pd.Series,
@@ -286,7 +286,7 @@ class HMMBasedTrainingStep:
             pruning_manager = ModelSpecificPruning(self.config)
             
             # Apply pruning based on model architecture
-            pruned_df, pruning_metadata = await pruning_manager.prune_for_step6_hmm_models(
+            pruned_df, pruning_metadata = pruning_manager.prune_for_step6_hmm_models(
                 features_df, target, timeframe, architecture
             )
             
@@ -1280,7 +1280,7 @@ class HMMBasedTrainingStep:
             y = data["target"]
             
             # Apply model-specific feature pruning
-            X_pruned, pruning_metadata = await self._apply_model_specific_pruning(
+            X_pruned, pruning_metadata = self._apply_model_specific_pruning(
                 X, y, timeframe, architecture
             )
             

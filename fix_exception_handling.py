@@ -80,7 +80,7 @@ class ExceptionHandlerFixer:
                 elif re.search(r'except\s*:', line):
                     issues['bare_except'].append((i, line_stripped, 'bare except'))
                     
-        except Exception as e:
+        except (IOError, OSError) as e:
             print(f"Error analyzing {file_path}: {e}")
             
         return issues

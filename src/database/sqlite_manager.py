@@ -36,7 +36,7 @@ class ConnectionPool:
         self.total_connections_created: int = 0
         self.connection_errors: int = 0
 
-    @handle_errors(exceptions=(Exception,), default_return=None)
+    @handle_errors(exceptions=(OSError, sqlite3.Error, asyncio.TimeoutError), default_return=None)
     async def initialize(self) -> None:
         """Initialize the connection pool."""
         self.connection_pool = asyncio.Queue(maxsize=self.max_connections)
@@ -48,7 +48,7 @@ class ConnectionPool:
                 await self.connection_pool.put(connection)
                 self.total_connections_created += 1
 
-    @handle_errors(exceptions=(Exception,), default_return=None)
+    @handle_errors(exceptions=(OSError, sqlite3.Error, PermissionError), default_return=None)
     async def _create_connection(self) -> sqlite3.Connection | None:
         """Create a new database connection."""
         connection = sqlite3.connect(self.database_path)
@@ -62,7 +62,7 @@ class ConnectionPool:
 
         return connection
 
-    @handle_errors(exceptions=(Exception,), default_return=None)
+    @handle_errors(exceptions=(asyncio.QueueEmpty, asyncio.TimeoutError, OSError), default_return=None)
     async def get_connection(self) -> sqlite3.Connection | None:
         """Get a connection from the pool."""
         if not self.connection_pool:
@@ -86,7 +86,7 @@ class ConnectionPool:
             self.active_connections += 1
             return connection
 
-    @handle_errors(exceptions=(Exception,), default_return=None)
+    @handle_errors(exceptions=(asyncio.QueueFull, sqlite3.Error, OSError), default_return=None)
     async def return_connection(self, connection: sqlite3.Connection) -> None:
         """Return a connection to the pool."""
         if connection and self.connection_pool:

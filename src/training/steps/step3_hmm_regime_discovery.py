@@ -1429,7 +1429,7 @@ def _fit_block_hmm_robust(
         return None, None
 
 
-@handle_errors(exceptions=(Exception,), default_return=np.array([]), context="step3_hmm_regime_discovery._posteriors")
+@handle_errors(exceptions=(ValueError, TypeError, np.linalg.LinAlgError), default_return=np.array([]), context="step3_hmm_regime_discovery._posteriors")
 def _posteriors(model: GMMHMM, X: np.ndarray) -> np.ndarray:
     """
     Get posterior probabilities with enhanced NaN/Inf guards.

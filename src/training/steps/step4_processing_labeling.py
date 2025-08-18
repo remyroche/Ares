@@ -22,6 +22,9 @@ from src.training.enhanced_training_manager_optimized import (
     MemoryEfficientDataManager,
 )
 
+# Import the auto-fix decorator for data quality issues
+from src.training.steps.raw_data_quality_checker import auto_fix_data_quality_issues
+
 
 async def _build_sr_levels(price_df: pd.DataFrame) -> dict[str, Any]:
     try:
@@ -135,6 +138,7 @@ def _persist_sr_levels(
         _logger.warning(f"⚠️ Persist SR levels skipped: {e}")
 
 
+@auto_fix_data_quality_issues
 async def run_step(
     symbol: str,
     exchange_name: str = "BINANCE",

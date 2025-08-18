@@ -40,6 +40,28 @@ class SRBreakoutPredictor:
     ATR_MULTIPLIER = 0.02  # ATR multiplier for fallback
     VOLUME_NORMALIZATION_FACTOR = 10000.0  # Volume normalization factor
     LEVEL_DENSITY_NORMALIZATION = 10.0  # Level density normalization factor
+    
+    # Enhanced clarity factor weights
+    CLARITY_FACTOR_WEIGHTS = (0.3, 0.2, 0.2, 0.2, 0.1)  # (touch_count, volume, age, bounce, isolation)
+    
+    # Proximity score constants
+    PROXIMITY_SCALE_FACTOR = 10
+    PROXIMITY_STRENGTH_ADJUSTMENT = 0.5
+    
+    # Feature names for consistency
+    SR_FEATURE_NAMES = [
+        "distance_to_support", "distance_to_resistance",
+        "normalized_distance_to_support", "normalized_distance_to_resistance",
+        "sr_proximity_score", "resistance_strength_score", "support_strength_score",
+        "clarity_factor", "directional_pressure", "sr_score", "delta_sr_score",
+        "normalized_distance_to_resistance_clarity", "normalized_distance_to_support_clarity"
+    ]
+    
+    # Magic number constants
+    CLARITY_NORMALIZATION_FACTOR = 2.0
+    ISOLATION_SCALE_FACTOR = 0.1
+    AGE_SCALE_FACTOR = 100
+    CLARITY_ADJUSTMENT_FACTOR = 0.1
 
     def __init__(self, config: dict[str, Any]) -> None:
         """
@@ -2301,54 +2323,89 @@ class SRBreakoutPredictor:
             support_prices = np.array([level.get("price", 0) for level in support_levels if level.get("price", 0) > 0])
             resistance_prices = np.array([level.get("price", 0) for level in resistance_levels if level.get("price", 0) > 0])
             
-            # Calculate SR_Score for each price point
-            sr_scores = []
+            # Vectorized SR_Score calculation for better performance
+            close_values = close.values
+            atr_values = atr.values
+            volume_values = volume.values
             
-            for i, current_price in enumerate(close):
-                if pd.isna(current_price):
-                    sr_scores.append(np.nan)
-                    continue
-                
-                # Calculate distances to nearest levels
+            # Pre-allocate arrays
+            n_prices = len(close_values)
+            sr_scores = np.full(n_prices, np.nan)
+            
+            # Handle NaN values
+            valid_mask = ~np.isnan(close_values)
+            valid_indices = np.where(valid_mask)[0]
+            
+            if len(valid_indices) == 0:
+                sr_scores = np.zeros(n_prices)
+            else:
+                # Vectorized distance calculations
                 if len(support_prices) > 0:
-                    support_distances = abs(support_prices - current_price)
-                    nearest_support_idx = np.argmin(support_distances)
-                    nearest_support_distance = support_distances[nearest_support_idx]
-                    nearest_support_strength = support_levels[nearest_support_idx].get("strength", 0.5)
+                    # Reshape for broadcasting: (n_prices, 1) - (1, n_support_levels) = (n_prices, n_support_levels)
+                    prices_reshaped = close_values[valid_mask].reshape(-1, 1)
+                    support_reshaped = support_prices.reshape(1, -1)
+                    
+                    # Calculate all support distances at once
+                    all_support_distances = np.abs(prices_reshaped - support_reshaped)
+                    nearest_support_indices = np.argmin(all_support_distances, axis=1)
+                    nearest_support_distances = all_support_distances[np.arange(len(valid_indices)), nearest_support_indices]
+                    nearest_support_strengths = np.array([support_levels[idx].get("strength", 0.5) for idx in nearest_support_indices])
                 else:
-                    nearest_support_distance = current_price * self.FALLBACK_DISTANCE_RATIO
-                    nearest_support_strength = self.FALLBACK_STRENGTH
+                    nearest_support_distances = close_values[valid_mask] * self.FALLBACK_DISTANCE_RATIO
+                    nearest_support_strengths = np.full(len(valid_indices), self.FALLBACK_STRENGTH)
                 
                 if len(resistance_prices) > 0:
-                    resistance_distances = abs(resistance_prices - current_price)
-                    nearest_resistance_idx = np.argmin(resistance_distances)
-                    nearest_resistance_distance = resistance_distances[nearest_resistance_idx]
-                    nearest_resistance_strength = resistance_levels[nearest_resistance_idx].get("strength", 0.5)
+                    # Reshape for broadcasting: (n_prices, 1) - (1, n_resistance_levels) = (n_prices, n_resistance_levels)
+                    resistance_reshaped = resistance_prices.reshape(1, -1)
+                    
+                    # Calculate all resistance distances at once
+                    all_resistance_distances = np.abs(prices_reshaped - resistance_reshaped)
+                    nearest_resistance_indices = np.argmin(all_resistance_distances, axis=1)
+                    nearest_resistance_distances = all_resistance_distances[np.arange(len(valid_indices)), nearest_resistance_indices]
+                    nearest_resistance_strengths = np.array([resistance_levels[idx].get("strength", 0.5) for idx in nearest_resistance_indices])
                 else:
-                    nearest_resistance_distance = current_price * self.FALLBACK_DISTANCE_RATIO
-                    nearest_resistance_strength = self.FALLBACK_STRENGTH
+                    nearest_resistance_distances = close_values[valid_mask] * self.FALLBACK_DISTANCE_RATIO
+                    nearest_resistance_strengths = np.full(len(valid_indices), self.FALLBACK_STRENGTH)
                 
-                # Calculate normalized distances (by ATR)
-                current_atr = atr.iloc[i] if i < len(atr) and not pd.isna(atr.iloc[i]) else current_price * self.ATR_MULTIPLIER
-                normalized_distance_to_support = nearest_support_distance / current_atr if current_atr > 0 else 0
-                normalized_distance_to_resistance = nearest_resistance_distance / current_atr if current_atr > 0 else 0
-                
-                # Calculate directional pressure
-                if normalized_distance_to_resistance + normalized_distance_to_support > 0:
-                    directional_pressure = (normalized_distance_to_resistance - normalized_distance_to_support) / (normalized_distance_to_resistance + normalized_distance_to_support)
-                else:
-                    directional_pressure = 0
-                
-                # Calculate strength score (replaces clarity factor)
-                strength_score = self._calculate_strength_score(
-                    nearest_support_strength, nearest_resistance_strength,
-                    len(support_prices), len(resistance_prices),
-                    current_price, volume.iloc[i] if i < len(volume) else 0
+                # Vectorized ATR normalization
+                current_atr_values = np.where(
+                    (valid_indices < len(atr_values)) & ~np.isnan(atr_values[valid_indices]),
+                    atr_values[valid_indices],
+                    close_values[valid_mask] * self.ATR_MULTIPLIER
                 )
                 
-                # Calculate SR_Score = Directional_Pressure * Strength_Score
-                sr_score = directional_pressure * strength_score
-                sr_scores.append(sr_score)
+                # Vectorized normalized distances
+                normalized_distance_to_support = np.where(
+                    current_atr_values > 0,
+                    nearest_support_distances / current_atr_values,
+                    0
+                )
+                normalized_distance_to_resistance = np.where(
+                    current_atr_values > 0,
+                    nearest_resistance_distances / current_atr_values,
+                    0
+                )
+                
+                # Vectorized directional pressure
+                denominator = normalized_distance_to_resistance + normalized_distance_to_support
+                directional_pressure = np.where(
+                    denominator > 0,
+                    (normalized_distance_to_resistance - normalized_distance_to_support) / denominator,
+                    0
+                )
+                
+                # Vectorized strength scores
+                strength_scores = np.array([
+                    self._calculate_strength_score(
+                        nearest_support_strengths[i], nearest_resistance_strengths[i],
+                        len(support_prices), len(resistance_prices),
+                        close_values[valid_indices[i]], volume_values[valid_indices[i]] if valid_indices[i] < len(volume_values) else 0
+                    )
+                    for i in range(len(valid_indices))
+                ])
+                
+                # Vectorized SR_Score calculation
+                sr_scores[valid_indices] = directional_pressure * strength_scores
             
             # Convert to pandas Series
             sr_score_series = pd.Series(sr_scores, index=close.index).fillna(0)

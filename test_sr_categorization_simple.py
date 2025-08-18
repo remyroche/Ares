@@ -21,8 +21,17 @@ def categorize_features_simple(feature_names):
         feature_lower = feature.lower()
         categorized = False
         
+        # Interaction features (check first to avoid conflicts)
+        elif any(keyword in feature_lower for keyword in [
+            "_x_", "_div_", "_ratio_", "_over_", "_cross_", "interaction",
+            "momentum_x_", "volatility_x_", "volume_x_", "regime_x_",
+            "momentum_div_", "volatility_div_", "volume_div_"
+        ]):
+            categories["interaction"].append(feature)
+            categorized = True
+        
         # Momentum indicators
-        if any(keyword in feature_lower for keyword in [
+        elif any(keyword in feature_lower for keyword in [
             "momentum", "mom", "rsi", "macd", "cci", "roc", "willr", "stoch",
             "adx", "dmi", "kama", "tema", "dema", "hma", "wma", "vwma", "zlema",
             "ichimoku", "psar", "trix", "cmo", "tsi", "ppo", "pmo", "uo",
@@ -45,7 +54,9 @@ def categorize_features_simple(feature_names):
         # Volume features
         elif any(keyword in feature_lower for keyword in [
             "volume", "tick_volume", "obv", "cmf", "mfi", "vwap",
-            "pvi", "nvi", "efi", "delta_volume"
+            "pvi", "nvi", "efi", "delta_volume", "volume_ratio", "volume_ma", 
+            "volume_change", "volume_sma", "volume_momentum", "volume_weighted",
+            "volume_velocity", "volume_acceleration", "volume_price"
         ]):
             categories["volume"].append(feature)
             categorized = True
@@ -86,12 +97,7 @@ def categorize_features_simple(feature_names):
             categories["sr_features"].append(feature)
             categorized = True
         
-        # Interaction features
-        elif any(keyword in feature_lower for keyword in [
-            "_x_", "_div_", "_ratio_", "_over_", "_cross_", "interaction"
-        ]):
-            categories["interaction"].append(feature)
-            categorized = True
+
         
         if not categorized:
             categories["other"].append(feature)
@@ -121,8 +127,17 @@ def test_sr_feature_categorization():
         # Proximity features
         "sr_proximity", "sr_proximity_1", "sr_proximity_2",
         
+        # Volume features (should be categorized as volume)
+        "volume_ratio", "volume_ma", "volume_change", "volume_sma", 
+        "volume_momentum", "volume_weighted_momentum", "volume_velocity",
+        "volume_acceleration", "volume_price_impact",
+        
+        # Interaction features (should be categorized as interaction)
+        "momentum_x_volume", "volatility_div_liquidity", "rsi_ratio_volume",
+        "regime_x_momentum", "volume_x_volatility",
+        
         # Other features (should not be categorized as SR)
-        "rsi_14", "macd_12_26", "volume_sma_20", "momentum_strength",
+        "rsi_14", "macd_12_26", "momentum_strength",
         "volatility_garman_klass", "order_flow_imbalance", "hmm_state_0"
     ]
     

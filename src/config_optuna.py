@@ -98,153 +98,21 @@ class VolatilityParameters:
 
     # Volatility-based stop losses
     volatility_stop_loss_multiplier: float = 2.0
+
+    # Volatility-based take profits
     volatility_take_profit_multiplier: float = 3.0
 
-
-@dataclass
-class ProfitTakingParameters:
-    """Multi-stage profit taking parameters."""
-
-    # Multi-stage profit taking
-    enable_multi_stage_profit_taking: bool = True
-    profit_taking_stages: int = 3
-
-    # Stage-specific targets (ATR multipliers)
-    pt1_target_atr_multiplier: float = 1.5
-    pt2_target_atr_multiplier: float = 2.5
-    pt3_target_atr_multiplier: float = 4.0
-
-    # Stage-specific position sizes
-    pt1_position_size_pct: float = 0.33
-    pt2_position_size_pct: float = 0.33
-    pt3_position_size_pct: float = 0.34
-
-    # Dynamic profit taking
-    enable_dynamic_profit_taking: bool = True
-    momentum_based_tp: bool = True
-    volatility_based_tp: bool = True
-    regime_based_tp: bool = True
-
-    # Profit taking confidence adjustments
-    pt_confidence_decrease: float = 0.1
-    pt_short_term_decrease: float = 0.08
-
-
-@dataclass
-class StopLossParameters:
-    """Stop loss and risk management parameters."""
-
-    # ATR-based stop losses
-    stop_loss_atr_multiplier: float = 2.0
-    trailing_stop_atr_multiplier: float = 1.5
-
-    # Confidence-based stop losses
-    stop_loss_confidence_threshold: float = 0.3
-    stop_loss_short_term_threshold: float = 0.24
-    stop_loss_price_threshold: float = -0.05
-
-    # Dynamic stop losses
-    enable_dynamic_stop_loss: bool = True
-    volatility_based_sl: bool = True
-    regime_based_sl: bool = True
-
-    # Stop loss adjustments
-    sl_tightening_threshold: float = 0.4
-    sl_loosening_threshold: float = 0.8
-
-
-@dataclass
-class PositionSizingParameters:
-    """Position sizing and leverage parameters."""
-
-    # Base position sizing
-    base_position_size: float = 0.05
-    max_position_size: float = 0.3
-    min_position_size: float = 0.01
-
-    # Kelly criterion parameters
-    kelly_multiplier: float = 0.25
-    fractional_kelly: bool = True
-
-    # Confidence-based scaling
-    confidence_based_scaling: bool = True
-    low_confidence_multiplier: float = 0.5
-    medium_confidence_multiplier: float = 1.0
-    high_confidence_multiplier: float = 1.5
-    very_high_confidence_multiplier: float = 2.0
-
-    # Successive position parameters
-    enable_successive_positions: bool = True
-    min_confidence_for_successive: float = 0.85
-    max_successive_positions: int = 3
-    position_spacing_minutes: int = 15
-    size_reduction_factor: float = 0.8
-    max_total_exposure: float = 0.3
-
-    # Leverage parameters
-    max_leverage: float = 100.0
-    min_leverage: float = 10.0
-    leverage_confidence_threshold: float = 0.7
-    risk_tolerance: float = 0.3
-
-
-@dataclass
-class CooldownParameters:
-    """Trade cooldown and timing parameters."""
-
-    # Trade cooldown periods (minutes)
-    base_cooldown_minutes: int = 30
-    high_confidence_cooldown: int = 15
-    low_confidence_cooldown: int = 60
-
-    # Regime-based cooldowns
-    bull_trend_cooldown: int = 20
-    bear_trend_cooldown: int = 45
-    sideways_cooldown: int = 60
-    high_impact_cooldown: int = 90
-
-    # Loss-based cooldowns
-    loss_cooldown_multiplier: float = 2.0
-    consecutive_loss_cooldown: int = 120
-
-    # Volatility-based cooldowns
-    high_volatility_cooldown_multiplier: float = 1.5
-    low_volatility_cooldown_multiplier: float = 0.8
-
-
-@dataclass
-class DrawdownParameters:
-    """Drawdown-based de-risking parameters."""
-
-    # Drawdown thresholds
-    warning_drawdown_threshold: float = 0.1
-    reduction_drawdown_threshold: float = 0.2
-    aggressive_drawdown_threshold: float = 0.3
-    emergency_drawdown_threshold: float = 0.4
-
-    # Size reduction factors
-    warning_size_reduction: float = 0.9
-    reduction_size_reduction: float = 0.7
-    aggressive_size_reduction: float = 0.5
-    emergency_size_reduction: float = 0.2
-
-    # Daily loss thresholds
-    warning_daily_loss: float = 0.05
-    reduction_daily_loss: float = 0.08
-    emergency_daily_loss: float = 0.10
-
-    # Daily loss size reductions
-    warning_daily_reduction: float = 0.8
-    reduction_daily_reduction: float = 0.5
-    emergency_daily_reduction: float = 0.2
+    # Volatility regime detection
+    volatility_regime_lookback: int = 30
+    volatility_regime_threshold: float = 0.02
 
 
 @dataclass
 class EnsembleParameters:
-    """Ensemble gathering and combination parameters."""
+    """Parameters for ensemble model combination."""
 
     # Ensemble method
-    ensemble_method: EnsembleMethod = EnsembleMethod.CONFIDENCE_WEIGHTED
+    ensemble_method: EnsembleMethod = EnsembleMethod.WEIGHTED_AVERAGE
 
     # Threshold-based ensemble
     all_threshold_confidence: float = 0.8
@@ -348,763 +216,381 @@ class MarketRegimeParameters:
                 },
                 "sideways": {
                     "tp_multiplier_range": [1.5, 3.0],
-                    "sl_multiplier_range": [0.8, 1.5],
-                    "position_size_range": [0.05, 0.15],
-                },
-                "sr": {
-                    "tp_multiplier_range": [1.8, 3.5],
-                    "sl_multiplier_range": [0.9, 1.8],
-                    "position_size_range": [0.06, 0.18],
-                },
-                "candle": {
-                    "tp_multiplier_range": [1.2, 2.5],
-                    "sl_multiplier_range": [0.6, 1.2],
-                    "position_size_range": [0.03, 0.12],
+                    "sl_multiplier_range": [0.8, 1.8],
+                    "position_size_range": [0.06, 0.15],
                 },
             }
 
 
 @dataclass
-class OptimizationParameters:
-    """Hyperparameter optimization parameters."""
-
-    # Optuna parameters
-    n_trials: int = 500
-    timeout_seconds: int = 3600
-    n_jobs: int = -1
-
-    # Optimization objectives
-    primary_objective: str = "sharpe_ratio"
-    secondary_objectives: list[str] = None
-
+class SROptimizationParameters:
+    """
+    Comprehensive S/R (Support/Resistance) optimization parameters.
+    
+    This dataclass contains all parameters that can be optimized for S/R analysis,
+    including strength score weights, level detection parameters, breakout thresholds,
+    zone multipliers, and confidence thresholds.
+    """
+    
+    # === STRENGTH SCORE WEIGHTS ===
+    # Weights for the strength score formula:
+    # Strength_score = (w1 * log(Touch Count)) + (w2 * log(Total Volume)) + 
+    #                  (w3 * log(Level Age)) + (w4 * Bounce Rate) + (w5 * Isolation_Score)
+    touch_count_weight: float = 0.3
+    total_volume_weight: float = 0.25
+    level_age_weight: float = 0.2
+    bounce_rate_weight: float = 0.15
+    isolation_score_weight: float = 0.1
+    
+    # === LEVEL DETECTION PARAMETERS ===
+    # Minimum requirements for S/R level identification
+    min_touch_count: int = 3
+    min_level_age_hours: int = 24
+    price_tolerance_pct: float = 0.5
+    volume_threshold: float = 1.0
+    strength_threshold: float = 0.5
+    
+    # === BREAKOUT THRESHOLDS ===
+    # Parameters for detecting S/R breakouts
+    breakout_threshold: float = 0.75
+    confirmation_periods: int = 2
+    volume_confirmation: float = 1.5
+    momentum_threshold: float = 0.2
+    false_breakout_filter: float = 0.2
+    
+    # === ZONE MULTIPLIERS ===
+    # Multipliers for S/R zone calculations
+    support_zone_multiplier: float = 1.0
+    resistance_zone_multiplier: float = 1.0
+    sr_zone_threshold: float = 0.7
+    zone_expansion_factor: float = 1.2
+    zone_contraction_factor: float = 0.8
+    
+    # === CONFIDENCE THRESHOLDS ===
+    # Thresholds for S/R confidence levels
+    min_sr_confidence: float = 0.6
+    high_confidence_threshold: float = 0.8
+    confidence_decay_rate: float = 0.2
+    regime_confidence_boost: float = 0.15
+    ensemble_confidence_threshold: float = 0.7
+    
+    # === OPTIMIZATION CONFIGURATION ===
+    # Parameters for the optimization process itself
+    multi_objective: bool = True
+    objectives: list[str] = None
+    objective_weights: dict[str, float] = None
+    
     # Optimization constraints
-    min_win_rate: float = 0.4
-    max_drawdown_threshold: float = 0.25
-    min_profit_factor: float = 1.2
-
-    # Performance optimization parameters
-    min_trades_for_optimization: int = 10
-    optimization_interval: int = 3600  # 1 hour
-    performance_degradation_threshold: float = 0.1
-
-    # Search spaces
-    confidence_threshold_range: list[float] = None
-    volatility_multiplier_range: list[float] = None
-    atr_multiplier_range: list[float] = None
-    position_size_range: list[float] = None
-
-    def __post_init__(self):
-        if self.secondary_objectives is None:
-            self.secondary_objectives = ["win_rate", "profit_factor"]
-        if self.confidence_threshold_range is None:
-            self.confidence_threshold_range = [0.6, 0.95]
-        if self.volatility_multiplier_range is None:
-            self.volatility_multiplier_range = [0.5, 2.0]
-        if self.atr_multiplier_range is None:
-            self.atr_multiplier_range = [1.0, 5.0]
-        if self.position_size_range is None:
-            self.position_size_range = [0.01, 0.5]
-
-
-@dataclass
-class TimingParameters:
-    """Timing and interval parameters for various system components."""
-
-    # Update intervals
-    ml_target_update_interval: int = 30  # seconds
-    position_monitoring_interval: int = 10  # seconds
-    sentinel_monitoring_interval: int = 60  # seconds
-    metrics_dashboard_interval: int = 5  # seconds
-    performance_optimizer_interval: int = 3600  # 1 hour
-
-    # Training intervals
-    enhanced_training_interval: int = 3600  # 1 hour
-    retrain_interval_hours: int = 24  # hours
-    model_validation_interval: int = 1800  # 30 minutes
-
-    # Cache durations
-    feature_cache_duration_minutes: int = 5
-    regime_cache_duration_minutes: int = 15
-    optimization_cache_duration_minutes: int = 60
-
-    # Data splits
-    training_split: float = 0.8
-    validation_split: float = 0.15
-    test_split: float = 0.05
-
-    # Calibration parameters
-    calibration_window: int = 1000
-    calibration_interval_hours: int = 6
-
-
-@dataclass
-class ModelTrainingParameters:
-    """Model training and validation parameters."""
-
-    # Training configuration
-    enable_advanced_model_training: bool = True
-    enable_ensemble_training: bool = True
-    enable_multi_timeframe_training: bool = True
-    enable_adaptive_training: bool = True
-    enable_regime_specific_training: bool = True
-    enable_dual_model_training: bool = True
-    enable_confidence_calibration: bool = True
-
-    # Model performance thresholds
-    min_model_accuracy: float = 0.6
-    min_model_precision: float = 0.55
-    min_model_recall: float = 0.5
-    model_degradation_threshold: float = 0.1
-    model_retrain_threshold: float = 0.2
-
-    # Training constraints
-    max_training_time_hours: int = 2
-    min_training_samples: int = 1000
-    max_training_samples: int = 50000
+    n_trials: int = 100
+    cv_folds: int = 5
     early_stopping_patience: int = 20
-
-    # Validation parameters
-    cross_validation_folds: int = 5
-    walk_forward_windows: int = 10
-    monte_carlo_simulations: int = 100
-
-
-@dataclass
-class MonitoringParameters:
-    """System monitoring and performance tracking parameters."""
-
-    # Performance monitoring
-    performance_history_size: int = 1000
-    model_performance_history_size: int = 100
-    monitoring_interval_seconds: int = 60
-
-    # Alert thresholds
-    performance_alert_threshold: float = 0.1
-    model_degradation_alert_threshold: float = 0.15
-    system_health_alert_threshold: float = 0.8
-
-    # Metrics tracking
-    enable_detailed_metrics: bool = True
-    enable_model_performance_tracking: bool = True
-    enable_system_health_monitoring: bool = True
-
-    # Reporting intervals
-    daily_report_interval_hours: int = 24
-    weekly_report_interval_days: int = 7
-    monthly_report_interval_days: int = 30
-
-
-@dataclass
-class FeatureEngineeringParameters:
-    """Feature engineering and data processing parameters."""
-
-    # Feature selection
-    feature_selection_threshold: float = 0.01
-    correlation_threshold: float = 0.95
-    pca_variance_threshold: float = 0.95
-    min_features: int = 10
-    max_features: int = 100
-
-    # Technical indicators
-    rsi_period: int = 14
-    macd_fast_period: int = 12
-    macd_slow_period: int = 26
-    macd_signal_period: int = 9
-    bollinger_period: int = 20
-    bollinger_std: float = 2.0
-    atr_period: int = 14
-
-    # Advanced features
-    enable_divergence_detection: bool = True
-    enable_pattern_recognition: bool = True
-    enable_volume_profile: bool = True
-    enable_market_microstructure: bool = True
-    enable_volatility_targeting: bool = True
-
-    # Feature caching
-    enable_feature_caching: bool = True
-    feature_cache_size: int = 1000
-    feature_cache_ttl_minutes: int = 60
-
-
-@dataclass
-class DualModelSystemParameters:
-    """Dual model system configuration parameters."""
-
-    # Analyst model configuration (IF decisions) - multi-timeframe
-    analyst_timeframes: list[str] = None
-    analyst_confidence_threshold: float = 0.5
-    analyst_model_types: list[str] = None
-
-    # Tactician model configuration (WHEN decisions) - 1m timeframe
-    tactician_timeframes: list[str] = None
-    tactician_confidence_threshold: float = 0.6
-    tactician_model_types: list[str] = None
-
-    # Signal management
-    enter_signal_validity_duration: int = 120  # 2 minutes in seconds
-    signal_check_interval: int = 10  # 10 seconds
-
-    # Confidence thresholds for signals
-    neutral_signal_threshold: float = (
-        0.5  # NEUTRAL signal when confidence drops below 0.5
-    )
-    close_signal_threshold: float = 0.4  # CLOSE signal when confidence drops below 0.4
-
-    # Position management thresholds
-    position_close_confidence_threshold: float = (
-        0.6  # Close positions when tactician confidence drops below 0.6
-    )
-
-    # Ensemble analysis
-    enable_ensemble_analysis: bool = True
-    ensemble_agreement_threshold: float = 0.7
-    ensemble_minimum_models: int = 3
-
-    # ML Confidence Predictor integration
-    enhanced_training_integration: bool = True
-    model_path: str = "models/ml_confidence_predictor"
-    min_samples_for_training: int = 1000
-    confidence_threshold: float = 0.6
-    max_prediction_horizon: int = 1
-
-    # Meta-labeling deprecated
-    enable_meta_labeling: bool = False
-    meta_labeling_config: dict[str, Any] = None
-
-    # Dual confidence formula parameters
-    final_confidence_minimum: float = 0.216  # 0.5 * 0.6^2
-    normalized_confidence_range: float = 0.784  # 1.0 - 0.216
-    max_size_multiplier: float = 3.0
-
-    # Kelly criterion parameters
-    fractional_kelly_pct: float = 0.75  # 75% fractional Kelly for safety
-    historical_trades_for_kelly: int = 200
-    default_win_rate: float = 0.5  # Default for less than 200 trades
-
-    # Leverage parameters
-    min_leverage: float = 10.0
-    max_leverage: float = 100.0
-    leverage_confidence_threshold: float = 0.7
-
-    # Position closing parameters
-    atr_exit_multiplier: float = 1.5  # Exit if price reverses by 1.5x ATR
-    hard_stop_loss_before_liquidation: float = 0.1  # 10% before liquidation
-    time_based_exit_hours: int = 2  # 2-hour exit rule
-
-    # Position division strategy
-    enable_confidence_increase_check: bool = True
-    min_confidence_increase: float = 0.05
-
+    subsample_fraction: float = 0.7
+    
+    # Performance thresholds
+    min_sharpe_ratio: float = 0.5
+    max_drawdown_threshold: float = -0.15
+    min_win_rate: float = 0.55
+    min_profit_factor: float = 1.3
+    min_signal_clarity: float = 0.1
+    
     def __post_init__(self):
-        if self.analyst_timeframes is None:
-            self.analyst_timeframes = ["30m", "15m", "5m"]
-        if self.tactician_timeframes is None:
-            self.tactician_timeframes = ["1m"]
-        if self.analyst_model_types is None:
-            self.analyst_model_types = ["tcn", "tabnet", "transformer"]
-        if self.tactician_model_types is None:
-            self.tactician_model_types = ["lstm", "gru", "transformer"]
-        if self.meta_labeling_config is None:
-            self.meta_labeling_config = {
-                "enable_analyst_labels": True,
-                "enable_tactician_labels": True,
-                "pattern_detection": {
-                    "volatility_threshold": 0.02,
-                    "momentum_threshold": 0.01,
-                    "volume_threshold": 1.5,
-                },
-                "entry_prediction": {
-                    "prediction_horizon": 5,
-                    "max_adverse_excursion": 0.02,
-                },
+        if self.objectives is None:
+            self.objectives = ["sharpe_ratio", "win_rate", "signal_clarity"]
+        
+        if self.objective_weights is None:
+            self.objective_weights = {
+                "sharpe_ratio": 0.4,
+                "win_rate": 0.3,
+                "signal_clarity": 0.3
             }
+    
+    def get_strength_score_weights(self) -> dict[str, float]:
+        """Get strength score weights as a dictionary."""
+        return {
+            "touch_count": self.touch_count_weight,
+            "total_volume": self.total_volume_weight,
+            "level_age": self.level_age_weight,
+            "bounce_rate": self.bounce_rate_weight,
+            "isolation_score": self.isolation_score_weight
+        }
+    
+    def get_level_detection_params(self) -> dict[str, Any]:
+        """Get level detection parameters as a dictionary."""
+        return {
+            "min_touch_count": self.min_touch_count,
+            "min_level_age_hours": self.min_level_age_hours,
+            "price_tolerance_pct": self.price_tolerance_pct,
+            "volume_threshold": self.volume_threshold,
+            "strength_threshold": self.strength_threshold
+        }
+    
+    def get_breakout_thresholds(self) -> dict[str, float]:
+        """Get breakout thresholds as a dictionary."""
+        return {
+            "breakout_threshold": self.breakout_threshold,
+            "confirmation_periods": self.confirmation_periods,
+            "volume_confirmation": self.volume_confirmation,
+            "momentum_threshold": self.momentum_threshold,
+            "false_breakout_filter": self.false_breakout_filter
+        }
+    
+    def get_zone_multipliers(self) -> dict[str, float]:
+        """Get zone multipliers as a dictionary."""
+        return {
+            "support_zone_multiplier": self.support_zone_multiplier,
+            "resistance_zone_multiplier": self.resistance_zone_multiplier,
+            "sr_zone_threshold": self.sr_zone_threshold,
+            "zone_expansion_factor": self.zone_expansion_factor,
+            "zone_contraction_factor": self.zone_contraction_factor
+        }
+    
+    def get_confidence_thresholds(self) -> dict[str, float]:
+        """Get confidence thresholds as a dictionary."""
+        return {
+            "min_sr_confidence": self.min_sr_confidence,
+            "high_confidence_threshold": self.high_confidence_threshold,
+            "confidence_decay_rate": self.confidence_decay_rate,
+            "regime_confidence_boost": self.regime_confidence_boost,
+            "ensemble_confidence_threshold": self.ensemble_confidence_threshold
+        }
 
 
 @dataclass
-class MetaLabelingParameters:
-    """Meta-labeling system configuration parameters."""
+class HyperparameterOptimizationConfig:
+    """Configuration for hyperparameter optimization."""
 
-    # Enable/disable features
-    enable_analyst_labels: bool = True
-    enable_tactician_labels: bool = True
-
-    # Pattern detection parameters
-    volatility_threshold: float = 0.02
-    momentum_threshold: float = 0.01
-    volume_threshold: float = 1.5
-
-    # Entry prediction parameters
-    prediction_horizon: int = 5  # minutes
-    max_adverse_excursion: float = 0.02
-
-    # Analyst label types
-    enable_trend_continuation: bool = True
-    enable_exhaustion_reversal: bool = True
-    enable_range_mean_reversion: bool = True
-    enable_breakout_patterns: bool = True
-    enable_volatility_patterns: bool = True
-    enable_chart_patterns: bool = True
-    enable_momentum_patterns: bool = True
-
-    # Tactician label types
-    enable_entry_signals: bool = True
-    enable_price_extremes: bool = True
-    enable_order_returns: bool = True
-    enable_adverse_excursion: bool = True
-    enable_abort_signals: bool = True
-
-    # Pattern detection thresholds
-    trend_strength_threshold: float = 0.6
-    reversal_confidence_threshold: float = 0.7
-    breakout_confidence_threshold: float = 0.8
-    volatility_confidence_threshold: float = 0.6
-    momentum_confidence_threshold: float = 0.7
-
-    # Entry signal thresholds
-    vwap_reversion_threshold: float = 0.01
-    market_order_momentum_threshold: float = 0.02
-    micro_breakout_threshold: float = 0.001
-    order_imbalance_threshold: float = 0.3
-    taker_spike_threshold: float = 3.0
-
-
-@dataclass
-class FeatureEngineeringParameters:
-    """Feature engineering system configuration parameters."""
-
-    # Enable/disable features
-    enable_advanced_features: bool = True
-    enable_multi_timeframe_features: bool = True
-    enable_autoencoder_features: bool = True
-    enable_legacy_features: bool = True
-
-    # Feature management
-    feature_cache_duration: int = 300  # 5 minutes
-    enable_feature_selection: bool = True
-    max_features: int = 500
-    feature_selection_method: str = "mutual_info"
-
-    # Multi-timeframe feature engineering
-    enable_mtf_features: bool = True
-    enable_timeframe_adaptation: bool = True
-
-    # Advanced feature engineering
-    enable_candlestick_patterns: bool = True
-    enable_microstructure_features: bool = True
-    enable_adaptive_indicators: bool = True
-    enable_volatility_regime_modeling: bool = True
-    enable_correlation_analysis: bool = True
-    enable_momentum_analysis: bool = True
-    enable_liquidity_analysis: bool = True
-
-    # Autoencoder feature generation
-    autoencoder_hidden_dim: int = 64
-    autoencoder_latent_dim: int = 16
-    autoencoder_learning_rate: float = 0.001
-    autoencoder_epochs: int = 100
-    autoencoder_batch_size: int = 32
-
-    # Feature preprocessing
-    enable_feature_scaling: bool = True
-    scaling_method: str = "standard"  # "standard", "minmax", "robust"
-    enable_feature_normalization: bool = True
-    enable_outlier_detection: bool = True
-    outlier_detection_method: str = "isolation_forest"
-
-    # Technical indicators
-    enable_rsi: bool = True
-    enable_macd: bool = True
-    enable_bollinger_bands: bool = True
-    enable_stochastic: bool = True
-    enable_atr: bool = True
-    enable_adx: bool = True
-    enable_cci: bool = True
-
-    # Volume indicators
-    enable_volume_ma: bool = True
-    enable_volume_ratio: bool = True
-    enable_obv: bool = True
-    enable_vwap: bool = True
-    enable_money_flow_index: bool = True
-
-    # Volatility indicators
-    enable_historical_volatility: bool = True
-    enable_parkinson_volatility: bool = True
-    enable_garman_klass_volatility: bool = True
-    enable_rogers_satchell_volatility: bool = True
-
-    # Momentum indicators
-    enable_momentum: bool = True
-    enable_rate_of_change: bool = True
-    enable_williams_r: bool = True
-    enable_ultimate_oscillator: bool = True
-
-    # Timeframe-specific parameters
-    execution_timeframe: str = "1m"
-    tactical_timeframe: str = "15m"
-    strategic_timeframe: str = "1h"
-
-    # Feature selection thresholds
-    mutual_info_threshold: float = 0.01
-    correlation_threshold: float = 0.95
-    variance_threshold: float = 0.01
-
-
-@dataclass
-class OrderManagementParameters:
-    """Order management and execution parameters."""
-
-    # Enhanced order manager
-    enable_enhanced_order_manager: bool = True
-    enable_async_order_executor: bool = True
-    enable_chase_micro_breakout: bool = True
-    enable_limit_order_return: bool = True
-    enable_partial_fill_management: bool = True
-
-    # Order execution parameters
-    max_order_retries: int = 3
-    order_timeout_seconds: int = 30
-    slippage_tolerance: float = 0.001
-    volume_threshold: float = 1.5
-    momentum_threshold: float = 0.02
-
-    # Execution strategies
-    enable_immediate_execution: bool = True
-    enable_batch_execution: bool = True
-    enable_twap_execution: bool = True
-    enable_vwap_execution: bool = True
-    enable_iceberg_execution: bool = True
-    enable_adaptive_execution: bool = True
-
-    # Strategy-specific parameters
-    immediate_max_slippage: float = 0.001
-    immediate_timeout_seconds: int = 30
-
-    batch_size: float = 0.1
-    batch_interval: int = 5
-
-    twap_duration_minutes: int = 10
-    twap_intervals: int = 20
-
-    vwap_volume_threshold: float = 1.5
-    vwap_price_deviation: float = 0.002
-
-    iceberg_qty: float = 0.1
-    iceberg_display_qty: float = 0.01
-
-    adaptive_dynamic_slippage: bool = True
-    adaptive_market_impact_aware: bool = True
-
-    # Order tracking
-    enable_order_tracking: bool = True
-    order_tracking_interval: int = 5  # seconds
-    max_tracking_duration: int = 3600  # 1 hour
-
-    # Performance monitoring
-    enable_execution_analytics: bool = True
-    enable_slippage_monitoring: bool = True
-    enable_fill_rate_tracking: bool = True
-
-    # Risk management
-    max_order_size: float = 0.3  # 30% of portfolio
-    max_daily_orders: int = 100
-    max_concurrent_orders: int = 10
-
-    # Order validation
-    enable_order_validation: bool = True
-    min_order_size: float = 0.001
-    max_order_size_usdt: float = 5000
-
-    # Error handling
-    enable_retry_on_failure: bool = True
-    max_retry_attempts: int = 3
-    retry_delay_seconds: int = 5
-
-
-@dataclass
-class ModelTrainingParameters:
-    """Model training and update parameters."""
-
-    # Training enable/disable
-    enable_continuous_training: bool = True
-    enable_adaptive_training: bool = True
-    enable_incremental_training: bool = True
-    enable_full_training: bool = True
-
-    # Training intervals and triggers
-    training_interval_hours: int = 24
-    min_samples_for_retraining: int = 1000
-    performance_degradation_threshold: float = 0.1
-    accuracy_degradation_threshold: float = 0.05
-
-    # Model calibration
-    enable_model_calibration: bool = True
-    enable_confidence_calibration: bool = True
-    enable_ensemble_calibration: bool = True
-    enable_regime_calibration: bool = True
-
-    # Training strategies
-    enable_ensemble_training: bool = True
-    enable_regime_specific_training: bool = True
-    enable_multi_timeframe_training: bool = True
-    enable_dual_model_training: bool = True
-
-    # Training parameters
-    batch_size: int = 1000
-    learning_rate: float = 0.001
-    epochs: int = 100
-    validation_split: float = 0.2
+    # General optimization settings
+    enable_optimization: bool = True
+    optimization_method: str = "optuna"  # optuna, grid_search, random_search
+    max_trials: int = 100
+    timeout_minutes: int = 60
+    
+    # Cross-validation settings
+    cv_folds: int = 5
+    cv_strategy: str = "stratified"  # stratified, time_series_split
+    
+    # Early stopping
     early_stopping_patience: int = 10
-
-    # Adaptive training
-    dynamic_learning_rate: bool = True
-    performance_threshold: float = 0.7
-    adaptive_batch_size: bool = True
-    adaptive_epochs: bool = True
-
-    # Incremental training
-    update_frequency: int = 100
-    memory_size: int = 10000
-    incremental_learning_rate: float = 0.0001
-    forgetting_factor: float = 0.9
-
-    # Model types
-    analyst_model_types: list[str] = None
-    tactician_model_types: list[str] = None
-    ensemble_methods: list[str] = None
-
-    # Training data
-    min_training_samples: int = 5000
-    max_training_samples: int = 100000
-    data_quality_threshold: float = 0.8
-    feature_importance_threshold: float = 0.01
-
-    # Validation
-    cross_validation_folds: int = 5
-    walk_forward_windows: int = 10
-    monte_carlo_simulations: int = 100
-
-    # Performance monitoring
-    enable_performance_tracking: bool = True
-    performance_history_size: int = 100
-    model_comparison_metrics: list[str] = None
-
-    # Model storage
-    enable_model_versioning: bool = True
-    max_model_versions: int = 10
-    model_backup_enabled: bool = True
-
-    # Training optimization
-    enable_hyperparameter_optimization: bool = True
-    optimization_trials: int = 100
-    optimization_timeout_hours: int = 2
-
+    early_stopping_delta: float = 0.001
+    
+    # Pruning settings
+    enable_pruning: bool = True
+    pruning_method: str = "hyperband"  # hyperband, median, percentile
+    
+    # Multi-objective optimization
+    enable_multi_objective: bool = True
+    objectives: list[str] = None
+    objective_weights: dict[str, float] = None
+    
+    # S/R specific optimization
+    enable_sr_optimization: bool = True
+    sr_optimization_config: SROptimizationParameters = None
+    
     def __post_init__(self):
-        if self.analyst_model_types is None:
-            self.analyst_model_types = ["tcn", "tabnet", "transformer"]
-        if self.tactician_model_types is None:
-            self.tactician_model_types = ["lstm", "gru", "transformer"]
-        if self.ensemble_methods is None:
-            self.ensemble_methods = ["voting", "stacking", "bagging", "boosting"]
-        if self.model_comparison_metrics is None:
-            self.model_comparison_metrics = [
-                "accuracy",
-                "precision",
-                "recall",
-                "f1",
-                "auc",
-            ]
+        if self.objectives is None:
+            self.objectives = ["accuracy", "f1_score", "precision"]
+        
+        if self.objective_weights is None:
+            self.objective_weights = {
+                "accuracy": 0.4,
+                "f1_score": 0.4,
+                "precision": 0.2
+            }
+        
+        if self.sr_optimization_config is None:
+            self.sr_optimization_config = SROptimizationParameters()
 
 
-# Main Optuna Configuration
-OPTUNA_CONFIG = {
-    "confidence_thresholds": ConfidenceThresholds(),
-    "volatility_parameters": VolatilityParameters(),
-    "profit_taking_parameters": ProfitTakingParameters(),
-    "stop_loss_parameters": StopLossParameters(),
-    "position_sizing_parameters": PositionSizingParameters(),
-    "cooldown_parameters": CooldownParameters(),
-    "drawdown_parameters": DrawdownParameters(),
-    "ensemble_parameters": EnsembleParameters(),
-    "risk_management_parameters": RiskManagementParameters(),
-    "market_regime_parameters": MarketRegimeParameters(),
-    "optimization_parameters": OptimizationParameters(),
-    "timing_parameters": TimingParameters(),
-    "model_training_parameters": ModelTrainingParameters(),
-    "monitoring_parameters": MonitoringParameters(),
-    "feature_engineering_parameters": FeatureEngineeringParameters(),
-    "dual_model_system_parameters": DualModelSystemParameters(),
-    "meta_labeling_parameters": MetaLabelingParameters(),
-    "order_management_parameters": OrderManagementParameters(),
+# === GLOBAL CONFIGURATION ===
+
+# Default parameter values
+DEFAULT_CONFIDENCE_THRESHOLDS = ConfidenceThresholds()
+DEFAULT_VOLATILITY_PARAMETERS = VolatilityParameters()
+DEFAULT_ENSEMBLE_PARAMETERS = EnsembleParameters()
+DEFAULT_RISK_MANAGEMENT_PARAMETERS = RiskManagementParameters()
+DEFAULT_MARKET_REGIME_PARAMETERS = MarketRegimeParameters()
+DEFAULT_SR_OPTIMIZATION_PARAMETERS = SROptimizationParameters()
+DEFAULT_HYPERPARAMETER_OPTIMIZATION_CONFIG = HyperparameterOptimizationConfig()
+
+# Parameter search spaces for optimization
+PARAMETER_SEARCH_SPACES = {
+    # Confidence thresholds
+    "confidence_thresholds": {
+        "base_entry_threshold": {"min": 0.5, "max": 0.9, "type": "float"},
+        "analyst_confidence_threshold": {"min": 0.6, "max": 0.9, "type": "float"},
+        "tactician_confidence_threshold": {"min": 0.7, "max": 0.95, "type": "float"},
+        "sr_zone_threshold": {"min": 0.6, "max": 0.9, "type": "float"},
+    },
+    
+    # Volatility parameters
+    "volatility_parameters": {
+        "target_volatility": {"min": 0.1, "max": 0.25, "type": "float"},
+        "volatility_lookback_period": {"min": 10, "max": 50, "type": "int"},
+        "volatility_multiplier": {"min": 0.5, "max": 2.0, "type": "float"},
+    },
+    
+    # Ensemble parameters
+    "ensemble_parameters": {
+        "analyst_weight": {"min": 0.2, "max": 0.6, "type": "float"},
+        "tactician_weight": {"min": 0.2, "max": 0.5, "type": "float"},
+        "strategist_weight": {"min": 0.2, "max": 0.5, "type": "float"},
+    },
+    
+    # Risk management parameters
+    "risk_management_parameters": {
+        "max_portfolio_risk": {"min": 0.1, "max": 0.25, "type": "float"},
+        "max_single_position": {"min": 0.1, "max": 0.25, "type": "float"},
+        "max_drawdown": {"min": 0.15, "max": 0.35, "type": "float"},
+    },
+    
+    # Market regime parameters
+    "market_regime_parameters": {
+        "regime_lookback_period": {"min": 30, "max": 100, "type": "int"},
+        "regime_volatility_threshold": {"min": 0.01, "max": 0.05, "type": "float"},
+        "regime_trend_threshold": {"min": 0.005, "max": 0.02, "type": "float"},
+        "sr_zone_multiplier": {"min": 0.8, "max": 1.5, "type": "float"},
+    },
+    
+    # S/R optimization parameters
+    "sr_optimization_parameters": {
+        # Strength score weights
+        "touch_count_weight": {"min": 0.1, "max": 0.5, "type": "float"},
+        "total_volume_weight": {"min": 0.1, "max": 0.4, "type": "float"},
+        "level_age_weight": {"min": 0.1, "max": 0.4, "type": "float"},
+        "bounce_rate_weight": {"min": 0.1, "max": 0.4, "type": "float"},
+        "isolation_score_weight": {"min": 0.05, "max": 0.3, "type": "float"},
+        
+        # Level detection parameters
+        "min_touch_count": {"min": 2, "max": 10, "type": "int"},
+        "min_level_age_hours": {"min": 1, "max": 48, "type": "int"},
+        "price_tolerance_pct": {"min": 0.1, "max": 2.0, "type": "float"},
+        "volume_threshold": {"min": 0.5, "max": 2.0, "type": "float"},
+        "strength_threshold": {"min": 0.3, "max": 0.8, "type": "float"},
+        
+        # Breakout thresholds
+        "breakout_threshold": {"min": 0.6, "max": 0.9, "type": "float"},
+        "confirmation_periods": {"min": 1, "max": 5, "type": "int"},
+        "volume_confirmation": {"min": 1.2, "max": 3.0, "type": "float"},
+        "momentum_threshold": {"min": 0.1, "max": 0.5, "type": "float"},
+        "false_breakout_filter": {"min": 0.1, "max": 0.3, "type": "float"},
+        
+        # Zone multipliers
+        "support_zone_multiplier": {"min": 0.8, "max": 1.5, "type": "float"},
+        "resistance_zone_multiplier": {"min": 0.8, "max": 1.5, "type": "float"},
+        "sr_zone_threshold": {"min": 0.6, "max": 0.9, "type": "float"},
+        "zone_expansion_factor": {"min": 1.0, "max": 2.0, "type": "float"},
+        "zone_contraction_factor": {"min": 0.5, "max": 1.0, "type": "float"},
+        
+        # Confidence thresholds
+        "min_sr_confidence": {"min": 0.5, "max": 0.8, "type": "float"},
+        "high_confidence_threshold": {"min": 0.7, "max": 0.9, "type": "float"},
+        "confidence_decay_rate": {"min": 0.1, "max": 0.5, "type": "float"},
+        "regime_confidence_boost": {"min": 0.1, "max": 0.3, "type": "float"},
+        "ensemble_confidence_threshold": {"min": 0.6, "max": 0.9, "type": "float"},
+    }
 }
 
 
-def get_optuna_config() -> dict[str, Any]:
-    """Get the complete Optuna configuration."""
-    return OPTUNA_CONFIG
-
-
-def get_parameter_value(parameter_path: str, default: Any = None) -> Any:
+def get_parameter_value(param_name: str, default_value: Any = None) -> Any:
     """
-    Get a parameter value from the Optuna configuration using dot notation.
-
+    Get parameter value from configuration.
+    
     Args:
-        parameter_path: Dot-separated path to the parameter (e.g., "confidence_thresholds.base_entry_threshold")
-        default: Default value if parameter not found
-
+        param_name: Name of the parameter
+        default_value: Default value if parameter not found
+        
     Returns:
-        Parameter value or default
+        Parameter value
     """
+    # This function can be extended to read from environment variables,
+    # configuration files, or other sources
+    return default_value
+
+
+def get_sr_optimization_config() -> SROptimizationParameters:
+    """Get S/R optimization configuration."""
+    return DEFAULT_SR_OPTIMIZATION_PARAMETERS
+
+
+def get_hyperparameter_optimization_config() -> HyperparameterOptimizationConfig:
+    """Get hyperparameter optimization configuration."""
+    return DEFAULT_HYPERPARAMETER_OPTIMIZATION_CONFIG
+
+
+def get_parameter_search_space(param_category: str) -> dict:
+    """Get parameter search space for a specific category."""
+    return PARAMETER_SEARCH_SPACES.get(param_category, {})
+
+
+# === CONFIGURATION VALIDATION ===
+
+def validate_sr_optimization_config(config: SROptimizationParameters) -> bool:
+    """Validate S/R optimization configuration."""
     try:
-        keys = parameter_path.split(".")
-        value = OPTUNA_CONFIG
-
-        for key in keys:
-            if isinstance(value, dict):
-                value = value[key]
-            elif hasattr(value, key):
-                value = getattr(value, key)
-            else:
-                return default
-
-        return value
-    except (KeyError, AttributeError):
-        return default
-
-
-def update_parameter_value(parameter_path: str, new_value: Any) -> bool:
-    """
-    Update a parameter value in the Optuna configuration using dot notation.
-
-    Args:
-        parameter_path: Dot-separated path to the parameter
-        new_value: New value to set
-
-    Returns:
-        True if update successful, False otherwise
-    """
-    try:
-        keys = parameter_path.split(".")
-        current = OPTUNA_CONFIG
-
-        # Navigate to the parent of the target
-        for key in keys[:-1]:
-            if isinstance(current, dict):
-                current = current[key]
-            elif hasattr(current, key):
-                current = getattr(current, key)
-            else:
-                return False
-
-        # Set the value
-        target_key = keys[-1]
-        if isinstance(current, dict):
-            current[target_key] = new_value
-        elif hasattr(current, target_key):
-            setattr(current, target_key, new_value)
-        else:
-            return False
-
+        # Validate strength score weights sum to 1.0
+        weights = config.get_strength_score_weights()
+        weight_sum = sum(weights.values())
+        if abs(weight_sum - 1.0) > 0.01:
+            raise ValueError(f"Strength score weights must sum to 1.0, got {weight_sum}")
+        
+        # Validate objective weights sum to 1.0
+        obj_weight_sum = sum(config.objective_weights.values())
+        if abs(obj_weight_sum - 1.0) > 0.01:
+            raise ValueError(f"Objective weights must sum to 1.0, got {obj_weight_sum}")
+        
+        # Validate parameter ranges
+        if config.n_trials < 10:
+            raise ValueError("n_trials must be at least 10")
+        
+        if config.cv_folds < 2:
+            raise ValueError("cv_folds must be at least 2")
+        
+        if not 0.1 <= config.subsample_fraction <= 1.0:
+            raise ValueError("subsample_fraction must be between 0.1 and 1.0")
+        
         return True
-    except (KeyError, AttributeError):
+        
+    except Exception as e:
+        print(f"Configuration validation failed: {e}")
         return False
 
 
-def get_optimizable_parameters() -> dict[str, Any]:
+def create_optimization_study_config(
+    study_name: str,
+    optimization_type: str = "sr_parameters",
+    multi_objective: bool = True
+) -> dict:
     """
-    Get all parameters that can be optimized by Optuna.
-
+    Create Optuna study configuration.
+    
+    Args:
+        study_name: Name of the study
+        optimization_type: Type of optimization (sr_parameters, model_hyperparameters, etc.)
+        multi_objective: Whether to use multi-objective optimization
+        
     Returns:
-        Dictionary of parameter names and their current values
+        Study configuration dictionary
     """
-    optimizable_params = {}
-
-    # Add all dataclass fields that are numeric
-    for section_name, section_config in OPTUNA_CONFIG.items():
-        if hasattr(section_config, "__dataclass_fields__"):
-            for field_name, field_info in section_config.__dataclass_fields__.items():
-                if field_info.type in (float, int):
-                    param_path = f"{section_name}.{field_name}"
-                    optimizable_params[param_path] = getattr(section_config, field_name)
-
-    return optimizable_params
-
-
-def validate_optuna_config() -> list[str]:
-    """
-    Validate the Optuna configuration for consistency.
-
-    Returns:
-        List of validation errors (empty if valid)
-    """
-    errors = []
-
-    # Validate confidence thresholds
-    ct = OPTUNA_CONFIG["confidence_thresholds"]
-    if ct.base_entry_threshold <= 0 or ct.base_entry_threshold >= 1:
-        errors.append("base_entry_threshold must be between 0 and 1")
-
-    # Validate position sizing
-    ps = OPTUNA_CONFIG["position_sizing_parameters"]
-    if ps.max_position_size <= ps.min_position_size:
-        errors.append("max_position_size must be greater than min_position_size")
-
-    # Validate drawdown parameters
-    dd = OPTUNA_CONFIG["drawdown_parameters"]
-    if dd.warning_drawdown_threshold >= dd.reduction_drawdown_threshold:
-        errors.append(
-            "warning_drawdown_threshold must be less than reduction_drawdown_threshold",
-        )
-
-    # Validate volatility parameters
-    vp = OPTUNA_CONFIG["volatility_parameters"]
-    if vp.low_volatility_threshold >= vp.medium_volatility_threshold:
-        errors.append(
-            "low_volatility_threshold must be less than medium_volatility_threshold",
-        )
-
-    # Validate timing parameters
-    tp = OPTUNA_CONFIG["timing_parameters"]
-    if tp.training_split + tp.validation_split + tp.test_split != 1.0:
-        errors.append("training_split + validation_split + test_split must equal 1.0")
-
-    # Validate model training parameters
-    mtp = OPTUNA_CONFIG["model_training_parameters"]
-    if mtp.min_model_accuracy < 0 or mtp.min_model_accuracy > 1:
-        errors.append("min_model_accuracy must be between 0 and 1")
-
-    # Validate feature engineering parameters
-    fe = OPTUNA_CONFIG["feature_engineering_parameters"]
-    if fe.min_features > fe.max_features:
-        errors.append("min_features must be less than or equal to max_features")
-
-    return errors
-
-
-# Export for backward compatibility
-__all__ = [
-    "OPTUNA_CONFIG",
-    "get_optuna_config",
-    "get_parameter_value",
-    "update_parameter_value",
-    "get_optimizable_parameters",
-    "validate_optuna_config",
-    "ConfidenceThresholds",
-    "VolatilityParameters",
-    "ProfitTakingParameters",
-    "StopLossParameters",
-    "PositionSizingParameters",
-    "CooldownParameters",
-    "DrawdownParameters",
-    "EnsembleParameters",
-    "RiskManagementParameters",
-    "MarketRegimeParameters",
-    "OptimizationParameters",
-    "TimingParameters",
-    "ModelTrainingParameters",
-    "MonitoringParameters",
-    "FeatureEngineeringParameters",
-    "EnsembleMethod",
-    "RiskLevel",
-]
+    config = {
+        "study_name": study_name,
+        "optimization_type": optimization_type,
+        "multi_objective": multi_objective,
+        "storage_url": "sqlite:///optuna_studies.db",
+        "sampler": "tpe",  # tpe, random, cmaes
+        "pruner": "hyperband",  # hyperband, median, percentile
+        "load_if_exists": True
+    }
+    
+    if optimization_type == "sr_parameters":
+        config.update({
+            "objectives": ["sharpe_ratio", "win_rate", "signal_clarity"],
+            "objective_weights": {
+                "sharpe_ratio": 0.4,
+                "win_rate": 0.3,
+                "signal_clarity": 0.3
+            },
+            "n_trials": 100,
+            "timeout_minutes": 120
+        })
+    
+    return config

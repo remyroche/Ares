@@ -52,23 +52,20 @@ class MemoryOptimizer:
         initial_memory = df.memory_usage(deep=True).sum() / 1024 / 1024
         
         # Optimize numeric columns
-        for col in df.select_dtypes(include=[np.number]).columns:
+        # Optimize integer columns
+        for col in df.select_dtypes(include=['int64']).columns:
             col_min = df[col].min()
             col_max = df[col].max()
-            
-            # Optimize integers
-            if df[col].dtype == 'int64':
-                if col_min >= np.iinfo(np.int8).min and col_max <= np.iinfo(np.int8).max:
-                    df[col] = df[col].astype(np.int8)
-                elif col_min >= np.iinfo(np.int16).min and col_max <= np.iinfo(np.int16).max:
-                    df[col] = df[col].astype(np.int16)
-                elif col_min >= np.iinfo(np.int32).min and col_max <= np.iinfo(np.int32).max:
-                    df[col] = df[col].astype(np.int32)
-        
-        # Optimize floats
-        for col in df.select_dtypes(include=[np.number]).columns:
-            if df[col].dtype == 'float64' and df[col].isnull().sum() == 0:
-                df[col] = df[col].astype(np.float32)
+            if col_min >= np.iinfo(np.int8).min and col_max <= np.iinfo(np.int8).max:
+                df[col] = df[col].astype(np.int8)
+            elif col_min >= np.iinfo(np.int16).min and col_max <= np.iinfo(np.int16).max:
+                df[col] = df[col].astype(np.int16)
+            elif col_min >= np.iinfo(np.int32).min and col_max <= np.iinfo(np.int32).max:
+                df[col] = df[col].astype(np.int32)
+
+        # Optimize float columns
+        for col in df.select_dtypes(include=['float64']).columns:
+            df[col] = df[col].astype(np.float32)
         
         # Optimize object columns
         for col in df.select_dtypes(include=['object']).columns:

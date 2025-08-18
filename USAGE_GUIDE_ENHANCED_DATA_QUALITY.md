@@ -20,7 +20,7 @@ The enhanced data quality checker implements an intelligent preprocessing strate
 
 1. **Resample** to expected intervals
 2. **Re-add original data** to preserve accuracy
-3. **Forward-fill** if missing values are less than 10 seconds
+3. **Forward-fill** if missing values are 10 seconds or less
 4. **Download missing data** for gaps > 10 seconds using existing download functions
 
 ## Quick Fix: Using the Decorator

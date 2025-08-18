@@ -563,74 +563,7 @@ class Strategist:
             self.print(error("Error getting regime-specific parameters: {e}"))
             return {"confidence_threshold": 0.6, "risk_adjustment": 1.0}
 
-    def _apply_regime_adjustments(
-        self,
-        ml_predictions: dict[str, Any],
-        regime: str,
-        confidence: float,
-    ) -> dict[str, Any]:
-        """
-        Apply regime-specific adjustments to ML predictions.
-
-        Args:
-            ml_predictions: Original ML predictions
-            regime: Current market regime
-            confidence: Regime confidence
-
-        Returns:
-            Dict[str, Any]: Adjusted predictions
-        """
-        try:
-            adjustments = {
-                "confidence_scores_adjusted": {},
-                "expected_decreases_adjusted": {},
-                "position_sizing_adjusted": {},
-                "risk_parameters_adjusted": {},
-            }
-
-            # Adjust confidence scores based on regime
-            confidence_scores = ml_predictions.get("confidence_scores", {})
-            for level, score in confidence_scores.items():
-                if regime == "BULL":
-                    adjusted_score = min(
-                        1.0,
-                        score * 1.1,
-                    )  # Boost confidence in bullish regime
-                elif regime == "BEAR":
-                    adjusted_score = score * 0.9  # Reduce confidence in bearish regime
-                elif regime == "SIDEWAYS":
-                    adjusted_score = score * 0.8  # Significantly reduce confidence
-                else:
-                    adjusted_score = score
-
-                adjustments["confidence_scores_adjusted"][level] = adjusted_score
-
-            # Adjust adversarial confidences based on regime
-            adversarial_confidences = ml_predictions.get("adversarial_confidences", {})
-            for level, prob in adversarial_confidences.items():
-                if regime == "BEAR":
-                    adjusted_prob = min(1.0, prob * 1.2)  # Increase bearish probability
-                elif regime == "BULL":
-                    adjusted_prob = prob * 0.8  # Decrease bearish probability
-                else:
-                    adjusted_prob = prob
-
-                adjustments["adversarial_confidences_adjusted"][level] = adjusted_prob
-
-            # Apply confidence multiplier
-            confidence_multiplier = max(0.5, confidence)
-            for key in [
-                "confidence_scores_adjusted",
-                "adversarial_confidences_adjusted",
-            ]:
-                for level in adjustments[key]:
-                    adjustments[key][level] *= confidence_multiplier
-
-            return adjustments
-
-        except Exception:
-            self.print(error("Error applying regime adjustments: {e}"))
-            return {}
+    # Note: _apply_regime_adjustments method removed - per-regime distinct LM models handle regime-specific adjustments
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -797,15 +730,8 @@ class Strategist:
                 "max_drawdown": float(self.risk_config.get("max_daily_loss", 0.02)),
             }
 
-            # Adjust based on regime
-            if regime == "BEAR":
-                risk_params["stop_loss_percentage"] *= 0.8  # Tighter stop loss
-                risk_params["take_profit_percentage"] *= 0.7  # Lower take profit
-            elif regime == "BULL":
-                risk_params["take_profit_percentage"] *= 1.3  # Higher take profit
-            elif regime == "SIDEWAYS":
-                risk_params["stop_loss_percentage"] *= 0.6  # Very tight stop loss
-                risk_params["take_profit_percentage"] *= 0.5  # Lower take profit
+            # Note: Per-regime distinct LM models handle regime-specific adjustments
+            # No manual regime-based multipliers needed as each model is trained for its specific regime
 
             # Note: Volatility-based position sizing handled by tactician/position_sizer.py
             # This provides basic risk parameters for the tactician to use
@@ -880,30 +806,7 @@ class Strategist:
             self.print(error("Error calculating volatility trend: {e}"))
             return "stable"
 
-    def _get_regime_adjustment(self, regime: str) -> float:
-        """
-        Get position size adjustment based on market regime.
-
-        Args:
-            regime: Market regime string
-
-        Returns:
-            float: Position size adjustment multiplier
-        """
-        try:
-            regime_adjustments = {
-                "BULL": 1.2,  # Increase position size in bullish regime
-                "BEAR": 0.8,  # Decrease position size in bearish regime
-                "SIDEWAYS": 1.0,  # No adjustment in sideways regime
-                # Legacy S/R/Candle code removed: 0.5,  # Significantly reduce position size
-                # Legacy S/R/Candle code removed: 1.1,  # Slight increase for SR action
-            }
-
-            return regime_adjustments.get(regime, 1.0)
-
-        except Exception:
-            self.print(error("Error calculating regime adjustment: {e}"))
-            return 1.0
+    # Note: _get_regime_adjustment method removed - per-regime distinct LM models handle regime-specific adjustments
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -937,9 +840,12 @@ class Strategist:
                 "timeframe": "1m",
             }
 
+            # Import constants
+            from src.config.constants import DEFAULT_MIN_CONFIDENCE_THRESHOLD
+            
             # Generate long entry conditions based on ML confidence
             for increase_level, confidence in confidence_scores.items():
-                if confidence >= 0.7:  # High confidence threshold
+                if confidence >= DEFAULT_MIN_CONFIDENCE_THRESHOLD:  # High confidence threshold
                     entry_signals["long_conditions"].append(
                         {
                             "type": "ml_high_confidence",
@@ -951,7 +857,7 @@ class Strategist:
 
             # Generate short entry conditions based on adversarial confidences
             for decrease_level, probability in adversarial_confidences.items():
-                if probability >= 0.7:  # High probability threshold
+                if probability >= DEFAULT_MIN_CONFIDENCE_THRESHOLD:  # High probability threshold
                     entry_signals["short_conditions"].append(
                         {
                             "type": "ml_high_probability_decrease",
@@ -961,13 +867,8 @@ class Strategist:
                         },
                     )
 
-            # Adjust confidence based on regime
-            if regime == "BULL":
-                entry_signals["confidence"] *= 1.1
-            elif regime == "BEAR":
-                entry_signals["confidence"] *= 0.9
-            elif regime == "SIDEWAYS":
-                entry_signals["confidence"] *= 0.7
+            # Note: Per-regime distinct LM models provide regime-specific confidence scores
+            # No manual regime-based confidence adjustments needed
 
             return entry_signals
 

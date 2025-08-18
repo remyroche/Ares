@@ -1438,37 +1438,25 @@ async def run_step(
             # Initialize feature selection manager
             feature_selection_manager = FeatureSelectionManager(config)
             
-            # Apply feature selection to each split
-            selected_features = None
-            for split_name, X in [("train", X_tr), ("validation", X_vl), ("test", X_te)]:
-                # Create dummy target for feature selection (since we don't have labels yet)
-                dummy_target = pd.Series([0] * len(X), index=X.index)
+            # Perform feature selection ONLY on the training data using the real target
+            # Get the actual target labels from the labeled data
+            if "target" not in labeled["train"].columns:
+                logger.warning("⚠️ Target column 'target' not found in training data, skipping feature selection")
+            else:
+                train_target = labeled["train"]["target"].reindex(X_tr.index)
                 
-                # Apply feature selection
-                X_selected, selection_metadata = await feature_selection_manager.select_features_step2(
-                    X, dummy_target, symbol, exchange, data_dir
+                logger.info("Applying feature selection on the training set...")
+                X_tr, selection_metadata = await feature_selection_manager.select_features_step2(
+                    X_tr, train_target, symbol, exchange, data_dir
                 )
                 
-                # Update the split with selected features
-                if split_name == "train":
-                    X_tr = X_selected
-                elif split_name == "validation":
-                    X_vl = X_selected
-                elif split_name == "test":
-                    X_te = X_selected
+                selected_features = list(X_tr.columns)
+                logger.info(f"✅ Feature selection completed: {len(selected_features)} features selected from training data.")
                 
-                # Store selected features for consistency across splits
-                if selected_features is None:
-                    selected_features = list(X_selected.columns)
-                
-                logger.info(f"✅ Feature selection for {split_name}: {len(X.columns)} -> {len(X_selected.columns)} features")
-            
-            # Ensure all splits have the same features
-            X_tr = X_tr[selected_features]
-            X_vl = X_vl[selected_features]
-            X_te = X_te[selected_features]
-            
-            logger.info(f"✅ Feature selection completed: {len(selected_features)} features selected across all splits")
+                # Apply the same feature selection to validation and test sets
+                X_vl = X_vl[selected_features]
+                X_te = X_te[selected_features]
+                logger.info("Applied selected features to validation and test sets.")
             
         except Exception as e:
             logger.warning(f"⚠️ Feature selection failed, using original features: {e}")

@@ -241,10 +241,10 @@ class UnifiedRegimeIntelligenceStep:
         if ENHANCED_OPTIMIZER_AVAILABLE:
             try:
                 self.enhanced_lm_optimizer = EnhancedLMOptimizer(config)
-                await self.enhanced_lm_optimizer.initialize()
-                self.logger.info("✅ Enhanced LM optimizer initialized for step6_5")
+                # Note: initialize() will be called later in an async context
+                self.logger.info("✅ Enhanced LM optimizer created for step6_5")
             except Exception as e:
-                self.logger.warning(f"⚠️ Failed to initialize enhanced LM optimizer: {e}")
+                self.logger.warning(f"⚠️ Failed to create enhanced LM optimizer: {e}")
 
         # Device selection
         self.device_str = self._safe_get_device()

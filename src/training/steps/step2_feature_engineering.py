@@ -738,7 +738,6 @@ async def run_step(
         
         # Parallel feature engineering
         if config["enable_parallel_processing"]:
-            from concurrent.futures import ThreadPoolExecutor
             import gc
             
             async def engineer_features_single_split(split_name: str, price_df: pd.DataFrame, vol_df: pd.DataFrame, sr_levels: dict) -> tuple[str, pd.DataFrame]:
@@ -768,25 +767,23 @@ async def run_step(
                     # Memory cleanup
                     gc.collect()
             
-            # Execute parallel feature engineering
-            with ThreadPoolExecutor(max_workers=config["max_workers"]) as executor:
-                futures = []
-                for split_name, (price_df, vol_df, _) in data_splits.items():
-                    future = executor.submit(
-                        asyncio.run,
-                        engineer_features_single_split(split_name, price_df, vol_df, sr_levels[split_name])
-                    )
-                    futures.append((future, split_name))
-                
-                # Collect results
-                features = {}
-                for future, split_name in futures:
-                    try:
-                        split_name, split_features = future.result()
-                        features[split_name] = split_features
-                    except Exception as e:
-                        logger.error(f"❌ Failed to get features for {split_name}: {e}")
-                        raise
+            # Execute parallel feature engineering using asyncio.gather
+            tasks = [
+                engineer_features_single_split(split_name, price_df, vol_df, sr_levels[split_name])
+                for split_name, (price_df, vol_df, _) in data_splits.items()
+            ]
+            
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Collect results
+            features = {}
+            for i, (split_name, (price_df, vol_df, _)) in enumerate(data_splits.items()):
+                result = results[i]
+                if isinstance(result, Exception):
+                    logger.error(f"❌ Failed to get features for {split_name}: {result}")
+                    raise result
+                split_name, split_features = result
+                features[split_name] = split_features
         else:
             # Sequential processing (fallback)
             logger.info("🔄 Using sequential feature engineering")

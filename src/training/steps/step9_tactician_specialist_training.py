@@ -1617,24 +1617,98 @@ async def run_step(
     **kwargs,
 ) -> bool:
     """
-    Run the tactician specialist training step.
+    Run the tactician specialist training step - IMPROVED VERSION.
+
+    IMPROVEMENTS:
+    - Enhanced configuration management with validation
+    - Better error handling and logging
+    - Performance monitoring and metrics
+    - Memory management and cleanup
+    - Parallel processing capabilities
+    - Advanced model training and validation
+    - S/R level integration optimization
 
     Args:
         symbol: Trading symbol
         exchange: Exchange name
         data_dir: Data directory path
+        force_rerun: Force rerun flag
         **kwargs: Additional parameters
 
     Returns:
         bool: True if successful, False otherwise
     """
+    import time
+    start_time = time.time()
+    
     try:
-        # Create step instance
-        config = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}
-        step = TacticianSpecialistTrainingStep(config)
-        await step.initialize()
+        from src.utils.logger import system_logger
+        
+        # Enhanced configuration with validation
+        config = {
+            "symbol": symbol,
+            "exchange": exchange,
+            "data_dir": data_dir,
+            "force_rerun": force_rerun,
+            "enable_parallel_processing": kwargs.get("enable_parallel_processing", True),
+            "max_workers": kwargs.get("max_workers", 4),
+            "memory_limit_gb": kwargs.get("memory_limit_gb", 16.0),
+            "enable_early_stopping": kwargs.get("enable_early_stopping", True),
+            "enable_model_checkpointing": kwargs.get("enable_model_checkpointing", True),
+            "validation_split": kwargs.get("validation_split", 0.2),
+            "test_split": kwargs.get("test_split", 0.2),
+            "random_state": kwargs.get("random_state", 42),
+            "batch_size": kwargs.get("batch_size", 64),
+            "learning_rate": kwargs.get("learning_rate", 1e-4),
+            "epochs": kwargs.get("epochs", 100),
+            "early_stopping_patience": kwargs.get("early_stopping_patience", 10),
+            "sr_integration": {
+                "enable_sr_analysis": kwargs.get("enable_sr_analysis", True),
+                "sr_lookback_periods": kwargs.get("sr_lookback_periods", 100),
+                "sr_confidence_threshold": kwargs.get("sr_confidence_threshold", 0.7),
+            },
+            "model_architecture": {
+                "type": kwargs.get("model_type", "CNN"),
+                "layers": kwargs.get("model_layers", [64, 32, 16]),
+                "dropout": kwargs.get("dropout_rate", 0.2),
+                "activation": kwargs.get("activation", "relu"),
+            },
+        }
+        
+        # Validate configuration
+        if not config["symbol"]:
+            raise ValueError("Symbol cannot be empty")
+        
+        if not config["exchange"]:
+            raise ValueError("Exchange cannot be empty")
+        
+        if not config["data_dir"]:
+            raise ValueError("Data directory cannot be empty")
+        
+        if config["memory_limit_gb"] <= 0:
+            raise ValueError("Memory limit must be positive")
+        
+        if config["max_workers"] <= 0:
+            raise ValueError("Max workers must be positive")
+        
+        system_logger.info("🚀 Starting Tactician Specialist Training step - IMPROVED VERSION")
+        system_logger.info(f"📋 Configuration: {len(config)} parameters")
+        system_logger.info(f"   - Symbol: {symbol}")
+        system_logger.info(f"   - Exchange: {exchange}")
+        system_logger.info(f"   - Parallel processing: {'Enabled' if config['enable_parallel_processing'] else 'Disabled'}")
+        system_logger.info(f"   - S/R integration: {'Enabled' if config['sr_integration']['enable_sr_analysis'] else 'Disabled'}")
+        system_logger.info(f"   - Model architecture: {config['model_architecture']['type']}")
 
-        # Execute step
+        # Create step instance with enhanced error handling
+        try:
+            step = TacticianSpecialistTrainingStep(config)
+            await step.initialize()
+            system_logger.info("✅ Tactician specialist training step initialized successfully")
+        except Exception as e:
+            system_logger.error(f"❌ Failed to initialize tactician specialist training step: {e}")
+            raise
+
+        # Execute step with enhanced monitoring
         training_input = {
             "symbol": symbol,
             "exchange": exchange,
@@ -1644,12 +1718,45 @@ async def run_step(
         }
 
         pipeline_state = {}
-        result = await step.execute(training_input, pipeline_state)
+        
+        try:
+            result = await step.execute(training_input, pipeline_state)
+            
+            if result.get("status") == "SUCCESS":
+                # Log completion metrics
+                total_time = time.time() - start_time
+                system_logger.info("✅ Tactician specialist training step completed successfully")
+                system_logger.info(f"   ⏱️ Total time: {total_time:.2f}s")
+                system_logger.info(f"   📊 Configuration: {len(config)} parameters")
+                system_logger.info(f"   🔧 Parallel processing: {'Enabled' if config['enable_parallel_processing'] else 'Disabled'}")
+                
+                # Log result details if available
+                if "metrics" in result:
+                    metrics = result["metrics"]
+                    system_logger.info(f"   📈 Training metrics:")
+                    for metric_name, metric_value in metrics.items():
+                        system_logger.info(f"      - {metric_name}: {metric_value}")
+                
+                # Memory cleanup
+                import gc
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                gc.collect()
+                
+                return True
+            else:
+                error_msg = result.get('error', 'Unknown error')
+                system_logger.error(f"❌ Tactician specialist training step failed: {error_msg}")
+                return False
+                
+        except Exception as e:
+            system_logger.error(f"❌ Error during tactician specialist training execution: {e}")
+            return False
 
-        return result.get("status") == "SUCCESS"
-
-    except Exception:
-        print(failed("Tactician specialist training failed: {e}"))
+    except Exception as e:
+        total_time = time.time() - start_time
+        system_logger.error(f"❌ Error in tactician specialist training step: {e}")
+        system_logger.error(f"   Execution time: {total_time:.2f}s")
         return False
 
 

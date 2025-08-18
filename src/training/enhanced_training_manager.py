@@ -162,9 +162,21 @@ class EnhancedTrainingManager:
         # Initialize vectorized training pipeline
         self.vectorized_pipeline = VectorizedTrainingPipeline(config)
         
-        # Initialize enhanced matrix operations and GPU acceleration
-        self.enhanced_matrix_ops = EnhancedMatrixOperations(config)
-        self.gpu_integration = EnhancedMatrixGPUIntegration(config)
+        # Initialize enhanced matrix operations and GPU acceleration (optional)
+        self.enhanced_matrix_ops = None
+        self.gpu_integration = None
+        
+        # Check if enhanced matrix operations are enabled
+        if config.get("enable_enhanced_matrix_operations", False):
+            try:
+                self.enhanced_matrix_ops = EnhancedMatrixOperations(config)
+                self.gpu_integration = EnhancedMatrixGPUIntegration(config)
+                self.logger.info("✅ Enhanced matrix operations and GPU acceleration initialized")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to initialize enhanced matrix operations: {e}")
+                self.logger.info("🔄 Continuing with standard pipeline (enhanced operations disabled)")
+        else:
+            self.logger.info("ℹ️ Enhanced matrix operations disabled - using standard pipeline")
         
         # Enhanced training manager state
         self.is_training: bool = False
@@ -1210,6 +1222,16 @@ class EnhancedTrainingManager:
             tuple: Enhanced features DataFrame and metadata
         """
         try:
+            # Check if enhanced matrix operations are available
+            if self.gpu_integration is None:
+                self.logger.warning("⚠️ Enhanced matrix operations not available - returning original features")
+                return features_df, {
+                    "status": "skipped",
+                    "reason": "enhanced_matrix_operations_not_available",
+                    "feature_count_increase": 0,
+                    "processing_time": 0
+                }
+            
             self.logger.info("🚀 Applying Enhanced Matrix Operations with GPU Acceleration")
             
             # Get optimized configuration based on mode
@@ -1241,7 +1263,13 @@ class EnhancedTrainingManager:
             
         except Exception as e:
             self.logger.error(f"❌ Enhanced Matrix Operations failed: {e}")
-            return features_df, {"error": str(e)}
+            self.logger.info("🔄 Falling back to original features")
+            return features_df, {
+                "status": "failed",
+                "error": str(e),
+                "feature_count_increase": 0,
+                "processing_time": 0
+            }
 
     @handle_specific_errors(
         error_handlers={
@@ -1339,10 +1367,13 @@ class EnhancedTrainingManager:
 
             self.is_training = False
             
-            # Clear GPU memory after training
-            if hasattr(self, 'gpu_integration'):
-                self.gpu_integration.clear_gpu_memory()
-                self.logger.info("🧹 GPU memory cleared after training")
+            # Clear GPU memory after training (if available)
+            if hasattr(self, 'gpu_integration') and self.gpu_integration is not None:
+                try:
+                    self.gpu_integration.clear_gpu_memory()
+                    self.logger.info("🧹 GPU memory cleared after training")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to clear GPU memory: {e}")
             
             return success
 
@@ -1351,10 +1382,13 @@ class EnhancedTrainingManager:
             self.logger.error(f"📋 Error details: {type(e).__name__}: {str(e)}")
             self.is_training = False
             
-            # Clear GPU memory even on failure
-            if hasattr(self, 'gpu_integration'):
-                self.gpu_integration.clear_gpu_memory()
-                self.logger.info("🧹 GPU memory cleared after training failure")
+            # Clear GPU memory even on failure (if available)
+            if hasattr(self, 'gpu_integration') and self.gpu_integration is not None:
+                try:
+                    self.gpu_integration.clear_gpu_memory()
+                    self.logger.info("🧹 GPU memory cleared after training failure")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to clear GPU memory: {e}")
             
             return False
 
@@ -1676,8 +1710,10 @@ class EnhancedTrainingManager:
             self._save_checkpoint("step2_feature_engineering", pipeline_state)
             step_times["step2_feature_engineering"] = time.time() - step_start_2
 
-            # Step 2.5: Enhanced Matrix Operations with GPU Acceleration
-            if step2_success and self.config.get("enable_enhanced_matrix_operations", True):
+            # Step 2.5: Enhanced Matrix Operations with GPU Acceleration (Optional Enhancement)
+            if (step2_success and 
+                self.config.get("enable_enhanced_matrix_operations", False) and 
+                self.config.get("enable_step_2_5_enhancement", False)):
                 self._heartbeat("Step 2.5: Enhanced Matrix Operations")
                 step_start_2_5 = time.time()
                 
@@ -1741,6 +1777,8 @@ class EnhancedTrainingManager:
                     step_times["step2_5_enhanced_matrix_operations"] = time.time() - step_start_2_5
                 else:
                     self.logger.warning("⚠️ Step 2.5 failed - continuing with original features")
+            else:
+                self.logger.info("⏭️ Skipping Step 2.5: Enhanced Matrix Operations (not enabled in config)")
 
             # Run validator for Step 2 (AFTER execution, for verification only)
                 # Run validator only if Step 2 was executed (not skipped above)
@@ -1960,8 +1998,9 @@ class EnhancedTrainingManager:
 
             # Step 4_8: Regime Forecasting is now integrated into Step 6 training (artifacts emitted there)
 
-            # Step 5.5: Enhanced Matrix Operations for Model Training
-            if self.config.get("enable_enhanced_matrix_operations", True):
+            # Step 5.5: Enhanced Matrix Operations for Model Training (Optional Enhancement)
+            if (self.config.get("enable_enhanced_matrix_operations", False) and 
+                self.config.get("enable_step_5_5_enhancement", False)):
                 self._heartbeat("Step 5.5: Enhanced Matrix Operations for Model Training")
                 step_start_5_5 = time.time()
                 
@@ -2042,6 +2081,8 @@ class EnhancedTrainingManager:
                     step_times["step5_5_enhanced_model_training_operations"] = time.time() - step_start_5_5
                 else:
                     self.logger.warning("⚠️ Step 5.5 failed - continuing with original training data")
+            else:
+                self.logger.info("⏭️ Skipping Step 5.5: Enhanced Matrix Operations for Model Training (not enabled in config)")
 
             # Step 6: HMM-Based Training (enable Method A experts via config)
             self._heartbeat("Step 6: HMM-Based Training")
@@ -3347,10 +3388,18 @@ class EnhancedTrainingManager:
             dict: Matrix enhancement results and GPU performance metrics
         """
         try:
+            gpu_summary = {}
+            if hasattr(self, 'gpu_integration') and self.gpu_integration is not None:
+                try:
+                    gpu_summary = self.gpu_integration.get_integration_summary()
+                except Exception as e:
+                    self.logger.warning(f"Failed to get GPU integration summary: {e}")
+            
             return {
                 "matrix_enhancement_results": self.matrix_enhancement_results,
                 "gpu_performance_metrics": self.gpu_performance_metrics,
-                "gpu_integration_summary": self.gpu_integration.get_integration_summary() if hasattr(self, 'gpu_integration') else {},
+                "gpu_integration_summary": gpu_summary,
+                "enhanced_matrix_operations_enabled": self.config.get("enable_enhanced_matrix_operations", False),
             }
         except Exception as e:
             self.logger.error(f"Failed to get matrix enhancement results: {e}")
@@ -3364,8 +3413,12 @@ class EnhancedTrainingManager:
             dict: GPU performance summary
         """
         try:
-            if hasattr(self, 'gpu_integration'):
-                return self.gpu_integration.get_integration_summary()
+            if hasattr(self, 'gpu_integration') and self.gpu_integration is not None:
+                try:
+                    return self.gpu_integration.get_integration_summary()
+                except Exception as e:
+                    self.logger.warning(f"Failed to get GPU integration summary: {e}")
+                    return {}
             return {}
         except Exception as e:
             self.logger.error(f"Failed to get GPU performance summary: {e}")

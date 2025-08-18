@@ -1207,34 +1207,7 @@ class EnhancedTrainingManager:
                     f"Validator for step3_hmm_regime_discovery failed but is non-fatal: {e}"
                 )
 
-            # Removed old Step 3 Feature Engineering: feature engineering is handled in Step 2 now
-
-            if not step3_success:
-                self._log_step_completion(
-                    "Step 3: Feature Engineering",
-                    step_start,
-                    step_times,
-                    success=False,
-                )
-                return False
-
-            # Update pipeline state
-            pipeline_state["feature_engineering"] = {
-                "status": "SUCCESS",
-                "success": step3_success,
-            }
-
-            # Run validator for Step 3 (uses step4_analyst_labeling_feature_engineering_validator)
-            validation_result = await self._run_step_validator(
-                "step3_feature_engineering", training_input, pipeline_state
-            )
-
-            self._log_step_completion(
-                "Step 3: Feature Engineering", step_start, step_times
-            )
-
-            # Save checkpoint after step 3
-            self._save_checkpoint("step3_feature_engineering", pipeline_state)
+            # Feature engineering is handled in Step 2; no separate Step 3 Feature Engineering
 
             # Step 4: Data Splitting for Training (regimes or meta-labels)
             self._heartbeat("Step 4: Data Splitting for Training")

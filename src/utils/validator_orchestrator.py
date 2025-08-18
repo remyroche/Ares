@@ -178,9 +178,7 @@ class ValidatorOrchestrator:
             "step2_processing_labeling_feature_engineering": (
                 "step4_analyst_labeling_feature_engineering_validator"
             ),
-            "step3_feature_engineering": (
-                "step4_analyst_labeling_feature_engineering_validator"
-            ),
+            # Removed: separate step3_feature_engineering. Feature engineering validated via step2 mapping.
             "step4_regime_data_splitting": "step3_regime_data_splitting_validator",
             "step5_analyst_specialist_training": (
                 "step5_analyst_specialist_training_validator"

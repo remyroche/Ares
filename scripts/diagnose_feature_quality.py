@@ -23,7 +23,7 @@ from src.utils.logger import system_logger
 from src.training.steps.vectorized_advanced_feature_engineering import (
     VectorizedAdvancedFeatureEngineering,
 )
-from src.training.steps.step1_7_hmm_regime_discovery import (
+from src.training.steps.step3_hmm_regime_discovery import (
     _select_block_features,
     _transform_for_hmm,
 )

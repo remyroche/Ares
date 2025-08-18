@@ -66,6 +66,9 @@ from src.training.enhanced_training_manager_optimized import (
 # Add model trainer import
 from src.training.model_trainer import setup_model_trainer
 
+# Import the new vectorized training pipeline
+from src.training.vectorized_training_pipeline import VectorizedTrainingPipeline
+
 from contextlib import contextmanager
 
 
@@ -151,6 +154,9 @@ class EnhancedTrainingManager:
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("EnhancedTrainingManager")
 
+        # Initialize vectorized training pipeline
+        self.vectorized_pipeline = VectorizedTrainingPipeline(config)
+        
         # Enhanced training manager state
         self.is_training: bool = False
         self.enhanced_training_results: dict[str, Any] = {}

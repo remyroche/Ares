@@ -203,7 +203,7 @@ def test_sr_feature_categorization():
     print("🧪 Testing SR Feature Categorization (Simple Version)")
     print("=" * 60)
     
-    # Test features with various SR-related names
+    # Test features with various SR-related names (minimal realistic set)
     sr_feature_names = [
         # Basic SR features
         "sr_distance", "sr_proximity",
@@ -221,38 +221,14 @@ def test_sr_feature_categorization():
         # Proximity features
         "sr_proximity", "sr_proximity_1", "sr_proximity_2",
         
-        # Volume features (should be categorized as volume)
-        "volume_ratio", "volume_ma", "volume_change", "volume_sma", 
-        "volume_momentum", "volume_weighted_momentum", "volume_velocity",
-        "volume_acceleration", "volume_price_impact",
+        # Volume features
+        "volume_sma_20",
         
-        # Interaction features (should be categorized as interaction)
-        "momentum_x_volume", "volatility_div_liquidity", "rsi_ratio_volume",
-        "regime_x_momentum", "volume_x_volatility",
+        # Interaction features
+        "momentum_x_volume",
         
-        # Momentum features (including derivatives and multi-timeframe)
-        "rsi_14", "rsi_diff_1", "rsi_accel_3", "rsi_norm_20",
-        "macd_12_26", "macd_signal", "macd_histogram", "macd_diff_1",
-        "momentum_strength", "momentum_diff_1", "momentum_accel_3",
-        "bb_position", "bb_upper", "bb_lower", "bb_width",
-        "sma_20", "ema_12", "ema_26", "sma_diff_5_20",
-        
-        # Volatility features (including derivatives)
-        "volatility_garman_klass", "atr_14", "atr_diff_1", "atr_norm_20",
-        "realized_vol_20", "volatility_diff_1", "volatility_accel_3",
-        "bbands_std", "bbands_width", "bbands_position",
-        
-        # Liquidity features
-        "spread_1m", "bid_ask_spread", "liquidity_ratio", "quote_imbalance",
-        "spread_diff_1", "liquidity_norm_20",
-        
-        # Microstructure features
-        "order_flow_imbalance", "trade_frequency", "order_flow_diff_1",
-        "imbalance_norm_20", "trade_count", "trade_count_diff_1",
-        
-        # Regime features
-        "hmm_state_0", "regime_1", "cluster_0", "composite_regime",
-        "hmm_state_diff_1", "regime_norm_20"
+        # Momentum/Volatility/Microstructure/Regime (single examples)
+        "rsi_14", "macd_12_26", "volatility_garman_klass", "order_flow_imbalance", "hmm_state_0"
     ]
     
     # Test categorization

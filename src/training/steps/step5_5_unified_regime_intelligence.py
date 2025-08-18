@@ -350,7 +350,7 @@ class UnifiedRegimeIntelligenceStep:
             if not optimization_data:
                 raise RuntimeError("Failed to prepare optimization data")
             
-            optimization_results = await self.enhanced_lm_optimizer.optimize_lm_model(
+            optimization_results, optimized_features = await self.enhanced_lm_optimizer.optimize_lm_model(
                 step_name="step6_5",
                 features_df=optimization_data["features"],
                 target=optimization_data["target"],
@@ -363,6 +363,9 @@ class UnifiedRegimeIntelligenceStep:
             if not hasattr(self, "enhancement_results"):
                 self.enhancement_results = {}
             self.enhancement_results["enhanced_optimization"] = optimization_results
+            
+            # Check if HPO is enabled
+            if self.hpo_enabled:
                 self.logger.info("🔧 HPO enabled: starting short optimization...")
                 hpo_results = await self._run_hyperparameter_optimization()
                 if hpo_results and "best_params" in hpo_results:

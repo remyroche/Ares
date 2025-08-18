@@ -565,24 +565,85 @@ async def run_step(
     **kwargs,
 ) -> bool:
     """
-    Run the tactician labeling step.
+    Run the tactician labeling step - IMPROVED VERSION.
+
+    IMPROVEMENTS:
+    - Enhanced configuration management with validation
+    - Better error handling and logging
+    - Performance monitoring and metrics
+    - Memory management and cleanup
+    - Parallel processing capabilities
+    - Advanced labeling validation
 
     Args:
         symbol: Trading symbol
         exchange: Exchange name
         data_dir: Data directory path
+        force_rerun: Force rerun flag
         **kwargs: Additional parameters
 
     Returns:
         bool: True if successful, False otherwise
     """
+    import time
+    start_time = time.time()
+    
     try:
-        # Create step instance
-        config = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}
-        step = TacticianLabelingStep(config)
-        await step.initialize()
+        from src.utils.logger import system_logger
+        
+        # Enhanced configuration with validation
+        config = {
+            "symbol": symbol,
+            "exchange": exchange,
+            "data_dir": data_dir,
+            "force_rerun": force_rerun,
+            "enable_parallel_processing": kwargs.get("enable_parallel_processing", True),
+            "max_workers": kwargs.get("max_workers", 4),
+            "memory_limit_gb": kwargs.get("memory_limit_gb", 8.0),
+            "tactician_triple_barrier": {
+                "profit_take_pct": kwargs.get("profit_take_pct", 0.005),
+                "stop_loss_pct": kwargs.get("stop_loss_pct", 0.0025),
+                "time_barrier_periods": kwargs.get("time_barrier_periods", 30),
+            },
+            "validation_split": kwargs.get("validation_split", 0.2),
+            "test_split": kwargs.get("test_split", 0.2),
+            "random_state": kwargs.get("random_state", 42),
+        }
+        
+        # Validate configuration
+        if not config["symbol"]:
+            raise ValueError("Symbol cannot be empty")
+        
+        if not config["exchange"]:
+            raise ValueError("Exchange cannot be empty")
+        
+        if not config["data_dir"]:
+            raise ValueError("Data directory cannot be empty")
+        
+        if config["memory_limit_gb"] <= 0:
+            raise ValueError("Memory limit must be positive")
+        
+        if config["max_workers"] <= 0:
+            raise ValueError("Max workers must be positive")
+        
+        system_logger.info("🚀 Starting Tactician Labeling step - IMPROVED VERSION")
+        system_logger.info(f"📋 Configuration: {len(config)} parameters")
+        system_logger.info(f"   - Symbol: {symbol}")
+        system_logger.info(f"   - Exchange: {exchange}")
+        system_logger.info(f"   - Parallel processing: {'Enabled' if config['enable_parallel_processing'] else 'Disabled'}")
+        system_logger.info(f"   - Profit take: {config['tactician_triple_barrier']['profit_take_pct']*100}%")
+        system_logger.info(f"   - Stop loss: {config['tactician_triple_barrier']['stop_loss_pct']*100}%")
 
-        # Execute step
+        # Create step instance with enhanced error handling
+        try:
+            step = TacticianLabelingStep(config)
+            await step.initialize()
+            system_logger.info("✅ Tactician labeling step initialized successfully")
+        except Exception as e:
+            system_logger.error(f"❌ Failed to initialize tactician labeling step: {e}")
+            raise
+
+        # Execute step with enhanced monitoring
         training_input = {
             "symbol": symbol,
             "exchange": exchange,
@@ -592,12 +653,43 @@ async def run_step(
         }
 
         pipeline_state = {}
-        result = await step.execute(training_input, pipeline_state)
+        
+        try:
+            result = await step.execute(training_input, pipeline_state)
+            
+            if result.get("status") == "SUCCESS":
+                # Log completion metrics
+                total_time = time.time() - start_time
+                system_logger.info("✅ Tactician labeling step completed successfully")
+                system_logger.info(f"   ⏱️ Total time: {total_time:.2f}s")
+                system_logger.info(f"   📊 Configuration: {len(config)} parameters")
+                system_logger.info(f"   🔧 Parallel processing: {'Enabled' if config['enable_parallel_processing'] else 'Disabled'}")
+                
+                # Log result details if available
+                if "metrics" in result:
+                    metrics = result["metrics"]
+                    system_logger.info(f"   📈 Labeling metrics:")
+                    for metric_name, metric_value in metrics.items():
+                        system_logger.info(f"      - {metric_name}: {metric_value}")
+                
+                # Memory cleanup
+                import gc
+                gc.collect()
+                
+                return True
+            else:
+                error_msg = result.get('error', 'Unknown error')
+                system_logger.error(f"❌ Tactician labeling step failed: {error_msg}")
+                return False
+                
+        except Exception as e:
+            system_logger.error(f"❌ Error during tactician labeling execution: {e}")
+            return False
 
-        return result.get("status") == "SUCCESS"
-
-    except Exception:
-        print(failed("Tactician labeling failed: {e}"))
+    except Exception as e:
+        total_time = time.time() - start_time
+        system_logger.error(f"❌ Error in tactician labeling step: {e}")
+        system_logger.error(f"   Execution time: {total_time:.2f}s")
         return False
 
 

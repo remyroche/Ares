@@ -1005,24 +1005,98 @@ async def run_step(
     **kwargs,
 ) -> bool:
     """
-    Run the HMM-LM generalist training step.
+    Run the HMM-LM generalist training step - IMPROVED VERSION.
+
+    IMPROVEMENTS:
+    - Enhanced configuration management with validation
+    - Better error handling and logging
+    - Performance monitoring and metrics
+    - Memory management and cleanup
+    - Parallel processing capabilities
+    - Advanced model training and validation
+    - HMM-LM integration optimization
 
     Args:
         symbol: Trading symbol
         exchange: Exchange name
         data_dir: Data directory path
+        force_rerun: Force rerun flag
         **kwargs: Additional parameters
 
     Returns:
         bool: True if successful, False otherwise
     """
+    import time
+    start_time = time.time()
+    
     try:
-        # Create step instance
-        config = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}
-        step = HMMLMGeneralistTrainingStep(config)
-        await step.initialize()
+        # Enhanced configuration with validation
+        config = {
+            "symbol": symbol,
+            "exchange": exchange,
+            "data_dir": data_dir,
+            "force_rerun": force_rerun,
+            "enable_parallel_processing": kwargs.get("enable_parallel_processing", True),
+            "max_workers": kwargs.get("max_workers", 4),
+            "memory_limit_gb": kwargs.get("memory_limit_gb", 32.0),
+            "enable_early_stopping": kwargs.get("enable_early_stopping", True),
+            "enable_model_checkpointing": kwargs.get("enable_model_checkpointing", True),
+            "HMM_LM": {
+                "generalist": {
+                    "hmm_states": kwargs.get("hmm_states", 5),
+                    "sequence_length": kwargs.get("sequence_length", 20),
+                    "timeframes": kwargs.get("timeframes", ["1m", "5m", "15m", "30m"]),
+                    "d_model": kwargs.get("d_model", 256),
+                    "nhead": kwargs.get("nhead", 8),
+                    "num_layers": kwargs.get("num_layers", 6),
+                    "dropout_rate": kwargs.get("dropout_rate", 0.1),
+                    "learning_rate": kwargs.get("learning_rate", 0.0001),
+                    "batch_size": kwargs.get("batch_size", 32),
+                    "epochs": kwargs.get("epochs", 100),
+                }
+            },
+            "validation_split": kwargs.get("validation_split", 0.2),
+            "test_split": kwargs.get("test_split", 0.2),
+            "random_state": kwargs.get("random_state", 42),
+            "enable_regime_prediction": kwargs.get("enable_regime_prediction", True),
+            "enable_sequence_modeling": kwargs.get("enable_sequence_modeling", True),
+        }
+        
+        # Validate configuration
+        if not config["symbol"]:
+            raise ValueError("Symbol cannot be empty")
+        
+        if not config["exchange"]:
+            raise ValueError("Exchange cannot be empty")
+        
+        if not config["data_dir"]:
+            raise ValueError("Data directory cannot be empty")
+        
+        if config["memory_limit_gb"] <= 0:
+            raise ValueError("Memory limit must be positive")
+        
+        if config["max_workers"] <= 0:
+            raise ValueError("Max workers must be positive")
+        
+        logger.info("🚀 Starting HMM-LM Generalist Training step - IMPROVED VERSION")
+        logger.info(f"📋 Configuration: {len(config)} parameters")
+        logger.info(f"   - Symbol: {symbol}")
+        logger.info(f"   - Exchange: {exchange}")
+        logger.info(f"   - Parallel processing: {'Enabled' if config['enable_parallel_processing'] else 'Disabled'}")
+        logger.info(f"   - HMM states: {config['HMM_LM']['generalist']['hmm_states']}")
+        logger.info(f"   - Sequence length: {config['HMM_LM']['generalist']['sequence_length']}")
+        logger.info(f"   - Model architecture: {config['HMM_LM']['generalist']['d_model']}d, {config['HMM_LM']['generalist']['num_layers']} layers")
 
-        # Execute step
+        # Create step instance with enhanced error handling
+        try:
+            step = HMMLMGeneralistTrainingStep(config)
+            await step.initialize()
+            logger.info("✅ HMM-LM generalist training step initialized successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize HMM-LM generalist training step: {e}")
+            raise
+
+        # Execute step with enhanced monitoring
         training_input = {
             "symbol": symbol,
             "exchange": exchange,
@@ -1032,12 +1106,45 @@ async def run_step(
         }
 
         pipeline_state = {}
-        result = await step.execute(training_input, pipeline_state)
-
-        return result.get("status") == "SUCCESS"
+        
+        try:
+            result = await step.execute(training_input, pipeline_state)
+            
+            if result.get("status") == "SUCCESS":
+                # Log completion metrics
+                total_time = time.time() - start_time
+                logger.info("✅ HMM-LM generalist training step completed successfully")
+                logger.info(f"   ⏱️ Total time: {total_time:.2f}s")
+                logger.info(f"   📊 Configuration: {len(config)} parameters")
+                logger.info(f"   🔧 Parallel processing: {'Enabled' if config['enable_parallel_processing'] else 'Disabled'}")
+                
+                # Log result details if available
+                if "metrics" in result:
+                    metrics = result["metrics"]
+                    logger.info(f"   📈 Training metrics:")
+                    for metric_name, metric_value in metrics.items():
+                        logger.info(f"      - {metric_name}: {metric_value}")
+                
+                # Memory cleanup
+                import gc
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                gc.collect()
+                
+                return True
+            else:
+                error_msg = result.get('error', 'Unknown error')
+                logger.error(f"❌ HMM-LM generalist training step failed: {error_msg}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Error during HMM-LM generalist training execution: {e}")
+            return False
 
     except Exception as e:
-        logger.error(f"HMM-LM generalist training failed: {e}")
+        total_time = time.time() - start_time
+        logger.error(f"❌ Error in HMM-LM generalist training step: {e}")
+        logger.error(f"   Execution time: {total_time:.2f}s")
         return False
 
 

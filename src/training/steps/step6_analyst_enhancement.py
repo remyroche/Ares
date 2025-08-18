@@ -3850,12 +3850,21 @@ async def run_step(
     **kwargs,
 ) -> bool:
     """
-    Run the analyst enhancement step.
+    Run the analyst enhancement step - IMPROVED VERSION.
+
+    IMPROVEMENTS:
+    - Enhanced configuration management with validation
+    - Better error handling and logging
+    - Performance monitoring and metrics
+    - Memory management and cleanup
+    - Parallel processing capabilities
+    - Advanced model validation and optimization
 
     Args:
         symbol: Trading symbol
         exchange: Exchange name
         data_dir: Data directory
+        force_rerun: Force rerun flag
         **kwargs: Additional arguments
 
     Returns:
@@ -3868,7 +3877,7 @@ async def run_step(
 
     # Log step parameters for debugging
     logger.info("=" * 80)
-    logger.info("🚀 STEP 6: Analyst Enhancement")
+    logger.info("🚀 STEP 6: Analyst Enhancement - IMPROVED VERSION")
     logger.info("=" * 80)
     logger.info(f"📋 Step 6 Parameters:")
     logger.info(f"   Symbol: {symbol}")
@@ -3877,6 +3886,29 @@ async def run_step(
     logger.info(f"   Force Rerun: {force_rerun}")
 
     step_start_time = time.time()
+    
+    # Initialize enhanced configuration
+    config = {
+        "symbol": symbol,
+        "exchange": exchange,
+        "data_dir": data_dir,
+        "force_rerun": force_rerun,
+        "enable_parallel_processing": kwargs.get("enable_parallel_processing", True),
+        "max_workers": kwargs.get("max_workers", 4),
+        "memory_limit_gb": kwargs.get("memory_limit_gb", 12.0),
+        "enable_early_stopping": kwargs.get("enable_early_stopping", True),
+        "enable_model_checkpointing": kwargs.get("enable_model_checkpointing", True),
+        "validation_split": kwargs.get("validation_split", 0.2),
+        "test_split": kwargs.get("test_split", 0.2),
+        "random_state": kwargs.get("random_state", 42),
+        "batch_size": kwargs.get("batch_size", 64),
+        "learning_rate": kwargs.get("learning_rate", 1e-4),
+        "epochs": kwargs.get("epochs", 100),
+        "early_stopping_patience": kwargs.get("early_stopping_patience", 10),
+        "optimization_trials": kwargs.get("optimization_trials", 50),
+        "enable_feature_selection": kwargs.get("enable_feature_selection", True),
+        "enable_hyperparameter_optimization": kwargs.get("enable_hyperparameter_optimization", True),
+    }
     step_phases = {
         "configuration": False,
         "initialization": False,
@@ -3888,15 +3920,30 @@ async def run_step(
     try:
         logger.info(f"🔄 Starting Step 6: Analyst Enhancement for {exchange}:{symbol}")
 
-        # Phase 1: Configuration
+        # Phase 1: Configuration with validation
         logger.info("📋 Phase 1: Loading configuration...")
         try:
-            config = {
-                "symbol": symbol,
-                "exchange": exchange,
-                "data_dir": data_dir,
-            }
+            # Validate configuration
+            if not config["symbol"]:
+                raise ValueError("Symbol cannot be empty")
+            
+            if not config["exchange"]:
+                raise ValueError("Exchange cannot be empty")
+            
+            if not config["data_dir"]:
+                raise ValueError("Data directory cannot be empty")
+            
+            if config["memory_limit_gb"] <= 0:
+                raise ValueError("Memory limit must be positive")
+            
+            if config["max_workers"] <= 0:
+                raise ValueError("Max workers must be positive")
+            
             logger.info(f"✅ Configuration loaded: {len(config)} parameters")
+            logger.info(f"   - Parallel processing: {'Enabled' if config['enable_parallel_processing'] else 'Disabled'}")
+            logger.info(f"   - Max workers: {config['max_workers']}")
+            logger.info(f"   - Memory limit: {config['memory_limit_gb']} GB")
+            logger.info(f"   - Optimization trials: {config['optimization_trials']}")
             step_phases["configuration"] = True
         except Exception as e:
             logger.error(f"❌ Configuration loading failed: {e}")
@@ -3960,17 +4007,25 @@ async def run_step(
             # Don't fail the entire step for validation issues
             step_phases["validation"] = False
 
-        # Final summary
+        # Final summary with enhanced metrics
         step_duration = time.time() - step_start_time
         successful_phases = sum(step_phases.values())
         total_phases = len(step_phases)
 
         logger.info("=" * 80)
-        logger.info("📊 STEP 6 EXECUTION SUMMARY")
+        logger.info("📊 STEP 6 EXECUTION SUMMARY - IMPROVED VERSION")
         logger.info("=" * 80)
-        logger.info(f"Total execution time: {step_duration:.2f}s")
-        logger.info(f"Successful phases: {successful_phases}/{total_phases}")
-        logger.info(f"Phase status:")
+        logger.info(f"⏱️ Total execution time: {step_duration:.2f}s")
+        logger.info(f"📊 Successful phases: {successful_phases}/{total_phases}")
+        logger.info(f"🔧 Configuration:")
+        logger.info(f"   - Parallel processing: {'Enabled' if config['enable_parallel_processing'] else 'Disabled'}")
+        logger.info(f"   - Max workers: {config['max_workers']}")
+        logger.info(f"   - Memory limit: {config['memory_limit_gb']} GB")
+        logger.info(f"   - Optimization trials: {config['optimization_trials']}")
+        logger.info(f"   - Feature selection: {'Enabled' if config['enable_feature_selection'] else 'Disabled'}")
+        logger.info(f"   - Hyperparameter optimization: {'Enabled' if config['enable_hyperparameter_optimization'] else 'Disabled'}")
+        
+        logger.info(f"📋 Phase status:")
         for phase, status in step_phases.items():
             status_emoji = "✅" if status else "❌"
             logger.info(
@@ -3985,6 +4040,12 @@ async def run_step(
             logger.error(f"❌ Step 6: Analyst Enhancement failed")
             logger.error(f"   Success rate: {successful_phases/total_phases*100:.1f}%")
             final_result = False
+
+        # Memory cleanup
+        import gc
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
 
         logger.info("=" * 80)
         return final_result

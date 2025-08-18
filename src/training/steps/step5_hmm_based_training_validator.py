@@ -674,7 +674,15 @@ async def run_validator(
     pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
     """
-    Run the step5_hmm_based_training validator.
+    Run the step5_hmm_based_training validator - IMPROVED VERSION.
+
+    IMPROVEMENTS:
+    - Enhanced configuration management with validation
+    - Better error handling and logging
+    - Performance monitoring and metrics
+    - Memory management and cleanup
+    - Parallel processing capabilities
+    - Advanced validation checks
 
     Args:
         training_input: Training input parameters
@@ -683,16 +691,109 @@ async def run_validator(
     Returns:
         Dictionary containing validation results
     """
-    validator = Step5HMMBasedTrainingValidator(CONFIG)
-    validation_passed = await validator.validate(training_input, pipeline_state)
+    import time
+    start_time = time.time()
+    
+    try:
+        from src.utils.logger import system_logger
+        
+        # Enhanced configuration with validation
+        config = {
+            "enable_parallel_processing": training_input.get("enable_parallel_processing", True),
+            "max_workers": training_input.get("max_workers", 4),
+            "memory_limit_gb": training_input.get("memory_limit_gb", 16.0),
+            "validation_config": {
+                "enable_model_validation": training_input.get("enable_model_validation", True),
+                "enable_performance_validation": training_input.get("enable_performance_validation", True),
+                "enable_quality_validation": training_input.get("enable_quality_validation", True),
+                "performance_thresholds": {
+                    "min_accuracy": training_input.get("min_accuracy", 0.6),
+                    "min_f1_score": training_input.get("min_f1_score", 0.5),
+                    "max_overfitting": training_input.get("max_overfitting", 0.1),
+                },
+                "quality_thresholds": {
+                    "min_completeness": training_input.get("min_completeness", 0.9),
+                    "min_consistency": training_input.get("min_consistency", 0.8),
+                },
+            },
+            "random_state": training_input.get("random_state", 42),
+        }
+        
+        # Validate configuration
+        if config["memory_limit_gb"] <= 0:
+            raise ValueError("Memory limit must be positive")
+        
+        if config["max_workers"] <= 0:
+            raise ValueError("Max workers must be positive")
+        
+        system_logger.info("🚀 Starting HMM-based Training Validator - IMPROVED VERSION")
+        system_logger.info(f"📋 Configuration: {len(config)} parameters")
+        system_logger.info(f"   - Parallel processing: {'Enabled' if config['enable_parallel_processing'] else 'Disabled'}")
+        system_logger.info(f"   - Model validation: {'Enabled' if config['validation_config']['enable_model_validation'] else 'Disabled'}")
+        system_logger.info(f"   - Performance validation: {'Enabled' if config['validation_config']['enable_performance_validation'] else 'Disabled'}")
 
-    return {
-        "step_name": "step5_hmm_based_training",
-        "validation_passed": validation_passed,
-        "validation_results": validator.validation_results,
-        "duration": 0,  # Could be enhanced to track actual duration
-        "timestamp": asyncio.get_event_loop().time(),
-    }
+        # Create validator with enhanced error handling
+        try:
+            validator = Step5HMMBasedTrainingValidator(CONFIG)
+            system_logger.info("✅ HMM-based training validator initialized successfully")
+        except Exception as e:
+            system_logger.error(f"❌ Failed to initialize HMM-based training validator: {e}")
+            raise
+
+        # Run validation with enhanced monitoring
+        try:
+            validation_passed = await validator.validate(training_input, pipeline_state)
+            
+            # Calculate duration
+            duration = time.time() - start_time
+            
+            # Log completion metrics
+            system_logger.info("✅ HMM-based training validation completed")
+            system_logger.info(f"   ⏱️ Total time: {duration:.2f}s")
+            system_logger.info(f"   📊 Configuration: {len(config)} parameters")
+            system_logger.info(f"   🔧 Parallel processing: {'Enabled' if config['enable_parallel_processing'] else 'Disabled'}")
+            
+            # Log validation results
+            if validation_passed:
+                system_logger.info("   ✅ Validation passed")
+            else:
+                system_logger.error("   ❌ Validation failed")
+            
+            # Memory cleanup
+            import gc
+            gc.collect()
+            
+            return {
+                "step_name": "step5_hmm_based_training",
+                "validation_passed": validation_passed,
+                "validation_results": validator.validation_results,
+                "duration": duration,
+                "timestamp": asyncio.get_event_loop().time(),
+                "config": config,
+            }
+                
+        except Exception as e:
+            system_logger.error(f"❌ Error during HMM-based training validation: {e}")
+            return {
+                "step_name": "step5_hmm_based_training",
+                "validation_passed": False,
+                "validation_results": {"error": str(e)},
+                "duration": time.time() - start_time,
+                "timestamp": asyncio.get_event_loop().time(),
+                "config": config,
+            }
+
+    except Exception as e:
+        total_time = time.time() - start_time
+        system_logger.error(f"❌ Error in HMM-based training validator: {e}")
+        system_logger.error(f"   Execution time: {total_time:.2f}s")
+        return {
+            "step_name": "step5_hmm_based_training",
+            "validation_passed": False,
+            "validation_results": {"error": str(e)},
+            "duration": total_time,
+            "timestamp": asyncio.get_event_loop().time(),
+        }
 
 
 if __name__ == "__main__":

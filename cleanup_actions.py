@@ -33,7 +33,7 @@ def cleanup_file(file_path: str):
                 f.write(content)
             print(f'Cleaned up: {file_path}')
 
-    except Exception as e:
+    except (IOError, OSError) as e:
         print(f'Error cleaning up {file_path}: {e}')
 
 def main():

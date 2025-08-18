@@ -688,21 +688,17 @@ async def run_step(
         comprehensive_sr_vl = await _generate_comprehensive_sr_features(price_vl, sr_vl)
         comprehensive_sr_te = await _generate_comprehensive_sr_features(price_te, sr_te)
 
+        def _merge_features(target_feats, new_feats):
+            if not new_feats:
+                return
+            for feature_name, feature_series in new_feats.items():
+                if feature_name not in target_feats:
+                    target_feats[feature_name] = feature_series
+
         # Merge comprehensive SR features with existing features
-        if comprehensive_sr_tr:
-            for feature_name, feature_series in comprehensive_sr_tr.items():
-                if feature_name not in feats_tr:
-                    feats_tr[feature_name] = feature_series
-                    
-        if comprehensive_sr_vl:
-            for feature_name, feature_series in comprehensive_sr_vl.items():
-                if feature_name not in feats_vl:
-                    feats_vl[feature_name] = feature_series
-                    
-        if comprehensive_sr_te:
-            for feature_name, feature_series in comprehensive_sr_te.items():
-                if feature_name not in feats_te:
-                    feats_te[feature_name] = feature_series
+        _merge_features(feats_tr, comprehensive_sr_tr)
+        _merge_features(feats_vl, comprehensive_sr_vl)
+        _merge_features(feats_te, comprehensive_sr_te)
 
         X_tr = pd.DataFrame(feats_tr).reindex(price_tr.index)
         X_vl = pd.DataFrame(feats_vl).reindex(price_vl.index)

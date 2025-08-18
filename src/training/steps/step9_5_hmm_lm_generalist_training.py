@@ -21,9 +21,29 @@ from sklearn.model_selection import TimeSeriesSplit
 import lightgbm as lgb
 
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors
 from src.utils.warning_symbols import error, failed, success
-from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
+from src.utils.centralized_decorators import (
+    handle_errors,
+    deterministic_seed,
+    idempotent_step,
+    artifact_write_lock,
+    nan_inf_and_constant_guard,
+    artifact_versioning,
+    time_budget_watchdog,
+    validate_step_prerequisites,
+    secure_data_processing,
+    prevent_data_leakage,
+    resource_monitor,
+    memory_efficient,
+    debug_training_step,
+    circuit_breaker_protection,
+    validate_step_output,
+    quality_gate,
+    validate_data_quality,
+    validate_feature_engineering_pipeline,
+    with_tracing_span,
+    guard_dataframe_nulls,
+)
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -97,6 +117,8 @@ class HMMLMGeneralistTrainingStep:
         self.logger.info("Initializing HMM-LM Generalist Training Step...")
         self.logger.info("HMM-LM Generalist Training Step initialized successfully")
 
+    @with_tracing_span("step9_5.execute", log_args=False)
+    @validate_data_quality(validation_level="WARNING")
     @handle_errors(
         exceptions=(Exception,),
         default_return={"status": "FAILED", "error": "Execution failed"},
@@ -159,6 +181,8 @@ class HMMLMGeneralistTrainingStep:
             self.logger.error(f"❌ HMM-LM Generalist Training failed: {e}")
             return {"status": "FAILED", "error": str(e)}
 
+    @with_tracing_span("step9_5._load_multi_timeframe_hmm_data", log_args=False)
+    @guard_dataframe_nulls(mode="warn", arg_index=0)
     async def _load_multi_timeframe_hmm_data(
         self, exchange: str, symbol: str, data_dir: str
     ) -> Dict[str, pd.DataFrame]:
@@ -918,6 +942,61 @@ class EfficientRegimeTrainer:
 
 
 # For backward compatibility with existing step structure
+@deterministic_seed(42)
+@idempotent_step(step_key="step9_5_hmm_lm_generalist_training")
+@artifact_write_lock()
+@nan_inf_and_constant_guard()
+@artifact_versioning("1.0")
+@time_budget_watchdog(soft_timeout_seconds=3600.0)
+@validate_step_prerequisites(
+    required_directories=["data/training", "models"],
+    min_memory_gb=16.0,
+    min_disk_gb=10.0,
+    required_packages=["torch", "numpy", "pandas", "sklearn", "lightgbm"],
+    data_quality_checks={"check_data_completeness": True}
+)
+@secure_data_processing(
+    backup_before=True,
+    integrity_checks=True,
+    memory_cleanup=True,
+    data_validation=True
+)
+@prevent_data_leakage(
+    temporal_validation=True,
+    feature_leakage_detection=True,
+    cross_validation_isolation=True,
+    lookahead_bias_prevention=True
+)
+@resource_monitor(
+    memory_threshold_gb=32.0,
+    cpu_threshold_percent=90.0,
+    disk_threshold_gb=10.0,
+    auto_cleanup=True
+)
+@memory_efficient(
+    chunk_size=1000,
+    streaming_processing=True,
+    memory_pool=True,
+    cleanup_frequency=10
+)
+@debug_training_step(
+    log_intermediate_results=True,
+    save_debug_artifacts=True,
+    performance_profiling=True
+)
+@circuit_breaker_protection(
+    failure_threshold=3,
+    recovery_timeout=300.0
+)
+@validate_step_output(
+    required_files=["hmm_lm_generalist_model.pkl"],
+    data_quality_checks={"check_output_completeness": True}
+)
+@quality_gate(
+    model_performance_thresholds={"min_accuracy": 0.6},
+    data_quality_metrics={"completeness_threshold": 0.95}
+)
+@handle_errors(exceptions=(Exception,), default_return=False, context="step9_5_hmm_lm_generalist_training")
 async def run_step(
     symbol: str,
     exchange: str = "BINANCE",

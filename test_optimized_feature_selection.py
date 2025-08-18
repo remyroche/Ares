@@ -63,6 +63,27 @@ def create_test_data(n_samples=1000, n_features=200):
         data[f'cluster_{i}'] = np.random.randint(0, 3, n_samples)
         data[f'hmm_state_{i}'] = np.random.randint(0, 4, n_samples)
     
+    # Support/Resistance features (15% of features)
+    n_sr = int(n_features * 0.15)
+    for i in range(n_sr):
+        data[f'sr_distance_{i}'] = np.random.uniform(0, 0.1, n_samples)
+        data[f'sr_proximity_{i}'] = np.random.uniform(0, 1, n_samples)
+        data[f'breakout_probability_{i}'] = np.random.uniform(0, 1, n_samples)
+        data[f'rebounce_probability_{i}'] = np.random.uniform(0, 1, n_samples)
+        data[f'consolidation_probability_{i}'] = np.random.uniform(0, 1, n_samples)
+        data[f'sr_confidence_{i}'] = np.random.uniform(0, 1, n_samples)
+        data[f'multi_timeframe_sr_score_{i}'] = np.random.uniform(0, 1, n_samples)
+        data[f'distance_to_resistance_{i}'] = np.random.uniform(0, 0.05, n_samples)
+        data[f'distance_to_support_{i}'] = np.random.uniform(0, 0.05, n_samples)
+        data[f'normalized_distance_{i}'] = np.random.uniform(-1, 1, n_samples)
+        data[f'sr_proximity_score_{i}'] = np.random.uniform(0, 1, n_samples)
+        data[f'strength_score_{i}'] = np.random.uniform(0, 1, n_samples)
+        data[f'clarity_factor_{i}'] = np.random.uniform(0, 1, n_samples)
+        data[f'directional_pressure_{i}'] = np.random.uniform(-1, 1, n_samples)
+        data[f'sr_score_{i}'] = np.random.uniform(0, 1, n_samples)
+        data[f'delta_sr_score_{i}'] = np.random.uniform(-0.1, 0.1, n_samples)
+        data[f'isolation_score_{i}'] = np.random.uniform(0, 1, n_samples)
+    
     # Interaction features (10% of features)
     n_interaction = int(n_features * 0.10)
     for i in range(n_interaction):
@@ -124,12 +145,13 @@ def test_optimized_feature_selection():
                 "enable_matrix_vif": True,
                 "enable_balanced_selection": True,
                 "feature_categories": {
-                    "momentum": 0.25,
-                    "volatility": 0.20,
-                    "liquidity": 0.20,
-                    "microstructure": 0.15,
+                    "momentum": 0.20,
+                    "volatility": 0.15,
+                    "liquidity": 0.15,
+                    "microstructure": 0.10,
                     "regime": 0.10,
-                    "interaction": 0.10
+                    "sr_features": 0.15,
+                    "interaction": 0.15
                 }
             }
         }
@@ -287,7 +309,10 @@ def test_feature_selection_integration():
             "rsi_14", "macd_12_26", "bb_position", "atr_14", "volume_sma_20",
             "momentum_strength", "volatility_garman_klass", "liquidity_score",
             "order_flow_imbalance", "sr_proximity", "hmm_state_0", "hmm_state_1",
-            "momentum_x_volume", "volatility_div_liquidity", "rsi_ratio_volume"
+            "momentum_x_volume", "volatility_div_liquidity", "rsi_ratio_volume",
+            "sr_distance", "breakout_probability", "sr_confidence", "multi_timeframe_sr_score",
+            "distance_to_resistance", "distance_to_support", "sr_proximity_score",
+            "strength_score", "clarity_factor", "directional_pressure", "sr_score"
         ]
         
         # Rename some features to be more realistic

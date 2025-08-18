@@ -38,23 +38,38 @@ I have analyzed and optimized the feature selection processes in your ML trainin
 **Problem**: Feature selection was not ensuring a good mix across different categories.
 
 **Solution**: Implemented category-based balanced selection:
-- **Momentum**: 25% (RSI, MACD, trend indicators)
-- **Volatility**: 20% (ATR, realized volatility, range measures)
-- **Liquidity**: 20% (volume, spread, market depth)
-- **Microstructure**: 15% (order flow, imbalances)
+- **Momentum**: 20% (RSI, MACD, trend indicators)
+- **Volatility**: 15% (ATR, realized volatility, range measures)
+- **Liquidity**: 15% (volume, spread, market depth)
+- **Microstructure**: 10% (order flow, imbalances)
 - **Regime**: 10% (HMM states, clusters)
-- **Interaction**: 10% (cross-products, ratios)
+- **SR Features**: 15% (Support/Resistance distance, breakout probability, etc.)
+- **Interaction**: 15% (cross-products, ratios)
 
 **Result**: Ensures diverse feature representation for better model performance.
 
-### 4. Model-Specific Optimization
+### 4. Support/Resistance (SR) Features Integration
+
+**Problem**: SR features were not explicitly included in the feature selection process.
+
+**Solution**: Added comprehensive SR feature support:
+- **SR Distance Features**: Distance to support/resistance levels
+- **SR Probability Features**: Breakout, rebounce, consolidation probabilities
+- **SR Confidence Features**: Confidence scores and multi-timeframe SR scores
+- **SR Proximity Features**: Proximity scores and normalized distances
+- **SR Strength Features**: Strength scores, clarity factors, directional pressure
+- **SR Score Features**: Composite SR scores and delta scores
+
+**Benefits**: Ensures SR features are properly represented in the feature mix, which are crucial for trading strategies.
+
+### 5. Model-Specific Optimization
 
 **Problem**: Same feature selection strategy was used for all model types.
 
 **Solution**: Tailored optimization for different architectures:
 
 #### Neural Networks (CNN, TCN, Transformer)
-- Prefer interaction features and normalized features
+- Prefer interaction features, normalized features, and SR features
 - Keep diverse feature set for non-linear learning
 - Target: 80 features
 
@@ -145,9 +160,9 @@ I have analyzed and optimized the feature selection processes in your ML trainin
 - No guarantee of feature diversity
 
 ### After Optimization
-- **Balanced categories**: 25% momentum, 20% volatility, 20% liquidity, 15% microstructure, 10% regime, 10% interaction
+- **Balanced categories**: 20% momentum, 15% volatility, 15% liquidity, 10% microstructure, 10% regime, 15% SR features, 15% interaction
 - **Target feature counts**: 50-100 features depending on model type
-- **Diverse representation**: Ensures all important feature types are included
+- **Diverse representation**: Ensures all important feature types are included, with special emphasis on Support/Resistance features
 
 ## Usage Examples
 
@@ -187,12 +202,13 @@ feature_selection:
   enable_matrix_vif: true
   
   feature_categories:
-    momentum: 0.25
-    volatility: 0.20
-    liquidity: 0.20
-    microstructure: 0.15
+    momentum: 0.20
+    volatility: 0.15
+    liquidity: 0.15
+    microstructure: 0.10
     regime: 0.10
-    interaction: 0.10
+    sr_features: 0.15
+    interaction: 0.15
 ```
 
 ## Testing and Validation

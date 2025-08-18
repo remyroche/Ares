@@ -17,7 +17,7 @@ sys.path.insert(0, str(project_root))
 
 from src.utils.logger import setup_logging, system_logger
 from src.config.constants import DEFAULT_LOOKBACK_DAYS
-from src.training.steps.step1_7_hmm_regime_discovery import run_step
+from src.training.steps.step3_hmm_regime_discovery import run_step
 
 
 async def main():

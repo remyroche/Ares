@@ -415,7 +415,7 @@ HMM_OPTIMIZATION_CONFIG: Dict[str, Any] = {
     "momentum_sensitivity_multiplier": 1.5,  # Increase momentum state sensitivity
     "volatility_sensitivity_multiplier": 1.3,  # Increase volatility state sensitivity
     "volume_sensitivity_multiplier": 1.2,  # Increase volume state sensitivity
-    "microstructure_sensitivity_multiplier": 1.4,  # Increase microstructure state sensitivity
+
 }
 
 # Optimized block setup - Based on data availability and HMM suitability
@@ -976,7 +976,7 @@ def create_basic_features(price_df: pd.DataFrame) -> pd.DataFrame:
                 "enable_volatility_features": True,
                 "enable_momentum_features": True,
                 "enable_volume_features": True,
-                "enable_microstructure_features": True,
+            
                 "enable_wavelet_features": False,  # Disable for HMM to avoid complexity
                 "enable_candlestick_patterns": False,  # Disable for HMM
                 "enable_sr_distance": False,  # Disable for HMM
@@ -1757,9 +1757,9 @@ def _name_states(block: str, medians: Dict[int, Dict[str, float]]) -> Dict[int, 
             score = float(np.nanmean(np.abs(vals)))
         elif block == "momentum":
             score = float(np.nanmean(vals))
-        elif block == "liquidity":
+        elif block == "support_resistance":
             score = float(np.nanmean(vals))
-        else:  # microstructure
+        else:  # volume or other blocks
             score = float(np.nanmean(vals))
         scores[int(s)] = score
     # Create unique names for each state based on their rank and characteristics
@@ -1803,15 +1803,13 @@ def _name_states(block: str, medians: Dict[int, Dict[str, float]]) -> Dict[int, 
             else:
                 names[s] = "Very High Volume"
 
-        else:  # microstructure
-            if q < 0.25:  # 4 states, so 1/4 = 0.25
-                names[s] = "Tight Microstructure"
-            elif q < 0.5:
-                names[s] = "Neutral Microstructure"
-            elif q < 0.75:
-                names[s] = "Stressed Microstructure"
+        elif block == "support_resistance":
+            if q < 0.33:  # 3 states, so 1/3 = 0.33
+                names[s] = "Near Support"
+            elif q < 0.67:
+                names[s] = "Neutral Levels"
             else:
-                names[s] = "Very Stressed Microstructure"
+                names[s] = "Near Resistance"
     return names
 
 
@@ -3358,8 +3356,8 @@ def _generate_archetype_descriptions(
                 # Analyze the centroid values to determine market conditions
                 momentum_score = centroid[0] if len(centroid) > 0 else 0
                 volatility_score = centroid[1] if len(centroid) > 1 else 0
-                liquidity_score = centroid[2] if len(centroid) > 2 else 0
-                microstructure_score = centroid[3] if len(centroid) > 3 else 0
+                volume_score = centroid[2] if len(centroid) > 2 else 0
+                sr_score = centroid[3] if len(centroid) > 3 else 0
 
                 # Determine market conditions with more nuanced descriptions
                 conditions = []
@@ -3388,29 +3386,29 @@ def _generate_archetype_descriptions(
                 else:
                     conditions.append("very low volatility")
 
-                # Liquidity condition with intensity
-                if liquidity_score > 0.7:
-                    conditions.append("very high liquidity")
-                elif liquidity_score > 0.3:
-                    conditions.append("high liquidity")
-                elif liquidity_score > -0.3:
-                    conditions.append("moderate liquidity")
-                elif liquidity_score > -0.7:
-                    conditions.append("low liquidity")
+                # Volume condition with intensity
+                if volume_score > 0.7:
+                    conditions.append("very high volume")
+                elif volume_score > 0.3:
+                    conditions.append("high volume")
+                elif volume_score > -0.3:
+                    conditions.append("moderate volume")
+                elif volume_score > -0.7:
+                    conditions.append("low volume")
                 else:
-                    conditions.append("very low liquidity")
+                    conditions.append("very low volume")
 
-                # Microstructure condition with intensity
-                if microstructure_score > 0.7:
-                    conditions.append("very stressed microstructure")
-                elif microstructure_score > 0.3:
-                    conditions.append("stressed microstructure")
-                elif microstructure_score > -0.3:
-                    conditions.append("neutral microstructure")
-                elif microstructure_score > -0.7:
-                    conditions.append("tight microstructure")
+                # Support/Resistance condition with intensity
+                if sr_score > 0.7:
+                    conditions.append("near resistance")
+                elif sr_score > 0.3:
+                    conditions.append("approaching resistance")
+                elif sr_score > -0.3:
+                    conditions.append("neutral levels")
+                elif sr_score > -0.7:
+                    conditions.append("approaching support")
                 else:
-                    conditions.append("very tight microstructure")
+                    conditions.append("near support")
 
                 # Combine conditions
                 if conditions:
@@ -3557,7 +3555,7 @@ def _generate_regime_description(regime_id: int, meta: dict, original_desc: str)
         if not regime_label:
             return original_desc
 
-        # Parse the label format: "momentum:0|volatility:0|liquidity:0|microstructure:0"
+        # Parse the label format: "momentum:0|volatility:0|volume:0|support_resistance:0"
         block_states = {}
         for part in regime_label.split("|"):
             if ":" in part:
@@ -3596,13 +3594,12 @@ def _generate_regime_description(regime_id: int, meta: dict, original_desc: str)
                 3: "High Volume",
                 4: "Very High Volume",
             },
-
-            "microstructure": {
-                0: "Tight Microstructure",
-                1: "Neutral Microstructure",
-                2: "Stressed Microstructure",
-                3: "Very Stressed Microstructure",
+            "support_resistance": {
+                0: "Near Support",
+                1: "Neutral Levels",
+                2: "Near Resistance",
             },
+
         }
 
         for block_name, state_id in block_states.items():
@@ -3667,15 +3664,15 @@ def _generate_state_name(block_name: str, state_id: int, original_name: str, met
             }
             return volume_names.get(state_id, original_name)
 
-
-        elif block_name_lower == "microstructure":
-            microstructure_names = {
-                0: "Tight Microstructure",
-                1: "Neutral Microstructure",
-                2: "Stressed Microstructure",
-                3: "Very Stressed Microstructure",
+        elif block_name_lower == "support_resistance":
+            sr_names = {
+                0: "Near Support",
+                1: "Neutral Levels",
+                2: "Near Resistance",
             }
-            return microstructure_names.get(state_id, original_name)
+            return sr_names.get(state_id, original_name)
+
+
 
         else:
             return original_name
@@ -3753,6 +3750,12 @@ def _generate_simple_hmm_report(
         report_lines.append("**Key Findings:**")
         report_lines.append(
             f"- 🎯 **{actual_regime_count} distinct market regimes** identified"
+        )
+        report_lines.append(
+            "- 🔧 **Simplified regime structure** focusing on core market dynamics"
+        )
+        report_lines.append(
+            "- 📊 **4 primary blocks**: Momentum, Volatility, Volume, and Support/Resistance"
         )
 
         # Regime distribution and concentration analysis
@@ -3940,11 +3943,20 @@ def _generate_simple_hmm_report(
         if blocks:
             report_lines.append("## 🧩 HMM Block Analysis")
             report_lines.append("")
-            report_lines.append("### Block Configuration:")
+            report_lines.append("### Simplified Block Configuration:")
+            report_lines.append("> **Note**: Regime detection has been simplified to focus on core market dynamics:")
             for block in blocks:
                 report_lines.append(
                     f"- **{block['name'].title()}**: {block['n_states']} states"
                 )
+            report_lines.append("")
+            report_lines.append("**Simplified Regime Structure:**")
+            report_lines.append("- **Momentum**: Price trend and momentum patterns")
+            report_lines.append("- **Volatility**: Market volatility and dispersion")
+            report_lines.append("- **Volume**: Trading volume and flow analysis")
+            report_lines.append("- **Support/Resistance**: Price level proximity and strength")
+            report_lines.append("")
+            report_lines.append("*Liquidity and market microstructure blocks have been removed to simplify regime detection and improve stability.*")
             report_lines.append("")
 
             # State names with better descriptions
@@ -4500,43 +4512,36 @@ def _generate_simple_hmm_report(
                         "- **Volatility**: Low volatility environment with stable price action"
                     )
 
-                # Liquidity analysis
+                # Volume analysis
                 if any(
                     word in better_desc_lower
-                    for word in ["very high liquidity", "high liquidity"]
+                    for word in ["very high volume", "high volume"]
                 ):
                     report_lines.append(
-                        "- **Liquidity**: High liquidity environment with good trading volume"
+                        "- **Volume**: High volume environment with active trading"
                     )
                 elif any(
                     word in better_desc_lower
-                    for word in ["very low liquidity", "low liquidity"]
+                    for word in ["very low volume", "low volume"]
                 ):
                     report_lines.append(
-                        "- **Liquidity**: Low liquidity environment with limited trading volume"
+                        "- **Volume**: Low volume environment with limited trading activity"
                     )
 
-                # Microstructure analysis
+                # Support/Resistance analysis
                 if any(
                     word in better_desc_lower
-                    for word in ["very high spread", "high spread", "low efficiency"]
+                    for word in ["near resistance", "approaching resistance"]
                 ):
                     report_lines.append(
-                        "- **Microstructure**: Stressed market microstructure with potential inefficiencies"
+                        "- **Support/Resistance**: Price near resistance levels with potential reversal"
                     )
                 elif any(
                     word in better_desc_lower
-                    for word in ["low spread", "high efficiency"]
+                    for word in ["near support", "approaching support"]
                 ):
                     report_lines.append(
-                        "- **Microstructure**: Tight market microstructure with efficient price discovery"
-                    )
-                elif (
-                    "moderate spread" in better_desc_lower
-                    or "moderate efficiency" in better_desc_lower
-                ):
-                    report_lines.append(
-                        "- **Microstructure**: Normal market microstructure with standard efficiency"
+                        "- **Support/Resistance**: Price near support levels with potential bounce"
                     )
 
                 report_lines.append("")

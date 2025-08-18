@@ -1227,6 +1227,7 @@ class EnhancedTrainingManager:
 
             # Step 4: Data Splitting for Training (regimes or meta-labels)
             self._heartbeat("Step 4: Data Splitting for Training")
+            step_start_4 = time.time()
             try:
                 from src.training.steps import step4_regime_data_splitting as _split
                 step4_kwargs = {}
@@ -1252,7 +1253,7 @@ class EnhancedTrainingManager:
             if not step4_success:
                 self._log_step_completion(
                     "Step 4: Data Splitting for Training",
-                    step_start,
+                    step_start_4,
                     step_times,
                     success=False,
                 )
@@ -1264,6 +1265,11 @@ class EnhancedTrainingManager:
                 "success": bool(step4_success),
                 "completed": bool(step4_success),
             }
+
+            # Log completion for step 4 success path
+            self._log_step_completion(
+                "Step 4: Data Splitting for Training", step_start_4, step_times
+            )
             self._save_checkpoint(
                 "step4_regime_data_splitting", pipeline_state
             )

@@ -336,33 +336,29 @@ class UnifiedRegimeIntelligenceStep:
             self.logger.info("🚀 Starting Unified Regime Intelligence training...")
 
             # Enhanced optimization for step6_5
-            if self.enhanced_lm_optimizer is not None:
-                self.logger.info("🔧 Enhanced LM optimization enabled: starting comprehensive optimization...")
-                try:
-                    # Prepare data for optimization
-                    optimization_data = await self._prepare_optimization_data(data)
-                    if optimization_data:
-                        optimization_results = await self.enhanced_lm_optimizer.optimize_lm_model(
-                            step_name="step6_5",
-                            features_df=optimization_data["features"],
-                            target=optimization_data["target"],
-                            model_type="classification",
-                            architecture="Transformer"
-                        )
-                        
-                        if optimization_results:
-                            self.logger.info("✅ Enhanced optimization completed for step6_5")
-                            # Store optimization results
-                            if not hasattr(self, "enhancement_results"):
-                                self.enhancement_results = {}
-                            self.enhancement_results["enhanced_optimization"] = optimization_results
-                        else:
-                            self.logger.warning("⚠️ Enhanced optimization failed, continuing with basic training")
-                except Exception as e:
-                    self.logger.warning(f"⚠️ Enhanced optimization error: {e}, continuing with basic training")
+            if self.enhanced_lm_optimizer is None:
+                raise RuntimeError("Enhanced LM optimizer is required but not initialized")
             
-            # Optional: short HPO to refine a few hyperparameters (fallback)
-            if self.hpo_enabled and (self.enhanced_lm_optimizer is None or not hasattr(self, "enhancement_results")):
+            self.logger.info("🔧 Enhanced LM optimization enabled: starting comprehensive optimization...")
+            
+            # Prepare data for optimization
+            optimization_data = await self._prepare_optimization_data(data)
+            if not optimization_data:
+                raise RuntimeError("Failed to prepare optimization data")
+            
+            optimization_results = await self.enhanced_lm_optimizer.optimize_lm_model(
+                step_name="step6_5",
+                features_df=optimization_data["features"],
+                target=optimization_data["target"],
+                model_type="classification",
+                architecture="Transformer"
+            )
+            
+            self.logger.info("✅ Enhanced optimization completed for step6_5")
+            # Store optimization results
+            if not hasattr(self, "enhancement_results"):
+                self.enhancement_results = {}
+            self.enhancement_results["enhanced_optimization"] = optimization_results
                 self.logger.info("🔧 HPO enabled: starting short optimization...")
                 hpo_results = await self._run_hyperparameter_optimization()
                 if hpo_results and "best_params" in hpo_results:

@@ -184,15 +184,18 @@ class EnhancedLMOptimizer:
                     
         return default_config
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="enhanced LM optimizer initialization"
-    )
     async def initialize(self) -> bool:
-        """Initialize the enhanced LM optimizer."""
+        """Initialize the Enhanced LM Optimizer with all components. Fails fast if any component fails."""
         try:
             self.logger.info("🔄 Initializing Enhanced LM Optimizer...")
+            
+            # Track initialization status for artifact saving
+            initialization_status = {
+                "feature_selector": False,
+                "regularization_manager": False,
+                "optuna_study": False,
+                "experiment_tracking": False
+            }
             
             # Initialize feature selector
             feature_selection_enabled = (
@@ -202,8 +205,11 @@ class EnhancedLMOptimizer:
             )
             
             if feature_selection_enabled:
+                self.logger.info("🔄 Initializing feature selector...")
                 self.feature_selector = EnhancedFeatureSelector(self.optimization_config)
                 await self.feature_selector.initialize()
+                initialization_status["feature_selector"] = True
+                self.logger.info("✅ Feature selector initialized successfully")
             
             # Initialize regularization manager
             regularization_enabled = (
@@ -213,8 +219,11 @@ class EnhancedLMOptimizer:
             )
             
             if regularization_enabled:
+                self.logger.info("🔄 Initializing regularization manager...")
                 self.regularization_manager = EnhancedRegularizationManager(self.optimization_config)
                 await self.regularization_manager.initialize()
+                initialization_status["regularization_manager"] = True
+                self.logger.info("✅ Regularization manager initialized successfully")
             
             # Initialize Optuna study
             optuna_enabled = (
@@ -224,14 +233,137 @@ class EnhancedLMOptimizer:
             )
             
             if optuna_enabled:
+                self.logger.info("🔄 Initializing Optuna study...")
                 await self._initialize_optuna_study()
+                initialization_status["optuna_study"] = True
+                self.logger.info("✅ Optuna study initialized successfully")
+            
+            # Initialize experiment tracking
+            experiment_tracking_enabled = (
+                self.optimization_config.experiment_tracking.enable 
+                if hasattr(self.optimization_config, 'experiment_tracking') 
+                else self.optimization_config.get("experiment_tracking", {}).get("enable", True)
+            )
+            
+            if experiment_tracking_enabled:
+                self.logger.info("🔄 Initializing experiment tracking...")
+                # Experiment tracking is initialized in _initialize_optuna_study
+                initialization_status["experiment_tracking"] = True
+                self.logger.info("✅ Experiment tracking initialized successfully")
+            
+            # Store initialization status for potential failure handling
+            self.initialization_status = initialization_status
             
             self.logger.info("✅ Enhanced LM Optimizer initialized successfully")
             return True
             
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize Enhanced LM Optimizer: {e}")
-            return False
+            
+            # Save initialization artifacts before raising
+            await self._save_initialization_artifacts(initialization_status, str(e))
+            
+            # Re-raise the exception - no fallback, it has to work
+            raise RuntimeError(f"Enhanced LM Optimizer initialization failed: {e}")
+    
+    async def _save_initialization_artifacts(self, initialization_status: Dict[str, bool], error_message: str):
+        """Save artifacts of successful initialization components before failing."""
+        try:
+            import json
+            import os
+            from datetime import datetime
+            
+            # Create artifacts directory
+            artifacts_dir = "artifacts/initialization_failure"
+            os.makedirs(artifacts_dir, exist_ok=True)
+            
+            # Save initialization status
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            status_file = f"{artifacts_dir}/initialization_status_{timestamp}.json"
+            
+            status_data = {
+                "timestamp": timestamp,
+                "initialization_status": initialization_status,
+                "error_message": error_message,
+                "config_summary": self._get_config_summary()
+            }
+            
+            with open(status_file, 'w') as f:
+                json.dump(status_data, f, indent=2)
+            
+            # Save successful component configurations
+            if initialization_status.get("feature_selector"):
+                await self._save_feature_selector_artifacts(artifacts_dir, timestamp)
+            
+            if initialization_status.get("regularization_manager"):
+                await self._save_regularization_artifacts(artifacts_dir, timestamp)
+            
+            if initialization_status.get("optuna_study"):
+                await self._save_optuna_artifacts(artifacts_dir, timestamp)
+            
+            self.logger.info(f"📁 Initialization artifacts saved to {artifacts_dir}")
+            
+        except Exception as artifact_error:
+            self.logger.error(f"❌ Failed to save initialization artifacts: {artifact_error}")
+    
+    def _get_config_summary(self) -> Dict[str, Any]:
+        """Get a summary of the current configuration."""
+        try:
+            if hasattr(self.optimization_config, 'get_optimization_summary'):
+                return self.optimization_config.get_optimization_summary()
+            else:
+                return {
+                    "config_type": "dictionary",
+                    "keys": list(self.optimization_config.keys()) if isinstance(self.optimization_config, dict) else []
+                }
+        except Exception as e:
+            return {"error": f"Failed to get config summary: {e}"}
+    
+    async def _save_feature_selector_artifacts(self, artifacts_dir: str, timestamp: str):
+        """Save feature selector artifacts."""
+        try:
+            if self.feature_selector:
+                feature_artifacts = {
+                    "feature_selection_config": self.feature_selector.feature_selection_config,
+                    "performance_metrics": self.feature_selector.performance_metrics
+                }
+                
+                feature_file = f"{artifacts_dir}/feature_selector_{timestamp}.json"
+                with open(feature_file, 'w') as f:
+                    json.dump(feature_artifacts, f, indent=2)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to save feature selector artifacts: {e}")
+    
+    async def _save_regularization_artifacts(self, artifacts_dir: str, timestamp: str):
+        """Save regularization manager artifacts."""
+        try:
+            if self.regularization_manager:
+                reg_artifacts = {
+                    "regularization_config": self.regularization_manager.regularization_config
+                }
+                
+                reg_file = f"{artifacts_dir}/regularization_manager_{timestamp}.json"
+                with open(reg_file, 'w') as f:
+                    json.dump(reg_artifacts, f, indent=2)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to save regularization artifacts: {e}")
+    
+    async def _save_optuna_artifacts(self, artifacts_dir: str, timestamp: str):
+        """Save Optuna study artifacts."""
+        try:
+            if self.optuna_study:
+                optuna_artifacts = {
+                    "study_name": self.optuna_study.study_name,
+                    "n_trials": len(self.optuna_study.trials),
+                    "best_value": self.optuna_study.best_value if self.optuna_study.trials else None,
+                    "best_params": self.optuna_study.best_params if self.optuna_study.trials else None
+                }
+                
+                optuna_file = f"{artifacts_dir}/optuna_study_{timestamp}.json"
+                with open(optuna_file, 'w') as f:
+                    json.dump(optuna_artifacts, f, indent=2)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to save Optuna artifacts: {e}")
     
     async def _initialize_optuna_study(self):
         """Initialize Optuna study for hyperparameter optimization with advanced samplers and pruners."""
@@ -324,11 +456,6 @@ class EnhancedLMOptimizer:
             self.mlflow_available = False
             self.wandb_available = False
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="comprehensive LM optimization"
-    )
     async def optimize_lm_model(
         self,
         step_name: str,
@@ -339,7 +466,7 @@ class EnhancedLMOptimizer:
         **kwargs
     ) -> Dict[str, Any]:
         """
-        Comprehensive optimization for LM models.
+        Comprehensive optimization for LM models. No fallbacks - it has to work.
         
         Args:
             step_name: Step name (step6, step6_5, step9)
@@ -351,11 +478,31 @@ class EnhancedLMOptimizer:
             
         Returns:
             Dict containing optimization results
+            
+        Raises:
+            RuntimeError: If any optimization step fails
         """
         start_time = time.time()
         
         try:
             self.logger.info(f"🔄 Starting comprehensive optimization for {step_name} {architecture}")
+            
+            # Validate inputs
+            if features_df.empty or target.empty:
+                raise ValueError("Features and target cannot be empty")
+            
+            if len(features_df) != len(target):
+                raise ValueError("Features and target must have the same length")
+            
+            # Validate that all required components are available
+            if self.feature_selector is None:
+                raise RuntimeError("Feature selector is required but not initialized")
+            
+            if self.regularization_manager is None:
+                raise RuntimeError("Regularization manager is required but not initialized")
+            
+            if self.optuna_study is None:
+                raise RuntimeError("Optuna study is required but not initialized")
             
             optimization_results = {
                 "step_name": step_name,
@@ -369,48 +516,43 @@ class EnhancedLMOptimizer:
             }
             
             # Step 1: Feature Selection
-            if self.optimization_config["feature_selection"]["enable"]:
-                self.logger.info(f"📊 Step 1: Feature selection for {step_name}")
-                feature_selection_start = time.time()
-                
-                optimized_features, feature_selection_results = await self._optimize_features(
-                    features_df, target, step_name, architecture
-                )
-                
-                optimization_results["feature_selection"] = feature_selection_results
-                self.optimization_metrics["feature_selection_time"] = time.time() - feature_selection_start
-                
-                self.logger.info(f"✅ Feature selection completed: {len(features_df.columns)} -> {len(optimized_features.columns)} features")
-            else:
-                optimized_features = features_df
+            self.logger.info(f"📊 Step 1: Feature selection for {step_name}")
+            feature_selection_start = time.time()
+            
+            optimized_features, feature_selection_results = await self._optimize_features(
+                features_df, target, step_name, architecture
+            )
+            
+            optimization_results["feature_selection"] = feature_selection_results
+            self.optimization_metrics["feature_selection_time"] = time.time() - feature_selection_start
+            
+            self.logger.info(f"✅ Feature selection completed: {len(features_df.columns)} -> {len(optimized_features.columns)} features")
             
             # Step 2: Regularization Tuning
-            if self.optimization_config["regularization"]["enable"]:
-                self.logger.info(f"🔧 Step 2: Regularization tuning for {step_name}")
-                regularization_start = time.time()
-                
-                regularization_params = await self._optimize_regularization(
-                    optimized_features, target, step_name, architecture
-                )
-                
-                optimization_results["regularization"] = regularization_params
-                self.optimization_metrics["regularization_tuning_time"] = time.time() - regularization_start
-                
-                self.logger.info(f"✅ Regularization tuning completed")
+            self.logger.info(f"🔧 Step 2: Regularization tuning for {step_name}")
+            regularization_start = time.time()
+            
+            regularization_params = await self._optimize_regularization(
+                optimized_features, target, step_name, architecture
+            )
+            
+            optimization_results["regularization"] = regularization_params
+            self.optimization_metrics["regularization_tuning_time"] = time.time() - regularization_start
+            
+            self.logger.info(f"✅ Regularization tuning completed")
             
             # Step 3: Hyperparameter Optimization with Optuna
-            if self.optimization_config["optuna"]["enable"]:
-                self.logger.info(f"🎯 Step 3: Hyperparameter optimization for {step_name}")
-                hyperopt_start = time.time()
-                
-                best_params, hyperopt_results = await self._optimize_hyperparameters(
-                    optimized_features, target, step_name, architecture, model_type
-                )
-                
-                optimization_results["hyperparameter_optimization"] = hyperopt_results
-                self.optimization_metrics["hyperparameter_optimization_time"] = time.time() - hyperopt_start
-                
-                self.logger.info(f"✅ Hyperparameter optimization completed")
+            self.logger.info(f"🎯 Step 3: Hyperparameter optimization for {step_name}")
+            hyperopt_start = time.time()
+            
+            best_params, hyperopt_results = await self._optimize_hyperparameters(
+                optimized_features, target, step_name, architecture, model_type
+            )
+            
+            optimization_results["hyperparameter_optimization"] = hyperopt_results
+            self.optimization_metrics["hyperparameter_optimization_time"] = time.time() - hyperopt_start
+            
+            self.logger.info(f"✅ Hyperparameter optimization completed")
             
             # Step 4: Performance Evaluation
             self.logger.info(f"📈 Step 4: Performance evaluation for {step_name}")
@@ -434,7 +576,66 @@ class EnhancedLMOptimizer:
             
         except Exception as e:
             self.logger.error(f"❌ Optimization failed for {step_name}: {e}")
-            return None
+            
+            # Save optimization artifacts before failing
+            await self._save_optimization_artifacts(step_name, features_df, target, model_type, architecture, str(e))
+            
+            # Re-raise the exception - no fallback, it has to work
+            raise RuntimeError(f"LM optimization failed for {step_name}: {e}")
+    
+    async def _save_optimization_artifacts(self, step_name: str, features_df: pd.DataFrame, target: pd.Series, model_type: str, architecture: str, error_message: str):
+        """Save artifacts of optimization process before failing."""
+        try:
+            import json
+            import os
+            from datetime import datetime
+            
+            # Create artifacts directory
+            artifacts_dir = f"artifacts/optimization_failure/{step_name}"
+            os.makedirs(artifacts_dir, exist_ok=True)
+            
+            # Save optimization status
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            status_file = f"{artifacts_dir}/optimization_status_{timestamp}.json"
+            
+            status_data = {
+                "timestamp": timestamp,
+                "step_name": step_name,
+                "architecture": architecture,
+                "model_type": model_type,
+                "error_message": error_message,
+                "data_info": {
+                    "features_shape": features_df.shape,
+                    "target_shape": target.shape,
+                    "features_columns": list(features_df.columns),
+                    "target_dtype": str(target.dtype),
+                    "target_unique_values": len(target.unique())
+                },
+                "config_summary": self._get_config_summary()
+            }
+            
+            with open(status_file, 'w') as f:
+                json.dump(status_data, f, indent=2)
+            
+            # Save data samples for debugging
+            data_sample_file = f"{artifacts_dir}/data_sample_{timestamp}.json"
+            data_sample = {
+                "features_sample": features_df.head(100).to_dict(),
+                "target_sample": target.head(100).tolist(),
+                "features_info": {
+                    "dtypes": features_df.dtypes.to_dict(),
+                    "null_counts": features_df.isnull().sum().to_dict(),
+                    "memory_usage": features_df.memory_usage(deep=True).sum()
+                }
+            }
+            
+            with open(data_sample_file, 'w') as f:
+                json.dump(data_sample, f, indent=2)
+            
+            self.logger.info(f"📁 Optimization artifacts saved to {artifacts_dir}")
+            
+        except Exception as artifact_error:
+            self.logger.error(f"❌ Failed to save optimization artifacts: {artifact_error}")
     
     async def _optimize_features(
         self,

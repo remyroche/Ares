@@ -905,7 +905,7 @@ class OptimizedFeatureSelectionManager:
             # 3. Matrix-based PCA for dimensionality reduction
             if X.shape[1] > 50:  # Only apply PCA if we have many features
                 # Standardize the data
-                X_std = (X - np.mean(X, axis=0)) / np.std(X, axis=0)
+                X_std = (X - np.mean(X, axis=0)) / (np.std(X, axis=0) + 1e-8)
                 
                 # Compute covariance matrix
                 cov_matrix = np.cov(X_std.T)

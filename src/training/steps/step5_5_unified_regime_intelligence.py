@@ -339,6 +339,10 @@ class UnifiedRegimeIntelligenceStep:
             if self.enhanced_lm_optimizer is None:
                 raise RuntimeError("Enhanced LM optimizer is required but not initialized")
             
+            # Initialize the optimizer if not already done
+            if not hasattr(self.enhanced_lm_optimizer, 'initialization_status'):
+                await self.enhanced_lm_optimizer.initialize()
+            
             self.logger.info("🔧 Enhanced LM optimization enabled: starting comprehensive optimization...")
             
             # Prepare data for optimization

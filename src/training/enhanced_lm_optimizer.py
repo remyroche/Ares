@@ -19,7 +19,7 @@ import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
 import warnings
-warnings.filterwarnings("ignore")
+# Suppress specific warnings only where needed
 
 import numpy as np
 import pandas as pd
@@ -173,16 +173,21 @@ class EnhancedLMOptimizer:
             }
         }
         
-        # Merge with config
+        # Merge with config using recursive update
         config = self.config.get("enhanced_lm_optimizer", {})
-        for key, value in config.items():
-            if key in default_config:
-                if isinstance(value, dict) and isinstance(default_config[key], dict):
-                    default_config[key].update(value)
-                else:
-                    default_config[key] = value
+        default_config = self._recursive_update(default_config, config)
                     
         return default_config
+    
+    def _recursive_update(self, base_dict: Dict[str, Any], update_dict: Dict[str, Any]) -> Dict[str, Any]:
+        """Recursively update nested dictionaries."""
+        result = base_dict.copy()
+        for key, value in update_dict.items():
+            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                result[key] = self._recursive_update(result[key], value)
+            else:
+                result[key] = value
+        return result
     
     async def initialize(self) -> bool:
         """Initialize the Enhanced LM Optimizer with all components. Fails fast if any component fails."""
@@ -769,7 +774,8 @@ class EnhancedLMOptimizer:
                 params = self._suggest_unified_neural_network_params(trial, architecture, step_name)
                 
                 # For neural networks, we need a proper training loop
-                cv_scores = await self._evaluate_neural_network_with_training_loop(
+                # Note: This is a synchronous method, so we'll use a simplified evaluation
+                cv_scores = self._evaluate_neural_network_sync(
                     params, features_df, target, architecture, model_type
                 )
                 
@@ -1031,6 +1037,27 @@ class EnhancedLMOptimizer:
             scores = await loop.run_in_executor(
                 None,
                 self._run_neural_network_training_loop,
+                params, features_df, target, architecture, model_type
+            )
+            
+            return scores
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Neural network evaluation failed: {e}")
+            return np.array([0.5])  # Fallback score
+    
+    def _evaluate_neural_network_sync(
+        self,
+        params: Dict[str, Any],
+        features_df: pd.DataFrame,
+        target: pd.Series,
+        architecture: str,
+        model_type: str
+    ) -> np.ndarray:
+        """Synchronous evaluation of neural network for Optuna objective function."""
+        try:
+            # Use the existing training loop method
+            scores = self._run_neural_network_training_loop(
                 params, features_df, target, architecture, model_type
             )
             
@@ -1391,9 +1418,16 @@ class EnhancedFeatureSelector:
             # Fit Lasso
             lasso.fit(features_df, target)
             
-            # Get non-zero coefficients
+            # Get coefficients - handle both binary and multiclass cases
             if hasattr(lasso, 'coef_'):
                 coef = lasso.coef_
+                # Handle multiclass case
+                if len(coef.shape) > 1:
+                    # Use mean of absolute coefficients across classes
+                    coef = np.mean(np.abs(coef), axis=0)
+                else:
+                    # Binary classification
+                    coef = coef[0] if len(coef.shape) > 1 else coef
             else:
                 coef = lasso.feature_importances_
             
@@ -1652,19 +1686,76 @@ class SimpleTCNModel(nn.Module):
         self.params = params
         self.model_type = model_type
         
-        # Simple TCN implementation
-        self.layers = nn.Sequential(
-            nn.Linear(input_size, params.get('hidden_size', 128)),
-            nn.ReLU(),
-            nn.Dropout(params.get('dropout', 0.2)),
-            nn.Linear(params.get('hidden_size', 128), 64),
-            nn.ReLU(),
-            nn.Dropout(params.get('dropout', 0.2)),
-            nn.Linear(64, 1 if model_type == "regression" else 2)
-        )
+        # TCN implementation with causal convolutions
+        self.hidden_size = params.get('hidden_size', 128)
+        self.num_layers = params.get('num_layers', 3)
+        self.kernel_size = params.get('kernel_size', 3)
+        self.dilation = params.get('dilation', 1)
+        self.output_size = 1 if model_type == "regression" else 2
+        
+        # TCN layers with causal convolutions
+        self.tcn_layers = nn.ModuleList()
+        in_channels = input_size
+        
+        for i in range(self.num_layers):
+            out_channels = self.hidden_size if i < self.num_layers - 1 else self.output_size
+            dilation = self.dilation ** i
+            
+            # Causal convolution with padding
+            padding = (self.kernel_size - 1) * dilation
+            conv = nn.Conv1d(
+                in_channels, out_channels, 
+                kernel_size=self.kernel_size, 
+                dilation=dilation,
+                padding=padding
+            )
+            
+            # Residual connection
+            if in_channels == out_channels:
+                self.tcn_layers.append(nn.ModuleList([
+                    conv,
+                    nn.ReLU(),
+                    nn.Dropout(params.get('dropout', 0.2)),
+                    nn.Conv1d(out_channels, out_channels, 1)  # 1x1 conv for residual
+                ]))
+            else:
+                self.tcn_layers.append(nn.ModuleList([
+                    conv,
+                    nn.ReLU(),
+                    nn.Dropout(params.get('dropout', 0.2)),
+                    nn.Conv1d(out_channels, out_channels, 1)  # 1x1 conv for residual
+                ]))
+            
+            in_channels = out_channels
+        
+        # Global average pooling
+        self.global_pool = nn.AdaptiveAvgPool1d(1)
     
     def forward(self, x):
-        return self.layers(x)
+        # x shape: (batch_size, features)
+        # Reshape for 1D convolution: (batch_size, channels, sequence_length)
+        x = x.unsqueeze(-1).transpose(1, 2)  # Add sequence dimension
+        
+        for layer in self.tcn_layers:
+            conv, relu, dropout, residual = layer
+            
+            # Apply convolution
+            out = conv(x)
+            out = relu(out)
+            out = dropout(out)
+            
+            # Add residual connection
+            if x.size(1) == out.size(1):
+                out = out + residual(x)
+            else:
+                out = out + residual(out)
+            
+            x = out
+        
+        # Global average pooling
+        x = self.global_pool(x).squeeze(-1)
+        
+        return x
 
 
 class SimpleTransformerModel(nn.Module):
@@ -1690,6 +1781,8 @@ class SimpleTransformerModel(nn.Module):
     
     def forward(self, x):
         x = self.embedding(x)
+        # Add sequence dimension for transformer
+        x = x.unsqueeze(1)  # (batch_size, 1, hidden_size)
         x = self.transformer(x)
         x = x.mean(dim=1)  # Global average pooling
         return self.output_layer(x)

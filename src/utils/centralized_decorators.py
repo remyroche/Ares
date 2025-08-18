@@ -65,6 +65,8 @@ from src.utils.enhanced_data_quality_decorators import (
 try:
     from src.training.steps.raw_data_quality_checker import auto_fix_data_quality_issues
 except ImportError:
+    from src.utils.logger import system_logger
+    system_logger.warning("Could not import 'auto_fix_data_quality_issues' due to an ImportError. Using a pass-through decorator. This may be due to a circular dependency.")
     def auto_fix_data_quality_issues(func):
         return func
 

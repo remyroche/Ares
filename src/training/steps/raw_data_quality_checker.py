@@ -349,6 +349,12 @@ class RawDataQualityChecker:
                 results["validation_passed"] = False
                 return results, data
 
+            # Multi-timeframe validation
+            multi_timeframe_valid = self._validate_multi_timeframe_alignment(data, results)
+            if not multi_timeframe_valid:
+                results["validation_passed"] = False
+                return results, data
+
             # Check for irregular intervals and auto-fix if enabled
             if self.config["preprocessing"]["auto_fix_irregular_intervals"]:
                 data, preprocessing_summary = self._auto_fix_irregular_intervals(data, symbol, exchange, results)
@@ -2038,6 +2044,58 @@ class RawDataQualityChecker:
             
             return data, validation_results
 
+    def _validate_multi_timeframe_alignment(self, data: pd.DataFrame, results: Dict[str, Any]) -> bool:
+        """Validate multi-timeframe data alignment."""
+        # Check for proper datetime index
+        if not isinstance(data.index, pd.DatetimeIndex):
+            results["critical_issues"].append("Multi-timeframe data missing datetime index")
+            return False
+        
+        # Check for regular intervals
+        time_diffs = data.index.to_series().diff().dropna()
+        if len(time_diffs) > 0:
+            modes = time_diffs.mode()
+            if modes.empty:
+                # Handle case with no mode, use median
+                expected_interval = time_diffs.median()
+                self.logger.warning("Could not determine a single mode for time intervals, using median.")
+            else:
+                expected_interval = modes.iloc[0]
+            
+            irregular_intervals = time_diffs[time_diffs != expected_interval]
+            irregular_ratio = len(irregular_intervals) / len(time_diffs)
+            
+            if irregular_ratio > 0.05:  # More than 5% irregular
+                results["warnings"].append(f"High irregular interval ratio: {irregular_ratio:.3f}")
+                
+                # Add detailed analysis
+                if "multi_timeframe_analysis" not in results["detailed_analysis"]:
+                    results["detailed_analysis"]["multi_timeframe_analysis"] = {}
+                
+                results["detailed_analysis"]["multi_timeframe_analysis"].update({
+                    "irregular_interval_ratio": irregular_ratio,
+                    "expected_interval": str(expected_interval),
+                    "total_intervals": len(time_diffs),
+                    "irregular_intervals_count": len(irregular_intervals)
+                })
+        
+        # Check for data consistency across timeframes
+        if len(data) > 100:
+            # Check for price continuity
+            price_cols = ['open', 'high', 'low', 'close']
+            # Configurable thresholds for price change detection
+            large_change_threshold = self.config.get("multi_timeframe", {}).get("large_change_threshold", 0.1)  # 10% change
+            large_change_ratio_threshold = self.config.get("multi_timeframe", {}).get("large_change_ratio_threshold", 0.01)  # 1% of data points
+            
+            for col in price_cols:
+                if col in data.columns:
+                    price_changes = data[col].pct_change().abs()
+                    large_changes = price_changes[price_changes > large_change_threshold]
+                    if len(large_changes) > len(data) * large_change_ratio_threshold:
+                        results["warnings"].append(f"High price volatility detected in {col} column")
+        
+        return True
+
     def _generate_recommendations(self, results: Dict[str, Any]) -> List[str]:
         """Generate recommendations based on validation results optimized for feature engineering."""
         recommendations = []
@@ -2064,6 +2122,16 @@ class RawDataQualityChecker:
             if zero_volume_ratio > 0.05:
                 recommendations.append(
                     "High zero volume may indicate data quality issues"
+                )
+
+        # Multi-timeframe specific recommendations
+        if "multi_timeframe_analysis" in results["detailed_analysis"]:
+            mt_analysis = results["detailed_analysis"]["multi_timeframe_analysis"]
+            irregular_ratio = mt_analysis.get("irregular_interval_ratio", 0)
+            
+            if irregular_ratio > 0.05:
+                recommendations.append(
+                    f"High irregular interval ratio ({irregular_ratio:.3f}) - consider data resampling for multi-timeframe features"
                 )
 
         # Feature engineering specific recommendations

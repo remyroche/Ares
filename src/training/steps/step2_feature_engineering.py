@@ -1431,6 +1431,48 @@ async def run_step(
         except Exception as e:
             logger.warning(f"⚠️ Pickle compatibility write skipped: {e}")
 
+        # Apply feature selection to reduce features to target count
+        try:
+            from src.training.feature_selection_manager import FeatureSelectionManager
+            
+            # Initialize feature selection manager
+            feature_selection_manager = FeatureSelectionManager(config)
+            
+            # Apply feature selection to each split
+            selected_features = None
+            for split_name, X in [("train", X_tr), ("validation", X_vl), ("test", X_te)]:
+                # Create dummy target for feature selection (since we don't have labels yet)
+                dummy_target = pd.Series([0] * len(X), index=X.index)
+                
+                # Apply feature selection
+                X_selected, selection_metadata = await feature_selection_manager.select_features_step2(
+                    X, dummy_target, symbol, exchange, data_dir
+                )
+                
+                # Update the split with selected features
+                if split_name == "train":
+                    X_tr = X_selected
+                elif split_name == "validation":
+                    X_vl = X_selected
+                elif split_name == "test":
+                    X_te = X_selected
+                
+                # Store selected features for consistency across splits
+                if selected_features is None:
+                    selected_features = list(X_selected.columns)
+                
+                logger.info(f"✅ Feature selection for {split_name}: {len(X.columns)} -> {len(X_selected.columns)} features")
+            
+            # Ensure all splits have the same features
+            X_tr = X_tr[selected_features]
+            X_vl = X_vl[selected_features]
+            X_te = X_te[selected_features]
+            
+            logger.info(f"✅ Feature selection completed: {len(selected_features)} features selected across all splits")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Feature selection failed, using original features: {e}")
+        
         # Save feature artifacts for persistence
         try:
             features_dict = {

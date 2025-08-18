@@ -932,56 +932,95 @@ class TacticianSpecialistTrainingStep:
 
             self.logger.info("✅ Using chronological time-series split (leak-proof)")
 
-            # Train different model types
+            # Apply model-specific pruning for each model type
+            from src.training.model_specific_pruning import ModelSpecificPruning
+            pruning_manager = ModelSpecificPruning(self.config)
+            
+            # Train different model types with pruning
             models = {}
 
-            # 1. LightGBM
+            # 1. LightGBM (ensemble model)
+            X_train_lgb, X_test_lgb = X_train.copy(), X_test.copy()
+            X_train_lgb, lgb_pruning_metadata = await pruning_manager.prune_for_step9_tactician(
+                X_train_lgb, y_train, "lightgbm"
+            )
+            X_test_lgb = X_test_lgb[X_train_lgb.columns]  # Ensure same features
+            
             models["lightgbm"] = await self._train_lightgbm(
-                X_train,
-                X_test,
+                X_train_lgb,
+                X_test_lgb,
                 y_train,
                 y_test,
                 symbol,
                 exchange,
             )
+            models["lightgbm"]["pruning_metadata"] = lgb_pruning_metadata
 
-            # 2. Calibrated Logistic Regression
+            # 2. Calibrated Logistic Regression (linear model)
+            X_train_log, X_test_log = X_train.copy(), X_test.copy()
+            X_train_log, log_pruning_metadata = await pruning_manager.prune_for_step9_tactician(
+                X_train_log, y_train, "calibrated_logistic"
+            )
+            X_test_log = X_test_log[X_train_log.columns]  # Ensure same features
+            
             models["calibrated_logistic"] = await self._train_calibrated_logistic(
-                X_train,
-                X_test,
+                X_train_log,
+                X_test_log,
                 y_train,
                 y_test,
                 symbol,
                 exchange,
             )
+            models["calibrated_logistic"]["pruning_metadata"] = log_pruning_metadata
 
-            # 3. XGBoost (additional model)
+            # 3. XGBoost (ensemble model)
+            X_train_xgb, X_test_xgb = X_train.copy(), X_test.copy()
+            X_train_xgb, xgb_pruning_metadata = await pruning_manager.prune_for_step9_tactician(
+                X_train_xgb, y_train, "xgboost"
+            )
+            X_test_xgb = X_test_xgb[X_train_xgb.columns]  # Ensure same features
+            
             models["xgboost"] = await self._train_xgboost(
-                X_train,
-                X_test,
+                X_train_xgb,
+                X_test_xgb,
                 y_train,
                 y_test,
                 symbol,
                 exchange,
             )
+            models["xgboost"]["pruning_metadata"] = xgb_pruning_metadata
 
-            # 3b. CatBoost (HPO)
+            # 3b. CatBoost (HPO) - ensemble model
             try:
-                best_cb = await self._hpo_catboost(X_train, X_test, y_train, y_test)
+                X_train_cb, X_test_cb = X_train.copy(), X_test.copy()
+                X_train_cb, cb_pruning_metadata = await pruning_manager.prune_for_step9_tactician(
+                    X_train_cb, y_train, "catboost"
+                )
+                X_test_cb = X_test_cb[X_train_cb.columns]  # Ensure same features
+                
+                best_cb = await self._hpo_catboost(X_train_cb, X_test_cb, y_train, y_test)
                 if best_cb:
+                    best_cb["pruning_metadata"] = cb_pruning_metadata
                     models["catboost"] = best_cb
             except Exception:
                 pass
 
-            # 4. Random Forest (additional model)
+            # 4. Random Forest (ensemble model)
+            X_train_rf, X_test_rf = X_train.copy(), X_test.copy()
+            X_train_rf, rf_pruning_metadata = await pruning_manager.prune_for_step9_tactician(
+                X_train_rf, y_train, "random_forest"
+            )
+            X_test_rf = X_test_rf[X_train_rf.columns]  # Ensure same features
+            
             models["random_forest"] = await self._train_random_forest(
-                X_train,
-                X_test,
+                X_train_rf,
+                X_test_rf,
                 y_train,
                 y_test,
                 symbol,
                 exchange,
             )
+            models["random_forest"]["pruning_metadata"] = rf_pruning_metadata
 
             self.logger.info(f"Trained {len(models)} tactician models")
 

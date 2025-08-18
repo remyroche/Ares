@@ -248,6 +248,31 @@ def get_training_config() -> dict[str, Any]:
                 "cluster_19": "intensity_cluster_19",
             },
         },
+        # --- Feature Reduction and Model-Specific Pruning Configuration ---
+        "feature_reduction": {
+            "step2_target_features": 100,  # Target number of features after Step 2
+            "enable_model_specific_pruning": True,  # Enable model-specific pruning
+            "variance_threshold": 0.01,  # Variance threshold for feature filtering
+            "correlation_threshold": 0.95,  # Correlation threshold for feature filtering
+            "mutual_info_threshold": 0.01,  # Mutual information threshold
+            "pruning_strategies": {
+                "neural_networks": {
+                    "target_features": 80,
+                    "focus_on": ["non_linear", "interactions", "normalized"],
+                    "remove": ["highly_correlated", "low_variance"]
+                },
+                "linear_models": {
+                    "target_features": 60,
+                    "focus_on": ["linear", "uncorrelated", "interpretable"],
+                    "remove": ["interactions", "highly_correlated"]
+                },
+                "ensemble_models": {
+                    "target_features": 90,
+                    "focus_on": ["diverse", "different_info"],
+                    "remove": ["redundant", "low_importance"]
+                }
+            }
+        },
         # --- Multi-Timeframe Training Configuration ---
         "MULTI_TIMEFRAME_TRAINING": {
             "enable_parallel_training": True,  # Train timeframes in parallel

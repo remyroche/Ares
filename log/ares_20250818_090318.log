@@ -1,0 +1,54 @@
+2025-08-18 09:03:18,017 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-18 09:03:18,094 INFO AresTradingSystem.System Environment configuration loaded successfully. Trading Environment: PAPER, Exchange: BINANCE - -
+2025-08-18 09:03:18,100 INFO AresTradingSystem.System.FeatureSelectionManager 🔍 Starting feature selection: 220 -> 100 features - -
+2025-08-18 09:03:18,121 INFO AresTradingSystem.System.FeatureSelectionManager Stage 1: Removed 0 low-quality features - -
+2025-08-18 09:03:18,123 INFO AresTradingSystem.System.FeatureSelectionManager Stage 2: Removed 0 low-variance features - -
+2025-08-18 09:03:18,208 INFO AresTradingSystem.System.FeatureSelectionManager Stage 3: Removed 0 highly correlated features - -
+2025-08-18 09:03:18,740 INFO AresTradingSystem.System.FeatureSelectionManager Stage 4: Ranked features by mutual information - -
+2025-08-18 09:03:18,742 INFO AresTradingSystem.System.FeatureSelectionManager Stage 5: Applied domain-specific selection - -
+2025-08-18 09:03:18,743 WARNING AresTradingSystem.System.FeatureSelectionManager ⚠️ Failed to save feature selection metadata: [Errno 2] No such file or directory: 'data/test/BINANCE_ETHUSDT_feature_selection_metadata.json' - -
+2025-08-18 09:03:18,743 INFO AresTradingSystem.System.FeatureSelectionManager ✅ Feature selection completed: 100 features selected - -
+2025-08-18 09:03:18,745 INFO AresTradingSystem.System.ModelSpecificPruning 🧠 Pruning features for neural network: CNN - -
+2025-08-18 09:03:19,012 INFO AresTradingSystem.System.ModelSpecificPruning ✅ Neural network pruning: 100 -> 80 features - -
+2025-08-18 09:03:19,012 INFO AresTradingSystem.System.ModelSpecificPruning 📊 Pruning features for linear model: LogisticRegression - -
+2025-08-18 09:03:19,075 INFO AresTradingSystem.System.ModelSpecificPruning ✅ Linear model pruning: 100 -> 17 features - -
+2025-08-18 09:03:19,075 INFO AresTradingSystem.System.ModelSpecificPruning 🌳 Pruning features for ensemble model: LightGBM - -
+2025-08-18 09:03:19,324 ERROR AresTradingSystem.System.ModelSpecificPruning ❌ Ensemble model pruning failed: 'list' object has no attribute 'columns' - -
+2025-08-18 09:03:19,324 INFO AresTradingSystem.System.ModelSpecificPruning 🎯 Pruning features for Step 6 1m CNN - -
+2025-08-18 09:03:19,324 INFO AresTradingSystem.System.ModelSpecificPruning 🧠 Pruning features for neural network: CNN - -
+2025-08-18 09:03:19,564 INFO AresTradingSystem.System.ModelSpecificPruning ✅ Neural network pruning: 100 -> 80 features - -
+2025-08-18 09:03:19,564 INFO AresTradingSystem.System.ModelSpecificPruning 🎯 Pruning features for Step 6.5 Unified Regime Intelligence - -
+2025-08-18 09:03:19,565 INFO AresTradingSystem.System.ModelSpecificPruning 🧠 Pruning features for neural network: MultiTimeframeHMMEncoder - -
+2025-08-18 09:03:19,566 ERROR AresTradingSystem.System.ModelSpecificPruning ❌ Neural network pruning failed: at least one array or dtype is required - -
+2025-08-18 09:03:19,566 INFO AresTradingSystem.System.ModelSpecificPruning 🎯 Pruning features for Step 7 Analyst Ensemble - -
+2025-08-18 09:03:19,566 INFO AresTradingSystem.System.ModelSpecificPruning 🌳 Pruning features for ensemble model: AnalystEnsemble - -
+2025-08-18 09:03:19,816 ERROR AresTradingSystem.System.ModelSpecificPruning ❌ Ensemble model pruning failed: 'list' object has no attribute 'columns' - -
+2025-08-18 09:03:19,816 INFO AresTradingSystem.System.ModelSpecificPruning 🎯 Pruning features for Step 9 Tactician lightgbm - -
+2025-08-18 09:03:19,816 INFO AresTradingSystem.System.ModelSpecificPruning 🌳 Pruning features for ensemble model: lightgbm - -
+2025-08-18 09:03:20,065 ERROR AresTradingSystem.System.ModelSpecificPruning ❌ Ensemble model pruning failed: 'list' object has no attribute 'columns' - -
+2025-08-18 09:03:20,069 INFO AresTradingSystem.System.FeatureSelectionManager 🔍 Starting feature selection: 220 -> 100 features - -
+2025-08-18 09:03:20,083 INFO AresTradingSystem.System.FeatureSelectionManager Stage 1: Removed 0 low-quality features - -
+2025-08-18 09:03:20,085 INFO AresTradingSystem.System.FeatureSelectionManager Stage 2: Removed 0 low-variance features - -
+2025-08-18 09:03:20,169 INFO AresTradingSystem.System.FeatureSelectionManager Stage 3: Removed 0 highly correlated features - -
+2025-08-18 09:03:20,699 INFO AresTradingSystem.System.FeatureSelectionManager Stage 4: Ranked features by mutual information - -
+2025-08-18 09:03:20,701 INFO AresTradingSystem.System.FeatureSelectionManager Stage 5: Applied domain-specific selection - -
+2025-08-18 09:03:20,702 WARNING AresTradingSystem.System.FeatureSelectionManager ⚠️ Failed to save feature selection metadata: [Errno 2] No such file or directory: 'data/test/BINANCE_ETHUSDT_feature_selection_metadata.json' - -
+2025-08-18 09:03:20,702 INFO AresTradingSystem.System.FeatureSelectionManager ✅ Feature selection completed: 100 features selected - -
+2025-08-18 09:03:20,704 INFO AresTradingSystem.System.ModelSpecificPruning 🧠 Pruning features for neural network: CNN - -
+2025-08-18 09:03:20,944 INFO AresTradingSystem.System.ModelSpecificPruning ✅ Neural network pruning: 100 -> 80 features - -
+2025-08-18 09:03:20,944 INFO AresTradingSystem.System.ModelSpecificPruning 📊 Pruning features for linear model: LogisticRegression - -
+2025-08-18 09:03:21,007 INFO AresTradingSystem.System.ModelSpecificPruning ✅ Linear model pruning: 100 -> 17 features - -
+2025-08-18 09:03:21,007 INFO AresTradingSystem.System.ModelSpecificPruning 🌳 Pruning features for ensemble model: LightGBM - -
+2025-08-18 09:03:21,256 ERROR AresTradingSystem.System.ModelSpecificPruning ❌ Ensemble model pruning failed: 'list' object has no attribute 'columns' - -
+2025-08-18 09:03:21,256 INFO AresTradingSystem.System.ModelSpecificPruning 🎯 Pruning features for Step 6 1m CNN - -
+2025-08-18 09:03:21,256 INFO AresTradingSystem.System.ModelSpecificPruning 🧠 Pruning features for neural network: CNN - -
+2025-08-18 09:03:21,496 INFO AresTradingSystem.System.ModelSpecificPruning ✅ Neural network pruning: 100 -> 80 features - -
+2025-08-18 09:03:21,496 INFO AresTradingSystem.System.ModelSpecificPruning 🎯 Pruning features for Step 6.5 Unified Regime Intelligence - -
+2025-08-18 09:03:21,497 INFO AresTradingSystem.System.ModelSpecificPruning 🧠 Pruning features for neural network: MultiTimeframeHMMEncoder - -
+2025-08-18 09:03:21,498 ERROR AresTradingSystem.System.ModelSpecificPruning ❌ Neural network pruning failed: at least one array or dtype is required - -
+2025-08-18 09:03:21,498 INFO AresTradingSystem.System.ModelSpecificPruning 🎯 Pruning features for Step 7 Analyst Ensemble - -
+2025-08-18 09:03:21,498 INFO AresTradingSystem.System.ModelSpecificPruning 🌳 Pruning features for ensemble model: AnalystEnsemble - -
+2025-08-18 09:03:21,747 ERROR AresTradingSystem.System.ModelSpecificPruning ❌ Ensemble model pruning failed: 'list' object has no attribute 'columns' - -
+2025-08-18 09:03:21,747 INFO AresTradingSystem.System.ModelSpecificPruning 🎯 Pruning features for Step 9 Tactician lightgbm - -
+2025-08-18 09:03:21,747 INFO AresTradingSystem.System.ModelSpecificPruning 🌳 Pruning features for ensemble model: lightgbm - -
+2025-08-18 09:03:21,995 ERROR AresTradingSystem.System.ModelSpecificPruning ❌ Ensemble model pruning failed: 'list' object has no attribute 'columns' - -

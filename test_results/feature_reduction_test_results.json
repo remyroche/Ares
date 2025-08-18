@@ -1,0 +1,91 @@
+{
+  "feature_selection": {
+    "original_features": 220,
+    "selected_features": 100,
+    "reduction_percentage": 54.54545454545454
+  },
+  "model_specific_pruning": {
+    "neural_network": {
+      "original": 100,
+      "pruned": 80,
+      "metadata": {
+        "model_type": "CNN",
+        "original_features": 100,
+        "final_features": 80,
+        "target_features": 80,
+        "non_linear_features": 10,
+        "interaction_features": 10,
+        "normalized_features": 0,
+        "preferred_features": 10,
+        "pruning_strategy": "neural_network_optimized"
+      }
+    },
+    "linear_model": {
+      "original": 100,
+      "pruned": 17,
+      "metadata": {
+        "model_type": "LogisticRegression",
+        "original_features": 100,
+        "final_features": 17,
+        "target_features": 60,
+        "linear_features": 90,
+        "interpretable_features": 30,
+        "lasso_selected": 17,
+        "pruning_strategy": "linear_optimized"
+      }
+    },
+    "ensemble_model": {
+      "original": 100,
+      "pruned": 0,
+      "metadata": {
+        "step": "7_analyst_ensemble",
+        "ensemble_focus": "diversity_and_complementarity"
+      }
+    },
+    "step6_cnn": {
+      "original": 100,
+      "pruned": 80,
+      "metadata": {
+        "model_type": "CNN",
+        "original_features": 100,
+        "final_features": 80,
+        "target_features": 80,
+        "non_linear_features": 10,
+        "interaction_features": 10,
+        "normalized_features": 0,
+        "preferred_features": 10,
+        "pruning_strategy": "neural_network_optimized"
+      }
+    },
+    "step6_5_unified": {
+      "original": 100,
+      "pruned": 0,
+      "metadata": {
+        "regime_features": 0,
+        "intensity_features": 0,
+        "transition_features": 0,
+        "step": "6.5_unified_regime"
+      }
+    },
+    "step7_ensemble": {
+      "original": 100,
+      "pruned": 0,
+      "metadata": {
+        "step": "7_analyst_ensemble",
+        "ensemble_focus": "diversity_and_complementarity"
+      }
+    },
+    "step9_tactician": {
+      "original": 100,
+      "pruned": 0,
+      "metadata": {
+        "step": "7_analyst_ensemble",
+        "ensemble_focus": "diversity_and_complementarity"
+      }
+    }
+  },
+  "overall_reduction": {
+    "step2_reduction": "54.5%",
+    "average_model_reduction": "25.3%"
+  }
+}

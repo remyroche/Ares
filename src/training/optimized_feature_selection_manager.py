@@ -652,7 +652,7 @@ class OptimizedFeatureSelectionManager:
                 "sr_", "sr_distance", "support", "resistance", "proximity",
                 "breakout_probability", "rebounce_probability", "consolidation_probability",
                 "sr_confidence", "multi_timeframe_sr_score", "sr_proximity", "sr_outcome",
-                "sr_", "distance_to_resistance", "distance_to_support", "normalized_distance",
+                "distance_to_resistance", "distance_to_support", "normalized_distance",
                 "sr_proximity_score", "strength_score", "clarity_factor", "directional_pressure",
                 "sr_score", "delta_sr_score", "isolation_score", "sr_level", "sr_breakout",
                 "sr_rebounce", "sr_consolidation", "sr_breakout_prob", "sr_rebounce_prob",

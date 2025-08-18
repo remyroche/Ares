@@ -252,10 +252,12 @@ class SRBreakoutPredictor:
     )
     def detect_enhanced_sr_levels(self, price_data: pd.DataFrame) -> dict[str, Any]:
         """
-        Detect enhanced S/R levels using multiple methods:
-        1. Fractal analysis for swing highs/lows
-        2. Volume-weighted price levels
-        3. Traditional pivot points (fallback)
+        Detect enhanced S/R levels using multiple methods with S/R flip logic and time-decay:
+        1. Fractal analysis for swing highs/lows with role reversal tracking
+        2. Volume-weighted price levels with time-decay
+        3. Traditional pivot points with flip detection
+        4. S/R flip logic for confirmed role reversals
+        5. Time-decay factor for level relevance
 
         Args:
             price_data: OHLCV price data
@@ -274,9 +276,9 @@ class SRBreakoutPredictor:
                 "level_metadata": {},
             }
 
-            # 1. Fractal Analysis for Swing Highs/Lows
+            # 1. Fractal Analysis for Swing Highs/Lows with flip detection
             if self.enable_fractal_analysis:
-                fractal_levels = self._detect_fractal_swing_levels(price_data)
+                fractal_levels = self._detect_fractal_swing_levels_with_flips(price_data)
                 enhanced_levels["support_levels"].extend(
                     fractal_levels.get("support_levels", [])
                 )
@@ -287,9 +289,9 @@ class SRBreakoutPredictor:
                     "metadata", {}
                 )
 
-            # 2. Volume-Weighted Price Levels
+            # 2. Volume-Weighted Price Levels with time-decay
             if self.enable_volume_weighted_levels:
-                vw_levels = self._detect_volume_weighted_levels(price_data)
+                vw_levels = self._detect_volume_weighted_levels_with_decay(price_data)
                 enhanced_levels["support_levels"].extend(
                     vw_levels.get("support_levels", [])
                 )
@@ -300,8 +302,8 @@ class SRBreakoutPredictor:
                     "metadata", {}
                 )
 
-            # 3. Traditional Pivot Points (fallback)
-            pivot_levels = self._detect_pivot_point_levels(price_data)
+            # 3. Traditional Pivot Points with flip detection
+            pivot_levels = self._detect_pivot_point_levels_with_flips(price_data)
             enhanced_levels["support_levels"].extend(
                 pivot_levels.get("support_levels", [])
             )
@@ -312,17 +314,20 @@ class SRBreakoutPredictor:
                 "metadata", {}
             )
 
-            # 4. Consolidate and deduplicate levels
-            consolidated_levels = self._consolidate_sr_levels(enhanced_levels)
+            # 4. Consolidate and deduplicate levels with flip logic
+            consolidated_levels = self._consolidate_sr_levels_with_flips(enhanced_levels, price_data)
 
-            # 5. Calculate ATR-based activation ranges
+            # 5. Apply time-decay factor to all levels
+            consolidated_levels = self._apply_time_decay_to_levels(consolidated_levels, price_data)
+
+            # 6. Calculate ATR-based activation ranges
             if self.enable_atr_based_activation:
                 consolidated_levels = self._add_atr_based_activation_ranges(
                     price_data, consolidated_levels
                 )
 
             self.logger.info(
-                f"✅ Detected {len(consolidated_levels['support_levels'])} support and {len(consolidated_levels['resistance_levels'])} resistance levels"
+                f"✅ Detected {len(consolidated_levels['support_levels'])} support and {len(consolidated_levels['resistance_levels'])} resistance levels with flip logic and time-decay"
             )
 
             return consolidated_levels
@@ -331,15 +336,15 @@ class SRBreakoutPredictor:
             self.logger.error(f"❌ Error detecting enhanced S/R levels: {e}")
             return {"support_levels": [], "resistance_levels": []}
 
-    def _detect_fractal_swing_levels(self, price_data: pd.DataFrame) -> dict[str, Any]:
+    def _detect_fractal_swing_levels_with_flips(self, price_data: pd.DataFrame) -> dict[str, Any]:
         """
-        Detect swing highs and lows using fractal analysis.
+        Detect swing highs and lows using fractal analysis with S/R flip detection.
 
         Args:
             price_data: OHLCV price data
 
         Returns:
-            Dictionary containing fractal swing levels
+            Dictionary containing fractal swing levels with flip information
         """
         try:
             high = price_data["high"].astype(float)
@@ -353,7 +358,11 @@ class SRBreakoutPredictor:
                 "swing_highs_count": 0,
                 "swing_lows_count": 0,
                 "avg_swing_strength": 0.0,
+                "flip_count": 0,
             }
+
+            # Track price interactions with each level for flip detection
+            level_interactions = {}
 
             # Detect swing highs
             for i in range(
@@ -389,8 +398,8 @@ class SRBreakoutPredictor:
                         price_movement / price_range if price_range > 0 else 0
                     )
 
-                    # Calculate swing strength (0.0 to 1.0)
-                    swing_strength = min(
+                    # Calculate base swing strength (0.0 to 1.0)
+                    base_strength = min(
                         (
                             normalized_movement * 0.6
                             + min(volume_ratio / self.fractal_volume_threshold, 1.0)
@@ -399,19 +408,30 @@ class SRBreakoutPredictor:
                         1.0,
                     )
 
-                    if swing_strength >= self.fractal_min_swing_strength:
+                    if base_strength >= self.fractal_min_swing_strength:
+                        # Check for S/R flip logic
+                        flip_bonus = self._calculate_flip_bonus(
+                            current_high, close, i, level_interactions
+                        )
+                        
+                        # Apply flip bonus to strength
+                        enhanced_strength = min(base_strength + flip_bonus, 1.0)
+                        
                         swing_highs.append(
                             {
                                 "price": float(current_high),
-                                "strength": float(swing_strength),
+                                "strength": float(enhanced_strength),
+                                "base_strength": float(base_strength),
+                                "flip_bonus": float(flip_bonus),
                                 "timestamp": price_data.index[i],
                                 "volume_ratio": float(volume_ratio),
                                 "price_movement": float(price_movement),
                                 "type": "fractal_swing_high",
+                                "has_flipped": flip_bonus > 0,
                             }
                         )
 
-            # Detect swing lows
+            # Detect swing lows with similar flip logic
             for i in range(
                 self.fractal_lookback_periods, len(low) - self.fractal_lookback_periods
             ):
@@ -442,8 +462,8 @@ class SRBreakoutPredictor:
                         price_movement / price_range if price_range > 0 else 0
                     )
 
-                    # Calculate swing strength (0.0 to 1.0)
-                    swing_strength = min(
+                    # Calculate base swing strength (0.0 to 1.0)
+                    base_strength = min(
                         (
                             normalized_movement * 0.6
                             + min(volume_ratio / self.fractal_volume_threshold, 1.0)
@@ -452,15 +472,26 @@ class SRBreakoutPredictor:
                         1.0,
                     )
 
-                    if swing_strength >= self.fractal_min_swing_strength:
+                    if base_strength >= self.fractal_min_swing_strength:
+                        # Check for S/R flip logic
+                        flip_bonus = self._calculate_flip_bonus(
+                            current_low, close, i, level_interactions
+                        )
+                        
+                        # Apply flip bonus to strength
+                        enhanced_strength = min(base_strength + flip_bonus, 1.0)
+                        
                         swing_lows.append(
                             {
                                 "price": float(current_low),
-                                "strength": float(swing_strength),
+                                "strength": float(enhanced_strength),
+                                "base_strength": float(base_strength),
+                                "flip_bonus": float(flip_bonus),
                                 "timestamp": price_data.index[i],
                                 "volume_ratio": float(volume_ratio),
                                 "price_movement": float(price_movement),
                                 "type": "fractal_swing_low",
+                                "has_flipped": flip_bonus > 0,
                             }
                         )
 
@@ -488,9 +519,10 @@ class SRBreakoutPredictor:
             metadata["avg_swing_strength"] = (
                 float(np.mean(all_strengths)) if all_strengths else 0.0
             )
+            metadata["flip_count"] = sum(1 for s in swing_highs + swing_lows if s.get("has_flipped", False))
 
             self.logger.info(
-                f"🔍 Fractal analysis: {len(swing_highs)} swing highs, {len(swing_lows)} swing lows"
+                f"🔍 Fractal analysis with flips: {len(swing_highs)} swing highs, {len(swing_lows)} swing lows, {metadata['flip_count']} flips detected"
             )
 
             return {
@@ -500,20 +532,101 @@ class SRBreakoutPredictor:
             }
 
         except Exception as e:
-            self.logger.error(f"❌ Error in fractal swing detection: {e}")
+            self.logger.error(f"❌ Error in fractal swing detection with flips: {e}")
             return {"support_levels": [], "resistance_levels": [], "metadata": {}}
 
-    def _detect_volume_weighted_levels(
-        self, price_data: pd.DataFrame
-    ) -> dict[str, Any]:
+    def _calculate_flip_bonus(self, level_price: float, close: pd.Series, current_idx: int, level_interactions: dict) -> float:
         """
-        Detect volume-weighted price levels using volume profile analysis.
+        Calculate strength bonus for levels that have acted as both support and resistance.
+        
+        Args:
+            level_price: Price level to check
+            close: Close price series
+            current_idx: Current index in the series
+            level_interactions: Dictionary tracking level interactions
+            
+        Returns:
+            float: Flip bonus (0.0 to 0.3)
+        """
+        try:
+            # Define proximity threshold (0.5% of level price)
+            proximity_threshold = level_price * 0.005
+            
+            # Round level price to reduce noise
+            rounded_level = round(level_price, 4)
+            
+            if rounded_level not in level_interactions:
+                level_interactions[rounded_level] = {
+                    "support_touches": 0,
+                    "resistance_touches": 0,
+                    "last_support_touch": None,
+                    "last_resistance_touch": None,
+                    "flip_sequence": []
+                }
+            
+            interaction = level_interactions[rounded_level]
+            
+            # Check recent price action around this level
+            lookback = min(50, current_idx)  # Look back up to 50 periods
+            
+            for i in range(current_idx - lookback, current_idx):
+                if i < 0:
+                    continue
+                    
+                price = close.iloc[i]
+                distance = abs(price - level_price)
+                
+                if distance <= proximity_threshold:
+                    # Determine if this is a support or resistance touch
+                    if price <= level_price + proximity_threshold:
+                        # Price touched from below (support)
+                        interaction["support_touches"] += 1
+                        interaction["last_support_touch"] = i
+                        
+                        # Check if this follows a resistance touch (flip)
+                        if (interaction["last_resistance_touch"] is not None and 
+                            i > interaction["last_resistance_touch"]):
+                            interaction["flip_sequence"].append(("R_to_S", i))
+                            
+                    elif price >= level_price - proximity_threshold:
+                        # Price touched from above (resistance)
+                        interaction["resistance_touches"] += 1
+                        interaction["last_resistance_touch"] = i
+                        
+                        # Check if this follows a support touch (flip)
+                        if (interaction["last_support_touch"] is not None and 
+                            i > interaction["last_support_touch"]):
+                            interaction["flip_sequence"].append(("S_to_R", i))
+            
+            # Calculate flip bonus based on confirmed role reversals
+            flip_bonus = 0.0
+            
+            if len(interaction["flip_sequence"]) >= 2:
+                # Strong flip bonus for multiple role reversals
+                flip_bonus = min(0.3, len(interaction["flip_sequence"]) * 0.1)
+            elif len(interaction["flip_sequence"]) == 1:
+                # Moderate flip bonus for single role reversal
+                flip_bonus = 0.15
+            elif (interaction["support_touches"] >= 2 and 
+                  interaction["resistance_touches"] >= 2):
+                # Small bonus for levels that have been touched from both sides
+                flip_bonus = 0.05
+            
+            return flip_bonus
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating flip bonus: {e}")
+            return 0.0
+
+    def _detect_volume_weighted_levels_with_decay(self, price_data: pd.DataFrame) -> dict[str, Any]:
+        """
+        Detect volume-weighted price levels with time-decay factor.
 
         Args:
             price_data: OHLCV price data
 
         Returns:
-            Dictionary containing volume-weighted levels
+            Dictionary containing volume-weighted levels with time-decay
         """
         try:
             high = price_data["high"].astype(float)
@@ -538,8 +651,9 @@ class SRBreakoutPredictor:
 
             bin_size = price_range / self.vw_price_bins
             volume_profile = np.zeros(self.vw_price_bins)
+            time_weights = np.zeros(self.vw_price_bins)
 
-            # Calculate volume profile
+            # Calculate volume profile with time-decay weights
             for i in range(len(window_data)):
                 price = window_close.iloc[i]
                 vol = window_volume.iloc[i]
@@ -548,7 +662,11 @@ class SRBreakoutPredictor:
                 bin_index = int((price - price_min) / bin_size)
                 bin_index = max(0, min(bin_index, self.vw_price_bins - 1))
 
-                volume_profile[bin_index] += vol
+                # Apply time-decay weight (more recent = higher weight)
+                time_weight = np.exp(-0.1 * (len(window_data) - 1 - i))  # Exponential decay
+                
+                volume_profile[bin_index] += vol * time_weight
+                time_weights[bin_index] += time_weight
 
             # Find significant volume nodes
             total_volume = volume_profile.sum()
@@ -571,14 +689,21 @@ class SRBreakoutPredictor:
                     # Calculate price level for this bin
                     price_level = price_min + (i + 0.5) * bin_size
                     volume_ratio = volume_ratios[i]
+                    
+                    # Calculate time-decay factor for this level
+                    avg_time_weight = time_weights[i] / max(1, time_weights[i])
+                    time_decay_factor = min(avg_time_weight, 1.0)
 
-                    # Calculate strength based on volume ratio
-                    strength = min(volume_ratio / avg_volume_ratio, 2.0) / 2.0
+                    # Calculate strength based on volume ratio and time-decay
+                    base_strength = min(volume_ratio / avg_volume_ratio, 2.0) / 2.0
+                    strength_with_decay = base_strength * (0.7 + 0.3 * time_decay_factor)
 
                     significant_levels.append(
                         {
                             "price": float(price_level),
-                            "strength": float(strength),
+                            "strength": float(strength_with_decay),
+                            "base_strength": float(base_strength),
+                            "time_decay_factor": float(time_decay_factor),
                             "volume_ratio": float(volume_ratio),
                             "type": "volume_weighted",
                         }
@@ -601,10 +726,11 @@ class SRBreakoutPredictor:
                 "significant_levels_count": len(significant_levels),
                 "price_range": float(price_range),
                 "bin_size": float(bin_size),
+                "avg_time_decay": float(np.mean([level["time_decay_factor"] for level in significant_levels]) if significant_levels else 0.0),
             }
 
             self.logger.info(
-                f"📊 Volume-weighted analysis: {len(significant_levels)} significant levels"
+                f"📊 Volume-weighted analysis with decay: {len(significant_levels)} significant levels, avg time-decay: {metadata['avg_time_decay']:.3f}"
             )
 
             return {
@@ -614,18 +740,18 @@ class SRBreakoutPredictor:
             }
 
         except Exception as e:
-            self.logger.error(f"❌ Error in volume-weighted level detection: {e}")
+            self.logger.error(f"❌ Error in volume-weighted level detection with decay: {e}")
             return {"support_levels": [], "resistance_levels": [], "metadata": {}}
 
-    def _detect_pivot_point_levels(self, price_data: pd.DataFrame) -> dict[str, Any]:
+    def _detect_pivot_point_levels_with_flips(self, price_data: pd.DataFrame) -> dict[str, Any]:
         """
-        Detect traditional pivot point levels using the existing regime classifier.
+        Detect traditional pivot point levels with S/R flip detection.
 
         Args:
             price_data: OHLCV price data
 
         Returns:
-            Dictionary containing pivot point levels
+            Dictionary containing pivot point levels with flip information
         """
         try:
             if not self.regime_classifier:
@@ -642,35 +768,51 @@ class SRBreakoutPredictor:
             support_levels = []
             resistance_levels = []
 
-            # Extract support levels
+            # Extract support levels with flip detection
             for level_name in ["s1", "s2"]:
                 if pivots[level_name] > 0:
+                    level_price = float(pivots[level_name])
+                    base_strength = float(pivots["strengths"][level_name]["strength"])
+                    
+                    # Check for S/R flip in pivot levels
+                    flip_bonus = self._check_pivot_flip(level_price, price_data)
+                    enhanced_strength = min(base_strength + flip_bonus, 1.0)
+                    
                     support_levels.append(
                         {
-                            "price": float(pivots[level_name]),
-                            "strength": float(
-                                pivots["strengths"][level_name]["strength"]
-                            ),
+                            "price": level_price,
+                            "strength": enhanced_strength,
+                            "base_strength": base_strength,
+                            "flip_bonus": flip_bonus,
                             "touches": int(pivots["strengths"][level_name]["touches"]),
                             "volume": float(pivots["strengths"][level_name]["volume"]),
                             "age": int(pivots["strengths"][level_name]["age"]),
                             "type": "pivot_point",
+                            "has_flipped": flip_bonus > 0,
                         }
                     )
 
-            # Extract resistance levels
+            # Extract resistance levels with flip detection
             for level_name in ["r1", "r2"]:
                 if pivots[level_name] > 0:
+                    level_price = float(pivots[level_name])
+                    base_strength = float(pivots["strengths"][level_name]["strength"])
+                    
+                    # Check for S/R flip in pivot levels
+                    flip_bonus = self._check_pivot_flip(level_price, price_data)
+                    enhanced_strength = min(base_strength + flip_bonus, 1.0)
+                    
                     resistance_levels.append(
                         {
-                            "price": float(pivots[level_name]),
-                            "strength": float(
-                                pivots["strengths"][level_name]["strength"]
-                            ),
+                            "price": level_price,
+                            "strength": enhanced_strength,
+                            "base_strength": base_strength,
+                            "flip_bonus": flip_bonus,
                             "touches": int(pivots["strengths"][level_name]["touches"]),
                             "volume": float(pivots["strengths"][level_name]["volume"]),
                             "age": int(pivots["strengths"][level_name]["age"]),
                             "type": "pivot_point",
+                            "has_flipped": flip_bonus > 0,
                         }
                     )
 
@@ -678,6 +820,7 @@ class SRBreakoutPredictor:
                 "pivot": float(pivots["pivot"]),
                 "support_count": len(support_levels),
                 "resistance_count": len(resistance_levels),
+                "flip_count": sum(1 for level in support_levels + resistance_levels if level.get("has_flipped", False)),
             }
 
             return {
@@ -687,28 +830,88 @@ class SRBreakoutPredictor:
             }
 
         except Exception as e:
-            self.logger.error(f"❌ Error in pivot point detection: {e}")
+            self.logger.error(f"❌ Error in pivot point detection with flips: {e}")
             return {"support_levels": [], "resistance_levels": [], "metadata": {}}
 
-    def _consolidate_sr_levels(self, enhanced_levels: dict[str, Any]) -> dict[str, Any]:
+    def _check_pivot_flip(self, level_price: float, price_data: pd.DataFrame) -> float:
         """
-        Consolidate and deduplicate S/R levels from multiple detection methods.
+        Check if a pivot level has acted as both support and resistance.
+        
+        Args:
+            level_price: Pivot level price
+            price_data: Price data
+            
+        Returns:
+            float: Flip bonus (0.0 to 0.2)
+        """
+        try:
+            close = price_data["close"].astype(float)
+            high = price_data["high"].astype(float)
+            low = price_data["low"].astype(float)
+            
+            # Define proximity threshold
+            proximity_threshold = level_price * 0.01  # 1% for pivot levels
+            
+            support_touches = 0
+            resistance_touches = 0
+            flip_sequence = []
+            
+            # Check recent price action around this level
+            for i in range(len(price_data)):
+                price = close.iloc[i]
+                high_price = high.iloc[i]
+                low_price = low.iloc[i]
+                
+                # Check if price touched this level
+                if (low_price <= level_price + proximity_threshold and 
+                    high_price >= level_price - proximity_threshold):
+                    
+                    # Determine if this is a support or resistance touch
+                    if price <= level_price + proximity_threshold * 0.5:
+                        # Price closed near or below level (support)
+                        support_touches += 1
+                        if resistance_touches > 0:
+                            flip_sequence.append(("R_to_S", i))
+                    else:
+                        # Price closed above level (resistance)
+                        resistance_touches += 1
+                        if support_touches > 0:
+                            flip_sequence.append(("S_to_R", i))
+            
+            # Calculate flip bonus
+            if len(flip_sequence) >= 2:
+                return 0.2  # Strong flip bonus
+            elif len(flip_sequence) == 1:
+                return 0.1  # Moderate flip bonus
+            elif support_touches >= 2 and resistance_touches >= 2:
+                return 0.05  # Small bonus for dual touches
+            
+            return 0.0
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error checking pivot flip: {e}")
+            return 0.0
+
+    def _consolidate_sr_levels_with_flips(self, enhanced_levels: dict[str, Any], price_data: pd.DataFrame) -> dict[str, Any]:
+        """
+        Consolidate and deduplicate S/R levels with enhanced flip logic.
 
         Args:
             enhanced_levels: Dictionary containing levels from multiple methods
+            price_data: Price data for additional flip detection
 
         Returns:
-            Consolidated levels with deduplication
+            Consolidated levels with flip information
         """
         try:
             all_support = enhanced_levels.get("support_levels", [])
             all_resistance = enhanced_levels.get("resistance_levels", [])
 
-            # Group levels by proximity
-            consolidated_support = self._group_levels_by_proximity(all_support)
-            consolidated_resistance = self._group_levels_by_proximity(all_resistance)
+            # Group levels by proximity with flip consideration
+            consolidated_support = self._group_levels_by_proximity_with_flips(all_support, price_data)
+            consolidated_resistance = self._group_levels_by_proximity_with_flips(all_resistance, price_data)
 
-            # Sort by strength
+            # Sort by enhanced strength (including flip bonuses)
             consolidated_support.sort(key=lambda x: x["strength"], reverse=True)
             consolidated_resistance.sort(key=lambda x: x["strength"], reverse=True)
 
@@ -724,15 +927,16 @@ class SRBreakoutPredictor:
             }
 
         except Exception as e:
-            self.logger.error(f"❌ Error consolidating S/R levels: {e}")
+            self.logger.error(f"❌ Error consolidating S/R levels with flips: {e}")
             return {"support_levels": [], "resistance_levels": []}
 
-    def _group_levels_by_proximity(self, levels: list[dict]) -> list[dict]:
+    def _group_levels_by_proximity_with_flips(self, levels: list[dict], price_data: pd.DataFrame) -> list[dict]:
         """
-        Group levels that are close to each other and merge their properties.
+        Group levels that are close to each other and merge their properties with flip consideration.
 
         Args:
             levels: List of level dictionaries
+            price_data: Price data for additional flip detection
 
         Returns:
             Consolidated list of levels
@@ -761,23 +965,24 @@ class SRBreakoutPredictor:
                 current_group.append(current_level)
             else:
                 # Merge current group
-                merged_level = self._merge_level_group(current_group)
+                merged_level = self._merge_level_group_with_flips(current_group, price_data)
                 grouped_levels.append(merged_level)
                 current_group = [current_level]
 
         # Merge the last group
         if current_group:
-            merged_level = self._merge_level_group(current_group)
+            merged_level = self._merge_level_group_with_flips(current_group, price_data)
             grouped_levels.append(merged_level)
 
         return grouped_levels
 
-    def _merge_level_group(self, level_group: list[dict]) -> dict:
+    def _merge_level_group_with_flips(self, level_group: list[dict], price_data: pd.DataFrame) -> dict:
         """
-        Merge a group of nearby levels into a single level.
+        Merge a group of nearby levels into a single level with flip consideration.
 
         Args:
             level_group: List of levels to merge
+            price_data: Price data for additional flip detection
 
         Returns:
             Merged level dictionary
@@ -798,12 +1003,20 @@ class SRBreakoutPredictor:
         # Combine types
         types = list(set(level.get("type", "unknown") for level in level_group))
 
+        # Check for additional flip logic on merged level
+        additional_flip_bonus = self._calculate_flip_bonus(
+            weighted_price, price_data["close"], len(price_data) - 1, {}
+        )
+
         # Create merged level
         merged_level = {
             "price": float(weighted_price),
-            "strength": float(max_strength),
+            "strength": float(min(max_strength + additional_flip_bonus, 1.0)),
+            "base_strength": float(max_strength),
+            "flip_bonus": float(additional_flip_bonus),
             "type": "+".join(types),
             "group_size": len(level_group),
+            "has_flipped": additional_flip_bonus > 0 or any(level.get("has_flipped", False) for level in level_group),
         }
 
         # Add additional properties if available
@@ -816,62 +1029,56 @@ class SRBreakoutPredictor:
 
         return merged_level
 
-    def _add_atr_based_activation_ranges(
-        self, price_data: pd.DataFrame, levels: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _apply_time_decay_to_levels(self, consolidated_levels: dict[str, Any], price_data: pd.DataFrame) -> dict[str, Any]:
         """
-        Add ATR-based activation ranges to S/R levels.
+        Apply time-decay factor to all S/R levels based on their age.
 
         Args:
-            price_data: OHLCV price data
-            levels: Dictionary containing S/R levels
+            consolidated_levels: Dictionary containing consolidated levels
+            price_data: Price data for timestamp calculations
 
         Returns:
-            Levels with ATR-based activation ranges
+            Levels with time-decay applied
         """
         try:
-            # Calculate ATR
-            high = price_data["high"].astype(float)
-            low = price_data["low"].astype(float)
-            close = price_data["close"].astype(float)
-
-            # True Range calculation
-            close_prev = close.shift(1)
-            tr1 = high - low
-            tr2 = np.abs(high - close_prev)
-            tr3 = np.abs(low - close_prev)
-            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-
-            # ATR
-            atr = true_range.rolling(window=self.atr_period, min_periods=1).mean()
-            current_atr = atr.iloc[-1]
-
-            # Add activation ranges to levels
+            current_time = price_data.index[-1]
+            
             for level_type in ["support_levels", "resistance_levels"]:
-                for level in levels.get(level_type, []):
-                    level_strength = level.get("strength", 1.0)
+                for level in consolidated_levels.get(level_type, []):
+                    # Calculate age of the level
+                    if "timestamp" in level:
+                        level_time = level["timestamp"]
+                        if isinstance(level_time, str):
+                            level_time = pd.to_datetime(level_time)
+                        
+                        # Calculate age in hours
+                        age_hours = (current_time - level_time).total_seconds() / 3600
+                        
+                        # Apply time-decay factor
+                        # Half-life of 168 hours (1 week)
+                        half_life_hours = 168
+                        decay_factor = np.exp(-np.log(2) * age_hours / half_life_hours)
+                        
+                        # Apply decay to strength
+                        original_strength = level.get("base_strength", level["strength"])
+                        decayed_strength = original_strength * (0.5 + 0.5 * decay_factor)
+                        
+                        # Update level with decay information
+                        level["time_decay_factor"] = float(decay_factor)
+                        level["age_hours"] = float(age_hours)
+                        level["strength"] = float(decayed_strength)
+                        
+                    else:
+                        # For levels without timestamp, apply moderate decay
+                        level["time_decay_factor"] = 0.7
+                        level["age_hours"] = 24.0  # Assume 1 day old
+                        level["strength"] = level["strength"] * 0.7
 
-                    # Calculate ATR-based activation range
-                    activation_range = (
-                        current_atr * self.atr_multiplier * level_strength
-                    )
-
-                    # Fallback to percentage-based if ATR is too small
-                    if activation_range < level["price"] * self.atr_fallback_multiplier:
-                        activation_range = (
-                            level["price"]
-                            * self.atr_fallback_multiplier
-                            * level_strength
-                        )
-
-                    level["activation_range"] = float(activation_range)
-                    level["atr_value"] = float(current_atr)
-
-            return levels
+            return consolidated_levels
 
         except Exception as e:
-            self.logger.error(f"❌ Error adding ATR-based activation ranges: {e}")
-            return levels
+            self.logger.error(f"❌ Error applying time-decay to levels: {e}")
+            return consolidated_levels
 
     @handle_errors(
         exceptions=(Exception,),
@@ -2220,6 +2427,63 @@ class SRBreakoutPredictor:
         except Exception as e:
             self.logger.error(f"❌ Error calculating ATR: {e}")
             return pd.Series([0.02] * len(price_data), index=price_data.index)
+
+    def _add_atr_based_activation_ranges(
+        self, price_data: pd.DataFrame, levels: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Add ATR-based activation ranges to S/R levels.
+
+        Args:
+            price_data: OHLCV price data
+            levels: Dictionary containing S/R levels
+
+        Returns:
+            Levels with ATR-based activation ranges
+        """
+        try:
+            # Calculate ATR
+            high = price_data["high"].astype(float)
+            low = price_data["low"].astype(float)
+            close = price_data["close"].astype(float)
+
+            # True Range calculation
+            close_prev = close.shift(1)
+            tr1 = high - low
+            tr2 = np.abs(high - close_prev)
+            tr3 = np.abs(low - close_prev)
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+            # ATR
+            atr = true_range.rolling(window=self.atr_period, min_periods=1).mean()
+            current_atr = atr.iloc[-1]
+
+            # Add activation ranges to levels
+            for level_type in ["support_levels", "resistance_levels"]:
+                for level in levels.get(level_type, []):
+                    level_strength = level.get("strength", 1.0)
+
+                    # Calculate ATR-based activation range
+                    activation_range = (
+                        current_atr * self.atr_multiplier * level_strength
+                    )
+
+                    # Fallback to percentage-based if ATR is too small
+                    if activation_range < level["price"] * self.atr_fallback_multiplier:
+                        activation_range = (
+                            level["price"]
+                            * self.atr_fallback_multiplier
+                            * level_strength
+                        )
+
+                    level["activation_range"] = float(activation_range)
+                    level["atr_value"] = float(current_atr)
+
+            return levels
+
+        except Exception as e:
+            self.logger.error(f"❌ Error adding ATR-based activation ranges: {e}")
+            return levels
 
 @handle_errors(
     exceptions=(Exception,),

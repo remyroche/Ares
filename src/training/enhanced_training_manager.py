@@ -69,6 +69,11 @@ from src.training.model_trainer import setup_model_trainer
 # Import the new vectorized training pipeline
 from src.training.vectorized_training_pipeline import VectorizedTrainingPipeline
 
+# Import enhanced matrix operations and GPU acceleration
+from src.training.enhanced_matrix_operations import EnhancedMatrixOperations
+from src.training.enhanced_matrix_gpu_integration import EnhancedMatrixGPUIntegration
+from src.config.m1_gpu_config import get_m1_gpu_config, get_optimized_m1_config
+
 from contextlib import contextmanager
 
 
@@ -157,18 +162,26 @@ class EnhancedTrainingManager:
         # Initialize vectorized training pipeline
         self.vectorized_pipeline = VectorizedTrainingPipeline(config)
         
+        # Initialize enhanced matrix operations and GPU acceleration
+        self.enhanced_matrix_ops = EnhancedMatrixOperations(config)
+        self.gpu_integration = EnhancedMatrixGPUIntegration(config)
+        
         # Enhanced training manager state
         self.is_training: bool = False
         self.enhanced_training_results: dict[str, Any] = {}
         self.enhanced_training_history: list[dict[str, Any]] = []
+        self.matrix_enhancement_results: dict[str, Any] = {}
+        self.gpu_performance_metrics: dict[str, Any] = {}
 
         # Define pipeline step order as class constant
         self.STEP_ORDER = [
             "step1_data_collection",
             "step2_feature_engineering", 
+            "step2_5_enhanced_matrix_operations",
             "step3_hmm_regime_discovery",
             "step4_processing_labeling",
             "step5_regime_data_splitting",
+            "step5_5_enhanced_model_training_operations",
             "step6_hmm_based_training",
             "step6_5_unified_regime_intelligence",
             "step7_analyst_enhancement",
@@ -191,6 +204,10 @@ class EnhancedTrainingManager:
             "step2_feature_engineering": [
                 "data/training/{exchange}_{symbol}_{timeframe}_engineered_features.parquet",
             ],
+            "step2_5_enhanced_matrix_operations": [
+                "data/training/{exchange}_{symbol}_{timeframe}_enhanced_features.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_enhancement_metadata.json",
+            ],
             "step3_hmm_regime_discovery": [
                 "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.parquet",
             ],
@@ -200,6 +217,10 @@ class EnhancedTrainingManager:
             "step5_regime_data_splitting": [
                 "data/training/{exchange}_{symbol}_{timeframe}_regime_splits_train.parquet",
                 "data/training/{exchange}_{symbol}_{timeframe}_regime_splits_validation.parquet",
+            ],
+            "step5_5_enhanced_model_training_operations": [
+                "data/training/{exchange}_{symbol}_{timeframe}_enhanced_training_data.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_training_enhancement_metadata.json",
             ],
             "step6_hmm_based_training": [
                 "data/training/{exchange}_{symbol}_{timeframe}_hmm_models.pkl",
@@ -343,6 +364,10 @@ class EnhancedTrainingManager:
                 "data/training/{exchange}_{symbol}_{timeframe}_engineered_features.*",
                 "data/training/{exchange}_{symbol}_{timeframe}_feature_metadata.*",
             ],
+            "step2_5_enhanced_matrix_operations": [
+                "data/training/{exchange}_{symbol}_{timeframe}_enhanced_features.*",
+                "data/training/{exchange}_{symbol}_{timeframe}_enhancement_metadata.*",
+            ],
             "step3_hmm_regime_discovery": [
                 "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_hmm_*.parquet",
                 "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.*",
@@ -355,6 +380,10 @@ class EnhancedTrainingManager:
             "step5_regime_data_splitting": [
                 "data/training/{exchange}_{symbol}_{timeframe}_regime_splits_*.parquet",
                 "data/training/{exchange}_{symbol}_{timeframe}_split_metadata.*",
+            ],
+            "step5_5_enhanced_model_training_operations": [
+                "data/training/{exchange}_{symbol}_{timeframe}_enhanced_training_data.*",
+                "data/training/{exchange}_{symbol}_{timeframe}_training_enhancement_metadata.*",
             ],
             "step6_hmm_based_training": [
                 "data/training/{exchange}_{symbol}_{timeframe}_hmm_models_*.pkl",
@@ -1161,6 +1190,66 @@ class EnhancedTrainingManager:
             KeyError: (False, "Missing required enhanced training data"),
         },
         default_return=False,
+        context="enhanced matrix operations",
+    )
+    async def apply_enhanced_matrix_operations(
+        self,
+        features_df: pd.DataFrame,
+        target: pd.Series = None,
+        optimization_mode: str = "performance"
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
+        """
+        Apply enhanced matrix operations with GPU acceleration to training data.
+        
+        Args:
+            features_df: Input features DataFrame
+            target: Target variable (optional)
+            optimization_mode: Optimization mode ("performance", "memory", "accuracy", "stability")
+            
+        Returns:
+            tuple: Enhanced features DataFrame and metadata
+        """
+        try:
+            self.logger.info("🚀 Applying Enhanced Matrix Operations with GPU Acceleration")
+            
+            # Get optimized configuration based on mode
+            config = get_optimized_m1_config(optimization_mode)
+            
+            # Apply GPU-accelerated matrix operations
+            enhanced_features, enhancement_metadata = await self.gpu_integration.enhanced_gpu_matrix_operations(
+                features_df, target
+            )
+            
+            # Store results
+            self.matrix_enhancement_results = enhancement_metadata
+            self.gpu_performance_metrics = enhancement_metadata.get("gpu_performance_summary", {})
+            
+            # Log results
+            feature_increase = enhancement_metadata.get("feature_count_increase", 0)
+            processing_time = enhancement_metadata.get("total_processing_time", 0)
+            
+            self.logger.info(f"✅ Enhanced Matrix Operations completed")
+            self.logger.info(f"📊 Features: {len(features_df.columns)} -> {len(enhanced_features.columns)} (+{feature_increase})")
+            self.logger.info(f"⏱️ Processing time: {processing_time:.2f}s")
+            
+            if "gpu_performance_summary" in enhancement_metadata:
+                gpu_summary = enhancement_metadata["gpu_performance_summary"]
+                self.logger.info(f"🎯 GPU Operations: {gpu_summary.get('gpu_operations_count', 0)}")
+                self.logger.info(f"⚡ GPU Time: {gpu_summary.get('gpu_processing_time', 0):.2f}s")
+            
+            return enhanced_features, enhancement_metadata
+            
+        except Exception as e:
+            self.logger.error(f"❌ Enhanced Matrix Operations failed: {e}")
+            return features_df, {"error": str(e)}
+
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Invalid enhanced training parameters"),
+            AttributeError: (False, "Missing enhanced training components"),
+            KeyError: (False, "Missing required enhanced training data"),
+        },
+        default_return=False,
         context="enhanced training execution",
     )
     async def execute_enhanced_training(
@@ -1249,12 +1338,24 @@ class EnhancedTrainingManager:
                 self.logger.error("❌ Enhanced training pipeline failed")
 
             self.is_training = False
+            
+            # Clear GPU memory after training
+            if hasattr(self, 'gpu_integration'):
+                self.gpu_integration.clear_gpu_memory()
+                self.logger.info("🧹 GPU memory cleared after training")
+            
             return success
 
         except Exception as e:
             self.logger.error(f"💥 ENHANCED TRAINING PIPELINE FAILED: {str(e)}")
             self.logger.error(f"📋 Error details: {type(e).__name__}: {str(e)}")
             self.is_training = False
+            
+            # Clear GPU memory even on failure
+            if hasattr(self, 'gpu_integration'):
+                self.gpu_integration.clear_gpu_memory()
+                self.logger.info("🧹 GPU memory cleared after training failure")
+            
             return False
 
     @handle_errors(
@@ -1575,7 +1676,73 @@ class EnhancedTrainingManager:
             self._save_checkpoint("step2_feature_engineering", pipeline_state)
             step_times["step2_feature_engineering"] = time.time() - step_start_2
 
-                            # Run validator for Step 2 (AFTER execution, for verification only)
+            # Step 2.5: Enhanced Matrix Operations with GPU Acceleration
+            if step2_success and self.config.get("enable_enhanced_matrix_operations", True):
+                self._heartbeat("Step 2.5: Enhanced Matrix Operations")
+                step_start_2_5 = time.time()
+                
+                try:
+                    # Load engineered features
+                    features_file = f"data/training/{exchange}_{symbol}_{timeframe}_engineered_features.parquet"
+                    if os.path.exists(features_file):
+                        features_df = pd.read_parquet(features_file)
+                        
+                        # Apply enhanced matrix operations
+                        enhanced_features, enhancement_metadata = await self.apply_enhanced_matrix_operations(
+                            features_df,
+                            optimization_mode=self.config.get("matrix_optimization_mode", "performance")
+                        )
+                        
+                        # Save enhanced features
+                        enhanced_features_file = f"data/training/{exchange}_{symbol}_{timeframe}_enhanced_features.parquet"
+                        enhanced_features.to_parquet(enhanced_features_file)
+                        
+                        # Save enhancement metadata
+                        metadata_file = f"data/training/{exchange}_{symbol}_{timeframe}_enhancement_metadata.json"
+                        with open(metadata_file, 'w') as f:
+                            json.dump(enhancement_metadata, f, indent=2, default=str)
+                        
+                        step2_5_success = True
+                        self.logger.info(f"✅ Step 2.5: Enhanced Matrix Operations completed successfully")
+                        
+                        # Update pipeline state
+                        pipeline_state["enhanced_matrix_operations"] = {
+                            "status": "SUCCESS",
+                            "success": True,
+                            "completed": True,
+                            "feature_increase": enhancement_metadata.get("feature_count_increase", 0),
+                            "processing_time": enhancement_metadata.get("total_processing_time", 0),
+                            "gpu_operations": enhancement_metadata.get("gpu_performance_summary", {}).get("gpu_operations_count", 0)
+                        }
+                        
+                    else:
+                        self.logger.warning(f"⚠️ Features file not found: {features_file}")
+                        step2_5_success = False
+                        
+                except Exception as e:
+                    self.logger.error(f"❌ Error in Step 2.5: {e}")
+                    step2_5_success = False
+                    pipeline_state["enhanced_matrix_operations"] = {
+                        "status": "FAILED",
+                        "success": False,
+                        "completed": False,
+                        "error": str(e)
+                    }
+                
+                self._log_step_completion(
+                    "Step 2.5: Enhanced Matrix Operations",
+                    step_start_2_5,
+                    step_times,
+                    success=step2_5_success,
+                )
+                
+                if step2_5_success:
+                    self._save_checkpoint("step2_5_enhanced_matrix_operations", pipeline_state)
+                    step_times["step2_5_enhanced_matrix_operations"] = time.time() - step_start_2_5
+                else:
+                    self.logger.warning("⚠️ Step 2.5 failed - continuing with original features")
+
+            # Run validator for Step 2 (AFTER execution, for verification only)
                 # Run validator only if Step 2 was executed (not skipped above)
                 if _should_run("step2_feature_engineering"):
                     try:
@@ -1792,6 +1959,89 @@ class EnhancedTrainingManager:
             self.logger.info("➡️ Proceeding to Step 6: HMM-Based Training")
 
             # Step 4_8: Regime Forecasting is now integrated into Step 6 training (artifacts emitted there)
+
+            # Step 5.5: Enhanced Matrix Operations for Model Training
+            if self.config.get("enable_enhanced_matrix_operations", True):
+                self._heartbeat("Step 5.5: Enhanced Matrix Operations for Model Training")
+                step_start_5_5 = time.time()
+                
+                try:
+                    # Load training data for model training
+                    training_data_file = f"data/training/{exchange}_{symbol}_{timeframe}_regime_splits_train.parquet"
+                    if os.path.exists(training_data_file):
+                        training_data = pd.read_parquet(training_data_file)
+                        
+                        # Separate features and target
+                        target_columns = [col for col in training_data.columns if 'target' in col.lower() or 'label' in col.lower()]
+                        if target_columns:
+                            target = training_data[target_columns[0]]
+                            features_df = training_data.drop(columns=target_columns)
+                        else:
+                            # If no target column found, use all data as features
+                            features_df = training_data
+                            target = None
+                        
+                        # Apply enhanced matrix operations for model training
+                        enhanced_training_features, training_enhancement_metadata = await self.apply_enhanced_matrix_operations(
+                            features_df,
+                            target,
+                            optimization_mode=self.config.get("model_training_optimization_mode", "accuracy")
+                        )
+                        
+                        # Combine enhanced features with target
+                        if target is not None:
+                            enhanced_training_data = pd.concat([enhanced_training_features, target], axis=1)
+                        else:
+                            enhanced_training_data = enhanced_training_features
+                        
+                        # Save enhanced training data
+                        enhanced_training_file = f"data/training/{exchange}_{symbol}_{timeframe}_enhanced_training_data.parquet"
+                        enhanced_training_data.to_parquet(enhanced_training_file)
+                        
+                        # Save training enhancement metadata
+                        training_metadata_file = f"data/training/{exchange}_{symbol}_{timeframe}_training_enhancement_metadata.json"
+                        with open(training_metadata_file, 'w') as f:
+                            json.dump(training_enhancement_metadata, f, indent=2, default=str)
+                        
+                        step5_5_success = True
+                        self.logger.info(f"✅ Step 5.5: Enhanced Matrix Operations for Model Training completed successfully")
+                        
+                        # Update pipeline state
+                        pipeline_state["enhanced_model_training_operations"] = {
+                            "status": "SUCCESS",
+                            "success": True,
+                            "completed": True,
+                            "feature_increase": training_enhancement_metadata.get("feature_count_increase", 0),
+                            "processing_time": training_enhancement_metadata.get("total_processing_time", 0),
+                            "gpu_operations": training_enhancement_metadata.get("gpu_performance_summary", {}).get("gpu_operations_count", 0)
+                        }
+                        
+                    else:
+                        self.logger.warning(f"⚠️ Training data file not found: {training_data_file}")
+                        step5_5_success = False
+                        
+                except Exception as e:
+                    self.logger.error(f"❌ Error in Step 5.5: {e}")
+                    step5_5_success = False
+                    pipeline_state["enhanced_model_training_operations"] = {
+                        "status": "FAILED",
+                        "success": False,
+                        "completed": False,
+                        "error": str(e)
+                    }
+                
+                self._log_step_completion(
+                    "Step 5.5: Enhanced Matrix Operations for Model Training",
+                    step_start_5_5,
+                    step_times,
+                    success=step5_5_success,
+                )
+                
+                if step5_5_success:
+                    self._save_checkpoint("step5_5_enhanced_model_training_operations", pipeline_state)
+                    step_times["step5_5_enhanced_model_training_operations"] = time.time() - step_start_5_5
+                else:
+                    self.logger.warning("⚠️ Step 5.5 failed - continuing with original training data")
 
             # Step 6: HMM-Based Training (enable Method A experts via config)
             self._heartbeat("Step 6: HMM-Based Training")
@@ -3085,7 +3335,41 @@ class EnhancedTrainingManager:
             "enable_validators": self.enable_validators,
             "enable_computational_optimization": self.enable_computational_optimization,
             "optimization_statistics": self.optimization_statistics,
+            "matrix_enhancement_results": bool(self.matrix_enhancement_results),
+            "gpu_performance_metrics": bool(self.gpu_performance_metrics),
         }
+
+    def get_matrix_enhancement_results(self) -> dict[str, Any]:
+        """
+        Get matrix enhancement results and performance metrics.
+
+        Returns:
+            dict: Matrix enhancement results and GPU performance metrics
+        """
+        try:
+            return {
+                "matrix_enhancement_results": self.matrix_enhancement_results,
+                "gpu_performance_metrics": self.gpu_performance_metrics,
+                "gpu_integration_summary": self.gpu_integration.get_integration_summary() if hasattr(self, 'gpu_integration') else {},
+            }
+        except Exception as e:
+            self.logger.error(f"Failed to get matrix enhancement results: {e}")
+            return {}
+
+    def get_gpu_performance_summary(self) -> dict[str, Any]:
+        """
+        Get GPU performance summary.
+
+        Returns:
+            dict: GPU performance summary
+        """
+        try:
+            if hasattr(self, 'gpu_integration'):
+                return self.gpu_integration.get_integration_summary()
+            return {}
+        except Exception as e:
+            self.logger.error(f"Failed to get GPU performance summary: {e}")
+            return {}
 
     def get_validation_results(self) -> dict[str, Any]:
         """

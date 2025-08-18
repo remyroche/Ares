@@ -204,8 +204,14 @@ class SQLiteManager:
             self.logger.info("✅ SQLite Manager initialization completed successfully")
             return True
 
-        except Exception:
-            self.print(failed("❌ SQLite Manager initialization failed: {e}"))
+        except (OSError, IOError) as e:
+            self.print(failed(f"❌ SQLite Manager initialization failed - File system error: {e}"))
+            return False
+        except sqlite3.Error as e:
+            self.print(failed(f"❌ SQLite Manager initialization failed - Database error: {e}"))
+            return False
+        except Exception as e:
+            self.print(failed(f"❌ SQLite Manager initialization failed - Unexpected error: {e}"))
             return False
 
     @handle_errors(
@@ -216,15 +222,24 @@ class SQLiteManager:
     async def _load_database_configuration(self) -> None:
         """Load database configuration."""
         try:
+            # Import constants
+            from src.config.constants import (
+                DEFAULT_DATABASE_PATH,
+                DEFAULT_BACKUP_INTERVAL,
+                DEFAULT_MAX_CONNECTIONS,
+                DEFAULT_MAX_RECOVERY_ATTEMPTS,
+                DEFAULT_RECOVERY_COOLDOWN,
+            )
+            
             # Set default database parameters
-            self.db_config.setdefault("database_path", "data/ares.db")
+            self.db_config.setdefault("database_path", DEFAULT_DATABASE_PATH)
             self.db_config.setdefault("auto_backup", True)
-            self.db_config.setdefault("backup_interval", 3600)
-            self.db_config.setdefault("max_connections", 10)
+            self.db_config.setdefault("backup_interval", DEFAULT_BACKUP_INTERVAL)
+            self.db_config.setdefault("max_connections", DEFAULT_MAX_CONNECTIONS)
             self.db_config.setdefault("enable_foreign_keys", True)
             self.db_config.setdefault("journal_mode", "WAL")
-            self.db_config.setdefault("max_recovery_attempts", 3)
-            self.db_config.setdefault("recovery_cooldown", 60)
+            self.db_config.setdefault("max_recovery_attempts", DEFAULT_MAX_RECOVERY_ATTEMPTS)
+            self.db_config.setdefault("recovery_cooldown", DEFAULT_RECOVERY_COOLDOWN)
 
             # Update configuration
             self.db_path = self.db_config["database_path"]
@@ -236,8 +251,10 @@ class SQLiteManager:
 
             self.logger.info("Database configuration loaded successfully")
 
-        except Exception:
-            self.print(error("Error loading database configuration: {e}"))
+        except (KeyError, TypeError) as e:
+            self.print(error(f"Error loading database configuration - Invalid config: {e}"))
+        except Exception as e:
+            self.print(error(f"Error loading database configuration - Unexpected error: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -279,8 +296,11 @@ class SQLiteManager:
             self.logger.info("Configuration validation successful")
             return True
 
-        except Exception:
-            self.print(error("Error validating configuration: {e}"))
+        except (ValueError, TypeError) as e:
+            self.print(error(f"Error validating configuration - Invalid value: {e}"))
+            return False
+        except Exception as e:
+            self.print(error(f"Error validating configuration - Unexpected error: {e}"))
             return False
 
     @handle_errors(
@@ -301,8 +321,10 @@ class SQLiteManager:
                 f"Connection pool initialized with {self.max_connections} connections",
             )
 
-        except Exception:
-            self.print(connection_error("Error initializing connection pool: {e}"))
+        except (OSError, IOError) as e:
+            self.print(connection_error(f"Error initializing connection pool - File system error: {e}"))
+        except Exception as e:
+            self.print(connection_error(f"Error initializing connection pool - Unexpected error: {e}"))
 
     @handle_file_operations(
         default_return=False,
@@ -350,8 +372,14 @@ class SQLiteManager:
                 # Return connection to pool
                 await self.connection_pool.return_connection(connection)
 
-        except Exception:
-            self.print(initialization_error("Error initializing database: {e}"))
+        except sqlite3.Error as e:
+            self.print(initialization_error(f"Error initializing database - SQLite error: {e}"))
+            return False
+        except (OSError, IOError) as e:
+            self.print(initialization_error(f"Error initializing database - File system error: {e}"))
+            return False
+        except Exception as e:
+            self.print(initialization_error(f"Error initializing database - Unexpected error: {e}"))
             return False
 
     @handle_errors(
@@ -425,8 +453,10 @@ class SQLiteManager:
 
             self.logger.info("Database tables created successfully")
 
-        except Exception:
-            self.print(error("Error creating tables: {e}"))
+        except sqlite3.Error as e:
+            self.print(error(f"Error creating tables - SQLite error: {e}"))
+        except Exception as e:
+            self.print(error(f"Error creating tables - Unexpected error: {e}"))
 
     @handle_specific_errors(
         error_handlers={

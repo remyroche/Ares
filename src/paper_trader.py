@@ -54,12 +54,20 @@ class PaperTrader:
         self.equity_history: list[float] = []
         self.prices: dict[str, float] = {}
 
+        # Import constants
+        from src.config.constants import (
+            DEFAULT_INITIAL_BALANCE,
+            DEFAULT_MAX_POSITION_SIZE,
+            DEFAULT_COMMISSION_RATE,
+            DEFAULT_SLIPPAGE_RATE,
+        )
+        
         # Configuration
         self.trader_config: dict[str, Any] = self.config.get("paper_trader", {})
-        self.initial_balance: float = self.trader_config.get("initial_balance", 10000.0)
-        self.max_position_size: float = self.trader_config.get("max_position_size", 0.1)
-        self.commission_rate: float = self.trader_config.get("commission_rate", 0.001)
-        self.slippage_rate: float = self.trader_config.get("slippage_rate", 0.0005)
+        self.initial_balance: float = self.trader_config.get("initial_balance", DEFAULT_INITIAL_BALANCE)
+        self.max_position_size: float = self.trader_config.get("max_position_size", DEFAULT_MAX_POSITION_SIZE)
+        self.commission_rate: float = self.trader_config.get("commission_rate", DEFAULT_COMMISSION_RATE)
+        self.slippage_rate: float = self.trader_config.get("slippage_rate", DEFAULT_SLIPPAGE_RATE)
         
         # Trade tracking
         self.trade_tracker = get_trade_tracker()

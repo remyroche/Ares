@@ -422,7 +422,7 @@ HMM_OPTIMIZATION_CONFIG: Dict[str, Any] = {
 # Keep only blocks that are essential for regime detection with available data
 BLOCKS: List[BlockConfig] = [
     # 1. MOMENTUM BLOCK - Price momentum, RSI, momentum divergence (ESSENTIAL)
-    BlockConfig("momentum", 5, 3),  # 5 states for granular momentum detection, target 3 features after filtering
+    BlockConfig("momentum", 6, 3),  # 6 states for granular momentum detection, target 3 features after filtering
     # Features: price_momentum_*, volume_weighted_momentum_*, rsi_*, momentum_divergence
     
     # 2. VOLATILITY BLOCK - Volatility measures, regime classification (ESSENTIAL)
@@ -430,11 +430,11 @@ BLOCKS: List[BlockConfig] = [
     # Features: volatility_*, volatility_regime, volatility_persistence, volatility_of_volatility
     
     # 3. VOLUME BLOCK - Pure volume indicators and flow analysis (ESSENTIAL)
-    BlockConfig("volume", 5, 4),  # 5 states for volume patterns
+    BlockConfig("volume", 4, 4),  # 4 states for volume patterns
     # Features: volume_*, vwap_*, volume_zscore, volume_ratio_*, trade_*
     
     # 4. SUPPORT_RESISTANCE BLOCK - Comprehensive SR features (ESSENTIAL)
-    BlockConfig("support_resistance", 3, 2),  # 3 states for SR patterns
+    BlockConfig("support_resistance", 6, 2),  # 6 states for SR patterns
     # Features: distance_to_*, normalized_distance_to_*, sr_proximity_score, strength_score,
     # clarity_factor, directional_pressure, sr_score, delta_sr_score, isolation_score
 ]
@@ -1771,17 +1771,17 @@ def _name_states(block: str, medians: Dict[int, Dict[str, float]]) -> Dict[int, 
 
         if block == "momentum":
             if q < 0.167:  # 6 states, so 1/6 = 0.167
-                names[s] = "Weak Downtrend"
+                names[s] = "Very Weak Downtrend"
             elif q < 0.333:
-                names[s] = "Moderate Downtrend"
+                names[s] = "Weak Downtrend"
             elif q < 0.5:
-                names[s] = "Sideways/Neutral"
+                names[s] = "Moderate Downtrend"
             elif q < 0.667:
                 names[s] = "Moderate Uptrend"
             elif q < 0.833:
                 names[s] = "Strong Uptrend"
             else:
-                names[s] = "Strong Downtrend"
+                names[s] = "Very Strong Uptrend"
         elif block == "volatility":
             if q < 0.25:  # 4 states, so 1/4 = 0.25
                 names[s] = "Low & Stable Vol"
@@ -1792,24 +1792,28 @@ def _name_states(block: str, medians: Dict[int, Dict[str, float]]) -> Dict[int, 
             else:
                 names[s] = "Very High & Choppy Vol"
         elif block == "volume":
-            if q < 0.2:  # 5 states, so 1/5 = 0.2
+            if q < 0.25:  # 4 states, so 1/4 = 0.25
                 names[s] = "Very Low Volume"
-            elif q < 0.4:
+            elif q < 0.5:
                 names[s] = "Low Volume"
-            elif q < 0.6:
-                names[s] = "Medium Volume"
-            elif q < 0.8:
+            elif q < 0.75:
                 names[s] = "High Volume"
             else:
                 names[s] = "Very High Volume"
 
         elif block == "support_resistance":
-            if q < 0.33:  # 3 states, so 1/3 = 0.33
+            if q < 0.167:  # 6 states, so 1/6 = 0.167
+                names[s] = "Very Near Support"
+            elif q < 0.333:
                 names[s] = "Near Support"
-            elif q < 0.67:
-                names[s] = "Neutral Levels"
-            else:
+            elif q < 0.5:
+                names[s] = "Approaching Support"
+            elif q < 0.667:
+                names[s] = "Approaching Resistance"
+            elif q < 0.833:
                 names[s] = "Near Resistance"
+            else:
+                names[s] = "Very Near Resistance"
     return names
 
 
@@ -3574,12 +3578,12 @@ def _generate_regime_description(regime_id: int, meta: dict, original_desc: str)
         # Block-specific descriptions (fallback) - Enhanced for higher sensitivity
         block_descriptions = {
             "momentum": {
-                0: "Weak Downtrend",  # More sensitive than "Sideways/Neutral"
-                1: "Moderate Downtrend", 
-                2: "Sideways/Neutral",  # Moved to middle state
+                0: "Very Weak Downtrend",
+                1: "Weak Downtrend",
+                2: "Moderate Downtrend",
                 3: "Moderate Uptrend",
                 4: "Strong Uptrend",
-                5: "Strong Downtrend",  # Added 6th state
+                5: "Very Strong Uptrend",
             },
             "volatility": {
                 0: "Low & Stable Vol",
@@ -3590,14 +3594,16 @@ def _generate_regime_description(regime_id: int, meta: dict, original_desc: str)
             "volume": {
                 0: "Very Low Volume",
                 1: "Low Volume",
-                2: "Medium Volume",
-                3: "High Volume",
-                4: "Very High Volume",
+                2: "High Volume",
+                3: "Very High Volume",
             },
             "support_resistance": {
-                0: "Near Support",
-                1: "Neutral Levels",
-                2: "Near Resistance",
+                0: "Very Near Support",
+                1: "Near Support",
+                2: "Approaching Support",
+                3: "Approaching Resistance",
+                4: "Near Resistance",
+                5: "Very Near Resistance",
             },
 
         }
@@ -3636,12 +3642,12 @@ def _generate_state_name(block_name: str, state_id: int, original_name: str, met
         # Fallback to hardcoded names - Enhanced for higher sensitivity
         if block_name_lower == "momentum":
             momentum_names = {
-                0: "Weak Downtrend",  # More sensitive than "Sideways/Neutral"
-                1: "Moderate Downtrend",
-                2: "Sideways/Neutral",  # Moved to middle state
-                3: "Moderate Uptrend", 
+                0: "Very Weak Downtrend",
+                1: "Weak Downtrend",
+                2: "Moderate Downtrend",
+                3: "Moderate Uptrend",
                 4: "Strong Uptrend",
-                5: "Strong Downtrend",  # Added 6th state
+                5: "Very Strong Uptrend",
             }
             return momentum_names.get(state_id, original_name)
 
@@ -3658,17 +3664,19 @@ def _generate_state_name(block_name: str, state_id: int, original_name: str, met
             volume_names = {
                 0: "Very Low Volume",
                 1: "Low Volume",
-                2: "Medium Volume",
-                3: "High Volume",
-                4: "Very High Volume",
+                2: "High Volume",
+                3: "Very High Volume",
             }
             return volume_names.get(state_id, original_name)
 
         elif block_name_lower == "support_resistance":
             sr_names = {
-                0: "Near Support",
-                1: "Neutral Levels",
-                2: "Near Resistance",
+                0: "Very Near Support",
+                1: "Near Support",
+                2: "Approaching Support",
+                3: "Approaching Resistance",
+                4: "Near Resistance",
+                5: "Very Near Resistance",
             }
             return sr_names.get(state_id, original_name)
 
@@ -3755,7 +3763,7 @@ def _generate_simple_hmm_report(
             "- 🔧 **Simplified regime structure** focusing on core market dynamics"
         )
         report_lines.append(
-            "- 📊 **4 primary blocks**: Momentum, Volatility, Volume, and Support/Resistance"
+            "- 📊 **4 primary blocks**: Momentum (6 states), Volatility (4 states), Volume (4 states), and Support/Resistance (6 states)"
         )
 
         # Regime distribution and concentration analysis
@@ -3951,10 +3959,10 @@ def _generate_simple_hmm_report(
                 )
             report_lines.append("")
             report_lines.append("**Simplified Regime Structure:**")
-            report_lines.append("- **Momentum**: Price trend and momentum patterns")
-            report_lines.append("- **Volatility**: Market volatility and dispersion")
-            report_lines.append("- **Volume**: Trading volume and flow analysis")
-            report_lines.append("- **Support/Resistance**: Price level proximity and strength")
+            report_lines.append("- **Momentum**: Price trend and momentum patterns (6 states)")
+            report_lines.append("- **Volatility**: Market volatility and dispersion (4 states)")
+            report_lines.append("- **Volume**: Trading volume and flow analysis (4 states)")
+            report_lines.append("- **Support/Resistance**: Price level proximity and strength (6 states)")
             report_lines.append("")
             report_lines.append("*Liquidity and market microstructure blocks have been removed to simplify regime detection and improve stability.*")
             report_lines.append("")

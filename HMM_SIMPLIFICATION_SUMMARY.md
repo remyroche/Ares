@@ -23,10 +23,10 @@ BLOCKS: List[BlockConfig] = [
 **After**:
 ```python
 BLOCKS: List[BlockConfig] = [
-    BlockConfig("momentum", 5, 3),         # Price trend and momentum patterns
-    BlockConfig("volatility", 4, 3),       # Market volatility and dispersion
-    BlockConfig("volume", 5, 4),           # Trading volume and flow analysis
-    BlockConfig("support_resistance", 3, 2), # Price level proximity and strength
+    BlockConfig("momentum", 6, 3),         # Price trend and momentum patterns (6 states)
+    BlockConfig("volatility", 4, 3),       # Market volatility and dispersion (4 states)
+    BlockConfig("volume", 4, 4),           # Trading volume and flow analysis (4 states)
+    BlockConfig("support_resistance", 6, 2), # Price level proximity and strength (6 states)
 ]
 ```
 
@@ -35,10 +35,21 @@ BLOCKS: List[BlockConfig] = [
 - `_generate_state_name()`: Removed microstructure state names, added support_resistance state names
 - `_generate_regime_description()`: Updated to handle 4-block regime structure
 
-**New Support/Resistance States**:
-- State 0: "Near Support"
-- State 1: "Neutral Levels" 
-- State 2: "Near Resistance"
+**New Momentum States** (6 states):
+- State 0: "Very Weak Downtrend"
+- State 1: "Weak Downtrend"
+- State 2: "Moderate Downtrend"
+- State 3: "Moderate Uptrend"
+- State 4: "Strong Uptrend"
+- State 5: "Very Strong Uptrend"
+
+**New Support/Resistance States** (6 states):
+- State 0: "Very Near Support"
+- State 1: "Near Support"
+- State 2: "Approaching Support"
+- State 3: "Approaching Resistance"
+- State 4: "Near Resistance"
+- State 5: "Very Near Resistance"
 
 ### 3. Report Generation Updates
 **File**: `src/training/steps/step3_hmm_regime_discovery.py`
@@ -94,12 +105,13 @@ BLOCKS: List[BlockConfig] = [
 ## Regime Structure
 
 ### Current 4-Block Structure:
-1. **Momentum Block** (5 states)
+1. **Momentum Block** (6 states)
+   - Very Weak Downtrend
    - Weak Downtrend
    - Moderate Downtrend
-   - Sideways/Neutral
    - Moderate Uptrend
    - Strong Uptrend
+   - Very Strong Uptrend
 
 2. **Volatility Block** (4 states)
    - Low & Stable Vol
@@ -107,17 +119,19 @@ BLOCKS: List[BlockConfig] = [
    - High & Choppy Vol
    - Very High & Choppy Vol
 
-3. **Volume Block** (5 states)
+3. **Volume Block** (4 states)
    - Very Low Volume
    - Low Volume
-   - Medium Volume
    - High Volume
    - Very High Volume
 
-4. **Support/Resistance Block** (3 states)
+4. **Support/Resistance Block** (6 states)
+   - Very Near Support
    - Near Support
-   - Neutral Levels
+   - Approaching Support
+   - Approaching Resistance
    - Near Resistance
+   - Very Near Resistance
 
 ## Migration Notes
 

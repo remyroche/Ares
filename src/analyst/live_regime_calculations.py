@@ -401,7 +401,7 @@ class LiveRegimeCalculator:
 
         return flags
 
-    @handle_errors(exceptions=(Exception,), default_return={}, context="build_snapshot")
+    @handle_errors(exceptions=(ValueError, TypeError, KeyError, pd.errors.EmptyDataError), default_return={}, context="build_snapshot")
     def build_snapshot(self, ohlcv: pd.DataFrame) -> dict[str, Any]:
         """
         Compute features and unified regime flags in one pass for live trading.

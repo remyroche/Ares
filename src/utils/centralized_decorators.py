@@ -68,6 +68,18 @@ except ImportError:
     def auto_fix_data_quality_issues(func):
         return func
 
+# Import advanced decorators
+from src.utils.advanced_decorators import (
+    performance_monitor,
+    model_validation,
+    pipeline_checkpoint,
+    intelligent_caching,
+    adaptive_resource_allocation,
+    comprehensive_validation,
+    PerformanceLevel,
+    ValidationLevel,
+)
+
 # Export all decorators for easy import
 __all__ = [
     # Error handling decorators
@@ -124,4 +136,14 @@ __all__ = [
     
     # Other decorators
     "auto_fix_data_quality_issues",
+    
+    # Advanced decorators
+    "performance_monitor",
+    "model_validation",
+    "pipeline_checkpoint",
+    "intelligent_caching",
+    "adaptive_resource_allocation",
+    "comprehensive_validation",
+    "PerformanceLevel",
+    "ValidationLevel",
 ]

@@ -2221,6 +2221,9 @@ class SRBreakoutPredictor:
                 self.logger.warning("⚠️ No S/R levels available, generating basic features")
                 return self._generate_basic_sr_features(price_data)
 
+            # Detect S/R flip confirmation and enhance levels
+            sr_levels = self._detect_sr_flip_confirmation(price_data, sr_levels)
+
             # 1. Basic distance features
             distance_features = self._calculate_distance_features(close, sr_levels)
             features.update(distance_features)
@@ -2306,7 +2309,7 @@ class SRBreakoutPredictor:
     def _calculate_distance_features(
         self, close: pd.Series, sr_levels: dict[str, Any]
     ) -> dict[str, pd.Series]:
-        """Calculate basic distance features."""
+        """Calculate basic distance features using vectorized operations."""
         try:
             features = {}
             
@@ -2314,37 +2317,39 @@ class SRBreakoutPredictor:
             support_levels = sr_levels.get("support_levels", [])
             resistance_levels = sr_levels.get("resistance_levels", [])
             
-            # Calculate distances to nearest levels
-            support_distances = []
-            resistance_distances = []
+            # Extract price levels as numpy arrays for vectorized operations
+            support_prices = np.array([level.get("price", 0) for level in support_levels if level.get("price", 0) > 0])
+            resistance_prices = np.array([level.get("price", 0) for level in resistance_levels if level.get("price", 0) > 0])
             
-            for price in close:
-                if pd.isna(price):
-                    support_distances.append(np.nan)
-                    resistance_distances.append(np.nan)
-                    continue
-                    
-                # Find nearest support
-                if support_levels:
-                    support_prices = [level.get("price", 0) for level in support_levels if level.get("price", 0) < price]
-                    if support_prices:
-                        nearest_support = max(support_prices)  # Closest support below price
-                        support_distances.append(price - nearest_support)
-                    else:
-                        support_distances.append(price * 0.1)  # Default distance
-                else:
-                    support_distances.append(price * 0.1)
-                    
-                # Find nearest resistance
-                if resistance_levels:
-                    resistance_prices = [level.get("price", float('inf')) for level in resistance_levels if level.get("price", 0) > price]
-                    if resistance_prices:
-                        nearest_resistance = min(resistance_prices)  # Closest resistance above price
-                        resistance_distances.append(nearest_resistance - price)
-                    else:
-                        resistance_distances.append(price * 0.1)  # Default distance
-                else:
-                    resistance_distances.append(price * 0.1)
+            # Vectorized distance calculation
+            if len(support_prices) > 0:
+                # Calculate distances to all support levels for each price point
+                # Shape: (len(close), len(support_prices))
+                support_distances_matrix = np.abs(close.values.reshape(-1, 1) - support_prices.reshape(1, -1))
+                # Find minimum distance to any support level for each price point
+                support_distances = np.min(support_distances_matrix, axis=1)
+                # Only consider supports below current price
+                support_mask = close.values.reshape(-1, 1) > support_prices.reshape(1, -1)
+                valid_support_distances = np.where(support_mask, support_distances_matrix, np.inf)
+                support_distances = np.min(valid_support_distances, axis=1)
+                # Replace inf with default distance
+                support_distances = np.where(np.isinf(support_distances), close.values * 0.1, support_distances)
+            else:
+                support_distances = close.values * 0.1
+            
+            if len(resistance_prices) > 0:
+                # Calculate distances to all resistance levels for each price point
+                resistance_distances_matrix = np.abs(close.values.reshape(-1, 1) - resistance_prices.reshape(1, -1))
+                # Find minimum distance to any resistance level for each price point
+                resistance_distances = np.min(resistance_distances_matrix, axis=1)
+                # Only consider resistances above current price
+                resistance_mask = close.values.reshape(-1, 1) < resistance_prices.reshape(1, -1)
+                valid_resistance_distances = np.where(resistance_mask, resistance_distances_matrix, np.inf)
+                resistance_distances = np.min(valid_resistance_distances, axis=1)
+                # Replace inf with default distance
+                resistance_distances = np.where(np.isinf(resistance_distances), close.values * 0.1, resistance_distances)
+            else:
+                resistance_distances = close.values * 0.1
             
             features["distance_to_support"] = pd.Series(support_distances, index=close.index)
             features["distance_to_resistance"] = pd.Series(resistance_distances, index=close.index)
@@ -2358,11 +2363,11 @@ class SRBreakoutPredictor:
     def _calculate_normalized_distance_features(
         self, close: pd.Series, sr_levels: dict[str, Any]
     ) -> dict[str, pd.Series]:
-        """Calculate normalized distance features by volatility."""
+        """Calculate normalized distance features by volatility using vectorized operations."""
         try:
             features = {}
             
-            # Calculate volatility (ATR-like measure)
+            # Calculate volatility (ATR-like measure) using vectorized operations
             high = close.rolling(14).max()
             low = close.rolling(14).min()
             volatility = (high - low) / close
@@ -2371,17 +2376,18 @@ class SRBreakoutPredictor:
             distance_features = self._calculate_distance_features(close, sr_levels)
             
             if "distance_to_support" in distance_features and "distance_to_resistance" in distance_features:
-                # Normalize by volatility
+                # Vectorized normalization
                 support_dist = distance_features["distance_to_support"]
                 resistance_dist = distance_features["distance_to_resistance"]
                 
-                # Avoid division by zero
+                # Avoid division by zero using vectorized operations
                 volatility_safe = volatility.replace(0, volatility.mean())
                 
+                # Vectorized normalization
                 features["normalized_distance_to_support"] = support_dist / (close * volatility_safe)
                 features["normalized_distance_to_resistance"] = resistance_dist / (close * volatility_safe)
                 
-                # Clip to reasonable range
+                # Vectorized clipping
                 features["normalized_distance_to_support"] = features["normalized_distance_to_support"].clip(-10, 10)
                 features["normalized_distance_to_resistance"] = features["normalized_distance_to_resistance"].clip(-10, 10)
             
@@ -2394,7 +2400,7 @@ class SRBreakoutPredictor:
     def _calculate_sr_proximity_features(
         self, close: pd.Series, sr_levels: dict[str, Any]
     ) -> dict[str, pd.Series]:
-        """Calculate SR proximity score."""
+        """Calculate SR proximity score using vectorized operations."""
         try:
             features = {}
             
@@ -2405,15 +2411,16 @@ class SRBreakoutPredictor:
                 support_dist = distance_features["distance_to_support"]
                 resistance_dist = distance_features["distance_to_resistance"]
                 
-                # Calculate proximity score using exponential decay
+                # Vectorized proximity calculation using exponential decay
                 # Closer to levels = higher score
-                support_proximity = np.exp(-support_dist / (close * 0.02))  # 2% scale
-                resistance_proximity = np.exp(-resistance_dist / (close * 0.02))
+                scale_factor = close * 0.02  # 2% scale
+                support_proximity = np.exp(-support_dist / scale_factor)
+                resistance_proximity = np.exp(-resistance_dist / scale_factor)
                 
-                # Combined proximity score
+                # Vectorized combined proximity score
                 sr_proximity_score = (support_proximity + resistance_proximity) / 2
                 
-                features["sr_proximity_score"] = sr_proximity_score.fillna(0)
+                features["sr_proximity_score"] = pd.Series(sr_proximity_score, index=close.index).fillna(0)
             
             return features
             
@@ -2424,15 +2431,15 @@ class SRBreakoutPredictor:
     def _calculate_strength_score_features(
         self, price_data: pd.DataFrame, sr_levels: dict[str, Any]
     ) -> dict[str, pd.Series]:
-        """Calculate strength score using the enhanced formula."""
+        """Calculate strength score using vectorized operations and enhanced S/R flip confirmation."""
         try:
             features = {}
             
-            # Get level metadata
+            # Get level metadata with S/R flip confirmation
             support_levels = sr_levels.get("support_levels", [])
             resistance_levels = sr_levels.get("resistance_levels", [])
             
-            # Calculate strength scores for each level
+            # Calculate strength scores for each level with flip confirmation bonus
             support_strengths = []
             resistance_strengths = []
             
@@ -2444,8 +2451,11 @@ class SRBreakoutPredictor:
                 bounce_rate = level.get("bounce_rate", 0.5)
                 isolation_score = level.get("isolation_score", 0.5)
                 
-                # Calculate strength score using the formula
-                strength_score = (
+                # Check for S/R flip confirmation bonus
+                flip_confirmation_bonus = level.get("flip_confirmation_bonus", 0.0)
+                
+                # Calculate base strength score using the formula
+                base_strength = (
                     self.strength_score_weights["touch_count"] * np.log(max(touch_count, 1)) +
                     self.strength_score_weights["total_volume"] * np.log(max(total_volume, 1)) +
                     self.strength_score_weights["level_age"] * np.log(max(level_age, 1)) +
@@ -2453,18 +2463,29 @@ class SRBreakoutPredictor:
                     self.strength_score_weights["isolation_score"] * isolation_score
                 )
                 
+                # Apply flip confirmation bonus (significant boost for confirmed flips)
+                strength_score = base_strength * (1.0 + flip_confirmation_bonus)
+                
                 if level in support_levels:
                     support_strengths.append(strength_score)
                 else:
                     resistance_strengths.append(strength_score)
             
-            # Create time series of strength scores
-            # For simplicity, use the average strength of nearby levels
+            # Create time series using vectorized operations
             close = price_data["close"]
-            support_strength_series = pd.Series(np.mean(support_strengths) if support_strengths else 0.5, index=close.index)
-            resistance_strength_series = pd.Series(np.mean(resistance_strengths) if resistance_strengths else 0.5, index=close.index)
             
-            # Combined strength score
+            # Vectorized strength score calculation
+            if support_strengths:
+                support_strength_series = pd.Series(np.mean(support_strengths), index=close.index)
+            else:
+                support_strength_series = pd.Series(0.5, index=close.index)
+                
+            if resistance_strengths:
+                resistance_strength_series = pd.Series(np.mean(resistance_strengths), index=close.index)
+            else:
+                resistance_strength_series = pd.Series(0.5, index=close.index)
+            
+            # Vectorized combined strength score
             strength_score = (support_strength_series + resistance_strength_series) / 2
             
             features["strength_score"] = strength_score
@@ -2477,57 +2498,10 @@ class SRBreakoutPredictor:
             self.logger.error(f"❌ Error calculating strength score features: {e}")
             return {"strength_score": pd.Series(0.5, index=price_data.index)}
 
-    def _calculate_clarity_factor_features(
-        self, price_data: pd.DataFrame, sr_levels: dict[str, Any]
-    ) -> dict[str, pd.Series]:
-        """Calculate clarity factor."""
-        try:
-            features = {}
-            
-            # Get level metadata
-            support_levels = sr_levels.get("support_levels", [])
-            resistance_levels = sr_levels.get("resistance_levels", [])
-            
-            # Calculate clarity factors for each level
-            support_clarity = []
-            resistance_clarity = []
-            
-            for level in support_levels + resistance_levels:
-                # Extract level properties
-                significance_score = level.get("strength", 0.5)
-                isolation_score = level.get("isolation_score", 0.5)
-                sharpness_score = level.get("sharpness_score", 0.5)
-                
-                # Calculate clarity factor
-                clarity_factor = (
-                    self.clarity_factor_weights["significance_score"] * significance_score +
-                    self.clarity_factor_weights["isolation_score"] * isolation_score +
-                    self.clarity_factor_weights["sharpness_score"] * sharpness_score
-                )
-                
-                if level in support_levels:
-                    support_clarity.append(clarity_factor)
-                else:
-                    resistance_clarity.append(clarity_factor)
-            
-            # Create time series
-            close = price_data["close"]
-            support_clarity_series = pd.Series(np.mean(support_clarity) if support_clarity else 0.5, index=close.index)
-            resistance_clarity_series = pd.Series(np.mean(resistance_clarity) if resistance_clarity else 0.5, index=close.index)
-            
-            features["support_clarity_factor"] = support_clarity_series
-            features["resistance_clarity_factor"] = resistance_clarity_series
-            
-            return features
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error calculating clarity factor features: {e}")
-            return {}
-
     def _calculate_directional_pressure_features(
         self, close: pd.Series, sr_levels: dict[str, Any]
     ) -> dict[str, pd.Series]:
-        """Calculate directional pressure."""
+        """Calculate directional pressure using vectorized operations."""
         try:
             features = {}
             
@@ -2538,14 +2512,14 @@ class SRBreakoutPredictor:
                 ndrs = normalized_features["normalized_distance_to_resistance"]
                 ndss = normalized_features["normalized_distance_to_support"]
                 
-                # Calculate directional pressure
+                # Vectorized directional pressure calculation
                 # Positive = bullish pressure, Negative = bearish pressure
                 denominator = ndrs + ndss
                 denominator = denominator.replace(0, 1e-8)  # Avoid division by zero
                 
                 directional_pressure = (ndrs - ndss) / denominator
                 
-                # Clip to reasonable range
+                # Vectorized clipping
                 directional_pressure = directional_pressure.clip(-1, 1)
                 
                 features["directional_pressure"] = directional_pressure.fillna(0)
@@ -2559,7 +2533,7 @@ class SRBreakoutPredictor:
     def _calculate_sr_score_features(
         self, close: pd.Series, sr_levels: dict[str, Any]
     ) -> dict[str, pd.Series]:
-        """Calculate SR score."""
+        """Calculate SR score using vectorized operations."""
         try:
             features = {}
             
@@ -2571,10 +2545,10 @@ class SRBreakoutPredictor:
                 directional_pressure = directional_features["directional_pressure"]
                 strength_score = strength_features["strength_score"]
                 
-                # Calculate SR score
+                # Vectorized SR score calculation
                 sr_score = directional_pressure * strength_score
                 
-                # Clip to [-1, 1] range
+                # Vectorized clipping
                 sr_score = sr_score.clip(-1, 1)
                 
                 features["sr_score"] = sr_score.fillna(0)
@@ -2588,17 +2562,17 @@ class SRBreakoutPredictor:
     def _calculate_delta_sr_score_features(
         self, sr_score_features: dict[str, pd.Series]
     ) -> dict[str, pd.Series]:
-        """Calculate delta SR score (change from previous period)."""
+        """Calculate delta SR score using vectorized operations."""
         try:
             features = {}
             
             if "sr_score" in sr_score_features:
                 sr_score = sr_score_features["sr_score"]
                 
-                # Calculate delta (change from previous period)
+                # Vectorized delta calculation
                 delta_sr_score = sr_score.diff()
                 
-                # Fill first value with 0
+                # Vectorized fillna
                 delta_sr_score = delta_sr_score.fillna(0)
                 
                 features["delta_sr_score"] = delta_sr_score
@@ -2658,6 +2632,163 @@ class SRBreakoutPredictor:
         except Exception as e:
             self.logger.error(f"❌ Error calculating isolation score features: {e}")
             return {"isolation_score": pd.Series(0.5, index=pd.DatetimeIndex([]))}
+
+    def _detect_sr_flip_confirmation(
+        self, price_data: pd.DataFrame, sr_levels: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Detect S/R flip confirmation: when a level was once resistance and is now confirmed as support (or vice versa).
+        This is a highly significant signal that significantly increases the level's strength.
+        
+        Args:
+            price_data: OHLCV price data
+            sr_levels: S/R levels dictionary
+            
+        Returns:
+            Updated sr_levels with flip confirmation bonuses
+        """
+        try:
+            if not sr_levels:
+                return sr_levels
+            
+            close = price_data["close"].astype(float)
+            high = price_data["high"].astype(float)
+            low = price_data["low"].astype(float)
+            
+            # Define flip confirmation parameters
+            flip_confirmation_window = 50  # Look back 50 periods for flip confirmation
+            flip_threshold = 0.02  # 2% threshold for considering a level "broken"
+            retest_threshold = 0.01  # 1% threshold for considering a level "retested"
+            
+            updated_levels = {
+                "support_levels": [],
+                "resistance_levels": []
+            }
+            
+            # Process each level type
+            for level_type in ["support_levels", "resistance_levels"]:
+                levels = sr_levels.get(level_type, [])
+                
+                for level in levels:
+                    level_price = level.get("price", 0)
+                    if level_price <= 0:
+                        continue
+                    
+                    # Initialize flip confirmation bonus
+                    flip_confirmation_bonus = 0.0
+                    
+                    # Check for flip confirmation in recent history
+                    if len(close) >= flip_confirmation_window:
+                        recent_data = price_data.tail(flip_confirmation_window)
+                        recent_close = recent_data["close"].astype(float)
+                        recent_high = recent_data["high"].astype(float)
+                        recent_low = recent_data["low"].astype(float)
+                        
+                        # Check if this level was previously broken and then retested
+                        if level_type == "support_levels":
+                            # For support levels, check if price broke below and then retested from above
+                            # Look for: price < level_price (break) then price > level_price (retest)
+                            break_occurred = (recent_low < level_price * (1 - flip_threshold)).any()
+                            retest_occurred = (recent_close > level_price * (1 + retest_threshold)).any()
+                            
+                            if break_occurred and retest_occurred:
+                                # Calculate the strength of the flip confirmation
+                                break_strength = (level_price - recent_low.min()) / level_price
+                                retest_strength = (recent_close.max() - level_price) / level_price
+                                
+                                # Flip confirmation bonus based on break and retest strength
+                                flip_confirmation_bonus = min(0.5, (break_strength + retest_strength) * 0.5)
+                                
+                        elif level_type == "resistance_levels":
+                            # For resistance levels, check if price broke above and then retested from below
+                            # Look for: price > level_price (break) then price < level_price (retest)
+                            break_occurred = (recent_high > level_price * (1 + flip_threshold)).any()
+                            retest_occurred = (recent_close < level_price * (1 - retest_threshold)).any()
+                            
+                            if break_occurred and retest_occurred:
+                                # Calculate the strength of the flip confirmation
+                                break_strength = (recent_high.max() - level_price) / level_price
+                                retest_strength = (level_price - recent_low.min()) / level_price
+                                
+                                # Flip confirmation bonus based on break and retest strength
+                                flip_confirmation_bonus = min(0.5, (break_strength + retest_strength) * 0.5)
+                    
+                    # Update level with flip confirmation bonus
+                    updated_level = level.copy()
+                    updated_level["flip_confirmation_bonus"] = flip_confirmation_bonus
+                    
+                    # Add flip confirmation metadata
+                    if flip_confirmation_bonus > 0:
+                        updated_level["flip_confirmed"] = True
+                        updated_level["flip_strength"] = flip_confirmation_bonus
+                        self.logger.info(f"✅ S/R flip confirmed for level {level_price:.4f} ({level_type}): bonus={flip_confirmation_bonus:.3f}")
+                    else:
+                        updated_level["flip_confirmed"] = False
+                        updated_level["flip_strength"] = 0.0
+                    
+                    updated_levels[level_type].append(updated_level)
+            
+            return updated_levels
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error detecting S/R flip confirmation: {e}")
+            return sr_levels
+
+    def _calculate_clarity_factor_features(
+        self, price_data: pd.DataFrame, sr_levels: dict[str, Any]
+    ) -> dict[str, pd.Series]:
+        """Calculate clarity factor using vectorized operations."""
+        try:
+            features = {}
+            
+            # Get level metadata
+            support_levels = sr_levels.get("support_levels", [])
+            resistance_levels = sr_levels.get("resistance_levels", [])
+            
+            # Calculate clarity factors for each level
+            support_clarity = []
+            resistance_clarity = []
+            
+            for level in support_levels + resistance_levels:
+                # Extract level properties
+                significance_score = level.get("strength", 0.5)
+                isolation_score = level.get("isolation_score", 0.5)
+                sharpness_score = level.get("sharpness_score", 0.5)
+                
+                # Calculate clarity factor
+                clarity_factor = (
+                    self.clarity_factor_weights["significance_score"] * significance_score +
+                    self.clarity_factor_weights["isolation_score"] * isolation_score +
+                    self.clarity_factor_weights["sharpness_score"] * sharpness_score
+                )
+                
+                if level in support_levels:
+                    support_clarity.append(clarity_factor)
+                else:
+                    resistance_clarity.append(clarity_factor)
+            
+            # Create time series using vectorized operations
+            close = price_data["close"]
+            
+            # Vectorized clarity factor calculation
+            if support_clarity:
+                support_clarity_series = pd.Series(np.mean(support_clarity), index=close.index)
+            else:
+                support_clarity_series = pd.Series(0.5, index=close.index)
+                
+            if resistance_clarity:
+                resistance_clarity_series = pd.Series(np.mean(resistance_clarity), index=close.index)
+            else:
+                resistance_clarity_series = pd.Series(0.5, index=close.index)
+            
+            features["support_clarity_factor"] = support_clarity_series
+            features["resistance_clarity_factor"] = resistance_clarity_series
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating clarity factor features: {e}")
+            return {}
 
 
 @handle_errors(

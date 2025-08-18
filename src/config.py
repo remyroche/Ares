@@ -111,6 +111,59 @@ class ModelTrainingConfig:
     batch_size: int = 64
     epochs: int = 100
     learning_rate: float = 0.001
+    
+    # Enhanced optimization settings
+    enhanced_lm_optimizer: dict[str, Any] = None
+    
+    def __post_init__(self):
+        if self.enhanced_lm_optimizer is None:
+            self.enhanced_lm_optimizer = {
+                "feature_selection": {
+                    "enable": True,
+                    "methods": ["mutual_info", "lasso", "random_forest", "shap"],
+                    "target_features": {
+                        "step6": 80,
+                        "step6_5": 100,
+                        "step9": 90
+                    },
+                    "vif_threshold": 10.0,
+                    "correlation_threshold": 0.95,
+                    "variance_threshold": 0.01,
+                    "mutual_info_threshold": 0.001,
+                    "shap_threshold": 0.001
+                },
+                "regularization": {
+                    "enable": True,
+                    "l1_alpha_range": [0.001, 0.1],
+                    "l2_alpha_range": [0.0001, 0.01],
+                    "dropout_range": [0.1, 0.5],
+                    "model_specific": {
+                        "lightgbm": {
+                            "reg_alpha_range": [0.001, 0.1],
+                            "reg_lambda_range": [0.0001, 0.01]
+                        },
+                        "neural_networks": {
+                            "weight_decay_range": [1e-6, 1e-3],
+                            "dropout_range": [0.1, 0.5]
+                        }
+                    }
+                },
+                "optuna": {
+                    "enable": True,
+                    "n_trials_per_batch": 50,
+                    "n_batches": 3,
+                    "timeout_per_batch": 300,  # 5 minutes per batch
+                    "sampler": "tpe",
+                    "pruner": "median",
+                    "storage": None  # Can be set to database URL
+                },
+                "vectorization": {
+                    "enable": True,
+                    "batch_size": 1024,
+                    "use_gpu": True,
+                    "memory_efficient": True
+                }
+            }
 
 
 @dataclass

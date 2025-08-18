@@ -58,7 +58,7 @@ class EfficientFeaturesDatabase:
 
         self.is_initialized = False
 
-    @handle_errors(exceptions=(Exception,), default_return=False)
+    @handle_errors(exceptions=(OSError, PermissionError, ValueError), default_return=False)
     async def initialize(self) -> bool:
         """Initialize the efficient features database."""
         try:
@@ -120,7 +120,7 @@ class EfficientFeaturesDatabase:
 
         return os.path.join(self.base_storage_dir, f"{database_name}{extension}")
 
-    @handle_errors(exceptions=(Exception,), default_return=[])
+    @handle_errors(exceptions=(OSError, PermissionError, ValueError), default_return=[])
     async def _scan_existing_databases(self) -> list[str]:
         """Scan for existing databases and populate cache."""
         try:
@@ -181,7 +181,7 @@ class EfficientFeaturesDatabase:
             self.print(error("Error scanning existing databases: {e}"))
             return []
 
-    @handle_errors(exceptions=(Exception,), default_return={})
+    @handle_errors(exceptions=(OSError, ValueError, KeyError, pd.errors.EmptyDataError), default_return={})
     async def _get_database_info(self, db_path: str) -> dict[str, Any]:
         """Get information about a database file."""
         try:
@@ -228,7 +228,7 @@ class EfficientFeaturesDatabase:
                 categories[category] = categories.get(category, 0) + 1
         return categories
 
-    @handle_errors(exceptions=(Exception,), default_return=(None, []))
+    @handle_errors(exceptions=(ValueError, KeyError, OSError), default_return=(None, []))
     async def find_existing_database(
         self,
         symbol: str,
@@ -303,7 +303,7 @@ class EfficientFeaturesDatabase:
             self.print(error("Error finding existing database: {e}"))
             return None, [(start_time, end_time)] if start_time and end_time else []
 
-    @handle_errors(exceptions=(Exception,), default_return=pd.DataFrame())
+    @handle_errors(exceptions=(OSError, ValueError, KeyError, pd.errors.EmptyDataError), default_return=pd.DataFrame())
     async def load_database(self, database_name: str) -> pd.DataFrame:
         """Load a precomputed features database."""
         try:
@@ -342,7 +342,7 @@ class EfficientFeaturesDatabase:
             self.print(error("Error loading database {database_name}: {e}"))
             return pd.DataFrame()
 
-    @handle_errors(exceptions=(Exception,), default_return=False)
+    @handle_errors(exceptions=(OSError, ValueError, PermissionError), default_return=False)
     async def save_database(
         self,
         data: pd.DataFrame,
@@ -436,7 +436,7 @@ class EfficientFeaturesDatabase:
             self.logger.error(f"❌ Error saving database: {e}")
             return False
 
-    @handle_errors(exceptions=(Exception,), default_return=False)
+    @handle_errors(exceptions=(ValueError, KeyError, OSError, pd.errors.EmptyDataError), default_return=False)
     async def update_database(
         self,
         new_data: pd.DataFrame,
@@ -516,7 +516,7 @@ class EfficientFeaturesDatabase:
             self.print(error("❌ Error updating database: {e}"))
             return False
 
-    @handle_errors(exceptions=(Exception,), default_return=False)
+    @handle_errors(exceptions=(OSError, ValueError, PermissionError), default_return=False)
     async def _save_database_with_timestamp_update(
         self,
         data: pd.DataFrame,
@@ -655,7 +655,7 @@ class EfficientFeaturesDatabase:
             "compression_enabled": self.compression,
         }
 
-    @handle_errors(exceptions=(Exception,), default_return=None)
+    @handle_errors(exceptions=(OSError, PermissionError, ValueError), default_return=None)
     async def cleanup_old_databases(self, keep_latest_n: int = 5) -> None:
         """Clean up old databases, keeping only the latest N for each symbol/exchange pair."""
         try:

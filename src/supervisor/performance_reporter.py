@@ -29,7 +29,7 @@ class AdvancedReportingEngine:
         self.real_time_metrics: dict[str, Any] = {}
         self.performance_trends: dict[str, list[float]] = {}
 
-    @handle_errors(exceptions=(Exception,), default_return=None)
+    @handle_errors(exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError), default_return=None)
     async def generate_real_time_report(
         self,
         performance_data: dict[str, Any],
@@ -62,7 +62,7 @@ class AdvancedReportingEngine:
             self.print(error("Error generating real-time report: {e}"))
             return {}
 
-    @handle_errors(exceptions=(Exception,), default_return=None)
+    @handle_errors(exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError), default_return=None)
     async def _calculate_real_time_metrics(
         self,
         performance_data: dict[str, Any],
@@ -94,7 +94,7 @@ class AdvancedReportingEngine:
             self.print(error("Error calculating real-time metrics: {e}"))
             return {}
 
-    @handle_errors(exceptions=(Exception,), default_return=None)
+    @handle_errors(exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError), default_return=None)
     async def _analyze_performance_trends(
         self,
         performance_data: dict[str, Any],
@@ -128,7 +128,7 @@ class AdvancedReportingEngine:
             self.print(error("Error analyzing performance trends: {e}"))
             return {}
 
-    @handle_errors(exceptions=(Exception,), default_return=None)
+    @handle_errors(exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError), default_return=None)
     async def _perform_risk_analysis(
         self,
         performance_data: dict[str, Any],
@@ -152,7 +152,7 @@ class AdvancedReportingEngine:
             self.print(error("Error performing risk analysis: {e}"))
             return {}
 
-    @handle_errors(exceptions=(Exception,), default_return=None)
+    @handle_errors(exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError), default_return=None)
     async def _perform_attribution_analysis(
         self,
         performance_data: dict[str, Any],
@@ -178,7 +178,7 @@ class AdvancedReportingEngine:
             self.print(error("Error performing attribution analysis: {e}"))
             return {}
 
-    @handle_errors(exceptions=(Exception,), default_return=None)
+    @handle_errors(exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError), default_return=None)
     async def _generate_performance_forecast(
         self,
         performance_data: dict[str, Any],

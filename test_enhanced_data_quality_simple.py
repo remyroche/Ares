@@ -547,8 +547,8 @@ class TestDataQualityFixes:
                 data = data.drop(data.index[200:250])
                 
                 # Add some extreme values
-                data.loc[300, 'close'] = 1000.0  # Extreme price spike
-                data.loc[301, 'volume'] = 1000000  # Extreme volume spike
+                data.iloc[300, data.columns.get_loc('close')] = 1000.0  # Extreme price spike
+                data.iloc[301, data.columns.get_loc('volume')] = 1000000  # Extreme volume spike
             
             return data
         else:

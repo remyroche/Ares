@@ -273,7 +273,6 @@ class RawDataQualityChecker:
                 "auto_fix_irregular_intervals": True,  # Automatically fix irregular intervals
                 "download_missing_data": True,  # Download missing data for large gaps
                 "preserve_original_data": True,  # Preserve original data accuracy
-                "min_interval_seconds": 60,  # Minimum expected interval in seconds
             },
         }
 

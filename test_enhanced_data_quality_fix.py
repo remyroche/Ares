@@ -2,6 +2,9 @@
 """
 Test script for enhanced data quality checker
 Demonstrates how to fix irregular interval issues that cause data quality warnings.
+
+Note: Run this script from the project root directory:
+    python test_enhanced_data_quality_fix.py
 """
 
 import pandas as pd
@@ -10,10 +13,8 @@ from datetime import datetime, timedelta
 import sys
 import os
 
-# Add the src directory to the path
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
-
-from training.steps.raw_data_quality_checker import (
+# Import the modules directly (run from project root)
+from src.training.steps.raw_data_quality_checker import (
     RawDataQualityChecker,
     validate_raw_data_quality,
     fix_irregular_intervals_automatically,
@@ -311,18 +312,23 @@ def main():
         print("   - The @auto_fix_data_quality_issues decorator can be used to automatically fix issues in existing functions")
         print("   - This should eliminate the warnings you're seeing about irregular intervals")
         print("\n🔧 Usage in your code:")
-        print("   from training.steps.raw_data_quality_checker import auto_fix_data_quality_issues")
-        print("   @auto_fix_data_quality_issues")
-        print("   def analyze_patterns(data, symbol, exchange):")
-        print("       # Your existing code here")
-        print("       pass")
+print("   from src.training.steps.raw_data_quality_checker import auto_fix_data_quality_issues")
+print("   @auto_fix_data_quality_issues")
+print("   def analyze_patterns(data, symbol, exchange):")
+print("       # Your existing code here")
+print("       pass")
+print("\n📝 Note: Run this test from the project root directory:")
+print("   python test_enhanced_data_quality_fix.py")
         
-    except (FileNotFoundError, ValueError) as e:
+    except (FileNotFoundError, ValueError, ImportError) as e:
         print(f"\n❌ A data-related error occurred: {e}")
+        print("   This might be due to missing data files or import issues.")
+        print("   Make sure you're running from the project root directory.")
         import traceback
         traceback.print_exc()
     except Exception as e:
         print(f"\n❌ An unexpected error occurred: {e}")
+        print("   Please check the error details below and ensure all dependencies are installed.")
         import traceback
         traceback.print_exc()
 

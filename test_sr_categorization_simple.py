@@ -9,6 +9,7 @@ def categorize_features_simple(feature_names):
         "momentum": [],
         "volatility": [],
         "liquidity": [],
+        "volume": [],
         "microstructure": [],
         "regime": [],
         "sr_features": [],
@@ -41,10 +42,17 @@ def categorize_features_simple(feature_names):
             categories["volatility"].append(feature)
             categorized = True
         
-        # Liquidity/volume features
+        # Volume features
         elif any(keyword in feature_lower for keyword in [
-            "liquidity", "volume", "tick_volume", "obv", "cmf", "mfi", "vwap",
+            "volume", "tick_volume", "obv", "cmf", "mfi", "vwap",
             "pvi", "nvi", "efi", "delta_volume"
+        ]):
+            categories["volume"].append(feature)
+            categorized = True
+        
+        # Liquidity features (spread, bid-ask, etc.)
+        elif any(keyword in feature_lower for keyword in [
+            "liquidity", "spread", "bid_ask", "bidask", "quote_imbalance"
         ]):
             categories["liquidity"].append(feature)
             categorized = True
@@ -174,13 +182,14 @@ def test_sr_feature_categorization():
     print("-" * 30)
     
     category_weights = {
-        "momentum": 0.20,
-        "volatility": 0.15,
-        "liquidity": 0.15,
+        "momentum": 0.25,
+        "volatility": 0.10,
+        "liquidity": 0.10,
+        "volume": 0.15,
         "microstructure": 0.10,
         "regime": 0.10,
-        "sr_features": 0.15,
-        "interaction": 0.15
+        "sr_features": 0.10,
+        "interaction": 0.10
     }
     
     target_features = 100

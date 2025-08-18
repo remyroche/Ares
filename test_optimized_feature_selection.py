@@ -35,22 +35,32 @@ def create_test_data(n_samples=1000, n_features=200):
         data[f'rsi_{i}'] = np.random.uniform(0, 100, n_samples)
         data[f'macd_{i}'] = np.random.randn(n_samples)
     
-    # Volatility features (20% of features)
-    n_volatility = int(n_features * 0.20)
+    # Volatility features (10% of features)
+    n_volatility = int(n_features * 0.10)
     for i in range(n_volatility):
         data[f'volatility_{i}'] = np.abs(np.random.randn(n_samples))
         data[f'atr_{i}'] = np.random.uniform(0.1, 2.0, n_samples)
         data[f'realized_vol_{i}'] = np.random.uniform(0.05, 0.5, n_samples)
     
-    # Liquidity features (20% of features)
-    n_liquidity = int(n_features * 0.20)
-    for i in range(n_liquidity):
+    # Volume features (15% of features)
+    n_volume = int(n_features * 0.15)
+    for i in range(n_volume):
         data[f'volume_{i}'] = np.random.uniform(100, 10000, n_samples)
+        data[f'tick_volume_{i}'] = np.random.uniform(100, 1000, n_samples)
+        data[f'obv_{i}'] = np.random.uniform(-1000, 1000, n_samples)
+        data[f'cmf_{i}'] = np.random.uniform(-1, 1, n_samples)
+        data[f'mfi_{i}'] = np.random.uniform(0, 100, n_samples)
+        data[f'vwap_{i}'] = np.random.uniform(50, 150, n_samples)
+    
+    # Liquidity features (10% of features)
+    n_liquidity = int(n_features * 0.10)
+    for i in range(n_liquidity):
         data[f'spread_{i}'] = np.random.uniform(0.001, 0.01, n_samples)
         data[f'liquidity_{i}'] = np.random.uniform(0.1, 1.0, n_samples)
+        data[f'bid_ask_{i}'] = np.random.uniform(0.001, 0.005, n_samples)
     
-    # Microstructure features (15% of features)
-    n_microstructure = int(n_features * 0.15)
+    # Microstructure features (10% of features)
+    n_microstructure = int(n_features * 0.10)
     for i in range(n_microstructure):
         data[f'order_flow_{i}'] = np.random.randn(n_samples)
         data[f'imbalance_{i}'] = np.random.uniform(-1, 1, n_samples)
@@ -63,8 +73,8 @@ def create_test_data(n_samples=1000, n_features=200):
         data[f'cluster_{i}'] = np.random.randint(0, 3, n_samples)
         data[f'hmm_state_{i}'] = np.random.randint(0, 4, n_samples)
     
-    # Support/Resistance features (15% of features)
-    n_sr = int(n_features * 0.15)
+    # Support/Resistance features (10% of features)
+    n_sr = int(n_features * 0.10)
     for i in range(n_sr):
         data[f'sr_distance_{i}'] = np.random.uniform(0, 0.1, n_samples)
         data[f'sr_proximity_{i}'] = np.random.uniform(0, 1, n_samples)
@@ -84,9 +94,9 @@ def create_test_data(n_samples=1000, n_features=200):
     # Interaction features (10% of features)
     n_interaction = int(n_features * 0.10)
     for i in range(n_interaction):
-        data[f'momentum_x_volume_{i}'] = data[f'momentum_{i % n_momentum}'] * data[f'volume_{i % n_liquidity}']
+        data[f'momentum_x_volume_{i}'] = data[f'momentum_{i % n_momentum}'] * data[f'volume_{i % n_volume}']
         data[f'volatility_div_liquidity_{i}'] = data[f'volatility_{i % n_volatility}'] / (data[f'liquidity_{i % n_liquidity}'] + 1e-8)
-        data[f'rsi_ratio_volume_{i}'] = data[f'rsi_{i % n_momentum}'] / (data[f'volume_{i % n_liquidity}'] + 1e-8)
+        data[f'rsi_ratio_volume_{i}'] = data[f'rsi_{i % n_momentum}'] / (data[f'volume_{i % n_volume}'] + 1e-8)
     
     # Create DataFrame
     df = pd.DataFrame(data)

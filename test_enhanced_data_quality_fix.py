@@ -317,8 +317,12 @@ def main():
         print("       # Your existing code here")
         print("       pass")
         
+    except (FileNotFoundError, ValueError) as e:
+        print(f"\n❌ A data-related error occurred: {e}")
+        import traceback
+        traceback.print_exc()
     except Exception as e:
-        print(f"\n❌ Test failed with error: {e}")
+        print(f"\n❌ An unexpected error occurred: {e}")
         import traceback
         traceback.print_exc()
 

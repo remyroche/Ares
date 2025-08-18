@@ -125,7 +125,6 @@ config = {
         "auto_fix_irregular_intervals": True,
         "download_missing_data": True,
         "preserve_original_data": True,
-        "min_interval_seconds": 60,
     }
 }
 

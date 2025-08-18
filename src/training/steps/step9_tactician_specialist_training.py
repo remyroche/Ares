@@ -31,6 +31,14 @@ class TacticianSpecialistTrainingStep:
 
         # Initialize SRBreakoutPredictor for S/R level integration
         self.sr_predictor = SRBreakoutPredictor(config)
+        
+        # Initialize optimized feature selection manager
+        self.optimized_feature_selection = None
+        try:
+            from src.training.optimized_feature_selection_manager import OptimizedFeatureSelectionManager
+            self.optimized_feature_selection = OptimizedFeatureSelectionManager(config)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to initialize optimized feature selection: {e}")
 
     @handle_errors(
         exceptions=(Exception,),
@@ -932,11 +940,36 @@ class TacticianSpecialistTrainingStep:
 
             self.logger.info("✅ Using chronological time-series split (leak-proof)")
 
-            # Apply model-specific pruning for each model type
-            from src.training.model_specific_pruning import ModelSpecificPruning
-            pruning_manager = ModelSpecificPruning(self.config)
+            # Apply optimized feature selection for tactician models
+            if self.optimized_feature_selection is not None:
+                try:
+                    self.logger.info("🚀 Applying optimized feature selection for tactician models...")
+                    X_train_optimized, selection_metadata = self.optimized_feature_selection.select_features_optimized(
+                        X_train, y_train, model_type="ensemble_models", step_name="step9_tactician"
+                    )
+                    
+                    # Apply the same feature selection to test set
+                    X_test_optimized = X_test[X_train_optimized.columns]
+                    
+                    self.logger.info(f"✅ Optimized feature selection: {X_train.shape[1]} -> {X_train_optimized.shape[1]} features")
+                    
+                    # Log performance metrics
+                    if "performance_metrics" in selection_metadata:
+                        perf_metrics = selection_metadata["performance_metrics"]
+                        self.logger.info(f"📊 Tactician feature selection performance:")
+                        self.logger.info(f"   - VIF calculation: {perf_metrics.get('vif_calculation_time', 0):.2f}s")
+                        self.logger.info(f"   - SHAP analysis: {perf_metrics.get('shap_calculation_time', 0):.2f}s")
+                        self.logger.info(f"   - Total time: {selection_metadata.get('total_time', 0):.2f}s")
+                    
+                    # Update feature matrices
+                    X_train = X_train_optimized
+                    X_test = X_test_optimized
+                    feature_columns = list(X_train.columns)
+                    
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Optimized feature selection failed: {e}")
             
-            # Train different model types with pruning
+            # Train different model types
             models = {}
 
             # 1. LightGBM (ensemble model)

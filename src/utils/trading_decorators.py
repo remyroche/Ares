@@ -528,7 +528,11 @@ def monitor_performance(
     Args:
         alert_threshold_ms: Threshold in milliseconds to trigger alerts
         log_slow_operations: Whether to log slow operations
-        capture_memory_usage: Whether to capture memory usage
+        capture_memory_usage: Whether to capture memory usage (requires psutil package)
+    
+    Note:
+        Memory usage monitoring requires the 'psutil' package to be installed.
+        If psutil is not available, memory monitoring will be silently disabled.
     """
     def decorator(func: F) -> F:
         @wraps(func)

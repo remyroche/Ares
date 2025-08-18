@@ -706,6 +706,11 @@ async def integrate_with_existing_backtester():
             )
             print(f"Trade {i+1}: {result}")
     
+    # Add assertions to verify behavior
+    tracker = get_trade_tracker()
+    assert len(tracker.trades) > 0, "Expected trades to be tracked"
+    assert len(tracker.performance_history) > 0, "Expected performance history to be recorded"
+    
     # Get trade tracking data
     tracker = get_trade_tracker()
     print(f"Total trades tracked: {len(tracker.trades)}")
@@ -726,13 +731,14 @@ async def integrate_with_existing_live_trader():
     
     live_trader = LiveTradingPipelineWithDecorators(config)
     
-    # Execute live trade with comprehensive tracking
-    result = await live_trader.execute_live_trade(
+    # Create trade context for live trade
+    live_trade_context = TradeContext(
         symbol='BTCUSDT',
-        side='buy',
+        side=TradeSide.BUY,
         quantity=0.001,
         price=150.0,
-        order_type='market',
+        timestamp=datetime.now(),
+        execution_mode=ExecutionMode.LIVE,
         model_weights={
             'xgboost': 0.4,
             'lstm': 0.3,
@@ -761,6 +767,18 @@ async def integrate_with_existing_live_trader():
             'max_drawdown': 0.05
         }
     )
+    
+    # Execute live trading with comprehensive tracking
+    # Note: The actual live trading pipeline uses execute_trading method
+    # This is a demonstration of how the decorators would work
+    market_data = {
+        'symbol': 'BTCUSDT',
+        'price': 150.0,
+        'volume': 1000.0,
+        'timestamp': datetime.now()
+    }
+    
+    result = await live_trader.execute_trading(market_data)
     
     print(f"Live trade result: {result}")
 

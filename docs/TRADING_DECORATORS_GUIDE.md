@@ -452,14 +452,27 @@ class ModelOperations:
 
 ### 1. Decorator Order
 
-Apply decorators in the following order for best results:
+Use the comprehensive decorators for most cases, as they include all necessary functionality:
 
 ```python
-@comprehensive_trade_decorator(...)  # Apply first
-@track_trade(...)                    # Then specific tracking
+# Recommended: Use comprehensive decorator (includes tracking, error handling, monitoring)
+@comprehensive_trade_decorator(
+    enable_error_handling=True,
+    enable_tracking=True,
+    enable_performance_monitoring=True,
+    enable_validation=True
+)
 async def your_function():
     pass
+
+# Only use individual decorators when you need specific functionality
+@track_trade(capture_model_data=True)
+@monitor_performance(alert_threshold_ms=1000.0)
+async def specific_function():
+    pass
 ```
+
+**Note**: Avoid stacking `@comprehensive_trade_decorator` with `@track_trade` as this will cause double logging.
 
 ### 2. Configuration Management
 
@@ -490,7 +503,41 @@ trading_decorators:
     alert_threshold_ms: 5000.0
 ```
 
-### 3. Trade Data Structure
+### 3. Using TradeContext for Cleaner Code
+
+For cleaner function signatures, use the `TradeContext` dataclass:
+
+```python
+from src.utils.trading_decorators import TradeContext, TradeSide, ExecutionMode
+
+# Create trade context
+trade_context = TradeContext(
+    symbol='BTCUSDT',
+    side=TradeSide.BUY,
+    quantity=0.001,
+    price=150.0,
+    timestamp=datetime.now(),
+    execution_mode=ExecutionMode.LIVE,
+    model_weights={'xgboost': 0.4, 'lstm': 0.3, 'random_forest': 0.3},
+    model_confidences={'xgboost': 0.85, 'lstm': 0.78, 'random_forest': 0.82},
+    regime_analysis={'regime_type': 'trending', 'regime_confidence': 0.75},
+    hmm_regime='bull_market',
+    support_resistance_levels={'support': 148.0, 'resistance': 155.0},
+    market_conditions={'trend': 'upward', 'volume': 'high'},
+    risk_metrics={'var_95': 0.02, 'max_drawdown': 0.05}
+)
+
+# Use in function calls
+await trader.execute_buy_order(
+    symbol='BTCUSDT',
+    quantity=0.001,
+    price=150.0,
+    timestamp=datetime.now(),
+    trade_context=trade_context
+)
+```
+
+### 4. Trade Data Structure
 
 Structure your trade metadata consistently:
 
@@ -529,7 +576,7 @@ trade_metadata = {
 }
 ```
 
-### 4. Error Handling Strategy
+### 5. Error Handling Strategy
 
 Implement a layered error handling strategy:
 
@@ -550,7 +597,7 @@ async def exchange_api_call():
     pass
 ```
 
-### 5. Monitoring and Alerting
+### 6. Monitoring and Alerting
 
 Set up proper monitoring and alerting:
 

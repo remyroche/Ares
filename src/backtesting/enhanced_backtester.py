@@ -404,12 +404,6 @@ class EnhancedBacktester:
             self.print(error("Error executing backtest trade: {e}"))
             return None
 
-    @track_trade(
-        capture_model_data=True,
-        capture_regime_data=True,
-        capture_market_conditions=True,
-        capture_risk_metrics=True
-    )
     async def _execute_buy_trade(
         self,
         symbol: str,
@@ -515,12 +509,6 @@ class EnhancedBacktester:
             self.print(error("Error executing buy trade: {e}"))
             return None
 
-    @track_trade(
-        capture_model_data=True,
-        capture_regime_data=True,
-        capture_market_conditions=True,
-        capture_risk_metrics=True
-    )
     async def _execute_sell_trade(
         self,
         symbol: str,

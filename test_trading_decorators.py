@@ -19,7 +19,7 @@ from src.backtesting.enhanced_backtester import EnhancedBacktester
 from src.paper_trader import PaperTrader
 from src.training.model_trainer import RayModelTrainer
 from src.training.ensemble_manager import EnsembleManager
-from src.utils.trading_decorators import get_trade_tracker
+from src.utils.trading_decorators import get_trade_tracker, TradeContext, TradeSide, ExecutionMode
 
 
 async def test_backtesting_decorators():
@@ -103,6 +103,12 @@ async def test_backtesting_decorators():
     print(f"Total trades tracked: {len(tracker.trades)}")
     print(f"Performance history: {len(tracker.performance_history)}")
     
+    # Add assertions to verify behavior
+    assert len(tracker.trades) > 0, "Expected trades to be tracked"
+    assert len(tracker.performance_history) > 0, "Expected performance history to be recorded"
+    final_value = results.get('performance_metrics', {}).get('final_value', 0)
+    assert final_value > 0, f"Expected final portfolio value to be positive, got {final_value}"
+    
     if tracker.trades:
         latest_trade = tracker.trades[-1]
         print(f"\nLatest trade details:")
@@ -139,12 +145,14 @@ async def test_paper_trading_decorators():
     # Execute trades with comprehensive tracking
     print("Executing paper trades with comprehensive tracking...")
     
-    # Buy trade
-    buy_result = await trader.execute_buy_order(
+    # Create trade context for buy trade
+    buy_context = TradeContext(
         symbol='BTCUSDT',
+        side=TradeSide.BUY,
         quantity=0.001,
         price=150.0,
         timestamp=datetime.now(),
+        execution_mode=ExecutionMode.PAPER,
         model_weights={
             'xgboost': 0.4,
             'lstm': 0.3,
@@ -174,7 +182,53 @@ async def test_paper_trading_decorators():
         }
     )
     
+    # Buy trade
+    buy_result = await trader.execute_buy_order(
+        symbol='BTCUSDT',
+        quantity=0.001,
+        price=150.0,
+        timestamp=datetime.now(),
+        trade_context=buy_context
+    )
+    
     print(f"Buy trade result: {buy_result}")
+    
+    # Create trade context for sell trade
+    sell_context = TradeContext(
+        symbol='BTCUSDT',
+        side=TradeSide.SELL,
+        quantity=0.001,
+        price=152.0,
+        timestamp=datetime.now(),
+        execution_mode=ExecutionMode.PAPER,
+        model_weights={
+            'xgboost': 0.4,
+            'lstm': 0.3,
+            'random_forest': 0.3
+        },
+        model_confidences={
+            'xgboost': 0.85,
+            'lstm': 0.78,
+            'random_forest': 0.82
+        },
+        regime_analysis={
+            'regime_type': 'trending',
+            'regime_confidence': 0.75
+        },
+        hmm_regime='bull_market',
+        support_resistance_levels={
+            'support': 148.0,
+            'resistance': 155.0
+        },
+        market_conditions={
+            'trend': 'upward',
+            'volume': 'high'
+        },
+        risk_metrics={
+            'var_95': 0.02,
+            'max_drawdown': 0.05
+        }
+    )
     
     # Sell trade
     sell_result = await trader.execute_sell_order(
@@ -182,33 +236,7 @@ async def test_paper_trading_decorators():
         quantity=0.001,
         price=152.0,
         timestamp=datetime.now(),
-        model_weights={
-            'xgboost': 0.4,
-            'lstm': 0.3,
-            'random_forest': 0.3
-        },
-        model_confidences={
-            'xgboost': 0.85,
-            'lstm': 0.78,
-            'random_forest': 0.82
-        },
-        regime_analysis={
-            'regime_type': 'trending',
-            'regime_confidence': 0.75
-        },
-        hmm_regime='bull_market',
-        support_resistance_levels={
-            'support': 148.0,
-            'resistance': 155.0
-        },
-        market_conditions={
-            'trend': 'upward',
-            'volume': 'high'
-        },
-        risk_metrics={
-            'var_95': 0.02,
-            'max_drawdown': 0.05
-        }
+        trade_context=sell_context
     )
     
     print(f"Sell trade result: {sell_result}")
@@ -216,6 +244,11 @@ async def test_paper_trading_decorators():
     # Get trade history
     trade_history = trader.get_trade_history()
     print(f"Trade history: {len(trade_history)} trades")
+    
+    # Add assertions to verify behavior
+    assert buy_result is True, "Expected buy trade to succeed"
+    assert sell_result is True, "Expected sell trade to succeed"
+    assert len(trade_history) >= 2, f"Expected at least 2 trades, got {len(trade_history)}"
     
     if trade_history:
         latest_trade = trade_history[-1]

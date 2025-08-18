@@ -68,13 +68,7 @@ def create_test_data(n_samples=1000, n_features=200):
     for i in range(n_sr):
         data[f'sr_distance_{i}'] = np.random.uniform(0, 0.1, n_samples)
         data[f'sr_proximity_{i}'] = np.random.uniform(0, 1, n_samples)
-        data[f'breakout_probability_{i}'] = np.random.uniform(0, 1, n_samples)
-        data[f'rebounce_probability_{i}'] = np.random.uniform(0, 1, n_samples)
-        data[f'consolidation_probability_{i}'] = np.random.uniform(0, 1, n_samples)
-        data[f'sr_confidence_{i}'] = np.random.uniform(0, 1, n_samples)
         data[f'multi_timeframe_sr_score_{i}'] = np.random.uniform(0, 1, n_samples)
-        data[f'distance_to_resistance_{i}'] = np.random.uniform(0, 0.05, n_samples)
-        data[f'distance_to_support_{i}'] = np.random.uniform(0, 0.05, n_samples)
         data[f'normalized_distance_{i}'] = np.random.uniform(-1, 1, n_samples)
         data[f'sr_proximity_score_{i}'] = np.random.uniform(0, 1, n_samples)
         data[f'strength_score_{i}'] = np.random.uniform(0, 1, n_samples)
@@ -83,6 +77,9 @@ def create_test_data(n_samples=1000, n_features=200):
         data[f'sr_score_{i}'] = np.random.uniform(0, 1, n_samples)
         data[f'delta_sr_score_{i}'] = np.random.uniform(-0.1, 0.1, n_samples)
         data[f'isolation_score_{i}'] = np.random.uniform(0, 1, n_samples)
+        # Distance features (not categorized as SR)
+        data[f'distance_to_resistance_{i}'] = np.random.uniform(0, 0.05, n_samples)
+        data[f'distance_to_support_{i}'] = np.random.uniform(0, 0.05, n_samples)
     
     # Interaction features (10% of features)
     n_interaction = int(n_features * 0.10)
@@ -310,7 +307,7 @@ def test_feature_selection_integration():
             "momentum_strength", "volatility_garman_klass", "liquidity_score",
             "order_flow_imbalance", "sr_proximity", "hmm_state_0", "hmm_state_1",
             "momentum_x_volume", "volatility_div_liquidity", "rsi_ratio_volume",
-            "sr_distance", "breakout_probability", "sr_confidence", "multi_timeframe_sr_score",
+            "sr_distance", "multi_timeframe_sr_score",
             "distance_to_resistance", "distance_to_support", "sr_proximity_score",
             "strength_score", "clarity_factor", "directional_pressure", "sr_score"
         ]

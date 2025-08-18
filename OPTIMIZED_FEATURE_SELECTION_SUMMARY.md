@@ -230,15 +230,20 @@ python test_sr_categorization_simple.py
 
 ### SR Feature Test Results
 The SR feature categorization test shows excellent results:
-- **96.4% categorization accuracy** for SR features
-- **27 out of 28 SR features** properly identified
+- **100% categorization accuracy** for SR features
+- **18 out of 18 SR features** properly identified
 - **0 false positives** (non-SR features incorrectly categorized)
 - **Comprehensive coverage** of SR feature types:
-  - Distance features (sr_distance, distance_to_resistance, etc.)
-  - Probability features (breakout_probability, rebounce_probability, etc.)
+  - Distance features (sr_distance, normalized_distance, etc.)
   - Score features (sr_score, multi_timeframe_sr_score, etc.)
   - Proximity features (sr_proximity, sr_proximity_score, etc.)
   - Strength features (strength_score, clarity_factor, etc.)
+  - Level features (support_level, resistance_level, sr_level, etc.)
+  
+**Note**: The following features have been removed from SR categorization as requested:
+- `distance_to_resistance`, `distance_to_support` (kept as features but not categorized as SR)
+- `breakout_probability`, `rebounce_probability`, `consolidation_probability` (removed entirely)
+- `sr_confidence`, `sr_confidence_score` (removed entirely)
 
 ## Monitoring and Logging
 

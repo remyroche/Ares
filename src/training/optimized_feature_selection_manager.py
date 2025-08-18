@@ -649,14 +649,13 @@ class OptimizedFeatureSelectionManager:
             
             # Support/Resistance features
             elif any(keyword in feature_lower for keyword in [
-                "sr_", "sr_distance", "support", "resistance", "proximity",
-                "breakout_probability", "rebounce_probability", "consolidation_probability",
-                "sr_confidence", "multi_timeframe_sr_score", "sr_proximity", "sr_outcome",
-                "distance_to_resistance", "distance_to_support", "normalized_distance",
+                "sr_distance", "support_level", "resistance_level", "proximity",
+                "multi_timeframe_sr_score", "sr_proximity", "sr_outcome",
+                "normalized_distance",
                 "sr_proximity_score", "strength_score", "clarity_factor", "directional_pressure",
                 "sr_score", "delta_sr_score", "isolation_score", "sr_level", "sr_breakout",
                 "sr_rebounce", "sr_consolidation", "sr_breakout_prob", "sr_rebounce_prob",
-                "sr_consolidation_prob", "sr_confidence_score", "sr_multi_timeframe"
+                "sr_consolidation_prob", "sr_multi_timeframe"
             ]):
                 categories["sr_features"].append(feature)
                 categorized = True

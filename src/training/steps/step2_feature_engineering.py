@@ -99,8 +99,9 @@ def _generate_feature_artifact_hash(symbol: str, exchange: str, timeframe: str, 
         
         return hashlib.md5(hash_input.encode()).hexdigest()
     except Exception:
-        # Fallback to simple hash
-        return hashlib.md5(f"{symbol}_{exchange}_{timeframe}".encode()).hexdigest()
+        # Fallback to simple hash with timestamp to reduce cache collisions
+        import time
+        return hashlib.md5(f"{symbol}_{exchange}_{timeframe}_{time.time()}".encode()).hexdigest()
 
 
 @validate_step_prerequisites(

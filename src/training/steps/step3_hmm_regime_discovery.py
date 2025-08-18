@@ -13,10 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass
 import joblib
-from joblib import Parallel, delayed
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import gc
-import psutil
 import multiprocessing as mp
 import signal
 import atexit
@@ -28,10 +25,6 @@ import pandas as pd
 from src.utils.logger import system_logger
 from src.utils.error_handler import (
     handle_errors,
-    handle_data_processing_errors,
-    handle_type_conversions,
-    safe_division,
-    clean_dataframe,
 )
 
 # Import decorators from centralized module
@@ -302,7 +295,7 @@ class RegimeClusterAnalyzer:
             clusterer = AgglomerativeClustering(
                 n_clusters=n_clusters,
                 linkage="ward",
-                metric="euclidean"
+                affinity="euclidean"
             )
             
             cluster_labels = clusterer.fit_predict(features)

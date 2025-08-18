@@ -49,6 +49,15 @@ from src.utils.error_handler import handle_errors
 from src.utils.warning_symbols import error, failed, success, timeout
 from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
 
+# Import Pydantic configuration
+try:
+    from src.training.enhanced_lm_config import EnhancedLMOptimizerConfig, DEFAULT_CONFIG
+    PYDANTIC_AVAILABLE = True
+except ImportError:
+    PYDANTIC_AVAILABLE = False
+    EnhancedLMOptimizerConfig = None
+    DEFAULT_CONFIG = None
+
 
 class EnhancedLMOptimizer:
     """
@@ -66,8 +75,30 @@ class EnhancedLMOptimizer:
         self.config = config
         self.logger = system_logger.getChild("EnhancedLMOptimizer")
         
-        # Load optimization configuration
-        self.optimization_config = self._load_optimization_config()
+        # Load optimization configuration with Pydantic validation
+        if PYDANTIC_AVAILABLE and EnhancedLMOptimizerConfig:
+            try:
+                # Try to use Pydantic configuration
+                if "enhanced_lm_optimizer" in config:
+                    self.optimization_config = EnhancedLMOptimizerConfig.from_dict(config["enhanced_lm_optimizer"])
+                else:
+                    self.optimization_config = DEFAULT_CONFIG
+                
+                # Validate configuration
+                warnings = self.optimization_config.validate_config()
+                if warnings:
+                    for warning in warnings:
+                        self.logger.warning(f"⚠️ Configuration warning: {warning}")
+                
+                self.logger.info("✅ Using Pydantic configuration with validation")
+                
+            except Exception as e:
+                self.logger.warning(f"⚠️ Pydantic configuration failed, falling back to dict: {e}")
+                self.optimization_config = self._load_optimization_config()
+        else:
+            # Fallback to dictionary-based configuration
+            self.optimization_config = self._load_optimization_config()
+            self.logger.info("⚠️ Using dictionary-based configuration (Pydantic not available)")
         
         # Initialize components
         self.feature_selector = None
@@ -84,6 +115,13 @@ class EnhancedLMOptimizer:
         
         # Cache for optimization results
         self.optimization_cache = {}
+        
+        # Log configuration summary
+        if hasattr(self.optimization_config, 'get_optimization_summary'):
+            summary = self.optimization_config.get_optimization_summary()
+            self.logger.info("📊 Optimization configuration summary:")
+            for section, details in summary.items():
+                self.logger.info(f"   {section}: {details}")
         
     def _load_optimization_config(self) -> Dict[str, Any]:
         """Load and validate optimization configuration."""
@@ -157,17 +195,35 @@ class EnhancedLMOptimizer:
             self.logger.info("🔄 Initializing Enhanced LM Optimizer...")
             
             # Initialize feature selector
-            if self.optimization_config["feature_selection"]["enable"]:
+            feature_selection_enabled = (
+                self.optimization_config.feature_selection.enable 
+                if hasattr(self.optimization_config, 'feature_selection') 
+                else self.optimization_config.get("feature_selection", {}).get("enable", True)
+            )
+            
+            if feature_selection_enabled:
                 self.feature_selector = EnhancedFeatureSelector(self.optimization_config)
                 await self.feature_selector.initialize()
             
             # Initialize regularization manager
-            if self.optimization_config["regularization"]["enable"]:
+            regularization_enabled = (
+                self.optimization_config.regularization.enable 
+                if hasattr(self.optimization_config, 'regularization') 
+                else self.optimization_config.get("regularization", {}).get("enable", True)
+            )
+            
+            if regularization_enabled:
                 self.regularization_manager = EnhancedRegularizationManager(self.optimization_config)
                 await self.regularization_manager.initialize()
             
             # Initialize Optuna study
-            if self.optimization_config["optuna"]["enable"]:
+            optuna_enabled = (
+                self.optimization_config.optuna.enable 
+                if hasattr(self.optimization_config, 'optuna') 
+                else self.optimization_config.get("optuna", {}).get("enable", True)
+            )
+            
+            if optuna_enabled:
                 await self._initialize_optuna_study()
             
             self.logger.info("✅ Enhanced LM Optimizer initialized successfully")
@@ -178,32 +234,95 @@ class EnhancedLMOptimizer:
             return False
     
     async def _initialize_optuna_study(self):
-        """Initialize Optuna study for hyperparameter optimization."""
+        """Initialize Optuna study for hyperparameter optimization with advanced samplers and pruners."""
         try:
-            optuna_config = self.optimization_config["optuna"]
+            # Get Optuna configuration
+            if hasattr(self.optimization_config, 'optuna'):
+                optuna_config = self.optimization_config.optuna
+                sampler_name = optuna_config.sampler.value if hasattr(optuna_config.sampler, 'value') else str(optuna_config.sampler)
+                pruner_name = optuna_config.pruner.value if hasattr(optuna_config.pruner, 'value') else str(optuna_config.pruner)
+                storage = optuna_config.storage
+            else:
+                optuna_config = self.optimization_config.get("optuna", {})
+                sampler_name = optuna_config.get("sampler", "tpe")
+                pruner_name = optuna_config.get("pruner", "median")
+                storage = optuna_config.get("storage")
             
             # Create study
             study_name = f"enhanced_lm_optimization_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             
-            # Configure sampler
-            if optuna_config["sampler"] == "tpe":
-                sampler = TPESampler(seed=42)
+            # Configure advanced sampler
+            if sampler_name == "tpe":
+                sampler = TPESampler(seed=42, n_startup_trials=10)
+            elif sampler_name == "cmaes":
+                from optuna.samplers import CmaEsSampler
+                sampler = CmaEsSampler(seed=42)
+            elif sampler_name == "random":
+                from optuna.samplers import RandomSampler
+                sampler = RandomSampler(seed=42)
             else:
-                sampler = TPESampler(seed=42)
+                sampler = TPESampler(seed=42, n_startup_trials=10)
             
-            # Create study
+            # Configure pruner
+            if pruner_name == "median":
+                from optuna.pruners import MedianPruner
+                pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=10)
+            elif pruner_name == "hyperband":
+                from optuna.pruners import HyperbandPruner
+                pruner = HyperbandPruner(min_resource=1, max_resource=100, reduction_factor=3)
+            elif pruner_name == "threshold":
+                from optuna.pruners import ThresholdPruner
+                pruner = ThresholdPruner(lower=0.1, upper=0.9)
+            else:
+                from optuna.pruners import MedianPruner
+                pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=10)
+            
+            # Create study with advanced configuration
             self.optuna_study = optuna.create_study(
                 direction="maximize",
                 sampler=sampler,
-                storage=optuna_config["storage"],
+                pruner=pruner,
+                storage=storage,
                 study_name=study_name,
                 load_if_exists=True
             )
             
-            self.logger.info(f"✅ Optuna study '{study_name}' initialized")
+            # Initialize experiment tracking
+            await self._initialize_experiment_tracking(study_name)
+            
+            self.logger.info(f"✅ Optuna study '{study_name}' initialized with {sampler_name} sampler and {pruner_name} pruner")
             
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize Optuna study: {e}")
+    
+    async def _initialize_experiment_tracking(self, study_name: str):
+        """Initialize experiment tracking for MLflow or similar tools."""
+        try:
+            # Try to initialize MLflow
+            try:
+                import mlflow
+                mlflow.set_tracking_uri("file:./mlruns")
+                mlflow.set_experiment(f"enhanced_lm_optimization_{study_name}")
+                self.mlflow_available = True
+                self.logger.info("✅ MLflow experiment tracking initialized")
+            except ImportError:
+                self.mlflow_available = False
+                self.logger.info("⚠️ MLflow not available, skipping experiment tracking")
+            
+            # Try to initialize Weights & Biases
+            try:
+                import wandb
+                wandb.init(project="ares-enhanced-lm-optimization", name=study_name, config=self.optimization_config)
+                self.wandb_available = True
+                self.logger.info("✅ Weights & Biases experiment tracking initialized")
+            except ImportError:
+                self.wandb_available = False
+                self.logger.info("⚠️ Weights & Biases not available, skipping experiment tracking")
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Experiment tracking initialization failed: {e}")
+            self.mlflow_available = False
+            self.wandb_available = False
     
     @handle_errors(
         exceptions=(Exception,),
@@ -376,7 +495,7 @@ class EnhancedLMOptimizer:
         architecture: str,
         model_type: str
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        """Optimize hyperparameters using Optuna in batches."""
+        """Optimize hyperparameters using Optuna in batches with unified regularization tuning."""
         try:
             if self.optuna_study is None:
                 return {}, {"error": "optuna_study_not_available"}
@@ -386,21 +505,19 @@ class EnhancedLMOptimizer:
             n_trials_per_batch = optuna_config["n_trials_per_batch"]
             timeout_per_batch = optuna_config["timeout_per_batch"]
             
-            best_params = {}
             batch_results = []
             
             for batch_idx in range(n_batches):
                 self.logger.info(f"🔄 Batch {batch_idx + 1}/{n_batches} for {step_name}")
                 
-                # Create objective function for this batch
+                # Create objective function for this batch with unified hyperparameter optimization
                 def objective(trial):
-                    return self._hyperparameter_objective(
+                    return self._unified_hyperparameter_objective(
                         trial, features_df, target, step_name, architecture, model_type
                     )
                 
-                # Optimize this batch
-                study = optuna.create_study(direction="maximize")
-                study.optimize(
+                # Use the persistent study for all batches to maintain learning
+                self.optuna_study.optimize(
                     objective,
                     n_trials=n_trials_per_batch,
                     timeout=timeout_per_batch
@@ -408,31 +525,25 @@ class EnhancedLMOptimizer:
                 
                 batch_results.append({
                     "batch": batch_idx + 1,
-                    "best_value": study.best_value,
-                    "best_params": study.best_params,
-                    "n_trials": len(study.trials)
+                    "best_value": self.optuna_study.best_value,
+                    "best_params": self.optuna_study.best_params,
+                    "n_trials": len(self.optuna_study.trials)
                 })
                 
-                # Update best params if this batch is better
-                if not best_params or study.best_value > best_params.get("best_value", -float('inf')):
-                    best_params = {
-                        "best_value": study.best_value,
-                        "best_params": study.best_params
-                    }
-                
-                self.logger.info(f"✅ Batch {batch_idx + 1} completed: best_value={study.best_value:.4f}")
+                self.logger.info(f"✅ Batch {batch_idx + 1} completed: best_value={self.optuna_study.best_value:.4f}")
             
-            return best_params["best_params"], {
+            return self.optuna_study.best_params, {
                 "batch_results": batch_results,
-                "overall_best_value": best_params["best_value"],
-                "total_trials": sum(r["n_trials"] for r in batch_results)
+                "overall_best_value": self.optuna_study.best_value,
+                "total_trials": sum(r["n_trials"] for r in batch_results),
+                "study_name": self.optuna_study.study_name
             }
             
         except Exception as e:
             self.logger.error(f"❌ Hyperparameter optimization failed: {e}")
             return {}, {"error": str(e)}
     
-    def _hyperparameter_objective(
+    def _unified_hyperparameter_objective(
         self,
         trial: optuna.Trial,
         features_df: pd.DataFrame,
@@ -441,58 +552,157 @@ class EnhancedLMOptimizer:
         architecture: str,
         model_type: str
     ) -> float:
-        """Objective function for Optuna hyperparameter optimization."""
+        """Unified objective function for Optuna hyperparameter optimization including regularization."""
         try:
-            # Get hyperparameter suggestions based on architecture
+            # Get unified hyperparameter suggestions including regularization
             if architecture == "LightGBM":
-                params = self._suggest_lightgbm_params(trial, step_name)
+                params = self._suggest_unified_lightgbm_params(trial, step_name)
                 model = lgb.LGBMClassifier(**params) if model_type == "classification" else lgb.LGBMRegressor(**params)
+                
+                # Cross-validation with domain-specific metrics
+                cv_scores = self._evaluate_model_with_domain_metrics(
+                    model, features_df, target, model_type, architecture
+                )
+                
             elif architecture in ["CNN", "TCN", "Transformer"]:
-                params = self._suggest_neural_network_params(trial, architecture, step_name)
-                model = self._create_neural_network_model(params, architecture, features_df.shape[1], model_type)
+                params = self._suggest_unified_neural_network_params(trial, architecture, step_name)
+                
+                # For neural networks, we need a proper training loop
+                cv_scores = await self._evaluate_neural_network_with_training_loop(
+                    params, features_df, target, architecture, model_type
+                )
+                
             else:
                 # Default to LightGBM
-                params = self._suggest_lightgbm_params(trial, step_name)
+                params = self._suggest_unified_lightgbm_params(trial, step_name)
                 model = lgb.LGBMClassifier(**params) if model_type == "classification" else lgb.LGBMRegressor(**params)
+                
+                cv_scores = self._evaluate_model_with_domain_metrics(
+                    model, features_df, target, model_type, architecture
+                )
             
-            # Cross-validation
-            cv_scores = cross_val_score(
-                model, features_df, target,
-                cv=TimeSeriesSplit(n_splits=3),
-                scoring='accuracy' if model_type == "classification" else 'neg_mean_squared_error'
-            )
+            final_score = cv_scores.mean()
             
-            return cv_scores.mean()
+            # Log experiment tracking
+            await self._log_experiment_trial(trial, params, final_score, cv_scores, step_name, architecture, model_type)
+            
+            return final_score
             
         except Exception as e:
             self.logger.warning(f"⚠️ Trial failed: {e}")
             return -float('inf')
     
-    def _suggest_lightgbm_params(self, trial: optuna.Trial, step_name: str) -> Dict[str, Any]:
-        """Suggest LightGBM hyperparameters."""
+    async def _log_experiment_trial(
+        self,
+        trial: optuna.Trial,
+        params: Dict[str, Any],
+        final_score: float,
+        cv_scores: np.ndarray,
+        step_name: str,
+        architecture: str,
+        model_type: str
+    ):
+        """Log experiment trial to MLflow and/or Weights & Biases."""
+        try:
+            # Log to MLflow
+            if hasattr(self, 'mlflow_available') and self.mlflow_available:
+                try:
+                    import mlflow
+                    with mlflow.start_run(nested=True):
+                        # Log hyperparameters
+                        mlflow.log_params(params)
+                        mlflow.log_params({
+                            "step_name": step_name,
+                            "architecture": architecture,
+                            "model_type": model_type,
+                            "trial_number": trial.number
+                        })
+                        
+                        # Log metrics
+                        mlflow.log_metric("final_score", final_score)
+                        mlflow.log_metric("cv_mean", cv_scores.mean())
+                        mlflow.log_metric("cv_std", cv_scores.std())
+                        mlflow.log_metric("cv_min", cv_scores.min())
+                        mlflow.log_metric("cv_max", cv_scores.max())
+                        
+                        # Log CV scores as list
+                        mlflow.log_metric("cv_scores", cv_scores.tolist())
+                        
+                except Exception as e:
+                    self.logger.warning(f"⚠️ MLflow logging failed: {e}")
+            
+            # Log to Weights & Biases
+            if hasattr(self, 'wandb_available') and self.wandb_available:
+                try:
+                    import wandb
+                    wandb.log({
+                        **params,
+                        "step_name": step_name,
+                        "architecture": architecture,
+                        "model_type": model_type,
+                        "trial_number": trial.number,
+                        "final_score": final_score,
+                        "cv_mean": cv_scores.mean(),
+                        "cv_std": cv_scores.std(),
+                        "cv_min": cv_scores.min(),
+                        "cv_max": cv_scores.max(),
+                        "cv_scores": cv_scores.tolist()
+                    })
+                    
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Weights & Biases logging failed: {e}")
+                    
+        except Exception as e:
+            self.logger.warning(f"⚠️ Experiment logging failed: {e}")
+    
+    def _suggest_unified_lightgbm_params(self, trial: optuna.Trial, step_name: str) -> Dict[str, Any]:
+        """Suggest unified LightGBM hyperparameters including regularization."""
         return {
+            # Core hyperparameters
             'n_estimators': trial.suggest_int('n_estimators', 100, 1000),
             'max_depth': trial.suggest_int('max_depth', 3, 12),
             'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
             'subsample': trial.suggest_float('subsample', 0.6, 1.0),
             'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
+            'min_child_samples': trial.suggest_int('min_child_samples', 10, 100),
+            
+            # Regularization parameters (unified with hyperparameter optimization)
             'reg_alpha': trial.suggest_float('reg_alpha', 0.001, 0.1),
             'reg_lambda': trial.suggest_float('reg_lambda', 0.001, 0.1),
-            'min_child_samples': trial.suggest_int('min_child_samples', 10, 100),
+            
+            # Additional regularization
+            'min_child_weight': trial.suggest_float('min_child_weight', 1e-3, 1e-1),
+            'min_split_gain': trial.suggest_float('min_split_gain', 0.0, 0.1),
+            
             'random_state': 42,
             'verbose': -1
         }
     
-    def _suggest_neural_network_params(self, trial: optuna.Trial, architecture: str, step_name: str) -> Dict[str, Any]:
-        """Suggest neural network hyperparameters."""
+    def _suggest_unified_neural_network_params(self, trial: optuna.Trial, architecture: str, step_name: str) -> Dict[str, Any]:
+        """Suggest unified neural network hyperparameters including regularization."""
         return {
+            # Architecture parameters
             'hidden_size': trial.suggest_int('hidden_size', 64, 512),
             'num_layers': trial.suggest_int('num_layers', 2, 6),
-            'dropout': trial.suggest_float('dropout', 0.1, 0.5),
+            
+            # Training parameters
             'learning_rate': trial.suggest_float('learning_rate', 1e-4, 1e-2),
-            'weight_decay': trial.suggest_float('weight_decay', 1e-6, 1e-3),
             'batch_size': trial.suggest_categorical('batch_size', [32, 64, 128, 256]),
-            'epochs': trial.suggest_int('epochs', 10, 50)
+            'epochs': trial.suggest_int('epochs', 10, 50),
+            
+            # Regularization parameters (unified with hyperparameter optimization)
+            'dropout': trial.suggest_float('dropout', 0.1, 0.5),
+            'weight_decay': trial.suggest_float('weight_decay', 1e-6, 1e-3),
+            
+            # Additional regularization
+            'layer_norm': trial.suggest_categorical('layer_norm', [True, False]),
+            'batch_norm': trial.suggest_categorical('batch_norm', [True, False]),
+            'gradient_clip': trial.suggest_float('gradient_clip', 0.1, 5.0),
+            
+            # Architecture-specific parameters
+            'attention_heads': trial.suggest_int('attention_heads', 4, 16) if architecture == "Transformer" else 8,
+            'kernel_size': trial.suggest_int('kernel_size', 3, 7) if architecture == "CNN" else 3,
+            'dilation': trial.suggest_int('dilation', 1, 4) if architecture == "TCN" else 1
         }
     
     def _create_neural_network_model(self, params: Dict[str, Any], architecture: str, input_size: int, model_type: str):
@@ -506,6 +716,211 @@ class EnhancedLMOptimizer:
             return SimpleTransformerModel(input_size, params, model_type)
         else:
             return SimpleNNModel(input_size, params, model_type)
+    
+    def _evaluate_model_with_domain_metrics(
+        self,
+        model,
+        features_df: pd.DataFrame,
+        target: pd.Series,
+        model_type: str,
+        architecture: str
+    ) -> np.ndarray:
+        """Evaluate model using domain-specific metrics for financial applications."""
+        try:
+            # Time series cross-validation
+            tscv = TimeSeriesSplit(n_splits=3)
+            scores = []
+            
+            for train_idx, val_idx in tscv.split(features_df):
+                X_train, X_val = features_df.iloc[train_idx], features_df.iloc[val_idx]
+                y_train, y_val = target.iloc[train_idx], target.iloc[val_idx]
+                
+                # Train model
+                model.fit(X_train, y_train)
+                
+                # Get predictions
+                if model_type == "classification":
+                    y_pred_proba = model.predict_proba(X_val)[:, 1] if hasattr(model, 'predict_proba') else model.predict(X_val)
+                    y_pred = model.predict(X_val)
+                else:
+                    y_pred = model.predict(X_val)
+                
+                # Calculate domain-specific metrics
+                if model_type == "classification":
+                    # For classification, use win rate and balanced accuracy
+                    score = self._calculate_classification_metrics(y_val, y_pred, y_pred_proba)
+                else:
+                    # For regression, use Sharpe ratio approximation
+                    score = self._calculate_regression_metrics(y_val, y_pred)
+                
+                scores.append(score)
+            
+            return np.array(scores)
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Domain-specific evaluation failed: {e}")
+            # Fallback to standard cross-validation
+            return cross_val_score(
+                model, features_df, target,
+                cv=TimeSeriesSplit(n_splits=3),
+                scoring='accuracy' if model_type == "classification" else 'neg_mean_squared_error'
+            )
+    
+    def _calculate_classification_metrics(self, y_true: pd.Series, y_pred: np.ndarray, y_pred_proba: np.ndarray) -> float:
+        """Calculate domain-specific classification metrics."""
+        try:
+            from sklearn.metrics import accuracy_score, balanced_accuracy_score
+            
+            # Basic metrics
+            accuracy = accuracy_score(y_true, y_pred)
+            balanced_acc = balanced_accuracy_score(y_true, y_pred)
+            
+            # Win rate (assuming positive class is "win")
+            win_rate = np.mean(y_pred == 1) if len(np.unique(y_pred)) > 1 else 0.5
+            
+            # Risk-adjusted metric (combine accuracy with win rate)
+            risk_adjusted_score = (accuracy * 0.6 + balanced_acc * 0.3 + win_rate * 0.1)
+            
+            return risk_adjusted_score
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Classification metrics calculation failed: {e}")
+            return 0.5
+    
+    def _calculate_regression_metrics(self, y_true: pd.Series, y_pred: np.ndarray) -> float:
+        """Calculate domain-specific regression metrics."""
+        try:
+            # Calculate returns (assuming y_true and y_pred are price changes)
+            returns = y_true - y_pred
+            
+            # Sharpe ratio approximation
+            if len(returns) > 1:
+                sharpe_ratio = np.mean(returns) / (np.std(returns) + 1e-8)
+                # Normalize to [0, 1] range
+                normalized_sharpe = 1 / (1 + np.exp(-sharpe_ratio))
+            else:
+                normalized_sharpe = 0.5
+            
+            # Win rate (positive returns)
+            win_rate = np.mean(returns > 0)
+            
+            # Combined metric
+            combined_score = (normalized_sharpe * 0.7 + win_rate * 0.3)
+            
+            return combined_score
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Regression metrics calculation failed: {e}")
+            return 0.5
+    
+    async def _evaluate_neural_network_with_training_loop(
+        self,
+        params: Dict[str, Any],
+        features_df: pd.DataFrame,
+        target: pd.Series,
+        architecture: str,
+        model_type: str
+    ) -> np.ndarray:
+        """Evaluate neural network with proper PyTorch training loop."""
+        try:
+            import asyncio
+            
+            # Run the training loop in a thread to avoid blocking
+            loop = asyncio.get_event_loop()
+            scores = await loop.run_in_executor(
+                None,
+                self._run_neural_network_training_loop,
+                params, features_df, target, architecture, model_type
+            )
+            
+            return scores
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Neural network evaluation failed: {e}")
+            return np.array([0.5])  # Fallback score
+    
+    def _run_neural_network_training_loop(
+        self,
+        params: Dict[str, Any],
+        features_df: pd.DataFrame,
+        target: pd.Series,
+        architecture: str,
+        model_type: str
+    ) -> np.ndarray:
+        """Run neural network training loop with proper PyTorch implementation."""
+        try:
+            # Time series cross-validation
+            tscv = TimeSeriesSplit(n_splits=3)
+            scores = []
+            
+            for train_idx, val_idx in tscv.split(features_df):
+                X_train, X_val = features_df.iloc[train_idx], features_df.iloc[val_idx]
+                y_train, y_val = target.iloc[train_idx], target.iloc[val_idx]
+                
+                # Create model
+                model = self._create_neural_network_model(params, architecture, X_train.shape[1], model_type)
+                
+                # Convert to tensors
+                X_train_tensor = torch.FloatTensor(X_train.values)
+                X_val_tensor = torch.FloatTensor(X_val.values)
+                
+                if model_type == "classification":
+                    y_train_tensor = torch.LongTensor(y_train.values)
+                    y_val_tensor = torch.LongTensor(y_val.values)
+                    criterion = nn.CrossEntropyLoss()
+                else:
+                    y_train_tensor = torch.FloatTensor(y_train.values).unsqueeze(1)
+                    y_val_tensor = torch.FloatTensor(y_val.values).unsqueeze(1)
+                    criterion = nn.MSELoss()
+                
+                # Create data loaders
+                train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
+                train_loader = DataLoader(train_dataset, batch_size=params['batch_size'], shuffle=True)
+                
+                # Optimizer
+                optimizer = optim.Adam(
+                    model.parameters(),
+                    lr=params['learning_rate'],
+                    weight_decay=params['weight_decay']
+                )
+                
+                # Training loop
+                model.train()
+                for epoch in range(params['epochs']):
+                    for batch_X, batch_y in train_loader:
+                        optimizer.zero_grad()
+                        outputs = model(batch_X)
+                        loss = criterion(outputs, batch_y)
+                        loss.backward()
+                        
+                        # Gradient clipping
+                        if 'gradient_clip' in params:
+                            torch.nn.utils.clip_grad_norm_(model.parameters(), params['gradient_clip'])
+                        
+                        optimizer.step()
+                
+                # Evaluation
+                model.eval()
+                with torch.no_grad():
+                    val_outputs = model(X_val_tensor)
+                    
+                    if model_type == "classification":
+                        _, val_pred = torch.max(val_outputs, 1)
+                        val_pred_proba = torch.softmax(val_outputs, dim=1)[:, 1]
+                        score = self._calculate_classification_metrics(
+                            y_val, val_pred.numpy(), val_pred_proba.numpy()
+                        )
+                    else:
+                        val_pred = val_outputs.squeeze()
+                        score = self._calculate_regression_metrics(y_val, val_pred.numpy())
+                
+                scores.append(score)
+            
+            return np.array(scores)
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Neural network training loop failed: {e}")
+            return np.array([0.5])  # Fallback score
     
     async def _evaluate_optimized_model(
         self,
@@ -574,7 +989,7 @@ class EnhancedFeatureSelector:
         target_features: int,
         architecture: str
     ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-        """Enhanced feature selection using multiple algorithms."""
+        """Enhanced feature selection using ensemble approach with multiple algorithms."""
         try:
             start_time = time.time()
             
@@ -588,49 +1003,26 @@ class EnhancedFeatureSelector:
                 features_df[variance_features], self.feature_selection_config["correlation_threshold"]
             )
             
-            # Step 3: Mutual information
-            if "mutual_info" in self.feature_selection_config["methods"]:
-                mi_features = self._select_mutual_info_features(
-                    features_df[correlation_features], target, target_features
-                )
-            else:
-                mi_features = correlation_features
+            # Step 3: Ensemble feature selection (run multiple methods in parallel)
+            ensemble_features = await self._ensemble_feature_selection(
+                features_df[correlation_features], target, target_features, architecture
+            )
             
-            # Step 4: Lasso-based selection
-            if "lasso" in self.feature_selection_config["methods"]:
-                lasso_features = self._select_lasso_features(
-                    features_df[mi_features], target, target_features
-                )
-            else:
-                lasso_features = mi_features
-            
-            # Step 5: Random Forest importance
-            if "random_forest" in self.feature_selection_config["methods"]:
-                rf_features = self._select_random_forest_features(
-                    features_df[lasso_features], target, target_features
-                )
-            else:
-                rf_features = lasso_features
-            
-            # Step 6: SHAP analysis (if enabled and features are manageable)
-            if "shap" in self.feature_selection_config["methods"] and len(rf_features) <= 50:
-                final_features = self._select_shap_features(
-                    features_df[rf_features], target, target_features
-                )
-            else:
-                final_features = rf_features[:target_features]
+            # Step 4: Feature stability analysis
+            stable_features = await self._analyze_feature_stability(
+                features_df[ensemble_features], target, target_features
+            )
             
             # Create final feature set
-            optimized_features = features_df[final_features]
+            optimized_features = features_df[stable_features]
             
             selection_metadata = {
                 "original_features": len(features_df.columns),
                 "variance_filtered": len(variance_features),
                 "correlation_filtered": len(correlation_features),
-                "mutual_info_filtered": len(mi_features),
-                "lasso_filtered": len(lasso_features),
-                "random_forest_filtered": len(rf_features),
-                "final_features": len(final_features),
+                "ensemble_filtered": len(ensemble_features),
+                "stable_features": len(stable_features),
+                "final_features": len(stable_features),
                 "selection_time": time.time() - start_time
             }
             
@@ -639,6 +1031,111 @@ class EnhancedFeatureSelector:
         except Exception as e:
             self.logger.error(f"❌ Enhanced feature selection failed: {e}")
             return features_df, {"error": str(e)}
+    
+    async def _ensemble_feature_selection(
+        self,
+        features_df: pd.DataFrame,
+        target: pd.Series,
+        target_features: int,
+        architecture: str
+    ) -> List[str]:
+        """Ensemble feature selection using voting approach."""
+        try:
+            feature_scores = {feature: 0 for feature in features_df.columns}
+            methods_used = []
+            
+            # Run multiple feature selection methods in parallel
+            if "mutual_info" in self.feature_selection_config["methods"]:
+                mi_features = self._select_mutual_info_features(features_df, target, target_features)
+                for feature in mi_features:
+                    feature_scores[feature] += 1
+                methods_used.append("mutual_info")
+            
+            if "lasso" in self.feature_selection_config["methods"]:
+                lasso_features = self._select_lasso_features(features_df, target, target_features)
+                for feature in lasso_features:
+                    feature_scores[feature] += 1
+                methods_used.append("lasso")
+            
+            if "random_forest" in self.feature_selection_config["methods"]:
+                rf_features = self._select_random_forest_features(features_df, target, target_features)
+                for feature in rf_features:
+                    feature_scores[feature] += 1
+                methods_used.append("random_forest")
+            
+            if "shap" in self.feature_selection_config["methods"] and len(features_df.columns) <= 50:
+                shap_features = self._select_shap_features(features_df, target, target_features)
+                for feature in shap_features:
+                    feature_scores[feature] += 1
+                methods_used.append("shap")
+            
+            # Select features based on voting score
+            sorted_features = sorted(feature_scores.items(), key=lambda x: x[1], reverse=True)
+            selected_features = [feature for feature, score in sorted_features[:target_features]]
+            
+            self.logger.info(f"📊 Ensemble feature selection used {len(methods_used)} methods: {methods_used}")
+            self.logger.info(f"📊 Feature voting scores: {dict(sorted_features[:10])}")  # Top 10 features
+            
+            return selected_features
+            
+        except Exception as e:
+            self.logger.error(f"❌ Ensemble feature selection failed: {e}")
+            return features_df.columns[:target_features].tolist()
+    
+    async def _analyze_feature_stability(
+        self,
+        features_df: pd.DataFrame,
+        target: pd.Series,
+        target_features: int
+    ) -> List[str]:
+        """Analyze feature stability across multiple CV folds."""
+        try:
+            from sklearn.model_selection import TimeSeriesSplit
+            
+            feature_stability = {feature: 0 for feature in features_df.columns}
+            n_folds = 5
+            
+            # Time series cross-validation for stability analysis
+            tscv = TimeSeriesSplit(n_splits=n_folds)
+            
+            for fold_idx, (train_idx, val_idx) in enumerate(tscv.split(features_df)):
+                X_train = features_df.iloc[train_idx]
+                y_train = target.iloc[train_idx]
+                
+                # Run feature selection on this fold
+                fold_features = self._select_random_forest_features(X_train, y_train, target_features)
+                
+                # Count how many times each feature is selected
+                for feature in fold_features:
+                    if feature in feature_stability:
+                        feature_stability[feature] += 1
+            
+            # Select features that are stable across folds
+            stable_features = [
+                feature for feature, count in feature_stability.items()
+                if count >= n_folds * 0.6  # Feature must be selected in at least 60% of folds
+            ]
+            
+            # If not enough stable features, add top features by stability score
+            if len(stable_features) < target_features:
+                sorted_by_stability = sorted(feature_stability.items(), key=lambda x: x[1], reverse=True)
+                additional_features = [
+                    feature for feature, count in sorted_by_stability
+                    if feature not in stable_features
+                ][:target_features - len(stable_features)]
+                stable_features.extend(additional_features)
+            
+            # Limit to target number of features
+            stable_features = stable_features[:target_features]
+            
+            self.logger.info(f"📊 Feature stability analysis: {len(stable_features)} stable features selected")
+            self.logger.info(f"📊 Stability scores: {dict(sorted(feature_stability.items(), key=lambda x: x[1], reverse=True)[:10])}")
+            
+            return stable_features
+            
+        except Exception as e:
+            self.logger.error(f"❌ Feature stability analysis failed: {e}")
+            return features_df.columns[:target_features].tolist()
     
     def _remove_correlated_features(self, features_df: pd.DataFrame, threshold: float) -> List[str]:
         """Remove highly correlated features using vectorized operations."""

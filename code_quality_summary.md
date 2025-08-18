@@ -8,11 +8,13 @@
 - **Files**: `src/database/sqlite_manager.py`, `src/trading/live_wavelet_integration.py`, `src/config.py`
 - **Fix**: Replace with specific exception types and proper error logging
 
-### 2. **Trading Decision Logic (HIGH)**
-- **Issue**: Over-simplified trading decisions with arbitrary confidence adjustments
-- **Impact**: Poor trading performance and potential losses
+### 2. **Trading Decision Logic (MEDIUM)**
+- **Issue**: Some over-simplified trading decisions with arbitrary confidence adjustments
+- **Impact**: Suboptimal trading performance in some areas
 - **Files**: `src/strategist/strategist.py` (lines 600-1000)
-- **Fix**: Implement proper Kelly Criterion, dynamic risk management, and market microstructure analysis
+- **Fix**: Review and enhance existing Kelly Criterion implementation, add dynamic risk management
+
+**Note**: Kelly Criterion is properly implemented in `src/tactician/position_sizer.py` with correct formula and risk management
 
 ### 3. **Hardcoded Values (HIGH)**
 - **Issue**: Magic numbers and hardcoded trading parameters throughout codebase
@@ -63,8 +65,8 @@
    - Clean up TODO comments
 
 ### Week 2 (High Priority)
-1. **Fix Trading Logic**
-   - Implement correct Kelly Criterion formula
+1. **Enhance Trading Logic**
+   - Review and potentially enhance existing Kelly Criterion implementation
    - Add dynamic risk management
    - Improve regime classification validation
 
@@ -89,7 +91,7 @@
 | Issue | Risk Level | Impact | Effort to Fix |
 |-------|------------|--------|---------------|
 | Exception Handling | CRITICAL | System failures | Medium |
-| Trading Logic | HIGH | Financial losses | High |
+| Trading Logic | MEDIUM | Suboptimal performance | Medium |
 | Hardcoded Values | HIGH | Poor performance | Low |
 | Wildcard Imports | MEDIUM | Maintenance issues | Low |
 | Debug Code | MEDIUM | Performance/logging | Low |
@@ -97,7 +99,7 @@
 ## Recommendations
 
 1. **Immediate**: Fix exception handling and remove debug code
-2. **Short-term**: Improve trading logic and configuration management
+2. **Short-term**: Enhance trading logic and configuration management
 3. **Long-term**: Implement comprehensive testing and documentation
 
-The codebase has a solid foundation but needs immediate attention to critical issues before production deployment.
+The codebase has a solid foundation with proper Kelly Criterion implementation but needs attention to critical issues before production deployment.

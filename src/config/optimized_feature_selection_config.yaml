@@ -35,13 +35,14 @@ feature_selection:
   
   # Feature category weights for balanced selection
   feature_categories:
-    momentum: 0.20        # 20% momentum indicators (RSI, MACD, etc.)
-    volatility: 0.15      # 15% volatility measures (ATR, realized vol, etc.)
-    liquidity: 0.15       # 15% liquidity features (volume, spread, etc.)
+    momentum: 0.25        # 25% momentum indicators (RSI, MACD, etc.)
+    volatility: 0.10      # 10% volatility measures (ATR, realized vol, etc.)
+    liquidity: 0.10       # 10% liquidity features (spread, etc.)
+    volume: 0.15          # 15% volume features (volume, tick_volume, etc.)
     microstructure: 0.10  # 10% microstructure (order flow, etc.)
     regime: 0.10          # 10% regime features (HMM states, etc.)
-    sr_features: 0.15     # 15% Support/Resistance features (SR distance, breakout probability, etc.)
-    interaction: 0.15     # 15% interaction features (cross-products, etc.)
+    sr_features: 0.10     # 10% Support/Resistance features (SR distance, etc.)
+    interaction: 0.10     # 10% interaction features (cross-products, etc.)
   
   # Model-specific optimization settings
   model_specific_optimization:

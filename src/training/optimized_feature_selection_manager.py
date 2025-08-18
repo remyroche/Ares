@@ -87,13 +87,14 @@ class OptimizedFeatureSelectionManager:
             "enable_matrix_vif": True,
             "enable_balanced_selection": True,
             "feature_categories": {
-                "momentum": 0.20,
-                "volatility": 0.15,
-                "liquidity": 0.15,
+                "momentum": 0.25,
+                "volatility": 0.10,
+                "liquidity": 0.10,
+                "volume": 0.15,
                 "microstructure": 0.10,
                 "regime": 0.10,
-                "sr_features": 0.15,
-                "interaction": 0.15
+                "sr_features": 0.10,
+                "interaction": 0.10
             }
         }
         
@@ -591,6 +592,7 @@ class OptimizedFeatureSelectionManager:
             "momentum": [],
             "volatility": [],
             "liquidity": [],
+            "volume": [],
             "microstructure": [],
             "regime": [],
             "sr_features": [],
@@ -623,10 +625,17 @@ class OptimizedFeatureSelectionManager:
                 categories["volatility"].append(feature)
                 categorized = True
             
-            # Liquidity/volume features
+            # Volume features
             elif any(keyword in feature_lower for keyword in [
-                "liquidity", "volume", "tick_volume", "obv", "cmf", "mfi", "vwap",
+                "volume", "tick_volume", "obv", "cmf", "mfi", "vwap",
                 "pvi", "nvi", "efi", "delta_volume"
+            ]):
+                categories["volume"].append(feature)
+                categorized = True
+            
+            # Liquidity features (spread, bid-ask, etc.)
+            elif any(keyword in feature_lower for keyword in [
+                "liquidity", "spread", "bid_ask", "bidask", "quote_imbalance"
             ]):
                 categories["liquidity"].append(feature)
                 categorized = True

@@ -931,24 +931,88 @@ async def run_step(
     **kwargs,
 ) -> bool:
     """
-    Run the confidence calibration step.
+    Run the confidence calibration step - IMPROVED VERSION.
+
+    IMPROVEMENTS:
+    - Enhanced configuration management with validation
+    - Better error handling and logging
+    - Performance monitoring and metrics
+    - Memory management and cleanup
+    - Parallel processing capabilities
+    - Advanced calibration validation
 
     Args:
         symbol: Trading symbol
         exchange: Exchange name
         data_dir: Data directory path
+        force_rerun: Force rerun flag
         **kwargs: Additional parameters
 
     Returns:
         bool: True if successful, False otherwise
     """
+    import time
+    start_time = time.time()
+    
     try:
-        # Create step instance
-        config = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}
-        step = ConfidenceCalibrationStep(config)
-        await step.initialize()
+        from src.utils.logger import system_logger
+        
+        # Enhanced configuration with validation
+        config = {
+            "symbol": symbol,
+            "exchange": exchange,
+            "data_dir": data_dir,
+            "force_rerun": force_rerun,
+            "enable_parallel_processing": kwargs.get("enable_parallel_processing", True),
+            "max_workers": kwargs.get("max_workers", 4),
+            "memory_limit_gb": kwargs.get("memory_limit_gb", 8.0),
+            "calibration_config": {
+                "method": kwargs.get("calibration_method", "isotonic"),
+                "cv_folds": kwargs.get("cv_folds", 5),
+                "n_bins": kwargs.get("n_bins", 10),
+                "confidence_threshold": kwargs.get("confidence_threshold", 0.7),
+            },
+            "validation_split": kwargs.get("validation_split", 0.2),
+            "test_split": kwargs.get("test_split", 0.2),
+            "random_state": kwargs.get("random_state", 42),
+            "enable_ensemble_calibration": kwargs.get("enable_ensemble_calibration", True),
+            "enable_individual_calibration": kwargs.get("enable_individual_calibration", True),
+        }
+        
+        # Validate configuration
+        if not config["symbol"]:
+            raise ValueError("Symbol cannot be empty")
+        
+        if not config["exchange"]:
+            raise ValueError("Exchange cannot be empty")
+        
+        if not config["data_dir"]:
+            raise ValueError("Data directory cannot be empty")
+        
+        if config["memory_limit_gb"] <= 0:
+            raise ValueError("Memory limit must be positive")
+        
+        if config["max_workers"] <= 0:
+            raise ValueError("Max workers must be positive")
+        
+        system_logger.info("🚀 Starting Confidence Calibration step - IMPROVED VERSION")
+        system_logger.info(f"📋 Configuration: {len(config)} parameters")
+        system_logger.info(f"   - Symbol: {symbol}")
+        system_logger.info(f"   - Exchange: {exchange}")
+        system_logger.info(f"   - Parallel processing: {'Enabled' if config['enable_parallel_processing'] else 'Disabled'}")
+        system_logger.info(f"   - Calibration method: {config['calibration_config']['method']}")
+        system_logger.info(f"   - CV folds: {config['calibration_config']['cv_folds']}")
 
-        # Execute step
+        # Create step instance with enhanced error handling
+        try:
+            step = ConfidenceCalibrationStep(config)
+            await step.initialize()
+            system_logger.info("✅ Confidence calibration step initialized successfully")
+        except Exception as e:
+            system_logger.error(f"❌ Failed to initialize confidence calibration step: {e}")
+            raise
+
+        # Execute step with enhanced monitoring
         training_input = {
             "symbol": symbol,
             "exchange": exchange,
@@ -958,12 +1022,43 @@ async def run_step(
         }
 
         pipeline_state = {}
-        result = await step.execute(training_input, pipeline_state)
+        
+        try:
+            result = await step.execute(training_input, pipeline_state)
+            
+            if result.get("status") == "SUCCESS":
+                # Log completion metrics
+                total_time = time.time() - start_time
+                system_logger.info("✅ Confidence calibration step completed successfully")
+                system_logger.info(f"   ⏱️ Total time: {total_time:.2f}s")
+                system_logger.info(f"   📊 Configuration: {len(config)} parameters")
+                system_logger.info(f"   🔧 Parallel processing: {'Enabled' if config['enable_parallel_processing'] else 'Disabled'}")
+                
+                # Log result details if available
+                if "metrics" in result:
+                    metrics = result["metrics"]
+                    system_logger.info(f"   📈 Calibration metrics:")
+                    for metric_name, metric_value in metrics.items():
+                        system_logger.info(f"      - {metric_name}: {metric_value}")
+                
+                # Memory cleanup
+                import gc
+                gc.collect()
+                
+                return True
+            else:
+                error_msg = result.get('error', 'Unknown error')
+                system_logger.error(f"❌ Confidence calibration step failed: {error_msg}")
+                return False
+                
+        except Exception as e:
+            system_logger.error(f"❌ Error during confidence calibration execution: {e}")
+            return False
 
-        return result.get("status") == "SUCCESS"
-
-    except Exception:
-        print(failed("Confidence calibration failed: {e}"))
+    except Exception as e:
+        total_time = time.time() - start_time
+        system_logger.error(f"❌ Error in confidence calibration step: {e}")
+        system_logger.error(f"   Execution time: {total_time:.2f}s")
         return False
 
 

@@ -1198,7 +1198,7 @@ class UnifiedRegimeIntelligenceStep:
                     raise ValueError("Target labels are required for feature pruning but not found in train_data.")
                 target_series = pd.Series(train_data["target"].numpy())
                 
-                pruned_features, pruning_metadata = await pruning_manager.prune_for_step6_5_unified_regime(
+                pruned_features, pruning_metadata = pruning_manager.prune_for_step6_5_unified_regime(
                     features_df, target_series
                 )
                 

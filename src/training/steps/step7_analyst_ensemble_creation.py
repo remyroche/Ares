@@ -137,7 +137,7 @@ class AnalystEnsembleCreationStep:
                 if sample_data is not None:
                     features_df, target = sample_data
                     
-                    pruned_features, pruning_metadata = await pruning_manager.prune_for_step7_ensemble(
+                    pruned_features, pruning_metadata = pruning_manager.prune_for_step7_ensemble(
                         features_df, target
                     )
                     
@@ -204,15 +204,28 @@ class AnalystEnsembleCreationStep:
     def _get_sample_data_for_pruning(self, data_dir: str, symbol: str, exchange: str) -> Optional[Tuple[pd.DataFrame, pd.Series]]:
         """Get sample data for pruning from existing features."""
         try:
-            # Try to load sample features from Step 2
-            sample_file = f"{data_dir}/{exchange}_{symbol}_features_train.parquet"
-            if os.path.exists(sample_file):
-                features_df = pd.read_parquet(sample_file)
+            # Try to load sample features and labels from Step 2 artifacts
+            features_file = f"{data_dir}/{exchange}_{symbol}_features_train.parquet"
+            labels_file = f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet"
+            
+            if os.path.exists(features_file) and os.path.exists(labels_file):
+                features_df = pd.read_parquet(features_file)
+                labels_df = pd.read_parquet(labels_file)
                 
-                # Create dummy target
-                target = pd.Series([0] * len(features_df), index=features_df.index)
-                
-                return features_df, target
+                # Align and extract target series
+                # This assumes 'target' is the target column and they share an index (e.g., timestamp)
+                if 'target' in labels_df.columns:
+                    # Ensure indices are aligned before extracting the target
+                    if not features_df.index.equals(labels_df.index):
+                        if 'timestamp' in labels_df.columns:
+                            labels_df = labels_df.set_index('timestamp')
+                        labels_df = labels_df.reindex(features_df.index)
+                    
+                    target = labels_df['target'].dropna()
+                    features_df = features_df.loc[target.index]  # Ensure features and target align after dropping NaNs
+                    return features_df, target
+                else:
+                    logger.warning(f"⚠️ Target 'target' column not found in {labels_file}")
             
             return None
             

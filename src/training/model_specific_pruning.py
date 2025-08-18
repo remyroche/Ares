@@ -69,7 +69,7 @@ class ModelSpecificPruning:
         default_return=(pd.DataFrame(), {}),
         context="neural network pruning"
     )
-    async def prune_for_neural_networks(
+    def prune_for_neural_networks(
         self, 
         features_df: pd.DataFrame, 
         target: pd.Series,
@@ -144,7 +144,7 @@ class ModelSpecificPruning:
         default_return=(pd.DataFrame(), {}),
         context="linear model pruning"
     )
-    async def prune_for_linear_models(
+    def prune_for_linear_models(
         self, 
         features_df: pd.DataFrame, 
         target: pd.Series,
@@ -214,7 +214,7 @@ class ModelSpecificPruning:
         default_return=(pd.DataFrame(), {}),
         context="ensemble model pruning"
     )
-    async def prune_for_ensemble_models(
+    def prune_for_ensemble_models(
         self, 
         features_df: pd.DataFrame, 
         target: pd.Series,
@@ -279,7 +279,7 @@ class ModelSpecificPruning:
         default_return=(pd.DataFrame(), {}),
         context="step6 hmm model pruning"
     )
-    async def prune_for_step6_hmm_models(
+    def prune_for_step6_hmm_models(
         self, 
         features_df: pd.DataFrame, 
         target: pd.Series,
@@ -309,13 +309,13 @@ class ModelSpecificPruning:
             
             if architecture in ["CNN", "TCN", "Transformer"]:
                 # Neural network pruning
-                return await self.prune_for_neural_networks(features_df, target, architecture)
+                return self.prune_for_neural_networks(features_df, target, architecture)
             elif architecture == "LightGBM":
                 # Ensemble pruning
-                return await self.prune_for_ensemble_models(features_df, target, architecture)
+                return self.prune_for_ensemble_models(features_df, target, architecture)
             else:
                 # Default to neural network pruning
-                return await self.prune_for_neural_networks(features_df, target, architecture)
+                return self.prune_for_neural_networks(features_df, target, architecture)
                 
         except Exception as e:
             self.logger.error(f"❌ Step 6 pruning failed: {e}")
@@ -326,7 +326,7 @@ class ModelSpecificPruning:
         default_return=(pd.DataFrame(), {}),
         context="step6.5 unified regime pruning"
     )
-    async def prune_for_step6_5_unified_regime(
+    def prune_for_step6_5_unified_regime(
         self, 
         features_df: pd.DataFrame, 
         target: pd.Series
@@ -358,7 +358,7 @@ class ModelSpecificPruning:
             preferred_features = list(set(regime_features + intensity_features + transition_features))
             
             # Use neural network pruning with regime focus
-            pruned_df, metadata = await self.prune_for_neural_networks(
+            pruned_df, metadata = self.prune_for_neural_networks(
                 features_df[preferred_features], target, "MultiTimeframeHMMEncoder"
             )
             
@@ -380,7 +380,7 @@ class ModelSpecificPruning:
         default_return=(pd.DataFrame(), {}),
         context="step7 ensemble pruning"
     )
-    async def prune_for_step7_ensemble(
+    def prune_for_step7_ensemble(
         self, 
         features_df: pd.DataFrame, 
         target: pd.Series
@@ -404,7 +404,7 @@ class ModelSpecificPruning:
             self.logger.info("🎯 Pruning features for Step 7 Analyst Ensemble")
             
             # Use ensemble pruning with focus on diversity
-            pruned_df, metadata = await self.prune_for_ensemble_models(
+            pruned_df, metadata = self.prune_for_ensemble_models(
                 features_df, target, "AnalystEnsemble"
             )
             
@@ -424,7 +424,7 @@ class ModelSpecificPruning:
         default_return=(pd.DataFrame(), {}),
         context="step9 tactician pruning"
     )
-    async def prune_for_step9_tactician(
+    def prune_for_step9_tactician(
         self, 
         features_df: pd.DataFrame, 
         target: pd.Series,
@@ -453,10 +453,10 @@ class ModelSpecificPruning:
             
             if model_type == "calibrated_logistic":
                 # Linear model pruning
-                return await self.prune_for_linear_models(features_df, target, model_type)
+                return self.prune_for_linear_models(features_df, target, model_type)
             else:
                 # Ensemble model pruning (LightGBM, XGBoost, CatBoost, Random Forest)
-                return await self.prune_for_ensemble_models(features_df, target, model_type)
+                return self.prune_for_ensemble_models(features_df, target, model_type)
                 
         except Exception as e:
             self.logger.error(f"❌ Step 9 pruning failed: {e}")

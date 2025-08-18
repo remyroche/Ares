@@ -29,18 +29,9 @@ DEFAULT_NEUTRAL_SIGNAL_THRESHOLD: Final[float] = 0.5
 DEFAULT_CLOSE_SIGNAL_THRESHOLD: Final[float] = 0.4
 DEFAULT_POSITION_CLOSE_CONFIDENCE_THRESHOLD: Final[float] = 0.6
 
-# Regime Classification Constants
-DEFAULT_REGIME_CONFIDENCE_MULTIPLIER: Final[float] = 0.9
-DEFAULT_SIDEWAYS_CONFIDENCE_MULTIPLIER: Final[float] = 0.8
-DEFAULT_BULL_CONFIDENCE_MULTIPLIER: Final[float] = 1.1
-DEFAULT_BEAR_CONFIDENCE_MULTIPLIER: Final[float] = 0.9
+# Note: Regime confidence multipliers removed - per-regime distinct LM models handle regime-specific confidence
 
-# Risk Adjustment Multipliers
-BEAR_STOP_LOSS_MULTIPLIER: Final[float] = 0.8
-BEAR_TAKE_PROFIT_MULTIPLIER: Final[float] = 0.7
-BULL_TAKE_PROFIT_MULTIPLIER: Final[float] = 1.3
-SIDEWAYS_STOP_LOSS_MULTIPLIER: Final[float] = 0.6
-SIDEWAYS_TAKE_PROFIT_MULTIPLIER: Final[float] = 0.5
+# Note: Risk adjustment multipliers removed - per-regime distinct LM models handle regime-specific adjustments
 
 # Data Quality Thresholds
 DEFAULT_MISSING_ERROR_THRESHOLD: Final[float] = 0.10
@@ -104,12 +95,7 @@ DEFAULT_FEATURE_WEIGHTS: Final[dict[str, float]] = {
     "volume": 0.10,
 }
 
-# Regime Adjustments
-DEFAULT_REGIME_ADJUSTMENTS: Final[dict[str, float]] = {
-    "BULL": 1.2,
-    "BEAR": 0.8,
-    "SIDEWAYS": 1.0,
-}
+# Note: Regime adjustments removed - per-regime distinct LM models handle regime-specific adjustments
 
 # Error Recovery Constants
 DEFAULT_RETRY_ATTEMPTS: Final[int] = 3

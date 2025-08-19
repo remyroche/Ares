@@ -1,0 +1,520 @@
+# src/training/vectorized_training_pipeline.py
+
+"""
+Vectorized Training Pipeline for enhanced ML training processes.
+Integrates matrix enhancements with existing training workflows to improve
+performance, accuracy, and computational efficiency.
+"""
+
+import numpy as np
+import pandas as pd
+import asyncio
+from typing import Dict, List, Tuple, Optional, Any
+import time
+import warnings
+from dataclasses import dataclass
+
+from src.utils.error_handler import handle_errors
+from src.utils.logger import system_logger
+from src.training.matrix_enhancement_manager import MatrixEnhancementManager
+from src.training.steps.vectorized_advanced_feature_engineering import VectorizedAdvancedFeatureEngineering
+
+
+@dataclass
+class VectorizedTrainingConfig:
+    """Configuration for vectorized training pipeline."""
+    
+    # Matrix enhancement settings
+    enable_matrix_enhancement: bool = True
+    enable_vectorized_features: bool = True
+    enable_parallel_processing: bool = True
+    
+    # Training optimization
+    enable_batch_processing: bool = True
+    enable_memory_optimization: bool = True
+    enable_gpu_acceleration: bool = False
+    
+    # Quality settings
+    enable_quality_gates: bool = True
+    enable_performance_monitoring: bool = True
+    
+    # Integration settings
+    integrate_with_existing_pipeline: bool = True
+    preserve_original_features: bool = True
+
+
+class VectorizedTrainingPipeline:
+    """
+    Vectorized training pipeline that enhances ML training processes.
+    
+    Integrates:
+    - Matrix enhancement operations
+    - Vectorized feature engineering
+    - Parallel processing optimizations
+    - Memory-efficient training
+    - Quality gates and monitoring
+    """
+    
+    def __init__(self, config: Dict[str, Any]):
+        """Initialize vectorized training pipeline."""
+        self.config = VectorizedTrainingConfig(**config.get("vectorized_training", {}))
+        self.logger = system_logger.getChild("VectorizedTrainingPipeline")
+        
+        # Initialize components
+        self.matrix_enhancement = MatrixEnhancementManager(config)
+        self.vectorized_features = None
+        if self.config.enable_vectorized_features:
+            self.vectorized_features = VectorizedAdvancedFeatureEngineering(config)
+        
+        # Pipeline state
+        self.pipeline_results = {}
+        self.performance_metrics = {}
+        
+    @handle_errors(exceptions=(ValueError, AttributeError), default_return=False)
+    async def initialize(self) -> bool:
+        """Initialize the vectorized training pipeline."""
+        try:
+            self.logger.info("🚀 Initializing Vectorized Training Pipeline...")
+            
+            # Initialize matrix enhancement
+            if self.config.enable_matrix_enhancement:
+                self.logger.info("📊 Initializing matrix enhancement components...")
+            
+            # Initialize vectorized features
+            if self.config.enable_vectorized_features and self.vectorized_features:
+                await self.vectorized_features.initialize()
+                self.logger.info("🔧 Initialized vectorized feature engineering")
+            
+            self.logger.info("✅ Vectorized Training Pipeline initialized successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Vectorized Training Pipeline initialization failed: {e}")
+            return False
+    
+    @handle_errors(exceptions=(ValueError, AttributeError), default_return=None)
+    async def enhance_training_data(
+        self, 
+        training_data: Dict[str, Any],
+        step_name: str = "vectorized_enhancement"
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """
+        Enhance training data with vectorized and matrix operations.
+        
+        Args:
+            training_data: Original training data
+            step_name: Name of the enhancement step
+            
+        Returns:
+            Enhanced training data and metadata
+        """
+        try:
+            start_time = time.time()
+            self.logger.info(f"🔄 Starting vectorized training data enhancement for {step_name}...")
+            
+            enhanced_data = training_data.copy()
+            enhancement_metadata = {}
+            
+            # 1. Apply vectorized feature engineering
+            if self.config.enable_vectorized_features and self.vectorized_features:
+                self.logger.info("🔧 Applying vectorized feature engineering...")
+                
+                # Extract features from training data
+                if "features" in training_data:
+                    features_df = training_data["features"]
+                    
+                    # Apply vectorized feature engineering
+                    enhanced_features, feature_metadata = await self._apply_vectorized_features(features_df)
+                    enhanced_data["features"] = enhanced_features
+                    enhancement_metadata["vectorized_features"] = feature_metadata
+                    
+                    self.logger.info(f"✅ Vectorized features: {len(features_df.columns)} -> {len(enhanced_features.columns)}")
+            
+            # 2. Apply matrix enhancements
+            if self.config.enable_matrix_enhancement:
+                self.logger.info("📊 Applying matrix enhancements...")
+                
+                if "features" in enhanced_data:
+                    features_df = enhanced_data["features"]
+                    
+                    # Apply matrix enhancement
+                    matrix_enhanced_features, matrix_metadata = self.matrix_enhancement.enhance_training_features(features_df)
+                    enhanced_data["features"] = matrix_enhanced_features
+                    enhancement_metadata["matrix_enhancement"] = matrix_metadata
+                    
+                    self.logger.info(f"✅ Matrix enhancement: {len(features_df.columns)} -> {len(matrix_enhanced_features.columns)}")
+            
+            # 3. Apply quality gates
+            if self.config.enable_quality_gates:
+                quality_check = await self._apply_quality_gates(enhanced_data)
+                enhancement_metadata["quality_gates"] = quality_check
+                
+                if not quality_check.get("passed", False):
+                    self.logger.warning("⚠️ Quality gates failed, reverting to original data")
+                    return training_data, enhancement_metadata
+            
+            # 4. Performance monitoring
+            if self.config.enable_performance_monitoring:
+                performance_metrics = self._calculate_performance_metrics(enhanced_data, training_data)
+                enhancement_metadata["performance_metrics"] = performance_metrics
+            
+            total_time = time.time() - start_time
+            enhancement_metadata["total_processing_time"] = total_time
+            enhancement_metadata["step_name"] = step_name
+            
+            self.logger.info(f"✅ Vectorized training data enhancement completed in {total_time:.2f}s")
+            
+            return enhanced_data, enhancement_metadata
+            
+        except Exception as e:
+            self.logger.error(f"❌ Vectorized training data enhancement failed: {e}")
+            return training_data, {"error": str(e)}
+    
+    @handle_errors(exceptions=(ValueError, AttributeError), default_return=None)
+    async def _apply_vectorized_features(self, features_df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """Apply vectorized feature engineering."""
+        try:
+            if not self.vectorized_features:
+                return features_df, {"skipped": "vectorized_features_disabled"}
+            
+            # Apply vectorized feature engineering
+            enhanced_features = await self.vectorized_features.engineer_features_vectorized(features_df)
+            
+            metadata = {
+                "original_features": len(features_df.columns),
+                "enhanced_features": len(enhanced_features.columns),
+                "feature_increase": len(enhanced_features.columns) - len(features_df.columns)
+            }
+            
+            return enhanced_features, metadata
+            
+        except Exception as e:
+            self.logger.error(f"❌ Vectorized feature application failed: {e}")
+            return features_df, {"error": str(e)}
+    
+    @handle_errors(exceptions=(ValueError, AttributeError), default_return=None)
+    async def _apply_quality_gates(self, enhanced_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply quality gates to enhanced data."""
+        try:
+            quality_results = {
+                "passed": True,
+                "checks": {}
+            }
+            
+            if "features" in enhanced_data:
+                features_df = enhanced_data["features"]
+                
+                # Check for NaN values
+                nan_count = features_df.isna().sum().sum()
+                nan_percentage = nan_count / (features_df.shape[0] * features_df.shape[1])
+                quality_results["checks"]["nan_check"] = {
+                    "passed": nan_percentage < 0.1,  # Less than 10% NaN
+                    "nan_count": nan_count,
+                    "nan_percentage": nan_percentage
+                }
+                
+                # Check for infinite values
+                inf_count = np.isinf(features_df.select_dtypes(include=[np.number])).sum().sum()
+                quality_results["checks"]["inf_check"] = {
+                    "passed": inf_count == 0,
+                    "inf_count": inf_count
+                }
+                
+                # Check feature variance
+                zero_var_features = features_df.var() == 0
+                zero_var_count = zero_var_features.sum()
+                quality_results["checks"]["variance_check"] = {
+                    "passed": zero_var_count < len(features_df.columns) * 0.1,  # Less than 10% zero variance
+                    "zero_variance_features": zero_var_count
+                }
+                
+                # Overall quality assessment
+                all_checks_passed = all(check["passed"] for check in quality_results["checks"].values())
+                quality_results["passed"] = all_checks_passed
+            
+            return quality_results
+            
+        except Exception as e:
+            self.logger.error(f"❌ Quality gates application failed: {e}")
+            return {"passed": False, "error": str(e)}
+    
+    @handle_errors(exceptions=(ValueError, AttributeError), default_return=None)
+    def _calculate_performance_metrics(
+        self, 
+        enhanced_data: Dict[str, Any], 
+        original_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Calculate performance metrics for enhanced data."""
+        try:
+            metrics = {}
+            
+            if "features" in enhanced_data and "features" in original_data:
+                enhanced_features = enhanced_data["features"]
+                original_features = original_data["features"]
+                
+                # Memory usage comparison
+                enhanced_memory = enhanced_features.memory_usage(deep=True).sum()
+                original_memory = original_features.memory_usage(deep=True).sum()
+                
+                metrics["memory_usage"] = {
+                    "original_mb": original_memory / (1024 * 1024),
+                    "enhanced_mb": enhanced_memory / (1024 * 1024),
+                    "memory_increase": (enhanced_memory - original_memory) / original_memory
+                }
+                
+                # Feature count comparison
+                metrics["feature_count"] = {
+                    "original": len(original_features.columns),
+                    "enhanced": len(enhanced_features.columns),
+                    "increase": len(enhanced_features.columns) - len(original_features.columns)
+                }
+                
+                # Data shape comparison
+                metrics["data_shape"] = {
+                    "original": original_features.shape,
+                    "enhanced": enhanced_features.shape
+                }
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"❌ Performance metrics calculation failed: {e}")
+            return {"error": str(e)}
+    
+    @handle_errors(exceptions=(ValueError, AttributeError), default_return=None)
+    async def integrate_with_training_pipeline(
+        self, 
+        training_pipeline: Any,
+        training_data: Dict[str, Any]
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """
+        Integrate vectorized enhancements with existing training pipeline.
+        
+        Args:
+            training_pipeline: Existing training pipeline instance
+            training_data: Training data to enhance
+            
+        Returns:
+            Enhanced training data and integration metadata
+        """
+        try:
+            self.logger.info("🔗 Integrating vectorized enhancements with training pipeline...")
+            
+            integration_metadata = {}
+            
+            # Enhance training data
+            enhanced_data, enhancement_metadata = await self.enhance_training_data(training_data, "pipeline_integration")
+            integration_metadata["enhancement"] = enhancement_metadata
+            
+            # Update training pipeline with enhanced data
+            if hasattr(training_pipeline, 'update_training_data'):
+                await training_pipeline.update_training_data(enhanced_data)
+                integration_metadata["pipeline_update"] = {"status": "success"}
+            else:
+                integration_metadata["pipeline_update"] = {"status": "skipped", "reason": "no_update_method"}
+            
+            # Store results
+            self.pipeline_results["integration"] = integration_metadata
+            
+            self.logger.info("✅ Vectorized enhancements integrated with training pipeline")
+            return enhanced_data, integration_metadata
+            
+        except Exception as e:
+            self.logger.error(f"❌ Pipeline integration failed: {e}")
+            return training_data, {"error": str(e)}
+    
+    @handle_errors(exceptions=(ValueError, AttributeError), default_return=None)
+    async def optimize_training_process(
+        self, 
+        training_data: Dict[str, Any],
+        optimization_target: str = "performance"
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """
+        Optimize training process using vectorized operations.
+        
+        Args:
+            training_data: Training data to optimize
+            optimization_target: Target for optimization ("performance", "memory", "accuracy")
+            
+        Returns:
+            Optimized training data and optimization metadata
+        """
+        try:
+            self.logger.info(f"⚡ Optimizing training process for {optimization_target}...")
+            
+            optimization_metadata = {}
+            
+            if optimization_target == "performance":
+                # Performance optimization
+                optimized_data, perf_metadata = await self._optimize_for_performance(training_data)
+                optimization_metadata["performance_optimization"] = perf_metadata
+                
+            elif optimization_target == "memory":
+                # Memory optimization
+                optimized_data, mem_metadata = await self._optimize_for_memory(training_data)
+                optimization_metadata["memory_optimization"] = mem_metadata
+                
+            elif optimization_target == "accuracy":
+                # Accuracy optimization
+                optimized_data, acc_metadata = await self._optimize_for_accuracy(training_data)
+                optimization_metadata["accuracy_optimization"] = acc_metadata
+                
+            else:
+                # Default to performance
+                optimized_data, perf_metadata = await self._optimize_for_performance(training_data)
+                optimization_metadata["performance_optimization"] = perf_metadata
+            
+            self.logger.info(f"✅ Training process optimization completed for {optimization_target}")
+            return optimized_data, optimization_metadata
+            
+        except Exception as e:
+            self.logger.error(f"❌ Training process optimization failed: {e}")
+            return training_data, {"error": str(e)}
+    
+    @handle_errors(exceptions=(ValueError, AttributeError), default_return=None)
+    async def _optimize_for_performance(self, training_data: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """Optimize for performance using vectorized operations."""
+        try:
+            optimized_data = training_data.copy()
+            metadata = {"optimization_type": "performance"}
+            
+            if "features" in training_data:
+                features_df = training_data["features"]
+                
+                # Convert to numpy arrays for faster operations
+                features_array = features_df.values
+                
+                # Apply vectorized operations
+                # 1. Standardization
+                features_std = (features_array - np.mean(features_array, axis=0)) / (np.std(features_array, axis=0) + 1e-8)
+                
+                # 2. Feature selection using variance threshold
+                variance_threshold = 0.01
+                feature_variances = np.var(features_std, axis=0)
+                selected_features = feature_variances > variance_threshold
+                
+                # 3. Create optimized features
+                optimized_features = features_std[:, selected_features]
+                optimized_feature_names = features_df.columns[selected_features].tolist()
+                
+                # Create DataFrame
+                optimized_df = pd.DataFrame(
+                    optimized_features,
+                    columns=optimized_feature_names,
+                    index=features_df.index
+                )
+                
+                optimized_data["features"] = optimized_df
+                
+                metadata.update({
+                    "original_features": len(features_df.columns),
+                    "optimized_features": len(optimized_df.columns),
+                    "variance_threshold": variance_threshold,
+                    "features_removed": len(features_df.columns) - len(optimized_df.columns)
+                })
+            
+            return optimized_data, metadata
+            
+        except Exception as e:
+            self.logger.error(f"❌ Performance optimization failed: {e}")
+            return training_data, {"error": str(e)}
+    
+    @handle_errors(exceptions=(ValueError, AttributeError), default_return=None)
+    async def _optimize_for_memory(self, training_data: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """Optimize for memory usage."""
+        try:
+            optimized_data = training_data.copy()
+            metadata = {"optimization_type": "memory"}
+            
+            if "features" in training_data:
+                features_df = training_data["features"]
+                
+                # Optimize data types
+                optimized_df = features_df.copy()
+                
+                # Convert to smaller data types where possible
+                for col in optimized_df.columns:
+                    if optimized_df[col].dtype == 'float64':
+                        # Check if float32 is sufficient
+                        if optimized_df[col].min() >= -3.4e38 and optimized_df[col].max() <= 3.4e38:
+                            optimized_df[col] = optimized_df[col].astype('float32')
+                    
+                    elif optimized_df[col].dtype == 'int64':
+                        # Check if int32 is sufficient
+                        if optimized_df[col].min() >= -2147483648 and optimized_df[col].max() <= 2147483647:
+                            optimized_df[col] = optimized_df[col].astype('int32')
+                
+                optimized_data["features"] = optimized_df
+                
+                # Calculate memory savings
+                original_memory = features_df.memory_usage(deep=True).sum()
+                optimized_memory = optimized_df.memory_usage(deep=True).sum()
+                memory_savings = (original_memory - optimized_memory) / original_memory
+                
+                metadata.update({
+                    "original_memory_mb": original_memory / (1024 * 1024),
+                    "optimized_memory_mb": optimized_memory / (1024 * 1024),
+                    "memory_savings_percent": memory_savings * 100
+                })
+            
+            return optimized_data, metadata
+            
+        except Exception as e:
+            self.logger.error(f"❌ Memory optimization failed: {e}")
+            return training_data, {"error": str(e)}
+    
+    @handle_errors(exceptions=(ValueError, AttributeError), default_return=None)
+    async def _optimize_for_accuracy(self, training_data: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """Optimize for accuracy using advanced matrix operations."""
+        try:
+            optimized_data = training_data.copy()
+            metadata = {"optimization_type": "accuracy"}
+            
+            if "features" in training_data:
+                features_df = training_data["features"]
+                
+                # Apply advanced matrix operations for accuracy improvement
+                # 1. Apply SVD enhancement
+                enhanced_features, svd_metadata = self.matrix_enhancement.enhance_features_with_svd(features_df)
+                
+                # 2. Apply NMF enhancement
+                enhanced_features, nmf_metadata = self.matrix_enhancement.enhance_features_with_nmf(enhanced_features)
+                
+                # 3. Apply spectral clustering features
+                enhanced_features, spectral_metadata = self.matrix_enhancement.apply_spectral_clustering_features(enhanced_features)
+                
+                optimized_data["features"] = enhanced_features
+                
+                metadata.update({
+                    "original_features": len(features_df.columns),
+                    "enhanced_features": len(enhanced_features.columns),
+                    "svd_enhancement": svd_metadata,
+                    "nmf_enhancement": nmf_metadata,
+                    "spectral_enhancement": spectral_metadata
+                })
+            
+            return optimized_data, metadata
+            
+        except Exception as e:
+            self.logger.error(f"❌ Accuracy optimization failed: {e}")
+            return training_data, {"error": str(e)}
+    
+    def get_pipeline_summary(self) -> Dict[str, Any]:
+        """Get summary of pipeline operations and results."""
+        try:
+            summary = {
+                "pipeline_config": {
+                    "enable_matrix_enhancement": self.config.enable_matrix_enhancement,
+                    "enable_vectorized_features": self.config.enable_vectorized_features,
+                    "enable_parallel_processing": self.config.enable_parallel_processing,
+                    "enable_quality_gates": self.config.enable_quality_gates
+                },
+                "pipeline_results": self.pipeline_results,
+                "performance_metrics": self.performance_metrics
+            }
+            
+            return summary
+            
+        except Exception as e:
+            self.logger.error(f"❌ Pipeline summary generation failed: {e}")
+            return {"error": str(e)}

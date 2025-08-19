@@ -22,43 +22,43 @@ def get_enhanced_matrix_training_config() -> Dict[str, Any]:
     
     # Enhanced matrix operations configuration
     enhanced_matrix_config = {
-        # Enable enhanced matrix operations
+        # Enable enhanced matrix operations (DEFAULT: ENABLED)
         "enable_enhanced_matrix_operations": True,
         
-        # Matrix optimization modes
+        # Matrix optimization modes (DEFAULT: BALANCED PERFORMANCE)
         "matrix_optimization_mode": "performance",  # "performance", "memory", "accuracy", "stability"
         "model_training_optimization_mode": "accuracy",  # For model training steps
         
-        # GPU acceleration settings
+        # GPU acceleration settings (DEFAULT: ENABLED)
         "enable_gpu_acceleration": True,
         "enable_mps": True,
         "enable_metal_performance_shaders": True,
         "enable_mixed_precision": True,
         
-        # Memory management
+        # Memory management (DEFAULT: OPTIMIZED)
         "gpu_memory_fraction": 0.8,
         "max_gpu_memory_gb": 8.0,
         "enable_memory_pooling": True,
         "enable_memory_cleanup": True,
         
-        # Performance settings
+        # Performance settings (DEFAULT: OPTIMIZED)
         "batch_size": 1000,
         "chunk_size": 5000,
         "enable_parallel_processing": True,
         "enable_batch_processing": True,
         
-        # Quality settings
+        # Quality settings (DEFAULT: ENABLED)
         "enable_numerical_stability": True,
         "enable_gradient_clipping": True,
         "gradient_clip_norm": 1.0,
         "enable_batch_norm": True,
         
-        # Fallback settings
+        # Fallback settings (DEFAULT: ENABLED FOR RELIABILITY)
         "enable_cpu_fallback": True,
         "cpu_threshold": 10000,
         "enable_automatic_fallback": True,
         
-        # Matrix operations settings
+        # Matrix operations settings (DEFAULT: ALL ENABLED)
         "enable_gpu_svd": True,
         "enable_gpu_eigenvalue": True,
         "enable_gpu_matrix_multiply": True,
@@ -67,17 +67,17 @@ def get_enhanced_matrix_training_config() -> Dict[str, Any]:
         "enable_gpu_training": True,
         "enable_gpu_inference": True,
         
-        # Performance thresholds
+        # Performance thresholds (DEFAULT: OPTIMIZED)
         "min_matrix_size_for_gpu": 100,
         "min_batch_size_for_gpu": 50,
         "max_gpu_memory_usage": 0.8,
         
-        # Quality thresholds
+        # Quality thresholds (DEFAULT: HIGH PRECISION)
         "numerical_precision": 1e-6,
         "convergence_tolerance": 1e-8,
         "max_iterations": 1000,
         
-        # Security settings
+        # Security settings (DEFAULT: ALL ENABLED)
         "enable_gpu_data_encryption": True,
         "enable_memory_isolation": True,
         "enable_secure_computation": True,
@@ -88,16 +88,16 @@ def get_enhanced_matrix_training_config() -> Dict[str, Any]:
         "enable_result_validation": True,
         "enable_error_detection": True,
         
-        # Integration settings
+        # Integration settings (DEFAULT: ALL ENABLED)
         "enable_step_2_5_enhancement": True,  # Enhanced matrix operations after feature engineering
         "enable_step_5_5_enhancement": True,  # Enhanced matrix operations before model training
         
-        # Logging and monitoring
+        # Logging and monitoring (DEFAULT: ALL ENABLED)
         "enable_enhanced_logging": True,
         "enable_performance_tracking": True,
         "enable_quality_monitoring": True,
         
-        # Error handling
+        # Error handling (DEFAULT: ROBUST)
         "max_retry_attempts": 3,
         "retry_delay_seconds": 1.0,
         "enable_graceful_degradation": True,

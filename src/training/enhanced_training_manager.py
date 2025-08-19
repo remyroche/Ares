@@ -166,8 +166,8 @@ class EnhancedTrainingManager:
         self.enhanced_matrix_ops = None
         self.gpu_integration = None
         
-        # Check if enhanced matrix operations are enabled
-        if config.get("enable_enhanced_matrix_operations", False):
+        # Check if enhanced matrix operations are enabled (DEFAULT: ENABLED)
+        if config.get("enable_enhanced_matrix_operations", True):
             try:
                 self.enhanced_matrix_ops = EnhancedMatrixOperations(config)
                 self.gpu_integration = EnhancedMatrixGPUIntegration(config)
@@ -1710,10 +1710,10 @@ class EnhancedTrainingManager:
             self._save_checkpoint("step2_feature_engineering", pipeline_state)
             step_times["step2_feature_engineering"] = time.time() - step_start_2
 
-            # Step 2.5: Enhanced Matrix Operations with GPU Acceleration (Optional Enhancement)
+            # Step 2.5: Enhanced Matrix Operations with GPU Acceleration (DEFAULT: ENABLED)
             if (step2_success and 
-                self.config.get("enable_enhanced_matrix_operations", False) and 
-                self.config.get("enable_step_2_5_enhancement", False)):
+                self.config.get("enable_enhanced_matrix_operations", True) and 
+                self.config.get("enable_step_2_5_enhancement", True)):
                 self._heartbeat("Step 2.5: Enhanced Matrix Operations")
                 step_start_2_5 = time.time()
                 
@@ -1998,9 +1998,9 @@ class EnhancedTrainingManager:
 
             # Step 4_8: Regime Forecasting is now integrated into Step 6 training (artifacts emitted there)
 
-            # Step 5.5: Enhanced Matrix Operations for Model Training (Optional Enhancement)
-            if (self.config.get("enable_enhanced_matrix_operations", False) and 
-                self.config.get("enable_step_5_5_enhancement", False)):
+            # Step 5.5: Enhanced Matrix Operations for Model Training (DEFAULT: ENABLED)
+            if (self.config.get("enable_enhanced_matrix_operations", True) and 
+                self.config.get("enable_step_5_5_enhancement", True)):
                 self._heartbeat("Step 5.5: Enhanced Matrix Operations for Model Training")
                 step_start_5_5 = time.time()
                 

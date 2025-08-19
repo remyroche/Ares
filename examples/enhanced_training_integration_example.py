@@ -21,14 +21,60 @@ from src.config.enhanced_matrix_config import (
 from src.training.enhanced_training_manager import EnhancedTrainingManager
 
 
+async def example_default_training():
+    """Example of default training with enhanced matrix operations enabled."""
+    
+    print("=" * 80)
+    print("🚀 DEFAULT TRAINING PIPELINE (Enhanced Matrix Operations ENABLED)")
+    print("=" * 80)
+    
+    # Default configuration - enhanced matrix operations are enabled by default
+    config = {}  # Empty config uses all defaults (enhanced operations enabled)
+    
+    # Initialize training manager
+    training_manager = EnhancedTrainingManager(config)
+    
+    # Training input
+    training_input = {
+        "symbol": "BTCUSDT",
+        "exchange": "binance",
+        "timeframe": "1m",
+        "training_mode": "default_enhanced",
+        "start_step": "step1_data_collection",
+        "force_rerun": False,
+    }
+    
+    print("📊 Starting default enhanced training pipeline...")
+    
+    # Execute training
+    success = await training_manager.execute_enhanced_training(training_input)
+    
+    if success:
+        print("✅ Default enhanced training completed successfully")
+        
+        # Get results
+        results = training_manager.get_enhanced_training_results()
+        status = training_manager.get_enhanced_training_status()
+        matrix_results = training_manager.get_matrix_enhancement_results()
+        
+        print(f"📈 Training Status: {status}")
+        print(f"📊 Results: {len(results)} result entries")
+        print(f"🔧 Matrix Enhancement Enabled: {matrix_results.get('enhanced_matrix_operations_enabled', False)}")
+        
+    else:
+        print("❌ Default enhanced training failed")
+    
+    return success
+
+
 async def example_standard_training():
     """Example of standard training without enhanced matrix operations."""
     
     print("=" * 80)
-    print("🚀 STANDARD TRAINING PIPELINE (No Enhanced Matrix Operations)")
+    print("🚀 STANDARD TRAINING PIPELINE (Enhanced Matrix Operations DISABLED)")
     print("=" * 80)
     
-    # Standard configuration without enhanced matrix operations
+    # Standard configuration without enhanced matrix operations (explicitly disabled)
     config = {
         "enable_enhanced_matrix_operations": False,
         "enable_step_2_5_enhancement": False,
@@ -77,7 +123,7 @@ async def example_enhanced_training_performance():
     print("🚀 ENHANCED TRAINING PIPELINE (Performance Mode)")
     print("=" * 80)
     
-    # Enhanced configuration with performance optimization
+    # Enhanced configuration with performance optimization (DEFAULT: ENABLED)
     config = get_optimized_enhanced_matrix_config("performance")
     
     # Initialize training manager
@@ -128,7 +174,7 @@ async def example_enhanced_training_accuracy():
     print("🚀 ENHANCED TRAINING PIPELINE (Accuracy Mode)")
     print("=" * 80)
     
-    # Enhanced configuration with accuracy optimization
+    # Enhanced configuration with accuracy optimization (DEFAULT: ENABLED)
     config = get_optimized_enhanced_matrix_config("accuracy")
     
     # Initialize training manager
@@ -180,7 +226,7 @@ async def example_production_training():
     print("🚀 PRODUCTION ENHANCED TRAINING PIPELINE")
     print("=" * 80)
     
-    # Production configuration
+    # Production configuration (DEFAULT: ENABLED)
     config = get_production_enhanced_matrix_config()
     
     # Initialize training manager
@@ -301,24 +347,28 @@ async def main():
     print("=" * 80)
     
     try:
-        # Example 1: Standard training (no enhancements)
+        # Example 1: Default training (enhanced operations enabled by default)
+        await example_default_training()
+        
+        # Example 2: Standard training (enhanced operations explicitly disabled)
         await example_standard_training()
         
-        # Example 2: Enhanced training with performance optimization
+        # Example 3: Enhanced training with performance optimization
         await example_enhanced_training_performance()
         
-        # Example 3: Enhanced training with accuracy optimization
+        # Example 4: Enhanced training with accuracy optimization
         await example_enhanced_training_accuracy()
         
-        # Example 4: Production training
+        # Example 5: Production training
         await example_production_training()
         
-        # Example 5: Graceful fallback
+        # Example 6: Graceful fallback
         await example_graceful_fallback()
         
         print("\n" + "=" * 80)
         print("🎉 All examples completed!")
-        print("✅ Enhanced matrix operations are fully integrated as optional enhancements")
+        print("✅ Enhanced matrix operations are now ENABLED BY DEFAULT")
+        print("🚀 All training pipelines will use enhanced operations unless explicitly disabled")
         print("🔄 The pipeline gracefully falls back to standard operations when needed")
         print("🔧 All operations are secured with existing decorators")
         print("=" * 80)

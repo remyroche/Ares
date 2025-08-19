@@ -13,35 +13,35 @@ from dataclasses import dataclass, field
 class M1GPUConfig:
     """Configuration for Mac M1 GPU acceleration."""
     
-    # GPU settings
+    # GPU settings (DEFAULT: ALL ENABLED)
     enable_mps: bool = True
     enable_metal_performance_shaders: bool = True
     enable_mixed_precision: bool = True
     
-    # Memory management
+    # Memory management (DEFAULT: OPTIMIZED)
     gpu_memory_fraction: float = 0.8
     max_gpu_memory_gb: float = 8.0
     enable_memory_pooling: bool = True
     enable_memory_cleanup: bool = True
     
-    # Performance settings
+    # Performance settings (DEFAULT: OPTIMIZED)
     batch_size: int = 1000
     chunk_size: int = 5000
     enable_parallel_processing: bool = True
     enable_batch_processing: bool = True
     
-    # Quality settings
+    # Quality settings (DEFAULT: ALL ENABLED)
     enable_numerical_stability: bool = True
     enable_gradient_clipping: bool = True
     gradient_clip_norm: float = 1.0
     enable_batch_norm: bool = True
     
-    # Fallback settings
+    # Fallback settings (DEFAULT: ENABLED FOR RELIABILITY)
     enable_cpu_fallback: bool = True
     cpu_threshold: int = 10000  # Use CPU for small matrices
     enable_automatic_fallback: bool = True
     
-    # Optimization settings
+    # Optimization settings (DEFAULT: ALL ENABLED)
     enable_tensor_cores: bool = True
     enable_fusion_operations: bool = True
     enable_memory_optimization: bool = True
@@ -52,23 +52,23 @@ class M1GPUConfig:
 class M1MatrixOperationsConfig:
     """Configuration for M1-optimized matrix operations."""
     
-    # Matrix factorization settings
+    # Matrix factorization settings (DEFAULT: ALL ENABLED)
     enable_gpu_svd: bool = True
     enable_gpu_eigenvalue: bool = True
     enable_gpu_matrix_multiply: bool = True
     enable_gpu_batch_operations: bool = True
     
-    # Neural network settings
+    # Neural network settings (DEFAULT: ALL ENABLED)
     enable_gpu_neural_networks: bool = True
     enable_gpu_training: bool = True
     enable_gpu_inference: bool = True
     
-    # Performance thresholds
+    # Performance thresholds (DEFAULT: OPTIMIZED)
     min_matrix_size_for_gpu: int = 100
     min_batch_size_for_gpu: int = 50
     max_gpu_memory_usage: float = 0.8
     
-    # Quality thresholds
+    # Quality thresholds (DEFAULT: HIGH PRECISION)
     numerical_precision: float = 1e-6
     convergence_tolerance: float = 1e-8
     max_iterations: int = 1000
@@ -78,17 +78,17 @@ class M1MatrixOperationsConfig:
 class M1SecurityConfig:
     """Configuration for M1 GPU security."""
     
-    # Data security
+    # Data security (DEFAULT: ALL ENABLED)
     enable_gpu_data_encryption: bool = True
     enable_memory_isolation: bool = True
     enable_secure_computation: bool = True
     
-    # Monitoring
+    # Monitoring (DEFAULT: ALL ENABLED)
     enable_gpu_monitoring: bool = True
     enable_memory_monitoring: bool = True
     enable_performance_monitoring: bool = True
     
-    # Quality gates
+    # Quality gates (DEFAULT: ALL ENABLED)
     enable_gpu_quality_gates: bool = True
     enable_result_validation: bool = True
     enable_error_detection: bool = True

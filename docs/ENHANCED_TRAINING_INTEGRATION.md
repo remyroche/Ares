@@ -25,10 +25,21 @@ The enhanced matrix operations are integrated as **optional enhancements** that:
 
 ## 🚀 Usage Examples
 
-### **Standard Training (No Enhancements)**
+### **Default Training (Enhanced Operations Enabled)**
 
 ```python
-# Standard configuration - no enhanced matrix operations
+# Default configuration - enhanced matrix operations are enabled by default
+config = {}  # Empty config uses all defaults (enhanced operations enabled)
+
+# Initialize and run training
+training_manager = EnhancedTrainingManager(config)
+success = await training_manager.execute_enhanced_training(training_input)
+```
+
+### **Standard Training (Enhanced Operations Disabled)**
+
+```python
+# Standard configuration - explicitly disable enhanced matrix operations
 config = {
     "enable_enhanced_matrix_operations": False,
     "enable_step_2_5_enhancement": False,
@@ -86,14 +97,14 @@ success = await training_manager.execute_enhanced_training(training_input)
 
 ```python
 config = {
-    # Enable/disable enhanced matrix operations
+    # Enable/disable enhanced matrix operations (DEFAULT: ENABLED)
     "enable_enhanced_matrix_operations": True,  # Master switch
     
-    # Enable specific enhancement steps
+    # Enable specific enhancement steps (DEFAULT: ENABLED)
     "enable_step_2_5_enhancement": True,        # After feature engineering
     "enable_step_5_5_enhancement": True,        # Before model training
     
-    # Optimization modes
+    # Optimization modes (DEFAULT: PERFORMANCE)
     "matrix_optimization_mode": "performance",  # "performance", "memory", "accuracy", "stability"
     "model_training_optimization_mode": "accuracy",
 }
@@ -103,17 +114,17 @@ config = {
 
 ```python
 config = {
-    # GPU settings
+    # GPU settings (DEFAULT: ALL ENABLED)
     "enable_gpu_acceleration": True,
     "enable_mps": True,                    # Mac M1 Metal Performance Shaders
     "enable_mixed_precision": True,
     
-    # Memory management
+    # Memory management (DEFAULT: OPTIMIZED)
     "gpu_memory_fraction": 0.8,
     "max_gpu_memory_gb": 8.0,
     "enable_memory_cleanup": True,
     
-    # Performance settings
+    # Performance settings (DEFAULT: OPTIMIZED)
     "batch_size": 1000,
     "chunk_size": 5000,
     "cpu_threshold": 10000,               # Use CPU for small matrices
@@ -124,17 +135,17 @@ config = {
 
 ```python
 config = {
-    # Quality settings
+    # Quality settings (DEFAULT: ALL ENABLED)
     "enable_numerical_stability": True,
     "enable_gradient_clipping": True,
     "gradient_clip_norm": 1.0,
     
-    # Security settings
+    # Security settings (DEFAULT: ALL ENABLED)
     "enable_gpu_data_encryption": True,
     "enable_memory_isolation": True,
     "enable_gpu_quality_gates": True,
     
-    # Fallback settings
+    # Fallback settings (DEFAULT: ALL ENABLED)
     "enable_cpu_fallback": True,
     "enable_automatic_fallback": True,
     "enable_graceful_degradation": True,
@@ -256,7 +267,11 @@ python examples/enhanced_training_integration_example.py
 ### **Test Different Modes**
 
 ```python
-# Test standard training
+# Test default training (enhanced operations enabled)
+config = {}  # Empty config uses all defaults
+training_manager = EnhancedTrainingManager(config)
+
+# Test standard training (enhanced operations disabled)
 config = {"enable_enhanced_matrix_operations": False}
 training_manager = EnhancedTrainingManager(config)
 
@@ -375,4 +390,4 @@ print(f"Detailed Results: {matrix_results}")
 
 ---
 
-**Note**: The enhanced matrix operations are designed as **optional enhancements** to the existing training pipeline. They provide significant performance improvements when available but gracefully fall back to standard operations when not available or when they fail. This ensures the training pipeline remains robust and reliable in all scenarios.
+**Note**: The enhanced matrix operations are now **enabled by default** in the training pipeline. They provide significant performance improvements and are automatically used unless explicitly disabled. The pipeline gracefully falls back to standard operations when enhanced features are not available or when they fail, ensuring the training pipeline remains robust and reliable in all scenarios.

@@ -1,31 +1,23 @@
-# src/training/steps/step4_analyst_labeling_feature_engineering/__init__.py
+# src/training/steps/step4_analyst_labeling_feature_engineering_components/__init__.py
 
-"""Step 4: Analyst Labeling and Feature Engineering Package.
+"""
+Step 4 Analyst Labeling Feature Engineering Components
 
-This package contains optimized implementations for:
-    pass
-- Triple barrier labeling with vectorized operations
-- Advanced feature engineering with computational optimizations
-- Memory-efficient data processing
+This module contains optimized components for triple barrier labeling and feature engineering
+used in step 4 of the training pipeline.
 """
 
-from src.utils.warning_symbols import (
-    connection_error,
-    critical,
-    error,
-    execution_error,
-    failed,
-    initialization_error,
-    invalid,
-    missing,
-    problem,
-    timeout,
-    validation_error,
-    warning,
+from .optimized_triple_barrier_labeling import (
+    OptimizedTripleBarrierLabeling,
+    benchmark_triple_barrier_methods,
 )
-
-from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
 
 __all__ = [
     "OptimizedTripleBarrierLabeling",
+    "benchmark_triple_barrier_methods",
 ]
+
+# Version information
+__version__ = "1.0.0"
+__author__ = "Ares Trading System"
+__description__ = "Optimized triple barrier labeling and feature engineering components for step 4"

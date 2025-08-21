@@ -23,7 +23,7 @@ async def load_config(config_path: str) -> dict:
     """Load configuration from YAML file."""
     try:
         with open(config_path) as f:
-            return yaml.safe_load(f)
+        return yaml.safe_load(f)
     except Exception:
         return {}
 
@@ -32,21 +32,21 @@ async def create_sample_data():
     """Create sample price data for demonstration."""
     try:
         # Create sample OHLCV data
-        dates = pd.date_range("2024-01-01", "2024-12-31", freq="1min")
-        n_points = len(dates)
+        dates, pd.date_range("2024-01-01", "2024-12-31", freq="1min")
+        n_points, len(dates)
 
         # Generate realistic price data
         np.random.seed(42)
-        base_price = 1000
-        returns = np.random.normal(0, 0.001, n_points)
-        prices = base_price * np.exp(np.cumsum(returns))
+        base_price, 1000
+        returns, np.random.normal(0, 0.001, n_points)
+        prices, base_price * np.exp(np.cumsum(returns))
 
         # Add some volatility clustering
-        volatility = np.random.gamma(2, 0.001, n_points)
-        prices = prices * (1 + np.random.normal(0, volatility))
+        volatility, np.random.gamma(2, 0.001, n_points)
+        prices, prices * (1 + np.random.normal(0, volatility))
 
         # Create OHLCV data
-        data = pd.DataFrame(
+        data, pd.DataFrame(
             {
                 "open": prices * (1 + np.random.normal(0, 0.0005, n_points)),
                 "high": prices * (1 + np.abs(np.random.normal(0, 0.001, n_points))),
@@ -71,25 +71,25 @@ async def step1_precompute_features(config: dict) -> bool | None:
     """Step 1: Pre-compute wavelet features for the entire dataset."""
     try:
         # Initialize pre-computer
-        precomputer = WaveletFeaturePrecomputer(config)
+        precomputer, WaveletFeaturePrecomputer(config)
         await precomputer.initialize()
 
         # Create sample data
-        sample_data = await create_sample_data()
+        sample_data, await create_sample_data()
 
         if sample_data.empty:
-            return False
+        return False
 
         # Save sample data
-        data_dir = Path("data/price_data")
+        data_dir, Path("data/price_data")
         data_dir.mkdir(parents=True, exist_ok=True)
 
         sample_data.to_parquet("data/price_data/sample_data.parquet")
 
         # Pre-compute features
-        start_time = time.time()
+        start_time, time.time()
 
-        success = await precomputer.precompute_dataset(
+        success, await precomputer.precompute_dataset(
             data_path="data/price_data/sample_data.parquet",
             symbol="SAMPLE",
             start_date="2024-01-01",
@@ -100,10 +100,10 @@ async def step1_precompute_features(config: dict) -> bool | None:
 
         if success:
 
-            # Print cache statistics
+        # Print cache statistics
             precomputer.get_precomputation_stats()
 
-            return True
+        return True
         return False
 
     except Exception:
@@ -114,7 +114,7 @@ async def step2_run_backtests(config: dict) -> bool | None:
     """Step 2: Run backtests using cached features."""
     try:
         # Initialize backtesting system
-        backtester = BacktestingWithCachedFeatures(config)
+        backtester, BacktestingWithCachedFeatures(config)
         await backtester.initialize()
 
         # Load sample data (project OHLCV)
@@ -143,23 +143,23 @@ async def step2_run_backtests(config: dict) -> bool | None:
             },
         ]
 
-        start_time = time.time()
+        start_time, time.time()
 
         # Run backtests
-        results = await backtester.run_multiple_backtests(backtest_configs)
+        results, await backtester.run_multiple_backtests(backtest_configs)
 
         time.time() - start_time
 
         if results:
 
-            # Print results
-            for _i, result in enumerate(results):
+        # Print results
+        for _i, result in enumerate(results):
                 result.get("strategy_results", {})
 
-            # Print performance statistics
+        # Print performance statistics
             backtester.get_performance_stats()
 
-            return True
+        return True
         return False
 
     except Exception:
@@ -171,31 +171,31 @@ async def step3_performance_comparison(config: dict) -> bool | None:
     try:
         # Load sample data (project OHLCV)
         try:
-            price_data = pd.read_parquet(
+            price_data, pd.read_parquet(
                 "data/price_data/sample_data.parquet",
                 columns=["timestamp", "open", "high", "low", "close", "volume"],
             )
         except Exception:
-            price_data = pd.read_parquet("data/price_data/sample_data.parquet")
+            price_data, pd.read_parquet("data/price_data/sample_data.parquet")
 
         # Test 1: With caching (should be fast)
-        backtester_cached = BacktestingWithCachedFeatures(config)
+        backtester_cached, BacktestingWithCachedFeatures(config)
         await backtester_cached.initialize()
 
-        start_time = time.time()
+        start_time, time.time()
         await backtester_cached.run_backtest(price_data)
-        cached_time = time.time() - start_time
+        cached_time, time.time() - start_time
 
         # Test 2: Without caching (should be slower)
-        config_no_cache = config.copy()
+        config_no_cache, config.copy()
         config_no_cache["wavelet_cache"]["cache_enabled"] = False
 
-        backtester_no_cache = BacktestingWithCachedFeatures(config_no_cache)
+        backtester_no_cache, BacktestingWithCachedFeatures(config_no_cache)
         await backtester_no_cache.initialize()
 
-        start_time = time.time()
+        start_time, time.time()
         await backtester_no_cache.run_backtest(price_data)
-        no_cache_time = time.time() - start_time
+        no_cache_time, time.time() - start_time
 
         # Print comparison
 
@@ -218,7 +218,7 @@ async def step4_cache_management(config: dict) -> bool | None:
             WaveletFeatureCache,
         )
 
-        cache = WaveletFeatureCache(config)
+        cache, WaveletFeatureCache(config)
 
         # Get cache statistics
         cache.get_cache_stats()
@@ -259,25 +259,25 @@ async def main() -> None:
                 },
             }
         else:
-            config = await load_config(config_path)
+            config, await load_config(config_path)
 
         # Step 1: Pre-compute features
-        step1_success = await step1_precompute_features(config)
+        step1_success, await step1_precompute_features(config)
         if not step1_success:
             return
 
         # Step 2: Run backtests
-        step2_success = await step2_run_backtests(config)
+        step2_success, await step2_run_backtests(config)
         if not step2_success:
             return
 
         # Step 3: Performance comparison
-        step3_success = await step3_performance_comparison(config)
+        step3_success, await step3_performance_comparison(config)
         if not step3_success:
             return
 
         # Step 4: Cache management
-        step4_success = await step4_cache_management(config)
+        step4_success, await step4_cache_management(config)
         if not step4_success:
             return
 

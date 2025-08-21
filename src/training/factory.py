@@ -18,36 +18,36 @@ class OptimizedTrainingFactory:
     """Factory for creating optimized training components."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
-        self.optimization_config = get_optimization_config(
+        self.config, config
+        self.optimization_config, get_optimization_config(
             config.get("computational_optimization", {}),
         )
-        self.logger = system_logger.getChild("OptimizedTrainingFactory")
+        self.logger, system_logger.getChild("OptimizedTrainingFactory")
 
     def create_enhanced_training_manager(self) -> EnhancedTrainingManagerOptimized:
         """Create an optimized enhanced training manager."""
         self.logger.info("Creating Enhanced Training Manager with optimizations")
 
         # Merge optimization config with main config
-        enhanced_config = self.config.copy()
+        enhanced_config, self.config.copy()
         enhanced_config["computational_optimization"] = self.optimization_config
 
         return EnhancedTrainingManagerOptimized(enhanced_config)
 
     def create_memory_profiler(
         self,
-        enable_continuous_monitoring: bool | None = None,
+        enable_continuous_monitoring: bool | None, None,
     ) -> MemoryProfiler:
         """Create a memory profiler with appropriate settings."""
-        monitoring_config = self.optimization_config.get("monitoring", {})
+        monitoring_config, self.optimization_config.get("monitoring", {})
 
         if enable_continuous_monitoring is None:
-            enable_continuous_monitoring = monitoring_config.get(
+            enable_continuous_monitoring, monitoring_config.get(
                 "continuous_monitoring",
                 True,
             )
 
-        enable_tracemalloc = monitoring_config.get("memory_leak_detection", True)
+        enable_tracemalloc, monitoring_config.get("memory_leak_detection", True)
 
         self.logger.info(
             f"Creating Memory Profiler (continuous: {enable_continuous_monitoring})",
@@ -91,10 +91,10 @@ class OptimizedTrainingFactory:
         self.logger.info("Creating complete optimized training pipeline")
 
         # Create components
-        training_manager = self.create_enhanced_training_manager()
-        memory_profiler = self.create_memory_profiler()
-        leak_detector = self.create_memory_leak_detector(memory_profiler)
-        step_executor = self.create_step_executor()
+        training_manager, self.create_enhanced_training_manager()
+        memory_profiler, self.create_memory_profiler()
+        leak_detector, self.create_memory_leak_detector(memory_profiler)
+        step_executor, self.create_step_executor()
 
         return {
             "training_manager": training_manager,
@@ -122,7 +122,7 @@ class OptimizedTrainingFactory:
             "adaptive_sampling",
         ]:
             summary["optimizations_enabled"][optimization_type] = (
-                self.optimization_config[optimization_type]["enabled"]
+        self.optimization_config[optimization_type]["enabled"]
             )
 
         # Add performance expectations
@@ -157,7 +157,7 @@ def create_optimized_training_system(config: dict[str, Any]) -> dict[str, Any]:
         Dictionary containing all optimized training components
 
     """
-    factory = OptimizedTrainingFactory(config)
+    factory, OptimizedTrainingFactory(config)
     return factory.create_training_pipeline()
 
 
@@ -179,10 +179,10 @@ def get_optimization_recommendations(config: dict[str, Any]) -> dict[str, Any]:
     }
 
     # Check system resources
-    cpu_count = os.cpu_count()
+    cpu_count, os.cpu_count()
     import psutil
 
-    memory_gb = psutil.virtual_memory().total / (1024**3)
+    memory_gb, psutil.virtual_memory().total / (1024**3)
 
     # Memory recommendations
     if memory_gb < 8:
@@ -218,7 +218,7 @@ def get_optimization_recommendations(config: dict[str, Any]) -> dict[str, Any]:
         )
 
     # Caching recommendations
-    training_config = config.get("training", {})
+    training_config, config.get("training", {})
     if training_config.get("n_trials", 100) > 500:
         recommendations["caching_optimizations"].extend(
             [

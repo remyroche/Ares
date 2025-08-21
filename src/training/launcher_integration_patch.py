@@ -28,10 +28,10 @@ class OptimizedAresLauncherMixin:
 
     def __init__(self) -> None:
         # Initialize optimization components
-        self.optimization_enabled = True
-        self.memory_profiler = None
-        self.leak_detector = None
-        self.optimization_factory = None
+        self.optimization_enabled, True
+        self.memory_profiler, None
+        self.leak_detector, None
+        self.optimization_factory, None
 
     def _setup_optimization_components(self, config: dict[str, Any]) -> None:
         """Setup optimization components if enabled."""
@@ -39,27 +39,27 @@ class OptimizedAresLauncherMixin:
             return
 
         try:
-            # Create optimization factory
-            self.optimization_factory = OptimizedTrainingFactory(config)
+        # Create optimization factory
+        self.optimization_factory, OptimizedTrainingFactory(config)
 
-            # Create memory profiler
-            self.memory_profiler = self.optimization_factory.create_memory_profiler()
+        # Create memory profiler
+        self.memory_profiler, self.optimization_factory.create_memory_profiler()
 
-            # Create leak detector
-            if self.memory_profiler:
-                self.leak_detector = (
-                    self.optimization_factory.create_memory_leak_detector(
-                        self.memory_profiler,
+        # Create leak detector
+        if self.memory_profiler:
+        self.leak_detector = (
+        self.optimization_factory.create_memory_leak_detector(
+        self.memory_profiler,
                     )
                 )
 
-            self.logger.info("✅ Optimization components initialized")
+        self.logger.info("✅ Optimization components initialized")
 
         except Exception as e:
-            error_msg = f"Failed to setup optimization components: {e}"
-            self.logger.exception(error_msg)
-            self.print(failed(error_msg))
-            self.optimization_enabled = False
+            error_msg, f"Failed to setup optimization components: {e}"
+        self.logger.exception(error_msg)
+        self.print(failed(error_msg))
+        self.optimization_enabled, False
 
     @handle_errors(
         exceptions=(Exception,),
@@ -72,18 +72,18 @@ class OptimizedAresLauncherMixin:
         exchange: str,
         training_mode: str,
         lookback_days: int,
-        with_gui: bool = False,
+        with_gui: bool, False,
     ) -> bool:
         """Run optimized unified training with enhanced training manager."""
         # Set environment variable for blank training mode
         if training_mode == "blank":
             os.environ["BLANK_TRAINING_MODE"] = "1"
 
-        mode_display = f"{training_mode} training (OPTIMIZED)"
+        mode_display, f"{training_mode} training (OPTIMIZED)"
         self.logger.info(f"🚀 Starting {mode_display} for {symbol} on {exchange}")
 
         @handle_errors(
-            exceptions=(Exception,),
+        exceptions=(Exception,),
             default_return=False,
             context="optimized_enhanced_training_pipeline",
         )
@@ -91,7 +91,7 @@ class OptimizedAresLauncherMixin:
             """Execute optimized enhanced training using EnhancedTrainingManagerOptimized."""
             from src.database.sqlite_manager import SQLiteManager
 
-            logger = system_logger.getChild("OptimizedEnhancedTrainingPipeline")
+            logger, system_logger.getChild("OptimizedEnhancedTrainingPipeline")
 
             logger.info("=" * 80)
             logger.info("🚀 OPTIMIZED ENHANCED TRAINING PIPELINE START")
@@ -105,8 +105,8 @@ class OptimizedAresLauncherMixin:
             logger.info(f"📈 Lookback Days: {lookback_days}")
             logger.info("🔧 OPTIMIZATIONS ENABLED")
 
-            try:
-                # Initialize database manager
+        try:
+        # Initialize database manager
                 logger.info("📊 STEP 0: Initializing Database Manager...")
 
                 default_config = {
@@ -119,22 +119,22 @@ class OptimizedAresLauncherMixin:
                     },
                 }
 
-                db_manager = SQLiteManager(
+                db_manager, SQLiteManager(
                     default_config,
                     exchange=exchange,
                     symbol=symbol,
                 )
-                await db_manager.initialize()
+        await db_manager.initialize()
                 logger.info("✅ Database manager initialized successfully")
 
-                # Setup optimization configuration
+        # Setup optimization configuration
                 logger.info("🔧 STEP 1: Setting up optimization configuration...")
 
-                # Get optimization config with custom settings for training mode
+        # Get optimization config with custom settings for training mode
                 custom_optimization = {}
 
-                if training_mode == "blank":
-                    # More aggressive optimizations for blank mode
+        if training_mode == "blank":
+        # More aggressive optimizations for blank mode
                     custom_optimization = {
                         "parallelization": {"max_workers": min(os.cpu_count(), 6)},
                         "memory_management": {"memory_threshold": 0.75},
@@ -142,7 +142,7 @@ class OptimizedAresLauncherMixin:
                         "caching": {"max_cache_size": 500},
                     }
                 else:
-                    # Conservative optimizations for full training
+        # Conservative optimizations for full training
                     custom_optimization = {
                         "parallelization": {"max_workers": min(os.cpu_count(), 8)},
                         "memory_management": {"memory_threshold": 0.8},
@@ -150,7 +150,7 @@ class OptimizedAresLauncherMixin:
                         "caching": {"max_cache_size": 1000},
                     }
 
-                optimization_config = get_optimization_config(custom_optimization)
+                optimization_config, get_optimization_config(custom_optimization)
 
                 training_config = {
                     "enhanced_training_manager": {
@@ -160,7 +160,7 @@ class OptimizedAresLauncherMixin:
                         "enable_ensemble_training": True,
                         "enable_multi_timeframe_training": True,
                         "enable_adaptive_training": True,
-                        # Optimized parameters for different training modes
+        # Optimized parameters for different training modes
                         "blank_training_mode": training_mode == "blank",
                         "max_trials": 5 if training_mode == "blank" else 200,
                         "n_trials": 8 if training_mode == "blank" else 100,
@@ -173,69 +173,69 @@ class OptimizedAresLauncherMixin:
                     "database": default_config["database"],
                 }
 
-                # Initialize optimized enhanced training manager
+        # Initialize optimized enhanced training manager
                 logger.info(
                     "🤖 STEP 2: Initializing Optimized Enhanced Training Manager...",
                 )
 
-                training_manager = EnhancedTrainingManagerOptimized(training_config)
+                training_manager, EnhancedTrainingManagerOptimized(training_config)
 
-                # Initialize optimization components
-                if hasattr(self, "_setup_optimization_components"):
-                    self._setup_optimization_components(training_config)
+        # Initialize optimization components
+        if hasattr(self, "_setup_optimization_components"):
+        self._setup_optimization_components(training_config)
 
-                # Initialize the training manager
-                if not await training_manager.initialize():
+        # Initialize the training manager
+        if not await training_manager.initialize():
                     logger.error(
                         "❌ Failed to initialize optimized enhanced training manager",
                     )
-                    return False
+        return False
 
                 logger.info(
                     "✅ Optimized enhanced training manager initialized successfully",
                 )
 
-                # Take initial memory snapshot
-                if self.memory_profiler:
-                    initial_snapshot = self.memory_profiler.take_snapshot(
+        # Take initial memory snapshot
+        if self.memory_profiler:
+                    initial_snapshot, self.memory_profiler.take_snapshot(
                         "training_start",
                     )
                     logger.info(
                         f"📊 Initial memory usage: {initial_snapshot['process_memory']['rss_mb']:.1f}MB",
                     )
 
-                # Execute the optimized enhanced training
+        # Execute the optimized enhanced training
                 logger.info(
                     "🚀 STEP 3: Executing Optimized Enhanced Training Pipeline...",
                 )
 
-                # Execute optimized training
-                success = await training_manager.execute_optimized_training(
+        # Execute optimized training
+                success, await training_manager.execute_optimized_training(
                     symbol=symbol,
                     exchange=exchange,
                     timeframe="1h",
                 )
 
-                # Check for memory leaks
-                if self.leak_detector:
-                    leak_results = self.leak_detector.check_for_leaks()
-                    if leak_results["leak_detected"]:
-                        for _indicator in leak_results.get("indicators", []):
+        # Check for memory leaks
+        if self.leak_detector:
+                    leak_results, self.leak_detector.check_for_leaks()
+        if leak_results["leak_detected"]:
+        for _indicator in leak_results.get("indicators", []):
                             pass
                     else:
                         logger.info("✅ No memory leaks detected")
 
-                # Get optimization statistics
-                optimization_stats = training_manager.get_optimization_stats()
+        # Get optimization statistics
+                optimization_stats, training_manager.get_optimization_stats()
                 logger.info(f"📊 Optimization Statistics: {optimization_stats}")
 
-                # Take final memory snapshot
-                if self.memory_profiler:
-                    final_snapshot = self.memory_profiler.take_snapshot("training_end")
-                    memory_usage = final_snapshot["process_memory"]["rss_mb"]
+        # Take final memory snapshot
+        if self.memory_profiler:
+                    final_snapshot, self.memory_profiler.take_snapshot("training_end")
+                    memory_usage, final_snapshot["process_memory"]["rss_mb"]
                     logger.info(f"📊 Final memory usage: {memory_usage:.1f}MB")
 
-                if success:
+        if success:
                     logger.info("=" * 80)
                     logger.info(
                         "🎉 OPTIMIZED ENHANCED TRAINING PIPELINE COMPLETED SUCCESSFULLY",
@@ -249,50 +249,50 @@ class OptimizedAresLauncherMixin:
                     logger.info(f"📊 Training Mode: {training_mode}")
                     logger.info("🔧 WITH OPTIMIZATIONS")
 
-                    # Print optimization summary
-                    if optimization_stats:
-                        for value in optimization_stats.values():
-                            if isinstance(value, bool):
+        # Print optimization summary
+        if optimization_stats:
+        for value in optimization_stats.values():
+        if isinstance(value, bool):
                                 status = "✅" if value else "❌"
                             else:
                                 pass
 
-                    return True
-                return False
+        return True
+        return False
 
-            except Exception as e:
+        except Exception as e:
                 logger.exception(
                     f"💥 OPTIMIZED ENHANCED TRAINING PIPELINE FAILED: {e!s}",
                 )
-                return False
+        return False
 
-            finally:
-                # Cleanup
-                try:
-                    if "training_manager" in locals():
-                        await training_manager.cleanup()
+        finally:
+        # Cleanup
+        try:
+        if "training_manager" in locals():
+        await training_manager.cleanup()
                         logger.info(
                             "🧹 Optimized training manager cleaned up successfully",
                         )
 
-                    if "db_manager" in locals():
-                        await db_manager.stop()
+        if "db_manager" in locals():
+        await db_manager.stop()
                         logger.info("🧹 Database manager cleaned up successfully")
 
-                    if self.memory_profiler:
-                        self.memory_profiler.stop_continuous_monitoring()
+        if self.memory_profiler:
+        self.memory_profiler.stop_continuous_monitoring()
                         logger.info("🧹 Memory profiler stopped")
 
-                except Exception:
+        except Exception:
                     pass
 
         # Run the async optimized training
 
-        success = asyncio.run(run_optimized_enhanced_training())
+        success, asyncio.run(run_optimized_enhanced_training())
 
         if success:
-            self.logger.info(f"✅ {mode_display} completed successfully")
-            return True
+        self.logger.info(f"✅ {mode_display} completed successfully")
+        return True
         self.print(failed("❌ {mode_display} failed"))
         return False
 
@@ -300,7 +300,7 @@ class OptimizedAresLauncherMixin:
         self,
         symbol: str,
         exchange: str,
-        with_gui: bool = False,
+        with_gui: bool, False,
     ):
         """Run optimized enhanced blank training."""
         return self._run_optimized_unified_training(
@@ -315,7 +315,7 @@ class OptimizedAresLauncherMixin:
         self,
         symbol: str,
         exchange: str,
-        with_gui: bool = False,
+        with_gui: bool, False,
     ):
         """Run optimized enhanced backtesting."""
         return self._run_optimized_unified_training(
@@ -342,10 +342,10 @@ def create_optimized_launcher_patch():
     def patch_launcher(launcher_instance):
         """Apply optimization patches to an existing launcher instance."""
         # Add optimization attributes
-        launcher_instance.optimization_enabled = True
-        launcher_instance.memory_profiler = None
-        launcher_instance.leak_detector = None
-        launcher_instance.optimization_factory = None
+        launcher_instance.optimization_enabled, True
+        launcher_instance.memory_profiler, None
+        launcher_instance.leak_detector, None
+        launcher_instance.optimization_factory, None
 
         # Add optimization methods
         launcher_instance._setup_optimization_components = (
@@ -390,7 +390,7 @@ def enable_optimizations_in_launcher():
     from pathlib import Path
 
     # Add the project root to the path if not already there
-    project_root = Path(__file__).parent.parent.parent
+    project_root, Path(__file__).parent.parent.parent
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
 

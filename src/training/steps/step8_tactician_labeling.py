@@ -29,8 +29,8 @@ class TacticianTripleBarrierLabeler:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config.get("tactician_triple_barrier", {})
-        self.logger = system_logger.getChild("TacticianTripleBarrierLabeler")
+        self.config, config.get("tactician_triple_barrier", {})
+        self.logger, system_logger.getChild("TacticianTripleBarrierLabeler")
 
     def apply_labels(
         self,
@@ -53,9 +53,9 @@ class TacticianTripleBarrierLabeler:
         )
 
         # Get parameters from config, with defaults for a high-leverage, 1m timeframe
-        pt_pct = self.config.get("profit_take_pct", 0.005)  # Target 0.5% profit
-        sl_pct = self.config.get("stop_loss_pct", 0.0025)  # Stop out at 0.25% loss
-        time_barrier = self.config.get(
+        pt_pct, self.config.get("profit_take_pct", 0.005)  # Target 0.5% profit
+        sl_pct, self.config.get("stop_loss_pct", 0.0025)  # Stop out at 0.25% loss
+        time_barrier, self.config.get(
             "time_barrier_periods",
             30,
         )  # 30-minute time horizon
@@ -65,48 +65,48 @@ class TacticianTripleBarrierLabeler:
             strategic_signals[strategic_signals != 0].reindex(data.index).dropna()
         )
         if entry_points.empty:
-            self.logger.warning(
+        self.logger.warning(
                 "⚠️ No strategic signals found to label. Returning data without labels.",
             )
             data[
                 "tactician_label"
             ] = -1  # Default to sell signal for binary classification
-            return data
+        return data
 
-        entry_indices = data.index.get_indexer_for(entry_points.index)
+        entry_indices, data.index.get_indexer_for(entry_points.index)
 
         # Calculate fixed percentage barriers for each entry point
-        entry_prices = data["open"].iloc[entry_indices + 1]
+        entry_prices, data["open"].iloc[entry_indices + 1]
 
-        profit_barriers = entry_prices * (1 + pt_pct * entry_points.values)
-        stop_barriers = entry_prices * (1 - sl_pct * entry_points.values)
+        profit_barriers, entry_prices * (1 + pt_pct * entry_points.values)
+        stop_barriers, entry_prices * (1 - sl_pct * entry_points.values)
 
-        labels = pd.Series(
+        labels, pd.Series(
             -1, index=data.index,
         )  # Default to sell signal for binary classification
 
         # Vectorized barrier check
         for i, entry_idx in enumerate(entry_indices):
-            if entry_idx >= len(data) - 1:
+        if entry_idx >= len(data) - 1:
                 continue
 
-            signal = entry_points.iloc[i]
-            pt = profit_barriers.iloc[i]
-            sl = stop_barriers.iloc[i]
+            signal, entry_points.iloc[i]
+            pt, profit_barriers.iloc[i]
+            sl, stop_barriers.iloc[i]
 
-            path = data.iloc[entry_idx + 1 : entry_idx + 1 + time_barrier]
-            if path.empty:
+            path, data.iloc[entry_idx + 1 : entry_idx + 1 + time_barrier]
+        if path.empty:
                 continue
 
-            # Check for hits
+        # Check for hits
             pt_hit_mask = (path["high"] >= pt) if signal == 1 else (path["low"] <= pt)
             sl_hit_mask = (path["low"] <= sl) if signal == 1 else (path["high"] >= sl)
 
-            pt_hit_time = path.index[pt_hit_mask].min()
-            sl_hit_time = path.index[sl_hit_mask].min()
+            pt_hit_time, path.index[pt_hit_mask].min()
+            sl_hit_time, path.index[sl_hit_mask].min()
 
-            # Determine label based on which barrier was hit first
-            if pd.notna(pt_hit_time) and (
+        # Determine label based on which barrier was hit first
+        if pd.notna(pt_hit_time) and (
                 pd.isna(sl_hit_time) or pt_hit_time <= sl_hit_time
             ):
                 labels.iloc[entry_idx] = 1  # Profit take
@@ -124,8 +124,8 @@ class TacticianLabelingStep:
     """Step 8: Tactician Model Labeling using Analyst's model."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
-        self.logger = system_logger
+        self.config, config
+        self.logger, system_logger
 
     @handle_errors(
         exceptions=(Exception,),
@@ -148,30 +148,30 @@ class TacticianLabelingStep:
     ) -> dict[str, Any]:
         """Execute tactician model labeling."""
         try:
-            self.logger.info("🔄 Executing Tactician Labeling...")
+        self.logger.info("🔄 Executing Tactician Labeling...")
 
-            symbol = training_input.get("symbol", "ETHUSDT")
-            exchange = training_input.get("exchange", "BINANCE")
-            data_dir = training_input.get("data_dir", "data/training")
+            symbol, training_input.get("symbol", "ETHUSDT")
+            exchange, training_input.get("exchange", "BINANCE")
+            data_dir, training_input.get("data_dir", "data/training")
 
-            # Use data sharing manager to get comprehensive data for tactician labeling
-            self.logger.info(
+        # Use data sharing manager to get comprehensive data for tactician labeling
+        self.logger.info(
                 "🔄 Loading unified data for tactician labeling via data sharing manager...",
             )
-            data_sharing_manager = get_data_sharing_manager(self.config)
-            timeframe = training_input.get("timeframe", "1m")
+            data_sharing_manager, get_data_sharing_manager(self.config)
+            timeframe, training_input.get("timeframe", "1m")
 
-            # Load unified data with optimizations for ML training
-            # Use data sharing manager to avoid redundant loading
+        # Load unified data with optimizations for ML training
+        # Use data sharing manager to avoid redundant loading
             from src.config.constants import (
                 BLANK_TRAINING_LOOKBACK_DAYS,
             )
 
-            # Use lookback_days from config (should be passed from enhanced training manager)
-            config_lookback = self.config.get(
+        # Use lookback_days from config (should be passed from enhanced training manager)
+            config_lookback, self.config.get(
                 "lookback_days", BLANK_TRAINING_LOOKBACK_DAYS,
             )
-            data_1m = await data_sharing_manager.get_unified_data(
+            data_1m, await data_sharing_manager.get_unified_data(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
@@ -179,69 +179,69 @@ class TacticianLabelingStep:
                 force_reload=False,  # Use cache if available from previous steps
             )
 
-            if data_1m is None or data_1m.empty:
-                self.logger.error(
+        if data_1m is None or data_1m.empty:
+        self.logger.error(
                     f"🚨 No unified data found for {symbol} on {exchange}",
                 )
-                return {
+        return {
                     "status": "FAILED",
                     "error": f"No unified data found for {symbol} on {exchange}",
                 }
 
-            # Log data information
-            try:
-                _loader = get_unified_data_loader(self.config)
-                data_info = _loader.get_data_info(data_1m)
-            except Exception as e:
-                self.logger.warning(f"⚠️ Could not get data info: {e}")
+        # Log data information
+        try:
+                _loader, get_unified_data_loader(self.config)
+                data_info, _loader.get_data_info(data_1m)
+        except Exception as e:
+        self.logger.warning(f"⚠️ Could not get data info: {e}")
                 data_info = {
                     "rows": len(data_1m) if hasattr(data_1m, "__len__") else None,
                     "columns": list(getattr(data_1m, "columns", [])) if hasattr(data_1m, "columns") else None,
                 }
-            self.logger.info(f"✅ Loaded unified data: {data_info['rows']} rows")
-            self.logger.info(
+        self.logger.info(f"✅ Loaded unified data: {data_info['rows']} rows")
+        self.logger.info(
                 f"   Date range: {data_info['date_range']['start']} to {data_info['date_range']['end']}",
             )
-            self.logger.info(
+        self.logger.info(
                 f"   Has aggtrades data: {data_info['has_aggtrades_data']}",
             )
-            self.logger.info(f"   Has futures data: {data_info['has_futures_data']}")
+        self.logger.info(f"   Has futures data: {data_info['has_futures_data']}")
 
-            # Ensure we have the required OHLCV columns
+        # Ensure we have the required OHLCV columns
             required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
             missing_columns = [
                 col for col in required_columns if col not in data_1m.columns
             ]
-            if missing_columns:
-                self.logger.error(f"🚨 Missing required columns: {missing_columns}")
-                return {
+        if missing_columns:
+        self.logger.error(f"🚨 Missing required columns: {missing_columns}")
+        return {
                     "status": "FAILED",
                     "error": f"Missing required columns: {missing_columns}",
                 }
-            with contextlib.suppress(Exception):
-                self.logger.info(
+        with contextlib.suppress(Exception):
+        self.logger.info(
                     f"Loaded 1m data: shape={getattr(data_1m, 'shape', None)}, columns={list(getattr(data_1m, 'columns', [])[:10])}",
                 )
 
-            # Load analyst ensemble models
-            analyst_ensembles = self._load_analyst_ensembles(data_dir)
+        # Load analyst ensemble models
+            analyst_ensembles, self._load_analyst_ensembles(data_dir)
 
-            # Generate strategic "setup" signals using analyst models
+        # Generate strategic "setup" signals using analyst models
             (
                 data_with_features,
                 strategic_signals,
             ) = await self._generate_strategic_signals(data_1m, analyst_ensembles)
 
-            # Apply the specialized Tactician Triple Barrier
-            labeler = TacticianTripleBarrierLabeler(self.config)
-            labeled_data = labeler.apply_labels(data_with_features, strategic_signals)
-            with contextlib.suppress(Exception):
-                self.logger.info(
+        # Apply the specialized Tactician Triple Barrier
+            labeler, TacticianTripleBarrierLabeler(self.config)
+            labeled_data, labeler.apply_labels(data_with_features, strategic_signals)
+        with contextlib.suppress(Exception):
+        self.logger.info(
                     f"Strategic signals summary: total={len(strategic_signals)}, nonzero={(strategic_signals != 0).sum()}",
                 )
 
-            # Save results
-            labeled_file, signals_file = self._save_results(
+        # Save results
+            labeled_file, signals_file, self._save_results(
                 labeled_data,
                 strategic_signals,
                 data_dir,
@@ -249,51 +249,51 @@ class TacticianLabelingStep:
                 symbol,
             )
 
-            self.logger.info(
+        self.logger.info(
                 f"✅ Tactician labeling completed. Labeled data saved to {labeled_file}",
             )
 
             pipeline_state["tactician_labeled_data"] = labeled_data
-            return {
+        return {
                 "status": "SUCCESS",
                 "labeled_file": labeled_file,
                 "signals_file": signals_file,
             }
         except Exception as e:
-            self.logger.exception(f"❌ Error in Tactician Labeling: {e}")
-            return {"status": "FAILED", "error": str(e)}
+        self.logger.exception(f"❌ Error in Tactician Labeling: {e}")
+        return {"status": "FAILED", "error": str(e)}
 
     def _load_analyst_ensembles(self, data_dir: str) -> dict[str, Any]:
         """Loads all trained analyst ensemble models."""
-        analyst_ensembles_dir = f"{data_dir}/analyst_ensembles"
+        analyst_ensembles_dir, f"{data_dir}/analyst_ensembles"
         analyst_ensembles = {}
         if not Path(analyst_ensembles_dir).exists():
-            msg = f"Analyst ensembles directory not found: {analyst_ensembles_dir}"
+            msg, f"Analyst ensembles directory not found: {analyst_ensembles_dir}"
             raise FileNotFoundError(
                 msg,
             )
 
         for ensemble_file in os.listdir(analyst_ensembles_dir):
-            if ensemble_file.endswith("_ensemble.pkl"):
-                regime_name = ensemble_file.replace("_ensemble.pkl", "")
-                ensemble_path = Path(analyst_ensembles_dir) / ensemble_file
-                with ensemble_path.open("rb") as f:
-                    loaded = pickle.load(f)
-                chosen_ensemble = None
-                if isinstance(loaded, dict):
-                    # Prefer stacking_cv, then dynamic_weighting, then voting
-                    for key in ENSEMBLE_PREFERENCE_ORDER:
-                        if key in loaded and isinstance(loaded[key], dict):
-                            obj = loaded[key].get("ensemble")
-                            if obj is not None:
-                                chosen_ensemble = obj
+        if ensemble_file.endswith("_ensemble.pkl"):
+                regime_name, ensemble_file.replace("_ensemble.pkl", "")
+                ensemble_path, Path(analyst_ensembles_dir) / ensemble_file
+        with ensemble_path.open("rb") as f:
+                    loaded, pickle.load(f)
+                chosen_ensemble, None
+        if isinstance(loaded, dict):
+        # Prefer stacking_cv, then dynamic_weighting, then voting
+        for key in ENSEMBLE_PREFERENCE_ORDER:
+        if key in loaded and isinstance(loaded[key], dict):
+                            obj, loaded[key].get("ensemble")
+        if obj is not None:
+                                chosen_ensemble, obj
                                 break
-                    if chosen_ensemble is None:
-                        # Fallback if saved dict is a single-ensemble payload
+        if chosen_ensemble is None:
+        # Fallback if saved dict is a single-ensemble payload
                         chosen_ensemble = (
                             loaded.get("ensemble") if "ensemble" in loaded else None
                         )
-                # Record whatever we found (could be None; upstream handles None)
+        # Record whatever we found (could be None; upstream handles None)
                 analyst_ensembles[regime_name] = chosen_ensemble
         return analyst_ensembles
 
@@ -306,40 +306,40 @@ class TacticianLabelingStep:
         self.logger.info("Generating strategic 'setup' signals from Analyst models...")
 
         # Step 1: Calculate all features needed for any of the analyst models
-        data_with_features = self._calculate_features(data)
+        data_with_features, self._calculate_features(data)
 
         # Step 2: Determine the market regime for each data point
         # This is a placeholder for your regime detection logic (e.g., from step 4)
         # It is crucial that this logic is consistent with how regimes were defined during Analyst training.
         data_with_features["regime"] = self._get_market_regime(data_with_features)
 
-        all_signals = pd.Series(0, index=data_with_features.index)
+        all_signals, pd.Series(0, index=data_with_features.index)
 
         # Step 3: Predict in a vectorized way for each regime
         for regime_name, ensemble in analyst_ensembles.items():
-            if ensemble is None:
+        if ensemble is None:
                 continue
 
-            regime_mask = data_with_features["regime"] == regime_name
-            if not regime_mask.any():
+            regime_mask, data_with_features["regime"] == regime_name
+        if not regime_mask.any():
                 continue
 
-            # Ensure the model's expected features are present
-            if hasattr(ensemble, "feature_names_in_"):
+        # Ensure the model's expected features are present
+        if hasattr(ensemble, "feature_names_in_"):
                 features_for_model = [
                     f
-                    for f in ensemble.feature_names_in_
-                    if f in data_with_features.columns
+        for f in ensemble.feature_names_in_
+        if f in data_with_features.columns
                 ]
-                x_regime = data_with_features.loc[regime_mask, features_for_model]
+                x_regime, data_with_features.loc[regime_mask, features_for_model]
             else:
-                # Fallback if feature names are not stored in the model
-                x_regime = data_with_features.loc[regime_mask].select_dtypes(
+        # Fallback if feature names are not stored in the model
+                x_regime, data_with_features.loc[regime_mask].select_dtypes(
                     include=np.number,
                 )
 
-            if not x_regime.empty:
-                predictions = ensemble.predict(x_regime)
+        if not x_regime.empty:
+                predictions, ensemble.predict(x_regime)
                 all_signals[regime_mask] = predictions
 
         self.logger.info(
@@ -354,10 +354,10 @@ class TacticianLabelingStep:
         # Example: Simple regime based on volatility percentile
         # NOTE: Volatility is calculated here because the Analyst models need it for regime detection.
         # It is NOT used by the Tactician's labeler.
-        vol_percentile = data["volatility"].rank(pct=True)
+        vol_percentile, data["volatility"].rank(pct=True)
         bins = [0, 0.33, 0.66, 1.0]
         labels = ["SIDEWAYS", "BULL", "BEAR"]
-        regimes = pd.cut(vol_percentile, bins=bins, labels=labels, right=False)
+        regimes, pd.cut(vol_percentile, bins=bins, labels=labels, right=False)
         return regimes.astype(str).fillna("SIDEWAYS")
 
     def _calculate_features(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -373,7 +373,7 @@ class TacticianLabelingStep:
 
     def _save_results(self, labeled_data, signals, data_dir, exchange, symbol):
         """Saves the labeled data and signals to disk."""
-        labeled_data_dir = f"{data_dir}/tactician_labeled_data"
+        labeled_data_dir, f"{data_dir}/tactician_labeled_data"
         Path(labeled_data_dir).mkdir(parents=True, exist_ok=True)
 
         # Prefer Parquet for DataFrame/Series persistence
@@ -381,7 +381,7 @@ class TacticianLabelingStep:
             f"{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.parquet"
         )
         try:
-            try:
+        try:
                 from src.training.enhanced_training_manager_optimized import (
                     ParquetDatasetManager,
                 )
@@ -394,11 +394,11 @@ class TacticianLabelingStep:
                     use_dictionary=True,
                     row_group_size=128_000,
                 )
-            except Exception:
+        except Exception:
                 from src.utils.logger import log_dataframe_overview, log_io_operation
 
-                with log_io_operation(
-                    self.logger,
+        with log_io_operation(
+        self.logger,
                     "to_parquet",
                     labeled_file_parquet,
                     compression="snappy",
@@ -406,25 +406,25 @@ class TacticianLabelingStep:
                     labeled_data.to_parquet(
                         labeled_file_parquet, compression="snappy", index=False,
                     )
-                with contextlib.suppress(Exception):
+        with contextlib.suppress(Exception):
                     log_dataframe_overview(
-                        self.logger, labeled_data, name="labeled_data",
+        self.logger, labeled_data, name="labeled_data",
                     )
         except Exception:
-            # Fallback to Pickle for compatibility
+        # Fallback to Pickle for compatibility
             labeled_file_pickle = (
                 f"{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.pkl"
             )
             labeled_data.to_pickle(labeled_file_pickle)
-            labeled_file_parquet = labeled_file_pickle
+            labeled_file_parquet, labeled_file_pickle
 
         signals_file_parquet = (
             f"{data_dir}/{exchange}_{symbol}_strategic_signals.parquet"
         )
         try:
-            # Save Series as Parquet by converting to DataFrame
-            _signals_df = signals.to_frame(name="signal").reset_index()
-            try:
+        # Save Series as Parquet by converting to DataFrame
+            _signals_df, signals.to_frame(name="signal").reset_index()
+        try:
                 from src.training.enhanced_training_manager_optimized import (
                     ParquetDatasetManager,
                 )
@@ -437,11 +437,11 @@ class TacticianLabelingStep:
                     use_dictionary=True,
                     row_group_size=128_000,
                 )
-            except Exception:
+        except Exception:
                 from src.utils.logger import log_dataframe_overview, log_io_operation
 
-                with log_io_operation(
-                    self.logger,
+        with log_io_operation(
+        self.logger,
                     "to_parquet",
                     signals_file_parquet,
                     compression="snappy",
@@ -449,14 +449,14 @@ class TacticianLabelingStep:
                     _signals_df.to_parquet(
                         signals_file_parquet, compression="snappy", index=False,
                     )
-                with contextlib.suppress(Exception):
+        with contextlib.suppress(Exception):
                     log_dataframe_overview(self.logger, _signals_df, name="signals_df")
         except Exception:
             signals_file_pickle = (
                 f"{data_dir}/{exchange}_{symbol}_strategic_signals.pkl"
             )
             signals.to_pickle(signals_file_pickle)
-            signals_file_parquet = signals_file_pickle
+            signals_file_parquet, signals_file_pickle
 
         return labeled_file_parquet, signals_file_parquet
 
@@ -546,7 +546,7 @@ async def run_step(
     symbol: str,
     exchange: str = "BINANCE",
     data_dir: str = "data/training",
-    force_rerun: bool = False,
+    force_rerun: bool, False,
     **kwargs,
 ) -> bool:
     """Run the tactician labeling step.
@@ -564,7 +564,7 @@ async def run_step(
     try:
         # Create step instance
         config = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}
-        step = TacticianLabelingStep(config)
+        step, TacticianLabelingStep(config)
         await step.initialize()
 
         # Execute step
@@ -577,7 +577,7 @@ async def run_step(
         }
 
         pipeline_state = {}
-        result = await step.execute(training_input, pipeline_state)
+        result, await step.execute(training_input, pipeline_state)
 
         return result.get("status") == "SUCCESS"
 

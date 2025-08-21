@@ -3,6 +3,7 @@
 """Unified Data Orchestrator - Single Source of Truth for Data Operations.
 
 This module provides a centralized, unified approach to all data operations including:
+    pass
 - Data loading from various sources (cache, unified format, raw files)
 - Data merging and consolidation
 - Multi-timeframe resampling
@@ -61,48 +62,48 @@ class UnifiedDataOrchestrator:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        start_time = time.time()
+        start_time, time.time()
 
-        self.config = config
-        self.logger = system_logger.getChild("UnifiedDataOrchestrator")
+        self.config, config
+        self.logger, system_logger.getChild("UnifiedDataOrchestrator")
 
         # Enable memory tracking for troubleshooting
         tracemalloc.start()
 
 
         # Initialize components
-        self.data_loader = UnifiedDataLoader(config)
+        self.data_loader, UnifiedDataLoader(config)
 
-        self.data_sharing_manager = DataSharingManager(config)
+        self.data_sharing_manager, DataSharingManager(config)
 
         # Configuration
-        self.orchestrator_config = config.get("unified_data_orchestrator", {})
-        self.enable_caching = self.orchestrator_config.get("enable_caching", True)
-        self.enable_memory_optimization = self.orchestrator_config.get(
+        self.orchestrator_config, config.get("unified_data_orchestrator", {})
+        self.enable_caching, self.orchestrator_config.get("enable_caching", True)
+        self.enable_memory_optimization, self.orchestrator_config.get(
             "enable_memory_optimization", True,
         )
-        self.enable_quality_validation = self.orchestrator_config.get(
+        self.enable_quality_validation, self.orchestrator_config.get(
             "enable_quality_validation", True,
         )
-        self.enable_auto_repair = self.orchestrator_config.get(
+        self.enable_auto_repair, self.orchestrator_config.get(
             "enable_auto_repair", True,
         )
 
 
         # Resampling configuration
-        self.resampling_config = self.orchestrator_config.get("resampling", {})
-        self.default_timeframes = self.resampling_config.get(
+        self.resampling_config, self.orchestrator_config.get("resampling", {})
+        self.default_timeframes, self.resampling_config.get(
             "default_timeframes", ["1m", "5m", "15m", "30m", "1h", "4h", "1d"],
         )
         self.resampling_cache = {}
-        self.resampling_cache_size = self.resampling_config.get("cache_size", 100)
+        self.resampling_cache_size, self.resampling_config.get("cache_size", 100)
 
 
         # Quality validation configuration
-        self.quality_config = self.orchestrator_config.get("quality_validation", {})
-        self.min_data_points = self.quality_config.get("min_data_points", 1000)
-        self.max_missing_ratio = self.quality_config.get("max_missing_ratio", 0.1)
-        self.max_duplicate_ratio = self.quality_config.get("max_duplicate_ratio", 0.05)
+        self.quality_config, self.orchestrator_config.get("quality_validation", {})
+        self.min_data_points, self.quality_config.get("min_data_points", 1000)
+        self.max_missing_ratio, self.quality_config.get("max_missing_ratio", 0.1)
+        self.max_duplicate_ratio, self.quality_config.get("max_duplicate_ratio", 0.05)
 
 
         # Statistics
@@ -119,21 +120,21 @@ class UnifiedDataOrchestrator:
         }
 
         # Initialize cache cleanup task
-        self._cache_cleanup_task = None
+        self._cache_cleanup_task, None
 
         time.time() - start_time
 
     def _get_memory_usage_mb(self) -> float:
         """Get current memory usage in MB."""
         try:
-            process = psutil.Process()
-            return process.memory_info().rss / 1024 / 1024
+            process, psutil.Process()
+        return process.memory_info().rss / 1024 / 1024
         except Exception:
-            return 0.0
+        return 0.0
 
     def _log_memory_usage(self, context: str) -> None:
         """Log current memory usage with context."""
-        memory_mb = self._get_memory_usage_mb()
+        memory_mb, self._get_memory_usage_mb()
         self.stats["memory_usage_history"].append(
             {"timestamp": datetime.now(), "context": context, "memory_mb": memory_mb},
         )
@@ -187,33 +188,33 @@ class UnifiedDataOrchestrator:
     )
     async def initialize(self) -> bool:
         """Initialize the orchestrator."""
-        start_time = time.time()
+        start_time, time.time()
         self._log_memory_usage("initialize_start")
 
         try:
-            self.logger.info("🚀 Initializing Unified Data Orchestrator")
+        self.logger.info("🚀 Initializing Unified Data Orchestrator")
 
-            # Initialize components
-            await self.data_sharing_manager.initialize()
+        # Initialize components
+        await self.data_sharing_manager.initialize()
 
-            # Start cache cleanup task
-            if self.enable_caching:
-                self._cache_cleanup_task = asyncio.create_task(
-                    self._cache_cleanup_loop(),
+        # Start cache cleanup task
+        if self.enable_caching:
+        self._cache_cleanup_task, asyncio.create_task(
+        self._cache_cleanup_loop(),
                 )
 
-            init_time = time.time() - start_time
-            self.stats["operation_times"]["initialization"] = init_time
+            init_time, time.time() - start_time
+        self.stats["operation_times"]["initialization"] = init_time
 
-            self._log_memory_usage("initialize_end")
+        self._log_memory_usage("initialize_end")
 
-            self.logger.info("✅ Unified Data Orchestrator initialized successfully")
-            return True
+        self.logger.info("✅ Unified Data Orchestrator initialized successfully")
+        return True
 
         except Exception as e:
-            init_time = time.time() - start_time
-            self.logger.exception(f"❌ Failed to initialize Unified Data Orchestrator: {e}")
-            return False
+            init_time, time.time() - start_time
+        self.logger.exception(f"❌ Failed to initialize Unified Data Orchestrator: {e}")
+        return False
 
     @validate_step_prerequisites(
         required_packages=["asyncio", "gc"], context="Orchestrator Cleanup",
@@ -255,31 +256,31 @@ class UnifiedDataOrchestrator:
     )
     async def cleanup(self) -> None:
         """Cleanup resources."""
-        start_time = time.time()
+        start_time, time.time()
         self._log_memory_usage("cleanup_start")
 
         try:
-            if self._cache_cleanup_task:
-                self._cache_cleanup_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await self._cache_cleanup_task
+        if self._cache_cleanup_task:
+        self._cache_cleanup_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+        await self._cache_cleanup_task
 
-            # Clear caches
+        # Clear caches
             len(self.resampling_cache)
-            self.resampling_cache.clear()
+        self.resampling_cache.clear()
 
-            self._force_garbage_collection()
+        self._force_garbage_collection()
 
-            cleanup_time = time.time() - start_time
-            self.stats["operation_times"]["cleanup"] = cleanup_time
+            cleanup_time, time.time() - start_time
+        self.stats["operation_times"]["cleanup"] = cleanup_time
 
-            self._log_memory_usage("cleanup_end")
+        self._log_memory_usage("cleanup_end")
 
-            self.logger.info("🧹 Unified Data Orchestrator cleanup completed")
+        self.logger.info("🧹 Unified Data Orchestrator cleanup completed")
 
         except Exception as e:
-            cleanup_time = time.time() - start_time
-            self.logger.exception(f"❌ Error during cleanup: {e}")
+            cleanup_time, time.time() - start_time
+        self.logger.exception(f"❌ Error during cleanup: {e}")
 
     @validate_step_prerequisites(
         required_directories=["data_cache", "data/training"],
@@ -350,10 +351,10 @@ class UnifiedDataOrchestrator:
         symbol: str,
         exchange: str,
         timeframe: str = "1m",
-        lookback_days: int | None = None,
-        force_reload: bool = False,
-        validate_quality: bool = True,
-        auto_repair: bool = True,
+        lookback_days: int | None, None,
+        force_reload: bool, False,
+        validate_quality: bool, True,
+        auto_repair: bool, True,
     ) -> pd.DataFrame | None:
         """Get unified data with comprehensive fallback strategies and quality validation.
 
@@ -370,23 +371,23 @@ class UnifiedDataOrchestrator:
             DataFrame with unified data or None if loading fails
 
         """
-        start_time = time.time()
-        request_id = f"{exchange}_{symbol}_{timeframe}_{int(start_time)}"
+        start_time, time.time()
+        request_id, f"{exchange}_{symbol}_{timeframe}_{int(start_time)}"
 
 
         self._log_memory_usage(f"data_load_start_{request_id}")
         self.stats["total_requests"] += 1
 
         try:
-            self.logger.info(
+        self.logger.info(
                 f"🔄 Loading unified data: {exchange}_{symbol}_{timeframe}",
             )
 
-            # Step 1: Try data sharing manager first (most efficient)
-            if not force_reload:
-                cache_start = time.time()
+        # Step 1: Try data sharing manager first (most efficient)
+        if not force_reload:
+                cache_start, time.time()
 
-                data = await self.data_sharing_manager.get_unified_data(
+                data, await self.data_sharing_manager.get_unified_data(
                     symbol=symbol,
                     exchange=exchange,
                     timeframe=timeframe,
@@ -396,30 +397,30 @@ class UnifiedDataOrchestrator:
 
                 time.time() - cache_start
 
-                if data is not None and not data.empty:
-                    self.stats["cache_hits"] += 1
+        if data is not None and not data.empty:
+        self.stats["cache_hits"] += 1
                     data.memory_usage(deep=True).sum() / 1024 / 1024
-                    self.logger.info(f"✅ Data loaded from cache: {data.shape}")
+        self.logger.info(f"✅ Data loaded from cache: {data.shape}")
 
-                    if validate_quality:
-                        validation_start = time.time()
-                        data = await self._validate_and_repair_data(data, auto_repair)
+        if validate_quality:
+                        validation_start, time.time()
+                        data, await self._validate_and_repair_data(data, auto_repair)
                         time.time() - validation_start
 
-                    total_time = time.time() - start_time
-                    self.stats["operation_times"][f"cache_hit_{request_id}"] = (
+                    total_time, time.time() - start_time
+        self.stats["operation_times"][f"cache_hit_{request_id}"] = (
                         total_time
                     )
-                    self._log_memory_usage(f"data_load_cache_hit_{request_id}")
+        self._log_memory_usage(f"data_load_cache_hit_{request_id}")
 
-                    return data
+        return data
 
-            self.stats["cache_misses"] += 1
+        self.stats["cache_misses"] += 1
 
-            # Step 2: Try unified data loader
-            loader_start = time.time()
+        # Step 2: Try unified data loader
+            loader_start, time.time()
 
-            data = await self.data_loader.load_unified_data(
+            data, await self.data_loader.load_unified_data(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
@@ -428,19 +429,19 @@ class UnifiedDataOrchestrator:
 
             time.time() - loader_start
 
-            if data is not None and not data.empty:
+        if data is not None and not data.empty:
                 data.memory_usage(deep=True).sum() / 1024 / 1024
-                self.logger.info(f"✅ Data loaded from unified loader: {data.shape}")
+        self.logger.info(f"✅ Data loaded from unified loader: {data.shape}")
 
-                if validate_quality:
-                    validation_start = time.time()
-                    data = await self._validate_and_repair_data(data, auto_repair)
+        if validate_quality:
+                    validation_start, time.time()
+                    data, await self._validate_and_repair_data(data, auto_repair)
                     time.time() - validation_start
 
-                # Cache the data
-                if self.enable_caching:
-                    cache_start = time.time()
-                    await self.data_sharing_manager.cache_unified_data(
+        # Cache the data
+        if self.enable_caching:
+                    cache_start, time.time()
+        await self.data_sharing_manager.cache_unified_data(
                         symbol=symbol,
                         exchange=exchange,
                         timeframe=timeframe,
@@ -449,21 +450,21 @@ class UnifiedDataOrchestrator:
                     )
                     time.time() - cache_start
 
-                total_time = time.time() - start_time
-                self.stats["operation_times"][f"unified_loader_{request_id}"] = (
+                total_time, time.time() - start_time
+        self.stats["operation_times"][f"unified_loader_{request_id}"] = (
                     total_time
                 )
-                self._log_memory_usage(f"data_load_unified_success_{request_id}")
+        self._log_memory_usage(f"data_load_unified_success_{request_id}")
 
-                return data
+        return data
 
-            # Step 3: Fallback to raw data loading and conversion
-            self.logger.warning(
+        # Step 3: Fallback to raw data loading and conversion
+        self.logger.warning(
                 "⚠️ Unified data not available, trying raw data conversion",
             )
-            raw_start = time.time()
+            raw_start, time.time()
 
-            data = await self._load_and_convert_raw_data(
+            data, await self._load_and_convert_raw_data(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
@@ -472,36 +473,36 @@ class UnifiedDataOrchestrator:
 
             time.time() - raw_start
 
-            if data is not None and not data.empty:
+        if data is not None and not data.empty:
                 data.memory_usage(deep=True).sum() / 1024 / 1024
-                self.logger.info(f"✅ Data loaded from raw conversion: {data.shape}")
+        self.logger.info(f"✅ Data loaded from raw conversion: {data.shape}")
 
-                if validate_quality:
-                    validation_start = time.time()
-                    data = await self._validate_and_repair_data(data, auto_repair)
+        if validate_quality:
+                    validation_start, time.time()
+                    data, await self._validate_and_repair_data(data, auto_repair)
                     time.time() - validation_start
 
-                total_time = time.time() - start_time
-                self.stats["operation_times"][f"raw_conversion_{request_id}"] = (
+                total_time, time.time() - start_time
+        self.stats["operation_times"][f"raw_conversion_{request_id}"] = (
                     total_time
                 )
-                self._log_memory_usage(f"data_load_raw_success_{request_id}")
+        self._log_memory_usage(f"data_load_raw_success_{request_id}")
 
-                return data
+        return data
 
-            # All methods failed
-            total_time = time.time() - start_time
-            self.logger.error(
+        # All methods failed
+            total_time, time.time() - start_time
+        self.logger.error(
                 f"❌ Failed to load data for {exchange}_{symbol}_{timeframe}",
             )
-            self._log_memory_usage(f"data_load_failed_{request_id}")
-            return None
+        self._log_memory_usage(f"data_load_failed_{request_id}")
+        return None
 
         except Exception as e:
-            total_time = time.time() - start_time
-            self.logger.exception(f"❌ Error loading unified data: {e}")
-            self._log_memory_usage(f"data_load_exception_{request_id}")
-            return None
+            total_time, time.time() - start_time
+        self.logger.exception(f"❌ Error loading unified data: {e}")
+        self._log_memory_usage(f"data_load_exception_{request_id}")
+        return None
 
     @validate_step_prerequisites(
         required_directories=["data_cache", "data/training"],
@@ -576,11 +577,11 @@ class UnifiedDataOrchestrator:
         self,
         symbol: str,
         exchange: str,
-        timeframes: list[str] | None = None,
-        lookback_days: int | None = None,
-        force_reload: bool = False,
-        validate_quality: bool = True,
-        auto_repair: bool = True,
+        timeframes: list[str] | None, None,
+        lookback_days: int | None, None,
+        force_reload: bool, False,
+        validate_quality: bool, True,
+        auto_repair: bool, True,
     ) -> dict[str, pd.DataFrame]:
         """Get data for multiple timeframes with intelligent resampling.
 
@@ -597,27 +598,27 @@ class UnifiedDataOrchestrator:
             Dictionary mapping timeframes to DataFrames
 
         """
-        start_time = time.time()
-        request_id = f"multi_{exchange}_{symbol}_{int(start_time)}"
+        start_time, time.time()
+        request_id, f"multi_{exchange}_{symbol}_{int(start_time)}"
 
 
         self._log_memory_usage(f"multi_tf_start_{request_id}")
 
         if timeframes is None:
-            timeframes = self.default_timeframes
+            timeframes, self.default_timeframes
 
         try:
-            self.logger.info(f"🔄 Loading multi-timeframe data: {exchange}_{symbol}")
-            self.logger.info(f"   Timeframes: {timeframes}")
+        self.logger.info(f"🔄 Loading multi-timeframe data: {exchange}_{symbol}")
+        self.logger.info(f"   Timeframes: {timeframes}")
 
-            # Sort timeframes by resolution (highest to lowest)
-            timeframe_order = self._sort_timeframes_by_resolution(timeframes)
+        # Sort timeframes by resolution (highest to lowest)
+            timeframe_order, self._sort_timeframes_by_resolution(timeframes)
 
-            # Load base timeframe first (usually 1m)
-            base_timeframe = self._get_base_timeframe(timeframe_order)
-            base_start = time.time()
+        # Load base timeframe first (usually 1m)
+            base_timeframe, self._get_base_timeframe(timeframe_order)
+            base_start, time.time()
 
-            base_data = await self.get_unified_data(
+            base_data, await self.get_unified_data(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=base_timeframe,
@@ -629,28 +630,28 @@ class UnifiedDataOrchestrator:
 
             time.time() - base_start
 
-            if base_data is None or base_data.empty:
-                self.logger.error(f"❌ Failed to load base data for {base_timeframe}")
-                return {}
+        if base_data is None or base_data.empty:
+        self.logger.error(f"❌ Failed to load base data for {base_timeframe}")
+        return {}
 
             base_data.memory_usage(deep=True).sum() / 1024 / 1024
 
-            # Load or resample data for each timeframe
+        # Load or resample data for each timeframe
             result = {}
-            successful_timeframes = 0
+            successful_timeframes, 0
 
-            for _i, timeframe in enumerate(timeframe_order, 1):
-                tf_start = time.time()
+        for _i, timeframe in enumerate(timeframe_order, 1):
+                tf_start, time.time()
 
-                if timeframe == base_timeframe:
+        if timeframe == base_timeframe:
                     result[timeframe] = base_data
                     successful_timeframes += 1
                     continue
 
-                # Try to load existing data for this timeframe
-                existing_start = time.time()
+        # Try to load existing data for this timeframe
+                existing_start, time.time()
 
-                existing_data = await self.get_unified_data(
+                existing_data, await self.get_unified_data(
                     symbol=symbol,
                     exchange=exchange,
                     timeframe=timeframe,
@@ -662,20 +663,20 @@ class UnifiedDataOrchestrator:
 
                 time.time() - existing_start
 
-                if existing_data is not None and not existing_data.empty:
+        if existing_data is not None and not existing_data.empty:
                     result[timeframe] = existing_data
                     (
                         existing_data.memory_usage(deep=True).sum() / 1024 / 1024
                     )
-                    self.logger.info(
+        self.logger.info(
                         f"✅ Loaded existing data for {timeframe}: {existing_data.shape}",
                     )
                     successful_timeframes += 1
                 else:
-                    # Resample from base data
-                    resample_start = time.time()
+        # Resample from base data
+                    resample_start, time.time()
 
-                    resampled_data = await self._resample_data(
+                    resampled_data, await self._resample_data(
                         data=base_data,
                         from_timeframe=base_timeframe,
                         to_timeframe=timeframe,
@@ -685,20 +686,20 @@ class UnifiedDataOrchestrator:
 
                     time.time() - resample_start
 
-                    if resampled_data is not None and not resampled_data.empty:
+        if resampled_data is not None and not resampled_data.empty:
                         result[timeframe] = resampled_data
                         (
                             resampled_data.memory_usage(deep=True).sum() / 1024 / 1024
                         )
-                        self.logger.info(
+        self.logger.info(
                             f"✅ Resampled data for {timeframe}: {resampled_data.shape}",
                         )
                         successful_timeframes += 1
 
-                        # Cache the resampled data
-                        if self.enable_caching:
-                            cache_start = time.time()
-                            await self.data_sharing_manager.cache_unified_data(
+        # Cache the resampled data
+        if self.enable_caching:
+                            cache_start, time.time()
+        await self.data_sharing_manager.cache_unified_data(
                                 symbol=symbol,
                                 exchange=exchange,
                                 timeframe=timeframe,
@@ -707,13 +708,13 @@ class UnifiedDataOrchestrator:
                             )
                             time.time() - cache_start
                     else:
-                        self.logger.warning(
+        self.logger.warning(
                             f"⚠️ Failed to resample data for {timeframe}",
                         )
 
                 time.time() - tf_start
 
-            total_time = time.time() - start_time
+            total_time, time.time() - start_time
             (
                 sum(df.memory_usage(deep=True).sum() for df in result.values())
                 / 1024
@@ -721,19 +722,19 @@ class UnifiedDataOrchestrator:
             )
 
 
-            self.stats["operation_times"][f"multi_tf_{request_id}"] = total_time
-            self._log_memory_usage(f"multi_tf_end_{request_id}")
+        self.stats["operation_times"][f"multi_tf_{request_id}"] = total_time
+        self._log_memory_usage(f"multi_tf_end_{request_id}")
 
-            self.logger.info(
+        self.logger.info(
                 f"✅ Multi-timeframe data loading completed: {len(result)} timeframes",
             )
-            return result
+        return result
 
         except Exception as e:
-            total_time = time.time() - start_time
-            self.logger.exception(f"❌ Error loading multi-timeframe data: {e}")
-            self._log_memory_usage(f"multi_tf_exception_{request_id}")
-            return {}
+            total_time, time.time() - start_time
+        self.logger.exception(f"❌ Error loading multi-timeframe data: {e}")
+        self._log_memory_usage(f"multi_tf_exception_{request_id}")
+        return {}
 
     @validate_step_prerequisites(
         required_packages=["pandas", "numpy"],
@@ -811,88 +812,88 @@ class UnifiedDataOrchestrator:
             Resampled DataFrame or None if resampling fails
 
         """
-        start_time = time.time()
-        request_id = f"resample_{from_timeframe}_{to_timeframe}_{int(start_time)}"
+        start_time, time.time()
+        request_id, f"resample_{from_timeframe}_{to_timeframe}_{int(start_time)}"
 
 
         self._log_memory_usage(f"resample_start_{request_id}")
 
         try:
-            self.stats["resampling_operations"] += 1
+        self.stats["resampling_operations"] += 1
 
-            # Generate cache key
-            cache_start = time.time()
-            cache_key = self._generate_resampling_cache_key(
+        # Generate cache key
+            cache_start, time.time()
+            cache_key, self._generate_resampling_cache_key(
                 data, from_timeframe, to_timeframe, symbol, exchange,
             )
             time.time() - cache_start
 
-            # Check cache
-            if cache_key in self.resampling_cache:
-                cached_data = self.resampling_cache[cache_key].copy()
+        # Check cache
+        if cache_key in self.resampling_cache:
+                cached_data, self.resampling_cache[cache_key].copy()
                 cached_data.memory_usage(deep=True).sum() / 1024 / 1024
-                self.logger.info(
+        self.logger.info(
                     f"📋 Using cached resampled data for {from_timeframe} -> {to_timeframe}",
                 )
 
-                total_time = time.time() - start_time
-                self.stats["operation_times"][f"resample_cache_hit_{request_id}"] = (
+                total_time, time.time() - start_time
+        self.stats["operation_times"][f"resample_cache_hit_{request_id}"] = (
                     total_time
                 )
-                self._log_memory_usage(f"resample_cache_hit_{request_id}")
+        self._log_memory_usage(f"resample_cache_hit_{request_id}")
 
-                return cached_data
+        return cached_data
 
 
-            # Perform resampling
-            resample_start = time.time()
+        # Perform resampling
+            resample_start, time.time()
 
-            resampled_data = self._perform_resampling(
+            resampled_data, self._perform_resampling(
                 data, from_timeframe, to_timeframe,
             )
 
             time.time() - resample_start
 
-            if resampled_data is not None and not resampled_data.empty:
+        if resampled_data is not None and not resampled_data.empty:
                 (
                     resampled_data.memory_usage(deep=True).sum() / 1024 / 1024
                 )
 
-                # Cache the result
-                cache_start = time.time()
+        # Cache the result
+                cache_start, time.time()
 
-                if len(self.resampling_cache) < self.resampling_cache_size:
-                    self.resampling_cache[cache_key] = resampled_data.copy()
+        if len(self.resampling_cache) < self.resampling_cache_size:
+        self.resampling_cache[cache_key] = resampled_data.copy()
                 else:
-                    # Remove oldest entry
-                    oldest_key = next(iter(self.resampling_cache))
+        # Remove oldest entry
+                    oldest_key, next(iter(self.resampling_cache))
                     del self.resampling_cache[oldest_key]
-                    self.resampling_cache[cache_key] = resampled_data.copy()
+        self.resampling_cache[cache_key] = resampled_data.copy()
 
                 time.time() - cache_start
 
-                total_time = time.time() - start_time
-                self.stats["operation_times"][f"resample_success_{request_id}"] = (
+                total_time, time.time() - start_time
+        self.stats["operation_times"][f"resample_success_{request_id}"] = (
                     total_time
                 )
-                self._log_memory_usage(f"resample_success_{request_id}")
+        self._log_memory_usage(f"resample_success_{request_id}")
 
-                self.logger.info(
+        self.logger.info(
                     f"✅ Resampled {from_timeframe} -> {to_timeframe}: {resampled_data.shape}",
                 )
-                return resampled_data
+        return resampled_data
 
-            total_time = time.time() - start_time
-            self.stats["operation_times"][f"resample_failed_{request_id}"] = total_time
-            self._log_memory_usage(f"resample_failed_{request_id}")
+            total_time, time.time() - start_time
+        self.stats["operation_times"][f"resample_failed_{request_id}"] = total_time
+        self._log_memory_usage(f"resample_failed_{request_id}")
 
-            return None
+        return None
 
         except Exception as e:
-            total_time = time.time() - start_time
-            self.logger.exception(f"❌ Error resampling data: {e}")
-            self._log_memory_usage(f"resample_exception_{request_id}")
-            return None
+            total_time, time.time() - start_time
+        self.logger.exception(f"❌ Error resampling data: {e}")
+        self._log_memory_usage(f"resample_exception_{request_id}")
+        return None
 
     def _perform_resampling(
         self, data: pd.DataFrame, from_timeframe: str, to_timeframe: str,
@@ -900,17 +901,17 @@ class UnifiedDataOrchestrator:
         """Perform the actual resampling operation."""
         try:
 
-            # Ensure we have a DatetimeIndex
-            if not isinstance(data.index, pd.DatetimeIndex):
-                if "timestamp" in data.columns:
-                    data = data.copy()
-                    data.index = pd.to_datetime(data["timestamp"], errors="coerce")
-                    data = data.sort_index()
+        # Ensure we have a DatetimeIndex
+        if not isinstance(data.index, pd.DatetimeIndex):
+        if "timestamp" in data.columns:
+                    data, data.copy()
+                    data.index, pd.to_datetime(data["timestamp"], errors="coerce")
+                    data, data.sort_index()
                 else:
-                    self.logger.error("❌ No timestamp column found for resampling")
-                    return None
+        self.logger.error("❌ No timestamp column found for resampling")
+        return None
 
-            # Convert timeframes to pandas offset
+        # Convert timeframes to pandas offset
             timeframe_map = {
                 "1m": "1min",
                 "5m": "5min",
@@ -922,24 +923,24 @@ class UnifiedDataOrchestrator:
             }
 
             timeframe_map.get(from_timeframe, "1min")
-            to_offset = timeframe_map.get(to_timeframe, "1min")
+            to_offset, timeframe_map.get(to_timeframe, "1min")
 
-            # Determine resampling direction
-            from_minutes = self._timeframe_to_minutes(from_timeframe)
-            to_minutes = self._timeframe_to_minutes(to_timeframe)
+        # Determine resampling direction
+            from_minutes, self._timeframe_to_minutes(from_timeframe)
+            to_minutes, self._timeframe_to_minutes(to_timeframe)
 
-            if from_minutes < to_minutes:
-                # Upsampling (e.g., 1m -> 5m)
-                return self._upsample_data(data, to_offset)
-            # Downsampling (e.g., 5m -> 1m) - not supported
-            self.logger.warning(
+        if from_minutes < to_minutes:
+        # Upsampling (e.g., 1m -> 5m)
+        return self._upsample_data(data, to_offset)
+        # Downsampling (e.g., 5m -> 1m) - not supported
+        self.logger.warning(
                 f"⚠️ Downsampling not supported: {from_timeframe} -> {to_timeframe}",
             )
-            return None
+        return None
 
         except Exception as e:
-            self.logger.exception(f"❌ Error in resampling operation: {e}")
-            return None
+        self.logger.exception(f"❌ Error in resampling operation: {e}")
+        return None
 
     def _upsample_data(
         self, data: pd.DataFrame, target_offset: str,
@@ -947,10 +948,10 @@ class UnifiedDataOrchestrator:
         """Upsample data to higher timeframe."""
         try:
 
-            # Resample OHLCV data
-            if all(
+        # Resample OHLCV data
+        if all(
                 col in data.columns
-                for col in ["open", "high", "low", "close", "volume"]
+        for col in ["open", "high", "low", "close", "volume"]
             ):
                 resampled = (
                     data.resample(target_offset)
@@ -966,14 +967,14 @@ class UnifiedDataOrchestrator:
                     .dropna()
                 )
             else:
-                # Fallback for other data types
-                resampled = data.resample(target_offset).last().dropna()
+        # Fallback for other data types
+                resampled, data.resample(target_offset).last().dropna()
 
-            return resampled
+        return resampled
 
         except Exception as e:
-            self.logger.exception(f"❌ Error upsampling data: {e}")
-            return None
+        self.logger.exception(f"❌ Error upsampling data: {e}")
+        return None
 
     @validate_step_prerequisites(
         required_packages=["pandas", "numpy"],
@@ -1028,7 +1029,7 @@ class UnifiedDataOrchestrator:
     async def _validate_and_repair_data(
         self,
         data: pd.DataFrame,
-        auto_repair: bool = True,
+        auto_repair: bool, True,
     ) -> pd.DataFrame:
         """Validate data quality and repair issues if possible.
 
@@ -1040,160 +1041,160 @@ class UnifiedDataOrchestrator:
             Validated and repaired DataFrame
 
         """
-        start_time = time.time()
-        request_id = f"validate_{data.shape[0]}_{int(start_time)}"
+        start_time, time.time()
+        request_id, f"validate_{data.shape[0]}_{int(start_time)}"
 
 
         self._log_memory_usage(f"validate_start_{request_id}")
 
         try:
-            if not self.enable_quality_validation:
-                return data
+        if not self.enable_quality_validation:
+        return data
 
-            self.logger.info(f"🔍 Validating data quality: {data.shape}")
+        self.logger.info(f"🔍 Validating data quality: {data.shape}")
 
-            # Check data size
-            if len(data) < self.min_data_points:
-                self.logger.warning(
+        # Check data size
+        if len(data) < self.min_data_points:
+        self.logger.warning(
                     f"⚠️ Insufficient data points: {len(data)} < {self.min_data_points}",
                 )
-                if not auto_repair:
-                    return data
+        if not auto_repair:
+        return data
 
-            # Check for missing values
-            missing_start = time.time()
-            missing_counts = data.isnull().sum()
-            missing_ratio = missing_counts.sum() / (len(data) * len(data.columns))
+        # Check for missing values
+            missing_start, time.time()
+            missing_counts, data.isnull().sum()
+            missing_ratio, missing_counts.sum() / (len(data) * len(data.columns))
             time.time() - missing_start
 
-            if missing_ratio > self.max_missing_ratio:
-                self.logger.warning(
+        if missing_ratio > self.max_missing_ratio:
+        self.logger.warning(
                     f"⚠️ High missing value ratio: {missing_ratio:.2%} > {self.max_missing_ratio:.2%}",
                 )
-                if auto_repair:
-                    repair_start = time.time()
-                    data = self._repair_missing_values(data)
+        if auto_repair:
+                    repair_start, time.time()
+                    data, self._repair_missing_values(data)
                     time.time() - repair_start
-                    self.stats["quality_repairs"] += 1
+        self.stats["quality_repairs"] += 1
 
-            # Check for duplicates
-            duplicate_start = time.time()
-            duplicate_count = data.duplicated().sum()
-            duplicate_ratio = duplicate_count / len(data)
+        # Check for duplicates
+            duplicate_start, time.time()
+            duplicate_count, data.duplicated().sum()
+            duplicate_ratio, duplicate_count / len(data)
             time.time() - duplicate_start
 
-            if duplicate_ratio > self.max_duplicate_ratio:
-                self.logger.warning(
+        if duplicate_ratio > self.max_duplicate_ratio:
+        self.logger.warning(
                     f"⚠️ High duplicate ratio: {duplicate_ratio:.2%} > {self.max_duplicate_ratio:.2%}",
                 )
-                if auto_repair:
-                    repair_start = time.time()
-                    data = data.drop_duplicates()
+        if auto_repair:
+                    repair_start, time.time()
+                    data, data.drop_duplicates()
                     time.time() - repair_start
-                    self.stats["quality_repairs"] += 1
+        self.stats["quality_repairs"] += 1
 
-            # Check for timestamp issues
-            if "timestamp" in data.columns:
-                timestamp_start = time.time()
-                data = self._repair_timestamp_issues(data)
+        # Check for timestamp issues
+        if "timestamp" in data.columns:
+                timestamp_start, time.time()
+                data, self._repair_timestamp_issues(data)
                 time.time() - timestamp_start
 
-            # Check for price anomalies
-            if all(col in data.columns for col in ["open", "high", "low", "close"]):
-                price_start = time.time()
-                data = self._repair_price_anomalies(data)
+        # Check for price anomalies
+        if all(col in data.columns for col in ["open", "high", "low", "close"]):
+                price_start, time.time()
+                data, self._repair_price_anomalies(data)
                 time.time() - price_start
 
-            total_time = time.time() - start_time
+            total_time, time.time() - start_time
 
-            self.stats["operation_times"][f"validation_{request_id}"] = total_time
-            self._log_memory_usage(f"validate_end_{request_id}")
+        self.stats["operation_times"][f"validation_{request_id}"] = total_time
+        self._log_memory_usage(f"validate_end_{request_id}")
 
-            self.logger.info(f"✅ Data validation completed: {data.shape}")
-            return data
+        self.logger.info(f"✅ Data validation completed: {data.shape}")
+        return data
 
         except Exception as e:
-            total_time = time.time() - start_time
-            self.logger.exception(f"❌ Error validating data: {e}")
-            self._log_memory_usage(f"validate_exception_{request_id}")
-            return data
+            total_time, time.time() - start_time
+        self.logger.exception(f"❌ Error validating data: {e}")
+        self._log_memory_usage(f"validate_exception_{request_id}")
+        return data
 
     def _repair_missing_values(self, data: pd.DataFrame) -> pd.DataFrame:
         """Repair missing values in the data."""
         try:
 
-            # Forward fill for OHLCV data
+        # Forward fill for OHLCV data
             ohlcv_columns = ["open", "high", "low", "close", "volume"]
-            if all(col in data.columns for col in ohlcv_columns):
+        if all(col in data.columns for col in ohlcv_columns):
                 data[ohlcv_columns] = data[ohlcv_columns].fillna(method="ffill")
 
-            # Drop remaining rows with missing values
-            data = data.dropna()
+        # Drop remaining rows with missing values
+            data, data.dropna()
 
-            self.logger.info(f"🔧 Repaired missing values: {data.shape}")
-            return data
+        self.logger.info(f"🔧 Repaired missing values: {data.shape}")
+        return data
 
         except Exception as e:
-            self.logger.exception(f"❌ Error repairing missing values: {e}")
-            return data
+        self.logger.exception(f"❌ Error repairing missing values: {e}")
+        return data
 
     def _repair_timestamp_issues(self, data: pd.DataFrame) -> pd.DataFrame:
         """Repair timestamp-related issues."""
         try:
 
-            # Ensure timestamp column is datetime
-            if "timestamp" in data.columns:
-                data = data.copy()
+        # Ensure timestamp column is datetime
+        if "timestamp" in data.columns:
+                data, data.copy()
                 data["timestamp"] = pd.to_datetime(data["timestamp"], errors="coerce")
 
-                # Remove rows with invalid timestamps
-                invalid_timestamps = data["timestamp"].isna()
-                if invalid_timestamps.sum() > 0:
-                    self.logger.warning(
+        # Remove rows with invalid timestamps
+                invalid_timestamps, data["timestamp"].isna()
+        if invalid_timestamps.sum() > 0:
+        self.logger.warning(
                         f"⚠️ Removing {invalid_timestamps.sum()} rows with invalid timestamps",
                     )
-                    data = data[~invalid_timestamps]
+                    data, data[~invalid_timestamps]
 
-                # Sort by timestamp
-                data = data.sort_values("timestamp")
+        # Sort by timestamp
+                data, data.sort_values("timestamp")
 
-                # Set timestamp as index
-                data = data.set_index("timestamp")
+        # Set timestamp as index
+                data, data.set_index("timestamp")
 
-            return data
+        return data
 
         except Exception as e:
-            self.logger.exception(f"❌ Error repairing timestamp issues: {e}")
-            return data
+        self.logger.exception(f"❌ Error repairing timestamp issues: {e}")
+        return data
 
     def _repair_price_anomalies(self, data: pd.DataFrame) -> pd.DataFrame:
         """Repair price anomalies in OHLCV data."""
         try:
 
-            # Check for negative prices
+        # Check for negative prices
             price_columns = ["open", "high", "low", "close"]
             negative_prices = (data[price_columns] <= 0).any(axis=1)
 
-            if negative_prices.sum() > 0:
-                self.logger.warning(
+        if negative_prices.sum() > 0:
+        self.logger.warning(
                     f"⚠️ Removing {negative_prices.sum()} rows with negative prices",
                 )
-                data = data[~negative_prices]
+                data, data[~negative_prices]
 
-            # Check for high-low inconsistencies
-            if all(col in data.columns for col in ["high", "low"]):
-                invalid_hl = data["high"] < data["low"]
-                if invalid_hl.sum() > 0:
-                    self.logger.warning(
+        # Check for high-low inconsistencies
+        if all(col in data.columns for col in ["high", "low"]):
+                invalid_hl, data["high"] < data["low"]
+        if invalid_hl.sum() > 0:
+        self.logger.warning(
                         f"⚠️ Removing {invalid_hl.sum()} rows with high < low",
                     )
-                    data = data[~invalid_hl]
+                    data, data[~invalid_hl]
 
-            return data
+        return data
 
         except Exception as e:
-            self.logger.exception(f"❌ Error repairing price anomalies: {e}")
-            return data
+        self.logger.exception(f"❌ Error repairing price anomalies: {e}")
+        return data
 
     @validate_step_prerequisites(
         required_directories=["data_cache"],
@@ -1261,87 +1262,87 @@ class UnifiedDataOrchestrator:
         lookback_days: int | None,
     ) -> pd.DataFrame | None:
         """Load and convert raw data to unified format."""
-        start_time = time.time()
-        request_id = f"raw_{exchange}_{symbol}_{timeframe}_{int(start_time)}"
+        start_time, time.time()
+        request_id, f"raw_{exchange}_{symbol}_{timeframe}_{int(start_time)}"
 
 
         self._log_memory_usage(f"raw_data_start_{request_id}")
 
         try:
-            self.logger.info(
+        self.logger.info(
                 f"🔄 Loading raw data for conversion: {exchange}_{symbol}_{timeframe}",
             )
 
-            # Look for raw data files
-            find_start = time.time()
-            raw_data_paths = self._find_raw_data_files(symbol, exchange, timeframe)
+        # Look for raw data files
+            find_start, time.time()
+            raw_data_paths, self._find_raw_data_files(symbol, exchange, timeframe)
             time.time() - find_start
 
-            if not raw_data_paths:
-                self.logger.warning(
+        if not raw_data_paths:
+        self.logger.warning(
                     f"⚠️ No raw data files found for {exchange}_{symbol}_{timeframe}",
                 )
-                return None
+        return None
 
-            # Load and combine raw data
-            load_start = time.time()
+        # Load and combine raw data
+            load_start, time.time()
             combined_data = []
-            successful_files = 0
+            successful_files, 0
 
-            for _i, file_path in enumerate(raw_data_paths, 1):
-                try:
-                    file_start = time.time()
-                    raw_data = pd.read_parquet(file_path)
+        for _i, file_path in enumerate(raw_data_paths, 1):
+        try:
+                    file_start, time.time()
+                    raw_data, pd.read_parquet(file_path)
                     time.time() - file_start
 
-                    if not raw_data.empty:
+        if not raw_data.empty:
                         combined_data.append(raw_data)
                         successful_files += 1
-                except Exception as e:
-                    self.logger.warning(f"⚠️ Failed to load {file_path}: {e}")
+        except Exception as e:
+        self.logger.warning(f"⚠️ Failed to load {file_path}: {e}")
 
             time.time() - load_start
 
-            if not combined_data:
-                self.logger.error(
+        if not combined_data:
+        self.logger.error(
                     f"❌ No valid raw data found for {exchange}_{symbol}_{timeframe}",
                 )
-                return None
+        return None
 
-            # Combine all data
-            combine_start = time.time()
-            data = pd.concat(combined_data, ignore_index=True)
-            data = data.drop_duplicates()
+        # Combine all data
+            combine_start, time.time()
+            data, pd.concat(combined_data, ignore_index=True)
+            data, data.drop_duplicates()
             time.time() - combine_start
 
-            # Convert to unified format
-            convert_start = time.time()
-            unified_data = self._convert_to_unified_format(
+        # Convert to unified format
+            convert_start, time.time()
+            unified_data, self._convert_to_unified_format(
                 data, symbol, exchange, timeframe,
             )
             time.time() - convert_start
 
-            if unified_data is not None and not unified_data.empty:
+        if unified_data is not None and not unified_data.empty:
                 (
                     unified_data.memory_usage(deep=True).sum() / 1024 / 1024
                 )
-                self.logger.info(
+        self.logger.info(
                     f"✅ Converted raw data to unified format: {unified_data.shape}",
                 )
 
-                total_time = time.time() - start_time
-                self.stats["operation_times"][f"raw_data_{request_id}"] = total_time
-                self._log_memory_usage(f"raw_data_success_{request_id}")
+                total_time, time.time() - start_time
+        self.stats["operation_times"][f"raw_data_{request_id}"] = total_time
+        self._log_memory_usage(f"raw_data_success_{request_id}")
 
-                return unified_data
+        return unified_data
 
-            return None
+        return None
 
         except Exception as e:
-            total_time = time.time() - start_time
-            self.logger.exception(f"❌ Error loading and converting raw data: {e}")
-            self._log_memory_usage(f"raw_data_exception_{request_id}")
-            return None
+            total_time, time.time() - start_time
+        self.logger.exception(f"❌ Error loading and converting raw data: {e}")
+        self._log_memory_usage(f"raw_data_exception_{request_id}")
+        return None
 
     def _find_raw_data_files(
         self, symbol: str, exchange: str, timeframe: str,
@@ -1349,24 +1350,24 @@ class UnifiedDataOrchestrator:
         """Find raw data files for the given parameters."""
         try:
 
-            # Look in data_cache directory
-            cache_dir = Path("data_cache")
-            if not cache_dir.exists():
-                return []
+        # Look in data_cache directory
+            cache_dir, Path("data_cache")
+        if not cache_dir.exists():
+        return []
 
-            # Search for files matching the pattern
-            pattern = f"{exchange}_{symbol}_*_{timeframe}*.parquet"
-            files = list(cache_dir.rglob(pattern))
+        # Search for files matching the pattern
+            pattern, f"{exchange}_{symbol}_*_{timeframe}*.parquet"
+            files, list(cache_dir.rglob(pattern))
 
-            # Sort by modification time (newest first)
+        # Sort by modification time (newest first)
             files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
 
-            return [str(f) for f in files]
+        return [str(f) for f in files]
 
 
         except Exception as e:
-            self.logger.exception(f"❌ Error finding raw data files: {e}")
-            return []
+        self.logger.exception(f"❌ Error finding raw data files: {e}")
+        return []
 
     def _convert_to_unified_format(
         self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str,
@@ -1374,10 +1375,10 @@ class UnifiedDataOrchestrator:
         """Convert raw data to unified format."""
         try:
 
-            # Ensure we have required columns
+        # Ensure we have required columns
             required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
 
-            # Map common column names
+        # Map common column names
             column_mapping = {
                 "time": "timestamp",
                 "date": "timestamp",
@@ -1387,39 +1388,39 @@ class UnifiedDataOrchestrator:
                 "quantity": "volume",
             }
 
-            # Rename columns if needed
-            for old_col, new_col in column_mapping.items():
-                if old_col in data.columns and new_col not in data.columns:
-                    data = data.rename(columns={old_col: new_col})
+        # Rename columns if needed
+        for old_col, new_col in column_mapping.items():
+        if old_col in data.columns and new_col not in data.columns:
+                    data, data.rename(columns={old_col: new_col})
 
-            # Check if we have the required columns
+        # Check if we have the required columns
             missing_columns = [
                 col for col in required_columns if col not in data.columns
             ]
-            if missing_columns:
-                self.logger.error(f"❌ Missing required columns: {missing_columns}")
-                return None
+        if missing_columns:
+        self.logger.error(f"❌ Missing required columns: {missing_columns}")
+        return None
 
-            # Ensure timestamp is datetime
+        # Ensure timestamp is datetime
             data["timestamp"] = pd.to_datetime(data["timestamp"], errors="coerce")
-            data = data.dropna(subset=["timestamp"])
+            data, data.dropna(subset=["timestamp"])
 
-            # Sort by timestamp
-            data = data.sort_values("timestamp")
+        # Sort by timestamp
+            data, data.sort_values("timestamp")
 
-            # Add metadata columns
+        # Add metadata columns
             data["symbol"] = symbol
             data["exchange"] = exchange
             data["timeframe"] = timeframe
 
-            # Set timestamp as index
-            data = data.set_index("timestamp")
+        # Set timestamp as index
+            data, data.set_index("timestamp")
 
-            return data
+        return data
 
         except Exception as e:
-            self.logger.exception(f"❌ Error converting to unified format: {e}")
-            return None
+        self.logger.exception(f"❌ Error converting to unified format: {e}")
+        return None
 
     def _generate_resampling_cache_key(
         self,
@@ -1432,19 +1433,19 @@ class UnifiedDataOrchestrator:
         """Generate cache key for resampled data."""
         try:
 
-            # Create a hashable representation of the data
-            data_hash = hashlib.md5(
+        # Create a hashable representation of the data
+            data_hash, hashlib.md5(
                 pd.util.hash_pandas_object(data, index=True).values,
             ).hexdigest()
 
-            return (
+        return (
                 f"{exchange}_{symbol}_{from_timeframe}_{to_timeframe}_{data_hash}"
             )
 
 
         except Exception:
-            # Fallback to simple hash
-            return f"{exchange}_{symbol}_{from_timeframe}_{to_timeframe}_{hash(str(data.shape))}"
+        # Fallback to simple hash
+        return f"{exchange}_{symbol}_{from_timeframe}_{to_timeframe}_{hash(str(data.shape))}"
 
     def _sort_timeframes_by_resolution(self, timeframes: list[str]) -> list[str]:
         """Sort timeframes by resolution (highest to lowest)."""
@@ -1454,7 +1455,7 @@ class UnifiedDataOrchestrator:
 
     def _get_base_timeframe(self, timeframes: list[str]) -> str:
         """Get the base timeframe (highest resolution)."""
-        sorted_timeframes = self._sort_timeframes_by_resolution(timeframes)
+        sorted_timeframes, self._sort_timeframes_by_resolution(timeframes)
         return sorted_timeframes[0] if sorted_timeframes else "1m"
 
 
@@ -1474,47 +1475,47 @@ class UnifiedDataOrchestrator:
     async def _cache_cleanup_loop(self) -> None:
         """Periodic cache cleanup loop."""
         while True:
-            try:
-                await asyncio.sleep(3600)  # Run every hour
+        try:
+        await asyncio.sleep(3600)  # Run every hour
 
-                cleanup_start = time.time()
+                cleanup_start, time.time()
 
-                # Clean up resampling cache
-                if len(self.resampling_cache) > self.resampling_cache_size * 0.8:
-                    # Remove oldest entries
-                    keys_to_remove = list(self.resampling_cache.keys())[
+        # Clean up resampling cache
+        if len(self.resampling_cache) > self.resampling_cache_size * 0.8:
+        # Remove oldest entries
+                    keys_to_remove, list(self.resampling_cache.keys())[
                         : len(self.resampling_cache) // 2
                     ]
-                    for key in keys_to_remove:
+        for key in keys_to_remove:
                         del self.resampling_cache[key]
 
-                    self.logger.info(
+        self.logger.info(
                         f"🧹 Cleaned up resampling cache: {len(self.resampling_cache)} entries remaining",
                     )
 
-                # Force garbage collection
-                if self.enable_memory_optimization:
-                    self._force_garbage_collection()
+        # Force garbage collection
+        if self.enable_memory_optimization:
+        self._force_garbage_collection()
 
                 time.time() - cleanup_start
 
-            except asyncio.CancelledError:
+        except asyncio.CancelledError:
                 break
-            except Exception as e:
-                self.logger.exception(f"❌ Error in cache cleanup loop: {e}")
+        except Exception as e:
+        self.logger.exception(f"❌ Error in cache cleanup loop: {e}")
 
     def _force_garbage_collection(self) -> None:
         """Force garbage collection."""
         try:
-            gc_start = time.time()
-            collected = gc.collect()
+            gc_start, time.time()
+            collected, gc.collect()
             time.time() - gc_start
 
-            self.stats["memory_cleanups"] += 1
-            self.logger.debug(f"🧹 Garbage collection: collected {collected} objects")
+        self.stats["memory_cleanups"] += 1
+        self.logger.debug(f"🧹 Garbage collection: collected {collected} objects")
 
         except Exception as e:
-            self.logger.exception(f"❌ Error during garbage collection: {e}")
+        self.logger.exception(f"❌ Error during garbage collection: {e}")
 
     def get_stats(self) -> dict[str, Any]:
         """Get orchestrator statistics."""
@@ -1532,7 +1533,7 @@ class UnifiedDataOrchestrator:
             "resampling_cache_size": len(self.resampling_cache),
             "resampling_cache_limit": self.resampling_cache_size,
             "data_sharing_cache_keys": list(
-                self.data_sharing_manager._data_cache.keys(),
+        self.data_sharing_manager._data_cache.keys(),
             ),
         }
 
@@ -1540,7 +1541,7 @@ class UnifiedDataOrchestrator:
 
 
 # Global instance
-_unified_data_orchestrator: UnifiedDataOrchestrator | None = None
+_unified_data_orchestrator: UnifiedDataOrchestrator | None, None
 
 
 def get_unified_data_orchestrator(config: dict[str, Any]) -> UnifiedDataOrchestrator:
@@ -1549,7 +1550,7 @@ def get_unified_data_orchestrator(config: dict[str, Any]) -> UnifiedDataOrchestr
 
 
     if _unified_data_orchestrator is None:
-        _unified_data_orchestrator = UnifiedDataOrchestrator(config)
+        _unified_data_orchestrator, UnifiedDataOrchestrator(config)
     else:
         pass
 
@@ -1562,9 +1563,9 @@ async def initialize_unified_data_orchestrator(config: dict[str, Any]) -> bool:
 
 
     if _unified_data_orchestrator is None:
-        _unified_data_orchestrator = UnifiedDataOrchestrator(config)
+        _unified_data_orchestrator, UnifiedDataOrchestrator(config)
 
-    success = await _unified_data_orchestrator.initialize()
+    success, await _unified_data_orchestrator.initialize()
 
     if success:
         pass
@@ -1581,6 +1582,6 @@ async def cleanup_unified_data_orchestrator() -> None:
 
     if _unified_data_orchestrator is not None:
         await _unified_data_orchestrator.cleanup()
-        _unified_data_orchestrator = None
+        _unified_data_orchestrator, None
     else:
         pass

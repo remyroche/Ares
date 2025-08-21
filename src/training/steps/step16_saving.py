@@ -16,8 +16,8 @@ class SavingStep:
     """Step 16: Saving using existing step9_save_results."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
-        self.logger = system_logger
+        self.config, config
+        self.logger, system_logger
 
     async def initialize(self) -> None:
         """Initialize the saving step."""
@@ -42,19 +42,19 @@ class SavingStep:
         self.logger.info("🔄 Executing Saving...")
 
         # Extract parameters
-        symbol = training_input.get("symbol", "ETHUSDT")
-        exchange = training_input.get("exchange", "BINANCE")
-        data_dir = training_input.get("data_dir", "data/training")
+        symbol, training_input.get("symbol", "ETHUSDT")
+        exchange, training_input.get("exchange", "BINANCE")
+        data_dir, training_input.get("data_dir", "data/training")
 
         # Create comprehensive training summary
-        training_summary = await self._create_training_summary(
+        training_summary, await self._create_training_summary(
             pipeline_state,
             symbol,
             exchange,
         )
 
         # Save to multiple formats
-        summary_results = await self._save_comprehensive_results(
+        summary_results, await self._save_comprehensive_results(
             training_summary,
             data_dir,
             symbol,
@@ -63,10 +63,10 @@ class SavingStep:
         try:
             summary_keys = (
                 list(summary_results.keys())
-                if isinstance(summary_results, dict)
+        if isinstance(summary_results, dict)
                 else []
             )
-            self.logger.info(
+        self.logger.info(
                 f"Summary artifacts saved: keys={summary_keys}",
             )
         except Exception:
@@ -74,10 +74,10 @@ class SavingStep:
 
         # Save to MLflow if enabled
         if self.config.get("enable_mlflow", True):
-            await self._save_to_mlflow(training_summary, symbol, exchange)
+        await self._save_to_mlflow(training_summary, symbol, exchange)
 
         # Create final training report
-        report_results = await self._create_training_report(
+        report_results, await self._create_training_report(
             pipeline_state,
             symbol,
             exchange,
@@ -87,7 +87,7 @@ class SavingStep:
             report_keys = (
                 list(report_results.keys()) if isinstance(report_results, dict) else []
             )
-            self.logger.info(
+        self.logger.info(
                 f"Training report generated: keys={report_keys}",
             )
         except Exception:
@@ -120,18 +120,18 @@ class SavingStep:
                 "components": {},
             }
 
-            # Add each pipeline component
-            for component_name, component_data in pipeline_state.items():
-                if component_data:
+        # Add each pipeline component
+        for component_name, component_data in pipeline_state.items():
+        if component_data:
                     summary["components"][component_name] = {
                         "status": "COMPLETED",
                         "timestamp": datetime.now().isoformat(),
                     }
 
-            return summary
+        return summary
 
         except Exception:
-            self.logger.exception("Error creating training summary")
+        self.logger.exception("Error creating training summary")
             raise
 
     async def _save_comprehensive_results(
@@ -145,25 +145,25 @@ class SavingStep:
         try:
             results = {}
 
-            # Save as JSON
+        # Save as JSON
             json_file = (
                 f"{data_dir}/{exchange}_{symbol}_comprehensive_training_summary.json"
             )
-            with open(json_file, "w") as f:
+        with open(json_file, "w") as f:
                 json.dump(training_summary, f, indent=2)
             results["json_file"] = json_file
 
-            # Save as pickle
+        # Save as pickle
             pickle_file = (
                 f"{data_dir}/{exchange}_{symbol}_comprehensive_training_summary.pkl"
             )
-            with open(pickle_file, "wb") as f:
+        with open(pickle_file, "wb") as f:
                 pickle.dump(training_summary, f)
             results["pickle_file"] = pickle_file
 
-            # Save as CSV summary
-            csv_file = f"{data_dir}/{exchange}_{symbol}_training_metrics.csv"
-            metrics_df = pd.DataFrame(
+        # Save as CSV summary
+            csv_file, f"{data_dir}/{exchange}_{symbol}_training_metrics.csv"
+            metrics_df, pd.DataFrame(
                 [
                     {
                         "metric": "overall_status",
@@ -174,14 +174,14 @@ class SavingStep:
             )
             from src.utils.logger import log_io_operation
 
-            with log_io_operation(self.logger, "to_csv", csv_file):
+        with log_io_operation(self.logger, "to_csv", csv_file):
                 metrics_df.to_csv(csv_file, index=False)
             results["csv_file"] = csv_file
 
-            return results
+        return results
 
         except Exception:
-            self.logger.exception("Error saving comprehensive results")
+        self.logger.exception("Error saving comprehensive results")
             raise
 
     async def _save_to_mlflow(
@@ -192,47 +192,47 @@ class SavingStep:
     ) -> None:
         """Save training results to MLflow. MLflow is required; do not skip."""
         try:
-            # Resolve MLflow configuration from system config
+        # Resolve MLflow configuration from system config
             from src.config.system import get_mlflow_config
 
-            config = get_mlflow_config() or {}
+            config, get_mlflow_config() or {}
 
-            # Attempt to import mlflow; if unavailable, raise a hard error
-            try:
+        # Attempt to import mlflow; if unavailable, raise a hard error
+        try:
                 import mlflow  # type: ignore
-            except Exception:
-                self.logger.exception(
+        except Exception:
+        self.logger.exception(
                     "🚨 MLflow is required but not installed. Install it with: 'poetry add mlflow'",
                 )
                 raise
 
-            # Set up MLflow
-            tracking_uri = config.get("tracking_uri") or "file:./mlruns"
-            experiment_name = config.get("experiment_name") or "ares_trading"
+        # Set up MLflow
+            tracking_uri, config.get("tracking_uri") or "file:./mlruns"
+            experiment_name, config.get("experiment_name") or "ares_trading"
             mlflow.set_tracking_uri(tracking_uri)
             mlflow.set_experiment(experiment_name)
 
-            # Start MLflow run
-            with mlflow.start_run(
+        # Start MLflow run
+        with mlflow.start_run(
                 run_name=f"{exchange}_{symbol}_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
             ):
-                # Log parameters
+        # Log parameters
                 mlflow.log_param("symbol", symbol)
                 mlflow.log_param("exchange", exchange)
                 mlflow.log_param("training_date", datetime.now().isoformat())
 
-                # Log metrics
-                if "metrics" in training_summary:
-                    for metric_name, metric_value in training_summary[
+        # Log metrics
+        if "metrics" in training_summary:
+        for metric_name, metric_value in training_summary[
                         "metrics"
                     ].items():
-                        if isinstance(metric_value, int | float):
+        if isinstance(metric_value, int | float):
                             mlflow.log_metric(metric_name, metric_value)
 
-                # Log training summary as artifact
+        # Log training summary as artifact
                 import tempfile
 
-                with tempfile.NamedTemporaryFile(
+        with tempfile.NamedTemporaryFile(
                     mode="w",
                     suffix=".json",
                     delete=False,
@@ -240,14 +240,14 @@ class SavingStep:
                     import json
 
                     json.dump(training_summary, f, indent=2, default=str)
-                    # Store under a stable artifacts directory in the run
+        # Store under a stable artifacts directory in the run
                     mlflow.log_artifact(f.name, artifact_path="artifacts")
                     os.unlink(f.name)
 
-                self.logger.info("✅ Training results saved to MLflow successfully")
+        self.logger.info("✅ Training results saved to MLflow successfully")
 
         except Exception:
-            self.logger.exception("🚨 MLflow saving failed")
+        self.logger.exception("🚨 MLflow saving failed")
             raise
 
     async def _create_training_report(
@@ -287,9 +287,9 @@ class SavingStep:
                 ],
             }
 
-            # Add details for each step
-            for step_name, step_data in pipeline_state.items():
-                if step_data:
+        # Add details for each step
+        for step_name, step_data in pipeline_state.items():
+        if step_data:
                     report["step_details"][step_name] = {
                         "status": "COMPLETED",
                         "completion_time": datetime.now().isoformat(),
@@ -301,15 +301,15 @@ class SavingStep:
                         "error": "Step not completed",
                     }
 
-            # Save report
-            report_file = f"{data_dir}/{exchange}_{symbol}_training_report.json"
-            with open(report_file, "w") as f:
+        # Save report
+            report_file, f"{data_dir}/{exchange}_{symbol}_training_report.json"
+        with open(report_file, "w") as f:
                 json.dump(report, f, indent=2)
 
-            return {"report": report, "report_file": report_file}
+        return {"report": report, "report_file": report_file}
 
         except Exception:
-            self.logger.exception("Error creating training report")
+        self.logger.exception("Error creating training report")
             raise
 
 
@@ -399,7 +399,7 @@ async def run_step(
     symbol: str,
     exchange: str = "BINANCE",
     data_dir: str = "data/training",
-    force_rerun: bool = False,
+    force_rerun: bool, False,
     **kwargs,
 ) -> bool:
     """Run the saving step.
@@ -417,7 +417,7 @@ async def run_step(
     try:
         # Create step instance
         config = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}
-        step = SavingStep(config)
+        step, SavingStep(config)
         await step.initialize()
 
         # Execute step
@@ -430,7 +430,7 @@ async def run_step(
         }
 
         pipeline_state = {}
-        result = await step.execute(training_input, pipeline_state)
+        result, await step.execute(training_input, pipeline_state)
 
         return result.get("status") == "SUCCESS"
 

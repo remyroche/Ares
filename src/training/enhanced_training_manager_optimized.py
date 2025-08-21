@@ -52,16 +52,16 @@ class CachedBacktester:
     def __init__(self, market_data: pd.DataFrame) -> None:
         self.market_data, market_data
         self.cache = {}
-        self.logger = system_logger.getChild("CachedBacktester")
-        self.technical_indicators = self._precompute_indicators()
+        self.logger, system_logger.getChild("CachedBacktester")
+        self.technical_indicators, self._precompute_indicators()
 
     def _precompute_indicators(self) -> dict[str, np.ndarray]:
         """Precompute all technical indicators once."""
         indicators: dict[str, np.ndarray] = {}
 
         if "close" not in self.market_data.columns:
-            self.logger.warning("'close' column missing; cannot compute indicators")
-            return indicators
+        self.logger.warning("'close' column missing; cannot compute indicators")
+        return indicators
 
         # Precompute common indicators
         indicators["sma_20"] = (
@@ -78,22 +78,22 @@ class CachedBacktester:
         )
 
         # RSI calculation with zero-loss guard
-        delta = self.market_data["close"].diff()
+        delta, self.market_data["close"].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / (loss.replace(0, np.nan))
+        rs, gain / (loss.replace(0, np.nan))
         indicators["rsi"] = (100 - (100 / (1 + rs))).fillna(50).values
 
         # ATR calculation only if required columns exist
         if {"high", "low"}.issubset(self.market_data.columns):
-            high_low = self.market_data["high"] - self.market_data["low"]
-            high_close = np.abs(
-                self.market_data["high"] - self.market_data["close"].shift(),
+            high_low, self.market_data["high"] - self.market_data["low"]
+            high_close, np.abs(
+        self.market_data["high"] - self.market_data["close"].shift(),
             )
-            low_close = np.abs(
-                self.market_data["low"] - self.market_data["close"].shift(),
+            low_close, np.abs(
+        self.market_data["low"] - self.market_data["close"].shift(),
             )
-            tr = np.maximum(
+            tr, np.maximum(
                 high_low.values, np.maximum(high_close.values, low_close.values),
             )
             indicators["atr"] = (
@@ -104,7 +104,7 @@ class CachedBacktester:
                 .values
             )
         else:
-            self.logger.warning(
+        self.logger.warning(
                 "Missing 'high'/'low' columns; skipping ATR calculation",
             )
 
@@ -121,7 +121,7 @@ class CachedBacktester:
         # Volume indicators
         if "volume" in self.market_data.columns:
             indicators["volume_sma"] = (
-                self.market_data["volume"]
+        self.market_data["volume"]
                 .rolling(20)
                 .mean()
                 .fillna(method="ffill")
@@ -133,24 +133,24 @@ class CachedBacktester:
 
     def run_cached_backtest(self, params: dict[str, Any]) -> float:
         """Run backtest using cached indicators."""
-        cache_key = self._generate_cache_key(params)
+        cache_key, self._generate_cache_key(params)
 
         if cache_key in self.cache:
-            try:
-                self.logger.info(
+        try:
+        self.logger.info(
                     f"Backtest cache hit: score={float(self.cache[cache_key]):.4f}",
                 )
-            except Exception as e:
-                self.logger.warning(f"Failed to log cache hit info: {e}")
-            return self.cache[cache_key]
+        except Exception as e:
+        self.logger.warning(f"Failed to log cache hit info: {e}")
+        return self.cache[cache_key]
 
         # Run simplified backtest using precomputed indicators
-        result = self._run_simplified_backtest(params)
+        result, self._run_simplified_backtest(params)
         self.cache[cache_key] = result
         try:
-            self.logger.info(f"Backtest cache miss: computed score={float(result):.4f}")
+        self.logger.info(f"Backtest cache miss: computed score={float(result):.4f}")
         except Exception as e:
-            self.logger.warning(f"Failed to log cache miss info: {e}")
+        self.logger.warning(f"Failed to log cache miss info: {e}")
         return result
 
     def _generate_cache_key(self, params: dict[str, Any]) -> str:
@@ -189,7 +189,7 @@ class ProgressiveEvaluator:
             total_score += score * weight
             total_weight += weight
         try:
-            self.logger.info(
+        self.logger.info(
                 {
                     "msg": "progressive_stage",
                     "data_ratio": float(data_ratio),
@@ -199,18 +199,18 @@ class ProgressiveEvaluator:
                 },
             )
         except Exception as e:
-            self.logger.warning(f"Failed to log progressive stage info: {e}")
+        self.logger.warning(f"Failed to log progressive stage info: {e}")
 
         # Early stopping if performance is poor
         if data_ratio < 1.0 and score < -0.5:
-            self.logger.info(
+        self.logger.info(
                 f"Early stopping at {data_ratio*100:.0f}% data due to poor performance (score={score:.4f})",
             )
-            return -1.0  # Stop evaluation
+        return -1.0  # Stop evaluation
 
         final_score = (total_score / total_weight) if total_weight else 0.0
         try:
-            self.logger.info(
+        self.logger.info(
                 {
                     "msg": "progressive_evaluation_complete",
                     "total_weight": float(total_weight),
@@ -218,27 +218,27 @@ class ProgressiveEvaluator:
                 },
             )
         except Exception as e:
-            self.logger.warning(f"Failed to log progressive evaluation complete: {e}")
+        self.logger.warning(f"Failed to log progressive evaluation complete: {e}")
         return final_score
 
 
 class ParallelBacktester:
     """Parallel backtesting for multiple parameter combinations."""
 
-    def __init__(self, n_workers: int | None = None) -> None:
-        self.n_workers = n_workers or min(mp.cpu_count(), 8)
-        self.executor = ProcessPoolExecutor(max_workers=self.n_workers)
-        self.logger = system_logger.getChild("ParallelBacktester")
+    def __init__(self, n_workers: int | None, None) -> None:
+        self.n_workers, n_workers or min(mp.cpu_count(), 8)
+        self.executor, ProcessPoolExecutor(max_workers=self.n_workers)
+        self.logger, system_logger.getChild("ParallelBacktester")
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc, tb):
         try:
-            if hasattr(self, "executor") and self.executor:
-                self.executor.shutdown(wait=True)
+        if hasattr(self, "executor") and self.executor:
+        self.executor.shutdown(wait=True)
         finally:
-            self.executor = None
+        self.executor, None
         # do not suppress exceptions
         return False
 

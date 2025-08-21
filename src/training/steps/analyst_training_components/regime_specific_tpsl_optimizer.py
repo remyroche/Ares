@@ -20,7 +20,7 @@ import optuna
 import pandas as pd
 
 # Add the project root to the Python path
-project_root = Path(__file__).parent.parent
+project_root, Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # MetaLabelingSystem removed - using only HMM market regimes
@@ -49,9 +49,9 @@ class RegimeSpecificTPSLOptimizer:
             config: Configuration dictionary
 
         """
-        self.config = config
-        self.logger = system_logger.getChild("RegimeSpecificTPSLOptimizer")
-        self.print = self.logger.info
+        self.config, config
+        self.logger, system_logger.getChild("RegimeSpecificTPSLOptimizer")
+        self.print, self.logger.info
 
         # Meta-labeling system removed - using only HMM market regimes
         self.logger.info(
@@ -61,7 +61,7 @@ class RegimeSpecificTPSLOptimizer:
         # Regime-specific parameters for HMM clusters (seeded defaults)
         # These will be dynamically updated based on actual HMM cluster analysis
         self.regime_parameters = {
-            # HMM Cluster 0 - will be characterized by step1_7 analysis
+        # HMM Cluster 0 - will be characterized by step1_7 analysis
             "hmm_cluster_0": {
                 "target_pct": 0.5,
                 "stop_pct": 0.2,
@@ -70,7 +70,7 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 7.0,
                 "frequency_score": 100.0,
             },
-            # HMM Cluster 1 - will be characterized by step1_7 analysis
+        # HMM Cluster 1 - will be characterized by step1_7 analysis
             "hmm_cluster_1": {
                 "target_pct": 0.4,
                 "stop_pct": 0.15,
@@ -79,7 +79,7 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 6.5,
                 "frequency_score": 80.0,
             },
-            # HMM Cluster 2 - will be characterized by step1_7 analysis
+        # HMM Cluster 2 - will be characterized by step1_7 analysis
             "hmm_cluster_2": {
                 "target_pct": 0.3,
                 "stop_pct": 0.2,
@@ -88,7 +88,7 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 7.5,
                 "frequency_score": 100.0,
             },
-            # HMM Cluster 3 - will be characterized by step1_7 analysis
+        # HMM Cluster 3 - will be characterized by step1_7 analysis
             "hmm_cluster_3": {
                 "target_pct": 0.6,
                 "stop_pct": 0.15,
@@ -97,7 +97,7 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 6.0,
                 "frequency_score": 70.0,
             },
-            # HMM Cluster 4 - will be characterized by step1_7 analysis
+        # HMM Cluster 4 - will be characterized by step1_7 analysis
             "hmm_cluster_4": {
                 "target_pct": 0.35,
                 "stop_pct": 0.2,
@@ -106,7 +106,7 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 5.5,
                 "frequency_score": 60.0,
             },
-            # HMM Cluster 5 - will be characterized by step1_7 analysis
+        # HMM Cluster 5 - will be characterized by step1_7 analysis
             "hmm_cluster_5": {
                 "target_pct": 0.5,
                 "stop_pct": 0.15,
@@ -115,7 +115,7 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 5.5,
                 "frequency_score": 70.0,
             },
-            # HMM Cluster 6 - will be characterized by step1_7 analysis
+        # HMM Cluster 6 - will be characterized by step1_7 analysis
             "hmm_cluster_6": {
                 "target_pct": 0.25,
                 "stop_pct": 0.2,
@@ -124,7 +124,7 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 6.0,
                 "frequency_score": 90.0,
             },
-            # HMM Cluster 7 - will be characterized by step1_7 analysis
+        # HMM Cluster 7 - will be characterized by step1_7 analysis
             "hmm_cluster_7": {
                 "target_pct": 0.5,
                 "stop_pct": 0.25,
@@ -141,7 +141,7 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 6.0,
                 "frequency_score": 100.0,
             },
-            # Fallbacks (legacy names kept for compatibility)
+        # Fallbacks (legacy names kept for compatibility)
             "SIDEWAYS_RANGE": {
                 "target_pct": 0.5,
                 "stop_pct": 0.3,
@@ -161,10 +161,10 @@ class RegimeSpecificTPSLOptimizer:
         }
 
         # Optimization configuration
-        self.optimization_config = config.get("regime_specific_tpsl_optimizer", {})
-        self.n_trials = self.optimization_config.get("n_trials", 100)
-        self.min_trades = self.optimization_config.get("min_trades", 20)
-        self.optimization_metric = self.optimization_config.get(
+        self.optimization_config, config.get("regime_specific_tpsl_optimizer", {})
+        self.n_trials, self.optimization_config.get("n_trials", 100)
+        self.min_trades, self.optimization_config.get("min_trades", 20)
+        self.optimization_metric, self.optimization_config.get(
             "optimization_metric",
             "sharpe_ratio",
         )
@@ -187,21 +187,21 @@ class RegimeSpecificTPSLOptimizer:
             ],
         )
         # Timeframe used to identify meta label context
-        self.analysis_timeframe: str = self.optimization_config.get(
+        self.analysis_timeframe: str, self.optimization_config.get(
             "analysis_timeframe",
             "30m",
         )
 
         # Model storage
-        self.model_dir = os.path.join(CONFIG["CHECKPOINT_DIR"], "regime_tpsl_models")
+        self.model_dir, os.path.join(CONFIG["CHECKPOINT_DIR"], "regime_tpsl_models")
         # De-duplicate S/R variants
         if "SR_TOUCH" in self.regime_parameters:
-            self.regime_parameters["SR_BOUNCE"] = self.regime_parameters["SR_TOUCH"]
+        self.regime_parameters["SR_BOUNCE"] = self.regime_parameters["SR_TOUCH"]
         os.makedirs(self.model_dir, exist_ok=True)
 
         # Optimization results cache
         self.optimization_results: dict[str, dict[str, Any]] = {}
-        self.last_optimization_time: datetime | None = None
+        self.last_optimization_time: datetime | None, None
 
     @handle_specific_errors(
         error_handlers={
@@ -222,28 +222,28 @@ class RegimeSpecificTPSLOptimizer:
 
         """
         try:
-            self.logger.info(
+        self.logger.info(
                 "Initializing Regime-Specific TP/SL Optimizer (Meta-Label)...",
             )
 
-            # Initialize Meta-Labeling system
-            if not await self._initialize_meta_label_system():
-                self.print(failed("Failed to initialize Meta-Labeling system"))
-                return False
+        # Initialize Meta-Labeling system
+        if not await self._initialize_meta_label_system():
+        self.print(failed("Failed to initialize Meta-Labeling system"))
+        return False
 
-            # Load existing optimization results
-            await self._load_optimization_results()
+        # Load existing optimization results
+        await self._load_optimization_results()
 
-            self.logger.info(
+        self.logger.info(
                 "✅ Regime-Specific TP/SL Optimizer initialized successfully",
             )
-            return True
+        return True
 
         except Exception as e:
-            self.logger.exception(
+        self.logger.exception(
                 f"❌ Failed to initialize Regime-Specific TP/SL Optimizer: {e}",
             )
-            return False
+        return False
 
     async def _initialize_meta_label_system(self) -> bool:
         """Initialize the MetaLabelingSystem.
@@ -253,46 +253,46 @@ class RegimeSpecificTPSLOptimizer:
 
         """
         try:
-            ok = await self.meta_labeling_system.initialize()
-            if ok:
-                self.logger.info(
+            ok, await self.meta_labeling_system.initialize()
+        if ok:
+        self.logger.info(
                     "✅ Meta-Labeling system initialized for regime identification",
                 )
-                return True
-            self.logger.warning("Meta-Labeling system failed to initialize")
-            return False
+        return True
+        self.logger.warning("Meta-Labeling system failed to initialize")
+        return False
         except Exception as e:
-            self.print(
+        self.print(
                 initialization_error(f"Error initializing Meta-Labeling system: {e}"),
             )
-            return False
+        return False
 
     async def _load_optimization_results(self) -> None:
         """Load existing optimization results from disk."""
         try:
-            results_file = os.path.join(self.model_dir, "optimization_results.json")
-            if os.path.exists(results_file):
+            results_file, os.path.join(self.model_dir, "optimization_results.json")
+        if os.path.exists(results_file):
                 import json
 
-                with open(results_file) as f:
-                    self.optimization_results = json.load(f)
-                self.logger.info(
+        with open(results_file) as f:
+        self.optimization_results, json.load(f)
+        self.logger.info(
                     f"✅ Loaded {len(self.optimization_results)} regime optimization results",
                 )
         except Exception:
-            self.print(warning("Could not load optimization results: {e}"))
+        self.print(warning("Could not load optimization results: {e}"))
 
     async def _save_optimization_results(self) -> None:
         """Save optimization results to disk."""
         try:
-            results_file = os.path.join(self.model_dir, "optimization_results.json")
+            results_file, os.path.join(self.model_dir, "optimization_results.json")
             import json
 
-            with open(results_file, "w") as f:
+        with open(results_file, "w") as f:
                 json.dump(self.optimization_results, f, indent=2, default=str)
-            self.logger.info("✅ Saved optimization results")
+        self.logger.info("✅ Saved optimization results")
         except Exception:
-            self.print(failed("Failed to save optimization results: {e}"))
+        self.print(failed("Failed to save optimization results: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -313,46 +313,46 @@ class RegimeSpecificTPSLOptimizer:
 
         """
         try:
-            # Require meta-labeling to be initialized
-            if not getattr(self.meta_labeling_system, "is_initialized", False):
-                self.print(
+        # Require meta-labeling to be initialized
+        if not getattr(self.meta_labeling_system, "is_initialized", False):
+        self.print(
                     warning(
                         "Meta-Labeling system not initialized, using default regime",
                     ),
                 )
-                return "SIDEWAYS_RANGE", 0.5, {"method": "default"}
+        return "SIDEWAYS_RANGE", 0.5, {"method": "default"}
 
-            # Use the same frame for price and volume; expect OHLCV input
-            labels = await self.meta_labeling_system.generate_analyst_labels(
+        # Use the same frame for price and volume; expect OHLCV input
+            labels, await self.meta_labeling_system.generate_analyst_labels(
                 price_data=current_data,
                 volume_data=current_data,
                 timeframe=self.analysis_timeframe,
             )
 
-            # Build intensity map for candidate labels
+        # Build intensity map for candidate labels
             intensities: dict[str, float] = {}
             actives: dict[str, int] = {}
-            for label in self.candidate_labels:
+        for label in self.candidate_labels:
                 intensities[label] = float(labels.get(f"intensity_{label}", 0.0))
                 actives[label] = int(
                     labels.get(f"active_{label}", labels.get(label, 0)),
                 )
 
-            # Choose the dominant label by intensity, breaking ties by active flag
-            best_label = max(
-                self.candidate_labels,
+        # Choose the dominant label by intensity, breaking ties by active flag
+            best_label, max(
+        self.candidate_labels,
                 key=lambda k: (intensities.get(k, 0.0), actives.get(k, 0)),
                 default="SIDEWAYS_RANGE",
             )
-            confidence = float(intensities.get(best_label, 0.0))
+            confidence, float(intensities.get(best_label, 0.0))
 
-            # Log and return with compact info
-            top3 = sorted(
+        # Log and return with compact info
+            top3, sorted(
                 ((k, intensities.get(k, 0.0)) for k in self.candidate_labels),
                 key=lambda x: x[1],
                 reverse=True,
             )[:3]
-            self.logger.info(
+        self.logger.info(
                 {
                     "msg": "Identified label-driven regime",
                     "regime": best_label,
@@ -361,7 +361,7 @@ class RegimeSpecificTPSLOptimizer:
                     "timeframe": self.analysis_timeframe,
                 },
             )
-            return (
+        return (
                 best_label,
                 confidence,
                 {
@@ -373,8 +373,8 @@ class RegimeSpecificTPSLOptimizer:
             )
 
         except Exception as e:
-            self.print(error(f"Error identifying regime: {e}"))
-            return "SIDEWAYS_RANGE", 0.5, {"method": "fallback", "error": str(e)}
+        self.print(error(f"Error identifying regime: {e}"))
+        return "SIDEWAYS_RANGE", 0.5, {"method": "fallback", "error": str(e)}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -399,37 +399,37 @@ class RegimeSpecificTPSLOptimizer:
 
         """
         try:
-            self.logger.info(f"🎯 Optimizing TP/SL for regime: {regime}")
+        self.logger.info(f"🎯 Optimizing TP/SL for regime: {regime}")
 
-            # Get base parameters for this regime
-            base_params = self.regime_parameters.get(
+        # Get base parameters for this regime
+            base_params, self.regime_parameters.get(
                 regime,
-                self.regime_parameters["SIDEWAYS_RANGE"],
+        self.regime_parameters["SIDEWAYS_RANGE"],
             )
 
-            # Create optimization study
-            study = optuna.create_study(
+        # Create optimization study
+            study, optuna.create_study(
                 direction="maximize",
                 study_name=f"tpsl_optimization_{regime}",
             )
 
-            # Define objective function
+        # Define objective function
             def objective(trial):
-                return self._evaluate_tpsl_parameters(
+        return self._evaluate_tpsl_parameters(
                     trial,
                     regime,
                     historical_data,
                     base_params,
                 )
 
-            # Run optimization
+        # Run optimization
             study.optimize(objective, n_trials=self.n_trials, show_progress_bar=False)
 
-            # Get best parameters
-            best_params = study.best_params
-            best_value = study.best_value
+        # Get best parameters
+            best_params, study.best_params
+            best_value, study.best_value
 
-            # Combine with base parameters
+        # Combine with base parameters
             optimized_params = {
                 **base_params,
                 **best_params,
@@ -438,18 +438,18 @@ class RegimeSpecificTPSLOptimizer:
                 "optimization_time": datetime.now().isoformat(),
             }
 
-            # Cache results
-            self.optimization_results[regime] = optimized_params
-            await self._save_optimization_results()
+        # Cache results
+        self.optimization_results[regime] = optimized_params
+        await self._save_optimization_results()
 
-            self.logger.info(f"✅ Optimized TP/SL for {regime}: {best_params}")
-            return optimized_params
+        self.logger.info(f"✅ Optimized TP/SL for {regime}: {best_params}")
+        return optimized_params
 
         except Exception:
-            self.print(error(f"Error optimizing TP/SL for regime {regime}: {e}"))
-            return self.regime_parameters.get(
+        self.print(error(f"Error optimizing TP/SL for regime {regime}: {e}"))
+        return self.regime_parameters.get(
                 regime,
-                self.regime_parameters["SIDEWAYS_RANGE"],
+        self.regime_parameters["SIDEWAYS_RANGE"],
             )
 
     def _evaluate_tpsl_parameters(
@@ -472,54 +472,54 @@ class RegimeSpecificTPSLOptimizer:
 
         """
         try:
-            # Suggest parameters within reasonable bounds
-            target_pct = trial.suggest_float(
+        # Suggest parameters within reasonable bounds
+            target_pct, trial.suggest_float(
                 "target_pct",
                 base_params["target_pct"] * 0.5,
                 base_params["target_pct"] * 1.5,
             )
-            stop_pct = trial.suggest_float(
+            stop_pct, trial.suggest_float(
                 "stop_pct",
                 base_params["stop_pct"] * 0.5,
                 base_params["stop_pct"] * 1.5,
             )
 
-            # Ensure target > stop
-            if target_pct <= stop_pct:
-                return -1.0
+        # Ensure target > stop
+        if target_pct <= stop_pct:
+        return -1.0
 
-            # Run simplified backtest
-            trades = self._simulate_trades(
+        # Run simplified backtest
+            trades, self._simulate_trades(
                 historical_data,
                 target_pct,
                 stop_pct,
                 regime,
             )
 
-            if len(trades) < self.min_trades:
-                return -1.0
+        if len(trades) < self.min_trades:
+        return -1.0
 
-            # Calculate performance metrics
+        # Calculate performance metrics
             returns = [trade["return"] for trade in trades]
-            total_return = sum(returns)
-            sharpe_ratio = np.mean(returns) / (np.std(returns) + 1e-8)
-            win_rate = len([r for r in returns if r > 0]) / len(returns)
+            total_return, sum(returns)
+            sharpe_ratio, np.mean(returns) / (np.std(returns) + 1e-8)
+            win_rate, len([r for r in returns if r > 0]) / len(returns)
 
-            # Combine metrics based on optimization target
-            if self.optimization_metric == "sharpe_ratio":
-                score = sharpe_ratio
+        # Combine metrics based on optimization target
+        if self.optimization_metric == "sharpe_ratio":
+                score, sharpe_ratio
             elif self.optimization_metric == "total_return":
-                score = total_return
+                score, total_return
             elif self.optimization_metric == "win_rate":
-                score = win_rate
+                score, win_rate
             else:
-                score = sharpe_ratio * 0.4 + total_return * 0.3 + win_rate * 0.3
+                score, sharpe_ratio * 0.4 + total_return * 0.3 + win_rate * 0.3
 
-            return score
+        return score
 
         except Exception:
-            self.print(error(f"Error in parameter evaluation: {e}"))
-            return -1.0
+        self.print(error(f"Error in parameter evaluation: {e}"))
+        return -1.0
 
     def _simulate_trades(
         self,
@@ -541,24 +541,24 @@ class RegimeSpecificTPSLOptimizer:
 
         """
         trades = []
-        position_open = False
-        entry_price = 0.0
-        entry_time = None
+        position_open, False
+        entry_price, 0.0
+        entry_time, None
 
         for i in range(1, len(data)):
-            current_price = data.iloc[i]["close"]
-            high_price = data.iloc[i]["high"]
-            low_price = data.iloc[i]["low"]
+            current_price, data.iloc[i]["close"]
+            high_price, data.iloc[i]["high"]
+            low_price, data.iloc[i]["low"]
 
-            if not position_open:
-                # Simple entry condition (can be enhanced)
-                if data.iloc[i]["close"] > data.iloc[i - 1]["close"]:
-                    position_open = True
-                    entry_price = current_price
-                    entry_time = data.index[i]
-            # Check for TP/SL
+        if not position_open:
+        # Simple entry condition (can be enhanced)
+        if data.iloc[i]["close"] > data.iloc[i - 1]["close"]:
+                    position_open, True
+                    entry_price, current_price
+                    entry_time, data.index[i]
+        # Check for TP/SL
             elif high_price >= entry_price * (1 + target_pct):
-                # Take profit hit
+        # Take profit hit
                 trades.append(
                     {
                         "entry_time": entry_time,
@@ -569,9 +569,9 @@ class RegimeSpecificTPSLOptimizer:
                         "type": "TP",
                     },
                 )
-                position_open = False
+                position_open, False
             elif low_price <= entry_price * (1 - stop_pct):
-                # Stop loss hit
+        # Stop loss hit
                 trades.append(
                     {
                         "entry_time": entry_time,
@@ -582,7 +582,7 @@ class RegimeSpecificTPSLOptimizer:
                         "type": "SL",
                     },
                 )
-                position_open = False
+                position_open, False
 
         return trades
 
@@ -595,7 +595,7 @@ class RegimeSpecificTPSLOptimizer:
         self,
         current_data: pd.DataFrame,
         historical_data: pd.DataFrame,
-        force_optimization: bool = False,
+        force_optimization: bool, False,
     ) -> dict[str, Any]:
         """Get optimized TP/SL parameters for the current label-driven market regime.
 
@@ -609,30 +609,30 @@ class RegimeSpecificTPSLOptimizer:
 
         """
         try:
-            # Identify current regime via meta-labels
-            regime, confidence, regime_info = await self.identify_current_regime(
+        # Identify current regime via meta-labels
+            regime, confidence, regime_info, await self.identify_current_regime(
                 current_data,
             )
 
-            # Check if we have cached results for this regime
-            if not force_optimization and regime in self.optimization_results:
-                cached_params = self.optimization_results[regime]
-                self.logger.info(f"Using cached TP/SL parameters for {regime}")
-                return {
+        # Check if we have cached results for this regime
+        if not force_optimization and regime in self.optimization_results:
+                cached_params, self.optimization_results[regime]
+        self.logger.info(f"Using cached TP/SL parameters for {regime}")
+        return {
                     **cached_params,
                     "regime": regime,
                     "confidence": confidence,
                     "regime_info": regime_info,
                 }
 
-            # Optimize for current regime
-            optimized_params = await self.optimize_tpsl_for_regime(
+        # Optimize for current regime
+            optimized_params, await self.optimize_tpsl_for_regime(
                 regime,
                 historical_data,
                 current_data,
             )
 
-            return {
+        return {
                 **optimized_params,
                 "regime": regime,
                 "confidence": confidence,
@@ -640,9 +640,9 @@ class RegimeSpecificTPSLOptimizer:
             }
 
         except Exception as e:
-            self.print(error(f"Error getting optimized TP/SL: {e}"))
-            # Return default parameters
-            return {
+        self.print(error(f"Error getting optimized TP/SL: {e}"))
+        # Return default parameters
+        return {
                 **self.regime_parameters["SIDEWAYS_RANGE"],
                 "regime": "SIDEWAYS_RANGE",
                 "confidence": 0.5,

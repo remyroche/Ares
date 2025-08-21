@@ -28,13 +28,13 @@ class EnhancedOptimizationOrchestrator:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
-        self.logger = system_logger.getChild("EnhancedOptimizationOrchestrator")
+        self.config, config
+        self.logger, system_logger.getChild("EnhancedOptimizationOrchestrator")
 
         # Initialize optimizers
-        self.multi_objective_optimizer = None
-        self.bayesian_optimizer = None
-        self.adaptive_optimizer = None
+        self.multi_objective_optimizer, None
+        self.bayesian_optimizer, None
+        self.adaptive_optimizer, None
 
         # Optimization results tracking
         self.optimization_history = []
@@ -46,22 +46,22 @@ class EnhancedOptimizationOrchestrator:
 
     def _initialize_optimizers(self) -> None:
         """Initialize optimization components based on configuration."""
-        opt_config = self.config.get("hyperparameter_optimization", {})
+        opt_config, self.config.get("hyperparameter_optimization", {})
 
         # Initialize multi-objective optimizer
         if opt_config.get("multi_objective", {}).get("enabled", False):
-            self.multi_objective_optimizer = MultiObjectiveOptimizer(opt_config)
-            self.logger.info("Multi-objective optimizer initialized")
+        self.multi_objective_optimizer, MultiObjectiveOptimizer(opt_config)
+        self.logger.info("Multi-objective optimizer initialized")
 
         # Initialize Bayesian optimizer
         if opt_config.get("bayesian_optimization", {}).get("enabled", False):
-            self.bayesian_optimizer = AdvancedBayesianOptimizer(opt_config)
-            self.logger.info("Bayesian optimizer initialized")
+        self.bayesian_optimizer, AdvancedBayesianOptimizer(opt_config)
+        self.logger.info("Bayesian optimizer initialized")
 
         # Initialize adaptive optimizer
         if opt_config.get("adaptive_optimization", {}).get("enabled", False):
-            self.adaptive_optimizer = AdaptiveOptimizer(opt_config)
-            self.logger.info("Adaptive optimizer initialized")
+        self.adaptive_optimizer, AdaptiveOptimizer(opt_config)
+        self.logger.info("Adaptive optimizer initialized")
 
     @handle_errors(
         exceptions=(Exception,),
@@ -95,8 +95,8 @@ class EnhancedOptimizationOrchestrator:
         }
 
         try:
-            # Run different optimization strategies based on type
-            if optimization_type == "comprehensive":
+        # Run different optimization strategies based on type
+        if optimization_type == "comprehensive":
                 results["results"] = await self._run_comprehensive_optimization(
                     market_data,
                 )
@@ -111,19 +111,19 @@ class EnhancedOptimizationOrchestrator:
             elif optimization_type == "quick":
                 results["results"] = await self._run_quick_optimization(market_data)
             else:
-                msg = f"Unknown optimization type: {optimization_type}"
+                msg, f"Unknown optimization type: {optimization_type}"
                 raise ValueError(msg)
 
-            # Analyze and summarize results
+        # Analyze and summarize results
             results["summary"] = self._analyze_optimization_results(results["results"])
 
-            # Update optimization history
-            self.optimization_history.append(results)
+        # Update optimization history
+        self.optimization_history.append(results)
 
-            self.logger.info(f"{optimization_type} optimization completed successfully")
+        self.logger.info(f"{optimization_type} optimization completed successfully")
 
         except Exception as e:
-            self.print(error("Error in {optimization_type} optimization: {e}"))
+        self.print(error("Error in {optimization_type} optimization: {e}"))
             results["error"] = str(e)
 
         return results
@@ -137,36 +137,36 @@ class EnhancedOptimizationOrchestrator:
 
         # Run multi-objective optimization
         if self.multi_objective_optimizer:
-            self.logger.info("Running multi-objective optimization...")
-            try:
-                mo_results = await self._run_multi_objective_optimization(market_data)
+        self.logger.info("Running multi-objective optimization...")
+        try:
+                mo_results, await self._run_multi_objective_optimization(market_data)
                 results["multi_objective"] = mo_results
-            except Exception as e:
-                error_msg = f"Multi-objective optimization failed: {e}"
-                self.logger.exception(error_msg)
-                self.print(failed(error_msg))
+        except Exception as e:
+                error_msg, f"Multi-objective optimization failed: {e}"
+        self.logger.exception(error_msg)
+        self.print(failed(error_msg))
 
         # Run Bayesian optimization
         if self.bayesian_optimizer:
-            self.logger.info("Running Bayesian optimization...")
-            try:
-                bayes_results = await self._run_bayesian_optimization(market_data)
+        self.logger.info("Running Bayesian optimization...")
+        try:
+                bayes_results, await self._run_bayesian_optimization(market_data)
                 results["bayesian"] = bayes_results
-            except Exception as e:
-                error_msg = f"Bayesian optimization failed: {e}"
-                self.logger.exception(error_msg)
-                self.print(failed(error_msg))
+        except Exception as e:
+                error_msg, f"Bayesian optimization failed: {e}"
+        self.logger.exception(error_msg)
+        self.print(failed(error_msg))
 
         # Run adaptive optimization
         if self.adaptive_optimizer:
-            self.logger.info("Running adaptive optimization...")
-            try:
-                adaptive_results = await self._run_adaptive_optimization(market_data)
+        self.logger.info("Running adaptive optimization...")
+        try:
+                adaptive_results, await self._run_adaptive_optimization(market_data)
                 results["adaptive"] = adaptive_results
-            except Exception as e:
-                error_msg = f"Adaptive optimization failed: {e}"
-                self.logger.exception(error_msg)
-                self.print(failed(error_msg))
+        except Exception as e:
+                error_msg, f"Adaptive optimization failed: {e}"
+        self.logger.exception(error_msg)
+        self.print(failed(error_msg))
 
         # Combine and rank results
         results["combined"] = self._combine_optimization_results(results)
@@ -183,7 +183,7 @@ class EnhancedOptimizationOrchestrator:
             raise ValueError(msg)
 
         # Run optimization
-        results = self.multi_objective_optimizer.run_optimization(n_trials=300)
+        results, self.multi_objective_optimizer.run_optimization(n_trials=300)
 
         return {
             "best_params": results["best_params"],
@@ -201,7 +201,7 @@ class EnhancedOptimizationOrchestrator:
             raise ValueError(msg)
 
         # Run optimization
-        results = self.bayesian_optimizer.run_optimization()
+        results, self.bayesian_optimizer.run_optimization()
 
         return {
             "best_params": results["best_params"],
@@ -220,10 +220,10 @@ class EnhancedOptimizationOrchestrator:
             raise ValueError(msg)
 
         # Detect market regime
-        regime = self.adaptive_optimizer.detect_market_regime(market_data)
+        regime, self.adaptive_optimizer.detect_market_regime(market_data)
 
         # Optimize for detected regime
-        results = self.adaptive_optimizer.optimize_for_regime(regime, market_data)
+        results, self.adaptive_optimizer.optimize_for_regime(regime, market_data)
 
         return {
             "detected_regime": regime.name,
@@ -242,19 +242,19 @@ class EnhancedOptimizationOrchestrator:
 
         # Quick Bayesian optimization
         if self.bayesian_optimizer:
-            quick_config = self.config.copy()
+            quick_config, self.config.copy()
             quick_config["hyperparameter_optimization"]["bayesian_optimization"][
                 "max_trials"
             ] = 50
 
-            quick_bayes = AdvancedBayesianOptimizer(quick_config)
-            bayes_results = quick_bayes.run_optimization()
+            quick_bayes, AdvancedBayesianOptimizer(quick_config)
+            bayes_results, quick_bayes.run_optimization()
             results["bayesian"] = bayes_results
 
         # Quick adaptive optimization
         if self.adaptive_optimizer:
-            regime = self.adaptive_optimizer.detect_market_regime(market_data)
-            adaptive_results = self.adaptive_optimizer.optimize_for_regime(
+            regime, self.adaptive_optimizer.detect_market_regime(market_data)
+            adaptive_results, self.adaptive_optimizer.optimize_for_regime(
                 regime,
                 market_data,
             )
@@ -289,17 +289,17 @@ class EnhancedOptimizationOrchestrator:
         # Compare performance
         performance_scores = {}
         for method, result in results.items():
-            if method in ["multi_objective", "bayesian", "adaptive"]:
-                if "best_score" in result:
+        if method in ["multi_objective", "bayesian", "adaptive"]:
+        if "best_score" in result:
                     performance_scores[method] = result["best_score"]
                 elif "optimization_metrics" in result:
-                    # Use weighted score for multi-objective
-                    metrics = result["optimization_metrics"]
+        # Use weighted score for multi-objective
+                    metrics, result["optimization_metrics"]
                     performance_scores[method] = metrics.get("weighted_score", 0)
 
         # Determine recommended approach
         if performance_scores:
-            best_method = max(performance_scores, key=performance_scores.get)
+            best_method, max(performance_scores, key=performance_scores.get)
             combined_results["recommended_approach"] = best_method
             combined_results["performance_comparison"] = performance_scores
 
@@ -310,9 +310,9 @@ class EnhancedOptimizationOrchestrator:
         metrics = {}
 
         if "pareto_front" in results:
-            pareto_front = results["pareto_front"]
-            if pareto_front:
-                # Calculate metrics from Pareto front
+            pareto_front, results["pareto_front"]
+        if pareto_front:
+        # Calculate metrics from Pareto front
                 scores = [
                     solution.get("weighted_score", 0) for solution in pareto_front
                 ]
@@ -334,18 +334,18 @@ class EnhancedOptimizationOrchestrator:
 
         # Analyze each optimization result
         for method, result in results.items():
-            if method in ["multi_objective", "bayesian", "adaptive"]:
-                if result and "best_params" in result:
+        if method in ["multi_objective", "bayesian", "adaptive"]:
+        if result and "best_params" in result:
                     summary["successful_optimizations"] += 1
 
-                    # Track best score
-                    if "best_score" in result:
-                        score = result["best_score"]
-                        if score > summary["best_overall_score"]:
+        # Track best score
+        if "best_score" in result:
+                        score, result["best_score"]
+        if score > summary["best_overall_score"]:
                             summary["best_overall_score"] = score
                             summary["recommended_parameters"] = result["best_params"]
 
-                    # Collect insights
+        # Collect insights
                     summary["optimization_insights"][method] = {
                         "parameters_found": len(result["best_params"]),
                         "optimization_quality": self._assess_optimization_quality(
@@ -358,31 +358,31 @@ class EnhancedOptimizationOrchestrator:
     def _assess_optimization_quality(self, result: dict[str, Any]) -> str:
         """Assess the quality of optimization results."""
         if "best_score" in result:
-            score = result["best_score"]
-            if score > 0.8:
-                return "excellent"
-            if score > 0.6:
-                return "good"
-            if score > 0.4:
-                return "fair"
-            return "poor"
+            score, result["best_score"]
+        if score > 0.8:
+        return "excellent"
+        if score > 0.6:
+        return "good"
+        if score > 0.4:
+        return "fair"
+        return "poor"
 
         return "unknown"
 
     def get_optimization_history(
         self,
-        limit: int | None = None,
+        limit: int | None, None,
     ) -> list[dict[str, Any]]:
         """Get optimization history."""
         if limit:
-            return self.optimization_history[-limit:]
+        return self.optimization_history[-limit:]
 
         return self.optimization_history
 
     def get_performance_trends(self) -> dict[str, Any]:
         """Analyze performance trends over time."""
         if not self.optimization_history:
-            return {"message": "No optimization history available"}
+        return {"message": "No optimization history available"}
 
         trends = {
             "score_trend": [],
@@ -392,7 +392,7 @@ class EnhancedOptimizationOrchestrator:
 
         # Analyze score trends
         for result in self.optimization_history:
-            if "summary" in result and "best_overall_score" in result["summary"]:
+        if "summary" in result and "best_overall_score" in result["summary"]:
                 trends["score_trend"].append(
                     {
                         "timestamp": result["timestamp"],
@@ -412,21 +412,21 @@ class EnhancedOptimizationOrchestrator:
         schedule_type: str = "daily",
     ) -> dict[str, Any]:
         """Run optimization based on schedule."""
-        schedule_config = self.config.get("hyperparameter_optimization", {}).get(
+        schedule_config, self.config.get("hyperparameter_optimization", {}).get(
             "optimization_schedules",
             {},
         )
-        schedule = schedule_config.get(schedule_type, {})
+        schedule, schedule_config.get(schedule_type, {})
 
         if not schedule.get("enabled", False):
-            return {"message": f"{schedule_type} optimization not enabled"}
+        return {"message": f"{schedule_type} optimization not enabled"}
 
         # Determine optimization type based on schedule
-        focus = schedule.get("focus", "comprehensive")
+        focus, schedule.get("focus", "comprehensive")
         schedule.get("max_trials", 100)
 
         # Load market data (this would integrate with your data loading)
-        market_data = self._load_market_data_for_optimization()
+        market_data, self._load_market_data_for_optimization()
 
         # Run optimization
         return await self.run_comprehensive_optimization(
@@ -438,7 +438,7 @@ class EnhancedOptimizationOrchestrator:
         """Load market data for optimization (placeholder)."""
         # This would integrate with your existing data loading infrastructure
         # For now, returning mock data
-        dates = pd.date_range(start="2024-01-01", end="2024-12-31", freq="1H")
+        dates, pd.date_range(start="2024-01-01", end="2024-12-31", freq="1H")
 
         return pd.DataFrame(
             {

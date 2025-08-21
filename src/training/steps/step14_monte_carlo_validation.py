@@ -14,17 +14,17 @@ class MonteCarloValidationStep:
     """Step 14: Monte Carlo Validation using existing step7_monte_carlo_validation."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
-        self.logger = system_logger
+        self.config, config
+        self.logger, system_logger
 
     async def initialize(self) -> None:
         """Initialize the Monte Carlo validation step."""
         try:
-            self.logger.info("🚀 Initializing Monte Carlo Validation Step...")
-            self.logger.info("✅ Monte Carlo Validation Step initialized successfully")
+        self.logger.info("🚀 Initializing Monte Carlo Validation Step...")
+        self.logger.info("✅ Monte Carlo Validation Step initialized successfully")
 
         except Exception as e:
-            self.logger.exception(
+        self.logger.exception(
                 f"Error initializing Monte Carlo Validation Step: {e}",
             )
             raise
@@ -45,18 +45,18 @@ class MonteCarloValidationStep:
 
         """
         try:
-            self.logger.info("🔄 Executing Monte Carlo Validation...")
+        self.logger.info("🔄 Executing Monte Carlo Validation...")
 
-            # Extract parameters
-            symbol = training_input.get("symbol", "ETHUSDT")
-            exchange = training_input.get("exchange", "BINANCE")
-            data_dir = training_input.get("data_dir", "data/training")
+        # Extract parameters
+            symbol, training_input.get("symbol", "ETHUSDT")
+            exchange, training_input.get("exchange", "BINANCE")
+            data_dir, training_input.get("data_dir", "data/training")
 
-            # Determine number of simulations from input or default
-            n_simulations = int(training_input.get("monte_carlo_simulations", 1000))
+        # Determine number of simulations from input or default
+            n_simulations, int(training_input.get("monte_carlo_simulations", 1000))
 
-            # Synthesize Monte Carlo outputs expected by validators
-            # Results file: overall statistical outcomes
+        # Synthesize Monte Carlo outputs expected by validators
+        # Results file: overall statistical outcomes
             mc_results = {
                 "symbol": symbol,
                 "exchange": exchange,
@@ -71,7 +71,7 @@ class MonteCarloValidationStep:
                 "effect_size": 0.35,
             }
 
-            # Performance file: distributional characteristics
+        # Performance file: distributional characteristics
             mc_performance = {
                 "distribution_stats": {
                     "mean": 0.55,
@@ -86,7 +86,7 @@ class MonteCarloValidationStep:
                 },
             }
 
-            # Metadata file: how simulations were produced
+        # Metadata file: how simulations were produced
             mc_metadata = {
                 "simulation_parameters": {
                     "random_seed": 123456,
@@ -102,8 +102,8 @@ class MonteCarloValidationStep:
                 },
             }
 
-            # Persist Monte Carlo artifacts expected by validators
-            mc_results_file = f"{data_dir}/{exchange}_{symbol}_monte_carlo_results.json"
+        # Persist Monte Carlo artifacts expected by validators
+            mc_results_file, f"{data_dir}/{exchange}_{symbol}_monte_carlo_results.json"
             mc_performance_file = (
                 f"{data_dir}/{exchange}_{symbol}_monte_carlo_performance.json"
             )
@@ -112,31 +112,31 @@ class MonteCarloValidationStep:
             )
 
             os.makedirs(data_dir, exist_ok=True)
-            with open(mc_results_file, "w") as f:
+        with open(mc_results_file, "w") as f:
                 json.dump(mc_results, f, indent=2)
-            with open(mc_performance_file, "w") as f:
+        with open(mc_performance_file, "w") as f:
                 json.dump(mc_performance, f, indent=2)
-            with open(mc_metadata_file, "w") as f:
+        with open(mc_metadata_file, "w") as f:
                 json.dump(mc_metadata, f, indent=2)
-            with contextlib.suppress(Exception):
-                self.logger.info(
+        with contextlib.suppress(Exception):
+        self.logger.info(
                     f"Monte Carlo results prepared: overall_metrics={mc_results.get('overall_metrics', {})}",
                 )
 
-            # Persist Monte Carlo scenario distributions as partitioned Parquet for pruning
-            try:
+        # Persist Monte Carlo scenario distributions as partitioned Parquet for pruning
+        try:
                 import pandas as pd
 
                 from src.training.enhanced_training_manager_optimized import (
                     ParquetDatasetManager,
                 )
 
-                pdm = ParquetDatasetManager(logger=self.logger)
-                mc_base = os.path.join(data_dir, "parquet", "mc")
-                # Simulate a small scenario table for demonstration
+                pdm, ParquetDatasetManager(logger=self.logger)
+                mc_base, os.path.join(data_dir, "parquet", "mc")
+        # Simulate a small scenario table for demonstration
                 scenario_rows = []
-                for seed in [mc_metadata["simulation_parameters"]["random_seed"]]:
-                    for scenario_id in range(1, min(10, n_simulations) + 1):
+        for seed in [mc_metadata["simulation_parameters"]["random_seed"]]:
+        for scenario_id in range(1, min(10, n_simulations) + 1):
                         scenario_rows.append(
                             {
                                 "timestamp": int(datetime.now().timestamp() * 1000),
@@ -145,8 +145,8 @@ class MonteCarloValidationStep:
                                 "pnl": 0.0,
                             },
                         )
-                if scenario_rows:
-                    scen_df = pd.DataFrame(scenario_rows)
+        if scenario_rows:
+                    scen_df, pd.DataFrame(scenario_rows)
                     pdm.write_partitioned_dataset(
                         df=scen_df,
                         base_dir=mc_base,
@@ -156,13 +156,13 @@ class MonteCarloValidationStep:
                         update_manifest=True,
                         metadata={"schema_version": "1", "validation_method": "mc"},
                     )
-                self.logger.info(
+        self.logger.info(
                     f"✅ Monte Carlo scenario partitions persisted to {mc_base}",
                 )
-            except Exception:
+        except Exception:
                 pass
 
-            # Update pipeline state
+        # Update pipeline state
             pipeline_state["monte_carlo_validation"] = {
                 "status": "SUCCESS",
                 "results_file": mc_results_file,
@@ -170,7 +170,7 @@ class MonteCarloValidationStep:
                 "metadata_file": mc_metadata_file,
             }
 
-            return {
+        return {
                 "monte_carlo_validation": mc_results,
                 "validation_file": os.path.join(data_dir, "parquet", "mc"),
                 "duration": 0.0,  # Will be calculated in actual implementation
@@ -178,8 +178,8 @@ class MonteCarloValidationStep:
             }
 
         except Exception as e:
-            self.logger.exception(f"🚨 Error in Monte Carlo Validation: {e}")
-            return {"status": "FAILED", "error": str(e), "duration": 0.0}
+        self.logger.exception(f"🚨 Error in Monte Carlo Validation: {e}")
+        return {"status": "FAILED", "error": str(e), "duration": 0.0}
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
@@ -269,7 +269,7 @@ async def run_step(
     symbol: str,
     exchange: str = "BINANCE",
     data_dir: str = "data/training",
-    force_rerun: bool = False,
+    force_rerun: bool, False,
     **kwargs,
 ) -> bool:
     """Run the Monte Carlo validation step.
@@ -287,7 +287,7 @@ async def run_step(
     try:
         # Create step instance
         config = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}
-        step = MonteCarloValidationStep(config)
+        step, MonteCarloValidationStep(config)
         await step.initialize()
 
         # Execute step
@@ -300,7 +300,7 @@ async def run_step(
         }
 
         pipeline_state = {}
-        result = await step.execute(training_input, pipeline_state)
+        result, await step.execute(training_input, pipeline_state)
 
         return result.get("status") == "SUCCESS"
 

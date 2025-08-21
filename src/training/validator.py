@@ -23,19 +23,19 @@ class TrainingStepValidator:
     def add_error(self, step_name: str, error: str, severity: str = "ERROR") -> None:
         """Add an error for a specific step."""
         if step_name not in self.step_errors:
-            self.step_errors[step_name] = []
+        self.step_errors[step_name] = []
 
         self.step_errors[step_name].append(
             {"error": error, "severity": severity, "timestamp": time.time()},
         )
 
         if severity == "CRITICAL":
-            self.critical_errors.append(f"{step_name}: {error}")
+        self.critical_errors.append(f"{step_name}: {error}")
 
     def add_warning(self, step_name: str, warning: str) -> None:
         """Add a warning for a specific step."""
         if step_name not in self.warnings:
-            self.warnings[step_name] = []
+        self.warnings[step_name] = []
         self.warnings[step_name].append(warning)
 
     def set_step_status(self, step_name: str, status: str, details: str = "") -> None:
@@ -51,7 +51,7 @@ class TrainingStepValidator:
     ) -> tuple[bool, str]:
         """Check if we can proceed to the next step based on current step status."""
         # Use the validation configuration to check progression rules
-        can_proceed, message = can_proceed_to_step(
+        can_proceed, message, can_proceed_to_step(
             current_step, next_step, self.step_status,
         )
 
@@ -60,25 +60,25 @@ class TrainingStepValidator:
             critical_errors = [
                 e for e in self.step_errors[current_step] if e["severity"] == "CRITICAL"
             ]
-            if critical_errors:
-                return (
+        if critical_errors:
+        return (
                     False,
                     f"Cannot proceed to {next_step}: {len(critical_errors)} critical errors in {current_step}",
                 )
 
         # Check step status
         if current_step in self.step_status:
-            status = self.step_status[current_step]["status"]
-            if status == "FAILED":
-                # Check if the step can be skipped according to configuration
-                current_rules = get_progression_rules(current_step)
-                if not current_rules.get("can_skip", False):
-                    return (
+            status, self.step_status[current_step]["status"]
+        if status == "FAILED":
+        # Check if the step can be skipped according to configuration
+                current_rules, get_progression_rules(current_step)
+        if not current_rules.get("can_skip", False):
+        return (
                         False,
                         f"Cannot proceed to {next_step}: {current_step} failed and cannot be skipped",
                     )
             elif status == "SKIPPED":
-                return True, f"Proceeding to {next_step}: {current_step} was skipped"
+        return True, f"Proceeding to {next_step}: {current_step} was skipped"
 
         return can_proceed, message
 
@@ -106,7 +106,7 @@ class TrainingStepValidator:
     ) -> tuple[bool, list[str]]:
         """Validate step results using the validation configuration."""
         if step_name in VALIDATION_FUNCTIONS:
-            return VALIDATION_FUNCTIONS[step_name](results)
+        return VALIDATION_FUNCTIONS[step_name](results)
         return True, []
 
     def validate_step_thresholds(
@@ -115,18 +115,18 @@ class TrainingStepValidator:
         metrics: dict[str, float],
     ) -> tuple[bool, list[str]]:
         """Validate step metrics against configured thresholds."""
-        config = get_validation_config(step_name)
+        config, get_validation_config(step_name)
         if not config or "thresholds" not in config:
-            return True, []
+        return True, []
 
         failed_thresholds = []
         for metric_name, threshold_config in config["thresholds"].items():
-            if metric_name in metrics:
-                value = metrics[metric_name]
-                min_val = threshold_config.get("min")
-                max_val = threshold_config.get("max")
+        if metric_name in metrics:
+                value, metrics[metric_name]
+                min_val, threshold_config.get("min")
+                max_val, threshold_config.get("max")
 
-                if min_val is not None and value < min_val:
+        if min_val is not None and value < min_val:
                     failed_thresholds.append(
                         f"{metric_name} ({value}) below minimum threshold ({min_val})",
                     )
@@ -160,14 +160,14 @@ class TrainingStepValidator:
         """Get list of steps that have failed."""
         return [
             step_name
-            for step_name, status in self.step_status.items()
-            if status["status"] == "FAILED"
+        for step_name, status in self.step_status.items()
+        if status["status"] == "FAILED"
         ]
 
     def get_successful_steps(self) -> list[str]:
         """Get list of steps that have succeeded."""
         return [
             step_name
-            for step_name, status in self.step_status.items()
-            if status["status"] == "SUCCESS"
+        for step_name, status in self.step_status.items()
+        if status["status"] == "SUCCESS"
         ]

@@ -18,8 +18,8 @@ class RegimeDataSplittingStep:
     """Step 4: Data Splitting for Training - HMM composite clusters only."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
-        self.logger = system_logger.getChild("Step4.RegimeSplit")
+        self.config, config
+        self.logger, system_logger.getChild("Step4.RegimeSplit")
 
     async def initialize(self) -> None:
         self.logger.info("🚀 Initializing Step 4: HMM Composite Regime Data Splitting...")
@@ -27,96 +27,96 @@ class RegimeDataSplittingStep:
 
     async def execute(self) -> dict[str, Any]:
         try:
-            self.logger.info("🔄 Loading unified data for HMM composite regime data splitting...")
-            data_loader = get_unified_data_loader(self.config)
+        self.logger.info("🔄 Loading unified data for HMM composite regime data splitting...")
+            data_loader, get_unified_data_loader(self.config)
             from src.config.constants import (
                 BLANK_TRAINING_LOOKBACK_DAYS,
             )
 
-            # Use lookback_days from config (should be passed from enhanced training manager)
-            config_lookback = self.config.get(
+        # Use lookback_days from config (should be passed from enhanced training manager)
+            config_lookback, self.config.get(
                 "lookback_days", BLANK_TRAINING_LOOKBACK_DAYS,
             )
-            unified_data = await data_loader.load_unified_data(
+            unified_data, await data_loader.load_unified_data(
                 symbol=self.config.get("symbol", "ETHUSDT"),
                 exchange=self.config.get("exchange", "BINANCE"),
                 timeframe=self.config.get("timeframe", "1m"),
                 lookback_days=config_lookback,
             )
 
-            self.logger.info(f"✅ Loaded unified data: {len(unified_data)} rows")
-            self.logger.info(
+        self.logger.info(f"✅ Loaded unified data: {len(unified_data)} rows")
+        self.logger.info(
                 f"   Date range: {unified_data.index.min()} to {unified_data.index.max()}",
             )
 
-            # HMM COMPOSITE CLUSTERS ONLY - NO FALLBACKS
-            self.logger.info("🎯 Using HMM composite clusters for regime splitting (PARAMOUNT)")
+        # HMM COMPOSITE CLUSTERS ONLY - NO FALLBACKS
+        self.logger.info("🎯 Using HMM composite clusters for regime splitting (PARAMOUNT)")
 
-            # Check for HMM composite cluster data
-            if "composite_cluster_id" not in unified_data.columns:
-                self.logger.error("🚨 HMM composite_cluster_id column is missing from unified data")
-                self.logger.error("   This is a critical failure - HMM composite clusters are paramount")
-                self.logger.error("   Please ensure step3_hmm_regime_discovery completed successfully")
-                return {"success": False, "error": "Missing HMM composite_cluster_id - paramount requirement"}
+        # Check for HMM composite cluster data
+        if "composite_cluster_id" not in unified_data.columns:
+        self.logger.error("🚨 HMM composite_cluster_id column is missing from unified data")
+        self.logger.error("   This is a critical failure - HMM composite clusters are paramount")
+        self.logger.error("   Please ensure step3_hmm_regime_discovery completed successfully")
+        return {"success": False, "error": "Missing HMM composite_cluster_id - paramount requirement"}
 
-            # Verify HMM composite clusters are not all null
-            composite_clusters = unified_data["composite_cluster_id"].dropna()
-            if composite_clusters.empty:
-                self.logger.error("🚨 HMM composite_cluster_id column contains only null values")
-                self.logger.error("   This indicates step3_hmm_regime_discovery failed to generate valid clusters")
-                return {"success": False, "error": "HMM composite_cluster_id contains only null values"}
+        # Verify HMM composite clusters are not all null
+            composite_clusters, unified_data["composite_cluster_id"].dropna()
+        if composite_clusters.empty:
+        self.logger.error("🚨 HMM composite_cluster_id column contains only null values")
+        self.logger.error("   This indicates step3_hmm_regime_discovery failed to generate valid clusters")
+        return {"success": False, "error": "HMM composite_cluster_id contains only null values"}
 
-            # Get unique HMM composite clusters
-            unique_clusters = composite_clusters.unique()
-            self.logger.info(f"📊 Found {len(unique_clusters)} unique HMM composite clusters: {sorted(unique_clusters)}")
+        # Get unique HMM composite clusters
+            unique_clusters, composite_clusters.unique()
+        self.logger.info(f"📊 Found {len(unique_clusters)} unique HMM composite clusters: {sorted(unique_clusters)}")
 
-            # Split data by HMM composite clusters
+        # Split data by HMM composite clusters
             regime_splits: dict[str, pd.DataFrame] = {}
-            for cluster_id in unique_clusters:
-                cluster_mask = unified_data["composite_cluster_id"] == cluster_id
-                cluster_data = unified_data[cluster_mask].copy()
+        for cluster_id in unique_clusters:
+                cluster_mask, unified_data["composite_cluster_id"] == cluster_id
+                cluster_data, unified_data[cluster_mask].copy()
 
-                if not cluster_data.empty:
-                    regime_name = f"hmm_composite_{cluster_id}"
+        if not cluster_data.empty:
+                    regime_name, f"hmm_composite_{cluster_id}"
                     regime_splits[regime_name] = cluster_data
-                    self.logger.info(f"✅ Created regime split for {regime_name}: {len(cluster_data)} rows")
+        self.logger.info(f"✅ Created regime split for {regime_name}: {len(cluster_data)} rows")
 
-            if not regime_splits:
-                self.logger.error("🚨 No valid regime splits created from HMM composite clusters")
-                return {"success": False, "error": "No valid regime splits created"}
+        if not regime_splits:
+        self.logger.error("🚨 No valid regime splits created from HMM composite clusters")
+        return {"success": False, "error": "No valid regime splits created"}
 
-            self.logger.info(f"✅ Successfully created {len(regime_splits)} HMM composite regime splits")
+        self.logger.info(f"✅ Successfully created {len(regime_splits)} HMM composite regime splits")
 
-            # Save regime splits & summary
-            self._save_regime_splits(regime_splits)
-            summary = self._create_regime_splitting_summary(regime_splits)
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            with open(f"log/step4_regime_split_{ts}.json", "w") as f:
+        # Save regime splits & summary
+        self._save_regime_splits(regime_splits)
+            summary, self._create_regime_splitting_summary(regime_splits)
+            ts, datetime.now().strftime("%Y%m%d_%H%M%S")
+        with open(f"log/step4_regime_split_{ts}.json", "w") as f:
                 json.dump(summary, f, indent=2)
 
-            self.logger.info("✅ HMM composite regime data splitting completed successfully")
-            return {"success": True, "regime_splits": summary}
+        self.logger.info("✅ HMM composite regime data splitting completed successfully")
+        return {"success": True, "regime_splits": summary}
         except Exception as e:
-            self.logger.exception(f"❌ HMM composite regime data splitting failed: {e}")
-            return {"success": False, "error": str(e)}
+        self.logger.exception(f"❌ HMM composite regime data splitting failed: {e}")
+        return {"success": False, "error": str(e)}
 
     def _save_regime_splits(self, regime_splits: dict[str, pd.DataFrame]) -> None:
-        data_dir = self.config.get("data_dir", "data/training")
+        data_dir, self.config.get("data_dir", "data/training")
         os.makedirs(data_dir, exist_ok=True)
-        regime_data_dir = os.path.join(data_dir, "regime_data")
+        regime_data_dir, os.path.join(data_dir, "regime_data")
         os.makedirs(regime_data_dir, exist_ok=True)
         for regime, regime_df in regime_splits.items():
-            if not regime_df.empty:
-                regime_file = os.path.join(regime_data_dir, f"{regime}.parquet")
-                try:
+        if not regime_df.empty:
+                regime_file, os.path.join(regime_data_dir, f"{regime}.parquet")
+        try:
                     regime_df.to_parquet(regime_file, index=False)
-                    self.logger.info(
+        self.logger.info(
                         f"✅ Saved {regime} regime data: {len(regime_df)} rows -> {regime_file}",
                     )
-                except Exception as e:
-                    self.logger.exception(f"🚨 Failed to save {regime} regime data: {e}")
+        except Exception as e:
+        self.logger.exception(f"🚨 Failed to save {regime} regime data: {e}")
             else:
-                self.logger.warning(f"⚠️ No data for {regime} regime")
+        self.logger.warning(f"⚠️ No data for {regime} regime")
 
     def _create_regime_splitting_summary(self, regime_splits: dict[str, pd.DataFrame]) -> dict[str, Any]:
         """Create a summary of the regime splitting results."""
@@ -224,7 +224,7 @@ async def run_step(
     exchange: str,
     data_dir: str,
     timeframe: str = "1m",
-    force_rerun: bool = False,
+    force_rerun: bool, False,
     **kwargs,
 ) -> bool:
     """Run the HMM composite regime data splitting step."""
@@ -237,9 +237,9 @@ async def run_step(
         **kwargs,
     }
 
-    step = RegimeDataSplittingStep(config)
+    step, RegimeDataSplittingStep(config)
     await step.initialize()
-    result = await step.execute()
+    result, await step.execute()
     return result.get("success", False)
 
 

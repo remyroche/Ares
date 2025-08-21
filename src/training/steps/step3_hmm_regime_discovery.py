@@ -67,9 +67,9 @@ from src.utils.logger import system_logger
 # Optional clustering
 try:
 
-    _HDBSCAN_AVAILABLE = True
+    _HDBSCAN_AVAILABLE, True
 except Exception:
-    _HDBSCAN_AVAILABLE = False
+    _HDBSCAN_AVAILABLE, False
 
 import sys
 
@@ -91,24 +91,24 @@ def _cleanup_multiprocessing_resources() -> None:
 
         # Clean up any remaining multiprocessing resources
         if hasattr(mp, "current_process"):
-            current_process = mp.current_process()
-            if hasattr(current_process, "_cleanup"):
+            current_process, mp.current_process()
+        if hasattr(current_process, "_cleanup"):
                 current_process._cleanup()
 
         # Additional cleanup for joblib
         if hasattr(joblib, "parallel"):
-            joblib.parallel._backend = None
+            joblib.parallel._backend, None
 
         # Clear any remaining multiprocessing pools
         if hasattr(mp, "_current_process"):
-            current_process = mp.current_process()
-            if hasattr(current_process, "_children"):
-                for child in list(current_process._children):
-                    if child.is_alive():
-                        try:
+            current_process, mp.current_process()
+        if hasattr(current_process, "_children"):
+        for child in list(current_process._children):
+        if child.is_alive():
+        try:
                             child.terminate()
                             child.join(timeout=1)
-                        except Exception:
+        except Exception:
                             pass
 
     except Exception as e:
@@ -119,7 +119,7 @@ def _cleanup_multiprocessing_resources() -> None:
 atexit.register(_cleanup_multiprocessing_resources)
 
 # Configure logging
-logger = system_logger.getChild("Step3.HMMRegimeDiscovery")
+logger, system_logger.getChild("Step3.HMMRegimeDiscovery")
 
 
 def _signal_handler(signum, frame) -> None:
@@ -140,22 +140,22 @@ def _generate_simple_hmm_report(
     """Generate a simple text-based HMM regime report to avoid complex visualizations."""
     try:
         # Load the composite clusters data
-        clusters_path = os.path.join(
+        clusters_path, os.path.join(
             data_dir, f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet",
         )
         if not os.path.exists(clusters_path):
-            return f"# HMM Regime Report for {exchange}_{symbol}_{timeframe}\n\nNo cluster data available."
+        return f"# HMM Regime Report for {exchange}_{symbol}_{timeframe}\n\nNo cluster data available."
 
-        clusters_df = pd.read_parquet(clusters_path)
+        clusters_df, pd.read_parquet(clusters_path)
 
         # Load the meta information
-        meta_path = os.path.join(
+        meta_path, os.path.join(
             data_dir, f"{exchange}_{symbol}_hmm_composite_meta_{timeframe}.json",
         )
         meta_info = {}
         if os.path.exists(meta_path):
-            with open(meta_path) as f:
-                meta_info = json.load(f)
+        with open(meta_path) as f:
+                meta_info, json.load(f)
 
         # Generate simple report
         report_lines = [
@@ -176,7 +176,7 @@ def _generate_simple_hmm_report(
             regime_counts = (
                 clusters_df["composite_cluster_id"].value_counts().sort_index()
             )
-            for regime_id, count in regime_counts.items():
+        for regime_id, count in regime_counts.items():
                 percentage = (count / len(clusters_df)) * 100
                 report_lines.append(
                     f"- Regime {regime_id}: {count} points ({percentage:.1f}%)",
@@ -300,7 +300,7 @@ def validate_required_artifacts(
 
     artifact_status = {}
     for artifact_name, filename in required_artifacts.items():
-        filepath = os.path.join(data_dir, filename)
+        filepath, os.path.join(data_dir, filename)
         artifact_status[artifact_name] = os.path.exists(filepath)
 
     return artifact_status
@@ -344,7 +344,7 @@ def ensure_artifacts_directory(data_dir: str) -> None:
 
 def ensure_reports_directory() -> None:
     """Ensure the reports directory exists."""
-    reports_dir = os.path.join("reports")
+    reports_dir, os.path.join("reports")
     os.makedirs(reports_dir, exist_ok=True)
 
 
@@ -354,7 +354,7 @@ class BlockConfig:
 
     name: str
     n_states: int
-    max_features: int = 3
+    max_features: int, 3
 
 
 # HMM Optimization Configuration - Enhanced for higher sensitivity and less sideways/neutral states
@@ -438,13 +438,13 @@ class FeatureCache:
     def __init__(
         self,
         cache_dir: str = "data_cache/feature_cache",
-        max_size_gb: float = 5.0,
-        ttl_hours: int = 24,
+        max_size_gb: float, 5.0,
+        ttl_hours: int, 24,
     ) -> None:
-        self.cache_dir = cache_dir
-        self.max_size_gb = max_size_gb
-        self.ttl_seconds = ttl_hours * 3600
-        self.cache_metadata_file = os.path.join(cache_dir, "cache_metadata.json")
+        self.cache_dir, cache_dir
+        self.max_size_gb, max_size_gb
+        self.ttl_seconds, ttl_hours * 3600
+        self.cache_metadata_file, os.path.join(cache_dir, "cache_metadata.json")
         self._ensure_cache_dir()
         self._load_metadata()
 
@@ -455,21 +455,21 @@ class FeatureCache:
     def _load_metadata(self) -> None:
         """Load cache metadata."""
         try:
-            if os.path.exists(self.cache_metadata_file):
-                with open(self.cache_metadata_file) as f:
-                    self.metadata = json.load(f)
+        if os.path.exists(self.cache_metadata_file):
+        with open(self.cache_metadata_file) as f:
+        self.metadata, json.load(f)
             else:
-                self.metadata = {"entries": {}, "total_size_gb": 0.0}
+        self.metadata = {"entries": {}, "total_size_gb": 0.0}
         except Exception as e:
             print_and_log(
                 f"Failed to load cache metadata: {e}", "warning", "FeatureCache",
             )
-            self.metadata = {"entries": {}, "total_size_gb": 0.0}
+        self.metadata = {"entries": {}, "total_size_gb": 0.0}
 
     def _save_metadata(self) -> None:
         """Save cache metadata."""
         try:
-            with open(self.cache_metadata_file, "w") as f:
+        with open(self.cache_metadata_file, "w") as f:
                 json.dump(self.metadata, f, indent=2)
         except Exception as e:
             print_and_log(
@@ -490,34 +490,34 @@ class FeatureCache:
     def _get_file_size_gb(self, file_path: str) -> float:
         """Get file size in GB."""
         try:
-            return os.path.getsize(file_path) / (1024**3)
+        return os.path.getsize(file_path) / (1024**3)
         except:
-            return 0.0
+        return 0.0
 
     def _cleanup_expired_entries(self) -> None:
         """Remove expired cache entries."""
-        current_time = time.time()
+        current_time, time.time()
         expired_keys = []
 
         for key, entry in self.metadata["entries"].items():
-            if current_time - entry["timestamp"] > self.ttl_seconds:
+        if current_time - entry["timestamp"] > self.ttl_seconds:
                 expired_keys.append(key)
 
         for key in expired_keys:
-            self._remove_entry(key)
+        self._remove_entry(key)
 
     def _remove_entry(self, key: str) -> None:
         """Remove a cache entry."""
         if key in self.metadata["entries"]:
-            self.metadata["entries"][key]
-            try:
-                cache_file = os.path.join(self.cache_dir, f"{key}.parquet")
-                if os.path.exists(cache_file):
-                    size_gb = self._get_file_size_gb(cache_file)
-                    self.metadata["total_size_gb"] -= size_gb
+        self.metadata["entries"][key]
+        try:
+                cache_file, os.path.join(self.cache_dir, f"{key}.parquet")
+        if os.path.exists(cache_file):
+                    size_gb, self._get_file_size_gb(cache_file)
+        self.metadata["total_size_gb"] -= size_gb
                     os.remove(cache_file)
                 del self.metadata["entries"][key]
-            except Exception as e:
+        except Exception as e:
                 print_and_log(
                     f"Failed to remove cache entry {key}: {e}",
                     "warning",
@@ -527,15 +527,15 @@ class FeatureCache:
     def _evict_if_needed(self) -> None:
         """Evict old entries if cache size exceeds limit."""
         while (
-            self.metadata["total_size_gb"] > self.max_size_gb
+        self.metadata["total_size_gb"] > self.max_size_gb
             and self.metadata["entries"]
         ):
-            # Find oldest entry
-            oldest_key = min(
-                self.metadata["entries"].keys(),
+        # Find oldest entry
+            oldest_key, min(
+        self.metadata["entries"].keys(),
                 key=lambda k: self.metadata["entries"][k]["timestamp"],
             )
-            self._remove_entry(oldest_key)
+        self._remove_entry(oldest_key)
 
     def get_cached_features(
         self,
@@ -547,19 +547,19 @@ class FeatureCache:
     ) -> pd.DataFrame | None:
         """Retrieve cached features if available and valid."""
         if not HMM_OPTIMIZATION_CONFIG.get("enable_feature_caching", True):
-            return None
+        return None
 
         try:
-            cache_key = self._generate_cache_key(
+            cache_key, self._generate_cache_key(
                 symbol, exchange, timeframe, block_name, data_hash,
             )
 
-            if cache_key in self.metadata["entries"]:
-                entry = self.metadata["entries"][cache_key]
-                cache_file = os.path.join(self.cache_dir, f"{cache_key}.parquet")
+        if cache_key in self.metadata["entries"]:
+                entry, self.metadata["entries"][cache_key]
+                cache_file, os.path.join(self.cache_dir, f"{cache_key}.parquet")
 
-                # Check if file exists and is not expired
-                if (
+        # Check if file exists and is not expired
+        if (
                     os.path.exists(cache_file)
                     and (time.time() - entry["timestamp"]) < self.ttl_seconds
                 ):
@@ -568,17 +568,17 @@ class FeatureCache:
                         "info",
                         "FeatureCache",
                     )
-                    return pd.read_parquet(cache_file)
-                # Remove expired entry
-                self._remove_entry(cache_key)
+        return pd.read_parquet(cache_file)
+        # Remove expired entry
+        self._remove_entry(cache_key)
 
-            return None
+        return None
 
         except Exception as e:
             print_and_log(
                 f"Error retrieving cached features: {e}", "warning", "FeatureCache",
             )
-            return None
+        return None
 
     def cache_features(
         self,
@@ -594,17 +594,17 @@ class FeatureCache:
             return
 
         try:
-            cache_key = self._generate_cache_key(
+            cache_key, self._generate_cache_key(
                 symbol, exchange, timeframe, block_name, data_hash,
             )
-            cache_file = os.path.join(self.cache_dir, f"{cache_key}.parquet")
+            cache_file, os.path.join(self.cache_dir, f"{cache_key}.parquet")
 
-            # Save features
+        # Save features
             features.to_parquet(cache_file)
 
-            # Update metadata
-            size_gb = self._get_file_size_gb(cache_file)
-            self.metadata["entries"][cache_key] = {
+        # Update metadata
+            size_gb, self._get_file_size_gb(cache_file)
+        self.metadata["entries"][cache_key] = {
                 "timestamp": time.time(),
                 "size_gb": size_gb,
                 "symbol": symbol,
@@ -613,12 +613,12 @@ class FeatureCache:
                 "block_name": block_name,
                 "data_hash": data_hash,
             }
-            self.metadata["total_size_gb"] += size_gb
+        self.metadata["total_size_gb"] += size_gb
 
-            # Cleanup and evict if needed
-            self._cleanup_expired_entries()
-            self._evict_if_needed()
-            self._save_metadata()
+        # Cleanup and evict if needed
+        self._cleanup_expired_entries()
+        self._evict_if_needed()
+        self._save_metadata()
 
             print_and_log(
                 f"💾 Cached features for {symbol}_{exchange}_{timeframe}_{block_name} ({size_gb:.3f}GB)",
@@ -640,7 +640,7 @@ class FeatureCache:
 
 
 # Global feature cache instance
-feature_cache = FeatureCache(
+feature_cache, FeatureCache(
     cache_dir=HMM_OPTIMIZATION_CONFIG.get(
         "feature_cache_dir", "data_cache/feature_cache",
     ),
@@ -656,13 +656,13 @@ class ModelCache:
     def __init__(
         self,
         cache_dir: str = "data_cache/model_cache",
-        max_size_gb: float = 3.0,
-        ttl_hours: int = 48,
+        max_size_gb: float, 3.0,
+        ttl_hours: int, 48,
     ) -> None:
-        self.cache_dir = cache_dir
-        self.max_size_gb = max_size_gb
-        self.ttl_seconds = ttl_hours * 3600
-        self.cache_metadata_file = os.path.join(cache_dir, "model_cache_metadata.json")
+        self.cache_dir, cache_dir
+        self.max_size_gb, max_size_gb
+        self.ttl_seconds, ttl_hours * 3600
+        self.cache_metadata_file, os.path.join(cache_dir, "model_cache_metadata.json")
         self._ensure_cache_dir()
         self._load_metadata()
 
@@ -673,21 +673,21 @@ class ModelCache:
     def _load_metadata(self) -> None:
         """Load cache metadata."""
         try:
-            if os.path.exists(self.cache_metadata_file):
-                with open(self.cache_metadata_file) as f:
-                    self.metadata = json.load(f)
+        if os.path.exists(self.cache_metadata_file):
+        with open(self.cache_metadata_file) as f:
+        self.metadata, json.load(f)
             else:
-                self.metadata = {"entries": {}, "total_size_gb": 0.0}
+        self.metadata = {"entries": {}, "total_size_gb": 0.0}
         except Exception as e:
             print_and_log(
                 f"Failed to load model cache metadata: {e}", "warning", "ModelCache",
             )
-            self.metadata = {"entries": {}, "total_size_gb": 0.0}
+        self.metadata = {"entries": {}, "total_size_gb": 0.0}
 
     def _save_metadata(self) -> None:
         """Save cache metadata."""
         try:
-            with open(self.cache_metadata_file, "w") as f:
+        with open(self.cache_metadata_file, "w") as f:
                 json.dump(self.metadata, f, indent=2)
         except Exception as e:
             print_and_log(
@@ -710,41 +710,41 @@ class ModelCache:
     def _get_file_size_gb(self, file_path: str) -> float:
         """Get file size in GB."""
         try:
-            return os.path.getsize(file_path) / (1024**3)
+        return os.path.getsize(file_path) / (1024**3)
         except:
-            return 0.0
+        return 0.0
 
     def _cleanup_expired_entries(self) -> None:
         """Remove expired cache entries."""
-        current_time = time.time()
+        current_time, time.time()
         expired_keys = []
 
         for key, entry in self.metadata["entries"].items():
-            if current_time - entry["timestamp"] > self.ttl_seconds:
+        if current_time - entry["timestamp"] > self.ttl_seconds:
                 expired_keys.append(key)
 
         for key in expired_keys:
-            self._remove_entry(key)
+        self._remove_entry(key)
 
     def _remove_entry(self, key: str) -> None:
         """Remove a cache entry."""
         if key in self.metadata["entries"]:
-            self.metadata["entries"][key]
-            try:
-                model_file = os.path.join(self.cache_dir, f"{key}_model.joblib")
-                scaler_file = os.path.join(self.cache_dir, f"{key}_scaler.joblib")
+        self.metadata["entries"][key]
+        try:
+                model_file, os.path.join(self.cache_dir, f"{key}_model.joblib")
+                scaler_file, os.path.join(self.cache_dir, f"{key}_scaler.joblib")
 
-                if os.path.exists(model_file):
-                    size_gb = self._get_file_size_gb(model_file)
-                    self.metadata["total_size_gb"] -= size_gb
+        if os.path.exists(model_file):
+                    size_gb, self._get_file_size_gb(model_file)
+        self.metadata["total_size_gb"] -= size_gb
                     os.remove(model_file)
-                if os.path.exists(scaler_file):
-                    size_gb = self._get_file_size_gb(scaler_file)
-                    self.metadata["total_size_gb"] -= size_gb
+        if os.path.exists(scaler_file):
+                    size_gb, self._get_file_size_gb(scaler_file)
+        self.metadata["total_size_gb"] -= size_gb
                     os.remove(scaler_file)
 
                 del self.metadata["entries"][key]
-            except Exception as e:
+        except Exception as e:
                 print_and_log(
                     f"Failed to remove model cache entry {key}: {e}",
                     "warning",
@@ -754,15 +754,15 @@ class ModelCache:
     def _evict_if_needed(self) -> None:
         """Evict old entries if cache size exceeds limit."""
         while (
-            self.metadata["total_size_gb"] > self.max_size_gb
+        self.metadata["total_size_gb"] > self.max_size_gb
             and self.metadata["entries"]
         ):
-            # Find oldest entry
-            oldest_key = min(
-                self.metadata["entries"].keys(),
+        # Find oldest entry
+            oldest_key, min(
+        self.metadata["entries"].keys(),
                 key=lambda k: self.metadata["entries"][k]["timestamp"],
             )
-            self._remove_entry(oldest_key)
+        self._remove_entry(oldest_key)
 
     def get_cached_model(
         self,
@@ -776,10 +776,10 @@ class ModelCache:
     ) -> tuple[Any, Any] | None:
         """Retrieve cached model and scaler if available and valid."""
         if not HMM_OPTIMIZATION_CONFIG.get("enable_model_caching", True):
-            return None
+        return None
 
         try:
-            cache_key = self._generate_cache_key(
+            cache_key, self._generate_cache_key(
                 symbol,
                 exchange,
                 timeframe,
@@ -789,13 +789,13 @@ class ModelCache:
                 config_hash,
             )
 
-            if cache_key in self.metadata["entries"]:
-                entry = self.metadata["entries"][cache_key]
-                model_file = os.path.join(self.cache_dir, f"{cache_key}_model.joblib")
-                scaler_file = os.path.join(self.cache_dir, f"{cache_key}_scaler.joblib")
+        if cache_key in self.metadata["entries"]:
+                entry, self.metadata["entries"][cache_key]
+                model_file, os.path.join(self.cache_dir, f"{cache_key}_model.joblib")
+                scaler_file, os.path.join(self.cache_dir, f"{cache_key}_scaler.joblib")
 
-                # Check if files exist and are not expired
-                if (
+        # Check if files exist and are not expired
+        if (
                     os.path.exists(model_file)
                     and os.path.exists(scaler_file)
                     and (time.time() - entry["timestamp"]) < self.ttl_seconds
@@ -805,19 +805,19 @@ class ModelCache:
                         "info",
                         "ModelCache",
                     )
-                    cached_model = joblib.load(model_file)
-                    cached_scaler = joblib.load(scaler_file)
-                    return cached_model, cached_scaler
-                # Remove expired entry
-                self._remove_entry(cache_key)
+                    cached_model, joblib.load(model_file)
+                    cached_scaler, joblib.load(scaler_file)
+        return cached_model, cached_scaler
+        # Remove expired entry
+        self._remove_entry(cache_key)
 
-            return None
+        return None
 
         except Exception as e:
             print_and_log(
                 f"Error retrieving cached model: {e}", "warning", "ModelCache",
             )
-            return None
+        return None
 
     def cache_model(
         self,
@@ -836,7 +836,7 @@ class ModelCache:
             return
 
         try:
-            cache_key = self._generate_cache_key(
+            cache_key, self._generate_cache_key(
                 symbol,
                 exchange,
                 timeframe,
@@ -845,21 +845,21 @@ class ModelCache:
                 data_hash,
                 config_hash,
             )
-            model_file = os.path.join(self.cache_dir, f"{cache_key}_model.joblib")
-            scaler_file = os.path.join(self.cache_dir, f"{cache_key}_scaler.joblib")
+            model_file, os.path.join(self.cache_dir, f"{cache_key}_model.joblib")
+            scaler_file, os.path.join(self.cache_dir, f"{cache_key}_scaler.joblib")
 
-            # Save model and scaler
+        # Save model and scaler
             joblib.dump(model, model_file)
             joblib.dump(scaler, scaler_file)
 
-            # Validate that files were created and have content
-            if not os.path.exists(model_file) or os.path.getsize(model_file) == 0:
-                msg = f"Model file was not created or is empty: {model_file}"
+        # Validate that files were created and have content
+        if not os.path.exists(model_file) or os.path.getsize(model_file) == 0:
+                msg, f"Model file was not created or is empty: {model_file}"
                 raise ValueError(
                     msg,
                 )
-            if not os.path.exists(scaler_file) or os.path.getsize(scaler_file) == 0:
-                msg = f"Scaler file was not created or is empty: {scaler_file}"
+        if not os.path.exists(scaler_file) or os.path.getsize(scaler_file) == 0:
+                msg, f"Scaler file was not created or is empty: {scaler_file}"
                 raise ValueError(
                     msg,
                 )
@@ -868,19 +868,19 @@ class ModelCache:
                 "✅ Model and scaler files saved successfully", "debug", "ModelCache",
             )
 
-            # Update metadata
-            model_size_gb = self._get_file_size_gb(model_file)
-            scaler_size_gb = self._get_file_size_gb(scaler_file)
-            total_size_gb = model_size_gb + scaler_size_gb
+        # Update metadata
+            model_size_gb, self._get_file_size_gb(model_file)
+            scaler_size_gb, self._get_file_size_gb(scaler_file)
+            total_size_gb, model_size_gb + scaler_size_gb
 
-            # Log detailed size information
+        # Log detailed size information
             print_and_log(
                 f"🔍 Model file size: {model_size_gb*1024*1024:.1f}KB, Scaler file size: {scaler_size_gb*1024*1024:.1f}KB",
                 "debug",
                 "ModelCache",
             )
 
-            self.metadata["entries"][cache_key] = {
+        self.metadata["entries"][cache_key] = {
                 "timestamp": time.time(),
                 "size_gb": total_size_gb,
                 "symbol": symbol,
@@ -891,22 +891,22 @@ class ModelCache:
                 "data_hash": data_hash,
                 "config_hash": config_hash,
             }
-            self.metadata["total_size_gb"] += total_size_gb
+        self.metadata["total_size_gb"] += total_size_gb
 
-            # Cleanup and evict if needed
-            self._cleanup_expired_entries()
-            self._evict_if_needed()
-            self._save_metadata()
+        # Cleanup and evict if needed
+        self._cleanup_expired_entries()
+        self._evict_if_needed()
+        self._save_metadata()
 
-            # Format size appropriately based on magnitude
-            if total_size_gb >= 1.0:
-                size_str = f"{total_size_gb:.3f}GB"
+        # Format size appropriately based on magnitude
+        if total_size_gb >= 1.0:
+                size_str, f"{total_size_gb:.3f}GB"
             elif total_size_gb >= 0.001:
-                size_str = f"{total_size_gb*1024:.1f}MB"
+                size_str, f"{total_size_gb*1024:.1f}MB"
             elif total_size_gb >= 0.000001:
-                size_str = f"{total_size_gb*1024*1024:.1f}KB"
+                size_str, f"{total_size_gb*1024*1024:.1f}KB"
             else:
-                size_str = f"{total_size_gb*1024*1024*1024:.0f}B"
+                size_str, f"{total_size_gb*1024*1024*1024:.0f}B"
 
             print_and_log(
                 f"💾 Cached model for {symbol}_{exchange}_{timeframe}_{block_name}_states{n_states} ({size_str})",
@@ -928,7 +928,7 @@ class ModelCache:
 
 
 # Global model cache instance
-model_cache = ModelCache(
+model_cache, ModelCache(
     cache_dir=HMM_OPTIMIZATION_CONFIG.get("model_cache_dir", "data_cache/model_cache"),
     max_size_gb=HMM_OPTIMIZATION_CONFIG.get("model_cache_max_size_gb", 3.0),
     ttl_hours=HMM_OPTIMIZATION_CONFIG.get("model_cache_ttl_hours", 48),
@@ -967,10 +967,10 @@ def create_basic_features(price_df: pd.DataFrame) -> pd.DataFrame:
         }
 
         # Create feature engineering instance
-        fe = VectorizedAdvancedFeatureEngineering(fe_config)
+        fe, VectorizedAdvancedFeatureEngineering(fe_config)
 
         # Prepare volume data
-        vol_df = price_df[["volume"]].copy()
+        vol_df, price_df[["volume"]].copy()
 
         # Handle async execution properly
         import asyncio
@@ -978,18 +978,18 @@ def create_basic_features(price_df: pd.DataFrame) -> pd.DataFrame:
 
         def run_async_features():
             """Run async feature engineering in a new thread with its own event loop."""
-            new_loop = asyncio.new_event_loop()
+            new_loop, asyncio.new_event_loop()
             asyncio.set_event_loop(new_loop)
-            try:
-                # Initialize the feature engineering
+        try:
+        # Initialize the feature engineering
                 new_loop.run_until_complete(fe.initialize())
 
-                # Engineer advanced features
-                features_dict = new_loop.run_until_complete(
+        # Engineer advanced features
+                features_dict, new_loop.run_until_complete(
                     fe.engineer_features(price_df, vol_df),
                 )
 
-                if not features_dict:
+        if not features_dict:
                     logger.error(
                         "❌ No advanced features produced - this is a critical error",
                     )
@@ -998,28 +998,28 @@ def create_basic_features(price_df: pd.DataFrame) -> pd.DataFrame:
                         msg,
                     )
 
-                features_df = pd.DataFrame(features_dict, index=price_df.index)
+                features_df, pd.DataFrame(features_dict, index=price_df.index)
 
-                # Handle NaN and infinite values
-                features_df = features_df.fillna(0)
-                features_df = features_df.replace([np.inf, -np.inf], 0)
+        # Handle NaN and infinite values
+                features_df, features_df.fillna(0)
+                features_df, features_df.replace([np.inf, -np.inf], 0)
 
                 logger.info(f"✅ Created {len(features_df.columns)} advanced features")
                 logger.info(f"📊 Advanced features: {list(features_df.columns)}")
 
-                return features_df
-            finally:
+        return features_df
+        finally:
                 new_loop.close()
 
         # Run in a separate thread to avoid event loop conflicts
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(run_async_features)
-            return future.result()
+            future, executor.submit(run_async_features)
+        return future.result()
 
 
     except Exception as e:
         logger.exception(f"❌ Critical error in advanced feature engineering: {e}")
-        msg = f"Advanced feature engineering failed: {e}"
+        msg, f"Advanced feature engineering failed: {e}"
         raise RuntimeError(msg)
 
 
@@ -1027,41 +1027,41 @@ def create_basic_features(price_df: pd.DataFrame) -> pd.DataFrame:
 
 
 @handle_type_conversions(default_return=np.array([]))
-def _winsorize(col: np.ndarray, lower: float = 0.01, upper: float = 0.99) -> np.ndarray:
+def _winsorize(col: np.ndarray, lower: float, 0.01, upper: float, 0.99) -> np.ndarray:
     """Winsorize array to handle outliers."""
     if col.size == 0:
         return col
-    lo = np.nanquantile(col, lower)
-    hi = np.nanquantile(col, upper)
+    lo, np.nanquantile(col, lower)
+    hi, np.nanquantile(col, upper)
     return np.clip(col, lo, hi)
 
 
 @handle_data_processing_errors(default_return=pd.DataFrame())
 def _robust_scale(df: pd.DataFrame) -> pd.DataFrame:
     """Robust scaling using IQR with fallback to standard deviation."""
-    df_out = pd.DataFrame(index=df.index)
+    df_out, pd.DataFrame(index=df.index)
     for c in df.columns:
-        arr = df[c].astype(float).values
-        arr = _winsorize(arr)
-        q1 = np.nanquantile(arr, 0.25)
-        q3 = np.nanquantile(arr, 0.75)
+        arr, df[c].astype(float).values
+        arr, _winsorize(arr)
+        q1, np.nanquantile(arr, 0.25)
+        q3, np.nanquantile(arr, 0.75)
         iqr = (q3 - q1) if (q3 - q1) != 0 else np.nan
         if not np.isnan(iqr) and iqr > 1e-12:
             scaled = (arr - np.nanmedian(arr)) / (iqr + 1e-12)
         else:
-            std = np.nanstd(arr)
+            std, np.nanstd(arr)
             scaled = (arr - np.nanmean(arr)) / (std + 1e-12)
         df_out[c] = np.nan_to_num(scaled, nan=0.0, posinf=0.0, neginf=0.0)
     return df_out
 
 
 @handle_data_processing_errors(default_return=[])
-def _corr_prune(df: pd.DataFrame, thr: float = 0.95) -> list[str]:
+def _corr_prune(df: pd.DataFrame, thr: float, 0.95) -> list[str]:
     """Remove highly correlated columns."""
     if df.empty:
         return []
-    corr = df.corr().abs()
-    upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
+    corr, df.corr().abs()
+    upper, corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
     return [c for c in upper.columns if any(upper[c] >= thr)]
 
 
@@ -1074,7 +1074,7 @@ def _assign_block(feature_name: str) -> str:
 
     Updated to match actual features generated by the system.
     """
-    feature_name_lower = feature_name.lower()
+    feature_name_lower, feature_name.lower()
 
     # CRITICAL: Exclude raw data and basic transformations - these are not features
     raw_data_patterns = [
@@ -1088,7 +1088,7 @@ def _assign_block(feature_name: str) -> str:
 
     for pattern in raw_data_patterns:
         if pattern in feature_name_lower:
-            return "exclude"  # These are raw data, not engineered features
+        return "exclude"  # These are raw data, not engineered features
 
     # ENGINEERED FEATURES ONLY - Based on actual features generated by the system
 
@@ -1117,7 +1117,7 @@ def _assign_block(feature_name: str) -> str:
 
     for pattern in momentum_patterns:
         if pattern in feature_name_lower:
-            return "momentum"
+        return "momentum"
 
     # 2. VOLATILITY BLOCK - Volatility and dispersion indicators (ACTUALLY GENERATED)
     volatility_patterns = [
@@ -1127,7 +1127,7 @@ def _assign_block(feature_name: str) -> str:
 
     for pattern in volatility_patterns:
         if pattern in feature_name_lower:
-            return "volatility"
+        return "volatility"
 
     # 3. VOLUME BLOCK - Pure volume indicators and flow analysis (ESSENTIAL)
     volume_patterns = [
@@ -1149,7 +1149,7 @@ def _assign_block(feature_name: str) -> str:
 
     for pattern in volume_patterns:
         if pattern in feature_name_lower:
-            return "volume"
+        return "volume"
 
     # 4. SUPPORT_RESISTANCE BLOCK - Distance to levels (ESSENTIAL)
     sr_patterns = [
@@ -1163,7 +1163,7 @@ def _assign_block(feature_name: str) -> str:
 
     for pattern in sr_patterns:
         if pattern in feature_name_lower:
-            return "support_resistance"
+        return "support_resistance"
 
     # Default to exclude any other features not explicitly categorized
     return "exclude"
@@ -1175,7 +1175,7 @@ def _select_block_features(
 ) -> pd.DataFrame:
     """Select and prepare features for a specific block."""
     # Debug: log all available features and their block assignments
-    all_features = list(full_df.columns)
+    all_features, list(full_df.columns)
     feature_assignments = {feature: _assign_block(feature) for feature in all_features}
 
     logger.info(f"🔍 Available features for {block} block:")
@@ -1192,13 +1192,13 @@ def _select_block_features(
     if not cols:
         logger.warning(f"⚠️ No features found for {block} block")
         return pd.DataFrame(index=full_df.index)
-    X = full_df[cols].copy()
+    X, full_df[cols].copy()
     # Drop constant columns
-    nunique = X.nunique(dropna=True)
-    const_cols = nunique[nunique <= 1].index.tolist()
+    nunique, X.nunique(dropna=True)
+    const_cols, nunique[nunique <= 1].index.tolist()
     if const_cols:
         logger.info(f"📊 Dropping {len(const_cols)} constant columns: {const_cols}")
-        X = X.drop(columns=const_cols)
+        X, X.drop(columns=const_cols)
 
     if X.empty:
         logger.warning(f"⚠️ No features remaining for {block} block after dropping constants")
@@ -1206,16 +1206,16 @@ def _select_block_features(
 
     # Apply correlation pruning with block-specific thresholds
     if block == "momentum":
-        correlation_threshold = 0.98  # Less aggressive for momentum block to preserve diversity
+        correlation_threshold, 0.98  # Less aggressive for momentum block to preserve diversity
     else:
-        correlation_threshold = 0.95  # Standard threshold for other blocks
+        correlation_threshold, 0.95  # Standard threshold for other blocks
 
     logger.info(f"🔧 Using correlation threshold {correlation_threshold} for {block} block")
 
-    to_drop = _corr_prune(X, correlation_threshold)
+    to_drop, _corr_prune(X, correlation_threshold)
     if to_drop:
         logger.info(f"📊 Dropping {len(to_drop)} highly correlated columns: {to_drop}")
-        X = X.drop(columns=to_drop)
+        X, X.drop(columns=to_drop)
 
     if X.empty:
         logger.warning(f"⚠️ No features remaining for {block} block after correlation pruning")
@@ -1224,10 +1224,10 @@ def _select_block_features(
     # Limit to max_features if specified
     if max_features and len(X.columns) > max_features:
         # Select features with highest variance
-        variances = X.var()
-        top_features = variances.nlargest(max_features).index.tolist()
+        variances, X.var()
+        top_features, variances.nlargest(max_features).index.tolist()
         logger.info(f"📊 Limiting to top {max_features} features by variance: {top_features}")
-        X = X[top_features]
+        X, X[top_features]
 
     logger.info(f"✅ Final {block} block: {len(X.columns)} features")
     return X
@@ -1248,88 +1248,88 @@ def _fit_block_hmm_robust(
     """
     try:
         # hmmlearn expects 2D array
-        arr = X.values.astype(float)
+        arr, X.values.astype(float)
 
         # Enhanced NaN handling and data validation
         # 1. Check for NaN values and log them
-        nan_mask = np.isnan(arr)
+        nan_mask, np.isnan(arr)
         if nan_mask.any():
-            nan_count = nan_mask.sum()
-            total_elements = arr.size
+            nan_count, nan_mask.sum()
+            total_elements, arr.size
             nan_percentage = (nan_count / total_elements) * 100
             system_logger.warning(
                 f"🚨 Block {block_name}: Found {nan_count} NaN values ({nan_percentage:.2f}%) in {total_elements} total elements",
             )
 
-            # Log which features have NaN values
+        # Log which features have NaN values
             nan_features = []
-            for i, col in enumerate(X.columns):
-                if nan_mask[:, i].any():
-                    nan_count_col = nan_mask[:, i].sum()
+        for i, col in enumerate(X.columns):
+        if nan_mask[:, i].any():
+                    nan_count_col, nan_mask[:, i].sum()
                     nan_features.append(f"{col}({nan_count_col})")
-            if nan_features:
+        if nan_features:
                 system_logger.warning(
                     f"🚨 Block {block_name}: Features with NaN values: {', '.join(nan_features[:10])}",
                 )
 
         # 2. Handle NaN values with column-wise median imputation
-        arr_clean = arr.copy()
+        arr_clean, arr.copy()
         for i in range(arr_clean.shape[1]):
-            col_data = arr_clean[:, i]
+            col_data, arr_clean[:, i]
             non_nan_mask = ~np.isnan(col_data)
-            if non_nan_mask.any():
-                median_val = np.median(col_data[non_nan_mask])
+        if non_nan_mask.any():
+                median_val, np.median(col_data[non_nan_mask])
                 arr_clean[~non_nan_mask, i] = median_val
             else:
-                # If all values are NaN, use 0
+        # If all values are NaN, use 0
                 arr_clean[:, i] = 0.0
 
         # 3. Handle infinite values
-        inf_mask = np.isinf(arr_clean)
+        inf_mask, np.isinf(arr_clean)
         if inf_mask.any():
-            inf_count = inf_mask.sum()
+            inf_count, inf_mask.sum()
             system_logger.warning(
                 f"🚨 Block {block_name}: Found {inf_count} infinite values",
             )
-            arr_clean = np.nan_to_num(arr_clean, nan=0.0, posinf=1e6, neginf=-1e6)
+            arr_clean, np.nan_to_num(arr_clean, nan=0.0, posinf=1e6, neginf=-1e6)
 
         # 4. Enhanced feature preprocessing for better HMM stability
         # Remove constant features that can cause convergence issues
-        feature_vars = np.var(arr_clean, axis=0)
-        non_constant_mask = feature_vars > 1e-8
+        feature_vars, np.var(arr_clean, axis=0)
+        non_constant_mask, feature_vars > 1e-8
         if not np.any(non_constant_mask):
             system_logger.error(f"🚨 All features are constant for block {block_name}")
-            return None, None
+        return None, None
 
         # Log feature variance information
-        constant_features = X.columns[~non_constant_mask].tolist()
+        constant_features, X.columns[~non_constant_mask].tolist()
         if constant_features:
             system_logger.info(
                 f"📊 Block {block_name}: Removed {len(constant_features)} constant features: {constant_features}",
             )
 
-        arr_clean = arr_clean[:, non_constant_mask]
+        arr_clean, arr_clean[:, non_constant_mask]
         X.columns[non_constant_mask].tolist()
 
         # 5. Robust scaling with outlier handling
-        scaler = StandardScaler()
-        arr_scaled = scaler.fit_transform(arr_clean)
+        scaler, StandardScaler()
+        arr_scaled, scaler.fit_transform(arr_clean)
 
         # 6. Clip extreme values to prevent convergence issues
-        arr_scaled = np.clip(arr_scaled, -10, 10)
+        arr_scaled, np.clip(arr_scaled, -10, 10)
 
         # 7. Final validation of scaled data
         if np.any(np.isnan(arr_scaled)) or np.any(np.isinf(arr_scaled)):
             system_logger.error(
                 f"🚨 Block {block_name}: Scaled data still contains NaN or infinite values",
             )
-            arr_scaled = np.nan_to_num(arr_scaled, nan=0.0, posinf=1e6, neginf=-1e6)
+            arr_scaled, np.nan_to_num(arr_scaled, nan=0.0, posinf=1e6, neginf=-1e6)
 
         # Multiple training attempts with different random seeds
-        best_model = None
-        best_scaler = None
+        best_model, None
+        best_scaler, None
         best_quality_score = -1
-        best_state_distribution = None
+        best_state_distribution, None
 
         # Define quality thresholds
 
@@ -1348,9 +1348,9 @@ def _fit_block_hmm_robust(
         ]
 
         for attempt, seed in enumerate(training_seeds):
-            try:
-                # Create HMM model with current seed and enhanced initialization
-                model = GMMHMM(
+        try:
+        # Create HMM model with current seed and enhanced initialization
+                model, GMMHMM(
                     n_components=n_states,
                     n_mix=2,
                     covariance_type="diag",
@@ -1361,42 +1361,42 @@ def _fit_block_hmm_robust(
                     params="stmcw",  # Update all parameters
                 )
 
-                # Fit the model with additional error handling
-                try:
+        # Fit the model with additional error handling
+        try:
                     model.fit(arr_scaled)
-                except Exception as fit_error:
+        except Exception as fit_error:
                     system_logger.warning(
                         f"🚨 Block {block_name} attempt {attempt + 1} fit failed: {fit_error}",
                     )
                     continue
 
-                # Get state predictions
-                try:
-                    states = model.predict(arr_scaled)
-                except Exception as predict_error:
+        # Get state predictions
+        try:
+                    states, model.predict(arr_scaled)
+        except Exception as predict_error:
                     system_logger.warning(
                         f"🚨 Block {block_name} attempt {attempt + 1} prediction failed: {predict_error}",
                     )
                     continue
 
-                # Calculate state distribution
-                unique_states, state_counts = np.unique(states, return_counts=True)
-                state_distribution = state_counts / len(states)
+        # Calculate state distribution
+                unique_states, state_counts, np.unique(states, return_counts=True)
+                state_distribution, state_counts / len(states)
 
-                # Calculate quality score based on state coverage and balance
-                min_state_coverage = np.min(state_distribution)
-                max_state_coverage = np.max(state_distribution)
+        # Calculate quality score based on state coverage and balance
+                min_state_coverage, np.min(state_distribution)
+                max_state_coverage, np.max(state_distribution)
 
-                # Quality score: higher is better
-                # Reward good state coverage and penalize dominance
-                quality_score = min_state_coverage - (max_state_coverage - 1/n_states)
+        # Quality score: higher is better
+        # Reward good state coverage and penalize dominance
+                quality_score, min_state_coverage - (max_state_coverage - 1/n_states)
 
-                # Check if this is the best model so far
-                if quality_score > best_quality_score:
-                    best_quality_score = quality_score
-                    best_model = model
-                    best_scaler = scaler
-                    best_state_distribution = state_distribution
+        # Check if this is the best model so far
+        if quality_score > best_quality_score:
+                    best_quality_score, quality_score
+                    best_model, model
+                    best_scaler, scaler
+                    best_state_distribution, state_distribution
 
                     system_logger.info(
                         f"✅ Block {block_name} attempt {attempt + 1}: New best model "
@@ -1405,7 +1405,7 @@ def _fit_block_hmm_robust(
                         f"max_coverage={max_state_coverage:.3f})",
                     )
 
-            except Exception as e:
+        except Exception as e:
                 system_logger.warning(
                     f"🚨 Block {block_name} attempt {attempt + 1} failed: {e}",
                 )
@@ -1414,7 +1414,7 @@ def _fit_block_hmm_robust(
         # Validate final model
         if best_model is None:
             system_logger.error(f"🚨 Block {block_name}: All training attempts failed")
-            return None, None
+        return None, None
 
         # Log final model quality
         system_logger.info(
@@ -1448,28 +1448,28 @@ def _posteriors(model: GMMHMM, X: np.ndarray) -> np.ndarray:
         # Guard against NaN/Inf in input data
         if np.any(np.isnan(X)) or np.any(np.isinf(X)):
             system_logger.warning("🚨 Input data contains NaN/Inf values, cleaning...")
-            X = np.nan_to_num(X, nan=0.0, posinf=1e6, neginf=-1e6)
+            X, np.nan_to_num(X, nan=0.0, posinf=1e6, neginf=-1e6)
 
         # Get posterior probabilities
-        posteriors = model.predict_proba(X)
+        posteriors, model.predict_proba(X)
 
         # Guard against NaN/Inf in output
         if np.any(np.isnan(posteriors)) or np.any(np.isinf(posteriors)):
             system_logger.warning("🚨 Posterior probabilities contain NaN/Inf, cleaning...")
-            posteriors = np.nan_to_num(posteriors, nan=0.0, posinf=1.0, neginf=0.0)
+            posteriors, np.nan_to_num(posteriors, nan=0.0, posinf=1.0, neginf=0.0)
 
-            # Ensure probabilities sum to 1
-            row_sums = posteriors.sum(axis=1, keepdims=True)
-            row_sums = np.where(row_sums == 0, 1, row_sums)  # Avoid division by zero
-            posteriors = posteriors / row_sums
+        # Ensure probabilities sum to 1
+            row_sums, posteriors.sum(axis=1, keepdims=True)
+            row_sums, np.where(row_sums == 0, 1, row_sums)  # Avoid division by zero
+            posteriors, posteriors / row_sums
 
         return posteriors
 
     except Exception as e:
         system_logger.error(f"🚨 Error in _posteriors: {e}")
         # Return uniform probabilities as fallback
-        n_samples = X.shape[0]
-        n_states = model.n_components
+        n_samples, X.shape[0]
+        n_states, model.n_components
         return np.full((n_samples, n_states), 1.0/n_states)
 
 
@@ -1481,30 +1481,30 @@ def _build_combination_profiles(
     """Build combination profiles from block states and posteriors."""
     # combination key per row (efficient join of key parts)
     if not block_states:
-        combination_keys = pd.Series(dtype=str)
+        combination_keys, pd.Series(dtype=str)
     else:
         key_parts = [[f"{b}:{int(v)}" for v in s] for b, s in block_states.items()]
         # Transpose and join
         joined_keys = ["|".join(map(str, row)) for row in zip(*key_parts, strict=False)]
-        combination_keys = pd.Series(joined_keys)
+        combination_keys, pd.Series(joined_keys)
     # profile vector: concatenated mean posteriors per block across occurrences
     profiles = {}
     for combo, idx in combination_keys.groupby(combination_keys).groups.items():
         vecs: list[np.ndarray] , []
         for gamma in block_posteriors.values():
-            if len(idx) == 0:
+        if len(idx) == 0:
                 continue
-            # mean posterior for this block at these indices
+        # mean posterior for this block at these indices
             vecs.append(np.nanmean(gamma[idx, :], axis=0))
         profiles[combo] = np.concatenate(vecs, axis=0)
-    profile_df = pd.DataFrame.from_dict(profiles, orient="index")
+    profile_df, pd.DataFrame.from_dict(profiles, orient="index")
     return combination_keys, profile_df
 
 
 @with_tracing_span("step3._cluster_combinations", log_args=False)
 @handle_data_processing_errors(default_return=pd.Series([-1] * 1000))
 def _cluster_combinations(
-    profile_df: pd.DataFrame, min_cluster_size: int = 5,
+    profile_df: pd.DataFrame, min_cluster_size: int, 5,
 ) -> pd.Series:
     """Advanced clustering that ensures exactly 20 archetypes with 70-80% concentration.
 
@@ -1517,36 +1517,36 @@ def _cluster_combinations(
     if profile_df.empty or profile_df.shape[0] < 2:
         return pd.Series([-1] * profile_df.shape[0], index=profile_df.index)
 
-    X = profile_df.values.astype(float)
+    X, profile_df.values.astype(float)
 
     # Handle NaN values before normalization
-    X_clean = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+    X_clean, np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
 
     # Normalize rows to unit norm for cosine similarity
-    norms = np.linalg.norm(X_clean, axis=1, keepdims=True) + 1e-12
-    Xn = X_clean / norms
+    norms, np.linalg.norm(X_clean, axis=1, keepdims=True) + 1e-12
+    Xn, X_clean / norms
 
     # Target more archetypes for higher sensitivity
-    TARGET_ARCHETYPES = 25  # Increased from 20 to 25 for more granular regimes
-    CONCENTRATION_TARGET_MIN = 0.75  # Reduced from 85% to 75% to allow more diverse regimes
-    CONCENTRATION_TARGET_MAX = 0.90  # Reduced from 95% to 90% to preserve more nuanced states
+    TARGET_ARCHETYPES, 25  # Increased from 20 to 25 for more granular regimes
+    CONCENTRATION_TARGET_MIN, 0.75  # Reduced from 85% to 75% to allow more diverse regimes
+    CONCENTRATION_TARGET_MAX, 0.90  # Reduced from 95% to 90% to preserve more nuanced states
     SIMILARITY_THRESHOLD = (
         0.80  # Keep original threshold for balanced merging
     )
 
     # Start with many clusters (1 per 5 combinations, but don't exceed available combinations)
-    initial_clusters = min(max(25, profile_df.shape[0] // 5), profile_df.shape[0])
+    initial_clusters, min(max(25, profile_df.shape[0] // 5), profile_df.shape[0])
 
     logger.info(
         f"🔄 Starting with {initial_clusters} initial clusters, targeting {TARGET_ARCHETYPES} archetypes",
     )
 
     # Use AgglomerativeClustering to get initial clusters
-    dist = cosine_distances(Xn)
-    agg = AgglomerativeClustering(
+    dist, cosine_distances(Xn)
+    agg, AgglomerativeClustering(
         n_clusters=initial_clusters, metric="precomputed", linkage="average",
     )
-    initial_labels = agg.fit_predict(dist)
+    initial_labels, agg.fit_predict(dist)
 
     # Create cluster profiles and counts
     cluster_profiles = {}
@@ -1563,13 +1563,13 @@ def _cluster_combinations(
     )
 
     # Dynamic merging to reach target archetypes
-    current_clusters = list(cluster_profiles.keys())
-    current_labels = initial_labels.copy()
+    current_clusters, list(cluster_profiles.keys())
+    current_labels, initial_labels.copy()
 
     while len(current_clusters) > TARGET_ARCHETYPES:
         # Calculate concentration of current clusters
-        total_samples = sum(cluster_counts.values())
-        sorted_clusters = sorted(
+        total_samples, sum(cluster_counts.values())
+        sorted_clusters, sorted(
             cluster_counts.items(), key=lambda x: x[1], reverse=True,
         )
         top_20_concentration = (
@@ -1588,20 +1588,20 @@ def _cluster_combinations(
 
         # Find the best pair to merge (most similar clusters)
         best_similarity = -1
-        best_pair = None
+        best_pair, None
 
         for i, cluster1 in enumerate(current_clusters):
-            for _j, cluster2 in enumerate(current_clusters[i + 1 :], i + 1):
-                # Calculate cosine similarity between cluster profiles
-                profile1 = cluster_profiles[cluster1]
-                profile2 = cluster_profiles[cluster2]
-                similarity = np.dot(profile1, profile2) / (
+        for _j, cluster2 in enumerate(current_clusters[i + 1 :], i + 1):
+        # Calculate cosine similarity between cluster profiles
+                profile1, cluster_profiles[cluster1]
+                profile2, cluster_profiles[cluster2]
+                similarity, np.dot(profile1, profile2) / (
                     np.linalg.norm(profile1) * np.linalg.norm(profile2)
                 )
 
-                # Only consider merging if similarity meets threshold
-                if similarity >= SIMILARITY_THRESHOLD and similarity > best_similarity:
-                    best_similarity = similarity
+        # Only consider merging if similarity meets threshold
+        if similarity >= SIMILARITY_THRESHOLD and similarity > best_similarity:
+                    best_similarity, similarity
                     best_pair = (cluster1, cluster2)
 
         if best_pair is None:
@@ -1611,13 +1611,13 @@ def _cluster_combinations(
             break
 
         # Merge the best pair
-        cluster1, cluster2 = best_pair
+        cluster1, cluster2, best_pair
         logger.info(
             f"🔄 Merging clusters {cluster1} and {cluster2} (similarity: {best_similarity:.3f})",
         )
 
         # Update cluster profiles and counts
-        total_count = cluster_counts[cluster1] + cluster_counts[cluster2]
+        total_count, cluster_counts[cluster1] + cluster_counts[cluster2]
         merged_profile = (
             cluster_profiles[cluster1] * cluster_counts[cluster1]
             + cluster_profiles[cluster2] * cluster_counts[cluster2]
@@ -1632,7 +1632,7 @@ def _cluster_combinations(
         del cluster_counts[cluster2]
 
         # Create new merged cluster ID
-        merged_cluster_id = max(current_clusters) + 1 if current_clusters else 0
+        merged_cluster_id, max(current_clusters) + 1 if current_clusters else 0
         cluster_profiles[merged_cluster_id] = merged_profile
         cluster_counts[merged_cluster_id] = total_count
         current_clusters.append(merged_cluster_id)
@@ -1642,8 +1642,8 @@ def _cluster_combinations(
         current_labels[current_labels == cluster2] = merged_cluster_id
 
     # Final concentration check
-    total_samples = sum(cluster_counts.values())
-    sorted_clusters = sorted(cluster_counts.items(), key=lambda x: x[1], reverse=True)
+    total_samples, sum(cluster_counts.values())
+    sorted_clusters, sorted(cluster_counts.items(), key=lambda x: x[1], reverse=True)
     top_20_concentration = (
         sum(count for _, count in sorted_clusters[:TARGET_ARCHETYPES]) / total_samples
     )
@@ -1661,18 +1661,18 @@ def _cluster_combinations(
         )
 
         while len(current_clusters) > TARGET_ARCHETYPES:
-            # Find smallest clusters to merge
-            smallest_clusters = sorted(cluster_counts.items(), key=lambda x: x[1])[:2]
-            cluster1, cluster2 = smallest_clusters[0][0], smallest_clusters[1][0]
+        # Find smallest clusters to merge
+            smallest_clusters, sorted(cluster_counts.items(), key=lambda x: x[1])[:2]
+            cluster1, cluster2, smallest_clusters[0][0], smallest_clusters[1][0]
 
-            # Merge smallest clusters
-            total_count = cluster_counts[cluster1] + cluster_counts[cluster2]
+        # Merge smallest clusters
+            total_count, cluster_counts[cluster1] + cluster_counts[cluster2]
             merged_profile = (
                 cluster_profiles[cluster1] * cluster_counts[cluster1]
                 + cluster_profiles[cluster2] * cluster_counts[cluster2]
             ) / total_count
 
-            # Update
+        # Update
             current_clusters.remove(cluster1)
             current_clusters.remove(cluster2)
             del cluster_profiles[cluster1]
@@ -1680,7 +1680,7 @@ def _cluster_combinations(
             del cluster_counts[cluster1]
             del cluster_counts[cluster2]
 
-            merged_cluster_id = max(current_clusters) + 1 if current_clusters else 0
+            merged_cluster_id, max(current_clusters) + 1 if current_clusters else 0
             cluster_profiles[merged_cluster_id] = merged_profile
             cluster_counts[merged_cluster_id] = total_count
             current_clusters.append(merged_cluster_id)
@@ -1692,7 +1692,7 @@ def _cluster_combinations(
     cluster_mapping = {
         old_id: new_id for new_id, old_id in enumerate(sorted(current_clusters))
     }
-    final_labels = np.array(
+    final_labels, np.array(
         [cluster_mapping.get(label, -1) for label in current_labels],
     )
 
@@ -1729,24 +1729,24 @@ def _name_states(block: str, medians: dict[int, dict[str, float]]) -> dict[int, 
     # Compute a scalar score per state depending on block
     scores: dict[int, float] = {}
     for s, feat in medians.items():
-        vals = list(feat.values()) if feat else [0.0]
+        vals, list(feat.values()) if feat else [0.0]
         if block == "volatility":
-            # intensity via absolute values
-            score = float(np.nanmean(np.abs(vals)))
+        # intensity via absolute values
+            score, float(np.nanmean(np.abs(vals)))
         elif block in {"momentum", "liquidity"}:
-            score = float(np.nanmean(vals))
+            score, float(np.nanmean(vals))
         else:  # microstructure
-            score = float(np.nanmean(vals))
+            score, float(np.nanmean(vals))
         scores[int(s)] = score
     # Create unique names for each state based on their rank and characteristics
-    sorted_states = sorted(scores.items(), key=lambda kv: kv[1])
-    n = max(1, len(sorted_states))
+    sorted_states, sorted(scores.items(), key=lambda kv: kv[1])
+    n, max(1, len(sorted_states))
 
     for rank, (s, _sc) in enumerate(sorted_states):
-        q = rank / max(1, n - 1)
+        q, rank / max(1, n - 1)
 
         if block == "momentum":
-            if q < 0.167:  # 6 states, so 1/6 = 0.167
+        if q < 0.167:  # 6 states, so 1/6, 0.167
                 names[s] = "Weak Downtrend"
             elif q < 0.333:
                 names[s] = "Moderate Downtrend"
@@ -1759,7 +1759,7 @@ def _name_states(block: str, medians: dict[int, dict[str, float]]) -> dict[int, 
             else:
                 names[s] = "Strong Downtrend"
         elif block == "volatility":
-            if q < 0.25:  # 4 states, so 1/4 = 0.25
+        if q < 0.25:  # 4 states, so 1/4, 0.25
                 names[s] = "Low & Stable Vol"
             elif q < 0.5:
                 names[s] = "Moderate Vol"
@@ -1768,7 +1768,7 @@ def _name_states(block: str, medians: dict[int, dict[str, float]]) -> dict[int, 
             else:
                 names[s] = "Very High & Choppy Vol"
         elif block == "volume":
-            if q < 0.2:  # 5 states, so 1/5 = 0.2
+        if q < 0.2:  # 5 states, so 1/5, 0.2
                 names[s] = "Very Low Volume"
             elif q < 0.4:
                 names[s] = "Low Volume"
@@ -1779,7 +1779,7 @@ def _name_states(block: str, medians: dict[int, dict[str, float]]) -> dict[int, 
             else:
                 names[s] = "Very High Volume"
 
-        elif q < 0.25:  # 4 states, so 1/4 = 0.25
+        elif q < 0.25:  # 4 states, so 1/4, 0.25
             names[s] = "Tight Microstructure"
         elif q < 0.5:
             names[s] = "Neutral Microstructure"
@@ -1841,7 +1841,7 @@ def _process_single_block(
         Tuple of (block_name, success, results_dict, message, processing_time)
 
     """
-    blk_start_time = time.time()
+    blk_start_time, time.time()
 
     try:
         print_and_log(
@@ -1850,9 +1850,9 @@ def _process_single_block(
             context,
         )
 
-        X_blk = block_features.get(blk.name)
+        X_blk, block_features.get(blk.name)
         if X_blk is None or X_blk.empty:
-            return (
+        return (
                 blk.name,
                 False,
                 {},
@@ -1867,7 +1867,7 @@ def _process_single_block(
         )
 
         # Check for cached model first
-        data_hash = str(
+        data_hash, str(
             hash(
                 str(X_blk.index[0])
                 + str(X_blk.index[-1])
@@ -1875,7 +1875,7 @@ def _process_single_block(
                 + str(list(X_blk.columns)),
             ),
         )
-        config_hash = str(
+        config_hash, str(
             hash(
                 str(blk.n_states)
                 + str(HMM_OPTIMIZATION_CONFIG.get("n_mix", 1))
@@ -1883,27 +1883,27 @@ def _process_single_block(
             ),
         )
 
-        cached_model_result = model_cache.get_cached_model(
+        cached_model_result, model_cache.get_cached_model(
             symbol, exchange, tf, blk.name, blk.n_states, data_hash, config_hash,
         )
 
         if cached_model_result is not None:
-            model, scaler = cached_model_result
+            model, scaler, cached_model_result
             print_and_log(
                 f"📦 Using cached model for {blk.name} (states={blk.n_states})",
                 "info",
                 context,
             )
         else:
-            # Train HMM model
+        # Train HMM model
             print_and_log(
                 f"🎯 Training new model for {blk.name} (states={blk.n_states})",
                 "info",
                 context,
             )
-            model, scaler = _fit_block_hmm_robust(X_blk, blk.n_states, blk.name)
-            if model is None or scaler is None:
-                return (
+            model, scaler, _fit_block_hmm_robust(X_blk, blk.n_states, blk.name)
+        if model is None or scaler is None:
+        return (
                     blk.name,
                     False,
                     {},
@@ -1911,7 +1911,7 @@ def _process_single_block(
                     time.time() - blk_start_time,
                 )
 
-            # Cache the model
+        # Cache the model
             model_cache.cache_model(
                 model,
                 scaler,
@@ -1925,9 +1925,9 @@ def _process_single_block(
             )
 
         # Compute posteriors
-        gamma = _posteriors(model, X_blk.values)
+        gamma, _posteriors(model, X_blk.values)
         if len(gamma) == 0:
-            return (
+        return (
                 blk.name,
                 False,
                 {},
@@ -1936,10 +1936,10 @@ def _process_single_block(
             )
 
         # Get state predictions
-        states = model.predict(X_blk.values)
+        states, model.predict(X_blk.values)
 
         # Compute state feature medians
-        state_medians = _state_feature_medians(X_blk, states)
+        state_medians, _state_feature_medians(X_blk, states)
 
         # Prepare results
         results = {
@@ -1967,7 +1967,7 @@ def _process_single_block(
             context,
         )
 
-        processing_time = time.time() - blk_start_time
+        processing_time, time.time() - blk_start_time
         return blk.name, True, results, "success", processing_time
 
     except Exception as e:
@@ -2077,8 +2077,8 @@ async def run_step(
     exchange: str = "BINANCE",
     data_dir: str = "data/training",
     timeframe: str = "1m",
-    lookback_days: int | None = None,
-    force: bool = False,
+    lookback_days: int | None, None,
+    force: bool, False,
     **kwargs: Any,
 ) -> bool:
     """Step 1_7: HMM regime discovery via block HMMs and composite clustering.
@@ -2091,7 +2091,7 @@ async def run_step(
     - Proper data usage (scaling, normalization, returns vs prices)
     - Complete type hints throughout
     """
-    logger = system_logger.getChild("Step3.HMMRegimeDiscovery")
+    logger, system_logger.getChild("Step3.HMMRegimeDiscovery")
     logger.info(
         "🚀 Step 3: HMM Regime Discovery — using features from Step 2",
     )
@@ -2099,7 +2099,7 @@ async def run_step(
         "🚀 Starting HMM Regime Discovery step", "info", "Step3.HMMRegimeDiscovery",
     )
 
-    t0_total = time.time()
+    t0_total, time.time()
 
     # Import data sharing manager inside function to avoid circular import
     from src.training.data_sharing_manager import get_data_sharing_manager
@@ -2108,15 +2108,15 @@ async def run_step(
     print_and_log(
         "🔧 Initializing data sharing manager", "info", "Step3.HMMRegimeDiscovery",
     )
-    data_sharing_manager = get_data_sharing_manager({})
+    data_sharing_manager, get_data_sharing_manager({})
 
     # Load data per timeframe
     print_and_log(
         "🔧 Initializing UnifiedDataLoader", "info", "Step3.HMMRegimeDiscovery",
     )
-    loader = UnifiedDataLoader({})
+    loader, UnifiedDataLoader({})
 
-    any_success = False
+    any_success, False
 
     # Ensure data directory exists
     print_and_log(
@@ -2140,7 +2140,7 @@ async def run_step(
     )
 
     for tf in timeframes_to_process:
-        t0_timeframe = time.time()
+        t0_timeframe, time.time()
         logger.info(f"🔄 Processing timeframe: {tf}")
         print_and_log(
             f"🔄 Starting processing for timeframe: {tf}",
@@ -2150,7 +2150,7 @@ async def run_step(
 
         # Use the new HMM implementation
         try:
-            success = await implement_hmm_regime_discovery(
+            success, await implement_hmm_regime_discovery(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=tf,
@@ -2158,15 +2158,15 @@ async def run_step(
                 force=force,
             )
 
-            if success:
-                timeframe_time = time.time() - t0_timeframe
+        if success:
+                timeframe_time, time.time() - t0_timeframe
                 logger.info(f"✅ HMM regime discovery completed for {tf} (took {timeframe_time:.2f}s)")
                 print_and_log(
                     f"✅ HMM regime discovery completed for {tf} (took {timeframe_time:.2f}s)",
                     "info",
                     f"Step1_7.HMMRegimeDiscovery.{tf}",
                 )
-                any_success = True
+                any_success, True
 
             else:
                 logger.error(f"❌ HMM regime discovery failed for {tf}")
@@ -2186,7 +2186,7 @@ async def run_step(
             continue
 
         # Validate required artifacts and log which ones need to be created
-        artifact_status = validate_required_artifacts(symbol, exchange, data_dir, tf)
+        artifact_status, validate_required_artifacts(symbol, exchange, data_dir, tf)
         missing_artifacts = [
             name for name, exists in artifact_status.items() if not exists
         ]
@@ -2205,7 +2205,7 @@ async def run_step(
         )
 
         # Default to blank mode lookback if not specified, but this should be passed from enhanced training manager
-        actual_lookback_days = lookback_days or BLANK_TRAINING_LOOKBACK_DAYS
+        actual_lookback_days, lookback_days or BLANK_TRAINING_LOOKBACK_DAYS
 
         try:
             print_and_log(
@@ -2213,16 +2213,16 @@ async def run_step(
                 "info",
                 f"Step1_7.HMMRegimeDiscovery.{tf}",
             )
-            t0_data_load = time.time()
+            t0_data_load, time.time()
 
-            # Use data sharing manager to load data (will use cache if available)
+        # Use data sharing manager to load data (will use cache if available)
             print_and_log(
                 f"📊 Loading data with {actual_lookback_days} days lookback",
                 "info",
                 f"Step1_7.HMMRegimeDiscovery.{tf}",
             )
 
-            df = await data_sharing_manager.get_unified_data(
+            df, await data_sharing_manager.get_unified_data(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=tf,
@@ -2230,14 +2230,14 @@ async def run_step(
                 force_reload=False,  # Use cache if available
             )
 
-            data_load_time = time.time() - t0_data_load
+            data_load_time, time.time() - t0_data_load
             print_and_log(
                 f"📊 Data loading completed in {data_load_time:.2f}s",
                 "info",
                 f"Step1_7.HMMRegimeDiscovery.{tf}",
             )
 
-            if df is None or df.empty:
+        if df is None or df.empty:
                 logger.warning(
                     f"⚠️ No unified data for {exchange}_{symbol}_{tf}; skipping",
                 )
@@ -2248,24 +2248,24 @@ async def run_step(
                 )
                 continue
 
-            # Ensure datetime index and validate data range
+        # Ensure datetime index and validate data range
             print_and_log(
                 "🔧 Ensuring datetime index and validating data range",
                 "info",
                 f"Step1_7.HMMRegimeDiscovery.{tf}",
             )
-            if "timestamp" in df.columns and not isinstance(df.index, pd.DatetimeIndex):
+        if "timestamp" in df.columns and not isinstance(df.index, pd.DatetimeIndex):
                 df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
-                df = df.set_index("timestamp").sort_index()
+                df, df.set_index("timestamp").sort_index()
                 print_and_log(
                     "✅ Datetime index set successfully",
                     "info",
                     f"Step1_7.HMMRegimeDiscovery.{tf}",
                 )
 
-            # Validate data range - ensure we have sufficient data
-            data_start = df.index.min()
-            data_end = df.index.max()
+        # Validate data range - ensure we have sufficient data
+            data_start, df.index.min()
+            data_end, df.index.max()
             data_duration_days = (data_end - data_start).days
 
             print_and_log(
@@ -2274,7 +2274,7 @@ async def run_step(
                 f"Step1_7.HMMRegimeDiscovery.{tf}",
             )
 
-            if data_duration_days < actual_lookback_days * 0.8:  # Allow 20% tolerance
+        if data_duration_days < actual_lookback_days * 0.8:  # Allow 20% tolerance
                 logger.warning(
                     f"⚠️ Insufficient data duration for {tf}: {data_duration_days} days < {actual_lookback_days * 0.8} days",
                 )
@@ -2285,14 +2285,14 @@ async def run_step(
                 )
                 continue
 
-            # Extract OHLCV for FE
+        # Extract OHLCV for FE
             print_and_log(
                 "🔧 Extracting OHLCV data", "info", f"Step1_7.HMMRegimeDiscovery.{tf}",
             )
             price_cols = [
                 c for c in ["open", "high", "low", "close", "volume"] if c in df.columns
             ]
-            if len(price_cols) < 5:
+        if len(price_cols) < 5:
                 logger.warning(f"⚠️ Missing OHLCV columns for {tf}; found {price_cols}")
                 print_and_log(
                     f"⚠️ Missing OHLCV columns for {tf}; found {price_cols}",
@@ -2300,49 +2300,49 @@ async def run_step(
                     f"Step1_7.HMMRegimeDiscovery.{tf}",
                 )
                 continue
-            price_df = df[["open", "high", "low", "close", "volume"]].copy()
-            vol_df = price_df[["volume"]].copy()
+            price_df, df[["open", "high", "low", "close", "volume"]].copy()
+            vol_df, price_df[["volume"]].copy()
             print_and_log(
                 f"✅ OHLCV data extracted: {price_df.shape}",
                 "info",
                 f"Step1_7.HMMRegimeDiscovery.{tf}",
             )
 
-            # Load features from Step 2 artifacts instead of re-engineering
+        # Load features from Step 2 artifacts instead of re-engineering
             print_and_log(
                 f"📦 Loading features from Step 2 artifacts for {tf}...",
                 "info",
                 f"Step1_7.HMMRegimeDiscovery.{tf}",
             )
-            t0_feature_load = time.time()
+            t0_feature_load, time.time()
 
-            try:
+        try:
                 from src.training.steps.feature_artifact_loader import (
                     load_features_for_step,
                 )
 
-                # Load features for the current timeframe
-                features_dict = load_features_for_step(symbol, exchange, data_dir, f"Step3.{tf}")
+        # Load features for the current timeframe
+                features_dict, load_features_for_step(symbol, exchange, data_dir, f"Step3.{tf}")
 
-                # Use train features for HMM regime discovery (most comprehensive dataset)
-                features_df = features_dict["train"]
+        # Use train features for HMM regime discovery (most comprehensive dataset)
+                features_df, features_dict["train"]
 
-                # Ensure features are aligned with the price data
-                if len(features_df) != len(price_df):
+        # Ensure features are aligned with the price data
+        if len(features_df) != len(price_df):
                     logger.warning(f"⚠️ Feature count mismatch: {len(features_df)} features vs {len(price_df)} prices")
-                    # Align features to price data
-                    common_index = features_df.index.intersection(price_df.index)
-                    features_df = features_df.loc[common_index]
-                    price_df = price_df.loc[common_index]
+        # Align features to price data
+                    common_index, features_df.index.intersection(price_df.index)
+                    features_df, features_df.loc[common_index]
+                    price_df, price_df.loc[common_index]
 
-                feature_load_time = time.time() - t0_feature_load
+                feature_load_time, time.time() - t0_feature_load
                 print_and_log(
                     f"📦 Feature loading completed in {feature_load_time:.2f}s",
                     "info",
                     f"Step1_7.HMMRegimeDiscovery.{tf}",
                 )
 
-                if features_df.empty:
+        if features_df.empty:
                     logger.warning(f"⚠️ No features loaded for {tf}; skipping")
                     print_and_log(
                         f"⚠️ No features loaded for {tf}; skipping",
@@ -2360,7 +2360,7 @@ async def run_step(
                     f"Step1_7.HMMRegimeDiscovery.{tf}",
                 )
 
-            except Exception as e:
+        except Exception as e:
                 logger.exception(f"❌ Failed to load features for {tf}: {e}")
                 print_and_log(
                     f"❌ Failed to load features for {tf}: {e}",
@@ -2369,18 +2369,18 @@ async def run_step(
                 )
                 continue
 
-            # Create block features for HMM regime discovery using proper block selection
+        # Create block features for HMM regime discovery using proper block selection
             print_and_log(
                 "🔧 Creating block features", "info", f"Step1_7.HMMRegimeDiscovery.{tf}",
             )
-            t0_block_features = time.time()
+            t0_block_features, time.time()
 
             block_features: dict[str, pd.DataFrame] = {}
 
-            # Build per-block feature matrices with robust scaling and selection
-            for blk in BLOCKS:
-                X_blk = _select_block_features(features_df, blk.name, blk.max_features)
-                if X_blk.empty:
+        # Build per-block feature matrices with robust scaling and selection
+        for blk in BLOCKS:
+                X_blk, _select_block_features(features_df, blk.name, blk.max_features)
+        if X_blk.empty:
                     logger.warning(
                         f"Block '{blk.name}' has no features after selection — skipping",
                     )
@@ -2390,17 +2390,17 @@ async def run_step(
                         f"Step1_7.HMMRegimeDiscovery.{tf}",
                     )
                     continue
-                # No extra robust scaling here to avoid duplication
+        # No extra robust scaling here to avoid duplication
                 block_features[blk.name] = X_blk
 
-            block_features_time = time.time() - t0_block_features
+            block_features_time, time.time() - t0_block_features
             print_and_log(
                 f"🔧 Block features creation completed in {block_features_time:.2f}s",
                 "info",
                 f"Step1_7.HMMRegimeDiscovery.{tf}",
             )
 
-            if not block_features:
+        if not block_features:
                 logger.warning(f"⚠️ No block features created for {tf}; skipping")
                 print_and_log(
                     f"⚠️ No block features created for {tf}; skipping",
@@ -2418,33 +2418,33 @@ async def run_step(
                 f"Step1_7.HMMRegimeDiscovery.{tf}",
             )
 
-            # Check if parallel block processing is enabled
-            enable_parallel_blocks = HMM_OPTIMIZATION_CONFIG.get(
+        # Check if parallel block processing is enabled
+            enable_parallel_blocks, HMM_OPTIMIZATION_CONFIG.get(
                 "enable_parallel_block_processing", True,
             )
-            parallel_block_n_jobs = HMM_OPTIMIZATION_CONFIG.get(
+            parallel_block_n_jobs, HMM_OPTIMIZATION_CONFIG.get(
                 "parallel_block_n_jobs", 2,
             )
-            parallel_block_backend = HMM_OPTIMIZATION_CONFIG.get(
+            parallel_block_backend, HMM_OPTIMIZATION_CONFIG.get(
                 "parallel_block_backend", "threading",
             )
 
-            # Initialize result containers
+        # Initialize result containers
             block_models: dict[str, Any] = {}
             block_scalers: dict[str, Any] = {}
             block_states: dict[str, np.ndarray] = {}
             block_posteriors: dict[str, np.ndarray] = {}
             state_feature_medians: dict[str, dict[int, dict[str, float]]] = {}
 
-            # Process blocks
-            if enable_parallel_blocks and len(BLOCKS) > 1:
+        # Process blocks
+        if enable_parallel_blocks and len(BLOCKS) > 1:
                 logger.info(
                     f"🚀 Using parallel block processing with {parallel_block_n_jobs} jobs ({parallel_block_backend} backend)",
                 )
 
-                # Prepare arguments for parallel block processing
+        # Prepare arguments for parallel block processing
                 parallel_block_args = []
-                for blk_idx, blk in enumerate(BLOCKS, 1):
+        for blk_idx, blk in enumerate(BLOCKS, 1):
                     args = (
                         blk,
                         blk_idx,
@@ -2458,30 +2458,30 @@ async def run_step(
                     )
                     parallel_block_args.append(args)
 
-                # Process blocks in parallel
-                try:
-                    # Use context manager to ensure proper cleanup
-                    with Parallel(
+        # Process blocks in parallel
+        try:
+        # Use context manager to ensure proper cleanup
+        with Parallel(
                         n_jobs=parallel_block_n_jobs, backend=parallel_block_backend,
                     ) as parallel_executor:
-                        block_results = parallel_executor(
+                        block_results, parallel_executor(
                             delayed(_process_single_block)(*args)
-                            for args in parallel_block_args
+        for args in parallel_block_args
                         )
 
-                    # Process block results
-                    successful_blocks = 0
+        # Process block results
+                    successful_blocks, 0
                     failed_blocks = []
-                    for (
+        for (
                         block_name,
                         success,
                         results,
                         message,
                         processing_time,
                     ) in block_results:
-                        if success:
+        if success:
                             successful_blocks += 1
-                            # Extract results
+        # Extract results
                             block_models[block_name] = results["model"]
                             block_scalers[block_name] = results["scaler"]
                             block_states[block_name] = results["states"]
@@ -2501,38 +2501,38 @@ async def run_step(
                     logger.info(
                         f"📊 Parallel block processing completed: {successful_blocks}/{len(BLOCKS)} blocks successful",
                     )
-                    if failed_blocks:
+        if failed_blocks:
                         logger.warning(f"⚠️ Failed blocks: {', '.join(failed_blocks)}")
 
-                    # Enhanced resource cleanup after parallel block processing
-                    if HMM_OPTIMIZATION_CONFIG.get("enable_garbage_collection", True):
+        # Enhanced resource cleanup after parallel block processing
+        if HMM_OPTIMIZATION_CONFIG.get("enable_garbage_collection", True):
                         _cleanup_multiprocessing_resources()
                         logger.info(
                             "🧹 Enhanced resource cleanup completed after parallel block processing",
                         )
 
-                except Exception as e:
+        except Exception as e:
                     logger.exception(f"❌ Parallel block processing failed: {e}")
                     logger.info("🔄 Falling back to sequential block processing...")
-                    # Ensure cleanup even on failure
+        # Ensure cleanup even on failure
                     _cleanup_multiprocessing_resources()
-                    # Continue with sequential processing below
+        # Continue with sequential processing below
             else:
                 logger.info("🔄 Using sequential block processing")
 
-            # Sequential block processing (fallback or if parallel is disabled)
-            if not enable_parallel_blocks or len(BLOCKS) <= 1:
-                for blk in BLOCKS:
-                    X_blk = block_features.get(blk.name)
-                    if X_blk is None or X_blk.empty:
+        # Sequential block processing (fallback or if parallel is disabled)
+        if not enable_parallel_blocks or len(BLOCKS) <= 1:
+        for blk in BLOCKS:
+                    X_blk, block_features.get(blk.name)
+        if X_blk is None or X_blk.empty:
                         continue
 
                     logger.info(
                         f"🧩 Training HMM for block='{blk.name}' n_states={blk.n_states} features={list(X_blk.columns)}",
                     )
 
-                    # Check for cached model first
-                    data_hash = str(
+        # Check for cached model first
+                    data_hash, str(
                         hash(
                             str(X_blk.index[0])
                             + str(X_blk.index[-1])
@@ -2540,7 +2540,7 @@ async def run_step(
                             + str(list(X_blk.columns)),
                         ),
                     )
-                    config_hash = str(
+                    config_hash, str(
                         hash(
                             str(blk.n_states)
                             + str(HMM_OPTIMIZATION_CONFIG.get("n_mix", 1))
@@ -2548,7 +2548,7 @@ async def run_step(
                         ),
                     )
 
-                    cached_model_result = model_cache.get_cached_model(
+                    cached_model_result, model_cache.get_cached_model(
                         symbol,
                         exchange,
                         tf,
@@ -2558,24 +2558,24 @@ async def run_step(
                         config_hash,
                     )
 
-                    if cached_model_result is not None:
-                        model, scaler = cached_model_result
+        if cached_model_result is not None:
+                        model, scaler, cached_model_result
                         logger.info(
                             f"📦 Using cached model for {blk.name} (states={blk.n_states})",
                         )
                     else:
-                        # Train HMM model
+        # Train HMM model
                         logger.info(
                             f"🎯 Training new model for {blk.name} (states={blk.n_states})",
                         )
-                        model, scaler = _fit_block_hmm_robust(
+                        model, scaler, _fit_block_hmm_robust(
                             X_blk, blk.n_states, blk.name,
                         )
-                        if model is None or scaler is None:
+        if model is None or scaler is None:
                             logger.error(f"❌ Failed to fit HMM for block '{blk.name}'")
                             continue
 
-                        # Cache the model
+        # Cache the model
                         model_cache.cache_model(
                             model,
                             scaler,
@@ -2588,15 +2588,15 @@ async def run_step(
                             config_hash,
                         )
 
-                    gamma = _posteriors(model, X_blk.values)
-                    if len(gamma) == 0:
+                    gamma, _posteriors(model, X_blk.values)
+        if len(gamma) == 0:
                         logger.error(
                             f"❌ Failed to compute posteriors for block '{blk.name}'",
                         )
                         continue
 
-                    # Get state predictions
-                    states = model.predict(X_blk.values)
+        # Get state predictions
+                    states, model.predict(X_blk.values)
 
                     block_models[blk.name] = model
                     block_scalers[blk.name] = scaler
@@ -2613,23 +2613,23 @@ async def run_step(
                             "unique_states_found": len(np.unique(states)),
                             "state_counts": {
                                 int(s): int((states == s).sum())
-                                for s in np.unique(states)
+        for s in np.unique(states)
                             },
                         },
                     )
 
-            # Persist per-block states and posteriors per timeframe
-            out_idx = price_df.index
+        # Persist per-block states and posteriors per timeframe
+            out_idx, price_df.index
             block_cols: dict[str, Any] = {}
-            for blk in BLOCKS:
-                if blk.name not in block_states:
+        for blk in BLOCKS:
+        if blk.name not in block_states:
                     continue
                 block_cols[f"{blk.name}_state_id"] = block_states[blk.name]
-                gamma = block_posteriors[blk.name]
-                for i in range(gamma.shape[1]):
+                gamma, block_posteriors[blk.name]
+        for i in range(gamma.shape[1]):
                     block_cols[f"{blk.name}_p_state_{i}"] = gamma[:, i]
-            block_df = pd.DataFrame(block_cols, index=out_idx)
-            block_out_path = os.path.join(
+            block_df, pd.DataFrame(block_cols, index=out_idx)
+            block_out_path, os.path.join(
                 data_dir,
                 f"{exchange}_{symbol}_hmm_block_states_{tf}.parquet",
             )
@@ -2638,17 +2638,17 @@ async def run_step(
                 f"💾 Saved block states/posteriors -> {block_out_path} ({len(block_df)} rows)",
             )
 
-            # Build combinations and composite clusters
-            combo_keys, profile_df = _build_combination_profiles(
+        # Build combinations and composite clusters
+            combo_keys, profile_df, _build_combination_profiles(
                 block_states, block_posteriors,
             )
-            if profile_df.empty:
+        if profile_df.empty:
                 logger.warning(
                     f"⚠️ Empty combination profiles for {tf}; skipping clustering",
                 )
                 continue
 
-            # Generate composite clusters from combination profiles
+        # Generate composite clusters from combination profiles
             logger.info(f"🔄 Generating composite clusters for {tf}...")
             print_and_log(
                 f"🔄 Generating composite clusters for {tf}...",
@@ -2656,34 +2656,34 @@ async def run_step(
                 f"Step1_7.HMMRegimeDiscovery.{tf}",
             )
 
-            try:
-                # Cluster the combination profiles to create composite clusters
-                cluster_labels = _cluster_combinations(profile_df, min_cluster_size=5)
+        try:
+        # Cluster the combination profiles to create composite clusters
+                cluster_labels, _cluster_combinations(profile_df, min_cluster_size=5)
 
-                # Create composite cluster DataFrame
-                composite_df = pd.DataFrame({
+        # Create composite cluster DataFrame
+                composite_df, pd.DataFrame({
                     "combination_key": combo_keys,
                     "composite_cluster_id": cluster_labels.values,
                 }, index=out_idx)
 
-                # Add intensity scores for top 20 clusters only (computational efficiency)
-                unique_clusters = sorted(cluster_labels.unique())
-                # Limit to top 20 clusters by frequency to reduce feature dimensionality
-                cluster_counts = pd.Series(cluster_labels).value_counts()
-                top_clusters = cluster_counts.head(20).index.tolist()
+        # Add intensity scores for top 20 clusters only (computational efficiency)
+                unique_clusters, sorted(cluster_labels.unique())
+        # Limit to top 20 clusters by frequency to reduce feature dimensionality
+                cluster_counts, pd.Series(cluster_labels).value_counts()
+                top_clusters, cluster_counts.head(20).index.tolist()
 
-                for cluster_id in top_clusters:
+        for cluster_id in top_clusters:
                     cluster_mask, cluster_labels = = cluster_id
-                    intensity = cluster_mask.astype(float)
+                    intensity, cluster_mask.astype(float)
                     composite_df[f"intensity_cluster_{cluster_id}"] = intensity
 
-                # Log cluster selection for transparency
+        # Log cluster selection for transparency
                 logger.info(f"🎯 Selected top {len(top_clusters)} clusters out of {len(unique_clusters)} total clusters")
                 logger.info(f"   Top clusters: {top_clusters}")
                 logger.info(f"   Cluster frequencies: {cluster_counts.head(20).to_dict()}")
 
-                # Save composite clusters
-                composite_out_path = os.path.join(
+        # Save composite clusters
+                composite_out_path, os.path.join(
                     data_dir,
                     f"{exchange}_{symbol}_hmm_composite_clusters_{tf}.parquet",
                 )
@@ -2697,10 +2697,10 @@ async def run_step(
                     f"Step1_7.HMMRegimeDiscovery.{tf}",
                 )
 
-                # Save composite intensity data
+        # Save composite intensity data
                 intensity_cols = [col for col in composite_df.columns if col.startswith("intensity_cluster_")]
-                intensity_df = composite_df[["combination_key", *intensity_cols]].copy()
-                intensity_out_path = os.path.join(
+                intensity_df, composite_df[["combination_key", *intensity_cols]].copy()
+                intensity_out_path, os.path.join(
                     data_dir,
                     f"{exchange}_{symbol}_hmm_composite_intensity_{tf}.parquet",
                 )
@@ -2709,7 +2709,7 @@ async def run_step(
                     f"💾 Saved composite intensity -> {intensity_out_path}",
                 )
 
-                # Save composite meta information
+        # Save composite meta information
                 composite_meta = {
                     "exchange": exchange,
                     "symbol": symbol,
@@ -2721,11 +2721,11 @@ async def run_step(
                     "blocks": [{"name": b.name, "n_states": b.n_states} for b in BLOCKS],
                 }
 
-                meta_out_path = os.path.join(
+                meta_out_path, os.path.join(
                     data_dir,
                     f"{exchange}_{symbol}_hmm_composite_meta_{tf}.json",
                 )
-                with open(meta_out_path, "w") as f:
+        with open(meta_out_path, "w") as f:
                     json.dump(composite_meta, f, indent=2, default=str)
                 logger.info(f"💾 Saved composite meta -> {meta_out_path}")
                 print_and_log(
@@ -2734,14 +2734,14 @@ async def run_step(
                     f"Step1_7.HMMRegimeDiscovery.{tf}",
                 )
 
-                # Log cluster statistics
-                cluster_stats = composite_df["composite_cluster_id"].value_counts().sort_index()
+        # Log cluster statistics
+                cluster_stats, composite_df["composite_cluster_id"].value_counts().sort_index()
                 logger.info(f"📊 Composite cluster distribution for {tf}:")
-                for cluster_id, count in cluster_stats.items():
+        for cluster_id, count in cluster_stats.items():
                     percentage = (count / len(composite_df)) * 100
                     logger.info(f"   Cluster {cluster_id}: {count} samples ({percentage:.1f}%)")
 
-            except Exception as e:
+        except Exception as e:
                 logger.exception(f"❌ Failed to generate composite clusters for {tf}: {e}")
                 print_and_log(
                     f"❌ Failed to generate composite clusters for {tf}: {e}",
@@ -2750,15 +2750,15 @@ async def run_step(
                 )
                 continue
 
-            # Merge rare combinations into similar frequent combinations instead of filtering
-            # Skip complex clustering to avoid crashes - just save basic HMM results
+        # Merge rare combinations into similar frequent combinations instead of filtering
+        # Skip complex clustering to avoid crashes - just save basic HMM results
             logger.info(f"🔄 Skipping complex clustering for {tf} to avoid crashes")
 
-            # Generate basic metrics report (simplified to avoid crashes)
-            try:
+        # Generate basic metrics report (simplified to avoid crashes)
+        try:
                 logger.info(f"📊 Generating basic metrics report for {tf}...")
 
-                # Generate basic report
+        # Generate basic report
                 report_lines = []
                 report_lines.append("HMM Regime Discovery Report")
                 report_lines.append(f"Symbol: {symbol}")
@@ -2773,21 +2773,21 @@ async def run_step(
                 report_lines.append(f"Total Data Points: {len(block_df)}")
 
                 report_lines.append("\n✅ HMM TRAINING RESULTS")
-                for block_name, block_result in block_results.items():
-                    if block_result and "selected_n_states" in block_result:
+        for block_name, block_result in block_results.items():
+        if block_result and "selected_n_states" in block_result:
                         report_lines.append(
                             f"{block_name}: {block_result['selected_n_states']} states",
                         )
 
                 report = "\n".join(report_lines)
 
-                # Save report to file
-                report_path = os.path.join(
+        # Save report to file
+                report_path, os.path.join(
                     data_dir, f"{exchange}_{symbol}_hmm_regime_report_{tf}.txt",
                 )
 
-                try:
-                    with open(report_path, "w") as f:
+        try:
+        with open(report_path, "w") as f:
                         f.write(report)
                     logger.info(f"💾 Saved basic HMM regime report -> {report_path}")
                     print_and_log(
@@ -2795,7 +2795,7 @@ async def run_step(
                         "info",
                         f"Step1_7.HMMRegimeDiscovery.{tf}",
                     )
-                except Exception as e:
+        except Exception as e:
                     logger.exception(f"❌ Failed to save report: {e}")
                     print_and_log(
                         f"❌ Failed to save report: {e}",
@@ -2803,16 +2803,16 @@ async def run_step(
                         f"Step1_7.HMMRegimeDiscovery.{tf}",
                     )
 
-                # Also log key metrics
+        # Also log key metrics
                 logger.info(f"📊 Key Metrics for {tf}:")
                 logger.info(f"   Total Data Points: {len(block_df)}")
-                for block_name, block_result in block_results.items():
-                    if block_result and "selected_n_states" in block_result:
+        for block_name, block_result in block_results.items():
+        if block_result and "selected_n_states" in block_result:
                         logger.info(
                             f"   {block_name}: {block_result['selected_n_states']} states",
                         )
 
-            except Exception as e:
+        except Exception as e:
                 logger.warning(f"⚠️ Error generating basic metrics report for {tf}: {e}")
                 print_and_log(
                     f"⚠️ Error generating basic metrics report for {tf}: {e}",
@@ -2820,11 +2820,11 @@ async def run_step(
                     f"Step1_7.HMMRegimeDiscovery.{tf}",
                 )
 
-            # Save basic HMM results (simplified to avoid crashes)
-            try:
+        # Save basic HMM results (simplified to avoid crashes)
+        try:
                 logger.info(f"💾 Saving basic HMM results for {tf}...")
 
-                # Create simple meta with just the essential information
+        # Create simple meta with just the essential information
                 simple_meta: dict[str, Any] = {
                     "exchange": exchange,
                     "symbol": symbol,
@@ -2838,22 +2838,22 @@ async def run_step(
                             "selected_n_states": block_results[blk.name][
                                 "selected_n_states"
                             ]
-                            if blk.name in block_results
+        if blk.name in block_results
                             else 0,
                             "features_used": block_results[blk.name]["features_used"]
-                            if blk.name in block_results
+        if blk.name in block_results
                             else [],
                         }
-                        for blk in BLOCKS
+        for blk in BLOCKS
                     },
                 }
 
-                meta_out_path = os.path.join(
+                meta_out_path, os.path.join(
                     data_dir,
                     f"{exchange}_{symbol}_hmm_basic_meta_{tf}.json",
                 )
 
-                with open(meta_out_path, "w") as f:
+        with open(meta_out_path, "w") as f:
                     json.dump(simple_meta, f, indent=2, default=str)
                 logger.info(f"💾 Saved basic HMM meta -> {meta_out_path}")
                 print_and_log(
@@ -2862,7 +2862,7 @@ async def run_step(
                     f"Step1_7.HMMRegimeDiscovery.{tf}",
                 )
 
-            except Exception as e:
+        except Exception as e:
                 logger.exception(f"❌ Failed to save basic HMM meta for {tf}: {e}")
                 print_and_log(
                     f"❌ Failed to save basic HMM meta for {tf}: {e}",
@@ -2870,7 +2870,7 @@ async def run_step(
                     f"Step1_7.HMMRegimeDiscovery.{tf}",
                 )
 
-            any_success = True
+            any_success, True
 
         except Exception as e:
             logger.exception(f"❌ Error processing timeframe {tf}: {e}")
@@ -2878,25 +2878,25 @@ async def run_step(
 
     # Log cache statistics
     if HMM_OPTIMIZATION_CONFIG.get("enable_feature_caching", True):
-        cache_stats = feature_cache.get_cache_stats()
+        cache_stats, feature_cache.get_cache_stats()
         logger.info(
             f"📊 Feature cache statistics: {cache_stats['total_entries']} entries, {cache_stats['total_size_gb']:.3f}GB used, {cache_stats['max_size_gb']:.3f}GB max",
         )
 
     if HMM_OPTIMIZATION_CONFIG.get("enable_model_caching", True):
-        model_cache_stats = model_cache.get_cache_stats()
+        model_cache_stats, model_cache.get_cache_stats()
         logger.info(
             f"📊 Model cache statistics: {model_cache_stats['total_entries']} entries, {model_cache_stats['total_size_gb']:.3f}GB used, {model_cache_stats['max_size_gb']:.3f}GB max",
         )
 
     # Final validation: check that all required artifacts exist for all timeframes
     logger.info("🔍 Performing final artifact validation...")
-    final_validation_passed = True
+    final_validation_passed, True
     for tf in TIMEFRAMES:
-        final_artifact_status = validate_required_artifacts(
+        final_artifact_status, validate_required_artifacts(
             symbol, exchange, data_dir, tf,
         )
-        all_present = all(final_artifact_status.values())
+        all_present, all(final_artifact_status.values())
         if all_present:
             logger.info(f"✅ Final validation passed for {tf}")
         else:
@@ -2906,7 +2906,7 @@ async def run_step(
             logger.error(
                 f"❌ Final validation failed for {tf}: missing {', '.join(missing)}",
             )
-            final_validation_passed = False
+            final_validation_passed, False
 
     # Generate HMM regime analysis reports for all timeframes (regardless of whether they were processed or skipped)
     logger.info("📊 Generating HMM regime analysis reports for all timeframes...")
@@ -2931,7 +2931,7 @@ async def run_step(
             "Step1_7.HMMRegimeDiscovery",
         )
         # Use TIMEFRAMES as fallback
-        timeframes_to_process = TIMEFRAMES
+        timeframes_to_process, TIMEFRAMES
         logger.info(f"🔧 FALLBACK: Using TIMEFRAMES = {timeframes_to_process}")
 
     for tf in timeframes_to_process:
@@ -2944,7 +2944,7 @@ async def run_step(
                 f"Step1_7.HMMRegimeDiscovery.{tf}",
             )
 
-            # Check if required files exist before attempting report generation
+        # Check if required files exist before attempting report generation
             required_files = [
                 os.path.join(
                     data_dir, f"{exchange}_{symbol}_hmm_composite_meta_{tf}.json",
@@ -2958,14 +2958,14 @@ async def run_step(
                 ),
             ]
 
-            # DEBUG: Log each required file and its existence
+        # DEBUG: Log each required file and its existence
             logger.info(f"🔍 DEBUG: Checking required files for {tf}:")
-            for req_file in required_files:
-                exists = os.path.exists(req_file)
+        for req_file in required_files:
+                exists, os.path.exists(req_file)
                 logger.info(f"  📄 {req_file}: {'✅ EXISTS' if exists else '❌ MISSING'}")
 
             missing_files = [f for f in required_files if not os.path.exists(f)]
-            if missing_files:
+        if missing_files:
                 logger.warning(
                     f"⚠️ Missing required files for {tf} report generation: {missing_files}",
                 )
@@ -2976,24 +2976,24 @@ async def run_step(
                 )
                 continue
 
-            # Generate simple text report instead of complex visualizations to avoid segmentation faults
-            try:
+        # Generate simple text report instead of complex visualizations to avoid segmentation faults
+        try:
                 logger.info(f"🔧 DEBUG: Calling _generate_simple_hmm_report for {tf}")
-                report_content = _generate_simple_hmm_report(
+                report_content, _generate_simple_hmm_report(
                     exchange, symbol, tf, data_dir,
                 )
                 logger.info(f"✅ DEBUG: _generate_simple_hmm_report completed for {tf}")
 
-                # Save report to file with timestamp
+        # Save report to file with timestamp
                 reports_dir = "reports"
                 os.makedirs(reports_dir, exist_ok=True)
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                report_path = os.path.join(
+                timestamp, datetime.now().strftime("%Y%m%d_%H%M%S")
+                report_path, os.path.join(
                     reports_dir, f"{exchange}_{symbol}_hmm_regime_summary_{tf}_{timestamp}.md",
                 )
 
                 logger.info(f"💾 DEBUG: Saving report to {report_path}")
-                with open(report_path, "w") as f:
+        with open(report_path, "w") as f:
                     f.write(report_content)
 
                 logger.info(
@@ -3005,7 +3005,7 @@ async def run_step(
                     f"Step1_7.HMMRegimeDiscovery.{tf}",
                 )
 
-            except Exception as report_error:
+        except Exception as report_error:
                 logger.exception(
                     f"❌ ERROR generating simple HMM report for {tf}: {report_error}",
                 )
@@ -3029,7 +3029,7 @@ async def run_step(
                 f"Step1_7.HMMRegimeDiscovery.{tf}",
             )
 
-    total_time = time.time() - t0_total
+    total_time, time.time() - t0_total
 
     # Final cleanup to prevent resource leaks
     try:
@@ -3072,22 +3072,22 @@ async def run_step(
         )
 
         # Summary of generated reports
-        reports_dir = os.path.join("reports")
+        reports_dir, os.path.join("reports")
         if os.path.exists(reports_dir):
             report_files = [
                 f
-                for f in os.listdir(reports_dir)
-                if f.endswith(".md") and "regime_summary" in f
+        for f in os.listdir(reports_dir)
+        if f.endswith(".md") and "regime_summary" in f
             ]
-            if report_files:
+        if report_files:
                 logger.info("📊 HMM Regime Analysis Reports generated:")
                 print_and_log(
                     "📊 HMM Regime Analysis Reports generated:",
                     "info",
                     "Step1_7.HMMRegimeDiscovery",
                 )
-                for report_file in sorted(report_files):
-                    report_path = os.path.join(reports_dir, report_file)
+        for report_file in sorted(report_files):
+                    report_path, os.path.join(reports_dir, report_file)
                     logger.info(f"  📄 {report_path}")
                     print_and_log(
                         f"  📄 {report_path}", "info", "Step1_7.HMMRegimeDiscovery",
@@ -3123,8 +3123,8 @@ async def run_step(
 def _merge_rare_combinations(
     combo_keys: pd.Series,
     profile_df: pd.DataFrame,
-    min_count: int = 3,  # Reduced from 5 to 3 to make penalty weaker
-    similarity_threshold: float = 0.65,  # Reduced from 0.7 to 0.65 to make penalty weaker
+    min_count: int, 3,  # Reduced from 5 to 3 to make penalty weaker
+    similarity_threshold: float, 0.65,  # Reduced from 0.7 to 0.65 to make penalty weaker
 ) -> tuple[pd.Series, pd.DataFrame]:
     """Merge rare combinations into similar frequent combinations instead of filtering them out.
     Only merges if similarity meets the threshold.
@@ -3142,15 +3142,15 @@ def _merge_rare_combinations(
     if profile_df.empty:
         return combo_keys, profile_df
 
-    counts = combo_keys.value_counts()
-    frequent_combos = counts[counts >= min_count].index
-    rare_combos = counts[counts < min_count].index
+    counts, combo_keys.value_counts()
+    frequent_combos, counts[counts >= min_count].index
+    rare_combos, counts[counts < min_count].index
 
     if len(frequent_combos) == 0:
         # If no frequent combinations, use the most common ones
-        top_combos = counts.head(max(2, len(counts) // 10)).index
-        frequent_combos = top_combos
-        rare_combos = counts[~counts.index.isin(frequent_combos)].index
+        top_combos, counts.head(max(2, len(counts) // 10)).index
+        frequent_combos, top_combos
+        rare_combos, counts[~counts.index.isin(frequent_combos)].index
 
     if len(rare_combos) == 0:
         # No rare combinations to merge
@@ -3164,37 +3164,37 @@ def _merge_rare_combinations(
     rare_to_frequent_map = {}
 
     # Get profiles for frequent combinations
-    frequent_profiles = profile_df.loc[profile_df.index.intersection(frequent_combos)]
+    frequent_profiles, profile_df.loc[profile_df.index.intersection(frequent_combos)]
 
     if frequent_profiles.empty:
         # Fallback: no frequent profiles available
         return combo_keys, profile_df
 
     # Normalize frequent profiles for similarity calculation
-    frequent_profiles_norm = frequent_profiles.values.astype(float)
-    frequent_profiles_norm = np.nan_to_num(
+    frequent_profiles_norm, frequent_profiles.values.astype(float)
+    frequent_profiles_norm, np.nan_to_num(
         frequent_profiles_norm, nan=0.0, posinf=0.0, neginf=0.0,
     )
-    norms = np.linalg.norm(frequent_profiles_norm, axis=1, keepdims=True) + 1e-12
-    frequent_profiles_norm = frequent_profiles_norm / norms
+    norms, np.linalg.norm(frequent_profiles_norm, axis=1, keepdims=True) + 1e-12
+    frequent_profiles_norm, frequent_profiles_norm / norms
 
     # For each rare combination, find the most similar frequent combination
-    merged_count = 0
-    rejected_count = 0
+    merged_count, 0
+    rejected_count, 0
 
     for rare_combo in rare_combos:
         if rare_combo not in profile_df.index:
             continue
 
-        rare_profile = profile_df.loc[rare_combo].values.astype(float)
-        rare_profile = np.nan_to_num(rare_profile, nan=0.0, posinf=0.0, neginf=0.0)
+        rare_profile, profile_df.loc[rare_combo].values.astype(float)
+        rare_profile, np.nan_to_num(rare_profile, nan=0.0, posinf=0.0, neginf=0.0)
 
         # Normalize rare profile
-        rare_norm = np.linalg.norm(rare_profile) + 1e-12
-        rare_profile_norm = rare_profile / rare_norm
+        rare_norm, np.linalg.norm(rare_profile) + 1e-12
+        rare_profile_norm, rare_profile / rare_norm
 
         # Calculate cosine similarities to all frequent combinations
-        similarities = np.dot(
+        similarities, np.dot(
             frequent_profiles_norm,
             rare_profile_norm.reshape(
                 -1,
@@ -3202,9 +3202,9 @@ def _merge_rare_combinations(
         )
 
         # Find the most similar frequent combination
-        most_similar_idx = np.argmax(similarities)
-        max_similarity = similarities[most_similar_idx]
-        most_similar_combo = frequent_profiles.index[most_similar_idx]
+        most_similar_idx, np.argmax(similarities)
+        max_similarity, similarities[most_similar_idx]
+        most_similar_combo, frequent_profiles.index[most_similar_idx]
 
         # Only merge if similarity meets the threshold
         if max_similarity >= similarity_threshold:
@@ -3221,12 +3221,12 @@ def _merge_rare_combinations(
     )
 
     # Create merged combination keys
-    merged_combo_keys = combo_keys.copy()
+    merged_combo_keys, combo_keys.copy()
     for rare_combo, frequent_combo in rare_to_frequent_map.items():
-        merged_combo_keys = merged_combo_keys.replace(rare_combo, frequent_combo)
+        merged_combo_keys, merged_combo_keys.replace(rare_combo, frequent_combo)
 
     # Update profile DataFrame to reflect merged combinations
-    merged_profile_df = profile_df.copy()
+    merged_profile_df, profile_df.copy()
 
     # For each frequent combination, update its profile to include merged rare combinations
     for frequent_combo in frequent_combos:
@@ -3236,38 +3236,38 @@ def _merge_rare_combinations(
         # Find all rare combinations that were merged into this frequent combination
         merged_rare_combos = [
             rare
-            for rare, freq in rare_to_frequent_map.items()
-            if freq == frequent_combo
+        for rare, freq in rare_to_frequent_map.items()
+        if freq == frequent_combo
         ]
 
         if merged_rare_combos:
-            # Calculate weighted average profile (weighted by count)
-            frequent_count = counts[frequent_combo]
-            total_weight = frequent_count
+        # Calculate weighted average profile (weighted by count)
+            frequent_count, counts[frequent_combo]
+            total_weight, frequent_count
 
-            # Start with the frequent combination profile
+        # Start with the frequent combination profile
             merged_profile = (
                 merged_profile_df.loc[frequent_combo].values.astype(float)
                 * frequent_count
             )
 
-            # Add weighted contributions from rare combinations
-            for rare_combo in merged_rare_combos:
-                if rare_combo in merged_profile_df.index:
-                    rare_count = counts[rare_combo]
-                    rare_profile = merged_profile_df.loc[rare_combo].values.astype(
+        # Add weighted contributions from rare combinations
+        for rare_combo in merged_rare_combos:
+        if rare_combo in merged_profile_df.index:
+                    rare_count, counts[rare_combo]
+                    rare_profile, merged_profile_df.loc[rare_combo].values.astype(
                         float,
                     )
                     merged_profile += rare_profile * rare_count
                     total_weight += rare_count
 
-            # Normalize by total weight
-            if total_weight > 0:
-                merged_profile = merged_profile / total_weight
+        # Normalize by total weight
+        if total_weight > 0:
+                merged_profile, merged_profile / total_weight
                 merged_profile_df.loc[frequent_combo] = merged_profile
 
     # Remove rare combinations from profile DataFrame
-    merged_profile_df = merged_profile_df.loc[
+    merged_profile_df, merged_profile_df.loc[
         merged_profile_df.index.intersection(frequent_combos)
     ]
 
@@ -3305,40 +3305,40 @@ def _generate_archetype_descriptions(
         archetype_descriptions = {}
 
         # Get unique cluster IDs
-        cluster_ids = list(cluster_centroids.keys())
+        cluster_ids, list(cluster_centroids.keys())
 
         for cluster_id in cluster_ids:
-            if cluster_id < 0:  # Skip noise clusters
+        if cluster_id < 0:  # Skip noise clusters
                 continue
 
-            # Get the centroid for this cluster
-            centroid = cluster_centroids.get(cluster_id, [])
-            if not centroid:
+        # Get the centroid for this cluster
+            centroid, cluster_centroids.get(cluster_id, [])
+        if not centroid:
                 continue
 
-            # Generate description based on the cluster characteristics
+        # Generate description based on the cluster characteristics
             description_parts = []
 
-            # Add frequency information
-            frequency = cluster_counts.get(cluster_id, 0)
-            if frequency > 0:
-                total_obs = sum(cluster_counts.values())
+        # Add frequency information
+            frequency, cluster_counts.get(cluster_id, 0)
+        if frequency > 0:
+                total_obs, sum(cluster_counts.values())
                 percentage = (frequency / total_obs * 100) if total_obs > 0 else 0
                 description_parts.append(f"Frequent ({percentage:.1f}% of time)")
 
-            # Add market condition description based on centroid characteristics
-            if len(centroid) >= 4:  # Assuming we have at least 4 blocks
-                # Analyze the centroid values to determine market conditions
-                momentum_score = centroid[0] if len(centroid) > 0 else 0
-                volatility_score = centroid[1] if len(centroid) > 1 else 0
-                liquidity_score = centroid[2] if len(centroid) > 2 else 0
-                microstructure_score = centroid[3] if len(centroid) > 3 else 0
+        # Add market condition description based on centroid characteristics
+        if len(centroid) >= 4:  # Assuming we have at least 4 blocks
+        # Analyze the centroid values to determine market conditions
+                momentum_score, centroid[0] if len(centroid) > 0 else 0
+                volatility_score, centroid[1] if len(centroid) > 1 else 0
+                liquidity_score, centroid[2] if len(centroid) > 2 else 0
+                microstructure_score, centroid[3] if len(centroid) > 3 else 0
 
-                # Determine market conditions with more nuanced descriptions
+        # Determine market conditions with more nuanced descriptions
                 conditions = []
 
-                # Momentum condition with intensity
-                if momentum_score > 0.7:
+        # Momentum condition with intensity
+        if momentum_score > 0.7:
                     conditions.append("strong bullish momentum")
                 elif momentum_score > 0.3:
                     conditions.append("moderate bullish momentum")
@@ -3349,8 +3349,8 @@ def _generate_archetype_descriptions(
                 else:
                     conditions.append("strong bearish momentum")
 
-                # Volatility condition with intensity
-                if volatility_score > 0.7:
+        # Volatility condition with intensity
+        if volatility_score > 0.7:
                     conditions.append("very high volatility")
                 elif volatility_score > 0.3:
                     conditions.append("high volatility")
@@ -3361,8 +3361,8 @@ def _generate_archetype_descriptions(
                 else:
                     conditions.append("very low volatility")
 
-                # Liquidity condition with intensity
-                if liquidity_score > 0.7:
+        # Liquidity condition with intensity
+        if liquidity_score > 0.7:
                     conditions.append("very high liquidity")
                 elif liquidity_score > 0.3:
                     conditions.append("high liquidity")
@@ -3373,8 +3373,8 @@ def _generate_archetype_descriptions(
                 else:
                     conditions.append("very low liquidity")
 
-                # Microstructure condition with intensity
-                if microstructure_score > 0.7:
+        # Microstructure condition with intensity
+        if microstructure_score > 0.7:
                     conditions.append("very stressed microstructure")
                 elif microstructure_score > 0.3:
                     conditions.append("stressed microstructure")
@@ -3385,16 +3385,16 @@ def _generate_archetype_descriptions(
                 else:
                     conditions.append("very tight microstructure")
 
-                # Combine conditions
-                if conditions:
+        # Combine conditions
+        if conditions:
                     condition_desc = ", ".join(conditions)
                     description_parts.append(f"{condition_desc} market")
 
-            # Create final description
-            if description_parts:
+        # Create final description
+        if description_parts:
                 description = " - ".join(description_parts)
             else:
-                description = f"Market Archetype {cluster_id}"
+                description, f"Market Archetype {cluster_id}"
 
             archetype_descriptions[cluster_id] = description
 
@@ -3421,43 +3421,43 @@ def _compute_comprehensive_composite_metrics(
 ) -> CompositeModelMetrics:
     """Compute comprehensive metrics for composite model analysis."""
     # Basic cluster metrics
-    cluster_count = len(np.unique(labels[labels >= 0]))
-    cluster_sizes = labels.value_counts().to_dict()
-    total_samples = len(labels)
+    cluster_count, len(np.unique(labels[labels >= 0]))
+    cluster_sizes, labels.value_counts().to_dict()
+    total_samples, len(labels)
     cluster_frequencies = {k: v / total_samples for k, v in cluster_sizes.items()}
 
     # Quality metrics (only for valid clusters)
-    valid_mask = labels >= 0
+    valid_mask, labels >= 0
     if valid_mask.sum() > 1 and len(np.unique(labels[valid_mask])) > 1:
         try:
-            silhouette = silhouette_score(profile_df[valid_mask], labels[valid_mask])
-            calinski_harabasz = calinski_harabasz_score(
+            silhouette, silhouette_score(profile_df[valid_mask], labels[valid_mask])
+            calinski_harabasz, calinski_harabasz_score(
                 profile_df[valid_mask], labels[valid_mask],
             )
-            davies_bouldin = davies_bouldin_score(
+            davies_bouldin, davies_bouldin_score(
                 profile_df[valid_mask], labels[valid_mask],
             )
         except Exception:
-            silhouette = 0.0
-            calinski_harabasz = 0.0
-            davies_bouldin = 0.0
+            silhouette, 0.0
+            calinski_harabasz, 0.0
+            davies_bouldin, 0.0
     else:
-        silhouette = 0.0
-        calinski_harabasz = 0.0
-        davies_bouldin = 0.0
+        silhouette, 0.0
+        calinski_harabasz, 0.0
+        davies_bouldin, 0.0
 
     # Diversity metrics
-    cluster_diversity = len(cluster_sizes) / max(1, cluster_count)
-    cluster_separation = 1.0 - (
+    cluster_diversity, len(cluster_sizes) / max(1, cluster_count)
+    cluster_separation, 1.0 - (
         min(cluster_sizes.values()) / max(cluster_sizes.values())
         if cluster_sizes
         else 0.0
     )
-    cluster_cohesion = silhouette  # Use silhouette as cohesion measure
+    cluster_cohesion, silhouette  # Use silhouette as cohesion measure
 
     # Temporal metrics (simplified)
-    cluster_persistence = dict.fromkeys(cluster_sizes.keys(), 1.0)
-    cluster_volatility = dict.fromkeys(cluster_sizes.keys(), 0.1)
+    cluster_persistence, dict.fromkeys(cluster_sizes.keys(), 1.0)
+    cluster_volatility, dict.fromkeys(cluster_sizes.keys(), 0.1)
 
     # Block composition metrics (simplified)
     block_representation = {}
@@ -3475,7 +3475,7 @@ def _compute_comprehensive_composite_metrics(
     market_condition_distribution = {
         k: {"trending": 0.5, "ranging": 0.5} for k in cluster_sizes
     }
-    regime_stability = dict.fromkeys(cluster_sizes.keys(), 0.8)
+    regime_stability, dict.fromkeys(cluster_sizes.keys(), 0.8)
     regime_transition_probability = {"high": 0.2, "medium": 0.5, "low": 0.3}
 
     # Anomaly detection (simplified)
@@ -3517,33 +3517,33 @@ def _generate_regime_description(regime_id: int, meta: dict, original_desc: str)
     """Generate a better regime description based on block composition."""
     try:
         # Get the cluster labels from meta data
-        cluster_labels = meta.get("cluster_labels", {})
+        cluster_labels, meta.get("cluster_labels", {})
 
         # Find the cluster label for this regime
-        regime_label = None
+        regime_label, None
         for label, cluster_id in cluster_labels.items():
-            if cluster_id == regime_id:
-                regime_label = label
+        if cluster_id == regime_id:
+                regime_label, label
                 break
 
         if not regime_label:
-            return original_desc
+        return original_desc
 
         # Parse the label format: "momentum:0|volatility:0|liquidity:0|microstructure:0"
         block_states = {}
         for part in regime_label.split("|"):
-            if ":" in part:
-                block_name, state_id = part.split(":")
+        if ":" in part:
+                block_name, state_id, part.split(":")
                 block_states[block_name] = int(state_id)
 
         if not block_states:
-            return original_desc
+        return original_desc
 
         # Build description based on block states
         desc_parts = []
 
         # Get state names from meta file, fallback to hardcoded descriptions
-        state_names = meta.get("state_names", {})
+        state_names, meta.get("state_names", {})
 
         # Block-specific descriptions (fallback) - Enhanced for higher sensitivity
         block_descriptions = {
@@ -3578,10 +3578,10 @@ def _generate_regime_description(regime_id: int, meta: dict, original_desc: str)
         }
 
         for block_name, state_id in block_states.items():
-            # Try to get state name from meta file first
-            if block_name in state_names and str(state_id) in state_names[block_name]:
+        # Try to get state name from meta file first
+        if block_name in state_names and str(state_id) in state_names[block_name]:
                 desc_parts.append(state_names[block_name][str(state_id)])
-            # Fallback to hardcoded descriptions
+        # Fallback to hardcoded descriptions
             elif (
                 block_name in block_descriptions
                 and state_id in block_descriptions[block_name]
@@ -3589,23 +3589,23 @@ def _generate_regime_description(regime_id: int, meta: dict, original_desc: str)
                 desc_parts.append(block_descriptions[block_name][state_id])
 
         if desc_parts:
-            return f"{', '.join(desc_parts)} Market"
+        return f"{', '.join(desc_parts)} Market"
         return original_desc
 
     except Exception:
         return original_desc
 
 
-def _generate_state_name(block_name: str, state_id: int, original_name: str, meta: dict | None = None) -> str:
+def _generate_state_name(block_name: str, state_id: int, original_name: str, meta: dict | None, None) -> str:
     """Generate better state names based on block type."""
     try:
-        block_name_lower = block_name.lower()
+        block_name_lower, block_name.lower()
 
         # Try to get state name from meta file first
         if meta and "state_names" in meta:
-            state_names = meta["state_names"]
-            if block_name_lower in state_names and str(state_id) in state_names[block_name_lower]:
-                return state_names[block_name_lower][str(state_id)]
+            state_names, meta["state_names"]
+        if block_name_lower in state_names and str(state_id) in state_names[block_name_lower]:
+        return state_names[block_name_lower][str(state_id)]
 
         # Fallback to hardcoded names - Enhanced for higher sensitivity
         if block_name_lower == "momentum":
@@ -3617,7 +3617,7 @@ def _generate_state_name(block_name: str, state_id: int, original_name: str, met
                 4: "Strong Uptrend",
                 5: "Strong Downtrend",  # Added 6th state
             }
-            return momentum_names.get(state_id, original_name)
+        return momentum_names.get(state_id, original_name)
 
         if block_name_lower == "volatility":
             volatility_names = {
@@ -3626,7 +3626,7 @@ def _generate_state_name(block_name: str, state_id: int, original_name: str, met
                 2: "High & Choppy Vol",
                 3: "Very High & Choppy Vol",
             }
-            return volatility_names.get(state_id, original_name)
+        return volatility_names.get(state_id, original_name)
 
         if block_name_lower == "volume":
             volume_names = {
@@ -3636,7 +3636,7 @@ def _generate_state_name(block_name: str, state_id: int, original_name: str, met
                 3: "High Volume",
                 4: "Very High Volume",
             }
-            return volume_names.get(state_id, original_name)
+        return volume_names.get(state_id, original_name)
 
 
         if block_name_lower == "microstructure":
@@ -3646,7 +3646,7 @@ def _generate_state_name(block_name: str, state_id: int, original_name: str, met
                 2: "Stressed Microstructure",
                 3: "Very Stressed Microstructure",
             }
-            return microstructure_names.get(state_id, original_name)
+        return microstructure_names.get(state_id, original_name)
 
         return original_name
 
@@ -3664,31 +3664,31 @@ def _generate_simple_hmm_report(
         from datetime import datetime
 
         # Load meta data
-        meta_path = os.path.join(
+        meta_path, os.path.join(
             data_dir, f"{exchange}_{symbol}_hmm_composite_meta_{timeframe}.json",
         )
         if not os.path.exists(meta_path):
-            return f"# HMM Regime Report\n\nError: Meta file not found at {meta_path}"
+        return f"# HMM Regime Report\n\nError: Meta file not found at {meta_path}"
 
         with open(meta_path) as f:
-            meta = json.load(f)
+            meta, json.load(f)
 
         # Load cluster data
-        cluster_path = os.path.join(
+        cluster_path, os.path.join(
             data_dir, f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet",
         )
         if not os.path.exists(cluster_path):
-            return f"# HMM Regime Report\n\nError: Cluster file not found at {cluster_path}"
+        return f"# HMM Regime Report\n\nError: Cluster file not found at {cluster_path}"
 
-        cluster_df = pd.read_parquet(cluster_path)
+        cluster_df, pd.read_parquet(cluster_path)
 
         # Load intensity data if available
-        intensity_df = None
-        intensity_path = os.path.join(
+        intensity_df, None
+        intensity_path, os.path.join(
             data_dir, f"{exchange}_{symbol}_hmm_composite_intensity_{timeframe}.parquet",
         )
         if os.path.exists(intensity_path):
-            intensity_df = pd.read_parquet(intensity_path)
+            intensity_df, pd.read_parquet(intensity_path)
 
         # Generate comprehensive report
         report_lines = []
@@ -3704,18 +3704,18 @@ def _generate_simple_hmm_report(
         report_lines.append("")
 
         # Get archetype descriptions
-        archetype_descriptions = meta.get("archetype_descriptions", {})
+        archetype_descriptions, meta.get("archetype_descriptions", {})
         valid_archetypes = {
             k: v for k, v in archetype_descriptions.items() if int(k) >= 0
         }
 
         # Count actual regimes from cluster data
-        actual_regime_count = 0
+        actual_regime_count, 0
         if "composite_cluster_id" in cluster_df.columns:
             cluster_counts = (
                 cluster_df["composite_cluster_id"].value_counts().sort_index()
             )
-            actual_regime_count = len(
+            actual_regime_count, len(
                 [regime_id for regime_id in cluster_counts.index if regime_id >= 0],
             )
 
@@ -3730,11 +3730,11 @@ def _generate_simple_hmm_report(
             cluster_counts = (
                 cluster_df["composite_cluster_id"].value_counts().sort_index()
             )
-            total_obs = len(cluster_df)
+            total_obs, len(cluster_df)
 
-            # Calculate concentration statistics
-            top_10_regimes = cluster_counts.head(10)
-            top_20_regimes = cluster_counts.head(20)
+        # Calculate concentration statistics
+            top_10_regimes, cluster_counts.head(10)
+            top_20_regimes, cluster_counts.head(20)
             top_10_concentration = (
                 (top_10_regimes.sum() / total_obs * 100) if total_obs > 0 else 0
             )
@@ -3749,10 +3749,10 @@ def _generate_simple_hmm_report(
                 f"- 📈 **Top 20 regimes** account for {top_20_concentration:.1f}% of market time",
             )
 
-            # Check for noise cluster (-1)
-            noise_count = cluster_counts.get(-1, 0)
+        # Check for noise cluster (-1)
+            noise_count, cluster_counts.get(-1, 0)
             noise_percentage = (noise_count / total_obs * 100) if total_obs > 0 else 0
-            if noise_count > 0:
+        if noise_count > 0:
                 report_lines.append(
                     f"- ⚠️ **Noise cluster (-1)** contains {noise_count} observations ({noise_percentage:.1f}%)",
                 )
@@ -3777,9 +3777,9 @@ def _generate_simple_hmm_report(
         report_lines.append("")
 
         # Add regime merging information if available
-        regime_merging_stats = meta.get("regime_merging_stats", {})
-        merging_config = meta.get("merging_config", {})
-        regime_merging_applied = meta.get("regime_merging_applied", False)
+        regime_merging_stats, meta.get("regime_merging_stats", {})
+        merging_config, meta.get("merging_config", {})
+        regime_merging_applied, meta.get("regime_merging_applied", False)
 
         if regime_merging_applied and regime_merging_stats:
             report_lines.append("## 📊 Regime Merging Analysis")
@@ -3830,13 +3830,13 @@ def _generate_simple_hmm_report(
             report_lines.append(
                 f"- **Top 20 Concentration**: {top_20_concentration:.1f}%",
             )
-            if noise_count > 0:
+        if noise_count > 0:
                 report_lines.append(
                     f"- **Regime -1 (Noise) Concentration**: {noise_percentage:.1f}%",
                 )
             report_lines.append("")
             report_lines.append("### Concentration Analysis:")
-            if top_10_concentration >= 85:
+        if top_10_concentration >= 85:
                 report_lines.append(
                     "- **High Concentration**: Top 10 regimes dominate the market (≥85%)",
                 )
@@ -3871,15 +3871,15 @@ def _generate_simple_hmm_report(
 
             report_lines.append("### Top 10 Regimes by Frequency:")
             report_lines.append("")
-            for i, (regime_id, count) in enumerate(cluster_counts.head(10).items(), 1):
-                if regime_id >= 0:  # Skip noise cluster
+        for i, (regime_id, count) in enumerate(cluster_counts.head(10).items(), 1):
+        if regime_id >= 0:  # Skip noise cluster
                     percentage = (count / total_obs * 100) if total_obs > 0 else 0
-                    desc = archetype_descriptions.get(
+                    desc, archetype_descriptions.get(
                         str(regime_id), f"Regime {regime_id}",
                     )
 
-                    # Generate better description based on block composition
-                    better_desc = _generate_regime_description(regime_id, meta, desc)
+        # Generate better description based on block composition
+                    better_desc, _generate_regime_description(regime_id, meta, desc)
 
                     report_lines.append(
                         f"{i}. **Regime {regime_id}**: {count:,} observations ({percentage:.2f}%)",
@@ -3887,16 +3887,16 @@ def _generate_simple_hmm_report(
                     report_lines.append(f"   - **Description**: {better_desc}")
                     report_lines.append("")
 
-            if len(cluster_counts) > 10:
+        if len(cluster_counts) > 10:
                 report_lines.append("### Remaining Regimes:")
                 report_lines.append("")
-                for regime_id, count in cluster_counts.iloc[10:].items():
-                    if regime_id >= 0:  # Skip noise cluster
+        for regime_id, count in cluster_counts.iloc[10:].items():
+        if regime_id >= 0:  # Skip noise cluster
                         percentage = (count / total_obs * 100) if total_obs > 0 else 0
-                        desc = archetype_descriptions.get(
+                        desc, archetype_descriptions.get(
                             str(regime_id), f"Regime {regime_id}",
                         )
-                        better_desc = _generate_regime_description(
+                        better_desc, _generate_regime_description(
                             regime_id, meta, desc,
                         )
                         report_lines.append(
@@ -3905,26 +3905,26 @@ def _generate_simple_hmm_report(
                 report_lines.append("")
 
         # Block information
-        blocks = meta.get("blocks", [])
+        blocks, meta.get("blocks", [])
         if blocks:
             report_lines.append("## 🧩 HMM Block Analysis")
             report_lines.append("")
             report_lines.append("### Block Configuration:")
-            for block in blocks:
+        for block in blocks:
                 report_lines.append(
                     f"- **{block['name'].title()}**: {block['n_states']} states",
                 )
             report_lines.append("")
 
-            # State names with better descriptions
-            state_names = meta.get("state_names", {})
-            if state_names:
+        # State names with better descriptions
+            state_names, meta.get("state_names", {})
+        if state_names:
                 report_lines.append("### State Names by Block:")
-                for block_name, states in state_names.items():
+        for block_name, states in state_names.items():
                     report_lines.append(f"**{block_name.title()}:**")
-                    for state_id, state_name in states.items():
-                        # Generate better state names based on block type
-                        better_state_name = _generate_state_name(
+        for state_id, state_name in states.items():
+        # Generate better state names based on block type
+                        better_state_name, _generate_state_name(
                             block_name, int(state_id), state_name, meta,
                         )
                         report_lines.append(
@@ -3939,77 +3939,77 @@ def _generate_simple_hmm_report(
             report_lines.append("### Percentage of Time Spent in Each State:")
             report_lines.append("")
 
-            # Get block information
-            blocks = meta.get("blocks", [])
-            state_names = meta.get("state_names", {})
+        # Get block information
+            blocks, meta.get("blocks", [])
+            state_names, meta.get("state_names", {})
 
-            # Calculate state distributions for each block
-            for block in blocks:
-                block_name = block["name"]
-                n_states = block["n_states"]
+        # Calculate state distributions for each block
+        for block in blocks:
+                block_name, block["name"]
+                n_states, block["n_states"]
 
                 report_lines.append(f"**{block_name.title()} Block:**")
                 report_lines.append("")
 
-                # Create table header
+        # Create table header
                 report_lines.append("| State | Description | % of Time | Observations |")
                 report_lines.append("|-------|-------------|-----------|--------------|")
 
-                # Calculate state distribution
+        # Calculate state distribution
                 state_counts = {}
-                total_obs = len(intensity_df)
+                total_obs, len(intensity_df)
 
-                # Get state column for this block
-                state_col = f"{block_name}_state"
-                if state_col in intensity_df.columns:
-                    state_counts = intensity_df[state_col].value_counts().sort_index()
+        # Get state column for this block
+                state_col, f"{block_name}_state"
+        if state_col in intensity_df.columns:
+                    state_counts, intensity_df[state_col].value_counts().sort_index()
 
-                    for state_id in range(n_states):
-                        count = state_counts.get(state_id, 0)
+        for state_id in range(n_states):
+                        count, state_counts.get(state_id, 0)
                         percentage = (count / total_obs * 100) if total_obs > 0 else 0
 
-                        # Get state description
-                        if block_name in state_names and str(state_id) in state_names[block_name]:
-                            description = state_names[block_name][str(state_id)]
+        # Get state description
+        if block_name in state_names and str(state_id) in state_names[block_name]:
+                            description, state_names[block_name][str(state_id)]
                         else:
-                            description = _generate_state_name(block_name, state_id, f"State {state_id}", meta)
+                            description, _generate_state_name(block_name, state_id, f"State {state_id}", meta)
 
                         report_lines.append(f"| {state_id} | {description} | {percentage:.2f}% | {count:,} |")
 
                 report_lines.append("")
                 report_lines.append("")
 
-            # Add summary statistics
+        # Add summary statistics
             report_lines.append("### State Distribution Summary:")
             report_lines.append("")
 
-            for block in blocks:
-                block_name = block["name"]
-                state_col = f"{block_name}_state"
+        for block in blocks:
+                block_name, block["name"]
+                state_col, f"{block_name}_state"
 
-                if state_col in intensity_df.columns:
-                    state_counts = intensity_df[state_col].value_counts().sort_index()
-                    total_obs = len(intensity_df)
+        if state_col in intensity_df.columns:
+                    state_counts, intensity_df[state_col].value_counts().sort_index()
+                    total_obs, len(intensity_df)
 
-                    # Find dominant state
-                    dominant_state = state_counts.index[0] if len(state_counts) > 0 else None
+        # Find dominant state
+                    dominant_state, state_counts.index[0] if len(state_counts) > 0 else None
                     dominant_percentage = (state_counts.iloc[0] / total_obs * 100) if len(state_counts) > 0 and total_obs > 0 else 0
 
-                    # Get dominant state description
-                    if dominant_state is not None:
-                        if block_name in state_names and str(dominant_state) in state_names[block_name]:
-                            dominant_desc = state_names[block_name][str(dominant_state)]
+        # Get dominant state description
+        if dominant_state is not None:
+        if block_name in state_names and str(dominant_state) in state_names[block_name]:
+                            dominant_desc, state_names[block_name][str(dominant_state)]
                         else:
-                            dominant_desc = _generate_state_name(block_name, dominant_state, f"State {dominant_state}", meta)
+                            dominant_desc, _generate_state_name(block_name, dominant_state, f"State {dominant_state}", meta)
 
                         report_lines.append(f"- **{block_name.title()}**: Dominant state is {dominant_desc} ({dominant_percentage:.1f}% of time)")
 
-                    # Calculate state diversity
-                    state_diversity = len(state_counts)
+        # Calculate state diversity
+                    state_diversity, len(state_counts)
                     report_lines.append(f"  - State diversity: {state_diversity} distinct states")
 
-                    # Calculate concentration (top state percentage)
-                    if dominant_percentage > 50:
+        # Calculate concentration (top state percentage)
+        if dominant_percentage > 50:
                         concentration_desc = "High concentration"
                     elif dominant_percentage > 30:
                         concentration_desc = "Moderate concentration"
@@ -4030,50 +4030,50 @@ def _generate_simple_hmm_report(
         report_lines.append("")
 
         if "composite_cluster_id" in cluster_df.columns:
-            cluster_series = cluster_df["composite_cluster_id"]
+            cluster_series, cluster_df["composite_cluster_id"]
 
-            # Calculate regime transitions
+        # Calculate regime transitions
             transitions = []
-            for i in range(1, len(cluster_series)):
-                from_regime = cluster_series.iloc[i - 1]
-                to_regime = cluster_series.iloc[i]
-                if from_regime != to_regime:  # Only count actual transitions
+        for i in range(1, len(cluster_series)):
+                from_regime, cluster_series.iloc[i - 1]
+                to_regime, cluster_series.iloc[i]
+        if from_regime != to_regime:  # Only count actual transitions
                     transitions.append((from_regime, to_regime))
 
-            # Calculate transition matrix
-            unique_regimes = sorted(cluster_series.unique())
+        # Calculate transition matrix
+            unique_regimes, sorted(cluster_series.unique())
             transition_matrix = {}
-            for from_regime in unique_regimes:
+        for from_regime in unique_regimes:
                 transition_matrix[from_regime] = {}
-                for to_regime in unique_regimes:
+        for to_regime in unique_regimes:
                     transition_matrix[from_regime][to_regime] = 0
 
-            # Count transitions
-            for from_regime, to_regime in transitions:
-                if (
+        # Count transitions
+        for from_regime, to_regime in transitions:
+        if (
                     from_regime in transition_matrix
                     and to_regime in transition_matrix[from_regime]
                 ):
                     transition_matrix[from_regime][to_regime] += 1
 
-            # Calculate transition probabilities
+        # Calculate transition probabilities
             transition_probabilities = {}
-            for from_regime in unique_regimes:
-                total_from = sum(transition_matrix[from_regime].values())
-                if total_from > 0:
+        for from_regime in unique_regimes:
+                total_from, sum(transition_matrix[from_regime].values())
+        if total_from > 0:
                     transition_probabilities[from_regime] = {}
-                    for to_regime in unique_regimes:
-                        prob = transition_matrix[from_regime][to_regime] / total_from
+        for to_regime in unique_regimes:
+                        prob, transition_matrix[from_regime][to_regime] / total_from
                         transition_probabilities[from_regime][to_regime] = prob
 
-            # Calculate regime persistence
+        # Calculate regime persistence
             persistence_data = []
-            current_regime = cluster_series.iloc[0]
-            start_time = 0
-            duration = 1
+            current_regime, cluster_series.iloc[0]
+            start_time, 0
+            duration, 1
 
-            for i in range(1, len(cluster_series)):
-                if cluster_series.iloc[i] == current_regime:
+        for i in range(1, len(cluster_series)):
+        if cluster_series.iloc[i] == current_regime:
                     duration += 1
                 else:
                     persistence_data.append(
@@ -4083,59 +4083,59 @@ def _generate_simple_hmm_report(
                             "duration": duration,
                         },
                     )
-                    current_regime = cluster_series.iloc[i]
-                    start_time = i
-                    duration = 1
+                    current_regime, cluster_series.iloc[i]
+                    start_time, i
+                    duration, 1
 
-            # Add last regime
+        # Add last regime
             persistence_data.append(
                 {"regime": current_regime, "start": start_time, "duration": duration},
             )
 
-            # Calculate persistence statistics
+        # Calculate persistence statistics
             persistence_stats = {}
-            for data in persistence_data:
-                regime = data["regime"]
-                duration = data["duration"]
-                if regime not in persistence_stats:
+        for data in persistence_data:
+                regime, data["regime"]
+                duration, data["duration"]
+        if regime not in persistence_stats:
                     persistence_stats[regime] = {"durations": [], "count": 0}
                 persistence_stats[regime]["durations"].append(duration)
                 persistence_stats[regime]["count"] += 1
 
-            # Calculate average persistence for each regime
-            for regime in persistence_stats:
-                durations = persistence_stats[regime]["durations"]
+        # Calculate average persistence for each regime
+        for regime in persistence_stats:
+                durations, persistence_stats[regime]["durations"]
                 persistence_stats[regime]["avg_duration"] = np.mean(durations)
                 persistence_stats[regime]["median_duration"] = np.median(durations)
                 persistence_stats[regime]["max_duration"] = max(durations)
                 persistence_stats[regime]["min_duration"] = min(durations)
                 persistence_stats[regime]["std_duration"] = np.std(durations)
 
-            # Most common transitions
+        # Most common transitions
             transition_counts = {}
-            for from_regime, to_regime in transitions:
+        for from_regime, to_regime in transitions:
                 key = (from_regime, to_regime)
                 transition_counts[key] = transition_counts.get(key, 0) + 1
 
-            sorted_transitions = sorted(
+            sorted_transitions, sorted(
                 transition_counts.items(), key=lambda x: x[1], reverse=True,
             )
 
             report_lines.append("### 🔄 Most Common Regime Transitions:")
             report_lines.append("")
-            for i, ((from_regime, to_regime), count) in enumerate(
+        for i, ((from_regime, to_regime), count) in enumerate(
                 sorted_transitions[:10], 1,
             ):
-                from_desc = archetype_descriptions.get(
+                from_desc, archetype_descriptions.get(
                     str(from_regime), f"Regime {from_regime}",
                 )
-                to_desc = archetype_descriptions.get(
+                to_desc, archetype_descriptions.get(
                     str(to_regime), f"Regime {to_regime}",
                 )
-                from_better_desc = _generate_regime_description(
+                from_better_desc, _generate_regime_description(
                     from_regime, meta, from_desc,
                 )
-                to_better_desc = _generate_regime_description(to_regime, meta, to_desc)
+                to_better_desc, _generate_regime_description(to_regime, meta, to_desc)
                 report_lines.append(
                     f"{i}. **{from_regime} → {to_regime}**: {count} transitions",
                 )
@@ -4143,24 +4143,24 @@ def _generate_simple_hmm_report(
                 report_lines.append(f"   - **To**: {to_better_desc}")
                 report_lines.append("")
 
-            # Regime persistence analysis
+        # Regime persistence analysis
             report_lines.append("### ⏱️ Regime Persistence Analysis:")
             report_lines.append("")
 
-            # Sort regimes by average persistence
-            sorted_persistence = sorted(
+        # Sort regimes by average persistence
+            sorted_persistence, sorted(
                 [
                     (regime, stats)
-                    for regime, stats in persistence_stats.items()
-                    if regime >= 0
+        for regime, stats in persistence_stats.items()
+        if regime >= 0
                 ],
                 key=lambda x: x[1]["avg_duration"],
                 reverse=True,
             )
 
-            for regime, stats in sorted_persistence[:10]:  # Top 10 most persistent
-                desc = archetype_descriptions.get(str(regime), f"Regime {regime}")
-                better_desc = _generate_regime_description(regime, meta, desc)
+        for regime, stats in sorted_persistence[:10]:  # Top 10 most persistent
+                desc, archetype_descriptions.get(str(regime), f"Regime {regime}")
+                better_desc, _generate_regime_description(regime, meta, desc)
                 report_lines.append(f"**Regime {regime}** ({better_desc}):")
                 report_lines.append(
                     f"  - **Average Duration**: {stats['avg_duration']:.1f} periods",
@@ -4180,45 +4180,45 @@ def _generate_simple_hmm_report(
                 report_lines.append(f"  - **Occurrences**: {stats['count']} times")
                 report_lines.append("")
 
-            # Transition probability matrix (top 3 transitions per regime)
+        # Transition probability matrix (top 3 transitions per regime)
             report_lines.append(
                 "### 📊 Transition Probability Matrix (Top 3 Transitions per Regime):",
             )
             report_lines.append("")
 
-            # For each regime, find its top 3 transitions
-            for from_regime in sorted(transition_probabilities.keys()):
-                if from_regime < 0:  # Skip noise cluster
+        # For each regime, find its top 3 transitions
+        for from_regime in sorted(transition_probabilities.keys()):
+        if from_regime < 0:  # Skip noise cluster
                     continue
 
-                # Get all transitions from this regime
+        # Get all transitions from this regime
                 regime_transitions = []
-                for to_regime, prob in transition_probabilities[from_regime].items():
-                    if (
+        for to_regime, prob in transition_probabilities[from_regime].items():
+        if (
                         to_regime >= 0 and prob > 0.01
                     ):  # Only show transitions with >1% probability
                         regime_transitions.append((to_regime, prob))
 
-                # Sort by probability and take top 3
+        # Sort by probability and take top 3
                 regime_transitions.sort(key=lambda x: x[1], reverse=True)
-                top_3_transitions = regime_transitions[:3]
+                top_3_transitions, regime_transitions[:3]
 
-                if top_3_transitions:
-                    from_desc = archetype_descriptions.get(
+        if top_3_transitions:
+                    from_desc, archetype_descriptions.get(
                         str(from_regime), f"Regime {from_regime}",
                     )
-                    from_better_desc = _generate_regime_description(
+                    from_better_desc, _generate_regime_description(
                         from_regime, meta, from_desc,
                     )
                     report_lines.append(
                         f"**From Regime {from_regime}** ({from_better_desc}):",
                     )
 
-                    for to_regime, prob in top_3_transitions:
-                        to_desc = archetype_descriptions.get(
+        for to_regime, prob in top_3_transitions:
+                        to_desc, archetype_descriptions.get(
                             str(to_regime), f"Regime {to_regime}",
                         )
-                        to_better_desc = _generate_regime_description(
+                        to_better_desc, _generate_regime_description(
                             to_regime, meta, to_desc,
                         )
                         report_lines.append(
@@ -4227,25 +4227,25 @@ def _generate_simple_hmm_report(
 
                     report_lines.append("")
 
-            # Stability analysis
+        # Stability analysis
             report_lines.append("### 🎯 Regime Stability Analysis:")
             report_lines.append("")
 
-            # Calculate stability metrics
+        # Calculate stability metrics
             stable_regimes = []
             volatile_regimes = []
 
-            for regime, stats in persistence_stats.items():
-                if regime >= 0:  # Skip noise cluster
-                    avg_duration = stats["avg_duration"]
-                    std_duration = stats["std_duration"]
+        for regime, stats in persistence_stats.items():
+        if regime >= 0:  # Skip noise cluster
+                    avg_duration, stats["avg_duration"]
+                    std_duration, stats["std_duration"]
                     cv = (
                         std_duration / avg_duration
-                        if avg_duration > 0
+        if avg_duration > 0
                         else float("inf")
                     )  # Coefficient of variation
 
-                    if (
+        if (
                         avg_duration > 20 and cv < 0.5
                     ):  # High average duration, low variability
                         stable_regimes.append((regime, avg_duration, cv))
@@ -4254,25 +4254,25 @@ def _generate_simple_hmm_report(
                     ):  # Low average duration or high variability
                         volatile_regimes.append((regime, avg_duration, cv))
 
-            # Sort by stability
+        # Sort by stability
             stable_regimes.sort(key=lambda x: x[1], reverse=True)
             volatile_regimes.sort(key=lambda x: x[2], reverse=True)
 
-            if stable_regimes:
+        if stable_regimes:
                 report_lines.append("**Most Stable Regimes:**")
-                for regime, avg_duration, cv in stable_regimes[:5]:
-                    desc = archetype_descriptions.get(str(regime), f"Regime {regime}")
-                    better_desc = _generate_regime_description(regime, meta, desc)
+        for regime, avg_duration, cv in stable_regimes[:5]:
+                    desc, archetype_descriptions.get(str(regime), f"Regime {regime}")
+                    better_desc, _generate_regime_description(regime, meta, desc)
                     report_lines.append(
                         f"- **Regime {regime}**: {avg_duration:.1f} avg periods, {cv:.2f} CV ({better_desc})",
                     )
                 report_lines.append("")
 
-            if volatile_regimes:
+        if volatile_regimes:
                 report_lines.append("**Most Volatile Regimes:**")
-                for regime, avg_duration, cv in volatile_regimes[:5]:
-                    desc = archetype_descriptions.get(str(regime), f"Regime {regime}")
-                    better_desc = _generate_regime_description(regime, meta, desc)
+        for regime, avg_duration, cv in volatile_regimes[:5]:
+                    desc, archetype_descriptions.get(str(regime), f"Regime {regime}")
+                    better_desc, _generate_regime_description(regime, meta, desc)
                     report_lines.append(
                         f"- **Regime {regime}**: {avg_duration:.1f} avg periods, {cv:.2f} CV ({better_desc})",
                     )
@@ -4283,29 +4283,29 @@ def _generate_simple_hmm_report(
         report_lines.append("")
 
         if "composite_cluster_id" in cluster_df.columns:
-            # Load block states data for detailed analysis
-            block_states_path = os.path.join(
+        # Load block states data for detailed analysis
+            block_states_path, os.path.join(
                 data_dir, f"{exchange}_{symbol}_hmm_block_states_{timeframe}.parquet",
             )
-            block_states_df = None
-            if os.path.exists(block_states_path):
-                try:
-                    block_states_df = pd.read_parquet(block_states_path)
-                except Exception as e:
+            block_states_df, None
+        if os.path.exists(block_states_path):
+        try:
+                    block_states_df, pd.read_parquet(block_states_path)
+        except Exception as e:
                     logger.warning(
                         f"⚠️ Could not load block states for regime analysis: {e}",
                     )
 
-            # Analyze each regime in detail
-            for regime_id in sorted(cluster_counts.index):
-                if regime_id < 0:  # Skip noise cluster
+        # Analyze each regime in detail
+        for regime_id in sorted(cluster_counts.index):
+        if regime_id < 0:  # Skip noise cluster
                     continue
 
-                regime_count = cluster_counts[regime_id]
+                regime_count, cluster_counts[regime_id]
                 regime_percentage = (
                     (regime_count / total_obs * 100) if total_obs > 0 else 0
                 )
-                archetype_desc = archetype_descriptions.get(
+                archetype_desc, archetype_descriptions.get(
                     str(regime_id), f"Regime {regime_id}",
                 )
 
@@ -4316,9 +4316,9 @@ def _generate_simple_hmm_report(
                     f"- **Frequency**: {regime_count:,} observations ({regime_percentage:.2f}% of total)",
                 )
 
-                # Add persistence info if available
-                if "persistence_stats" in locals() and regime_id in persistence_stats:
-                    stats = persistence_stats[regime_id]
+        # Add persistence info if available
+        if "persistence_stats" in locals() and regime_id in persistence_stats:
+                    stats, persistence_stats[regime_id]
                     report_lines.append(
                         f"- **Average Duration**: {stats['avg_duration']:.1f} periods",
                     )
@@ -4330,24 +4330,24 @@ def _generate_simple_hmm_report(
                     )
                     report_lines.append(f"- **Occurrences**: {stats['count']} times")
 
-                # Add transition info if available
-                if (
+        # Add transition info if available
+        if (
                     "transition_probabilities" in locals()
                     and regime_id in transition_probabilities
                 ):
-                    outgoing_transitions = transition_probabilities[regime_id]
-                    # Find most likely transitions from this regime
+                    outgoing_transitions, transition_probabilities[regime_id]
+        # Find most likely transitions from this regime
                     likely_transitions = [
                         (to_regime, prob)
-                        for to_regime, prob in outgoing_transitions.items()
-                        if prob > 0.05
+        for to_regime, prob in outgoing_transitions.items()
+        if prob > 0.05
                     ]
                     likely_transitions.sort(key=lambda x: x[1], reverse=True)
 
-                    if likely_transitions:
+        if likely_transitions:
                         report_lines.append("- **Most Likely Transitions**:")
-                        for to_regime, prob in likely_transitions[:3]:  # Top 3
-                            to_desc = archetype_descriptions.get(
+        for to_regime, prob in likely_transitions[:3]:  # Top 3
+                            to_desc, archetype_descriptions.get(
                                 str(to_regime), f"Regime {to_regime}",
                             )
                             report_lines.append(
@@ -4356,27 +4356,27 @@ def _generate_simple_hmm_report(
 
                 report_lines.append("")
 
-                # Detailed block state analysis if block states data is available
-                if block_states_df is not None:
-                    # Get regime-specific data
-                    regime_mask = cluster_df["composite_cluster_id"] == regime_id
-                    if regime_mask.sum() > 0:
-                        regime_block_states = block_states_df[regime_mask]
+        # Detailed block state analysis if block states data is available
+        if block_states_df is not None:
+        # Get regime-specific data
+                    regime_mask, cluster_df["composite_cluster_id"] == regime_id
+        if regime_mask.sum() > 0:
+                        regime_block_states, block_states_df[regime_mask]
 
                         report_lines.append("**Block State Characteristics:**")
 
-                        # Analyze each block's state distribution
-                        for block in blocks:
-                            block_name = block["name"]
-                            state_col = f"{block_name}_state_id"
+        # Analyze each block's state distribution
+        for block in blocks:
+                            block_name, block["name"]
+                            state_col, f"{block_name}_state_id"
 
-                            if state_col in regime_block_states.columns:
-                                state_counts = regime_block_states[
+        if state_col in regime_block_states.columns:
+                                state_counts, regime_block_states[
                                     state_col
                                 ].value_counts()
                                 dominant_state = (
                                     state_counts.index[0]
-                                    if len(state_counts) > 0
+        if len(state_counts) > 0
                                     else None
                                 )
                                 dominant_percentage = (
@@ -4385,19 +4385,19 @@ def _generate_simple_hmm_report(
                                         / len(regime_block_states)
                                         * 100
                                     )
-                                    if len(regime_block_states) > 0
+        if len(regime_block_states) > 0
                                     else 0
                                 )
 
-                                # Get state name if available
-                                state_names = meta.get("state_names", {}).get(
+        # Get state name if available
+                                state_names, meta.get("state_names", {}).get(
                                     block_name, {},
                                 )
                                 dominant_state_name = (
                                     state_names.get(
                                         dominant_state, f"State {dominant_state}",
                                     )
-                                    if dominant_state is not None
+        if dominant_state is not None
                                     else "Unknown"
                                 )
 
@@ -4405,13 +4405,13 @@ def _generate_simple_hmm_report(
                                     f"- **{block_name.title()}**: {dominant_state_name} ({dominant_percentage:.1f}% dominant)",
                                 )
 
-                                # Show state distribution if there's significant diversity
-                                if len(state_counts) > 1 and dominant_percentage < 80:
+        # Show state distribution if there's significant diversity
+        if len(state_counts) > 1 and dominant_percentage < 80:
                                     other_states = []
-                                    for state_id, count in state_counts.iloc[
+        for state_id, count in state_counts.iloc[
                                         1:3
                                     ].items():  # Show top 3
-                                        state_name = state_names.get(
+                                        state_name, state_names.get(
                                             state_id, f"State {state_id}",
                                         )
                                         percentage = (
@@ -4420,30 +4420,30 @@ def _generate_simple_hmm_report(
                                         other_states.append(
                                             f"{state_name} ({percentage:.1f}%)",
                                         )
-                                    if other_states:
+        if other_states:
                                         report_lines.append(
                                             f"  - Also includes: {', '.join(other_states)}",
                                         )
 
                         report_lines.append("")
 
-                # Market condition interpretation
+        # Market condition interpretation
                 report_lines.append("**Market Condition Interpretation:**")
 
-                # Analyze regime characteristics based on better description
-                better_desc_lower = better_desc.lower()
+        # Analyze regime characteristics based on better description
+                better_desc_lower, better_desc.lower()
 
-                # Momentum analysis
-                if any(
+        # Momentum analysis
+        if any(
                     word in better_desc_lower
-                    for word in ["strong uptrend", "moderate uptrend"]
+        for word in ["strong uptrend", "moderate uptrend"]
                 ):
                     report_lines.append(
                         "- **Momentum**: Bullish market conditions with upward price pressure",
                     )
                 elif any(
                     word in better_desc_lower
-                    for word in ["strong downtrend", "moderate downtrend"]
+        for word in ["strong downtrend", "moderate downtrend"]
                 ):
                     report_lines.append(
                         "- **Momentum**: Bearish market conditions with downward price pressure",
@@ -4453,49 +4453,49 @@ def _generate_simple_hmm_report(
                         "- **Momentum**: Neutral market conditions with balanced price action",
                     )
 
-                # Volatility analysis
-                if any(
+        # Volatility analysis
+        if any(
                     word in better_desc_lower
-                    for word in ["very high volatility", "high volatility"]
+        for word in ["very high volatility", "high volatility"]
                 ):
                     report_lines.append(
                         "- **Volatility**: High volatility environment with large price swings",
                     )
                 elif any(
                     word in better_desc_lower
-                    for word in ["very low volatility", "low volatility"]
+        for word in ["very low volatility", "low volatility"]
                 ):
                     report_lines.append(
                         "- **Volatility**: Low volatility environment with stable price action",
                     )
 
-                # Liquidity analysis
-                if any(
+        # Liquidity analysis
+        if any(
                     word in better_desc_lower
-                    for word in ["very high liquidity", "high liquidity"]
+        for word in ["very high liquidity", "high liquidity"]
                 ):
                     report_lines.append(
                         "- **Liquidity**: High liquidity environment with good trading volume",
                     )
                 elif any(
                     word in better_desc_lower
-                    for word in ["very low liquidity", "low liquidity"]
+        for word in ["very low liquidity", "low liquidity"]
                 ):
                     report_lines.append(
                         "- **Liquidity**: Low liquidity environment with limited trading volume",
                     )
 
-                # Microstructure analysis
-                if any(
+        # Microstructure analysis
+        if any(
                     word in better_desc_lower
-                    for word in ["very high spread", "high spread", "low efficiency"]
+        for word in ["very high spread", "high spread", "low efficiency"]
                 ):
                     report_lines.append(
                         "- **Microstructure**: Stressed market microstructure with potential inefficiencies",
                     )
                 elif any(
                     word in better_desc_lower
-                    for word in ["low spread", "high efficiency"]
+        for word in ["low spread", "high efficiency"]
                 ):
                     report_lines.append(
                         "- **Microstructure**: Tight market microstructure with efficient price discovery",
@@ -4517,24 +4517,24 @@ def _generate_simple_hmm_report(
         report_lines.append("")
 
         if "composite_cluster_id" in cluster_df.columns:
-            # Analyze regime distribution by market conditions
+        # Analyze regime distribution by market conditions
             dominant_regime = (
                 cluster_counts.index[0] if len(cluster_counts) > 0 else None
             )
             dominant_percentage = (
                 (cluster_counts.iloc[0] / total_obs * 100)
-                if len(cluster_counts) > 0 and total_obs > 0
+        if len(cluster_counts) > 0 and total_obs > 0
                 else 0
             )
 
             report_lines.append("**Current Market Regime Distribution:**")
             report_lines.append("")
 
-            if dominant_regime is not None:
-                desc = archetype_descriptions.get(
+        if dominant_regime is not None:
+                desc, archetype_descriptions.get(
                     str(dominant_regime), f"Regime {dominant_regime}",
                 )
-                better_desc = _generate_regime_description(dominant_regime, meta, desc)
+                better_desc, _generate_regime_description(dominant_regime, meta, desc)
                 report_lines.append(
                     f"- **Dominant Regime**: Regime {dominant_regime} ({dominant_percentage:.1f}% of time)",
                 )
@@ -4544,7 +4544,7 @@ def _generate_simple_hmm_report(
             report_lines.append("**Market Condition Insights:**")
             report_lines.append("")
 
-            if dominant_percentage > 40:
+        if dominant_percentage > 40:
                 report_lines.append(
                     "- **High Concentration**: Dominant regime controls >40% of market time",
                 )
@@ -4582,27 +4582,27 @@ def _generate_simple_hmm_report(
             report_lines.append("## 📈 Trend Distribution Analysis")
             report_lines.append("")
 
-            # Analyze trend distribution from regime descriptions
-            uptrend_count = 0
-            downtrend_count = 0
-            sideways_count = 0
+        # Analyze trend distribution from regime descriptions
+            uptrend_count, 0
+            downtrend_count, 0
+            sideways_count, 0
 
-            for regime_id, count in cluster_counts.items():
-                if regime_id >= 0:  # Skip noise cluster
-                    desc = archetype_descriptions.get(str(regime_id), f"Regime {regime_id}")
-                    better_desc = _generate_regime_description(regime_id, meta, desc)
-                    better_desc_lower = better_desc.lower()
+        for regime_id, count in cluster_counts.items():
+        if regime_id >= 0:  # Skip noise cluster
+                    desc, archetype_descriptions.get(str(regime_id), f"Regime {regime_id}")
+                    better_desc, _generate_regime_description(regime_id, meta, desc)
+                    better_desc_lower, better_desc.lower()
 
-                    if any(word in better_desc_lower for word in ["strong uptrend", "moderate uptrend"]):
+        if any(word in better_desc_lower for word in ["strong uptrend", "moderate uptrend"]):
                         uptrend_count += count
                     elif any(word in better_desc_lower for word in ["strong downtrend", "moderate downtrend"]):
                         downtrend_count += count
                     elif "sideways" in better_desc_lower or "neutral" in better_desc_lower:
                         sideways_count += count
 
-            total_valid_obs = uptrend_count + downtrend_count + sideways_count
+            total_valid_obs, uptrend_count + downtrend_count + sideways_count
 
-            if total_valid_obs > 0:
+        if total_valid_obs > 0:
                 report_lines.append("**Overall Trend Distribution:**")
                 report_lines.append(f"- **Sideways/Neutral**: {sideways_count/total_valid_obs*100:.1f}% of observations ({sideways_count:,} out of {total_valid_obs:,})")
                 report_lines.append(f"- **Downtrend**: {downtrend_count/total_valid_obs*100:.1f}% of observations ({downtrend_count:,} out of {total_valid_obs:,})")
@@ -4789,7 +4789,7 @@ def _generate_comprehensive_metrics_report(
     # Cluster Size Distribution
     report_lines.append("\nCluster Size Distribution:")
     for cluster_id, size in sorted(metrics.cluster_sizes.items()):
-        frequency = metrics.cluster_frequencies.get(cluster_id, 0) * 100
+        frequency, metrics.cluster_frequencies.get(cluster_id, 0) * 100
         report_lines.append(
             f"  Cluster {cluster_id}: {size} observations ({frequency:.2f}%)",
         )
@@ -4830,14 +4830,14 @@ def _generate_comprehensive_metrics_report(
     report_lines.append("-" * 40)
     for cluster_id, block_repr in metrics.block_representation.items():
         report_lines.append(f"\nCluster {cluster_id}:")
-        dominant_block = metrics.block_dominance.get(cluster_id, "Unknown")
-        balance = metrics.block_balance.get(cluster_id, 0.0)
+        dominant_block, metrics.block_dominance.get(cluster_id, "Unknown")
+        balance, metrics.block_balance.get(cluster_id, 0.0)
         report_lines.append(f"  Dominant Block: {dominant_block}")
         report_lines.append(f"  Block Balance: {balance:.4f}")
 
         for block_name, block_info in block_repr.items():
-            dominant_state = block_info.get("dominant_state", "Unknown")
-            entropy = block_info.get("entropy", 0.0)
+            dominant_state, block_info.get("dominant_state", "Unknown")
+            entropy, block_info.get("entropy", 0.0)
             report_lines.append(
                 f"    {block_name}: {dominant_state} (entropy: {entropy:.4f})",
             )
@@ -4846,7 +4846,7 @@ def _generate_comprehensive_metrics_report(
     report_lines.append("\n📈 MARKET CONDITION ANALYSIS")
     report_lines.append("-" * 40)
     for cluster_id, conditions in metrics.market_condition_distribution.items():
-        stability = metrics.regime_stability.get(cluster_id, 0.0)
+        stability, metrics.regime_stability.get(cluster_id, 0.0)
         report_lines.append(f"\nCluster {cluster_id} (stability: {stability:.4f}):")
         for condition, value in conditions.items():
             report_lines.append(f"  {condition}: {value}")
@@ -4859,9 +4859,9 @@ def _generate_comprehensive_metrics_report(
             report_lines.append(
                 f"\nCluster {cluster_id} - Missing Features ({len(missing_features)}):",
             )
-            for feature in missing_features[:10]:  # Show first 10
+        for feature in missing_features[:10]:  # Show first 10
                 report_lines.append(f"  - {feature}")
-            if len(missing_features) > 10:
+        if len(missing_features) > 10:
                 report_lines.append(f"  ... and {len(missing_features) - 10} more")
 
     # Anomaly Detection
@@ -4906,25 +4906,25 @@ async def _calculate_and_integrate_hmm_features(
     This ensures HMM features are calculated when the HMM model is properly trained.
     """
     try:
-        logger = system_logger.getChild("HMMFeatureIntegration")
+        logger, system_logger.getChild("HMMFeatureIntegration")
         logger.info(f"🔧 Calculating HMM features for {exchange}_{symbol}_{timeframe}")
 
         # Load the HMM results that were just generated
-        clusters_file = hmm_output_dir / f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet"
-        intensity_file = hmm_output_dir / f"{exchange}_{symbol}_hmm_composite_intensity_{timeframe}.parquet"
+        clusters_file, hmm_output_dir / f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet"
+        intensity_file, hmm_output_dir / f"{exchange}_{symbol}_hmm_composite_intensity_{timeframe}.parquet"
 
         if not clusters_file.exists():
             logger.warning("⚠️ HMM clusters file not found - skipping HMM feature integration")
             return
 
         # Load HMM results
-        clusters_df = pd.read_parquet(clusters_file)
-        intensity_df = None
+        clusters_df, pd.read_parquet(clusters_file)
+        intensity_df, None
         if intensity_file.exists():
-            intensity_df = pd.read_parquet(intensity_file)
+            intensity_df, pd.read_parquet(intensity_file)
 
         # Load step2 features to integrate with
-        step2_data_dir = Path(data_dir)
+        step2_data_dir, Path(data_dir)
         step2_files = [
             step2_data_dir / f"{exchange}_{symbol}_features_train.parquet",
             step2_data_dir / f"{exchange}_{symbol}_features_validation.parquet",
@@ -4938,35 +4938,35 @@ async def _calculate_and_integrate_hmm_features(
 
         # Integrate HMM features into each step2 split
         for split_file in step2_files:
-            split_name = split_file.stem.split("_")[-1]  # train, validation, or test
+            split_name, split_file.stem.split("_")[-1]  # train, validation, or test
 
             logger.info(f"🔧 Integrating HMM features into {split_name} split")
 
-            # Load step2 features
-            step2_df = pd.read_parquet(split_file)
+        # Load step2 features
+            step2_df, pd.read_parquet(split_file)
 
-            # Align HMM features with step2 features
-            aligned_clusters = clusters_df.reindex(step2_df.index)
-            aligned_intensity = intensity_df.reindex(step2_df.index) if intensity_df is not None else None
+        # Align HMM features with step2 features
+            aligned_clusters, clusters_df.reindex(step2_df.index)
+            aligned_intensity, intensity_df.reindex(step2_df.index) if intensity_df is not None else None
 
-            # Add HMM features
+        # Add HMM features
             hmm_features_added = []
 
-            # Add cluster features
-            for col in aligned_clusters.columns:
-                if col in ["combination_id", "composite_cluster_id"]:
-                    feature_name = f"hmm_{col}"
+        # Add cluster features
+        for col in aligned_clusters.columns:
+        if col in ["combination_id", "composite_cluster_id"]:
+                    feature_name, f"hmm_{col}"
                     step2_df[feature_name] = aligned_clusters[col].fillna(-1.0)
                     hmm_features_added.append(feature_name)
 
-            # Add intensity features
-            if aligned_intensity is not None:
-                for col in aligned_intensity.columns:
-                    if col.startswith("intensity_cluster_"):
+        # Add intensity features
+        if aligned_intensity is not None:
+        for col in aligned_intensity.columns:
+        if col.startswith("intensity_cluster_"):
                         step2_df[col] = aligned_intensity[col].fillna(0.0)
                         hmm_features_added.append(col)
 
-            # Save updated features
+        # Save updated features
             step2_df.to_parquet(split_file)
 
             logger.info(f"✅ Added {len(hmm_features_added)} HMM features to {split_name} split")
@@ -4986,8 +4986,8 @@ async def run_step_enhanced(
     exchange: str = "BINANCE",
     data_dir: str = "data/training",
     timeframe: str = "1m",
-    lookback_days: int | None = None,
-    force_rerun: bool = False,
+    lookback_days: int | None, None,
+    force_rerun: bool, False,
     **kwargs: Any,
 ) -> bool:
     """Enhanced Step 3: HMM Regime Discovery with comprehensive error handling and validation.
@@ -5006,36 +5006,36 @@ async def run_step_enhanced(
 
     """
     try:
-        logger = system_logger.getChild("Step3.HMMRegimeDiscovery")
+        logger, system_logger.getChild("Step3.HMMRegimeDiscovery")
         logger.info("🚀 Step 3: HMM Regime Discovery — Critical for pipeline success")
 
         # Validate inputs
         if not symbol or not exchange or not data_dir:
             logger.error("❌ Missing required parameters: symbol, exchange, or data_dir")
-            return False
+        return False
 
         # Check if results already exist and force_rerun is False
-        output_dir = Path(data_dir) / "hmm_regimes"
+        output_dir, Path(data_dir) / "hmm_regimes"
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        clusters_file = output_dir / f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet"
-        meta_file = output_dir / f"{exchange}_{symbol}_hmm_composite_meta_{timeframe}.json"
+        clusters_file, output_dir / f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet"
+        meta_file, output_dir / f"{exchange}_{symbol}_hmm_composite_meta_{timeframe}.json"
 
         if clusters_file.exists() and meta_file.exists() and not force_rerun:
             logger.info(f"✅ HMM regime discovery results already exist for {exchange}_{symbol}_{timeframe}")
             logger.info(f"   Clusters file: {clusters_file}")
             logger.info(f"   Meta file: {meta_file}")
-            return True
+        return True
 
         # Load data using data sharing manager for efficiency
         from src.training.data_sharing_manager import get_data_sharing_manager
-        data_sharing_manager = get_data_sharing_manager({})
+        data_sharing_manager, get_data_sharing_manager({})
 
         # Load unified data with proper lookback
-        actual_lookback_days = lookback_days or 180  # Default to 180 days
+        actual_lookback_days, lookback_days or 180  # Default to 180 days
         logger.info(f"📊 Loading data with {actual_lookback_days} days lookback")
 
-        df = await data_sharing_manager.get_unified_data(
+        df, await data_sharing_manager.get_unified_data(
             symbol=symbol,
             exchange=exchange,
             timeframe=timeframe,
@@ -5045,7 +5045,7 @@ async def run_step_enhanced(
 
         if df is None or df.empty:
             logger.error(f"❌ No data found for {exchange}_{symbol}_{timeframe}")
-            return False
+        return False
 
         logger.info(f"📊 Loaded {len(df)} rows of data for HMM regime discovery")
 
@@ -5053,17 +5053,17 @@ async def run_step_enhanced(
         price_cols = ["open", "high", "low", "close", "volume"]
         if not all(col in df.columns for col in price_cols):
             logger.error(f"❌ Missing required OHLCV columns: {price_cols}")
-            return False
+        return False
 
-        price_df = df[price_cols].copy()
+        price_df, df[price_cols].copy()
 
         # Create advanced features for HMM regime discovery
         logger.info("🔧 Creating advanced features for HMM regime discovery")
-        features_df = create_basic_features(price_df)
+        features_df, create_basic_features(price_df)
 
         if features_df.empty:
             logger.error("❌ Failed to create features for HMM regime discovery")
-            return False
+        return False
 
         logger.info(f"✅ Created {len(features_df.columns)} features for HMM regime discovery")
 
@@ -5073,45 +5073,45 @@ async def run_step_enhanced(
         for tf in timeframes_to_process:
             logger.info(f"🔄 Processing HMM regime discovery for {tf}")
 
-            # Create block features for HMM regime discovery
+        # Create block features for HMM regime discovery
             block_features = {}
-            for blk in BLOCKS:
-                X_blk = _select_block_features(features_df, blk.name, blk.max_features)
-                if not X_blk.empty:
+        for blk in BLOCKS:
+                X_blk, _select_block_features(features_df, blk.name, blk.max_features)
+        if not X_blk.empty:
                     block_features[blk.name] = X_blk
                     logger.info(f"   ✅ Block '{blk.name}': {X_blk.shape}")
                 else:
                     logger.warning(f"   ⚠️ Block '{blk.name}': no features available")
 
-            if not block_features:
+        if not block_features:
                 logger.error(f"❌ No block features available for {tf}")
                 continue
 
-            # Process blocks and create HMM models
+        # Process blocks and create HMM models
             block_models = {}
             block_scalers = {}
             block_states = {}
             block_posteriors = {}
 
-            for blk_name, X_blk in block_features.items():
+        for blk_name, X_blk in block_features.items():
                 logger.info(f"🎯 Training HMM for block '{blk_name}' with {blk.n_states} states")
 
-                # Train HMM model
-                model, scaler = _fit_block_hmm_robust(X_blk, blk.n_states, blk_name)
-                if model is None or scaler is None:
+        # Train HMM model
+                model, scaler, _fit_block_hmm_robust(X_blk, blk.n_states, blk_name)
+        if model is None or scaler is None:
                     logger.error(f"❌ Failed to train HMM for block '{blk_name}'")
                     continue
 
-                # Get posteriors
-                gamma = _posteriors(model, X_blk.values)
-                if len(gamma) == 0:
+        # Get posteriors
+                gamma, _posteriors(model, X_blk.values)
+        if len(gamma) == 0:
                     logger.error(f"❌ Failed to get posteriors for block '{blk_name}'")
                     continue
 
-                # Get state predictions
-                states = model.predict(X_blk.values)
+        # Get state predictions
+                states, model.predict(X_blk.values)
 
-                # Store results
+        # Store results
                 block_models[blk_name] = model
                 block_scalers[blk_name] = scaler
                 block_states[blk_name] = states
@@ -5119,54 +5119,54 @@ async def run_step_enhanced(
 
                 logger.info(f"✅ Block '{blk_name}': {len(np.unique(states))} unique states")
 
-            if not block_states:
+        if not block_states:
                 logger.error(f"❌ No HMM models trained successfully for {tf}")
                 continue
 
-            # Build combination profiles and composite clusters
+        # Build combination profiles and composite clusters
             logger.info("🔧 Building combination profiles and composite clusters")
-            combo_keys, profile_df = _build_combination_profiles(block_states, block_posteriors)
+            combo_keys, profile_df, _build_combination_profiles(block_states, block_posteriors)
 
-            if profile_df.empty:
+        if profile_df.empty:
                 logger.error(f"❌ Failed to build combination profiles for {tf}")
                 continue
 
-            # Cluster combinations
-            composite_clusters = _cluster_combinations(profile_df, min_cluster_size=5)
+        # Cluster combinations
+            composite_clusters, _cluster_combinations(profile_df, min_cluster_size=5)
 
-            if len(composite_clusters) == 0:
+        if len(composite_clusters) == 0:
                 logger.error(f"❌ Failed to create composite clusters for {tf}")
                 continue
 
-            # Save results
+        # Save results
             logger.info(f"💾 Saving HMM regime discovery results for {tf}")
 
-            # Save block states
+        # Save block states
             block_cols = {}
-            for blk_name, states in block_states.items():
+        for blk_name, states in block_states.items():
                 block_cols[f"{blk_name}_state_id"] = states
-                gamma = block_posteriors[blk_name]
-                for i in range(gamma.shape[1]):
+                gamma, block_posteriors[blk_name]
+        for i in range(gamma.shape[1]):
                     block_cols[f"{blk_name}_p_state_{i}"] = gamma[:, i]
 
-            block_df = pd.DataFrame(block_cols, index=price_df.index)
-            block_out_path = output_dir / f"{exchange}_{symbol}_hmm_block_states_{tf}.parquet"
+            block_df, pd.DataFrame(block_cols, index=price_df.index)
+            block_out_path, output_dir / f"{exchange}_{symbol}_hmm_block_states_{tf}.parquet"
             _persist_dataframe(block_df, block_out_path)
 
-            # Save composite clusters
-            composite_df = pd.DataFrame({
+        # Save composite clusters
+            composite_df, pd.DataFrame({
                 "composite_cluster_id": composite_clusters,
                 "combination_key": combo_keys,
             }, index=price_df.index)
-            composite_out_path = output_dir / f"{exchange}_{symbol}_hmm_composite_clusters_{tf}.parquet"
+            composite_out_path, output_dir / f"{exchange}_{symbol}_hmm_composite_clusters_{tf}.parquet"
             _persist_dataframe(composite_df, composite_out_path)
 
-            # Save intensity features
-            intensity_df = pd.DataFrame(profile_df, index=combo_keys)
-            intensity_out_path = output_dir / f"{exchange}_{symbol}_hmm_composite_intensity_{tf}.parquet"
+        # Save intensity features
+            intensity_df, pd.DataFrame(profile_df, index=combo_keys)
+            intensity_out_path, output_dir / f"{exchange}_{symbol}_hmm_composite_intensity_{tf}.parquet"
             _persist_dataframe(intensity_df, intensity_out_path)
 
-            # Save metadata
+        # Save metadata
             meta_info = {
                 "symbol": symbol,
                 "exchange": exchange,
@@ -5178,7 +5178,7 @@ async def run_step_enhanced(
                 "lookback_days": actual_lookback_days,
                 "feature_count": len(features_df.columns),
             }
-            meta_out_path = output_dir / f"{exchange}_{symbol}_hmm_composite_meta_{tf}.json"
+            meta_out_path, output_dir / f"{exchange}_{symbol}_hmm_composite_meta_{tf}.json"
             _persist_json(meta_info, str(meta_out_path))
 
             logger.info(f"✅ HMM regime discovery completed for {tf}")
@@ -5193,18 +5193,18 @@ async def run_step_enhanced(
 
         # FIX: Create required data/hmm_regimes/*.parquet files for Step 4
         logger.info("🔧 Creating required data/hmm_regimes/*.parquet files for Step 4")
-        hmm_regimes_dir = Path(data_dir) / "hmm_regimes"
+        hmm_regimes_dir, Path(data_dir) / "hmm_regimes"
         hmm_regimes_dir.mkdir(exist_ok=True)
 
         # Copy composite clusters to hmm_regimes directory
         for tf in timeframes_to_process:
-            source_file = output_dir / f"{exchange}_{symbol}_hmm_composite_clusters_{tf}.parquet"
-            target_file = hmm_regimes_dir / f"{exchange}_{symbol}_hmm_composite_clusters_{tf}.parquet"
+            source_file, output_dir / f"{exchange}_{symbol}_hmm_composite_clusters_{tf}.parquet"
+            target_file, hmm_regimes_dir / f"{exchange}_{symbol}_hmm_composite_clusters_{tf}.parquet"
 
-            if source_file.exists():
+        if source_file.exists():
                 import shutil
-                # Only copy if source and target are different
-                if source_file != target_file:
+        # Only copy if source and target are different
+        if source_file != target_file:
                     shutil.copy2(source_file, target_file)
                     logger.info(f"✅ Copied {source_file} to {target_file}")
                 else:
@@ -5227,7 +5227,7 @@ async def implement_hmm_regime_discovery(
     exchange: str,
     timeframe: str,
     data_dir: str,
-    force: bool = False,
+    force: bool, False,
 ) -> bool:
     """Main implementation function for HMM regime discovery.
 
@@ -5243,37 +5243,37 @@ async def implement_hmm_regime_discovery(
 
     """
     try:
-        logger = system_logger.getChild("HMMRegimeDiscovery")
+        logger, system_logger.getChild("HMMRegimeDiscovery")
         logger.info(f"🚀 Implementing HMM regime discovery for {symbol} on {exchange}")
 
         # Check if results already exist
-        output_dir = Path(data_dir) / "hmm_regimes"
-        clusters_file = output_dir / f"{symbol}_{exchange}_{timeframe}_composite_clusters.parquet"
+        output_dir, Path(data_dir) / "hmm_regimes"
+        clusters_file, output_dir / f"{symbol}_{exchange}_{timeframe}_composite_clusters.parquet"
 
         if clusters_file.exists() and not force:
             logger.info(f"✅ HMM regime discovery results already exist for {symbol}")
-            return True
+        return True
 
         # Load unified data
         from src.training.steps.unified_data_loader import UnifiedDataLoader
-        loader = UnifiedDataLoader({})
+        loader, UnifiedDataLoader({})
 
         # Load data for the specific timeframe
-        data = await loader.load_unified_data(symbol, exchange, timeframe)
+        data, await loader.load_unified_data(symbol, exchange, timeframe)
         if data is None or data.empty:
             logger.error(f"❌ No data found for {symbol} on {exchange}")
-            return False
+        return False
 
         # Use existing HMM implementation instead of undefined class
         logger.info(f"Using existing HMM implementation for {symbol}")
 
         # Create features and run HMM regime discovery using existing functions
-        price_df = data[["open", "high", "low", "close", "volume"]].copy()
-        features_df = create_basic_features(price_df)
+        price_df, data[["open", "high", "low", "close", "volume"]].copy()
+        features_df, create_basic_features(price_df)
 
         if features_df.empty:
             logger.error(f"❌ Failed to create features for {symbol}")
-            return False
+        return False
 
         # Use the existing HMM regime discovery logic
         await run_step_enhanced(

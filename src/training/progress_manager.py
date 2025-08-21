@@ -21,13 +21,13 @@ class ProgressManager:
     """Manages progress saving and loading for training steps."""
 
     def __init__(self, symbol: str, exchange: str, data_dir: str = "data/training") -> None:
-        self.symbol = symbol
-        self.exchange = exchange
-        self.data_dir = data_dir
-        self.logger = system_logger.getChild("ProgressManager")
+        self.symbol, symbol
+        self.exchange, exchange
+        self.data_dir, data_dir
+        self.logger, system_logger.getChild("ProgressManager")
 
         # Create progress directory
-        self.progress_dir = Path(data_dir) / "progress" / f"{exchange}_{symbol}"
+        self.progress_dir, Path(data_dir) / "progress" / f"{exchange}_{symbol}"
         self.progress_dir.mkdir(parents=True, exist_ok=True)
 
         self.logger.info(f"Initialized ProgressManager for {symbol} on {exchange}")
@@ -37,7 +37,7 @@ class ProgressManager:
         self,
         step_name: str,
         step_data: dict[str, Any],
-        metadata: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None, None,
     ) -> bool:
         """Save progress for a specific step.
 
@@ -51,9 +51,9 @@ class ProgressManager:
 
         """
         try:
-            timestamp = datetime.now().isoformat()
+            timestamp, datetime.now().isoformat()
 
-            # Create step progress data
+        # Create step progress data
             progress_data = {
                 "step_name": step_name,
                 "symbol": self.symbol,
@@ -63,24 +63,24 @@ class ProgressManager:
                 "metadata": metadata or {},
             }
 
-            # Save as JSON for human readability
-            json_file = self.progress_dir / f"{step_name}.json"
-            with open(json_file, "w") as f:
+        # Save as JSON for human readability
+            json_file, self.progress_dir / f"{step_name}.json"
+        with open(json_file, "w") as f:
                 json.dump(progress_data, f, indent=2, default=str)
 
-            # Save as pickle for complex objects
-            pickle_file = self.progress_dir / f"{step_name}.pkl"
-            with open(pickle_file, "wb") as f:
+        # Save as pickle for complex objects
+            pickle_file, self.progress_dir / f"{step_name}.pkl"
+        with open(pickle_file, "wb") as f:
                 pickle.dump(progress_data, f)
 
-            self.logger.info(f"✅ Saved progress for {step_name}")
-            return True
+        self.logger.info(f"✅ Saved progress for {step_name}")
+        return True
 
         except Exception as e:
-            error_msg = f"Failed to save progress for {step_name}: {e}"
-            self.logger.exception(error_msg)
-            self.print(failed(error_msg))
-            return False
+            error_msg, f"Failed to save progress for {step_name}: {e}"
+        self.logger.exception(error_msg)
+        self.print(failed(error_msg))
+        return False
 
     def load_step_progress(self, step_name: str) -> dict[str, Any] | None:
         """Load progress for a specific step.
@@ -93,30 +93,30 @@ class ProgressManager:
 
         """
         try:
-            # Try pickle file first (for complex objects)
-            pickle_file = self.progress_dir / f"{step_name}.pkl"
-            if pickle_file.exists():
-                with open(pickle_file, "rb") as f:
-                    progress_data = pickle.load(f)
-                self.logger.info(f"✅ Loaded progress for {step_name}")
-                return progress_data
+        # Try pickle file first (for complex objects)
+            pickle_file, self.progress_dir / f"{step_name}.pkl"
+        if pickle_file.exists():
+        with open(pickle_file, "rb") as f:
+                    progress_data, pickle.load(f)
+        self.logger.info(f"✅ Loaded progress for {step_name}")
+        return progress_data
 
-            # Fallback to JSON file
-            json_file = self.progress_dir / f"{step_name}.json"
-            if json_file.exists():
-                with open(json_file) as f:
-                    progress_data = json.load(f)
-                self.logger.info(f"✅ Loaded progress for {step_name}")
-                return progress_data
+        # Fallback to JSON file
+            json_file, self.progress_dir / f"{step_name}.json"
+        if json_file.exists():
+        with open(json_file) as f:
+                    progress_data, json.load(f)
+        self.logger.info(f"✅ Loaded progress for {step_name}")
+        return progress_data
 
-            self.logger.info(f"ℹ️  No progress found for {step_name}")
-            return None
+        self.logger.info(f"ℹ️  No progress found for {step_name}")
+        return None
 
         except Exception as e:
-            error_msg = f"Failed to load progress for {step_name}: {e}"
-            self.logger.exception(error_msg)
-            self.print(failed(error_msg))
-            return None
+            error_msg, f"Failed to load progress for {step_name}: {e}"
+        self.logger.exception(error_msg)
+        self.print(failed(error_msg))
+        return None
 
     def get_latest_step(self) -> str | None:
         """Get the name of the latest completed step.
@@ -126,22 +126,22 @@ class ProgressManager:
 
         """
         try:
-            step_files = list(self.progress_dir.glob("*.pkl"))
-            if not step_files:
-                return None
+            step_files, list(self.progress_dir.glob("*.pkl"))
+        if not step_files:
+        return None
 
-            # Sort by modification time to find the latest
-            latest_file = max(step_files, key=lambda f: f.stat().st_mtime)
-            step_name = latest_file.stem  # Remove .pkl extension
+        # Sort by modification time to find the latest
+            latest_file, max(step_files, key=lambda f: f.stat().st_mtime)
+            step_name, latest_file.stem  # Remove .pkl extension
 
-            self.logger.info(f"📋 Latest completed step: {step_name}")
-            return step_name
+        self.logger.info(f"📋 Latest completed step: {step_name}")
+        return step_name
 
         except Exception as e:
-            error_msg = f"Failed to get latest step: {e}"
-            self.logger.exception(error_msg)
-            self.print(failed(error_msg))
-            return None
+            error_msg, f"Failed to get latest step: {e}"
+        self.logger.exception(error_msg)
+        self.print(failed(error_msg))
+        return None
 
     def get_all_progress(self) -> dict[str, dict[str, Any]]:
         """Get all saved progress data.
@@ -153,22 +153,22 @@ class ProgressManager:
         progress_data = {}
 
         try:
-            for pickle_file in self.progress_dir.glob("*.pkl"):
-                step_name = pickle_file.stem
-                progress = self.load_step_progress(step_name)
-                if progress:
+        for pickle_file in self.progress_dir.glob("*.pkl"):
+                step_name, pickle_file.stem
+                progress, self.load_step_progress(step_name)
+        if progress:
                     progress_data[step_name] = progress
 
-            self.logger.info(f"📋 Loaded progress for {len(progress_data)} steps")
-            return progress_data
+        self.logger.info(f"📋 Loaded progress for {len(progress_data)} steps")
+        return progress_data
 
         except Exception as e:
-            error_msg = f"Failed to get all progress: {e}"
-            self.logger.exception(error_msg)
-            self.print(failed(error_msg))
-            return {}
+            error_msg, f"Failed to get all progress: {e}"
+        self.logger.exception(error_msg)
+        self.print(failed(error_msg))
+        return {}
 
-    def clear_progress(self, step_name: str | None = None) -> bool:
+    def clear_progress(self, step_name: str | None, None) -> bool:
         """Clear progress for a specific step or all steps.
 
         Args:
@@ -179,29 +179,29 @@ class ProgressManager:
 
         """
         try:
-            if step_name:
-                # Clear specific step
+        if step_name:
+        # Clear specific step
                 files_to_remove = [
-                    self.progress_dir / f"{step_name}.pkl",
-                    self.progress_dir / f"{step_name}.json",
+        self.progress_dir / f"{step_name}.pkl",
+        self.progress_dir / f"{step_name}.json",
                 ]
-                for file_path in files_to_remove:
-                    if file_path.exists():
+        for file_path in files_to_remove:
+        if file_path.exists():
                         file_path.unlink()
-                self.logger.info(f"🗑️  Cleared progress for {step_name}")
+        self.logger.info(f"🗑️  Cleared progress for {step_name}")
             else:
-                # Clear all progress
-                for file_path in self.progress_dir.glob("*"):
+        # Clear all progress
+        for file_path in self.progress_dir.glob("*"):
                     file_path.unlink()
-                self.logger.info("🗑️  Cleared all progress")
+        self.logger.info("🗑️  Cleared all progress")
 
-            return True
+        return True
 
         except Exception as e:
-            error_msg = f"Failed to clear progress: {e}"
-            self.logger.exception(error_msg)
-            self.print(failed(error_msg))
-            return False
+            error_msg, f"Failed to clear progress: {e}"
+        self.logger.exception(error_msg)
+        self.print(failed(error_msg))
+        return False
 
     def step_exists(self, step_name: str) -> bool:
         """Check if progress exists for a specific step.
@@ -213,8 +213,8 @@ class ProgressManager:
             True if progress exists, False otherwise
 
         """
-        pickle_file = self.progress_dir / f"{step_name}.pkl"
-        json_file = self.progress_dir / f"{step_name}.json"
+        pickle_file, self.progress_dir / f"{step_name}.pkl"
+        json_file, self.progress_dir / f"{step_name}.json"
         return pickle_file.exists() or json_file.exists()
 
     def get_step_timestamp(self, step_name: str) -> str | None:
@@ -227,7 +227,7 @@ class ProgressManager:
             Timestamp string if found, None otherwise
 
         """
-        progress = self.load_step_progress(step_name)
+        progress, self.load_step_progress(step_name)
         if progress:
-            return progress.get("timestamp")
+        return progress.get("timestamp")
         return None

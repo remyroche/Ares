@@ -11,26 +11,26 @@ from src.utils.centralized_decorators import (
 
 class FeatureGenerator:
     def __init__(
-        self, custom_features: list[Callable[[pd.DataFrame], pd.DataFrame]] | None = None,
+        self, custom_features: list[Callable[[pd.DataFrame], pd.DataFrame]] | None, None,
     ) -> None:
         self.feature_functions = [
-            self.price_features,
-            self.moving_averages,
-            self.volatility_features,
-            self.volume_features,
-            self.technical_indicators,
+        self.price_features,
+        self.moving_averages,
+        self.volatility_features,
+        self.volume_features,
+        self.technical_indicators,
         ]
         if custom_features:
-            self.feature_functions.extend(custom_features)
+        self.feature_functions.extend(custom_features)
 
     @validate_call_or_runtime_types
     @guard_dataframe_nulls(mode="warn", arg_index=1)
     @with_tracing_span("FeatureGenerator.generate", log_args=False)
     def generate(self, data: pd.DataFrame) -> pd.DataFrame:
-        features = pd.DataFrame(index=data.index)
+        features, pd.DataFrame(index=data.index)
         for func in self.feature_functions:
-            feat = func(data)
-            features = features.join(feat, how="outer")
+            feat, func(data)
+            features, features.join(feat, how="outer")
         return features.fillna(0)  # Default - can be replaced by handle_missing_data
 
     def generate_labels(self, data: pd.DataFrame) -> pd.Series:
@@ -80,7 +80,7 @@ class FeatureGenerator:
     @guard_dataframe_nulls(mode="warn", arg_index=1)
     @with_tracing_span("FeatureGenerator.volume_features", log_args=False)
     def volume_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        vol_ma_5 = data["volume"].rolling(5).mean()
+        vol_ma_5, data["volume"].rolling(5).mean()
         return pd.DataFrame(
             {
                 "volume_ma_5": vol_ma_5,
@@ -101,18 +101,18 @@ class FeatureGenerator:
             index=data.index,
         )
 
-    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
-        delta = prices.diff()
+    def _calculate_rsi(self, prices: pd.Series, period: int, 14) -> pd.Series:
+        delta, prices.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        rs = gain / loss.replace(0, 1e-9)
+        rs, gain / loss.replace(0, 1e-9)
         return 100 - (100 / (1 + rs))
 
     def _calculate_macd(
-        self, prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9,
+        self, prices: pd.Series, fast: int, 12, slow: int, 26, signal: int, 9,
     ) -> pd.Series:
-        ema_fast = prices.ewm(span=fast).mean()
-        ema_slow = prices.ewm(span=slow).mean()
-        macd_line = ema_fast - ema_slow
-        signal_line = macd_line.ewm(span=signal).mean()
+        ema_fast, prices.ewm(span=fast).mean()
+        ema_slow, prices.ewm(span=slow).mean()
+        macd_line, ema_fast - ema_slow
+        signal_line, macd_line.ewm(span=signal).mean()
         return macd_line - signal_line

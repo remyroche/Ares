@@ -29,9 +29,9 @@ class RollbackPoint:
     description: str
     config_snapshot: dict[str, Any]
     pipeline_state: dict[str, Any]
-    performance_metrics: dict[str, Any] | None = None
-    optimization_results: dict[str, Any] | None = None
-    notes: str | None = None
+    performance_metrics: dict[str, Any] | None, None
+    optimization_results: dict[str, Any] | None, None
+    notes: str | None, None
 
 
 @dataclass
@@ -43,7 +43,7 @@ class RollbackOperation:
     to_point: str
     parameters_changed: list[str]
     success: bool
-    error_message: str | None = None
+    error_message: str | None, None
 
 
 class RollbackManager:
@@ -56,8 +56,8 @@ class RollbackManager:
             config: Configuration dictionary
 
         """
-        self.config = config
-        self.logger = system_logger.getChild("RollbackManager")
+        self.config, config
+        self.logger, system_logger.getChild("RollbackManager")
 
         # Rollback storage
         self.rollback_points: dict[str, RollbackPoint] = {}
@@ -81,13 +81,13 @@ class RollbackManager:
     def _initialize_storage(self) -> None:
         """Initialize rollback storage directory."""
         try:
-            rollback_dir = Path(self.storage_config["rollback_directory"])
+            rollback_dir, Path(self.storage_config["rollback_directory"])
             rollback_dir.mkdir(parents=True, exist_ok=True)
 
-            self.logger.info(f"📁 Rollback storage initialized at: {rollback_dir}")
+        self.logger.info(f"📁 Rollback storage initialized at: {rollback_dir}")
 
         except Exception:
-            self.print(initialization_error("Error initializing rollback storage: {e}"))
+        self.print(initialization_error("Error initializing rollback storage: {e}"))
 
     @handle_specific_errors(
         error_handlers={
@@ -102,9 +102,9 @@ class RollbackManager:
         self,
         description: str,
         pipeline_state: dict[str, Any],
-        performance_metrics: dict[str, Any] | None = None,
-        optimization_results: dict[str, Any] | None = None,
-        notes: str | None = None,
+        performance_metrics: dict[str, Any] | None, None,
+        optimization_results: dict[str, Any] | None, None,
+        notes: str | None, None,
     ) -> bool:
         """Create a rollback point with current configuration.
 
@@ -120,13 +120,13 @@ class RollbackManager:
 
         """
         try:
-            # Get current configuration
-            # Temporarily commented out due to syntax errors
-            # current_config = get_optuna_config()
+        # Get current configuration
+        # Temporarily commented out due to syntax errors
+        # current_config, get_optuna_config()
             current_config = {}
 
-            # Create rollback point
-            rollback_point = RollbackPoint(
+        # Create rollback point
+            rollback_point, RollbackPoint(
                 timestamp=datetime.now(),
                 description=description,
                 config_snapshot=current_config,
@@ -136,24 +136,24 @@ class RollbackManager:
                 notes=notes,
             )
 
-            # Generate unique ID
-            point_id = f"rollback_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        # Generate unique ID
+            point_id, f"rollback_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-            # Store rollback point
-            self.rollback_points[point_id] = rollback_point
+        # Store rollback point
+        self.rollback_points[point_id] = rollback_point
 
-            # Save to file
-            self._save_rollback_point(point_id, rollback_point)
+        # Save to file
+        self._save_rollback_point(point_id, rollback_point)
 
-            # Cleanup old points if needed
-            self._cleanup_old_rollback_points()
+        # Cleanup old points if needed
+        self._cleanup_old_rollback_points()
 
-            self.logger.info(f"✅ Rollback point created: {point_id} - {description}")
-            return True
+        self.logger.info(f"✅ Rollback point created: {point_id} - {description}")
+        return True
 
         except Exception:
-            self.print(error("❌ Error creating rollback point: {e}"))
-            return False
+        self.print(error("❌ Error creating rollback point: {e}"))
+        return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -173,21 +173,21 @@ class RollbackManager:
 
         """
         try:
-            rollback_dir = Path(self.storage_config["rollback_directory"])
-            point_file = rollback_dir / f"{point_id}.json"
+            rollback_dir, Path(self.storage_config["rollback_directory"])
+            point_file, rollback_dir / f"{point_id}.json"
 
-            # Convert to dictionary
-            point_data = asdict(rollback_point)
+        # Convert to dictionary
+            point_data, asdict(rollback_point)
             point_data["point_id"] = point_id
 
-            # Save to file
-            with open(point_file, "w") as f:
+        # Save to file
+        with open(point_file, "w") as f:
                 json.dump(point_data, f, indent=2, default=str)
 
-            self.logger.info(f"💾 Rollback point saved to: {point_file}")
+        self.logger.info(f"💾 Rollback point saved to: {point_file}")
 
         except Exception:
-            self.print(error("Error saving rollback point: {e}"))
+        self.print(error("Error saving rollback point: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -197,23 +197,23 @@ class RollbackManager:
     def load_rollback_points(self) -> None:
         """Load rollback points from storage."""
         try:
-            rollback_dir = Path(self.storage_config["rollback_directory"])
+            rollback_dir, Path(self.storage_config["rollback_directory"])
 
-            if not rollback_dir.exists():
-                self.logger.info("No rollback directory found, starting fresh")
+        if not rollback_dir.exists():
+        self.logger.info("No rollback directory found, starting fresh")
                 return
 
-            # Load all rollback point files
-            for point_file in rollback_dir.glob("*.json"):
-                try:
-                    with open(point_file) as f:
-                        point_data = json.load(f)
+        # Load all rollback point files
+        for point_file in rollback_dir.glob("*.json"):
+        try:
+        with open(point_file) as f:
+                        point_data, json.load(f)
 
-                    # Extract point ID from filename
-                    point_id = point_file.stem
+        # Extract point ID from filename
+                    point_id, point_file.stem
 
-                    # Convert back to RollbackPoint
-                    rollback_point = RollbackPoint(
+        # Convert back to RollbackPoint
+                    rollback_point, RollbackPoint(
                         timestamp=datetime.fromisoformat(point_data["timestamp"]),
                         description=point_data["description"],
                         config_snapshot=point_data["config_snapshot"],
@@ -223,17 +223,17 @@ class RollbackManager:
                         notes=point_data.get("notes"),
                     )
 
-                    self.rollback_points[point_id] = rollback_point
+        self.rollback_points[point_id] = rollback_point
 
-                except Exception as e:
-                    self.logger.warning(
+        except Exception as e:
+        self.logger.warning(
                         f"Error loading rollback point {point_file}: {e}",
                     )
 
-            self.logger.info(f"📂 Loaded {len(self.rollback_points)} rollback points")
+        self.logger.info(f"📂 Loaded {len(self.rollback_points)} rollback points")
 
         except Exception:
-            self.print(error("Error loading rollback points: {e}"))
+        self.print(error("Error loading rollback points: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -243,33 +243,33 @@ class RollbackManager:
     def _cleanup_old_rollback_points(self) -> None:
         """Cleanup old rollback points based on configuration."""
         try:
-            max_points = self.storage_config["max_rollback_points"]
-            self.storage_config["auto_cleanup_days"]
+            max_points, self.storage_config["max_rollback_points"]
+        self.storage_config["auto_cleanup_days"]
 
-            if len(self.rollback_points) <= max_points:
+        if len(self.rollback_points) <= max_points:
                 return
 
-            # Sort points by timestamp
-            sorted_points = sorted(
-                self.rollback_points.items(),
+        # Sort points by timestamp
+            sorted_points, sorted(
+        self.rollback_points.items(),
                 key=lambda x: x[1].timestamp,
                 reverse=True,
             )
 
-            # Keep only the most recent points
+        # Keep only the most recent points
             sorted_points[:max_points]
-            points_to_remove = sorted_points[max_points:]
+            points_to_remove, sorted_points[max_points:]
 
-            # Remove old points
-            for point_id, _ in points_to_remove:
-                self._remove_rollback_point(point_id)
+        # Remove old points
+        for point_id, _ in points_to_remove:
+        self._remove_rollback_point(point_id)
 
-            self.logger.info(
+        self.logger.info(
                 f"🧹 Cleaned up {len(points_to_remove)} old rollback points",
             )
 
         except Exception:
-            self.print(error("Error cleaning up old rollback points: {e}"))
+        self.print(error("Error cleaning up old rollback points: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -284,19 +284,19 @@ class RollbackManager:
 
         """
         try:
-            # Remove from memory
-            if point_id in self.rollback_points:
+        # Remove from memory
+        if point_id in self.rollback_points:
                 del self.rollback_points[point_id]
 
-            # Remove from file system
-            rollback_dir = Path(self.storage_config["rollback_directory"])
-            point_file = rollback_dir / f"{point_id}.json"
+        # Remove from file system
+            rollback_dir, Path(self.storage_config["rollback_directory"])
+            point_file, rollback_dir / f"{point_id}.json"
 
-            if point_file.exists():
+        if point_file.exists():
                 point_file.unlink()
 
         except Exception:
-            self.print(error("Error removing rollback point {point_id}: {e}"))
+        self.print(error("Error removing rollback point {point_id}: {e}"))
 
     @handle_specific_errors(
         error_handlers={
@@ -318,26 +318,26 @@ class RollbackManager:
 
         """
         try:
-            # Check if rollback point exists
-            if target_point_id not in self.rollback_points:
-                self.print(missing("Rollback point {target_point_id} not found"))
-                return False
+        # Check if rollback point exists
+        if target_point_id not in self.rollback_points:
+        self.print(missing("Rollback point {target_point_id} not found"))
+        return False
 
-            # Get current point ID for rollback operation
-            current_point_id = self._get_current_point_id()
+        # Get current point ID for rollback operation
+            current_point_id, self._get_current_point_id()
 
-            # Get target rollback point
-            target_point = self.rollback_points[target_point_id]
+        # Get target rollback point
+            target_point, self.rollback_points[target_point_id]
 
-            self.logger.info(f"🔄 Executing rollback to: {target_point_id}")
-            self.logger.info(f"   Description: {target_point.description}")
-            self.logger.info(f"   Timestamp: {target_point.timestamp}")
+        self.logger.info(f"🔄 Executing rollback to: {target_point_id}")
+        self.logger.info(f"   Description: {target_point.description}")
+        self.logger.info(f"   Timestamp: {target_point.timestamp}")
 
-            # Apply rollback configuration
-            success = self._apply_rollback_configuration(target_point.config_snapshot)
+        # Apply rollback configuration
+            success, self._apply_rollback_configuration(target_point.config_snapshot)
 
-            # Record rollback operation
-            rollback_operation = RollbackOperation(
+        # Record rollback operation
+            rollback_operation, RollbackOperation(
                 timestamp=datetime.now(),
                 from_point=current_point_id,
                 to_point=target_point_id,
@@ -346,24 +346,24 @@ class RollbackManager:
                 ),
                 success=success,
                 error_message=None
-                if success
+        if success
                 else "Failed to apply rollback configuration",
             )
 
-            self.rollback_history.append(rollback_operation)
+        self.rollback_history.append(rollback_operation)
 
-            if success:
-                self.logger.info(
+        if success:
+        self.logger.info(
                     f"✅ Rollback to {target_point_id} completed successfully",
                 )
             else:
-                self.print(failed("❌ Rollback to {target_point_id} failed"))
+        self.print(failed("❌ Rollback to {target_point_id} failed"))
 
-            return success
+        return success
 
         except Exception:
-            self.print(error("❌ Error executing rollback: {e}"))
-            return False
+        self.print(error("❌ Error executing rollback: {e}"))
+        return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -381,38 +381,38 @@ class RollbackManager:
 
         """
         try:
-            # This is a simplified implementation
-            # In production, you would need to carefully apply the configuration
-            # and ensure system consistency
+        # This is a simplified implementation
+        # In production, you would need to carefully apply the configuration
+        # and ensure system consistency
 
             applied_params = []
             failed_params = []
 
-            # Apply configuration parameters
-            for section_name, section_config in config_snapshot.items():
-                if hasattr(section_config, "__dataclass_fields__"):
-                    for field_name in section_config.__dict__:
-                        param_path = f"{section_name}.{field_name}"
-                        # Temporarily commented out due to syntax errors
-                        # if update_parameter_value(param_path, field_value):
-                        if True:  # Placeholder
+        # Apply configuration parameters
+        for section_name, section_config in config_snapshot.items():
+        if hasattr(section_config, "__dataclass_fields__"):
+        for field_name in section_config.__dict__:
+                        param_path, f"{section_name}.{field_name}"
+        # Temporarily commented out due to syntax errors
+        # if update_parameter_value(param_path, field_value):
+        if True:  # Placeholder
                             applied_params.append(param_path)
                         else:
                             failed_params.append(param_path)
 
-            # Log results
-            if applied_params:
-                self.logger.info(f"✅ Applied {len(applied_params)} parameters")
-            if failed_params:
-                self.logger.warning(
+        # Log results
+        if applied_params:
+        self.logger.info(f"✅ Applied {len(applied_params)} parameters")
+        if failed_params:
+        self.logger.warning(
                     f"⚠️ Failed to apply {len(failed_params)} parameters",
                 )
 
-            return len(failed_params) == 0
+        return len(failed_params) == 0
 
         except Exception:
-            self.print(error("Error applying rollback configuration: {e}"))
-            return False
+        self.print(error("Error applying rollback configuration: {e}"))
+        return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -430,27 +430,27 @@ class RollbackManager:
 
         """
         try:
-            # Temporarily commented out due to syntax errors
-            # current_config = get_optuna_config()
+        # Temporarily commented out due to syntax errors
+        # current_config, get_optuna_config()
             current_config = {}
             changed_params = []
 
-            # Compare configurations
-            for section_name, section_config in target_config.items():
-                if section_name in current_config:
-                    current_section = current_config[section_name]
-                    if hasattr(current_section, "__dataclass_fields__"):
-                        for field_name, field_value in section_config.__dict__.items():
-                            param_path = f"{section_name}.{field_name}"
-                            current_value = getattr(current_section, field_name, None)
-                            if current_value != field_value:
+        # Compare configurations
+        for section_name, section_config in target_config.items():
+        if section_name in current_config:
+                    current_section, current_config[section_name]
+        if hasattr(current_section, "__dataclass_fields__"):
+        for field_name, field_value in section_config.__dict__.items():
+                            param_path, f"{section_name}.{field_name}"
+                            current_value, getattr(current_section, field_name, None)
+        if current_value != field_value:
                                 changed_params.append(param_path)
 
-            return changed_params
+        return changed_params
 
         except Exception:
-            self.print(error("Error detecting changed parameters: {e}"))
-            return []
+        self.print(error("Error detecting changed parameters: {e}"))
+        return []
 
     def _get_current_point_id(self) -> str:
         """Get current point ID based on current configuration.
@@ -470,7 +470,7 @@ class RollbackManager:
         """
         try:
             points = {}
-            for point_id, rollback_point in self.rollback_points.items():
+        for point_id, rollback_point in self.rollback_points.items():
                 points[point_id] = {
                     "timestamp": rollback_point.timestamp.isoformat(),
                     "description": rollback_point.description,
@@ -481,11 +481,11 @@ class RollbackManager:
                     is not None,
                 }
 
-            return points
+        return points
 
         except Exception:
-            self.print(error("Error getting rollback points: {e}"))
-            return {}
+        self.print(error("Error getting rollback points: {e}"))
+        return {}
 
     def get_rollback_point_details(self, point_id: str) -> dict[str, Any] | None:
         """Get detailed information about a specific rollback point.
@@ -498,12 +498,12 @@ class RollbackManager:
 
         """
         try:
-            if point_id not in self.rollback_points:
-                return None
+        if point_id not in self.rollback_points:
+        return None
 
-            rollback_point = self.rollback_points[point_id]
+            rollback_point, self.rollback_points[point_id]
 
-            return {
+        return {
                 "point_id": point_id,
                 "timestamp": rollback_point.timestamp.isoformat(),
                 "description": rollback_point.description,
@@ -515,8 +515,8 @@ class RollbackManager:
             }
 
         except Exception:
-            self.print(error("Error getting rollback point details: {e}"))
-            return None
+        self.print(error("Error getting rollback point details: {e}"))
+        return None
 
     def get_rollback_history(self) -> list[dict[str, Any]]:
         """Get rollback operation history.
@@ -526,11 +526,11 @@ class RollbackManager:
 
         """
         try:
-            return [asdict(operation) for operation in self.rollback_history]
+        return [asdict(operation) for operation in self.rollback_history]
 
         except Exception:
-            self.print(error("Error getting rollback history: {e}"))
-            return []
+        self.print(error("Error getting rollback history: {e}"))
+        return []
 
     def delete_rollback_point(self, point_id: str) -> bool:
         """Delete a rollback point.
@@ -543,17 +543,17 @@ class RollbackManager:
 
         """
         try:
-            if point_id not in self.rollback_points:
-                self.print(missing("Rollback point {point_id} not found"))
-                return False
+        if point_id not in self.rollback_points:
+        self.print(missing("Rollback point {point_id} not found"))
+        return False
 
-            self._remove_rollback_point(point_id)
-            self.logger.info(f"✅ Rollback point {point_id} deleted successfully")
-            return True
+        self._remove_rollback_point(point_id)
+        self.logger.info(f"✅ Rollback point {point_id} deleted successfully")
+        return True
 
         except Exception:
-            self.print(error("Error deleting rollback point {point_id}: {e}"))
-            return False
+        self.print(error("Error deleting rollback point {point_id}: {e}"))
+        return False
 
     def get_rollback_summary(self) -> dict[str, Any]:
         """Get rollback manager summary.
@@ -563,20 +563,20 @@ class RollbackManager:
 
         """
         try:
-            return {
+        return {
                 "total_rollback_points": len(self.rollback_points),
                 "total_rollback_operations": len(self.rollback_history),
                 "storage_directory": self.storage_config["rollback_directory"],
                 "max_rollback_points": self.storage_config["max_rollback_points"],
                 "auto_cleanup_days": self.storage_config["auto_cleanup_days"],
                 "recent_operations": len(
-                    self.rollback_history[-10:],
+        self.rollback_history[-10:],
                 ),  # Last 10 operations
             }
 
         except Exception as e:
-            self.print(error("Error getting rollback summary: {e}"))
-            return {"error": str(e)}
+        self.print(error("Error getting rollback summary: {e}"))
+        return {"error": str(e)}
 
 
 @handle_errors(
@@ -585,7 +585,7 @@ class RollbackManager:
     context="rollback manager setup",
 )
 def setup_rollback_manager(
-    config: dict[str, Any] | None = None,
+    config: dict[str, Any] | None, None,
 ) -> RollbackManager | None:
     """Setup rollback manager.
 
@@ -600,7 +600,7 @@ def setup_rollback_manager(
         if config is None:
             config = {}
 
-        manager = RollbackManager(config)
+        manager, RollbackManager(config)
 
         # Load existing rollback points
         manager.load_rollback_points()

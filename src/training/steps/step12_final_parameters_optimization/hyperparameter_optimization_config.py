@@ -45,14 +45,14 @@ class SearchSpace:
 
     name: str = ""
     parameters: dict[str, dict[str, Any]] = field(default_factory=dict)
-    optimization_strategy: OptimizationStrategy = OptimizationStrategy.SINGLE_OBJECTIVE
-    n_trials: int = 50
-    timeout_seconds: int = 1800
-    early_stopping_patience: int = 10
+    optimization_strategy: OptimizationStrategy, OptimizationStrategy.SINGLE_OBJECTIVE
+    n_trials: int, 50
+    timeout_seconds: int, 1800
+    early_stopping_patience: int, 10
     evaluation_metrics: list[EvaluationMetric] = field(default_factory=list)
     constraints: dict[str, Any] = field(default_factory=dict)
-    warm_start: bool = True
-    parallel_trials: int = 1
+    warm_start: bool, True
+    parallel_trials: int, 1
 
 
 @dataclass
@@ -61,9 +61,9 @@ class ConfidenceThresholdsSearchSpace(SearchSpace):
 
     def __post_init__(self):
         self.name = "confidence_thresholds"
-        self.optimization_strategy = OptimizationStrategy.MULTI_OBJECTIVE
-        self.n_trials = 100
-        self.timeout_seconds = 1800
+        self.optimization_strategy, OptimizationStrategy.MULTI_OBJECTIVE
+        self.n_trials, 100
+        self.timeout_seconds, 1800
         self.evaluation_metrics = [
             EvaluationMetric.WIN_RATE,
             EvaluationMetric.AVERAGE_WIN,
@@ -145,8 +145,8 @@ class VolatilityParametersSearchSpace(SearchSpace):
 
     def __post_init__(self):
         self.name = "volatility_parameters"
-        self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
-        self.n_trials = 50
+        self.optimization_strategy, OptimizationStrategy.SINGLE_OBJECTIVE
+        self.n_trials, 50
         self.evaluation_metrics = [
             EvaluationMetric.SHARPE_RATIO,
             EvaluationMetric.VOLATILITY,
@@ -214,8 +214,8 @@ class PositionSizingSearchSpace(SearchSpace):
 
     def __post_init__(self):
         self.name = "position_sizing_parameters"
-        self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
-        self.n_trials = 60
+        self.optimization_strategy, OptimizationStrategy.SINGLE_OBJECTIVE
+        self.n_trials, 60
         self.evaluation_metrics = [
             EvaluationMetric.TOTAL_RETURN,
             EvaluationMetric.MAX_DRAWDOWN,
@@ -298,8 +298,8 @@ class RiskManagementSearchSpace(SearchSpace):
 
     def __post_init__(self):
         self.name = "risk_management_parameters"
-        self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
-        self.n_trials = 50
+        self.optimization_strategy, OptimizationStrategy.SINGLE_OBJECTIVE
+        self.n_trials, 50
         self.evaluation_metrics = [
             EvaluationMetric.MAX_DRAWDOWN,
             EvaluationMetric.VALUE_AT_RISK,
@@ -370,8 +370,8 @@ class EnsembleParametersSearchSpace(SearchSpace):
 
     def __post_init__(self):
         self.name = "ensemble_parameters"
-        self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
-        self.n_trials = 40
+        self.optimization_strategy, OptimizationStrategy.SINGLE_OBJECTIVE
+        self.n_trials, 40
         self.evaluation_metrics = [
             EvaluationMetric.WIN_RATE,
             EvaluationMetric.PROFIT_FACTOR,
@@ -432,8 +432,8 @@ class RegimeSpecificSearchSpace(SearchSpace):
 
     def __post_init__(self):
         self.name = "regime_specific_parameters"
-        self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
-        self.n_trials = 30
+        self.optimization_strategy, OptimizationStrategy.SINGLE_OBJECTIVE
+        self.n_trials, 30
         self.evaluation_metrics = [
             EvaluationMetric.SHARPE_RATIO,
             EvaluationMetric.TOTAL_RETURN,
@@ -507,8 +507,8 @@ class TimingParametersSearchSpace(SearchSpace):
 
     def __post_init__(self):
         self.name = "timing_parameters"
-        self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
-        self.n_trials = 30
+        self.optimization_strategy, OptimizationStrategy.SINGLE_OBJECTIVE
+        self.n_trials, 30
         self.evaluation_metrics = [
             EvaluationMetric.TOTAL_RETURN,
             EvaluationMetric.WIN_RATE,
@@ -595,20 +595,20 @@ class HyperparameterOptimizationConfig:
 
         # Check parameter definitions
         for param_name, param_config in search_space.parameters.items():
-            if "type" not in param_config:
+        if "type" not in param_config:
                 errors.append(f"Parameter {param_name} missing type definition")
 
-            param_type = param_config.get("type")
-            if param_type == "float":
-                if "min" not in param_config or "max" not in param_config:
+            param_type, param_config.get("type")
+        if param_type == "float":
+        if "min" not in param_config or "max" not in param_config:
                     errors.append(
                         f"Float parameter {param_name} missing min/max values",
                     )
             elif param_type == "int":
-                if "min" not in param_config or "max" not in param_config:
+        if "min" not in param_config or "max" not in param_config:
                     errors.append(f"Int parameter {param_name} missing min/max values")
             elif param_type == "categorical":
-                if "choices" not in param_config:
+        if "choices" not in param_config:
                     errors.append(f"Categorical parameter {param_name} missing choices")
 
         return errors
@@ -641,7 +641,7 @@ class HyperparameterOptimizationConfig:
 
 
 # Global configuration instance
-HYPERPARAMETER_CONFIG = HyperparameterOptimizationConfig()
+HYPERPARAMETER_CONFIG, HyperparameterOptimizationConfig()
 
 
 def get_hyperparameter_config() -> HyperparameterOptimizationConfig:
@@ -651,12 +651,12 @@ def get_hyperparameter_config() -> HyperparameterOptimizationConfig:
 
 def validate_hyperparameter_config() -> list[str]:
     """Validate the entire hyperparameter optimization configuration."""
-    config = get_hyperparameter_config()
+    config, get_hyperparameter_config()
     errors = []
 
     # Validate each search space
     for name, search_space in config.search_spaces.items():
-        space_errors = config.validate_search_space(search_space)
+        space_errors, config.validate_search_space(search_space)
         for error in space_errors:
             errors.append(f"{name}: {error}")
 
@@ -672,8 +672,8 @@ def validate_hyperparameter_config() -> list[str]:
 
 def get_optimization_plan() -> dict[str, Any]:
     """Get a detailed optimization plan."""
-    config = get_hyperparameter_config()
-    summary = config.get_optimization_summary()
+    config, get_hyperparameter_config()
+    summary, config.get_optimization_summary()
 
     return {
         "optimization_plan": {
@@ -698,10 +698,10 @@ def get_optimization_plan() -> dict[str, Any]:
 
 if __name__ == "__main__":
     # Test the configuration
-    config = get_hyperparameter_config()
+    config, get_hyperparameter_config()
 
     # Validate configuration
-    errors = validate_hyperparameter_config()
+    errors, validate_hyperparameter_config()
     if errors:
         for _error in errors:
             pass
@@ -709,7 +709,7 @@ if __name__ == "__main__":
         pass
 
     # Print optimization plan
-    plan = get_optimization_plan()
+    plan, get_optimization_plan()
 
     # Print search spaces
     for _name, _space in config.search_spaces.items():

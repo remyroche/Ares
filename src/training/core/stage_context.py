@@ -27,25 +27,25 @@ class StageContext:
 
         """
         self.config: dict[str, Any] = config
-        self.logger = system_logger.getChild("StageContext")
+        self.logger, system_logger.getChild("StageContext")
 
         # Stage context state
-        self.is_active: bool = False
+        self.is_active: bool, False
         self.context_results: dict[str, Any] = {}
         self.context_history: list[dict[str, Any]] , []
 
         # Configuration
         self.context_config: dict[str, Any] = self.config.get("stage_context", {})
-        self.context_interval: int = self.context_config.get("context_interval", 3600)
-        self.max_context_history: int = self.context_config.get(
+        self.context_interval: int, self.context_config.get("context_interval", 3600)
+        self.max_context_history: int, self.context_config.get(
             "max_context_history",
             100,
         )
-        self.enable_context_management: bool = self.context_config.get(
+        self.enable_context_management: bool, self.context_config.get(
             "enable_context_management",
             True,
         )
-        self.enable_context_validation: bool = self.context_config.get(
+        self.enable_context_validation: bool, self.context_config.get(
             "enable_context_validation",
             True,
         )
@@ -67,25 +67,25 @@ class StageContext:
 
         """
         try:
-            self.logger.info("Initializing Stage Context...")
+        self.logger.info("Initializing Stage Context...")
 
-            # Load context configuration
-            await self._load_context_configuration()
+        # Load context configuration
+        await self._load_context_configuration()
 
-            # Validate configuration
-            if not self._validate_configuration():
-                self.print(invalid("Invalid configuration for stage context"))
-                return False
+        # Validate configuration
+        if not self._validate_configuration():
+        self.print(invalid("Invalid configuration for stage context"))
+        return False
 
-            # Initialize context modules
-            await self._initialize_context_modules()
+        # Initialize context modules
+        await self._initialize_context_modules()
 
-            self.logger.info("✅ Stage Context initialization completed successfully")
-            return True
+        self.logger.info("✅ Stage Context initialization completed successfully")
+        return True
 
         except Exception:
-            self.print(failed("❌ Stage Context initialization failed: {e}"))
-            return False
+        self.print(failed("❌ Stage Context initialization failed: {e}"))
+        return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -95,28 +95,28 @@ class StageContext:
     async def _load_context_configuration(self) -> None:
         """Load context configuration."""
         try:
-            # Set default context parameters
-            self.context_config.setdefault("context_interval", 3600)
-            self.context_config.setdefault("max_context_history", 100)
-            self.context_config.setdefault("enable_context_management", True)
-            self.context_config.setdefault("enable_context_validation", True)
-            self.context_config.setdefault("enable_context_monitoring", True)
-            self.context_config.setdefault("enable_context_reporting", True)
+        # Set default context parameters
+        self.context_config.setdefault("context_interval", 3600)
+        self.context_config.setdefault("max_context_history", 100)
+        self.context_config.setdefault("enable_context_management", True)
+        self.context_config.setdefault("enable_context_validation", True)
+        self.context_config.setdefault("enable_context_monitoring", True)
+        self.context_config.setdefault("enable_context_reporting", True)
 
-            # Update configuration
-            self.context_interval = self.context_config["context_interval"]
-            self.max_context_history = self.context_config["max_context_history"]
-            self.enable_context_management = self.context_config[
+        # Update configuration
+        self.context_interval, self.context_config["context_interval"]
+        self.max_context_history, self.context_config["max_context_history"]
+        self.enable_context_management, self.context_config[
                 "enable_context_management"
             ]
-            self.enable_context_validation = self.context_config[
+        self.enable_context_validation, self.context_config[
                 "enable_context_validation"
             ]
 
-            self.logger.info("Context configuration loaded successfully")
+        self.logger.info("Context configuration loaded successfully")
 
         except Exception:
-            self.print(error("Error loading context configuration: {e}"))
+        self.print(error("Error loading context configuration: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -131,34 +131,34 @@ class StageContext:
 
         """
         try:
-            # Validate context interval
-            if self.context_interval <= 0:
-                self.print(invalid("Invalid context interval"))
-                return False
+        # Validate context interval
+        if self.context_interval <= 0:
+        self.print(invalid("Invalid context interval"))
+        return False
 
-            # Validate max context history
-            if self.max_context_history <= 0:
-                self.print(invalid("Invalid max context history"))
-                return False
+        # Validate max context history
+        if self.max_context_history <= 0:
+        self.print(invalid("Invalid max context history"))
+        return False
 
-            # Validate that at least one context type is enabled
-            if not any(
+        # Validate that at least one context type is enabled
+        if not any(
                 [
-                    self.enable_context_management,
-                    self.enable_context_validation,
-                    self.context_config.get("enable_context_monitoring", True),
-                    self.context_config.get("enable_context_reporting", True),
+        self.enable_context_management,
+        self.enable_context_validation,
+        self.context_config.get("enable_context_monitoring", True),
+        self.context_config.get("enable_context_reporting", True),
                 ],
             ):
-                self.print(error("At least one context type must be enabled"))
-                return False
+        self.print(error("At least one context type must be enabled"))
+        return False
 
-            self.logger.info("Configuration validation successful")
-            return True
+        self.logger.info("Configuration validation successful")
+        return True
 
         except Exception:
-            self.print(error("Error validating configuration: {e}"))
-            return False
+        self.print(error("Error validating configuration: {e}"))
+        return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -168,26 +168,26 @@ class StageContext:
     async def _initialize_context_modules(self) -> None:
         """Initialize context modules."""
         try:
-            # Initialize context management module
-            if self.enable_context_management:
-                await self._initialize_context_management()
+        # Initialize context management module
+        if self.enable_context_management:
+        await self._initialize_context_management()
 
-            # Initialize context validation module
-            if self.enable_context_validation:
-                await self._initialize_context_validation()
+        # Initialize context validation module
+        if self.enable_context_validation:
+        await self._initialize_context_validation()
 
-            # Initialize context monitoring module
-            if self.context_config.get("enable_context_monitoring", True):
-                await self._initialize_context_monitoring()
+        # Initialize context monitoring module
+        if self.context_config.get("enable_context_monitoring", True):
+        await self._initialize_context_monitoring()
 
-            # Initialize context reporting module
-            if self.context_config.get("enable_context_reporting", True):
-                await self._initialize_context_reporting()
+        # Initialize context reporting module
+        if self.context_config.get("enable_context_reporting", True):
+        await self._initialize_context_reporting()
 
-            self.logger.info("Context modules initialized successfully")
+        self.logger.info("Context modules initialized successfully")
 
         except Exception:
-            self.print(initialization_error("Error initializing context modules: {e}"))
+        self.print(initialization_error("Error initializing context modules: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -197,18 +197,18 @@ class StageContext:
     async def _initialize_context_management(self) -> None:
         """Initialize context management module."""
         try:
-            # Initialize context management components
-            self.context_management_components = {
+        # Initialize context management components
+        self.context_management_components = {
                 "context_creation": True,
                 "context_storage": True,
                 "context_retrieval": True,
                 "context_cleanup": True,
             }
 
-            self.logger.info("Context management module initialized")
+        self.logger.info("Context management module initialized")
 
         except Exception:
-            self.print(
+        self.print(
                 initialization_error("Error initializing context management: {e}"),
             )
 
@@ -220,18 +220,18 @@ class StageContext:
     async def _initialize_context_validation(self) -> None:
         """Initialize context validation module."""
         try:
-            # Initialize context validation components
-            self.context_validation_components = {
+        # Initialize context validation components
+        self.context_validation_components = {
                 "input_validation": True,
                 "output_validation": True,
                 "dependency_validation": True,
                 "metadata_validation": True,
             }
 
-            self.logger.info("Context validation module initialized")
+        self.logger.info("Context validation module initialized")
 
         except Exception:
-            self.print(validation_error("Error initializing context validation: {e}"))
+        self.print(validation_error("Error initializing context validation: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -241,18 +241,18 @@ class StageContext:
     async def _initialize_context_monitoring(self) -> None:
         """Initialize context monitoring module."""
         try:
-            # Initialize context monitoring components
-            self.context_monitoring_components = {
+        # Initialize context monitoring components
+        self.context_monitoring_components = {
                 "performance_monitoring": True,
                 "health_monitoring": True,
                 "error_monitoring": True,
                 "resource_monitoring": True,
             }
 
-            self.logger.info("Context monitoring module initialized")
+        self.logger.info("Context monitoring module initialized")
 
         except Exception:
-            self.print(
+        self.print(
                 initialization_error("Error initializing context monitoring: {e}"),
             )
 
@@ -264,18 +264,18 @@ class StageContext:
     async def _initialize_context_reporting(self) -> None:
         """Initialize context reporting module."""
         try:
-            # Initialize context reporting components
-            self.context_reporting_components = {
+        # Initialize context reporting components
+        self.context_reporting_components = {
                 "report_generation": True,
                 "report_formatting": True,
                 "report_distribution": True,
                 "report_archiving": True,
             }
 
-            self.logger.info("Context reporting module initialized")
+        self.logger.info("Context reporting module initialized")
 
         except Exception:
-            self.print(
+        self.print(
                 initialization_error("Error initializing context reporting: {e}"),
             )
 
@@ -299,49 +299,49 @@ class StageContext:
 
         """
         try:
-            if not self._validate_context_inputs(context_input):
-                return False
+        if not self._validate_context_inputs(context_input):
+        return False
 
-            self.is_active = True
-            self.logger.info("🔄 Starting context execution...")
+        self.is_active, True
+        self.logger.info("🔄 Starting context execution...")
 
-            # Perform context management
-            if self.enable_context_management:
-                management_results = await self._perform_context_management(
+        # Perform context management
+        if self.enable_context_management:
+                management_results, await self._perform_context_management(
                     context_input,
                 )
-                self.context_results["context_management"] = management_results
+        self.context_results["context_management"] = management_results
 
-            # Perform context validation
-            if self.enable_context_validation:
-                validation_results = await self._perform_context_validation(
+        # Perform context validation
+        if self.enable_context_validation:
+                validation_results, await self._perform_context_validation(
                     context_input,
                 )
-                self.context_results["context_validation"] = validation_results
+        self.context_results["context_validation"] = validation_results
 
-            # Perform context monitoring
-            if self.context_config.get("enable_context_monitoring", True):
-                monitoring_results = await self._perform_context_monitoring(
+        # Perform context monitoring
+        if self.context_config.get("enable_context_monitoring", True):
+                monitoring_results, await self._perform_context_monitoring(
                     context_input,
                 )
-                self.context_results["context_monitoring"] = monitoring_results
+        self.context_results["context_monitoring"] = monitoring_results
 
-            # Perform context reporting
-            if self.context_config.get("enable_context_reporting", True):
-                reporting_results = await self._perform_context_reporting(context_input)
-                self.context_results["context_reporting"] = reporting_results
+        # Perform context reporting
+        if self.context_config.get("enable_context_reporting", True):
+                reporting_results, await self._perform_context_reporting(context_input)
+        self.context_results["context_reporting"] = reporting_results
 
-            # Store context results
-            await self._store_context_results()
+        # Store context results
+        await self._store_context_results()
 
-            self.is_active = False
-            self.logger.info("✅ Context execution completed successfully")
-            return True
+        self.is_active, False
+        self.logger.info("✅ Context execution completed successfully")
+        return True
 
         except Exception:
-            self.print(error("Error executing context: {e}"))
-            self.is_active = False
-            return False
+        self.print(error("Error executing context: {e}"))
+        self.is_active, False
+        return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -359,27 +359,27 @@ class StageContext:
 
         """
         try:
-            # Check required context input fields
+        # Check required context input fields
             required_fields = ["context_type", "context_name", "timestamp"]
-            for field in required_fields:
-                if field not in context_input:
-                    self.print(missing("Missing required context input field: {field}"))
-                    return False
+        for field in required_fields:
+        if field not in context_input:
+        self.print(missing("Missing required context input field: {field}"))
+        return False
 
-            # Validate data types
-            if not isinstance(context_input["context_type"], str):
-                self.print(invalid("Invalid context type"))
-                return False
+        # Validate data types
+        if not isinstance(context_input["context_type"], str):
+        self.print(invalid("Invalid context type"))
+        return False
 
-            if not isinstance(context_input["context_name"], str):
-                self.print(invalid("Invalid context name"))
-                return False
+        if not isinstance(context_input["context_name"], str):
+        self.print(invalid("Invalid context name"))
+        return False
 
-            return True
+        return True
 
         except Exception:
-            self.print(error("Error validating context inputs: {e}"))
-            return False
+        self.print(error("Error validating context inputs: {e}"))
+        return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -402,36 +402,36 @@ class StageContext:
         try:
             results = {}
 
-            # Perform context creation
-            if self.context_management_components.get("context_creation", False):
+        # Perform context creation
+        if self.context_management_components.get("context_creation", False):
                 results["context_creation"] = self._perform_context_creation(
                     context_input,
                 )
 
-            # Perform context storage
-            if self.context_management_components.get("context_storage", False):
+        # Perform context storage
+        if self.context_management_components.get("context_storage", False):
                 results["context_storage"] = self._perform_context_storage(
                     context_input,
                 )
 
-            # Perform context retrieval
-            if self.context_management_components.get("context_retrieval", False):
+        # Perform context retrieval
+        if self.context_management_components.get("context_retrieval", False):
                 results["context_retrieval"] = self._perform_context_retrieval(
                     context_input,
                 )
 
-            # Perform context cleanup
-            if self.context_management_components.get("context_cleanup", False):
+        # Perform context cleanup
+        if self.context_management_components.get("context_cleanup", False):
                 results["context_cleanup"] = self._perform_context_cleanup(
                     context_input,
                 )
 
-            self.logger.info("Context management completed")
-            return results
+        self.logger.info("Context management completed")
+        return results
 
         except Exception:
-            self.print(error("Error performing context management: {e}"))
-            return {}
+        self.print(error("Error performing context management: {e}"))
+        return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -454,36 +454,36 @@ class StageContext:
         try:
             results = {}
 
-            # Perform input validation
-            if self.context_validation_components.get("input_validation", False):
+        # Perform input validation
+        if self.context_validation_components.get("input_validation", False):
                 results["input_validation"] = self._perform_input_validation(
                     context_input,
                 )
 
-            # Perform output validation
-            if self.context_validation_components.get("output_validation", False):
+        # Perform output validation
+        if self.context_validation_components.get("output_validation", False):
                 results["output_validation"] = self._perform_output_validation(
                     context_input,
                 )
 
-            # Perform dependency validation
-            if self.context_validation_components.get("dependency_validation", False):
+        # Perform dependency validation
+        if self.context_validation_components.get("dependency_validation", False):
                 results["dependency_validation"] = self._perform_dependency_validation(
                     context_input,
                 )
 
-            # Perform metadata validation
-            if self.context_validation_components.get("metadata_validation", False):
+        # Perform metadata validation
+        if self.context_validation_components.get("metadata_validation", False):
                 results["metadata_validation"] = self._perform_metadata_validation(
                     context_input,
                 )
 
-            self.logger.info("Context validation completed")
-            return results
+        self.logger.info("Context validation completed")
+        return results
 
         except Exception:
-            self.print(validation_error("Error performing context validation: {e}"))
-            return {}
+        self.print(validation_error("Error performing context validation: {e}"))
+        return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -506,36 +506,36 @@ class StageContext:
         try:
             results = {}
 
-            # Perform performance monitoring
-            if self.context_monitoring_components.get("performance_monitoring", False):
+        # Perform performance monitoring
+        if self.context_monitoring_components.get("performance_monitoring", False):
                 results["performance_monitoring"] = (
-                    self._perform_performance_monitoring(context_input)
+        self._perform_performance_monitoring(context_input)
                 )
 
-            # Perform health monitoring
-            if self.context_monitoring_components.get("health_monitoring", False):
+        # Perform health monitoring
+        if self.context_monitoring_components.get("health_monitoring", False):
                 results["health_monitoring"] = self._perform_health_monitoring(
                     context_input,
                 )
 
-            # Perform error monitoring
-            if self.context_monitoring_components.get("error_monitoring", False):
+        # Perform error monitoring
+        if self.context_monitoring_components.get("error_monitoring", False):
                 results["error_monitoring"] = self._perform_error_monitoring(
                     context_input,
                 )
 
-            # Perform resource monitoring
-            if self.context_monitoring_components.get("resource_monitoring", False):
+        # Perform resource monitoring
+        if self.context_monitoring_components.get("resource_monitoring", False):
                 results["resource_monitoring"] = self._perform_resource_monitoring(
                     context_input,
                 )
 
-            self.logger.info("Context monitoring completed")
-            return results
+        self.logger.info("Context monitoring completed")
+        return results
 
         except Exception:
-            self.print(error("Error performing context monitoring: {e}"))
-            return {}
+        self.print(error("Error performing context monitoring: {e}"))
+        return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -558,36 +558,36 @@ class StageContext:
         try:
             results = {}
 
-            # Perform report generation
-            if self.context_reporting_components.get("report_generation", False):
+        # Perform report generation
+        if self.context_reporting_components.get("report_generation", False):
                 results["report_generation"] = self._perform_report_generation(
                     context_input,
                 )
 
-            # Perform report formatting
-            if self.context_reporting_components.get("report_formatting", False):
+        # Perform report formatting
+        if self.context_reporting_components.get("report_formatting", False):
                 results["report_formatting"] = self._perform_report_formatting(
                     context_input,
                 )
 
-            # Perform report distribution
-            if self.context_reporting_components.get("report_distribution", False):
+        # Perform report distribution
+        if self.context_reporting_components.get("report_distribution", False):
                 results["report_distribution"] = self._perform_report_distribution(
                     context_input,
                 )
 
-            # Perform report archiving
-            if self.context_reporting_components.get("report_archiving", False):
+        # Perform report archiving
+        if self.context_reporting_components.get("report_archiving", False):
                 results["report_archiving"] = self._perform_report_archiving(
                     context_input,
                 )
 
-            self.logger.info("Context reporting completed")
-            return results
+        self.logger.info("Context reporting completed")
+        return results
 
         except Exception:
-            self.print(error("Error performing context reporting: {e}"))
-            return {}
+        self.print(error("Error performing context reporting: {e}"))
+        return {}
 
     # Context management methods
     def _perform_context_creation(
@@ -596,30 +596,30 @@ class StageContext:
     ) -> dict[str, Any]:
         """Perform context creation."""
         try:
-            # Simulate context creation
-            return {
+        # Simulate context creation
+        return {
                 "context_creation_completed": True,
                 "contexts_created": 3,
                 "creation_method": "dynamic",
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing context creation: {e}"))
-            return {}
+        self.print(error("Error performing context creation: {e}"))
+        return {}
 
     def _perform_context_storage(self, context_input: dict[str, Any]) -> dict[str, Any]:
         """Perform context storage."""
         try:
-            # Simulate context storage
-            return {
+        # Simulate context storage
+        return {
                 "context_storage_completed": True,
                 "storage_location": "/contexts/",
                 "storage_method": "compressed",
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing context storage: {e}"))
-            return {}
+        self.print(error("Error performing context storage: {e}"))
+        return {}
 
     def _perform_context_retrieval(
         self,
@@ -627,30 +627,30 @@ class StageContext:
     ) -> dict[str, Any]:
         """Perform context retrieval."""
         try:
-            # Simulate context retrieval
-            return {
+        # Simulate context retrieval
+        return {
                 "context_retrieval_completed": True,
                 "contexts_retrieved": 5,
                 "retrieval_method": "cached",
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing context retrieval: {e}"))
-            return {}
+        self.print(error("Error performing context retrieval: {e}"))
+        return {}
 
     def _perform_context_cleanup(self, context_input: dict[str, Any]) -> dict[str, Any]:
         """Perform context cleanup."""
         try:
-            # Simulate context cleanup
-            return {
+        # Simulate context cleanup
+        return {
                 "context_cleanup_completed": True,
                 "contexts_cleaned": 2,
                 "cleanup_method": "age_based",
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing context cleanup: {e}"))
-            return {}
+        self.print(error("Error performing context cleanup: {e}"))
+        return {}
 
     # Context validation methods
     def _perform_input_validation(
@@ -659,16 +659,16 @@ class StageContext:
     ) -> dict[str, Any]:
         """Perform input validation."""
         try:
-            # Simulate input validation
-            return {
+        # Simulate input validation
+        return {
                 "input_validation_completed": True,
                 "validation_score": 0.98,
                 "validation_method": "type_check",
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(validation_error("Error performing input validation: {e}"))
-            return {}
+        self.print(validation_error("Error performing input validation: {e}"))
+        return {}
 
     def _perform_output_validation(
         self,
@@ -676,16 +676,16 @@ class StageContext:
     ) -> dict[str, Any]:
         """Perform output validation."""
         try:
-            # Simulate output validation
-            return {
+        # Simulate output validation
+        return {
                 "output_validation_completed": True,
                 "validation_score": 0.96,
                 "validation_method": "quality_check",
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(validation_error("Error performing output validation: {e}"))
-            return {}
+        self.print(validation_error("Error performing output validation: {e}"))
+        return {}
 
     def _perform_dependency_validation(
         self,
@@ -693,16 +693,16 @@ class StageContext:
     ) -> dict[str, Any]:
         """Perform dependency validation."""
         try:
-            # Simulate dependency validation
-            return {
+        # Simulate dependency validation
+        return {
                 "dependency_validation_completed": True,
                 "validation_score": 0.94,
                 "validation_method": "graph_check",
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(validation_error("Error performing dependency validation: {e}"))
-            return {}
+        self.print(validation_error("Error performing dependency validation: {e}"))
+        return {}
 
     def _perform_metadata_validation(
         self,
@@ -710,16 +710,16 @@ class StageContext:
     ) -> dict[str, Any]:
         """Perform metadata validation."""
         try:
-            # Simulate metadata validation
-            return {
+        # Simulate metadata validation
+        return {
                 "metadata_validation_completed": True,
                 "metadata_score": 0.92,
                 "validation_method": "format_check",
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(validation_error("Error performing metadata validation: {e}"))
-            return {}
+        self.print(validation_error("Error performing metadata validation: {e}"))
+        return {}
 
     # Context monitoring methods
     def _perform_performance_monitoring(
@@ -728,16 +728,16 @@ class StageContext:
     ) -> dict[str, Any]:
         """Perform performance monitoring."""
         try:
-            # Simulate performance monitoring
-            return {
+        # Simulate performance monitoring
+        return {
                 "performance_monitoring_completed": True,
                 "performance_metrics": {"throughput": 100, "latency": 50},
                 "monitoring_interval": 60,
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing performance monitoring: {e}"))
-            return {}
+        self.print(error("Error performing performance monitoring: {e}"))
+        return {}
 
     def _perform_health_monitoring(
         self,
@@ -745,16 +745,16 @@ class StageContext:
     ) -> dict[str, Any]:
         """Perform health monitoring."""
         try:
-            # Simulate health monitoring
-            return {
+        # Simulate health monitoring
+        return {
                 "health_monitoring_completed": True,
                 "health_status": "healthy",
                 "health_score": 0.95,
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing health monitoring: {e}"))
-            return {}
+        self.print(error("Error performing health monitoring: {e}"))
+        return {}
 
     def _perform_error_monitoring(
         self,
@@ -762,16 +762,16 @@ class StageContext:
     ) -> dict[str, Any]:
         """Perform error monitoring."""
         try:
-            # Simulate error monitoring
-            return {
+        # Simulate error monitoring
+        return {
                 "error_monitoring_completed": True,
                 "error_count": 0,
                 "error_rate": 0.0,
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing error monitoring: {e}"))
-            return {}
+        self.print(error("Error performing error monitoring: {e}"))
+        return {}
 
     def _perform_resource_monitoring(
         self,
@@ -779,16 +779,16 @@ class StageContext:
     ) -> dict[str, Any]:
         """Perform resource monitoring."""
         try:
-            # Simulate resource monitoring
-            return {
+        # Simulate resource monitoring
+        return {
                 "resource_monitoring_completed": True,
                 "cpu_usage": 0.65,
                 "memory_usage": 0.45,
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing resource monitoring: {e}"))
-            return {}
+        self.print(error("Error performing resource monitoring: {e}"))
+        return {}
 
     # Context reporting methods
     def _perform_report_generation(
@@ -797,16 +797,16 @@ class StageContext:
     ) -> dict[str, Any]:
         """Perform report generation."""
         try:
-            # Simulate report generation
-            return {
+        # Simulate report generation
+        return {
                 "report_generation_completed": True,
                 "reports_generated": 3,
                 "generation_method": "automated",
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing report generation: {e}"))
-            return {}
+        self.print(error("Error performing report generation: {e}"))
+        return {}
 
     def _perform_report_formatting(
         self,
@@ -814,16 +814,16 @@ class StageContext:
     ) -> dict[str, Any]:
         """Perform report formatting."""
         try:
-            # Simulate report formatting
-            return {
+        # Simulate report formatting
+        return {
                 "report_formatting_completed": True,
                 "format_type": "json",
                 "formatting_time": 0.3,
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing report formatting: {e}"))
-            return {}
+        self.print(error("Error performing report formatting: {e}"))
+        return {}
 
     def _perform_report_distribution(
         self,
@@ -831,16 +831,16 @@ class StageContext:
     ) -> dict[str, Any]:
         """Perform report distribution."""
         try:
-            # Simulate report distribution
-            return {
+        # Simulate report distribution
+        return {
                 "report_distribution_completed": True,
                 "distribution_channels": ["email", "api"],
                 "distribution_time": 0.5,
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing report distribution: {e}"))
-            return {}
+        self.print(error("Error performing report distribution: {e}"))
+        return {}
 
     def _perform_report_archiving(
         self,
@@ -848,16 +848,16 @@ class StageContext:
     ) -> dict[str, Any]:
         """Perform report archiving."""
         try:
-            # Simulate report archiving
-            return {
+        # Simulate report archiving
+        return {
                 "report_archiving_completed": True,
                 "archive_location": "/reports/archive/",
                 "archiving_method": "compressed",
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing report archiving: {e}"))
-            return {}
+        self.print(error("Error performing report archiving: {e}"))
+        return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -867,27 +867,27 @@ class StageContext:
     async def _store_context_results(self) -> None:
         """Store context results."""
         try:
-            # Add timestamp
-            self.context_results["timestamp"] = datetime.now().isoformat()
+        # Add timestamp
+        self.context_results["timestamp"] = datetime.now().isoformat()
 
-            # Add to history
-            self.context_history.append(self.context_results.copy())
+        # Add to history
+        self.context_history.append(self.context_results.copy())
 
-            # Limit history size
-            if len(self.context_history) > self.max_context_history:
-                self.context_history.pop(0)
+        # Limit history size
+        if len(self.context_history) > self.max_context_history:
+        self.context_history.pop(0)
 
-            self.logger.info("Context results stored successfully")
+        self.logger.info("Context results stored successfully")
 
         except Exception:
-            self.print(error("Error storing context results: {e}"))
+        self.print(error("Error storing context results: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="context results getting",
     )
-    def get_context_results(self, context_type: str | None = None) -> dict[str, Any]:
+    def get_context_results(self, context_type: str | None, None) -> dict[str, Any]:
         """Get context results.
 
         Args:
@@ -898,20 +898,20 @@ class StageContext:
 
         """
         try:
-            if context_type:
-                return self.context_results.get(context_type, {})
-            return self.context_results.copy()
+        if context_type:
+        return self.context_results.get(context_type, {})
+        return self.context_results.copy()
 
         except Exception:
-            self.print(error("Error getting context results: {e}"))
-            return {}
+        self.print(error("Error getting context results: {e}"))
+        return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="context history getting",
     )
-    def get_context_history(self, limit: int | None = None) -> list[dict[str, Any]]:
+    def get_context_history(self, limit: int | None, None) -> list[dict[str, Any]]:
         """Get context history.
 
         Args:
@@ -922,16 +922,16 @@ class StageContext:
 
         """
         try:
-            history = self.context_history.copy()
+            history, self.context_history.copy()
 
-            if limit:
-                history = history[-limit:]
+        if limit:
+                history, history[-limit:]
 
-            return history
+        return history
 
         except Exception:
-            self.print(error("Error getting context history: {e}"))
-            return []
+        self.print(error("Error getting context history: {e}"))
+        return []
 
     def get_context_status(self) -> dict[str, Any]:
         """Get context status information.
@@ -967,23 +967,23 @@ class StageContext:
         self.logger.info("🛑 Stopping Stage Context...")
 
         try:
-            # Stop active
-            self.is_active = False
+        # Stop active
+        self.is_active, False
 
-            # Clear results
-            self.context_results.clear()
+        # Clear results
+        self.context_results.clear()
 
-            # Clear history
-            self.context_history.clear()
+        # Clear history
+        self.context_history.clear()
 
-            self.logger.info("✅ Stage Context stopped successfully")
+        self.logger.info("✅ Stage Context stopped successfully")
 
         except Exception:
-            self.print(error("Error stopping stage context: {e}"))
+        self.print(error("Error stopping stage context: {e}"))
 
 
 # Global stage context instance
-stage_context: StageContext | None = None
+stage_context: StageContext | None, None
 
 
 @handle_errors(
@@ -992,7 +992,7 @@ stage_context: StageContext | None = None
     context="stage context setup",
 )
 async def setup_stage_context(
-    config: dict[str, Any] | None = None,
+    config: dict[str, Any] | None, None,
 ) -> StageContext | None:
     """Setup global stage context.
 
@@ -1019,12 +1019,12 @@ async def setup_stage_context(
             }
 
         # Create stage context
-        stage_context = StageContext(config)
+        stage_context, StageContext(config)
 
         # Initialize stage context
-        success = await stage_context.initialize()
+        success, await stage_context.initialize()
         if success:
-            return stage_context
+        return stage_context
         return None
 
     except Exception:

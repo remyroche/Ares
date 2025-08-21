@@ -8,114 +8,114 @@ with explicit imports to avoid namespace pollution.
 try:
     from .step1_data_collection import DataCollectionStep
 except ImportError:
-    DataCollectionStep = None
+    DataCollectionStep, None
 
 # Temporarily comment out to avoid syntax errors
 # try:
 #     from .step2_feature_engineering import FeatureEngineeringStep
 # except ImportError:
-#     FeatureEngineeringStep = None
-FeatureEngineeringStep = None
+#     FeatureEngineeringStep, None
+FeatureEngineeringStep, None
 
 # Temporarily comment out all step imports to avoid syntax errors
 # try:
 #     from .step3_hmm_regime_discovery import HMMRegimeDiscoveryStep
 # except ImportError:
-#     HMMRegimeDiscoveryStep = None
+#     HMMRegimeDiscoveryStep, None
 
 # try:
 #     from .step4_processing_labeling import ProcessingLabelingStep
 # except ImportError:
-#     ProcessingLabelingStep = None
+#     ProcessingLabelingStep, None
 
 # try:
 #     from .step4_market_regime_classification import MarketRegimeClassificationStep
 # except ImportError:
-#     MarketRegimeClassificationStep = None
+#     MarketRegimeClassificationStep, None
 
 # try:
 #     from .step5_regime_data_splitting import RegimeDataSplittingStep
 # except ImportError:
-#     RegimeDataSplittingStep = None
+#     RegimeDataSplittingStep, None
 
 # try:
 #     from .step5_5_unified_regime_intelligence import UnifiedRegimeIntelligenceStep
 # except ImportError:
-#     UnifiedRegimeIntelligenceStep = None
+#     UnifiedRegimeIntelligenceStep, None
 
 # try:
 #     from .step6_hmm_based_training import HMMBasedTrainingStep
 # except ImportError:
-#     HMMBasedTrainingStep = None
+#     HMMBasedTrainingStep, None
 
 # try:
 #     from .step7_analyst_enhancement import AnalystEnhancementStep
 # except ImportError:
-#     AnalystEnhancementStep = None
+#     AnalystEnhancementStep, None
 
 # try:
 #     from .step8_tactician_labeling import TacticianLabelingStep
 # except ImportError:
-#     TacticianLabelingStep = None
+#     TacticianLabelingStep, None
 
 # try:
 #     from .step9_tactician_specialist_training import TacticianSpecialistTrainingStep
 # except ImportError:
-#     TacticianSpecialistTrainingStep = None
+#     TacticianSpecialistTrainingStep, None
 
 # try:
 #     from .step10_confidence_calibration import ConfidenceCalibrationStep
 # except ImportError:
-#     ConfidenceCalibrationStep = None
+#     ConfidenceCalibrationStep, None
 
 # try:
 #     from .step11_final_parameters_optimization import FinalParametersOptimizationStep
 # except ImportError:
-#     FinalParametersOptimizationStep = None
+#     FinalParametersOptimizationStep, None
 
 # try:
 #     from .step12_walk_forward_validation import WalkForwardValidationStep
 # except ImportError:
-#     WalkForwardValidationStep = None
+#     WalkForwardValidationStep, None
 
 # try:
 #     from .step13_monte_carlo_validation import MonteCarloValidationStep
 # except ImportError:
-#     MonteCarloValidationStep = None
+#     MonteCarloValidationStep, None
 
 # try:
 #     from .step14_ab_testing import ABTestingStep
 # except ImportError:
-#     ABTestingStep = None
+#     ABTestingStep, None
 
 # try:
 #     from .step15_saving import SavingStep
 # except ImportError:
-#     SavingStep = None
+#     SavingStep, None
 
 # Set all step classes to None temporarily
-HMMRegimeDiscoveryStep = None
-ProcessingLabelingStep = None
-MarketRegimeClassificationStep = None
-RegimeDataSplittingStep = None
-UnifiedRegimeIntelligenceStep = None
-HMMBasedTrainingStep = None
-AnalystEnhancementStep = None
-TacticianLabelingStep = None
-TacticianSpecialistTrainingStep = None
-ConfidenceCalibrationStep = None
-FinalParametersOptimizationStep = None
-WalkForwardValidationStep = None
-MonteCarloValidationStep = None
-ABTestingStep = None
-SavingStep = None
+HMMRegimeDiscoveryStep, None
+ProcessingLabelingStep, None
+MarketRegimeClassificationStep, None
+RegimeDataSplittingStep, None
+UnifiedRegimeIntelligenceStep, None
+HMMBasedTrainingStep, None
+AnalystEnhancementStep, None
+TacticianLabelingStep, None
+TacticianSpecialistTrainingStep, None
+ConfidenceCalibrationStep, None
+FinalParametersOptimizationStep, None
+WalkForwardValidationStep, None
+MonteCarloValidationStep, None
+ABTestingStep, None
+SavingStep, None
 
 # Import utility functions
 try:
     from .unified_data_loader import UnifiedDataLoader, get_unified_data_loader
 except ImportError:
-    get_unified_data_loader = None
-    UnifiedDataLoader = None
+    get_unified_data_loader, None
+    UnifiedDataLoader, None
 
 # Export all available classes
 __all__ = [

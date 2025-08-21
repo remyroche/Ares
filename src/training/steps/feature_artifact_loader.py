@@ -27,7 +27,7 @@ from src.utils.training_pipeline_decorators import (
     validate_step_prerequisites,
 )
 
-logger = system_logger.getChild("FeatureArtifactLoader")
+logger, system_logger.getChild("FeatureArtifactLoader")
 
 
 @validate_step_prerequisites(
@@ -94,7 +94,7 @@ def get_feature_artifact_paths(symbol: str, exchange: str, data_dir: str) -> dic
 
     """
     try:
-        base_name = f"{exchange}_{symbol}_features"
+        base_name, f"{exchange}_{symbol}_features"
         paths = {
             "train": f"{data_dir}/{base_name}_train.parquet",
             "validation": f"{data_dir}/{base_name}_validation.parquet",
@@ -108,7 +108,7 @@ def get_feature_artifact_paths(symbol: str, exchange: str, data_dir: str) -> dic
 
     except Exception as e:
         logger.exception(f"Failed to generate artifact paths for {exchange}_{symbol}: {e}")
-        msg = f"Artifact path generation failed: {e}"
+        msg, f"Artifact path generation failed: {e}"
         raise RuntimeError(msg)
 
 
@@ -176,25 +176,25 @@ def check_feature_artifacts_exist(symbol: str, exchange: str, data_dir: str) -> 
 
     """
     try:
-        paths = get_feature_artifact_paths(symbol, exchange, data_dir)
+        paths, get_feature_artifact_paths(symbol, exchange, data_dir)
 
         # Check if all required files exist
         required_files = ["train", "validation", "test", "metadata", "hash"]
         for file_type in required_files:
-            if not os.path.exists(paths[file_type]):
+        if not os.path.exists(paths[file_type]):
                 logger.debug(f"Missing artifact file: {paths[file_type]}")
-                return False
+        return False
 
         # Validate that the files are not empty
         for file_type in ["train", "validation", "test"]:
-            try:
-                df = pd.read_parquet(paths[file_type])
-                if df.empty:
+        try:
+                df, pd.read_parquet(paths[file_type])
+        if df.empty:
                     logger.warning(f"Empty artifact file: {paths[file_type]}")
-                    return False
-            except Exception as e:
+        return False
+        except Exception as e:
                 logger.warning(f"Failed to read artifact file {paths[file_type]}: {e}")
-                return False
+        return False
 
         logger.info(f"✅ All feature artifacts exist and are valid for {exchange}_{symbol}")
         return True
@@ -273,15 +273,15 @@ def load_feature_artifacts(symbol: str, exchange: str, data_dir: str) -> dict[st
     """
     try:
         if not check_feature_artifacts_exist(symbol, exchange, data_dir):
-            msg = f"Feature artifacts not found for {exchange}_{symbol}"
+            msg, f"Feature artifacts not found for {exchange}_{symbol}"
             raise FileNotFoundError(msg)
 
-        paths = get_feature_artifact_paths(symbol, exchange, data_dir)
+        paths, get_feature_artifact_paths(symbol, exchange, data_dir)
 
         # Load metadata for canonical feature columns
         try:
-            metadata = load_feature_metadata(symbol, exchange, data_dir)
-            canonical_columns = metadata.get("feature_columns", [])
+            metadata, load_feature_metadata(symbol, exchange, data_dir)
+            canonical_columns, metadata.get("feature_columns", [])
         except Exception as e:
             logger.warning(f"⚠️ Could not load metadata for canonical columns: {e}")
             metadata = {}
@@ -290,20 +290,20 @@ def load_feature_artifacts(symbol: str, exchange: str, data_dir: str) -> dict[st
         artifacts: dict[str, pd.DataFrame] = {}
         for split in ["train", "validation", "test"]:
             logger.info(f"Loading {split} features from {paths[split]}")
-            df = pd.read_parquet(paths[split])
+            df, pd.read_parquet(paths[split])
 
-            # Reindex to metadata columns if available to ensure split alignment
-            if canonical_columns:
-                current_cols = set(df.columns)
-                canonical_set = set(canonical_columns)
-                missing = list(canonical_set - current_cols)
-                extras = list(current_cols - canonical_set)
-                if missing or extras:
+        # Reindex to metadata columns if available to ensure split alignment
+        if canonical_columns:
+                current_cols, set(df.columns)
+                canonical_set, set(canonical_columns)
+                missing, list(canonical_set - current_cols)
+                extras, list(current_cols - canonical_set)
+        if missing or extras:
                     logger.info(
                         f"🔧 Aligning {split} features to metadata columns: missing={len(missing)}, extras={len(extras)}",
                     )
-                # Reindex and fill missing with 0.0
-                df = df.reindex(columns=canonical_columns).fillna(0.0)
+        # Reindex and fill missing with 0.0
+                df, df.reindex(columns=canonical_columns).fillna(0.0)
 
             artifacts[split] = df
             logger.info(
@@ -314,7 +314,7 @@ def load_feature_artifacts(symbol: str, exchange: str, data_dir: str) -> dict[st
 
     except Exception as e:
         logger.exception(f"Failed to load feature artifacts for {exchange}_{symbol}: {e}")
-        msg = f"Feature artifact loading failed: {e}"
+        msg, f"Feature artifact loading failed: {e}"
         raise RuntimeError(msg)
 
 
@@ -386,21 +386,21 @@ def load_feature_metadata(symbol: str, exchange: str, data_dir: str) -> dict:
 
     """
     try:
-        paths = get_feature_artifact_paths(symbol, exchange, data_dir)
+        paths, get_feature_artifact_paths(symbol, exchange, data_dir)
 
         if not os.path.exists(paths["metadata"]):
-            msg = f"Feature metadata not found for {exchange}_{symbol}"
+            msg, f"Feature metadata not found for {exchange}_{symbol}"
             raise FileNotFoundError(msg)
 
         with open(paths["metadata"]) as f:
-            metadata = json.load(f)
+            metadata, json.load(f)
 
         logger.debug(f"Loaded metadata for {exchange}_{symbol}: {list(metadata.keys())}")
         return metadata
 
     except Exception as e:
         logger.exception(f"Failed to load feature metadata for {exchange}_{symbol}: {e}")
-        msg = f"Feature metadata loading failed: {e}"
+        msg, f"Feature metadata loading failed: {e}"
         raise RuntimeError(msg)
 
 
@@ -468,8 +468,8 @@ def get_feature_columns(symbol: str, exchange: str, data_dir: str) -> list[str]:
 
     """
     try:
-        metadata = load_feature_metadata(symbol, exchange, data_dir)
-        columns = metadata.get("feature_columns", [])
+        metadata, load_feature_metadata(symbol, exchange, data_dir)
+        columns, metadata.get("feature_columns", [])
         logger.debug(f"Extracted {len(columns)} feature columns for {exchange}_{symbol}")
         return columns
 
@@ -542,8 +542,8 @@ def get_feature_counts(symbol: str, exchange: str, data_dir: str) -> dict[str, i
 
     """
     try:
-        metadata = load_feature_metadata(symbol, exchange, data_dir)
-        counts = metadata.get("feature_counts", {})
+        metadata, load_feature_metadata(symbol, exchange, data_dir)
+        counts, metadata.get("feature_counts", {})
         logger.debug(f"Extracted feature counts for {exchange}_{symbol}: {counts}")
         return counts
 
@@ -617,19 +617,19 @@ def validate_feature_artifacts(symbol: str, exchange: str, data_dir: str) -> tup
     """
     try:
         if not check_feature_artifacts_exist(symbol, exchange, data_dir):
-            return False, "Feature artifacts do not exist"
+        return False, "Feature artifacts do not exist"
 
-        metadata = load_feature_metadata(symbol, exchange, data_dir)
-        artifacts = load_feature_artifacts(symbol, exchange, data_dir)
+        metadata, load_feature_metadata(symbol, exchange, data_dir)
+        artifacts, load_feature_artifacts(symbol, exchange, data_dir)
 
         # Basic validation
         for split, df in artifacts.items():
-            if df.empty:
-                return False, f"{split} features are empty"
+        if df.empty:
+        return False, f"{split} features are empty"
 
-            expected_count = metadata.get("feature_counts", {}).get(split, 0)
-            if len(df.columns) != expected_count:
-                return False, f"{split} feature count mismatch: expected {expected_count}, got {len(df.columns)}"
+            expected_count, metadata.get("feature_counts", {}).get(split, 0)
+        if len(df.columns) != expected_count:
+        return False, f"{split} feature count mismatch: expected {expected_count}, got {len(df.columns)}"
 
         logger.info(f"✅ Feature artifacts validation passed for {exchange}_{symbol}")
         return True, "Feature artifacts are valid"
@@ -704,9 +704,9 @@ def get_feature_artifact_info(symbol: str, exchange: str, data_dir: str) -> dict
     """
     try:
         if not check_feature_artifacts_exist(symbol, exchange, data_dir):
-            return {"exists": False, "error": "Artifacts not found"}
+        return {"exists": False, "error": "Artifacts not found"}
 
-        metadata = load_feature_metadata(symbol, exchange, data_dir)
+        metadata, load_feature_metadata(symbol, exchange, data_dir)
         load_feature_artifacts(symbol, exchange, data_dir)
 
         info = {
@@ -800,17 +800,17 @@ def load_features_for_step(symbol: str, exchange: str, data_dir: str, step_name:
     logger.info(f"🔍 {step_name}: Loading feature artifacts for {exchange}_{symbol}")
 
     try:
-        features = load_feature_artifacts(symbol, exchange, data_dir)
+        features, load_feature_artifacts(symbol, exchange, data_dir)
         logger.info(f"✅ {step_name}: Successfully loaded feature artifacts")
         return features
 
     except Exception as e:
         logger.exception(f"❌ {step_name}: Failed to load feature artifacts: {e}")
-        msg = f"Feature artifacts not available for {step_name}. Please run Step 2 first."
+        msg, f"Feature artifacts not available for {step_name}. Please run Step 2 first."
         raise RuntimeError(msg)
 
 
 if __name__ == "__main__":
     # Test the loader
     with contextlib.suppress(Exception):
-        info = get_feature_artifact_info("ETHUSDT", "BINANCE", "data/training")
+        info, get_feature_artifact_info("ETHUSDT", "BINANCE", "data/training")

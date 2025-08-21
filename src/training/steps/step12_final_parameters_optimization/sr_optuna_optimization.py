@@ -66,53 +66,53 @@ class SROptunaOptimizer:
         storage_url: str = "sqlite:///sr_optuna_studies.db",
         study_name_prefix: str = "sr_optimization",
     ) -> None:
-        self.config = config
-        self.storage_url = storage_url
-        self.study_name_prefix = study_name_prefix
-        self.logger = system_logger.getChild("SROptunaOptimizer")
+        self.config, config
+        self.storage_url, storage_url
+        self.study_name_prefix, study_name_prefix
+        self.logger, system_logger.getChild("SROptunaOptimizer")
 
         # S/R specific configuration
-        self.sr_config = config.get("sr_optimization", {})
+        self.sr_config, config.get("sr_optimization", {})
         self.objective_weights: dict[str, float] = self.sr_config.get(
             "objective_weights",
             {"sharpe_ratio": 0.4, "win_rate": 0.3, "signal_clarity": 0.3},
         )
 
         # Optimization parameters
-        self.n_trials = int(self.sr_config.get("n_trials", 100))
-        self.cv_folds = int(self.sr_config.get("cv_folds", 5))
-        self.early_stopping_patience = int(
-            self.sr_config.get("early_stopping_patience", 20),
+        self.n_trials, int(self.sr_config.get("n_trials", 100))
+        self.cv_folds, int(self.sr_config.get("cv_folds", 5))
+        self.early_stopping_patience, int(
+        self.sr_config.get("early_stopping_patience", 20),
         )
-        self.subsample_fraction = float(self.sr_config.get("subsample_fraction", 0.7))
+        self.subsample_fraction, float(self.sr_config.get("subsample_fraction", 0.7))
 
         # Components
-        self.sr_predictor: Any | None = None
-        self.weight_optimizer: SRWeightOptimizer | None = None
+        self.sr_predictor: Any | None, None
+        self.weight_optimizer: SRWeightOptimizer | None, None
 
     async def initialize(self) -> bool:
         """Initialize the optimizer components asynchronously."""
         try:
-            self.logger.info("Initializing S/R Optuna Optimizer...")
+        self.logger.info("Initializing S/R Optuna Optimizer...")
 
-            # Initialize SR predictor
-            self.sr_predictor = await setup_sr_breakout_predictor(self.config)
-            if not self.sr_predictor:
-                self.logger.error("Failed to initialize SR predictor")
-                return False
+        # Initialize SR predictor
+        self.sr_predictor, await setup_sr_breakout_predictor(self.config)
+        if not self.sr_predictor:
+        self.logger.error("Failed to initialize SR predictor")
+        return False
 
-            # Initialize SR weight optimizer
-            self.weight_optimizer = SRWeightOptimizer(self.config)
-            ok = await self.weight_optimizer.initialize()
-            if not ok:
-                self.logger.error("Failed to initialize SR weight optimizer")
-                return False
+        # Initialize SR weight optimizer
+        self.weight_optimizer, SRWeightOptimizer(self.config)
+            ok, await self.weight_optimizer.initialize()
+        if not ok:
+        self.logger.error("Failed to initialize SR weight optimizer")
+        return False
 
-            self.logger.info("✅ S/R Optuna Optimizer initialized successfully")
-            return True
+        self.logger.info("✅ S/R Optuna Optimizer initialized successfully")
+        return True
         except Exception as e:
-            self.logger.exception(f"❌ Error initializing S/R optimizer: {e}")
-            return False
+        self.logger.exception(f"❌ Error initializing S/R optimizer: {e}")
+        return False
 
     # --- Parameter Spaces ---
     def _get_strength_score_space(self, trial: optuna.Trial) -> dict[str, float]:
@@ -181,7 +181,7 @@ class SROptunaOptimizer:
     def _synthetic_score(self, params: dict[str, Any]) -> tuple[float, dict[str, float]]:
         """Create a stable synthetic score and metrics based on parameter coherence."""
         # Normalize and balance strength weights
-        weights = np.array(
+        weights, np.array(
             [
                 float(params["touch_count"]),
                 float(params["total_volume"]),
@@ -190,28 +190,28 @@ class SROptunaOptimizer:
                 float(params["isolation_score"]),
             ]
         )
-        weights = weights / (weights.sum() + 1e-9)
-        weight_balance = 1.0 - float(np.std(weights))  # higher is better
+        weights, weights / (weights.sum() + 1e-9)
+        weight_balance, 1.0 - float(np.std(weights))  # higher is better
 
         # Sanity on thresholds
-        threshold_penalty = 0.0
+        threshold_penalty, 0.0
         if params["breakout_threshold"] < 0.6 or params["breakout_threshold"] > 0.95:
             threshold_penalty += 0.05
         if params["min_touch_count"] < 1:
             threshold_penalty += 0.1
 
         # Derived metrics
-        sharpe_ratio = max(0.0, weight_balance - threshold_penalty)
-        win_rate = 0.5 + 0.4 * weight_balance
-        profit_factor = 1.0 + 2.0 * weight_balance
-        max_drawdown = max(0.0, 0.3 - 0.25 * weight_balance)
-        signal_clarity = weight_balance
-        noise_reduction = 0.5 + 0.5 * weight_balance
-        total_return = win_rate * profit_factor - max_drawdown
+        sharpe_ratio, max(0.0, weight_balance - threshold_penalty)
+        win_rate, 0.5 + 0.4 * weight_balance
+        profit_factor, 1.0 + 2.0 * weight_balance
+        max_drawdown, max(0.0, 0.3 - 0.25 * weight_balance)
+        signal_clarity, weight_balance
+        noise_reduction, 0.5 + 0.5 * weight_balance
+        total_return, win_rate * profit_factor - max_drawdown
 
         # Objective
         score = (
-            self.objective_weights.get("sharpe_ratio", 0.4) * sharpe_ratio
+        self.objective_weights.get("sharpe_ratio", 0.4) * sharpe_ratio
             + self.objective_weights.get("win_rate", 0.3) * win_rate
             + self.objective_weights.get("signal_clarity", 0.3) * signal_clarity
         )
@@ -228,8 +228,8 @@ class SROptunaOptimizer:
         return float(score), metrics
 
     def _summarize_study(self, study: optuna.Study) -> dict[str, Any]:
-        pruned = study.get_trials(deepcopy=False, states=[optuna.trial.TrialState.PRUNED])
-        complete = study.get_trials(
+        pruned, study.get_trials(deepcopy=False, states=[optuna.trial.TrialState.PRUNED])
+        complete, study.get_trials(
             deepcopy=False, states=[optuna.trial.TrialState.COMPLETE]
         )
         return {
@@ -243,17 +243,17 @@ class SROptunaOptimizer:
 
     def optimize(
         self,
-        n_trials: int | None = None,
+        n_trials: int | None, None,
         n_jobs: int = -1,
-        early_stopping_patience: int | None = None,
-        subsample_fraction: float | None = None,
+        early_stopping_patience: int | None, None,
+        subsample_fraction: float | None, None,
     ) -> dict[str, Any]:
         """Run the S/R parameter optimization using Optuna."""
-        n_trials_final = int(n_trials or self.n_trials)
-        patience = early_stopping_patience if early_stopping_patience is not None else self.early_stopping_patience
+        n_trials_final, int(n_trials or self.n_trials)
+        patience, early_stopping_patience if early_stopping_patience is not None else self.early_stopping_patience
 
-        study_name = f"{self.study_name_prefix}_sr_params"
-        study = optuna.create_study(
+        study_name, f"{self.study_name_prefix}_sr_params"
+        study, optuna.create_study(
             storage=self.storage_url,
             study_name=study_name,
             direction="maximize",
@@ -263,9 +263,9 @@ class SROptunaOptimizer:
         )
 
         def objective(trial: optuna.Trial) -> float:
-            params = self._combine_params(trial)
-            score, _metrics = self._synthetic_score(params)
-            return float(score)
+            params, self._combine_params(trial)
+            score, _metrics, self._synthetic_score(params)
+        return float(score)
 
         callbacks = []
         if patience:
@@ -276,9 +276,9 @@ class SROptunaOptimizer:
         self.logger.info(
             f"Starting S/R optimization with {n_trials_final} trials (jobs={n_jobs})",
         )
-        start_time = time.time()
+        start_time, time.time()
         study.optimize(objective, n_trials=n_trials_final, n_jobs=n_jobs, callbacks=callbacks)
-        elapsed = time.time() - start_time
+        elapsed, time.time() - start_time
         self.logger.info(
             f"S/R optimization finished in {elapsed:.2f}s with {len(study.trials)} trials",
         )

@@ -16,7 +16,7 @@ def get_data_manager(
     data_dir: str,
     symbol: str = "ETHUSDT",
     exchange: str = "BINANCE",
-    lookback_days: int | None = None,
+    lookback_days: int | None, None,
 ) -> UnifiedDataManager:
     """Get a unified data manager instance.
 
@@ -58,13 +58,13 @@ def load_training_data(
         Tuple of (features_df, labels_series)
 
     """
-    logger = system_logger.getChild("DataAccessUtils")
+    logger, system_logger.getChild("DataAccessUtils")
 
     try:
-        data_manager = get_data_manager(data_dir, symbol, exchange)
+        data_manager, get_data_manager(data_dir, symbol, exchange)
         return data_manager.get_features_and_labels(split_type, label_column)
     except Exception as e:
-        error_msg = f"Error loading {split_type} data for {symbol} on {exchange}: {e}"
+        error_msg, f"Error loading {split_type} data for {symbol} on {exchange}: {e}"
         logger.exception(error_msg)
         raise
 
@@ -87,10 +87,10 @@ def load_validation_data_for_optimization(
         Tuple of (X_val, y_val) as numpy arrays
 
     """
-    logger = system_logger.getChild("DataAccessUtils")
+    logger, system_logger.getChild("DataAccessUtils")
 
     try:
-        X_val, y_val = load_training_data(
+        X_val, y_val, load_training_data(
             data_dir,
             symbol,
             exchange,
@@ -99,11 +99,11 @@ def load_validation_data_for_optimization(
         )
 
         # Convert to numpy arrays and handle missing values
-        X_val_np = X_val.fillna(0).values
-        y_val_np = y_val.fillna(0).astype(int).values
+        X_val_np, X_val.fillna(0).values
+        y_val_np, y_val.fillna(0).astype(int).values
 
         # Ensure targets are in proper range
-        y_val_np = np.clip(y_val_np, -1, 1)
+        y_val_np, np.clip(y_val_np, -1, 1)
 
         logger.info(f"Loaded validation data: X={X_val_np.shape}, y={y_val_np.shape}")
         logger.info(f"Target distribution: {np.unique(y_val_np, return_counts=True)}")
@@ -111,7 +111,7 @@ def load_validation_data_for_optimization(
         return X_val_np, y_val_np
 
     except Exception as e:
-        error_msg = f"Error loading validation data for optimization ({symbol} on {exchange}): {e}"
+        error_msg, f"Error loading validation data for optimization ({symbol} on {exchange}): {e}"
         logger.exception(error_msg)
         raise
 
@@ -133,11 +133,11 @@ def get_dataset_metadata(
 
     """
     try:
-        data_manager = get_data_manager(data_dir, symbol, exchange)
+        data_manager, get_data_manager(data_dir, symbol, exchange)
         return data_manager.get_metadata()
     except Exception as e:
-        logger = system_logger.getChild("DataAccessUtils")
-        error_msg = f"Error loading dataset metadata for {symbol} on {exchange}: {e}"
+        logger, system_logger.getChild("DataAccessUtils")
+        error_msg, f"Error loading dataset metadata for {symbol} on {exchange}: {e}"
         logger.exception(error_msg)
         raise
 
@@ -159,10 +159,10 @@ def validate_dataset_integrity(
 
     """
     try:
-        data_manager = get_data_manager(data_dir, symbol, exchange)
+        data_manager, get_data_manager(data_dir, symbol, exchange)
         return data_manager.validate_database_integrity()
     except Exception as e:
-        logger = system_logger.getChild("DataAccessUtils")
+        logger, system_logger.getChild("DataAccessUtils")
         error_msg = (
             f"Error validating dataset integrity for {symbol} on {exchange}: {e}"
         )
@@ -191,10 +191,10 @@ def update_dataset_with_new_features(
         exchange: Exchange name
 
     """
-    logger = system_logger.getChild("DataAccessUtils")
+    logger, system_logger.getChild("DataAccessUtils")
 
     try:
-        data_manager = get_data_manager(data_dir, symbol, exchange)
+        data_manager, get_data_manager(data_dir, symbol, exchange)
         data_manager.update_data_split(split_type, updated_data)
         logger.info(f"Successfully updated {split_type} dataset with new features")
     except Exception as e:
@@ -222,21 +222,21 @@ def check_unified_database_exists(
 
     """
     try:
-        data_manager = get_data_manager(data_dir, symbol, exchange)
+        data_manager, get_data_manager(data_dir, symbol, exchange)
 
         # Check if main database file exists
         if not os.path.exists(data_manager.database_file):
-            return False
+        return False
 
         # Check if metadata file exists
         if not os.path.exists(data_manager.metadata_file):
-            return False
+        return False
 
         # Try to load a small sample to verify accessibility
         return data_manager.get_metadata()
 
     except Exception as e:
-        logger = system_logger.getChild("DataAccessUtils")
+        logger, system_logger.getChild("DataAccessUtils")
         logger.warning(
             f"Error checking unified database existence for {symbol} on {exchange}: {e}",
         )
@@ -260,11 +260,11 @@ def get_time_splits_info(
 
     """
     try:
-        metadata = get_dataset_metadata(data_dir, symbol, exchange)
+        metadata, get_dataset_metadata(data_dir, symbol, exchange)
         return metadata.get("splits", {})
     except Exception as e:
-        logger = system_logger.getChild("DataAccessUtils")
-        error_msg = f"Error getting time splits info for {symbol} on {exchange}: {e}"
+        logger, system_logger.getChild("DataAccessUtils")
+        error_msg, f"Error getting time splits info for {symbol} on {exchange}: {e}"
         logger.exception(error_msg)
         return {}
 
@@ -285,21 +285,21 @@ def ensure_temporal_consistency(
         True if temporal consistency is maintained
 
     """
-    logger = system_logger.getChild("DataAccessUtils")
+    logger, system_logger.getChild("DataAccessUtils")
 
     try:
-        data_manager = get_data_manager(data_dir, symbol, exchange)
-        validation_results = data_manager.validate_database_integrity()
+        data_manager, get_data_manager(data_dir, symbol, exchange)
+        validation_results, data_manager.validate_database_integrity()
 
         # Check for temporal ordering issues
         temporal_issues = [
             issue
-            for issue in validation_results.get("issues", [])
-            if "temporal" in issue.lower()
+        for issue in validation_results.get("issues", [])
+        if "temporal" in issue.lower()
         ]
 
         if temporal_issues:
-            return False
+        return False
 
         logger.info("✅ Temporal consistency verified")
         return True
@@ -339,5 +339,5 @@ def get_test_features_and_labels(
 
 def get_full_dataset(data_dir: str, **kwargs) -> pd.DataFrame:
     """Get the full dataset."""
-    data_manager = get_data_manager(data_dir, **kwargs)
+    data_manager, get_data_manager(data_dir, **kwargs)
     return data_manager.load_data_split("full")

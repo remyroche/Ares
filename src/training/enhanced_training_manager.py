@@ -274,17 +274,17 @@ class EnhancedTrainingManager:
             self.logger.info(f"🚀 Starting {step_display_name}")
             self._heartbeat(step_display_name)
 
-            # Verify previous step artifacts BEFORE execution
+        # Verify previous step artifacts BEFORE execution
             if not await self.verify_previous_step_artifacts(step_name, step_args.get("symbol"), step_args.get("exchange"), step_args.get("timeframe")):
                 self.logger.error(f"❌ Previous step artifacts not found for {step_display_name}, stopping pipeline")
                 return False
 
-            # Validate step dependencies BEFORE execution
+        # Validate step dependencies BEFORE execution
             if not await self.validate_step_dependencies(step_name, pipeline_state, step_args.get("force_rerun", False)):
                 self.logger.error(f"❌ Step dependencies not met for {step_display_name}, stopping pipeline")
                 return False
 
-            # Execute the step
+        # Execute the step
             step_success = await step_function(**step_args)
 
             if not step_success:
@@ -297,7 +297,7 @@ class EnhancedTrainingManager:
             
             self._log_step_completion(step_display_name, step_start_time, step_times, success=True)
 
-            # Update pipeline state
+        # Update pipeline state
             pipeline_state[step_name.replace("step", "").replace("_", "")] = {
                 "status": "SUCCESS",
                 "success": True,
@@ -306,7 +306,7 @@ class EnhancedTrainingManager:
             self._save_checkpoint(step_name, pipeline_state)
             step_times[step_name] = time.time() - step_start_time
 
-            # Run validator for step (AFTER execution, for verification only)
+        # Run validator for step (AFTER execution, for verification only)
             try:
                 step_validation = await self._run_step_validator(step_name, training_input, pipeline_state)
                 if step_validation and step_validation.get("validation_passed", False):
@@ -502,109 +502,110 @@ class EnhancedTrainingManager:
             "enhanced_training_manager",
             {},
         )
-        self.enhanced_training_interval: int, self.enhanced_training_config.get(
+        self.enhanced_training_interval: int = self.enhanced_training_config.get(
             "enhanced_training_interval",
             3600,
         )
-        self.max_enhanced_training_history: int, self.enhanced_training_config.get(
+        self.max_enhanced_training_history: int = self.enhanced_training_config.get(
             "max_enhanced_training_history",
             100,
         )
 
         # Training parameters
-        self.enable_model_training: bool, self.enhanced_training_config.get(
+        self.enable_model_training: bool = self.enhanced_training_config.get(
             "enable_model_training", True,
         )
         # Check for BLANK mode from environment variable or config
-        blank_env, os.getenv("BLANK_TRAINING_MODE", "0") == "1"
-        blank_config, self.enhanced_training_config.get("blank_training_mode", False)
-        self.blank_training_mode: bool, blank_env or blank_config
-        self.max_trials: int, self.enhanced_training_config.get("max_trials", 200)
-        self.n_trials: int, self.enhanced_training_config.get("n_trials", 100)
+        blank_env = os.getenv("BLANK_TRAINING_MODE", "0") == "1"
+        blank_config = self.enhanced_training_config.get("blank_training_mode", False)
+        self.blank_training_mode: bool = blank_env or blank_config
+        self.max_trials: int = self.enhanced_training_config.get("max_trials", 200)
+        self.n_trials: int = self.enhanced_training_config.get("n_trials", 100)
         # Set lookback days based on BLANK mode
-        default_lookback, 180 if self.blank_training_mode else 30
-        self.lookback_days: int, self.enhanced_training_config.get(
+        default_lookback = 180 if self.blank_training_mode else 30
+        self.lookback_days: int = self.enhanced_training_config.get(
             "lookback_days", default_lookback,
         )
 
         # Validation parameters
-        self.enable_validators: bool, self.enhanced_training_config.get(
+        self.enable_validators: bool = self.enhanced_training_config.get(
             "enable_validators", True,
         )
         self.validation_results: dict[str, Any] = {}
 
         # Computational optimization parameters
-        self.enable_computational_optimization: bool = (
-        self.enhanced_training_config.get("enable_computational_optimization", True)
+        self.enable_computational_optimization: bool = self.enhanced_training_config.get(
+            "enable_computational_optimization",
+            True,
         )
         # Lazily set by create_computational_optimization_manager; type hint kept loose to avoid import cycle
-        self.computational_optimization_manager, None
+        self.computational_optimization_manager = None
         self.optimization_statistics: dict[str, Any] = {}
 
         # Optimization component configuration (ported)
-        optimization_root, get_computational_optimization_config().get(
+        optimization_root = get_computational_optimization_config().get(
             "computational_optimization", {},
         )
         self.optimization_config: dict[str, Any] = optimization_root
-        self.enable_caching: bool, optimization_root.get("enable_caching", True)
-        self.enable_parallelization: bool, optimization_root.get(
+        self.enable_caching: bool = optimization_root.get("enable_caching", True)
+        self.enable_parallelization: bool = optimization_root.get(
             "enable_parallelization", True,
         )
-        self.enable_early_stopping: bool, optimization_root.get(
+        self.enable_early_stopping: bool = optimization_root.get(
             "enable_early_stopping", True,
         )
-        self.enable_memory_management: bool, optimization_root.get(
+        self.enable_memory_management: bool = optimization_root.get(
             "enable_memory_management", True,
         )
-        self.max_workers: int | None, optimization_root.get("max_workers")
-        self.chunk_size: int, optimization_root.get("chunk_size", 1000)
-        self.cleanup_frequency: int, optimization_root.get("cleanup_frequency", 100)
-        self.memory_threshold: float, optimization_root.get("memory_threshold", 0.8)
+        self.max_workers: int | None = optimization_root.get("max_workers")
+        self.chunk_size: int = optimization_root.get("chunk_size", 1000)
+        self.cleanup_frequency: int = optimization_root.get("cleanup_frequency", 100)
+        self.memory_threshold: float = optimization_root.get("memory_threshold", 0.8)
 
         # Optimization components (lazy init)
         # Using classes from enhanced_training_manager_optimized
-        self.cached_backtester: CachedBacktester | None, None
-        self.progressive_evaluator: ProgressiveEvaluator | None, None
-        self.parallel_backtester: ParallelBacktester | None, None
-        self.incremental_trainer: IncrementalTrainer | None, None
-        self.streaming_processor: StreamingDataProcessor | None, None
-        self.adaptive_sampler: AdaptiveSampler | None, None
-        self.memory_manager: MemoryManager | None, None
-        self.data_manager: MemoryEfficientDataManager | None, None
+        self.cached_backtester: CachedBacktester | None = None
+        self.progressive_evaluator: ProgressiveEvaluator | None = None
+        self.parallel_backtester: ParallelBacktester | None = None
+        self.incremental_trainer: IncrementalTrainer | None = None
+        self.streaming_processor: StreamingDataProcessor | None = None
+        self.adaptive_sampler: AdaptiveSampler | None = None
+        self.memory_manager: MemoryManager | None = None
+        self.data_manager: MemoryEfficientDataManager | None = None
 
         # Checkpointing configuration
-        self.checkpoint_dir, Path("checkpoints")
+        self.checkpoint_dir = Path("checkpoints")
         self.checkpoint_dir.mkdir(exist_ok=True)
         # Note: final paths are namespaced per symbol/exchange/timeframe at save-time
-        self.enable_checkpointing, self.enhanced_training_config.get(
+        self.enable_checkpointing = self.enhanced_training_config.get(
             "enable_checkpointing", True,
         )
 
         # Initialize optimized tools from enhanced_training_manager_optimized
-        self.cached_backtester: CachedBacktester | None, None
-        self.progressive_evaluator: ProgressiveEvaluator | None, None
-        self.parallel_backtester: ParallelBacktester | None, None
-        self.incremental_trainer: IncrementalTrainer | None, None
-        self.streaming_processor: StreamingDataProcessor | None, None
-        self.adaptive_sampler: AdaptiveSampler | None, None
-        self.memory_manager, MemoryManager()
-        self.data_manager, MemoryEfficientDataManager()
+        self.cached_backtester = None
+        self.progressive_evaluator = None
+        self.parallel_backtester = None
+        self.incremental_trainer = None
+        self.streaming_processor = None
+        self.adaptive_sampler = None
+        self.memory_manager = MemoryManager()
+        self.data_manager = MemoryEfficientDataManager()
 
         # Initialize StepDependencyValidator for step dependency validation
-        self.step_dependency_validator, step_dependency_validator
+        self.step_dependency_validator = step_dependency_validator
 
         # Initialize multi-timeframe training manager
-        self.multi_timeframe_training_manager, MultiTimeframeTrainingManager(config)
+        self.multi_timeframe_training_manager = MultiTimeframeTrainingManager(config)
 
         # Optimization configuration
-        self.optimization_config, self.config.get("computational_optimization", {})
+        self.optimization_config = self.config.get("computational_optimization", {})
         self._load_optimization_config()
 
         # Initialize the underlying optimized training manager for advanced operations
-        self.optimized_manager, EnhancedTrainingManagerOptimized(config)
+        self.optimized_manager = EnhancedTrainingManagerOptimized(config)
 
         # Logging verbosity
-        self.verbosity: str, self.enhanced_training_config.get(
+        self.verbosity: str = self.enhanced_training_config.get(
             "verbosity", "info",
         )  # "info" or "debug"
 
@@ -613,8 +614,8 @@ class EnhancedTrainingManager:
         self.label_expert_calibrators: dict[str, Any] = {}
         self.label_reliability: dict[str, float] = {}
         self.activation_thresholds: dict[str, float] = {}
-        self.artifacts_dir: Path, Path(
-        self.enhanced_training_config.get(
+        self.artifacts_dir: Path = Path(
+            self.enhanced_training_config.get(
                 "artifacts_dir", "artifacts/meta_labeling",
             ),
         )
@@ -623,8 +624,8 @@ class EnhancedTrainingManager:
         env_force = (
             os.getenv("FORCE_RERUN", "0") == "1" or os.getenv("FORCE", "0") == "1"
         )
-        self.force_rerun: bool, bool(
-        self.enhanced_training_config.get("force_rerun", env_force),
+        self.force_rerun: bool = bool(
+            self.enhanced_training_config.get("force_rerun", env_force),
         )
 
         self.logger.info("Loaded optimization configuration")
@@ -633,39 +634,39 @@ class EnhancedTrainingManager:
     def _load_optimization_config(self) -> None:
         """Load optimization configuration from enhanced_training_manager_optimized."""
         # Caching configuration
-        caching_config, self.optimization_config.get("caching", {})
-        self.enable_caching, caching_config.get("enabled", True)
-        self.max_cache_size, caching_config.get("max_cache_size", 1000)
-        self.cache_ttl, caching_config.get("cache_ttl", 3600)
+        caching_config = self.optimization_config.get("caching", {})
+        self.enable_caching = caching_config.get("enabled", True)
+        self.max_cache_size = caching_config.get("max_cache_size", 1000)
+        self.cache_ttl = caching_config.get("cache_ttl", 3600)
 
         # Parallelization configuration
-        parallel_config, self.optimization_config.get("parallelization", {})
-        self.enable_parallelization, parallel_config.get("enabled", True)
-        self.max_workers, parallel_config.get("max_workers", 8)
-        self.chunk_size, parallel_config.get("chunk_size", 1000)
+        parallel_config = self.optimization_config.get("parallelization", {})
+        self.enable_parallelization = parallel_config.get("enabled", True)
+        self.max_workers = parallel_config.get("max_workers", 8)
+        self.chunk_size = parallel_config.get("chunk_size", 1000)
 
         # Early stopping configuration
-        early_stop_config, self.optimization_config.get("early_stopping", {})
-        self.enable_early_stopping, early_stop_config.get("enabled", True)
-        self.patience, early_stop_config.get("patience", 10)
-        self.min_trials, early_stop_config.get("min_trials", 20)
+        early_stop_config = self.optimization_config.get("early_stopping", {})
+        self.enable_early_stopping = early_stop_config.get("enabled", True)
+        self.patience = early_stop_config.get("patience", 10)
+        self.min_trials = early_stop_config.get("min_trials", 20)
 
         # Memory management configuration
-        memory_config, self.optimization_config.get("memory_management", {})
-        self.enable_memory_management, memory_config.get("enabled", True)
-        self.memory_threshold, memory_config.get("memory_threshold", 0.8)
-        self.cleanup_frequency, memory_config.get("cleanup_frequency", 100)
+        memory_config = self.optimization_config.get("memory_management", {})
+        self.enable_memory_management = memory_config.get("enabled", True)
+        self.memory_threshold = memory_config.get("memory_threshold", 0.8)
+        self.cleanup_frequency = memory_config.get("cleanup_frequency", 100)
 
         self.logger.info("Loaded optimization configuration")
 
     @contextmanager
     def _timed_step(self, name: str, step_times: dict):
-        start, time.time()
+        start = time.time()
         try:
             yield
-        self._log_step_completion(name, start, step_times, success=True)
+            self._log_step_completion(name, start, step_times, success=True)
         except Exception:
-        self._log_step_completion(name, start, step_times, success=False)
+            self._log_step_completion(name, start, step_times, success=False)
             raise
 
     def _save_checkpoint(self, step_name: str, pipeline_state: dict[str, Any]) -> None:
@@ -693,19 +694,19 @@ class EnhancedTrainingManager:
                 "n_trials": self.n_trials,
             }
 
-        # Namespaced checkpoint path
-            symbol, checkpoint_data.get("symbol") or "unknown"
-            exchange, checkpoint_data.get("exchange") or "unknown"
-            timeframe, checkpoint_data.get("timeframe") or "unknown"
-            ns_dir, self.checkpoint_dir / exchange / symbol / timeframe
+            # Namespaced checkpoint path
+            symbol = checkpoint_data.get("symbol") or "unknown"
+            exchange = checkpoint_data.get("exchange") or "unknown"
+            timeframe = checkpoint_data.get("timeframe") or "unknown"
+            ns_dir = self.checkpoint_dir / exchange / symbol / timeframe
             ns_dir.mkdir(parents=True, exist_ok=True)
-            target_file, ns_dir / "training_progress.json"
+            target_file = ns_dir / "training_progress.json"
             _safe_json_write(target_file, checkpoint_data)
 
-        self.logger.info(f"💾 Checkpoint saved: {step_name} -> {target_file}")
+            self.logger.info(f"💾 Checkpoint saved: {step_name} -> {target_file}")
 
         except Exception as e:
-        self.logger.warning(f"Failed to save checkpoint: {e}")
+            self.logger.warning(f"Failed to save checkpoint: {e}")
 
     def _load_checkpoint(self) -> dict[str, Any] | None:
         """Load training progress checkpoint.
@@ -717,20 +718,20 @@ class EnhancedTrainingManager:
         # Attempt to load namespaced checkpoint based on current params
         # Ensure enable_checkpointing is defined
         if not hasattr(self, "enable_checkpointing"):
-        self.enable_checkpointing, getattr(self, "enhanced_training_config", {}).get("enable_checkpointing", True)
+            self.enable_checkpointing = getattr(self, "enhanced_training_config", {}).get("enable_checkpointing", True)
 
         if not self.enable_checkpointing:
-        return None
+            return None
 
         # Ensure checkpoint_dir is defined
         if not hasattr(self, "checkpoint_dir"):
-        self.checkpoint_dir, Path("checkpoints")
-        self.checkpoint_dir.mkdir(exist_ok=True)
+            self.checkpoint_dir = Path("checkpoints")
+            self.checkpoint_dir.mkdir(exist_ok=True)
 
         try:
-            symbol, getattr(self, "current_symbol", "unknown")
-            exchange, getattr(self, "current_exchange", "unknown")
-            timeframe, getattr(self, "current_timeframe", "unknown")
+            symbol = getattr(self, "current_symbol", "unknown")
+            exchange = getattr(self, "current_exchange", "unknown")
+            timeframe = getattr(self, "current_timeframe", "unknown")
             ns_file = (
         self.checkpoint_dir
                 / exchange
@@ -738,41 +739,41 @@ class EnhancedTrainingManager:
                 / timeframe
                 / "training_progress.json"
             )
-        if not ns_file.exists():
-        return None
-        with open(ns_file) as f:
-                checkpoint_data, json.load(f)
-        self.logger.info(
+            if not ns_file.exists():
+                return None
+            with open(ns_file) as f:
+                checkpoint_data = json.load(f)
+            self.logger.info(
                 f"📂 Checkpoint loaded: {checkpoint_data.get('current_step', 'unknown')} from {ns_file}",
             )
-        return checkpoint_data
+            return checkpoint_data
 
         except Exception as e:
-        self.logger.warning(f"Failed to load checkpoint: {e}")
-        return None
+            self.logger.warning(f"Failed to load checkpoint: {e}")
+            return None
 
     def _clear_checkpoint(self) -> None:
         """Clear the checkpoint file."""
         try:
-            symbol, getattr(self, "current_symbol", "unknown")
-            exchange, getattr(self, "current_exchange", "unknown")
-            timeframe, getattr(self, "current_timeframe", "unknown")
+            symbol = getattr(self, "current_symbol", "unknown")
+            exchange = getattr(self, "current_exchange", "unknown")
+            timeframe = getattr(self, "current_timeframe", "unknown")
             ns_file = (
-        self.checkpoint_dir
+                self.checkpoint_dir
                 / exchange
                 / symbol
                 / timeframe
                 / "training_progress.json"
             )
-        if ns_file.exists():
-        # Guard against clearing outside configured checkpoint dir
-        if _is_relative_to(ns_file, self.checkpoint_dir) and not ns_file.is_symlink():
+            if ns_file.exists():
+                # Guard against clearing outside configured checkpoint dir
+                if _is_relative_to(ns_file, self.checkpoint_dir) and not ns_file.is_symlink():
                     ns_file.unlink()
-        self.logger.info(f"🗑️ Checkpoint cleared at {ns_file}")
+                    self.logger.info(f"🗑️ Checkpoint cleared at {ns_file}")
                 else:
-        self.logger.warning(f"Skipped clearing checkpoint due to unsafe path: {ns_file}")
+                    self.logger.warning(f"Skipped clearing checkpoint due to unsafe path: {ns_file}")
         except Exception as e:
-        self.logger.warning(f"Failed to clear checkpoint: {e}")
+            self.logger.warning(f"Failed to clear checkpoint: {e}")
 
     def _heartbeat(self, message: str) -> None:
         """Log a heartbeat message for monitoring training progress.
@@ -791,23 +792,23 @@ class EnhancedTrainingManager:
 
         """
         try:
-            process, psutil.Process(os.getpid())
-            memory_mb, process.memory_info().rss / 1024 / 1024
-            cpu_percent, process.cpu_percent(interval=0.1)
+            process = psutil.Process(os.getpid())
+            memory_mb = process.memory_info().rss / 1024 / 1024
+            cpu_percent = process.cpu_percent(interval=0.1)
 
         # Get system-wide memory info
-            system_memory, psutil.virtual_memory()
-            system_memory_percent, system_memory.percent
+            system_memory = psutil.virtual_memory()
+            system_memory_percent = system_memory.percent
 
-        return {
+            return {
                 "memory_mb": memory_mb,
                 "cpu_percent": cpu_percent,
                 "system_memory_percent": system_memory_percent,
                 "available_memory_gb": system_memory.available / 1024 / 1024 / 1024,
             }
         except Exception as e:
-        self.logger.warning(f"Could not get system resources: {e}")
-        return {
+            self.logger.warning(f"Could not get system resources: {e}")
+            return {
                 "memory_mb": 0,
                 "cpu_percent": 0,
                 "system_memory_percent": 0,
@@ -818,7 +819,7 @@ class EnhancedTrainingManager:
         self,
         step_name: str,
         pipeline_state: dict[str, Any],
-        force_rerun: bool, False,
+        force_rerun: bool = False,
     ) -> bool:
         """Validate that all dependencies for a step are met.
 
@@ -832,42 +833,42 @@ class EnhancedTrainingManager:
 
         """
         try:
-        self.logger.info(f"🔍 Validating dependencies for {step_name}")
+            self.logger.info(f"🔍 Validating dependencies for {step_name}")
 
         # If force_rerun is True, we're starting from this step, so skip dependency validation
-        if force_rerun:
-        self.logger.info(f"✅ Force rerun enabled for {step_name}, skipping dependency validation")
-        return True
+            if force_rerun:
+                self.logger.info(f"✅ Force rerun enabled for {step_name}, skipping dependency validation")
+                return True
 
         # Use StepDependencyValidator to check prerequisites
         # Use the correct checkpoint directory that matches where checkpoints are saved
         # Extract exchange and symbol from pipeline_state or use defaults
-            exchange, pipeline_state.get("exchange", "BINANCE")
-            symbol, pipeline_state.get("symbol", "ETHUSDT")
-            timeframe, pipeline_state.get("timeframe", "1m")
+            exchange = pipeline_state.get("exchange", "BINANCE")
+            symbol = pipeline_state.get("symbol", "ETHUSDT")
+            timeframe = pipeline_state.get("timeframe", "1m")
         # Use the same path structure as _save_checkpoint method
-            checkpoint_dir, f"checkpoints/{exchange}/{symbol}/{timeframe}"
-            validation_result, await self.step_dependency_validator.validate_step_prerequisites(
+            checkpoint_dir = f"checkpoints/{exchange}/{symbol}/{timeframe}"
+            validation_result = await self.step_dependency_validator.validate_step_prerequisites(
                 step_name=step_name,
                 pipeline_state=pipeline_state,
                 checkpoint_dir=checkpoint_dir,
                 force_rerun=force_rerun,
             )
 
-        if validation_result["valid"]:
-        self.logger.info(f"✅ Dependencies validated for {step_name}: {validation_result['reason']}")
-        return True
-        self.logger.error(f"❌ Dependencies failed for {step_name}: {validation_result['reason']}")
+            if validation_result["valid"]:
+                self.logger.info(f"✅ Dependencies validated for {step_name}: {validation_result['reason']}")
+                return True
+            self.logger.error(f"❌ Dependencies failed for {step_name}: {validation_result['reason']}")
 
         # Log failed prerequisites for debugging
-        if "failed_steps" in validation_result:
-        self.logger.error(f"   Failed prerequisites: {validation_result['failed_steps']}")
+            if "failed_steps" in validation_result:
+                self.logger.error(f"   Failed prerequisites: {validation_result['failed_steps']}")
 
-        return False
+            return False
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error validating dependencies for {step_name}: {e}")
-        return False
+            self.logger.exception(f"🚨 Error validating dependencies for {step_name}: {e}")
+            return False
 
     def _analyze_resource_requirements(self) -> dict[str, Any]:
         """Analyze resource requirements for the training process.
@@ -877,29 +878,29 @@ class EnhancedTrainingManager:
 
         """
         try:
-        # Get system info
-            cpu_count, psutil.cpu_count()
-            memory_gb, psutil.virtual_memory().total / 1024 / 1024 / 1024
+            # Get system info
+            cpu_count = psutil.cpu_count()
+            memory_gb = psutil.virtual_memory().total / 1024 / 1024 / 1024
 
         # Realistic estimates based on actual training complexity
-        if self.blank_training_mode:
-                estimated_memory_gb, 4.0  # Blank training uses less memory
-                estimated_time_minutes, 90  # Realistic: 1.5 hours for blank training
-                memory_warning_threshold, 6.0
-                models_to_train, 4
-                optimization_trials, 50
+            if self.blank_training_mode:
+                estimated_memory_gb = 4.0  # Blank training uses less memory
+                estimated_time_minutes = 90  # Realistic: 1.5 hours for blank training
+                memory_warning_threshold = 6.0
+                models_to_train = 4
+                optimization_trials = 50
             else:
-                estimated_memory_gb, 8.0  # Full training uses more memory
-                estimated_time_minutes, 720  # Realistic: 12 hours for full training
-                memory_warning_threshold, 12.0
-                models_to_train, 12
-                optimization_trials, 200
+                estimated_memory_gb = 8.0  # Full training uses more memory
+                estimated_time_minutes = 720  # Realistic: 12 hours for full training
+                memory_warning_threshold = 12.0
+                models_to_train = 12
+                optimization_trials = 200
 
         # Check if system meets requirements
-            memory_sufficient, memory_gb >= memory_warning_threshold
-            cpu_sufficient, cpu_count >= 4
+            memory_sufficient = memory_gb >= memory_warning_threshold
+            cpu_sufficient = cpu_count >= 4
 
-        return {
+            return {
                 "system_memory_gb": memory_gb,
                 "cpu_count": cpu_count,
                 "estimated_memory_gb": estimated_memory_gb,
@@ -913,12 +914,12 @@ class EnhancedTrainingManager:
                     memory_gb, cpu_count,
                 ),
                 "step_breakdown": self._get_step_time_breakdown(
-        self.blank_training_mode,
+                    self.blank_training_mode,
                 ),
             }
         except Exception as e:
-        self.logger.warning(f"Could not analyze resource requirements: {e}")
-        return {}
+            self.logger.warning(f"Could not analyze resource requirements: {e}")
+            return {}
 
     def _get_resource_recommendations(
         self, memory_gb: float, cpu_count: int,
@@ -973,7 +974,7 @@ class EnhancedTrainingManager:
 
         """
         if is_blank_mode:
-        return {
+            return {
                 "step1_data_collection": 5,
                 "step1_5_data_converter": 3,
                 "step2_feature_engineering": 15,
@@ -1015,35 +1016,35 @@ class EnhancedTrainingManager:
     def _optimize_memory_usage(self) -> None:
         """Perform memory optimization to reduce memory footprint."""
         try:
-        # Force garbage collection
+            # Force garbage collection
             gc.collect()
 
-        # Log memory before and after optimization
-            before_memory, psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
-        self.logger.info(
+            # Log memory before and after optimization
+            before_memory = psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
+            self.logger.info(
                 f"🧹 Memory optimization: {before_memory:.1f} MB before cleanup",
             )
 
         # Force another garbage collection
             gc.collect()
 
-            after_memory, psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
-            memory_saved, before_memory - after_memory
+            after_memory = psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
+            memory_saved = before_memory - after_memory
 
-        self.logger.info(
+            self.logger.info(
                 f"🧹 Memory optimization: {after_memory:.1f} MB after cleanup (saved {memory_saved:.1f} MB)",
             )
 
-        if memory_saved > 10:  # If we saved more than 10MB
-        self.logger.info(
+            if memory_saved > 10:  # If we saved more than 10MB
+                self.logger.info(
                     f"   🧹 Memory optimization saved {memory_saved:.1f} MB",
                 )
 
         except Exception as e:
-        self.logger.warning(f"Memory optimization failed: {e}")
+            self.logger.warning(f"Memory optimization failed: {e}")
 
     def _get_progress_percentage(
-        self, completed_steps: int, total_steps: int, 16,
+        self, completed_steps: int, total_steps: int,
     ) -> float:
         """Calculate progress percentage.
 
@@ -1058,7 +1059,7 @@ class EnhancedTrainingManager:
         return (completed_steps / total_steps) * 100
 
     def _log_progress(
-        self, current_step: int, total_steps: int, 16, elapsed_time: float, 0,
+        self, current_step: int, total_steps: int, elapsed_time: float,
     ) -> None:
         """Log progress with estimated completion time.
 
@@ -1068,27 +1069,27 @@ class EnhancedTrainingManager:
             elapsed_time: Time elapsed so far
 
         """
-        progress, self._get_progress_percentage(current_step, total_steps)
+        progress = self._get_progress_percentage(current_step, total_steps)
         if elapsed_time > 0:
-            avg_time, elapsed_time / max(current_step, 1)
-            remaining_steps, total_steps - current_step
+            avg_time = elapsed_time / max(current_step, 1)
+            remaining_steps = total_steps - current_step
             eta_minutes = (avg_time * remaining_steps) / 60
         else:
-            eta_minutes, 0
+            eta_minutes = 0
         if self.verbosity == "debug":
-        self.logger.debug(
+            self.logger.debug(
                 f"📊 Progress: {progress:.1f}% ({current_step}/{total_steps})",
             )
-        self.logger.debug(
+            self.logger.debug(
                 f"⏱️ Elapsed: {elapsed_time/60:.1f} min | ETA: {eta_minutes:.1f} min",
             )
         else:
-        self.logger.info(
+            self.logger.info(
                 f"📊 Progress: {progress:.1f}% ({current_step}/{total_steps})",
             )
 
     def _log_step_completion(
-        self, step_name: str, step_start: float, step_times: dict, success: bool, True,
+        self, step_name: str, step_start: float, step_times: dict, success: bool,
     ) -> None:
         """Log step completion with timing and memory usage.
 
@@ -1149,91 +1150,89 @@ class EnhancedTrainingManager:
 
         """
         try:
-        self.logger.info("🚀 Initializing Enhanced Training Manager...")
-        # Ensure blank_training_mode is defined
-        if not hasattr(self, "blank_training_mode"):
-                blank_env, os.getenv("BLANK_TRAINING_MODE", "0") == "1"
-                blank_config, getattr(self, "enhanced_training_config", {}).get("blank_training_mode", False)
-        self.blank_training_mode: bool, blank_env or blank_config
-        self.logger.info(f"📊 Blank training mode: {self.blank_training_mode}")
-        # Ensure other attributes are defined
-        if not hasattr(self, "max_trials"):
-        self.max_trials, getattr(self, "enhanced_training_config", {}).get("max_trials", 200)
-        if not hasattr(self, "n_trials"):
-        self.n_trials, getattr(self, "enhanced_training_config", {}).get("n_trials", 100)
-        if not hasattr(self, "lookback_days"):
-                default_lookback, 180 if self.blank_training_mode else 30
-        self.lookback_days, getattr(self, "enhanced_training_config", {}).get("lookback_days", default_lookback)
-        self.logger.info(f"🔧 Max trials: {self.max_trials}")
-        self.logger.info(f"🔧 N trials: {self.n_trials}")
-        self.logger.info(f"📈 Lookback days: {self.lookback_days}")
-        # Ensure enable_computational_optimization is defined
-        if not hasattr(self, "enable_computational_optimization"):
-        self.enable_computational_optimization, getattr(self, "enhanced_training_config", {}).get("enable_computational_optimization", True)
-        self.logger.info(
+            self.logger.info("🚀 Initializing Enhanced Training Manager...")
+            # Ensure blank_training_mode is defined
+            if not hasattr(self, "blank_training_mode"):
+                blank_env = os.getenv("BLANK_TRAINING_MODE", "0") == "1"
+                blank_config = getattr(self, "enhanced_training_config", {}).get("blank_training_mode", False)
+                self.blank_training_mode: bool = blank_env or blank_config
+            self.logger.info(f"📊 Blank training mode: {self.blank_training_mode}")
+            # Ensure other attributes are defined
+            if not hasattr(self, "max_trials"):
+                self.max_trials = getattr(self, "enhanced_training_config", {}).get("max_trials", 200)
+            if not hasattr(self, "n_trials"):
+                self.n_trials = getattr(self, "enhanced_training_config", {}).get("n_trials", 100)
+            if not hasattr(self, "lookback_days"):
+                default_lookback = 180 if self.blank_training_mode else 30
+                self.lookback_days = getattr(self, "enhanced_training_config", {}).get("lookback_days", default_lookback)
+            self.logger.info(f"🔧 Max trials: {self.max_trials}")
+            self.logger.info(f"🔧 N trials: {self.n_trials}")
+            self.logger.info(f"📈 Lookback days: {self.lookback_days}")
+            # Ensure enable_computational_optimization is defined
+            if not hasattr(self, "enable_computational_optimization"):
+                self.enable_computational_optimization = getattr(self, "enhanced_training_config", {}).get("enable_computational_optimization", True)
+            self.logger.info(
                 f"🚀 Computational optimization: {self.enable_computational_optimization}",
             )
 
         # Analyze resource requirements
-            resource_analysis, self._analyze_resource_requirements()
-        if resource_analysis:
-        self.logger.info("📊 Resource Analysis:")
-        self.logger.info(
+            resource_analysis = self._analyze_resource_requirements()
+            if resource_analysis:
+                self.logger.info("📊 Resource Analysis:")
+                self.logger.info(
                     f"   💾 System Memory: {resource_analysis['system_memory_gb']:.1f} GB",
                 )
-        self.logger.info(f"   🖥️ CPU Cores: {resource_analysis['cpu_count']}")
-        self.logger.info(
+                self.logger.info(f"   🖥️ CPU Cores: {resource_analysis['cpu_count']}")
+                self.logger.info(
                     f"   📈 Estimated Memory Usage: {resource_analysis['estimated_memory_gb']:.1f} GB",
                 )
-        self.logger.info(
+                self.logger.info(
                     f"   ⏱️ Estimated Time: {resource_analysis['estimated_time_minutes']} minutes ({resource_analysis['estimated_time_minutes']/60:.1f} hours)",
                 )
-        self.logger.info(
+                self.logger.info(
                     f"   🤖 Models to Train: {resource_analysis['models_to_train']}",
                 )
-        self.logger.info(
+                self.logger.info(
                     f"   🔧 Optimization Trials: {resource_analysis['optimization_trials']}",
                 )
 
         # Show step-by-step breakdown
-        if "step_breakdown" in resource_analysis:
-        self.logger.info("📋 Step-by-Step Time Estimates:")
-                    total_estimated, sum(resource_analysis["step_breakdown"].values())
-        for step_name, minutes in resource_analysis[
-                        "step_breakdown"
-                    ].items():
+                if "step_breakdown" in resource_analysis:
+                    self.logger.info("📋 Step-by-Step Time Estimates:")
+                    total_estimated = sum(resource_analysis["step_breakdown"].values())
+                    for step_name, minutes in resource_analysis["step_breakdown"].items():
                         percentage = (minutes / total_estimated) * 100
-        self.logger.info(
+                        self.logger.info(
                             f"   {step_name}: {minutes} min ({percentage:.1f}%)",
                         )
 
-        # Log recommendations
-        if resource_analysis["recommendations"]:
-        self.logger.info("💡 Recommendations:")
-        for rec in resource_analysis["recommendations"]:
-        self.logger.info(f"   {rec}")
+            # Log recommendations
+            if resource_analysis["recommendations"]:
+                self.logger.info("💡 Recommendations:")
+                for rec in resource_analysis["recommendations"]:
+                    self.logger.info(f"   {rec}")
 
         # Validate configuration
-        if not self._validate_configuration():
-        self.logger.error(
+            if not self._validate_configuration():
+                self.logger.error(
                     "❌ Invalid configuration for enhanced training manager",
                 )
-        return False
+                return False
 
         # Initialize computational optimization if enabled
-        if self.enable_computational_optimization:
-        await self._initialize_computational_optimization()
+            if self.enable_computational_optimization:
+                await self._initialize_computational_optimization()
 
         # Optimization components are initialized in _initialize_optimized_tools()
         # to ensure a single, consistent initialization path.
-        self.logger.info("✅ Enhanced Training Manager initialized successfully")
-        return True
+            self.logger.info("✅ Enhanced Training Manager initialized successfully")
+            return True
 
         except Exception as e:
-        self.logger.exception(
+            self.logger.exception(
                 f"❌ Enhanced Training Manager initialization failed: {e}",
             )
-        return False
+            return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -1248,34 +1247,34 @@ class EnhancedTrainingManager:
 
         """
         try:
-        # Validate enhanced training manager specific settings
-        # Ensure max_enhanced_training_history is defined
-        if not hasattr(self, "max_enhanced_training_history"):
-        self.max_enhanced_training_history, getattr(self, "enhanced_training_config", {}).get("max_enhanced_training_history", 100)
+            # Validate enhanced training manager specific settings
+            # Ensure max_enhanced_training_history is defined
+            if not hasattr(self, "max_enhanced_training_history"):
+                self.max_enhanced_training_history = getattr(self, "enhanced_training_config", {}).get("max_enhanced_training_history", 100)
 
-        if self.max_enhanced_training_history <= 0:
-        self.logger.error(
+            if self.max_enhanced_training_history <= 0:
+                self.logger.error(
                     "❌ Invalid max_enhanced_training_history configuration",
                 )
-        return False
+                return False
 
-        if self.max_trials <= 0:
-        self.logger.error("❌ Invalid max_trials configuration")
-        return False
+            if self.max_trials <= 0:
+                self.logger.error("❌ Invalid max_trials configuration")
+                return False
 
-        if self.n_trials <= 0:
-        self.logger.error("❌ Invalid n_trials configuration")
-        return False
+            if self.n_trials <= 0:
+                self.logger.error("❌ Invalid n_trials configuration")
+                return False
 
-        if self.lookback_days <= 0:
-        self.logger.error("❌ Invalid lookback_days configuration")
-        return False
+            if self.lookback_days <= 0:
+                self.logger.error("❌ Invalid lookback_days configuration")
+                return False
 
-        return True
+            return True
 
         except Exception as e:
-        self.logger.exception(f"❌ Configuration validation failed: {e}")
-        return False
+            self.logger.exception(f"❌ Configuration validation failed: {e}")
+            return False
 
     @handle_specific_errors(
         error_handlers={
@@ -1300,85 +1299,85 @@ class EnhancedTrainingManager:
 
         """
         try:
-        self.logger.info("=" * 80)
-        self.logger.info(
+            self.logger.info("=" * 80)
+            self.logger.info(
                 "🚀 COMPREHENSIVE 15-STEP ENHANCED TRAINING PIPELINE START",
             )
-        self.logger.info("=" * 80)
-        self.logger.info(
+            self.logger.info("=" * 80)
+            self.logger.info(
                 f"📅 Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             )
-        self.logger.info(
+            self.logger.info(
                 f"🎯 Symbol: {enhanced_training_input.get('symbol', 'N/A')}",
             )
-        self.logger.info(
+            self.logger.info(
                 f"🏢 Exchange: {enhanced_training_input.get('exchange', 'N/A')}",
             )
-        self.logger.info(
+            self.logger.info(
                 f"📊 Training Mode: {enhanced_training_input.get('training_mode', 'N/A')}",
             )
-        self.logger.info(f"📈 Lookback Days: {self.lookback_days}")
-        self.logger.info(f"🔧 Blank Training Mode: {self.blank_training_mode}")
-        self.logger.info(f"🔧 Max Trials: {self.max_trials}")
-        self.logger.info(f"🔧 N Trials: {self.n_trials}")
+            self.logger.info(f"📈 Lookback Days: {self.lookback_days}")
+            self.logger.info(f"🔧 Blank Training Mode: {self.blank_training_mode}")
+            self.logger.info(f"🔧 Max Trials: {self.max_trials}")
+            self.logger.info(f"🔧 N Trials: {self.n_trials}")
 
-        self.is_training, True
+            self.is_training = True
 
         # Validate training input
-        if not self._validate_enhanced_training_inputs(enhanced_training_input):
-        return False
+            if not self._validate_enhanced_training_inputs(enhanced_training_input):
+                return False
 
         # Execute the comprehensive 16-step pipeline
-            success, await self._execute_comprehensive_pipeline(
+            success = await self._execute_comprehensive_pipeline(
                 enhanced_training_input,
             )
 
-        if success:
-        # Store training history
-        await self._store_enhanced_training_history(enhanced_training_input)
+            if success:
+                # Store training history
+                await self._store_enhanced_training_history(enhanced_training_input)
 
-        self.logger.info("=" * 80)
-        self.logger.info(
+                self.logger.info("=" * 80)
+                self.logger.info(
                     "🎉 COMPREHENSIVE 16-STEP ENHANCED TRAINING PIPELINE COMPLETED SUCCESSFULLY",
                 )
-        self.logger.info("=" * 80)
-        self.logger.info(
+                self.logger.info("=" * 80)
+                self.logger.info(
                     f"📅 Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
                 )
-        self.logger.info(
+                self.logger.info(
                     f"🎯 Symbol: {enhanced_training_input.get('symbol', 'N/A')}",
                 )
-        self.logger.info(
+                self.logger.info(
                     f"🏢 Exchange: {enhanced_training_input.get('exchange', 'N/A')}",
                 )
-        self.logger.info("📋 Completed Steps:")
-        self.logger.info("   1. Data Collection")
-        self.logger.info("   2. Feature Engineering")
-        self.logger.info("   3. HMM Regime Discovery")
-        self.logger.info("   4. Processing & Labeling")
-        self.logger.info("   5. Regime Data Splitting")
-        self.logger.info("   6. HMM-Based Training")
-        self.logger.info("   6.5. Unified Regime Intelligence")
-        self.logger.info("   7. Analyst Enhancement")
-        self.logger.info("   8. Tactician Labeling")
-        self.logger.info("   9. Tactician Specialist Training")
-        self.logger.info("   10. Confidence Calibration")
-        self.logger.info("   11. Final Parameters Optimization")
-        self.logger.info("   12. Walk Forward Validation")
-        self.logger.info("   13. Monte Carlo Validation")
-        self.logger.info("   14. A/B Testing")
-        self.logger.info("   15. Saving Results")
+                self.logger.info("📋 Completed Steps:")
+                self.logger.info("   1. Data Collection")
+                self.logger.info("   2. Feature Engineering")
+                self.logger.info("   3. HMM Regime Discovery")
+                self.logger.info("   4. Processing & Labeling")
+                self.logger.info("   5. Regime Data Splitting")
+                self.logger.info("   6. HMM-Based Training")
+                self.logger.info("   6.5. Unified Regime Intelligence")
+                self.logger.info("   7. Analyst Enhancement")
+                self.logger.info("   8. Tactician Labeling")
+                self.logger.info("   9. Tactician Specialist Training")
+                self.logger.info("   10. Confidence Calibration")
+                self.logger.info("   11. Final Parameters Optimization")
+                self.logger.info("   12. Walk Forward Validation")
+                self.logger.info("   13. Monte Carlo Validation")
+                self.logger.info("   14. A/B Testing")
+                self.logger.info("   15. Saving Results")
             else:
-        self.logger.error("❌ Enhanced training pipeline failed")
+                self.logger.error("❌ Enhanced training pipeline failed")
 
-        self.is_training, False
-        return success
+            self.is_training = False
+            return success
 
         except Exception as e:
-        self.logger.exception(f"💥 ENHANCED TRAINING PIPELINE FAILED: {e!s}")
-        self.logger.exception(f"📋 Error details: {type(e).__name__}: {e!s}")
-        self.is_training, False
-        return False
+            self.logger.exception(f"💥 ENHANCED TRAINING PIPELINE FAILED: {e!s}")
+            self.logger.exception(f"📋 Error details: {type(e).__name__}: {e!s}")
+            self.is_training = False
+            return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -1401,23 +1400,23 @@ class EnhancedTrainingManager:
         try:
             required_fields = ["symbol", "exchange", "timeframe", "lookback_days"]
 
-        for field in required_fields:
-        if field not in enhanced_training_input:
-        self.logger.error(
+            for field in required_fields:
+                if field not in enhanced_training_input:
+                    self.logger.error(
                         f"❌ Missing required enhanced training input field: {field}",
                     )
-        return False
+                    return False
 
         # Validate specific field values
-        if enhanced_training_input.get("lookback_days", 0) <= 0:
-        self.logger.error("❌ Invalid lookback_days value")
-        return False
+            if enhanced_training_input.get("lookback_days", 0) <= 0:
+                self.logger.error("❌ Invalid lookback_days value")
+                return False
 
-        return True
+            return True
 
         except Exception as e:
-        self.logger.exception(f"❌ Enhanced training inputs validation failed: {e}")
-        return False
+            self.logger.exception(f"❌ Enhanced training inputs validation failed: {e}")
+            return False
 
     @handle_errors(
         exceptions=(Exception,),

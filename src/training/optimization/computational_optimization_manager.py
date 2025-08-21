@@ -41,73 +41,73 @@ class ComputationalOptimizationConfig:
     """Configuration for computational optimization strategies."""
 
     # Caching configuration
-    enable_caching: bool = True
-    max_cache_size: int = 1000
-    cache_ttl_hours: int = 24
+    enable_caching: bool, True
+    max_cache_size: int, 1000
+    cache_ttl_hours: int, 24
 
     # Parallel processing configuration
-    enable_parallelization: bool = True
-    max_workers: int = None  # Auto-detect if None
-    chunk_size: int = 1000
+    enable_parallelization: bool, True
+    max_workers: int, None  # Auto-detect if None
+    chunk_size: int, 1000
 
     # Early stopping configuration
-    enable_early_stopping: bool = True
-    patience: int = 10
-    min_trials: int = 20
+    enable_early_stopping: bool, True
+    patience: int, 10
+    min_trials: int, 20
 
     # Surrogate models configuration
-    enable_surrogate_models: bool = True
-    expensive_trials: int = 50
-    update_frequency: int = 10
+    enable_surrogate_models: bool, True
+    expensive_trials: int, 50
+    update_frequency: int, 10
 
     # Memory management configuration
-    enable_memory_management: bool = True
-    memory_threshold: float = 0.8
-    cleanup_frequency: int = 100
+    enable_memory_management: bool, True
+    memory_threshold: float, 0.8
+    cleanup_frequency: int, 100
 
     # Progressive evaluation configuration
-    enable_progressive_evaluation: bool = True
+    enable_progressive_evaluation: bool, True
     evaluation_stages: list[tuple[float, float]] = None  # (data_ratio, weight)
 
     # Model complexity scaling
-    enable_adaptive_complexity: bool = True
+    enable_adaptive_complexity: bool, True
     complexity_levels: dict[str, dict[str, Any]] = None
 
     # Backtesting configuration
-    enable_cached_backtesting: bool = True
-    enable_progressive_evaluation_backtesting: bool = True
-    enable_parallel_backtesting: bool = True
-    max_backtest_workers: int = 4
-    backtest_timeout_seconds: int = 300
+    enable_cached_backtesting: bool, True
+    enable_progressive_evaluation_backtesting: bool, True
+    enable_parallel_backtesting: bool, True
+    max_backtest_workers: int, 4
+    backtest_timeout_seconds: int, 300
 
     # Model training configuration
-    enable_incremental_training: bool = True
-    enable_adaptive_complexity_training: bool = True
-    model_cache_size: int = 100
-    warm_start_threshold: float = 0.8
+    enable_incremental_training: bool, True
+    enable_adaptive_complexity_training: bool, True
+    model_cache_size: int, 100
+    warm_start_threshold: float, 0.8
 
     # Feature engineering configuration
-    enable_precomputed_features: bool = True
-    enable_feature_caching: bool = True
-    feature_cache_size: int = 500
-    enable_memory_efficient_data: bool = True
+    enable_precomputed_features: bool, True
+    enable_feature_caching: bool, True
+    feature_cache_size: int, 500
+    enable_memory_efficient_data: bool, True
 
     # Multi-objective optimization
-    enable_surrogate_models_multi: bool = True
-    enable_adaptive_sampling: bool = True
+    enable_surrogate_models_multi: bool, True
+    enable_adaptive_sampling: bool, True
     surrogate_model_type: str = "gaussian_process"
-    expensive_evaluation_ratio: float = 0.2
+    expensive_evaluation_ratio: float, 0.2
 
     # Memory management
-    enable_memory_monitoring: bool = True
-    max_memory_usage_mb: int = 8000
-    enable_garbage_collection: bool = True
+    enable_memory_monitoring: bool, True
+    max_memory_usage_mb: int, 8000
+    enable_garbage_collection: bool, True
 
     def __post_init__(self):
         """Post-initialization processing to handle nested configurations."""
         # Convert evaluation_stages from list of tuples to proper format if needed
         if self.evaluation_stages is None:
-            self.evaluation_stages = [
+        self.evaluation_stages = [
                 (0.1, 0.3),  # 10% data, 30% weight
                 (0.3, 0.5),  # 30% data, 50% weight
                 (1.0, 1.0),  # 100% data, 100% weight
@@ -115,7 +115,7 @@ class ComputationalOptimizationConfig:
 
         # Set default complexity levels if None
         if self.complexity_levels is None:
-            self.complexity_levels = {
+        self.complexity_levels = {
                 "light": {"n_estimators": 50, "max_depth": 3},
                 "medium": {"n_estimators": 100, "max_depth": 6},
                 "heavy": {"n_estimators": 200, "max_depth": 10},
@@ -130,11 +130,11 @@ class CachedBacktester:
         market_data: pd.DataFrame,
         config: ComputationalOptimizationConfig,
     ) -> None:
-        self.market_data = market_data
-        self.config = config
+        self.market_data, market_data
+        self.config, config
         self.cache = {}
-        self.technical_indicators = self._precompute_indicators()
-        self.logger = system_logger.getChild("CachedBacktester")
+        self.technical_indicators, self._precompute_indicators()
+        self.logger, system_logger.getChild("CachedBacktester")
 
     def _precompute_indicators(self) -> dict[str, np.ndarray]:
         """Precompute all technical indicators once."""
@@ -148,10 +148,10 @@ class CachedBacktester:
         # Moving averages (multiple periods)
         for period in [5, 10, 20, 50, 100]:
             indicators[f"sma_{period}"] = (
-                self.market_data["close"].rolling(period).mean().values
+        self.market_data["close"].rolling(period).mean().values
             )
             indicators[f"ema_{period}"] = (
-                self.market_data["close"].ewm(span=period).mean().values
+        self.market_data["close"].ewm(span=period).mean().values
             )
 
         # Volatility features
@@ -169,55 +169,55 @@ class CachedBacktester:
 
     def _calculate_atr(self) -> np.ndarray:
         """Calculate Average True Range."""
-        high = self.market_data["high"].values
-        low = self.market_data["low"].values
-        close = self.market_data["close"].values
+        high, self.market_data["high"].values
+        low, self.market_data["low"].values
+        close, self.market_data["close"].values
 
-        tr1 = high - low
-        tr2 = np.abs(high - np.roll(close, 1))
-        tr3 = np.abs(low - np.roll(close, 1))
+        tr1, high - low
+        tr2, np.abs(high - np.roll(close, 1))
+        tr3, np.abs(low - np.roll(close, 1))
 
-        tr = np.maximum(tr1, np.maximum(tr2, tr3))
+        tr, np.maximum(tr1, np.maximum(tr2, tr3))
         return pd.Series(tr).rolling(14).mean().values
 
     def _calculate_rsi(self) -> np.ndarray:
         """Calculate Relative Strength Index."""
-        close = self.market_data["close"]
-        delta = close.diff()
+        close, self.market_data["close"]
+        delta, close.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
+        rs, gain / loss
+        rsi, 100 - (100 / (1 + rs))
         return rsi.values
 
     def _calculate_macd(self) -> np.ndarray:
         """Calculate MACD."""
-        close = self.market_data["close"]
-        ema12 = close.ewm(span=12).mean()
-        ema26 = close.ewm(span=26).mean()
-        macd = ema12 - ema26
+        close, self.market_data["close"]
+        ema12, close.ewm(span=12).mean()
+        ema26, close.ewm(span=26).mean()
+        macd, ema12 - ema26
         return macd.values
 
     def _generate_cache_key(self, params: dict[str, Any]) -> str:
         """Generate cache key based on parameters."""
-        param_str = json.dumps(params, sort_keys=True)
+        param_str, json.dumps(params, sort_keys=True)
         return hashlib.md5(param_str.encode()).hexdigest()
 
     def run_cached_backtest(self, params: dict[str, Any]) -> float:
         """Run backtest using cached indicators."""
-        cache_key = self._generate_cache_key(params)
+        cache_key, self._generate_cache_key(params)
 
         if cache_key in self.cache:
-            self.logger.debug(f"Cache hit for parameters: {cache_key[:8]}")
-            return self.cache[cache_key]
+        self.logger.debug(f"Cache hit for parameters: {cache_key[:8]}")
+        return self.cache[cache_key]
 
         # Run simplified backtest using precomputed indicators
-        result = self._run_simplified_backtest(params)
+        result, self._run_simplified_backtest(params)
         self.cache[cache_key] = result
 
         # Manage cache size
         if len(self.cache) > self.config.max_cache_size:
-            self._cleanup_cache()
+        self._cleanup_cache()
 
         return result
 
@@ -228,27 +228,27 @@ class CachedBacktester:
         # and apply the trading logic based on parameters
 
         # Extract parameters
-        sma_short = params.get("sma_short", 20)
-        sma_long = params.get("sma_long", 50)
-        rsi_threshold = params.get("rsi_threshold", 30)
+        sma_short, params.get("sma_short", 20)
+        sma_long, params.get("sma_long", 50)
+        rsi_threshold, params.get("rsi_threshold", 30)
 
         # Use precomputed indicators
-        sma_short_values = self.technical_indicators.get(
+        sma_short_values, self.technical_indicators.get(
             f"sma_{sma_short}",
-            self.technical_indicators["sma_20"],
+        self.technical_indicators["sma_20"],
         )
-        sma_long_values = self.technical_indicators.get(
+        sma_long_values, self.technical_indicators.get(
             f"sma_{sma_long}",
-            self.technical_indicators["sma_50"],
+        self.technical_indicators["sma_50"],
         )
-        rsi_values = self.technical_indicators["rsi"]
+        rsi_values, self.technical_indicators["rsi"]
 
         # Simple trading logic
-        signals = np.zeros(len(self.market_data))
+        signals, np.zeros(len(self.market_data))
 
         # Generate signals based on SMA crossover and RSI
         for i in range(1, len(signals)):
-            if (
+        if (
                 sma_short_values[i] > sma_long_values[i]
                 and sma_short_values[i - 1] <= sma_long_values[i - 1]
                 and rsi_values[i] < rsi_threshold
@@ -261,8 +261,8 @@ class CachedBacktester:
                 signals[i] = -1  # Sell signal
 
         # Calculate returns
-        returns = self.technical_indicators["returns"]
-        strategy_returns = signals * returns
+        returns, self.technical_indicators["returns"]
+        strategy_returns, signals * returns
 
         # Calculate Sharpe ratio
         return np.mean(strategy_returns) / (np.std(strategy_returns) + 1e-8)
@@ -270,9 +270,9 @@ class CachedBacktester:
     def _cleanup_cache(self) -> None:
         """Clean up old cache entries."""
         if len(self.cache) > self.config.max_cache_size:
-            # Remove oldest entries
-            oldest_keys = sorted(self.cache.keys())[: len(self.cache) // 2]
-            for key in oldest_keys:
+        # Remove oldest entries
+            oldest_keys, sorted(self.cache.keys())[: len(self.cache) // 2]
+        for key in oldest_keys:
                 del self.cache[key]
 
 
@@ -284,38 +284,38 @@ class ProgressiveEvaluator:
         full_data: pd.DataFrame,
         config: ComputationalOptimizationConfig,
     ) -> None:
-        self.full_data = full_data
-        self.config = config
-        self.logger = system_logger.getChild("ProgressiveEvaluator")
+        self.full_data, full_data
+        self.config, config
+        self.logger, system_logger.getChild("ProgressiveEvaluator")
 
         if config.evaluation_stages is None:
-            self.evaluation_stages = [
+        self.evaluation_stages = [
                 (0.1, 0.3),  # 10% data, 30% weight
                 (0.3, 0.5),  # 30% data, 50% weight
                 (1.0, 1.0),  # 100% data, 100% weight
             ]
         else:
-            self.evaluation_stages = config.evaluation_stages
+        self.evaluation_stages, config.evaluation_stages
 
     def evaluate_progressively(self, params: dict[str, Any]) -> float:
         """Evaluate parameters progressively across data subsets."""
-        total_score = 0
-        total_weight = 0
+        total_score, 0
+        total_weight, 0
 
         for data_ratio, weight in self.evaluation_stages:
-            subset_size = int(len(self.full_data) * data_ratio)
-            subset_data = self.full_data.iloc[:subset_size]
+            subset_size, int(len(self.full_data) * data_ratio)
+            subset_data, self.full_data.iloc[:subset_size]
 
-            score = self._evaluate_subset(subset_data, params)
+            score, self._evaluate_subset(subset_data, params)
             total_score += score * weight
             total_weight += weight
 
-            # Early stopping if performance is poor
-            if data_ratio < 1.0 and score < -0.5:
-                self.logger.debug(
+        # Early stopping if performance is poor
+        if data_ratio < 1.0 and score < -0.5:
+        self.logger.debug(
                     f"Early stopping at {data_ratio*100}% data due to poor performance",
                 )
-                return -1.0  # Stop evaluation
+        return -1.0  # Stop evaluation
 
         return total_score / total_weight
 
@@ -329,17 +329,17 @@ class ProgressiveEvaluator:
         # on the subset data with the given parameters
 
         # Extract parameters
-        sma_short = params.get("sma_short", 20)
-        sma_long = params.get("sma_long", 50)
+        sma_short, params.get("sma_short", 20)
+        sma_long, params.get("sma_long", 50)
 
         # Calculate simple moving averages
-        sma_short_values = subset_data["close"].rolling(sma_short).mean()
-        sma_long_values = subset_data["close"].rolling(sma_long).mean()
+        sma_short_values, subset_data["close"].rolling(sma_short).mean()
+        sma_long_values, subset_data["close"].rolling(sma_long).mean()
 
         # Simple signal generation
-        signals = np.zeros(len(subset_data))
+        signals, np.zeros(len(subset_data))
         for i in range(1, len(signals)):
-            if (
+        if (
                 sma_short_values.iloc[i] > sma_long_values.iloc[i]
                 and sma_short_values.iloc[i - 1] <= sma_long_values.iloc[i - 1]
             ):
@@ -351,8 +351,8 @@ class ProgressiveEvaluator:
                 signals[i] = -1
 
         # Calculate returns
-        returns = subset_data["close"].pct_change()
-        strategy_returns = signals * returns
+        returns, subset_data["close"].pct_change()
+        strategy_returns, signals * returns
 
         # Calculate Sharpe ratio
         return np.mean(strategy_returns) / (np.std(strategy_returns) + 1e-8)
@@ -362,15 +362,15 @@ class ParallelBacktester:
     """Parallel backtesting for multiple parameter combinations."""
 
     def __init__(self, config: ComputationalOptimizationConfig) -> None:
-        self.config = config
-        self.logger = system_logger.getChild("ParallelBacktester")
+        self.config, config
+        self.logger, system_logger.getChild("ParallelBacktester")
 
         if config.max_workers is None:
-            self.n_workers = min(mp.cpu_count(), 8)
+        self.n_workers, min(mp.cpu_count(), 8)
         else:
-            self.n_workers = config.max_workers
+        self.n_workers, config.max_workers
 
-        self.executor = None
+        self.executor, None
         self.logger.info(
             f"Initialized parallel backtester with {self.n_workers} workers",
         )
@@ -378,15 +378,15 @@ class ParallelBacktester:
     def _get_executor(self):
         """Get or create ProcessPoolExecutor with proper cleanup."""
         if self.executor is None:
-            self.executor = ProcessPoolExecutor(max_workers=self.n_workers)
+        self.executor, ProcessPoolExecutor(max_workers=self.n_workers)
         return self.executor
 
     def cleanup(self) -> None:
         """Clean up resources properly."""
         if self.executor is not None:
-            self.executor.shutdown(wait=True)
-            self.executor = None
-            self.logger.info("ProcessPoolExecutor cleaned up")
+        self.executor.shutdown(wait=True)
+        self.executor, None
+        self.logger.info("ProcessPoolExecutor cleaned up")
 
     def evaluate_batch(
         self,
@@ -395,14 +395,14 @@ class ParallelBacktester:
     ) -> list[float]:
         """Evaluate multiple parameter sets in parallel."""
         # Prepare data for parallel processing
-        data_pickle = pickle.dumps(market_data)
+        data_pickle, pickle.dumps(market_data)
 
         # Submit batch for parallel evaluation
-        executor = self._get_executor()
+        executor, self._get_executor()
         futures = []
         for params in param_batch:
-            future = executor.submit(
-                self._evaluate_single_params,
+            future, executor.submit(
+        self._evaluate_single_params,
                 data_pickle,
                 params,
             )
@@ -411,11 +411,11 @@ class ParallelBacktester:
         # Collect results
         results = []
         for future in futures:
-            try:
-                result = future.result(timeout=300)  # 5 minute timeout
+        try:
+                result, future.result(timeout=300)  # 5 minute timeout
                 results.append(result)
-            except Exception:
-                self.print(error("Error in parallel evaluation: {e}"))
+        except Exception:
+        self.print(error("Error in parallel evaluation: {e}"))
                 results.append(-1.0)  # Default to poor performance
 
         return results
@@ -424,10 +424,10 @@ class ParallelBacktester:
     def _evaluate_single_params(data_pickle: bytes, params: dict[str, Any]) -> float:
         """Evaluate single parameter set (runs in separate process)."""
         try:
-            market_data = pickle.loads(data_pickle)
-            return ParallelBacktester._run_simplified_backtest(market_data, params)
+            market_data, pickle.loads(data_pickle)
+        return ParallelBacktester._run_simplified_backtest(market_data, params)
         except Exception:
-            return -1.0
+        return -1.0
 
     @staticmethod
     def _run_simplified_backtest(
@@ -436,15 +436,15 @@ class ParallelBacktester:
     ) -> float:
         """Run simplified backtest for parallel evaluation."""
         # Simplified backtest implementation
-        sma_short = params.get("sma_short", 20)
-        sma_long = params.get("sma_long", 50)
+        sma_short, params.get("sma_short", 20)
+        sma_long, params.get("sma_long", 50)
 
-        sma_short_values = market_data["close"].rolling(sma_short).mean()
-        sma_long_values = market_data["close"].rolling(sma_long).mean()
+        sma_short_values, market_data["close"].rolling(sma_short).mean()
+        sma_long_values, market_data["close"].rolling(sma_long).mean()
 
-        signals = np.zeros(len(market_data))
+        signals, np.zeros(len(market_data))
         for i in range(1, len(signals)):
-            if (
+        if (
                 sma_short_values.iloc[i] > sma_long_values.iloc[i]
                 and sma_short_values.iloc[i - 1] <= sma_long_values.iloc[i - 1]
             ):
@@ -455,8 +455,8 @@ class ParallelBacktester:
             ):
                 signals[i] = -1
 
-        returns = market_data["close"].pct_change()
-        strategy_returns = signals * returns
+        returns, market_data["close"].pct_change()
+        strategy_returns, signals * returns
 
         return np.mean(strategy_returns) / (np.std(strategy_returns) + 1e-8)
 
@@ -469,10 +469,10 @@ class IncrementalTrainer:
         base_model_config: dict[str, Any],
         config: ComputationalOptimizationConfig,
     ) -> None:
-        self.base_config = base_model_config
-        self.config = config
+        self.base_config, base_model_config
+        self.config, config
         self.model_cache = {}
-        self.logger = system_logger.getChild("IncrementalTrainer")
+        self.logger, system_logger.getChild("IncrementalTrainer")
 
     def train_incrementally(
         self,
@@ -482,27 +482,27 @@ class IncrementalTrainer:
     ) -> Any:
         """Train model incrementally from cached state."""
         # Generate model key based on core parameters
-        model_key = self._generate_model_key(params)
+        model_key, self._generate_model_key(params)
 
         if model_key in self.model_cache:
-            # Continue training from cached state
-            self.logger.debug(f"Using cached model for key: {model_key[:8]}")
-            model = self.model_cache[model_key]
-            # For XGBoost, we can continue training
-            if hasattr(model, "fit"):
+        # Continue training from cached state
+        self.logger.debug(f"Using cached model for key: {model_key[:8]}")
+            model, self.model_cache[model_key]
+        # For XGBoost, we can continue training
+        if hasattr(model, "fit"):
                 model.fit(
                     X,
                     y,
                     xgb_model=model.get_booster()
-                    if hasattr(model, "get_booster")
+        if hasattr(model, "get_booster")
                     else None,
                 )
         else:
-            # Train new model
-            self.logger.debug(f"Training new model for key: {model_key[:8]}")
-            model = self._create_model(params)
+        # Train new model
+        self.logger.debug(f"Training new model for key: {model_key[:8]}")
+            model, self._create_model(params)
             model.fit(X, y)
-            self.model_cache[model_key] = model
+        self.model_cache[model_key] = model
 
         return model
 
@@ -532,17 +532,17 @@ class AdaptiveModelComplexity:
     """Adaptive model complexity based on data size and performance."""
 
     def __init__(self, config: ComputationalOptimizationConfig) -> None:
-        self.config = config
-        self.logger = system_logger.getChild("AdaptiveModelComplexity")
+        self.config, config
+        self.logger, system_logger.getChild("AdaptiveModelComplexity")
 
         if config.complexity_levels is None:
-            self.complexity_levels = {
+        self.complexity_levels = {
                 "light": {"n_estimators": 50, "max_depth": 3},
                 "medium": {"n_estimators": 100, "max_depth": 6},
                 "heavy": {"n_estimators": 200, "max_depth": 10},
             }
         else:
-            self.complexity_levels = config.complexity_levels
+        self.complexity_levels, config.complexity_levels
 
     def get_adaptive_params(
         self,
@@ -551,11 +551,11 @@ class AdaptiveModelComplexity:
     ) -> dict[str, Any]:
         """Get adaptive model parameters based on context."""
         if data_size < 1000 or previous_performance < 0.3:
-            self.logger.debug("Using light complexity model")
-            return self.complexity_levels["light"]
+        self.logger.debug("Using light complexity model")
+        return self.complexity_levels["light"]
         if data_size < 5000 or previous_performance < 0.6:
-            self.logger.debug("Using medium complexity model")
-            return self.complexity_levels["medium"]
+        self.logger.debug("Using medium complexity model")
+        return self.complexity_levels["medium"]
         self.logger.debug("Using heavy complexity model")
         return self.complexity_levels["heavy"]
 
@@ -568,10 +568,10 @@ class PrecomputedFeatureEngine:
         market_data: pd.DataFrame,
         config: ComputationalOptimizationConfig,
     ) -> None:
-        self.market_data = market_data
-        self.config = config
+        self.market_data, market_data
+        self.config, config
         self.feature_cache = {}
-        self.logger = system_logger.getChild("PrecomputedFeatureEngine")
+        self.logger, system_logger.getChild("PrecomputedFeatureEngine")
         self._precompute_all_features()
 
     def _precompute_all_features(self) -> None:
@@ -584,17 +584,17 @@ class PrecomputedFeatureEngine:
 
         # Moving averages (multiple periods)
         for period in [5, 10, 20, 50, 100]:
-            self.feature_cache[f"sma_{period}"] = (
-                self.market_data["close"].rolling(period).mean()
+        self.feature_cache[f"sma_{period}"] = (
+        self.market_data["close"].rolling(period).mean()
             )
-            self.feature_cache[f"ema_{period}"] = (
-                self.market_data["close"].ewm(span=period).mean()
+        self.feature_cache[f"ema_{period}"] = (
+        self.market_data["close"].ewm(span=period).mean()
             )
 
         # Volatility features
         self.feature_cache["atr"] = self._calculate_atr()
         self.feature_cache["volatility"] = (
-            self.feature_cache["returns"].rolling(20).std()
+        self.feature_cache["returns"].rolling(20).std()
         )
 
         # Momentum features
@@ -605,31 +605,31 @@ class PrecomputedFeatureEngine:
 
     def _calculate_atr(self) -> pd.Series:
         """Calculate Average True Range."""
-        high = self.market_data["high"]
-        low = self.market_data["low"]
-        close = self.market_data["close"]
+        high, self.market_data["high"]
+        low, self.market_data["low"]
+        close, self.market_data["close"]
 
-        tr1 = high - low
+        tr1, high - low
         tr2 = (high - close.shift()).abs()
         tr3 = (low - close.shift()).abs()
 
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        tr, pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
         return tr.rolling(14).mean()
 
     def _calculate_rsi(self) -> pd.Series:
         """Calculate Relative Strength Index."""
-        close = self.market_data["close"]
-        delta = close.diff()
+        close, self.market_data["close"]
+        delta, close.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss
+        rs, gain / loss
         return 100 - (100 / (1 + rs))
 
     def _calculate_macd(self) -> pd.Series:
         """Calculate MACD."""
-        close = self.market_data["close"]
-        ema12 = close.ewm(span=12).mean()
-        ema26 = close.ewm(span=26).mean()
+        close, self.market_data["close"]
+        ema12, close.ewm(span=12).mean()
+        ema26, close.ewm(span=26).mean()
         return ema12 - ema26
 
     @enforce_ndarray(arg_index=1, forbid_lists=True, require_vector=True)
@@ -639,7 +639,7 @@ class PrecomputedFeatureEngine:
         """Get selected features from cache."""
         selected_features = []
         for feature_name in feature_selection:
-            if feature_name in self.feature_cache:
+        if feature_name in self.feature_cache:
                 selected_features.append(self.feature_cache[feature_name].values)
 
         return np.column_stack(selected_features)
@@ -649,9 +649,9 @@ class FeatureSelectionCache:
     """Cache feature selection results."""
 
     def __init__(self, config: ComputationalOptimizationConfig) -> None:
-        self.config = config
+        self.config, config
         self.selection_cache = {}
-        self.logger = system_logger.getChild("FeatureSelectionCache")
+        self.logger, system_logger.getChild("FeatureSelectionCache")
 
     def get_cached_selection(
         self,
@@ -662,11 +662,11 @@ class FeatureSelectionCache:
         cache_key = (tuple(sorted(feature_list)), threshold)
 
         if cache_key in self.selection_cache:
-            self.logger.debug("Using cached feature selection")
-            return self.selection_cache[cache_key]
+        self.logger.debug("Using cached feature selection")
+        return self.selection_cache[cache_key]
 
         # Perform feature selection
-        selected_features = self._select_features(feature_list, threshold)
+        selected_features, self._select_features(feature_list, threshold)
         self.selection_cache[cache_key] = selected_features
 
         return selected_features
@@ -682,12 +682,12 @@ class SurrogateOptimizer:
     """Use surrogate models to reduce expensive evaluations."""
 
     def __init__(self, config: ComputationalOptimizationConfig) -> None:
-        self.config = config
-        self.logger = system_logger.getChild("SurrogateOptimizer")
-        self.n_expensive_trials = config.expensive_trials
-        self.surrogate_model = None
+        self.config, config
+        self.logger, system_logger.getChild("SurrogateOptimizer")
+        self.n_expensive_trials, config.expensive_trials
+        self.surrogate_model, None
         self.expensive_evaluations = []
-        self.update_frequency = config.update_frequency
+        self.update_frequency, config.update_frequency
 
     def optimize_with_surrogates(self, objective_func, n_trials: int) -> dict[str, Any]:
         """Optimize using surrogate models for expensive evaluations."""
@@ -695,25 +695,25 @@ class SurrogateOptimizer:
 
         # Initial expensive evaluations
         for i in range(self.n_expensive_trials):
-            params = self._suggest_parameters()
-            result = objective_func(params)  # Expensive evaluation
-            self.expensive_evaluations.append((params, result))
+            params, self._suggest_parameters()
+            result, objective_func(params)  # Expensive evaluation
+        self.expensive_evaluations.append((params, result))
 
         # Train surrogate model
         self._train_surrogate_model()
 
         # Use surrogate for remaining trials
         for i in range(self.n_expensive_trials, n_trials):
-            params = self._suggest_parameters()
-            predicted_result = self._predict_with_surrogate(params)
+            params, self._suggest_parameters()
+            predicted_result, self._predict_with_surrogate(params)
 
-            # Only do expensive evaluation occasionally
-            if i % self.update_frequency == 0:
-                actual_result = objective_func(params)
-                self._update_surrogate_model(params, actual_result)
+        # Only do expensive evaluation occasionally
+        if i % self.update_frequency == 0:
+                actual_result, objective_func(params)
+        self._update_surrogate_model(params, actual_result)
             else:
-                # Use surrogate prediction
-                result = predicted_result
+        # Use surrogate prediction
+                result, predicted_result
 
         return self._get_best_results()
 
@@ -737,12 +737,12 @@ class SurrogateOptimizer:
             X.append(list(params.values()))
             y.append(result)
 
-        X = np.array(X)
-        y = np.array(y)
+        X, np.array(X)
+        y, np.array(y)
 
         # Use Gaussian Process as surrogate
-        kernel = ConstantKernel(1.0) * RBF(length_scale=1.0)
-        self.surrogate_model = GaussianProcessRegressor(kernel=kernel, random_state=42)
+        kernel, ConstantKernel(1.0) * RBF(length_scale=1.0)
+        self.surrogate_model, GaussianProcessRegressor(kernel=kernel, random_state=42)
         self.surrogate_model.fit(X, y)
 
         self.logger.info("Trained surrogate model")
@@ -750,10 +750,10 @@ class SurrogateOptimizer:
     def _predict_with_surrogate(self, params: dict[str, Any]) -> float:
         """Predict result using surrogate model."""
         if self.surrogate_model is None:
-            return 0.0
+        return 0.0
 
-        X = np.array([list(params.values())]).reshape(1, -1)
-        prediction, _ = self.surrogate_model.predict(X, return_std=True)
+        X, np.array([list(params.values())]).reshape(1, -1)
+        prediction, _, self.surrogate_model.predict(X, return_std=True)
         return prediction[0]
 
     def _update_surrogate_model(self, params: dict[str, Any], result: float) -> None:
@@ -764,9 +764,9 @@ class SurrogateOptimizer:
     def _get_best_results(self) -> dict[str, Any]:
         """Get best results from expensive evaluations."""
         if not self.expensive_evaluations:
-            return {}
+        return {}
 
-        best_eval = max(self.expensive_evaluations, key=lambda x: x[1])
+        best_eval, max(self.expensive_evaluations, key=lambda x: x[1])
         return {
             "best_params": best_eval[0],
             "best_score": best_eval[1],
@@ -778,16 +778,16 @@ class AdaptiveSampler:
     """Adaptive sampling to focus on promising regions."""
 
     def __init__(self, config: ComputationalOptimizationConfig) -> None:
-        self.config = config
-        self.logger = system_logger.getChild("AdaptiveSampler")
-        self.initial_samples = 100
+        self.config, config
+        self.logger, system_logger.getChild("AdaptiveSampler")
+        self.initial_samples, 100
         self.promising_regions = []
 
     def suggest_parameters(self, trial_history: list[dict]) -> dict[str, Any]:
         """Suggest parameters based on promising regions."""
         if len(trial_history) < self.initial_samples:
-            # Random sampling for initial exploration
-            return self._random_sampling()
+        # Random sampling for initial exploration
+        return self._random_sampling()
         # Focus on promising regions
         return self._adaptive_sampling(trial_history)
 
@@ -805,17 +805,17 @@ class AdaptiveSampler:
         good_trials = [t for t in trial_history if t.get("score", 0) > 0.5]
 
         if not good_trials:
-            return self._random_sampling()
+        return self._random_sampling()
 
         # Sample around good trials
-        reference_trial = np.random.choice(good_trials)
+        reference_trial, np.random.choice(good_trials)
         return self._perturb_parameters(reference_trial.get("params", {}))
 
     def _perturb_parameters(self, base_params: dict[str, Any]) -> dict[str, Any]:
         """Perturb parameters around base values."""
         perturbed = {}
         for key, value in base_params.items():
-            if isinstance(value, int):
+        if isinstance(value, int):
                 perturbed[key] = max(1, value + np.random.randint(-5, 6))
             elif isinstance(value, float):
                 perturbed[key] = value + np.random.uniform(-0.1, 0.1)
@@ -833,9 +833,9 @@ class MemoryEfficientData:
         market_data: pd.DataFrame,
         config: ComputationalOptimizationConfig,
     ) -> None:
-        self.config = config
-        self.logger = system_logger.getChild("MemoryEfficientData")
-        self.data = self._optimize_dataframe(market_data)
+        self.config, config
+        self.logger, system_logger.getChild("MemoryEfficientData")
+        self.data, self._optimize_dataframe(market_data)
 
     @guard_dataframe_nulls(mode="warn", arg_index=1)
     def _optimize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -849,7 +849,7 @@ class MemoryEfficientData:
 
         # Reduce noise: move to debug and include shape
         with contextlib.suppress(Exception):
-            self.logger.debug(f"Optimized DataFrame memory usage: shape={df.shape}")
+        self.logger.debug(f"Optimized DataFrame memory usage: shape={df.shape}")
         return df
 
     def get_subset(self, start_idx: int, end_idx: int) -> np.ndarray:
@@ -861,24 +861,24 @@ class MemoryManager:
     """Manage memory usage during optimization."""
 
     def __init__(self, config: ComputationalOptimizationConfig) -> None:
-        self.config = config
-        self.logger = system_logger.getChild("MemoryManager")
-        self.memory_threshold = config.memory_threshold
-        self.cleanup_frequency = config.cleanup_frequency
-        self.evaluation_count = 0
+        self.config, config
+        self.logger, system_logger.getChild("MemoryManager")
+        self.memory_threshold, config.memory_threshold
+        self.cleanup_frequency, config.cleanup_frequency
+        self.evaluation_count, 0
 
     def check_memory_usage(self) -> None:
         """Check and manage memory usage."""
         self.evaluation_count += 1
 
         if self.evaluation_count % self.cleanup_frequency == 0:
-            memory_percent = psutil.virtual_memory().percent / 100
+            memory_percent, psutil.virtual_memory().percent / 100
 
-            if memory_percent > self.memory_threshold:
-                self.logger.warning(
+        if memory_percent > self.memory_threshold:
+        self.logger.warning(
                     f"High memory usage ({memory_percent:.1%}), cleaning up...",
                 )
-                self._cleanup_memory()
+        self._cleanup_memory()
 
     def _cleanup_memory(self) -> None:
         """Clean up memory by forcing garbage collection."""
@@ -890,21 +890,21 @@ class ComputationalOptimizationManager:
     """Main computational optimization manager that integrates all strategies."""
 
     def __init__(self, config: ComputationalOptimizationConfig) -> None:
-        self.config = config
-        self.logger = system_logger.getChild("ComputationalOptimizationManager")
+        self.config, config
+        self.logger, system_logger.getChild("ComputationalOptimizationManager")
 
         # Initialize optimization components
-        self.cached_backtester = None
-        self.progressive_evaluator = None
-        self.parallel_backtester = None
-        self.incremental_trainer = None
-        self.adaptive_complexity = None
-        self.precomputed_features = None
-        self.feature_cache = None
-        self.surrogate_optimizer = None
-        self.adaptive_sampler = None
-        self.memory_efficient_data = None
-        self.memory_manager = None
+        self.cached_backtester, None
+        self.progressive_evaluator, None
+        self.parallel_backtester, None
+        self.incremental_trainer, None
+        self.adaptive_complexity, None
+        self.precomputed_features, None
+        self.feature_cache, None
+        self.surrogate_optimizer, None
+        self.adaptive_sampler, None
+        self.memory_efficient_data, None
+        self.memory_manager, None
 
         self.logger.info("Computational Optimization Manager initialized")
 
@@ -920,42 +920,42 @@ class ComputationalOptimizationManager:
     ) -> bool:
         """Initialize all optimization components."""
         try:
-            self.logger.info("Initializing computational optimization components...")
+        self.logger.info("Initializing computational optimization components...")
 
-            # Initialize memory manager first
-            self.memory_manager = MemoryManager(self.config)
+        # Initialize memory manager first
+        self.memory_manager, MemoryManager(self.config)
 
-            # Initialize data components
-            self.memory_efficient_data = MemoryEfficientData(market_data, self.config)
-            self.precomputed_features = PrecomputedFeatureEngine(
+        # Initialize data components
+        self.memory_efficient_data, MemoryEfficientData(market_data, self.config)
+        self.precomputed_features, PrecomputedFeatureEngine(
                 market_data,
-                self.config,
+        self.config,
             )
-            self.feature_cache = FeatureSelectionCache(self.config)
+        self.feature_cache, FeatureSelectionCache(self.config)
 
-            # Initialize backtesting components
-            self.cached_backtester = CachedBacktester(market_data, self.config)
-            self.progressive_evaluator = ProgressiveEvaluator(market_data, self.config)
-            self.parallel_backtester = ParallelBacktester(self.config)
+        # Initialize backtesting components
+        self.cached_backtester, CachedBacktester(market_data, self.config)
+        self.progressive_evaluator, ProgressiveEvaluator(market_data, self.config)
+        self.parallel_backtester, ParallelBacktester(self.config)
 
-            # Initialize training components
-            self.incremental_trainer = IncrementalTrainer(model_config, self.config)
-            self.adaptive_complexity = AdaptiveModelComplexity(self.config)
+        # Initialize training components
+        self.incremental_trainer, IncrementalTrainer(model_config, self.config)
+        self.adaptive_complexity, AdaptiveModelComplexity(self.config)
 
-            # Initialize optimization components
-            self.surrogate_optimizer = SurrogateOptimizer(self.config)
-            self.adaptive_sampler = AdaptiveSampler(self.config)
+        # Initialize optimization components
+        self.surrogate_optimizer, SurrogateOptimizer(self.config)
+        self.adaptive_sampler, AdaptiveSampler(self.config)
 
-            self.logger.info(
+        self.logger.info(
                 "All computational optimization components initialized successfully",
             )
-            return True
+        return True
 
         except Exception as e:
-            self.logger.exception(
+        self.logger.exception(
                 f"Failed to initialize computational optimization manager: {e}",
             )
-            return False
+        return False
 
     @handle_errors(
         exceptions=(Exception,),
@@ -965,28 +965,28 @@ class ComputationalOptimizationManager:
     async def optimize_parameters(
         self,
         objective_function: callable,
-        n_trials: int = 100,
-        use_surrogates: bool = True,
+        n_trials: int, 100,
+        use_surrogates: bool, True,
     ) -> dict[str, Any]:
         """Run optimized parameter optimization."""
         try:
-            self.logger.info(
+        self.logger.info(
                 f"Starting optimized parameter optimization with {n_trials} trials",
             )
 
-            if use_surrogates and self.config.enable_surrogate_models:
-                return self.surrogate_optimizer.optimize_with_surrogates(
+        if use_surrogates and self.config.enable_surrogate_models:
+        return self.surrogate_optimizer.optimize_with_surrogates(
                     objective_function,
                     n_trials,
                 )
-            return await self._run_standard_optimization(
+        return await self._run_standard_optimization(
                 objective_function,
                 n_trials,
             )
 
         except Exception:
-            self.print(failed("Parameter optimization failed: {e}"))
-            return {}
+        self.print(failed("Parameter optimization failed: {e}"))
+        return {}
 
     async def _run_standard_optimization(
         self,
@@ -994,19 +994,19 @@ class ComputationalOptimizationManager:
         n_trials: int,
     ) -> dict[str, Any]:
         """Run standard optimization with caching and early stopping."""
-        study = optuna.create_study(direction="maximize")
+        study, optuna.create_study(direction="maximize")
 
         def objective(trial):
-            # Check memory usage
-            self.memory_manager.check_memory_usage()
+        # Check memory usage
+        self.memory_manager.check_memory_usage()
 
-            # Suggest parameters using adaptive sampling
-            params = self.adaptive_sampler.suggest_parameters(study.trials)
+        # Suggest parameters using adaptive sampling
+            params, self.adaptive_sampler.suggest_parameters(study.trials)
 
-            # Use cached backtesting if available
-            if self.cached_backtester:
-                return self.cached_backtester.run_cached_backtest(params)
-            return objective_function(params)
+        # Use cached backtesting if available
+        if self.cached_backtester:
+        return self.cached_backtester.run_cached_backtest(params)
+        return objective_function(params)
 
         study.optimize(objective, n_trials=n_trials)
 
@@ -1020,27 +1020,27 @@ class ComputationalOptimizationManager:
         """Get statistics from all optimization components."""
         return {
             "cache_hits": len(self.cached_backtester.cache)
-            if self.cached_backtester
+        if self.cached_backtester
             else 0,
             "memory_usage": psutil.virtual_memory().percent,
             "surrogate_evaluations": len(self.surrogate_optimizer.expensive_evaluations)
-            if self.surrogate_optimizer
+        if self.surrogate_optimizer
             else 0,
         }
 
     async def cleanup(self) -> None:
         """Cleanup resources."""
         try:
-            if self.parallel_backtester:
-                self.parallel_backtester.executor.shutdown()
+        if self.parallel_backtester:
+        self.parallel_backtester.executor.shutdown()
 
-            if self.memory_manager:
-                self.memory_manager._cleanup_memory()
+        if self.memory_manager:
+        self.memory_manager._cleanup_memory()
 
-            self.logger.info("Computational optimization manager cleanup completed")
+        self.logger.info("Computational optimization manager cleanup completed")
 
         except Exception:
-            self.print(failed("Cleanup failed: {e}"))
+        self.print(failed("Cleanup failed: {e}"))
 
 
 # Factory function for easy integration
@@ -1051,7 +1051,7 @@ async def create_computational_optimization_manager(
 ) -> ComputationalOptimizationManager:
     """Create and initialize a computational optimization manager."""
     # Extract the computational_optimization config and flatten nested structures
-    optimization_config_raw = config.get("computational_optimization", {})
+    optimization_config_raw, config.get("computational_optimization", {})
 
     # Get the valid field names for ComputationalOptimizationConfig
     from dataclasses import fields
@@ -1068,41 +1068,41 @@ async def create_computational_optimization_manager(
 
     # Extract nested configurations and flatten them
     if "backtesting" in optimization_config_raw:
-        backtesting_config = optimization_config_raw["backtesting"]
+        backtesting_config, optimization_config_raw["backtesting"]
         for key, value in backtesting_config.items():
-            field_name = f"enable_{key}" if key.startswith("enable_") else key
-            if field_name in valid_fields:
+            field_name, f"enable_{key}" if key.startswith("enable_") else key
+        if field_name in valid_fields:
                 flattened_config[field_name] = value
 
     if "model_training" in optimization_config_raw:
-        training_config = optimization_config_raw["model_training"]
+        training_config, optimization_config_raw["model_training"]
         for key, value in training_config.items():
-            field_name = f"enable_{key}" if key.startswith("enable_") else key
-            if field_name in valid_fields:
+            field_name, f"enable_{key}" if key.startswith("enable_") else key
+        if field_name in valid_fields:
                 flattened_config[field_name] = value
 
     if "feature_engineering" in optimization_config_raw:
-        feature_config = optimization_config_raw["feature_engineering"]
+        feature_config, optimization_config_raw["feature_engineering"]
         for key, value in feature_config.items():
-            field_name = f"enable_{key}" if key.startswith("enable_") else key
-            if field_name in valid_fields:
+            field_name, f"enable_{key}" if key.startswith("enable_") else key
+        if field_name in valid_fields:
                 flattened_config[field_name] = value
 
     if "multi_objective" in optimization_config_raw:
-        multi_config = optimization_config_raw["multi_objective"]
+        multi_config, optimization_config_raw["multi_objective"]
         for key, value in multi_config.items():
-            field_name = f"enable_{key}_multi" if key.startswith("enable_") else key
-            if field_name in valid_fields:
+            field_name, f"enable_{key}_multi" if key.startswith("enable_") else key
+        if field_name in valid_fields:
                 flattened_config[field_name] = value
 
     if "memory_management" in optimization_config_raw:
-        memory_config = optimization_config_raw["memory_management"]
+        memory_config, optimization_config_raw["memory_management"]
         for key, value in memory_config.items():
-            if key in valid_fields:
+        if key in valid_fields:
                 flattened_config[key] = value
 
     # Create the configuration object
-    optimization_config = ComputationalOptimizationConfig(**flattened_config)
+    optimization_config, ComputationalOptimizationConfig(**flattened_config)
     return ComputationalOptimizationManager(optimization_config)
 
     # Defer initialization until real market data is available

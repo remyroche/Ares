@@ -166,7 +166,7 @@ class EnhancedLMOptimizerConfig(BaseModel):
         validate_assignment = True
         extra = "forbid"  # Prevent additional fields
         json_encoders = {
-            # Custom JSON encoders if needed
+        # Custom JSON encoders if needed
         }
 
     def to_dict(self) -> dict[str, Any]:

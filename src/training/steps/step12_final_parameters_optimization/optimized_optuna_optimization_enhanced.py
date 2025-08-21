@@ -23,35 +23,35 @@ from sklearn.model_selection import StratifiedKFold, cross_val_score
 try:  # Optional dependencies
     import lightgbm as lgb  # type: ignore
 except Exception:  # pragma: no cover
-    lgb = None  # type: ignore
+    lgb, None  # type: ignore
 
 try:  # Optional dependencies
     import xgboost as xgb  # type: ignore
 except Exception:  # pragma: no cover
-    xgb = None  # type: ignore
+    xgb, None  # type: ignore
 
 try:  # Optional dependencies
     from catboost import CatBoostClassifier  # type: ignore
 except Exception:  # pragma: no cover
-    CatBoostClassifier = None  # type: ignore
+    CatBoostClassifier, None  # type: ignore
 
 
 @dataclass
 class OptimizationCache:
-    feature_cache: dict[str, np.ndarray] | None = None
-    model_cache: dict[str, Any] | None = None
-    data_cache: dict[str, tuple[np.ndarray, np.ndarray]] | None = None
-    parameter_cache: dict[str, dict[str, Any]] | None = None
+    feature_cache: dict[str, np.ndarray] | None, None
+    model_cache: dict[str, Any] | None, None
+    data_cache: dict[str, tuple[np.ndarray, np.ndarray]] | None, None
+    parameter_cache: dict[str, dict[str, Any]] | None, None
 
     def __post_init__(self) -> None:
         if self.feature_cache is None:
-            self.feature_cache = {}
+        self.feature_cache = {}
         if self.model_cache is None:
-            self.model_cache = {}
+        self.model_cache = {}
         if self.data_cache is None:
-            self.data_cache = {}
+        self.data_cache = {}
         if self.parameter_cache is None:
-            self.parameter_cache = {}
+        self.parameter_cache = {}
 
 
 class VectorizedOptunaOptimizer:
@@ -61,21 +61,21 @@ class VectorizedOptunaOptimizer:
         self,
         storage_url: str = "sqlite:///vectorized_optuna_studies.db",
         study_name_prefix: str = "vectorized_optimization",
-        config: dict[str, Any] | None = None,
-        enable_gpu: bool = True,  # Placeholder flag
-        enable_jit: bool = True,  # Placeholder flag
-        cache_size: int = 1000,
+        config: dict[str, Any] | None, None,
+        enable_gpu: bool, True,  # Placeholder flag
+        enable_jit: bool, True,  # Placeholder flag
+        cache_size: int, 1000,
     ) -> None:
-        self.storage_url = storage_url
-        self.study_name_prefix = study_name_prefix
-        self.config = config or {}
-        self.enable_gpu = bool(enable_gpu)
-        self.enable_jit = bool(enable_jit)
-        self.cache_size = cache_size
-        self.cache = OptimizationCache()
-        self.logger = logging.getLogger(__name__)
+        self.storage_url, storage_url
+        self.study_name_prefix, study_name_prefix
+        self.config, config or {}
+        self.enable_gpu, bool(enable_gpu)
+        self.enable_jit, bool(enable_jit)
+        self.cache_size, cache_size
+        self.cache, OptimizationCache()
+        self.logger, logging.getLogger(__name__)
 
-        self._model_configs = self._get_model_configurations()
+        self._model_configs, self._get_model_configurations()
 
         self.logger.info("VectorizedOptunaOptimizer initialized")
         self.logger.info(f"GPU flag: {self.enable_gpu}")
@@ -165,10 +165,10 @@ class VectorizedOptunaOptimizer:
         }
 
     def _summarize_study(self, study: optuna.Study) -> dict[str, Any]:
-        pruned_trials = study.get_trials(
+        pruned_trials, study.get_trials(
             deepcopy=False, states=[optuna.trial.TrialState.PRUNED]
         )
-        complete_trials = study.get_trials(
+        complete_trials, study.get_trials(
             deepcopy=False, states=[optuna.trial.TrialState.COMPLETE]
         )
         summary = {
@@ -187,20 +187,20 @@ class VectorizedOptunaOptimizer:
         model_type: str,
         X: pd.DataFrame,
         y: pd.Series,
-        n_trials: int = 100,
+        n_trials: int, 100,
         n_jobs: int = -1,
-        cv_folds: int = 5,
-        early_stopping_patience: int | None = 15,
-        subsample_fraction: float | None = None,
-        custom_objective: Any | None = None,
-        custom_space: Any | None = None,
-        batch_size: int = 10,
+        cv_folds: int, 5,
+        early_stopping_patience: int | None, 15,
+        subsample_fraction: float | None, None,
+        custom_objective: Any | None, None,
+        custom_space: Any | None, None,
+        batch_size: int, 10,
     ) -> dict[str, Any]:
         # Optional subsampling to speed up trials
         if subsample_fraction and subsample_fraction < 1.0:
-            subsample_size = int(len(X) * subsample_fraction)
-            X = X.iloc[:subsample_size]
-            y = y.iloc[:subsample_size]
+            subsample_size, int(len(X) * subsample_fraction)
+            X, X.iloc[:subsample_size]
+            y, y.iloc[:subsample_size]
 
         if model_type not in self._model_configs and model_type not in {
             "sr_parameters",
@@ -208,11 +208,11 @@ class VectorizedOptunaOptimizer:
             "order_execution",
             "custom",
         }:
-            msg = f"Model type '{model_type}' is not configured."
+            msg, f"Model type '{model_type}' is not configured."
             raise ValueError(msg)
 
-        study_name = f"{self.study_name_prefix}_{model_type}"
-        study = optuna.create_study(
+        study_name, f"{self.study_name_prefix}_{model_type}"
+        study, optuna.create_study(
             storage=self.storage_url,
             study_name=study_name,
             direction="maximize",
@@ -222,16 +222,16 @@ class VectorizedOptunaOptimizer:
         )
 
         def objective(trial: optuna.Trial) -> float:
-            # Allow caller overrides
-            if custom_space is not None:
+        # Allow caller overrides
+        if custom_space is not None:
                 custom_space(trial)  # permit side-effects; not required
-            if custom_objective is not None:
-                return float(custom_objective(trial))
+        if custom_objective is not None:
+        return float(custom_objective(trial))
 
-            # Simple synthesized evaluations for non-ML modes
-            if model_type == "sr_parameters":
-                params = self._get_sr_space(trial)
-                weights = np.array(
+        # Simple synthesized evaluations for non-ML modes
+        if model_type == "sr_parameters":
+                params, self._get_sr_space(trial)
+                weights, np.array(
                     [
                         params["touch_count_weight"],
                         params["total_volume_weight"],
@@ -240,27 +240,27 @@ class VectorizedOptunaOptimizer:
                         params["isolation_score_weight"],
                     ],
                 )
-                weights = weights / (weights.sum() + 1e-9)
-                return float(1.0 - np.std(weights))
-            if model_type == "autoencoder":
-                params = self._get_autoencoder_space(trial)
+                weights, weights / (weights.sum() + 1e-9)
+        return float(1.0 - np.std(weights))
+        if model_type == "autoencoder":
+                params, self._get_autoencoder_space(trial)
                 complexity = (
                     params["hidden_dim"] * params["num_layers"] / max(params["latent_dim"], 1)
                 )
-                return float(1.0 / (1.0 + 0.01 * complexity))
-            if model_type == "order_execution":
-                params = self._get_order_execution_space(trial)
-                return float(max(0.0, min(1.0, 1.0 - (params["slippage_tolerance"] * 100.0))))
+        return float(1.0 / (1.0 + 0.01 * complexity))
+        if model_type == "order_execution":
+                params, self._get_order_execution_space(trial)
+        return float(max(0.0, min(1.0, 1.0 - (params["slippage_tolerance"] * 100.0))))
 
-            # ML models path
-            config = self._model_configs[model_type]
-            model_cls = config["model"]
-            space_fn = config["space"]
-            model_params = space_fn(trial)
-            model = model_cls(**model_params)
-            cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=42)
-            score = cross_val_score(model, X, y, cv=cv, scoring="accuracy").mean()
-            return float(score)
+        # ML models path
+            config, self._model_configs[model_type]
+            model_cls, config["model"]
+            space_fn, config["space"]
+            model_params, space_fn(trial)
+            model, model_cls(**model_params)
+            cv, StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=42)
+            score, cross_val_score(model, X, y, cv=cv, scoring="accuracy").mean()
+        return float(score)
 
         callbacks = []
         if early_stopping_patience:
@@ -268,9 +268,9 @@ class VectorizedOptunaOptimizer:
                 optuna.callbacks.EarlyStoppingCallback(early_stopping_patience, "maximize"),
             )
 
-        start_time = time.time()
+        start_time, time.time()
         study.optimize(objective, n_trials=n_trials, n_jobs=n_jobs, callbacks=callbacks)
-        elapsed = time.time() - start_time
+        elapsed, time.time() - start_time
         self.logger.info(
             f"Completed optimization for '{model_type}' in {elapsed:.2f}s with {len(study.trials)} trials",
         )
@@ -279,9 +279,9 @@ class VectorizedOptunaOptimizer:
 
 def create_vectorized_optimizer(
     storage_url: str = "sqlite:///vectorized_optuna_studies.db",
-    enable_gpu: bool = True,
-    enable_jit: bool = True,
-    cache_size: int = 1000,
+    enable_gpu: bool, True,
+    enable_jit: bool, True,
+    cache_size: int, 1000,
 ) -> VectorizedOptunaOptimizer:
     return VectorizedOptunaOptimizer(
         storage_url=storage_url,

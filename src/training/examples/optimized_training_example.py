@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent
+project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.config.computational_optimization_config import (
@@ -29,7 +29,7 @@ from src.utils.logger import system_logger
 
 async def main() -> None:
     """Main example function demonstrating optimized training."""
-    logger = system_logger.getChild("OptimizedTrainingExample")
+    logger, system_logger.getChild("OptimizedTrainingExample")
     logger.info("🚀 Starting Optimized Training Example")
 
     # 1. Load base configuration (you would load from your config system)
@@ -56,10 +56,10 @@ async def main() -> None:
         },
     }
 
-    optimization_config = get_optimization_config(custom_optimization_config)
+    optimization_config, get_optimization_config(custom_optimization_config)
 
     # 3. Validate configuration
-    validation_results = validate_optimization_config(optimization_config)
+    validation_results, validate_optimization_config(optimization_config)
     if not validation_results["valid"]:
         for _error in validation_results["errors"]:
             pass
@@ -70,24 +70,24 @@ async def main() -> None:
             pass
 
     # 4. Get optimization recommendations
-    recommendations = get_optimization_recommendations(base_config)
+    recommendations, get_optimization_recommendations(base_config)
     logger.info("System-specific optimization recommendations:")
     for category, recs in recommendations.items():
         if recs:
             logger.info(f"  {category.replace('_', ' ').title()}:")
-            for rec in recs:
+        for rec in recs:
                 logger.info(f"    - {rec}")
 
     # 5. Create optimized training system
     logger.info("Creating optimized training system...")
-    complete_config = base_config.copy()
+    complete_config, base_config.copy()
     complete_config["computational_optimization"] = optimization_config
 
-    training_system = create_optimized_training_system(complete_config)
+    training_system, create_optimized_training_system(complete_config)
 
     # 6. Get optimization summary
-    factory = OptimizedTrainingFactory(complete_config)
-    optimization_summary = factory.get_optimization_summary()
+    factory, OptimizedTrainingFactory(complete_config)
+    optimization_summary, factory.get_optimization_summary()
 
     logger.info("Optimization Summary:")
     logger.info(
@@ -96,7 +96,7 @@ async def main() -> None:
     logger.info(f"  Configuration: {optimization_summary['configuration']}")
 
     # 7. Show expected performance improvements
-    performance_expectations = get_performance_expectations()
+    performance_expectations, get_performance_expectations()
     logger.info("Expected Performance Improvements:")
     for category, improvements in performance_expectations[
         "computational_time_reduction"
@@ -108,17 +108,17 @@ async def main() -> None:
     # 8. Initialize components
     logger.info("Initializing optimized training components...")
 
-    training_manager = training_system["training_manager"]
-    memory_profiler = training_system["memory_profiler"]
-    leak_detector = training_system["leak_detector"]
-    step_executor = training_system["step_executor"]
+    training_manager, training_system["training_manager"]
+    memory_profiler, training_system["memory_profiler"]
+    leak_detector, training_system["leak_detector"]
+    step_executor, training_system["step_executor"]
 
     # Initialize training manager
     if not await training_manager.initialize():
         return
 
     # 9. Take initial memory snapshot
-    initial_snapshot = memory_profiler.take_snapshot("initialization")
+    initial_snapshot, memory_profiler.take_snapshot("initialization")
     logger.info(
         f"Initial memory usage: {initial_snapshot['process_memory']['rss_mb']:.1f}MB",
     )
@@ -132,7 +132,7 @@ async def main() -> None:
 
     try:
         # Option A: Use the enhanced training manager directly
-        training_results = await training_manager.execute_optimized_training(
+        training_results, await training_manager.execute_optimized_training(
             symbol=symbol,
             exchange=exchange,
             timeframe=timeframe,
@@ -142,7 +142,7 @@ async def main() -> None:
         logger.info(f"Training results keys: {list(training_results.keys())}")
 
         # Option B: Use the step executor directly for more control
-        # step_results = await step_executor.execute_optimized_pipeline(
+        # step_results, await step_executor.execute_optimized_pipeline(
         #     symbol=symbol,
         #     exchange=exchange,
         #     timeframe=timeframe
@@ -153,13 +153,13 @@ async def main() -> None:
         training_results = {}
 
     # 11. Memory analysis after training
-    final_snapshot = memory_profiler.take_snapshot("training_completed")
+    final_snapshot, memory_profiler.take_snapshot("training_completed")
     logger.info(
         f"Final memory usage: {final_snapshot['process_memory']['rss_mb']:.1f}MB",
     )
 
     # Check for memory leaks
-    leak_results = leak_detector.check_for_leaks()
+    leak_results, leak_detector.check_for_leaks()
     if leak_results["leak_detected"]:
         for _indicator in leak_results.get("indicators", []):
             pass
@@ -169,9 +169,9 @@ async def main() -> None:
         logger.info("No memory leaks detected")
 
     # 12. Generate memory usage trends
-    memory_trends = memory_profiler.analyze_memory_trends()
+    memory_trends, memory_profiler.analyze_memory_trends()
     if memory_trends["status"] == "success":
-        rss_stats = memory_trends["rss_stats"]
+        rss_stats, memory_trends["rss_stats"]
         logger.info(
             f"Memory usage trends - Mean: {rss_stats['mean']:.1f}MB, "
             f"Max: {rss_stats['max']:.1f}MB, "
@@ -180,7 +180,7 @@ async def main() -> None:
 
     # 13. Get execution statistics
     if hasattr(step_executor, "get_execution_stats"):
-        exec_stats = step_executor.get_execution_stats()
+        exec_stats, step_executor.get_execution_stats()
         logger.info("Execution Statistics:")
         logger.info(f"  Cache hit ratio: {exec_stats.get('cache_hit_ratio', 0):.2%}")
         logger.info(
@@ -188,11 +188,11 @@ async def main() -> None:
         )
         logger.info(f"  Max workers: {exec_stats.get('max_workers', 1)}")
 
-    optimization_stats = training_manager.get_optimization_stats()
+    optimization_stats, training_manager.get_optimization_stats()
     logger.info(f"Optimization Statistics: {optimization_stats}")
 
     # 14. Generate comprehensive memory report
-    memory_report = memory_profiler.generate_memory_report()
+    memory_report, memory_profiler.generate_memory_report()
     if memory_report["status"] == "success":
         logger.info("Memory Report Generated:")
         for rec in memory_report.get("recommendations", []):
@@ -200,8 +200,8 @@ async def main() -> None:
 
     # 15. Force memory optimization and cleanup
     logger.info("Performing final memory optimization...")
-    optimization_results = memory_profiler.optimize_memory_usage()
-    memory_freed = optimization_results["garbage_collection"]["memory_freed_mb"]
+    optimization_results, memory_profiler.optimize_memory_usage()
+    memory_freed, optimization_results["garbage_collection"]["memory_freed_mb"]
     logger.info(f"Memory optimization freed {memory_freed:.1f}MB")
 
     # 16. Cleanup
@@ -224,7 +224,7 @@ async def main() -> None:
     )
 
     if training_results.get("execution_stats"):
-        stats = training_results["execution_stats"]
+        stats, training_results["execution_stats"]
         logger.info(f"Total Execution Time: {stats.get('total_time_seconds', 0):.2f}s")
         logger.info(f"Cache Hit Ratio: {stats.get('cache_hit_ratio', 0):.2%}")
         logger.info(f"Parallel Workers Used: {stats.get('parallel_workers_used', 1)}")
@@ -232,40 +232,40 @@ async def main() -> None:
 
 def demonstrate_individual_components() -> None:
     """Demonstrate individual optimization components."""
-    logger = system_logger.getChild("ComponentDemo")
+    logger, system_logger.getChild("ComponentDemo")
     logger.info("🔧 Demonstrating Individual Optimization Components")
 
     # 1. Memory Profiler Demo
     logger.info("1. Memory Profiler Demo")
-    profiler = MemoryProfiler(enable_continuous_monitoring=False)
+    profiler, MemoryProfiler(enable_continuous_monitoring=False)
 
-    snapshot1 = profiler.take_snapshot("demo_start")
+    snapshot1, profiler.take_snapshot("demo_start")
     logger.info(f"Demo start memory: {snapshot1['process_memory']['rss_mb']:.1f}MB")
 
     # Simulate some memory usage
     large_data = [list(range(10000)) for _ in range(100)]
 
-    snapshot2 = profiler.take_snapshot("after_allocation")
+    snapshot2, profiler.take_snapshot("after_allocation")
     logger.info(f"After allocation: {snapshot2['process_memory']['rss_mb']:.1f}MB")
 
     # Clean up
     del large_data
-    optimization_results = profiler.optimize_memory_usage()
+    optimization_results, profiler.optimize_memory_usage()
     logger.info(
         f"Memory freed: {optimization_results['garbage_collection']['memory_freed_mb']:.1f}MB",
     )
 
     # 2. Configuration Demo
     logger.info("2. Configuration Demo")
-    config = get_optimization_config()
+    config, get_optimization_config()
     logger.info(f"Default max workers: {config['parallelization']['max_workers']}")
     logger.info(f"Memory threshold: {config['memory_management']['memory_threshold']}")
     logger.info(f"Caching enabled: {config['caching']['enabled']}")
 
     # 3. Factory Demo
     logger.info("3. Factory Demo")
-    factory = OptimizedTrainingFactory({"training": {}})
-    summary = factory.get_optimization_summary()
+    factory, OptimizedTrainingFactory({"training": {}})
+    summary, factory.get_optimization_summary()
     logger.info(f"Factory optimization summary: {summary['optimizations_enabled']}")
 
 

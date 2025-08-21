@@ -22,25 +22,25 @@ from src.utils.logger import system_logger
 
 warnings.filterwarnings("ignore")
 
-logger = system_logger.getChild("Step5_5_UnifiedRegimeIntelligenceValidator")
+logger, system_logger.getChild("Step5_5_UnifiedRegimeIntelligenceValidator")
 
 
 class UnifiedRegimeIntelligenceValidator:
     """Validator for the Unified Regime Intelligence step."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
-        self.logger = system_logger
+        self.config, config
+        self.logger, system_logger
 
         # Validation configuration
-        self.validation_config = config.get("validation", {})
-        self.data_quality_threshold = self.validation_config.get(
+        self.validation_config, config.get("validation", {})
+        self.data_quality_threshold, self.validation_config.get(
             "data_quality_threshold", 0.95,
         )
-        self.model_performance_threshold = self.validation_config.get(
+        self.model_performance_threshold, self.validation_config.get(
             "model_performance_threshold", 0.7,
         )
-        self.artifact_completeness_threshold = self.validation_config.get(
+        self.artifact_completeness_threshold, self.validation_config.get(
             "artifact_completeness_threshold", 0.9,
         )
 
@@ -63,48 +63,48 @@ class UnifiedRegimeIntelligenceValidator:
     async def initialize(self) -> bool:
         """Initialize the validator."""
         try:
-            self.logger.info("Initializing Unified Regime Intelligence Validator...")
+        self.logger.info("Initializing Unified Regime Intelligence Validator...")
 
-            # Validate configuration
-            if not self._validate_configuration():
-                self.logger.error("Invalid validator configuration")
-                return False
+        # Validate configuration
+        if not self._validate_configuration():
+        self.logger.error("Invalid validator configuration")
+        return False
 
-            self.logger.info(
+        self.logger.info(
                 "Unified Regime Intelligence Validator initialized successfully",
             )
-            return True
+        return True
 
         except Exception as e:
-            self.logger.exception(f"Failed to initialize validator: {e}")
-            return False
+        self.logger.exception(f"Failed to initialize validator: {e}")
+        return False
 
     def _validate_configuration(self) -> bool:
         """Validate validator configuration."""
         try:
-            if self.data_quality_threshold <= 0 or self.data_quality_threshold > 1:
-                self.logger.error("Invalid data quality threshold")
-                return False
+        if self.data_quality_threshold <= 0 or self.data_quality_threshold > 1:
+        self.logger.error("Invalid data quality threshold")
+        return False
 
-            if (
-                self.model_performance_threshold <= 0
+        if (
+        self.model_performance_threshold <= 0
                 or self.model_performance_threshold > 1
             ):
-                self.logger.error("Invalid model performance threshold")
-                return False
+        self.logger.error("Invalid model performance threshold")
+        return False
 
-            if (
-                self.artifact_completeness_threshold <= 0
+        if (
+        self.artifact_completeness_threshold <= 0
                 or self.artifact_completeness_threshold > 1
             ):
-                self.logger.error("Invalid artifact completeness threshold")
-                return False
+        self.logger.error("Invalid artifact completeness threshold")
+        return False
 
-            return True
+        return True
 
         except Exception as e:
-            self.logger.exception(f"Configuration validation failed: {e}")
-            return False
+        self.logger.exception(f"Configuration validation failed: {e}")
+        return False
 
     @handle_errors(
         exceptions=(Exception,), default_return=False, context="data quality validation",
@@ -112,7 +112,7 @@ class UnifiedRegimeIntelligenceValidator:
     async def validate_data_quality(self, data: dict[str, pd.DataFrame]) -> bool:
         """Validate input data quality."""
         try:
-            self.logger.info("Validating data quality...")
+        self.logger.info("Validating data quality...")
 
             validation_results = {
                 "hmm_data_completeness": 0.0,
@@ -122,15 +122,15 @@ class UnifiedRegimeIntelligenceValidator:
                 "overall_score": 0.0,
             }
 
-            # Check HMM data completeness
-            timeframes = self.config.get("timeframes", ["5m", "15m", "30m"])
-            hmm_files_found = 0
+        # Check HMM data completeness
+            timeframes, self.config.get("timeframes", ["5m", "15m", "30m"])
+            hmm_files_found, 0
 
-            for tf in timeframes:
-                hmm_file = f"data/BINANCE_ETHUSDT_hmm_composite_clusters_{tf}.parquet"
-                if os.path.exists(hmm_file):
-                    hmm_data = pd.read_parquet(hmm_file)
-                    if (
+        for tf in timeframes:
+                hmm_file, f"data/BINANCE_ETHUSDT_hmm_composite_clusters_{tf}.parquet"
+        if os.path.exists(hmm_file):
+                    hmm_data, pd.read_parquet(hmm_file)
+        if (
                         not hmm_data.empty
                         and "composite_cluster_id" in hmm_data.columns
                     ):
@@ -140,26 +140,26 @@ class UnifiedRegimeIntelligenceValidator:
                 timeframes,
             )
 
-            # Check intensity data completeness
-            intensity_files_found = 0
-            for tf in timeframes:
+        # Check intensity data completeness
+            intensity_files_found, 0
+        for tf in timeframes:
                 intensity_file = (
                     f"data/BINANCE_ETHUSDT_hmm_composite_intensity_{tf}.parquet"
                 )
-                if os.path.exists(intensity_file):
-                    intensity_data = pd.read_parquet(intensity_file)
-                    if not intensity_data.empty:
+        if os.path.exists(intensity_file):
+                    intensity_data, pd.read_parquet(intensity_file)
+        if not intensity_data.empty:
                         intensity_files_found += 1
 
             validation_results["intensity_data_completeness"] = (
                 intensity_files_found / len(timeframes)
             )
 
-            # Check feature data quality
-            combined_features = data.get("combined_features", pd.DataFrame())
-            if not combined_features.empty:
-                # Check for null values
-                null_ratio = combined_features.isnull().sum().sum() / (
+        # Check feature data quality
+            combined_features, data.get("combined_features", pd.DataFrame())
+        if not combined_features.empty:
+        # Check for null values
+                null_ratio, combined_features.isnull().sum().sum() / (
                     combined_features.shape[0] * combined_features.shape[1]
                 )
                 validation_results["feature_data_quality"] = 1.0 - null_ratio
@@ -168,23 +168,23 @@ class UnifiedRegimeIntelligenceValidator:
                     0.5  # Neutral score for empty features
                 )
 
-            # Check data alignment
-            if hmm_files_found > 0:
-                # Load one HMM file to check alignment
+        # Check data alignment
+        if hmm_files_found > 0:
+        # Load one HMM file to check alignment
                 base_tf = "1m"
                 base_file = (
                     f"data/BINANCE_ETHUSDT_hmm_composite_clusters_{base_tf}.parquet"
                 )
-                if os.path.exists(base_file):
-                    base_data = pd.read_parquet(base_file)
-                    if not base_data.empty:
+        if os.path.exists(base_file):
+                    base_data, pd.read_parquet(base_file)
+        if not base_data.empty:
                         validation_results["data_alignment"] = 1.0
                     else:
                         validation_results["data_alignment"] = 0.0
                 else:
                     validation_results["data_alignment"] = 0.0
 
-            # Calculate overall score
+        # Calculate overall score
             validation_results["overall_score"] = (
                 validation_results["hmm_data_completeness"] * 0.4
                 + validation_results["intensity_data_completeness"] * 0.3
@@ -192,22 +192,22 @@ class UnifiedRegimeIntelligenceValidator:
                 + validation_results["data_alignment"] * 0.1
             )
 
-            self.validation_results["data_quality"] = validation_results
+        self.validation_results["data_quality"] = validation_results
 
-            # Check if overall score meets threshold
-            if validation_results["overall_score"] >= self.data_quality_threshold:
-                self.logger.info(
+        # Check if overall score meets threshold
+        if validation_results["overall_score"] >= self.data_quality_threshold:
+        self.logger.info(
                     f"✅ Data quality validation passed: {validation_results['overall_score']:.3f}",
                 )
-                return True
-            self.logger.error(
+        return True
+        self.logger.error(
                 f"❌ Data quality validation failed: {validation_results['overall_score']:.3f}",
             )
-            return False
+        return False
 
         except Exception as e:
-            self.logger.exception(f"Data quality validation failed: {e}")
-            return False
+        self.logger.exception(f"Data quality validation failed: {e}")
+        return False
 
     @handle_errors(
         exceptions=(Exception,),
@@ -217,7 +217,7 @@ class UnifiedRegimeIntelligenceValidator:
     async def validate_model_architecture(self, model: Any) -> bool:
         """Validate model architecture."""
         try:
-            self.logger.info("Validating model architecture...")
+        self.logger.info("Validating model architecture...")
 
             validation_results = {
                 "model_initialization": False,
@@ -227,45 +227,45 @@ class UnifiedRegimeIntelligenceValidator:
                 "overall_score": 0.0,
             }
 
-            # Check if model is initialized
-            if model is not None:
+        # Check if model is initialized
+        if model is not None:
                 validation_results["model_initialization"] = True
 
-                # Check architecture components
-                if hasattr(model, "timeframes"):
+        # Check architecture components
+        if hasattr(model, "timeframes"):
                     validation_results["architecture_components"]["timeframes"] = True
 
-                if hasattr(model, "hmm_embeddings"):
+        if hasattr(model, "hmm_embeddings"):
                     validation_results["architecture_components"]["hmm_embeddings"] = (
                         True
                     )
 
-                if hasattr(model, "cross_timeframe_attention"):
+        if hasattr(model, "cross_timeframe_attention"):
                     validation_results["architecture_components"]["attention"] = True
 
-                if hasattr(model, "transformer"):
+        if hasattr(model, "transformer"):
                     validation_results["architecture_components"]["transformer"] = True
 
-                if hasattr(model, "regime_classifier"):
+        if hasattr(model, "regime_classifier"):
                     validation_results["architecture_components"]["classifiers"] = True
 
-                # Count parameters
-                total_params = sum(p.numel() for p in model.parameters())
+        # Count parameters
+                total_params, sum(p.numel() for p in model.parameters())
                 validation_results["parameter_count"] = total_params
 
-                # Check device compatibility
-                try:
-                    device = torch.device(
+        # Check device compatibility
+        try:
+                    device, torch.device(
                         "cuda" if torch.cuda.is_available() else "cpu",
                     )
                     model.to(device)
                     validation_results["device_compatibility"] = True
                     model.cpu()  # Move back to CPU
-                except Exception as e:
-                    self.logger.warning(f"Device compatibility check failed: {e}")
+        except Exception as e:
+        self.logger.warning(f"Device compatibility check failed: {e}")
                     validation_results["device_compatibility"] = False
 
-            # Calculate overall score
+        # Calculate overall score
             component_score = (
                 sum(validation_results["architecture_components"].values()) / 5.0
             )
@@ -275,21 +275,21 @@ class UnifiedRegimeIntelligenceValidator:
                 + (1.0 if validation_results["device_compatibility"] else 0.0) * 0.2
             )
 
-            self.validation_results["model_architecture"] = validation_results
+        self.validation_results["model_architecture"] = validation_results
 
-            if validation_results["overall_score"] >= 0.8:
-                self.logger.info(
+        if validation_results["overall_score"] >= 0.8:
+        self.logger.info(
                     f"✅ Model architecture validation passed: {validation_results['overall_score']:.3f}",
                 )
-                return True
-            self.logger.error(
+        return True
+        self.logger.error(
                 f"❌ Model architecture validation failed: {validation_results['overall_score']:.3f}",
             )
-            return False
+        return False
 
         except Exception as e:
-            self.logger.exception(f"Model architecture validation failed: {e}")
-            return False
+        self.logger.exception(f"Model architecture validation failed: {e}")
+        return False
 
     @handle_errors(
         exceptions=(Exception,),
@@ -299,7 +299,7 @@ class UnifiedRegimeIntelligenceValidator:
     async def validate_training_process(self, training_data: dict[str, Any]) -> bool:
         """Validate training process integrity."""
         try:
-            self.logger.info("Validating training process...")
+        self.logger.info("Validating training process...")
 
             validation_results = {
                 "data_preparation": False,
@@ -309,40 +309,40 @@ class UnifiedRegimeIntelligenceValidator:
                 "overall_score": 0.0,
             }
 
-            # Check data preparation
-            if training_data and "num_sequences" in training_data:
+        # Check data preparation
+        if training_data and "num_sequences" in training_data:
                 validation_results["data_preparation"] = True
 
-            # Check sequence creation
-            if training_data and "hmm_tensors" in training_data:
-                hmm_tensors = training_data["hmm_tensors"]
-                if isinstance(hmm_tensors, dict) and len(hmm_tensors) > 0:
+        # Check sequence creation
+        if training_data and "hmm_tensors" in training_data:
+                hmm_tensors, training_data["hmm_tensors"]
+        if isinstance(hmm_tensors, dict) and len(hmm_tensors) > 0:
                     validation_results["sequence_creation"] = True
 
-            # Check feature tensor
-            if training_data and "feature_tensor" in training_data:
-                feature_tensor = training_data["feature_tensor"]
-                if (
+        # Check feature tensor
+        if training_data and "feature_tensor" in training_data:
+                feature_tensor, training_data["feature_tensor"]
+        if (
                     isinstance(feature_tensor, torch.Tensor)
                     and feature_tensor.shape[0] > 0
                 ):
                     validation_results["sequence_creation"] = True
 
-            # Check label encoding
-            if training_data and "labels" in training_data:
-                labels = training_data["labels"]
-                if isinstance(labels, dict) and all(
+        # Check label encoding
+        if training_data and "labels" in training_data:
+                labels, training_data["labels"]
+        if isinstance(labels, dict) and all(
                     k in labels for k in ["regime", "transition", "tpsl"]
                 ):
                     validation_results["label_encoding"] = True
 
-            # Check training split
-            if training_data and "num_sequences" in training_data:
-                num_sequences = training_data["num_sequences"]
-                if num_sequences > 100:  # Minimum required sequences
+        # Check training split
+        if training_data and "num_sequences" in training_data:
+                num_sequences, training_data["num_sequences"]
+        if num_sequences > 100:  # Minimum required sequences
                     validation_results["training_split"] = True
 
-            # Calculate overall score
+        # Calculate overall score
             validation_results["overall_score"] = (
                 sum(
                     [
@@ -355,21 +355,21 @@ class UnifiedRegimeIntelligenceValidator:
                 / 4.0
             )
 
-            self.validation_results["training_process"] = validation_results
+        self.validation_results["training_process"] = validation_results
 
-            if validation_results["overall_score"] >= 0.75:
-                self.logger.info(
+        if validation_results["overall_score"] >= 0.75:
+        self.logger.info(
                     f"✅ Training process validation passed: {validation_results['overall_score']:.3f}",
                 )
-                return True
-            self.logger.error(
+        return True
+        self.logger.error(
                 f"❌ Training process validation failed: {validation_results['overall_score']:.3f}",
             )
-            return False
+        return False
 
         except Exception as e:
-            self.logger.exception(f"Training process validation failed: {e}")
-            return False
+        self.logger.exception(f"Training process validation failed: {e}")
+        return False
 
     @handle_errors(
         exceptions=(Exception,), default_return=False, context="artifacts validation",
@@ -377,7 +377,7 @@ class UnifiedRegimeIntelligenceValidator:
     async def validate_artifacts(self, artifacts_dir: str) -> bool:
         """Validate saved artifacts."""
         try:
-            self.logger.info("Validating artifacts...")
+        self.logger.info("Validating artifacts...")
 
             validation_results = {
                 "model_file": False,
@@ -395,10 +395,10 @@ class UnifiedRegimeIntelligenceValidator:
                 "tpsl_encoder.pkl",
             ]
 
-            files_found = 0
-            for file_name in required_files:
-                file_path = os.path.join(artifacts_dir, file_name)
-                if os.path.exists(file_path):
+            files_found, 0
+        for file_name in required_files:
+                file_path, os.path.join(artifacts_dir, file_name)
+        if os.path.exists(file_path):
                     validation_results["file_sizes"][file_name] = os.path.getsize(
                         file_path,
                     )
@@ -407,48 +407,48 @@ class UnifiedRegimeIntelligenceValidator:
             validation_results["model_file"] = files_found >= 1
             validation_results["config_file"] = files_found >= 1
 
-            # Check label encoders
-            encoders_found = 0
-            for encoder_name in required_encoders:
-                encoder_path = os.path.join(artifacts_dir, encoder_name)
-                if os.path.exists(encoder_path):
-                    try:
-                        with open(encoder_path, "rb") as f:
-                            encoder = pickle.load(f)
-                        if isinstance(encoder, LabelEncoder):
+        # Check label encoders
+            encoders_found, 0
+        for encoder_name in required_encoders:
+                encoder_path, os.path.join(artifacts_dir, encoder_name)
+        if os.path.exists(encoder_path):
+        try:
+        with open(encoder_path, "rb") as f:
+                            encoder, pickle.load(f)
+        if isinstance(encoder, LabelEncoder):
                             encoders_found += 1
-                    except Exception:
+        except Exception:
                         pass
 
             validation_results["label_encoders"] = (
                 encoders_found >= 2
             )  # At least 2 out of 3
 
-            # Calculate overall score
+        # Calculate overall score
             validation_results["overall_score"] = (
                 (1.0 if validation_results["model_file"] else 0.0) * 0.4
                 + (1.0 if validation_results["config_file"] else 0.0) * 0.3
                 + (1.0 if validation_results["label_encoders"] else 0.0) * 0.3
             )
 
-            self.validation_results["artifacts"] = validation_results
+        self.validation_results["artifacts"] = validation_results
 
-            if (
+        if (
                 validation_results["overall_score"]
                 >= self.artifact_completeness_threshold
             ):
-                self.logger.info(
+        self.logger.info(
                     f"✅ Artifacts validation passed: {validation_results['overall_score']:.3f}",
                 )
-                return True
-            self.logger.error(
+        return True
+        self.logger.error(
                 f"❌ Artifacts validation failed: {validation_results['overall_score']:.3f}",
             )
-            return False
+        return False
 
         except Exception as e:
-            self.logger.exception(f"Artifacts validation failed: {e}")
-            return False
+        self.logger.exception(f"Artifacts validation failed: {e}")
+        return False
 
     @handle_errors(
         exceptions=(Exception,), default_return=False, context="predictions validation",
@@ -456,7 +456,7 @@ class UnifiedRegimeIntelligenceValidator:
     async def validate_predictions(self, model: Any, test_data: dict[str, Any]) -> bool:
         """Validate model predictions."""
         try:
-            self.logger.info("Validating predictions...")
+        self.logger.info("Validating predictions...")
 
             validation_results = {
                 "prediction_structure": False,
@@ -465,41 +465,41 @@ class UnifiedRegimeIntelligenceValidator:
                 "overall_score": 0.0,
             }
 
-            if model is None or test_data is None:
-                self.logger.warning(
+        if model is None or test_data is None:
+        self.logger.warning(
                     "Model or test data not available for prediction validation",
                 )
-                return False
+        return False
 
-            # Test prediction
-            try:
-                # Create dummy test data
+        # Test prediction
+        try:
+        # Create dummy test data
                 dummy_hmm_states = {"1m": np.random.randint(0, 5, (10,))}
-                dummy_features = np.random.random((10, 20))
+                dummy_features, np.random.random((10, 20))
 
-                prediction = model.predict(dummy_hmm_states, dummy_features)
+                prediction, model.predict(dummy_hmm_states, dummy_features)
 
-                if prediction is not None:
+        if prediction is not None:
                     validation_results["prediction_structure"] = True
 
-                    # Check output ranges
-                    if (
+        # Check output ranges
+        if (
                         "regime" in prediction
                         and "transition" in prediction
                         and "tpsl" in prediction
                     ):
                         validation_results["output_ranges"] = True
 
-                    # Check confidence scores
-                    if "confidence_score" in prediction:
-                        confidence = prediction["confidence_score"]
-                        if 0 <= confidence <= 1:
+        # Check confidence scores
+        if "confidence_score" in prediction:
+                        confidence, prediction["confidence_score"]
+        if 0 <= confidence <= 1:
                             validation_results["confidence_scores"] = True
 
-            except Exception as e:
-                self.logger.warning(f"Prediction test failed: {e}")
+        except Exception as e:
+        self.logger.warning(f"Prediction test failed: {e}")
 
-            # Calculate overall score
+        # Calculate overall score
             validation_results["overall_score"] = (
                 sum(
                     [
@@ -511,21 +511,21 @@ class UnifiedRegimeIntelligenceValidator:
                 / 3.0
             )
 
-            self.validation_results["predictions"] = validation_results
+        self.validation_results["predictions"] = validation_results
 
-            if validation_results["overall_score"] >= 0.67:
-                self.logger.info(
+        if validation_results["overall_score"] >= 0.67:
+        self.logger.info(
                     f"✅ Predictions validation passed: {validation_results['overall_score']:.3f}",
                 )
-                return True
-            self.logger.error(
+        return True
+        self.logger.error(
                 f"❌ Predictions validation failed: {validation_results['overall_score']:.3f}",
             )
-            return False
+        return False
 
         except Exception as e:
-            self.logger.exception(f"Predictions validation failed: {e}")
-            return False
+        self.logger.exception(f"Predictions validation failed: {e}")
+        return False
 
     @handle_errors(
         exceptions=(Exception,),
@@ -535,7 +535,7 @@ class UnifiedRegimeIntelligenceValidator:
     async def validate_sr_integration(self, model: Any) -> bool:
         """Validate S/R integration functionality."""
         try:
-            self.logger.info("Validating S/R integration...")
+        self.logger.info("Validating S/R integration...")
 
             validation_results = {
                 "sr_predictor_initialization": False,
@@ -545,42 +545,42 @@ class UnifiedRegimeIntelligenceValidator:
                 "overall_score": 0.0,
             }
 
-            # Check if SRBreakoutPredictor is available
-            try:
+        # Check if SRBreakoutPredictor is available
+        try:
                 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 
                 validation_results["sr_predictor_initialization"] = True
-            except ImportError:
-                self.logger.warning("SRBreakoutPredictor not available")
+        except ImportError:
+        self.logger.warning("SRBreakoutPredictor not available")
 
-            # Check if model has S/R integration method
-            if hasattr(model, "predict_with_sr_integration"):
+        # Check if model has S/R integration method
+        if hasattr(model, "predict_with_sr_integration"):
                 validation_results["integration_method"] = True
 
-            # Check if model has SRBreakoutPredictor instance
-            if hasattr(model, "sr_predictor") and model.sr_predictor is not None:
+        # Check if model has SRBreakoutPredictor instance
+        if hasattr(model, "sr_predictor") and model.sr_predictor is not None:
                 validation_results["sr_predictor_initialization"] = True
 
-            # Calculate overall score
+        # Calculate overall score
             validation_results["overall_score"] = (
                 1.0 if validation_results["sr_predictor_initialization"] else 0.0
             ) * 0.4 + (1.0 if validation_results["integration_method"] else 0.0) * 0.6
 
-            self.validation_results["sr_integration"] = validation_results
+        self.validation_results["sr_integration"] = validation_results
 
-            if validation_results["overall_score"] >= 0.5:
-                self.logger.info(
+        if validation_results["overall_score"] >= 0.5:
+        self.logger.info(
                     f"✅ S/R integration validation passed: {validation_results['overall_score']:.3f}",
                 )
-                return True
-            self.logger.warning(
+        return True
+        self.logger.warning(
                 f"⚠️ S/R integration validation partial: {validation_results['overall_score']:.3f}",
             )
-            return True  # Don't fail the entire validation for S/R issues
+        return True  # Don't fail the entire validation for S/R issues
 
         except Exception as e:
-            self.logger.exception(f"S/R integration validation failed: {e}")
-            return False
+        self.logger.exception(f"S/R integration validation failed: {e}")
+        return False
 
     @handle_errors(
         exceptions=(Exception,),
@@ -593,17 +593,17 @@ class UnifiedRegimeIntelligenceValidator:
         model: Any,
         training_data: dict[str, Any],
         artifacts_dir: str,
-        test_data: dict[str, Any] | None = None,
+        test_data: dict[str, Any] | None, None,
     ) -> bool:
         """Run comprehensive validation of the Unified Regime Intelligence step."""
         try:
-            self.logger.info(
+        self.logger.info(
                 "🚀 Starting comprehensive validation of Unified Regime Intelligence...",
             )
 
-            validation_passed = True
+            validation_passed, True
 
-            # Run all validation checks
+        # Run all validation checks
             checks = [
                 ("Data Quality", self.validate_data_quality(data)),
                 ("Model Architecture", self.validate_model_architecture(model)),
@@ -613,18 +613,18 @@ class UnifiedRegimeIntelligenceValidator:
                 ("S/R Integration", self.validate_sr_integration(model)),
             ]
 
-            for check_name, result in checks:
-                if not result:
-                    validation_passed = False
-                    self.logger.error(f"❌ {check_name} validation failed")
+        for check_name, result in checks:
+        if not result:
+                    validation_passed, False
+        self.logger.error(f"❌ {check_name} validation failed")
                 else:
-                    self.logger.info(f"✅ {check_name} validation passed")
+        self.logger.info(f"✅ {check_name} validation passed")
 
-            # Calculate overall validation score
+        # Calculate overall validation score
             overall_score = (
                 sum(
-                    self.validation_results[category]["overall_score"]
-                    for category in [
+        self.validation_results[category]["overall_score"]
+        for category in [
                         "data_quality",
                         "model_architecture",
                         "training_process",
@@ -636,28 +636,28 @@ class UnifiedRegimeIntelligenceValidator:
                 / 6.0
             )
 
-            self.validation_results["overall_status"] = (
+        self.validation_results["overall_status"] = (
                 "PASSED" if validation_passed else "FAILED"
             )
-            self.validation_results["overall_score"] = overall_score
+        self.validation_results["overall_score"] = overall_score
 
-            # Generate validation report
-            await self._generate_validation_report()
+        # Generate validation report
+        await self._generate_validation_report()
 
-            if validation_passed:
-                self.logger.info(
+        if validation_passed:
+        self.logger.info(
                     f"🎉 Comprehensive validation PASSED with overall score: {overall_score:.3f}",
                 )
             else:
-                self.logger.error(
+        self.logger.error(
                     f"💥 Comprehensive validation FAILED with overall score: {overall_score:.3f}",
                 )
 
-            return validation_passed
+        return validation_passed
 
         except Exception as e:
-            self.logger.exception(f"Comprehensive validation failed: {e}")
-            return False
+        self.logger.exception(f"Comprehensive validation failed: {e}")
+        return False
 
     async def _generate_validation_report(self) -> None:
         """Generate detailed validation report."""
@@ -670,7 +670,7 @@ class UnifiedRegimeIntelligenceValidator:
                     "overall_score": self.validation_results.get("overall_score", 0.0),
                     "passed_checks": sum(
                         1
-                        for category in [
+        for category in [
                             "data_quality",
                             "model_architecture",
                             "training_process",
@@ -678,26 +678,26 @@ class UnifiedRegimeIntelligenceValidator:
                             "predictions",
                             "sr_integration",
                         ]
-                        if self.validation_results[category].get("overall_score", 0)
+        if self.validation_results[category].get("overall_score", 0)
                         >= 0.5
                     ),
                     "total_checks": 6,
                 },
             }
 
-            # Save report
+        # Save report
             report_path = (
                 "validation_reports/step5_5_unified_regime_intelligence_validation.json"
             )
             os.makedirs("validation_reports", exist_ok=True)
 
-            with open(report_path, "w") as f:
+        with open(report_path, "w") as f:
                 json.dump(report, f, indent=2)
 
-            self.logger.info(f"Validation report saved to {report_path}")
+        self.logger.info(f"Validation report saved to {report_path}")
 
         except Exception as e:
-            self.logger.exception(f"Failed to generate validation report: {e}")
+        self.logger.exception(f"Failed to generate validation report: {e}")
 
 
 @handle_errors(
@@ -707,7 +707,7 @@ async def run_step5_5_validation(
     symbol: str,
     exchange: str = "BINANCE",
     timeframe: str = "1m",
-    training_config: dict[str, Any] | None = None,
+    training_config: dict[str, Any] | None, None,
 ) -> bool:
     """Run validation for step5_5_unified_regime_intelligence.
 
@@ -727,18 +727,18 @@ async def run_step5_5_validation(
         )
 
         # Load configuration
-        config = training_config or {}
-        validation_config = config.get("STEP5_5_VALIDATION", {})
+        config, training_config or {}
+        validation_config, config.get("STEP5_5_VALIDATION", {})
 
         if not validation_config.get("enabled", True):
             logger.info("Step 5.5 validation disabled; skipping validation.")
-            return True
+        return True
 
         # Initialize validator
-        validator = UnifiedRegimeIntelligenceValidator(validation_config)
+        validator, UnifiedRegimeIntelligenceValidator(validation_config)
         if not await validator.initialize():
             logger.error("Failed to initialize validator")
-            return False
+        return False
 
         # Load data for validation
         data = {
@@ -746,12 +746,12 @@ async def run_step5_5_validation(
         }
 
         # Load model and artifacts for validation
-        artifacts_dir = config.get(
+        artifacts_dir, config.get(
             "artifacts_dir", "checkpoints/unified_regime_intelligence",
         )
 
         # Run comprehensive validation
-        validation_passed = await validator.run_comprehensive_validation(
+        validation_passed, await validator.run_comprehensive_validation(
             data=data,
             model=None,  # Would be loaded from artifacts
             training_data={},  # Would be loaded from training process

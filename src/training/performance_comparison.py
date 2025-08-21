@@ -3,6 +3,7 @@
 """Performance Comparison Module.
 
 This module provides comprehensive performance comparison capabilities for:
+    pass
 1. Model performance across different optimization strategies
 2. Trading performance improvements
 3. Ensemble method effectiveness
@@ -52,8 +53,8 @@ class PerformanceComparison:
     """Comprehensive performance comparison system."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
-        self.logger = get_logger("PerformanceComparison")
+        self.config, config
+        self.logger, get_logger("PerformanceComparison")
         self.comparison_results = {}
         self.baseline_metrics = {}
         self.optimization_history = []
@@ -66,23 +67,23 @@ class PerformanceComparison:
     async def initialize(self) -> bool:
         """Initialize the performance comparison system."""
         try:
-            self.logger.info("🚀 Initializing Performance Comparison System")
+        self.logger.info("🚀 Initializing Performance Comparison System")
 
-            # Create reports directory
-            reports_dir = Path("reports")
+        # Create reports directory
+            reports_dir, Path("reports")
             reports_dir.mkdir(exist_ok=True)
 
-            # Initialize performance tracking
-            await self._initialize_performance_tracking()
+        # Initialize performance tracking
+        await self._initialize_performance_tracking()
 
-            self.logger.info("✅ Performance Comparison System initialized")
-            return True
+        self.logger.info("✅ Performance Comparison System initialized")
+        return True
 
         except Exception as e:
-            error_msg = f"Error initializing Performance Comparison: {e}"
-            self.logger.exception(error_msg)
-            self.print(initialization_error(error_msg))
-            return False
+            error_msg, f"Error initializing Performance Comparison: {e}"
+        self.logger.exception(error_msg)
+        self.print(initialization_error(error_msg))
+        return False
 
     async def _initialize_performance_tracking(self) -> None:
         """Initialize performance tracking components."""
@@ -99,11 +100,11 @@ class PerformanceComparison:
         self,
         models: dict[str, Any],
         test_data: pd.DataFrame,
-        baseline_model: str | None = None,
+        baseline_model: str | None, None,
     ) -> dict[str, Any]:
         """Compare performance of multiple models."""
         try:
-            self.logger.info(f"🔍 Comparing performance of {len(models)} models")
+        self.logger.info(f"🔍 Comparing performance of {len(models)} models")
 
             comparison_results = {
                 "models": {},
@@ -113,55 +114,55 @@ class PerformanceComparison:
                 "recommendations": [],
             }
 
-            # Calculate baseline if provided
-            if baseline_model and baseline_model in models:
-                baseline_metrics = await self._calculate_model_metrics(
+        # Calculate baseline if provided
+        if baseline_model and baseline_model in models:
+                baseline_metrics, await self._calculate_model_metrics(
                     models[baseline_model],
                     test_data,
                 )
-                self.baseline_metrics = baseline_metrics
+        self.baseline_metrics, baseline_metrics
                 comparison_results["baseline"] = baseline_model
 
-            # Compare all models
-            for model_name, model in models.items():
-                model_metrics = await self._calculate_model_metrics(model, test_data)
+        # Compare all models
+        for model_name, model in models.items():
+                model_metrics, await self._calculate_model_metrics(model, test_data)
                 comparison_results["models"][model_name] = model_metrics
 
-                # Calculate improvements over baseline
-                if baseline_model and baseline_model in models:
-                    improvements = await self._calculate_improvements(
+        # Calculate improvements over baseline
+        if baseline_model and baseline_model in models:
+                    improvements, await self._calculate_improvements(
                         model_metrics,
-                        self.baseline_metrics,
+        self.baseline_metrics,
                     )
                     comparison_results["improvements"][model_name] = improvements
 
-            # Generate rankings
+        # Generate rankings
             comparison_results["rankings"] = await self._generate_model_rankings(
                 comparison_results["models"],
             )
 
-            # Statistical significance testing
+        # Statistical significance testing
             comparison_results[
                 "statistical_significance"
             ] = await self._test_statistical_significance(comparison_results["models"])
 
-            # Generate recommendations
+        # Generate recommendations
             comparison_results[
                 "recommendations"
             ] = await self._generate_recommendations(comparison_results)
 
-            # Store results
-            self.model_performances.update(comparison_results["models"])
-            self.comparison_results["model_comparison"] = comparison_results
+        # Store results
+        self.model_performances.update(comparison_results["models"])
+        self.comparison_results["model_comparison"] = comparison_results
 
-            self.logger.info("✅ Model performance comparison completed")
-            return comparison_results
+        self.logger.info("✅ Model performance comparison completed")
+        return comparison_results
 
         except Exception as e:
-            error_msg = f"Error comparing model performances: {e}"
-            self.logger.exception(error_msg)
-            self.print(error(error_msg))
-            return {}
+            error_msg, f"Error comparing model performances: {e}"
+        self.logger.exception(error_msg)
+        self.print(error(error_msg))
+        return {}
 
     async def compare_ensemble_methods(
         self,
@@ -170,7 +171,7 @@ class PerformanceComparison:
     ) -> dict[str, Any]:
         """Compare different ensemble methods."""
         try:
-            self.logger.info(f"🔍 Comparing {len(ensembles)} ensemble methods")
+        self.logger.info(f"🔍 Comparing {len(ensembles)} ensemble methods")
 
             ensemble_comparison = {
                 "ensembles": {},
@@ -180,43 +181,43 @@ class PerformanceComparison:
                 "recommendations": [],
             }
 
-            for ensemble_name, ensemble in ensembles.items():
-                # Calculate ensemble-specific metrics
-                ensemble_metrics = await self._calculate_ensemble_metrics(
+        for ensemble_name, ensemble in ensembles.items():
+        # Calculate ensemble-specific metrics
+                ensemble_metrics, await self._calculate_ensemble_metrics(
                     ensemble,
                     test_data,
                 )
                 ensemble_comparison["ensembles"][ensemble_name] = ensemble_metrics
 
-                # Calculate diversity metrics
-                diversity = await self._calculate_ensemble_diversity(ensemble)
+        # Calculate diversity metrics
+                diversity, await self._calculate_ensemble_diversity(ensemble)
                 ensemble_comparison["diversity_metrics"][ensemble_name] = diversity
 
-                # Calculate stability metrics
-                stability = await self._calculate_ensemble_stability(ensemble)
+        # Calculate stability metrics
+                stability, await self._calculate_ensemble_stability(ensemble)
                 ensemble_comparison["stability_metrics"][ensemble_name] = stability
 
-                # Calculate complexity metrics
-                complexity = await self._calculate_ensemble_complexity(ensemble)
+        # Calculate complexity metrics
+                complexity, await self._calculate_ensemble_complexity(ensemble)
                 ensemble_comparison["complexity_metrics"][ensemble_name] = complexity
 
-            # Generate ensemble recommendations
+        # Generate ensemble recommendations
             ensemble_comparison[
                 "recommendations"
             ] = await self._generate_ensemble_recommendations(ensemble_comparison)
 
-            # Store results
-            self.ensemble_performances.update(ensemble_comparison["ensembles"])
-            self.comparison_results["ensemble_comparison"] = ensemble_comparison
+        # Store results
+        self.ensemble_performances.update(ensemble_comparison["ensembles"])
+        self.comparison_results["ensemble_comparison"] = ensemble_comparison
 
-            self.logger.info("✅ Ensemble method comparison completed")
-            return ensemble_comparison
+        self.logger.info("✅ Ensemble method comparison completed")
+        return ensemble_comparison
 
         except Exception as e:
-            error_msg = f"Error comparing ensemble methods: {e}"
-            self.logger.exception(error_msg)
-            self.print(error(error_msg))
-            return {}
+            error_msg, f"Error comparing ensemble methods: {e}"
+        self.logger.exception(error_msg)
+        self.print(error(error_msg))
+        return {}
 
     async def compare_optimization_strategies(
         self,
@@ -224,7 +225,7 @@ class PerformanceComparison:
     ) -> dict[str, Any]:
         """Compare different optimization strategies."""
         try:
-            self.logger.info("🔍 Comparing optimization strategies")
+        self.logger.info("🔍 Comparing optimization strategies")
 
             optimization_comparison = {
                 "strategies": {},
@@ -234,48 +235,48 @@ class PerformanceComparison:
                 "recommendations": [],
             }
 
-            for strategy_name, results in optimization_results.items():
-                # Calculate optimization-specific metrics
-                strategy_metrics = await self._calculate_optimization_metrics(results)
+        for strategy_name, results in optimization_results.items():
+        # Calculate optimization-specific metrics
+                strategy_metrics, await self._calculate_optimization_metrics(results)
                 optimization_comparison["strategies"][strategy_name] = strategy_metrics
 
-                # Calculate convergence metrics
-                convergence = await self._calculate_convergence_metrics(results)
+        # Calculate convergence metrics
+                convergence, await self._calculate_convergence_metrics(results)
                 optimization_comparison["convergence_metrics"][strategy_name] = (
                     convergence
                 )
 
-                # Calculate efficiency metrics
-                efficiency = await self._calculate_efficiency_metrics(results)
+        # Calculate efficiency metrics
+                efficiency, await self._calculate_efficiency_metrics(results)
                 optimization_comparison["efficiency_metrics"][strategy_name] = (
                     efficiency
                 )
 
-                # Calculate robustness metrics
-                robustness = await self._calculate_robustness_metrics(results)
+        # Calculate robustness metrics
+                robustness, await self._calculate_robustness_metrics(results)
                 optimization_comparison["robustness_metrics"][strategy_name] = (
                     robustness
                 )
 
-            # Generate optimization recommendations
+        # Generate optimization recommendations
             optimization_comparison[
                 "recommendations"
             ] = await self._generate_optimization_recommendations(
                 optimization_comparison,
             )
 
-            # Store results
-            self.optimization_performances.update(optimization_comparison["strategies"])
-            self.comparison_results["optimization_comparison"] = optimization_comparison
+        # Store results
+        self.optimization_performances.update(optimization_comparison["strategies"])
+        self.comparison_results["optimization_comparison"] = optimization_comparison
 
-            self.logger.info("✅ Optimization strategy comparison completed")
-            return optimization_comparison
+        self.logger.info("✅ Optimization strategy comparison completed")
+        return optimization_comparison
 
         except Exception as e:
-            error_msg = f"Error comparing optimization strategies: {e}"
-            self.logger.exception(error_msg)
-            self.print(error(error_msg))
-            return {}
+            error_msg, f"Error comparing optimization strategies: {e}"
+        self.logger.exception(error_msg)
+        self.print(error(error_msg))
+        return {}
 
     async def measure_trading_performance_improvements(
         self,
@@ -284,7 +285,7 @@ class PerformanceComparison:
     ) -> dict[str, Any]:
         """Measure actual trading performance improvements."""
         try:
-            self.logger.info("📈 Measuring trading performance improvements")
+        self.logger.info("📈 Measuring trading performance improvements")
 
             improvements = {
                 "overall_improvements": {},
@@ -294,50 +295,50 @@ class PerformanceComparison:
                 "recommendations": [],
             }
 
-            # Calculate overall improvements
-            overall_metrics = await self._calculate_overall_improvements(
+        # Calculate overall improvements
+            overall_metrics, await self._calculate_overall_improvements(
                 before_optimization,
                 after_optimization,
             )
             improvements["overall_improvements"] = overall_metrics
 
-            # Calculate regime-specific improvements
-            regime_improvements = await self._calculate_regime_improvements(
+        # Calculate regime-specific improvements
+            regime_improvements, await self._calculate_regime_improvements(
                 before_optimization,
                 after_optimization,
             )
             improvements["regime_specific_improvements"] = regime_improvements
 
-            # Calculate risk metrics improvements
-            risk_improvements = await self._calculate_risk_improvements(
+        # Calculate risk metrics improvements
+            risk_improvements, await self._calculate_risk_improvements(
                 before_optimization,
                 after_optimization,
             )
             improvements["risk_metrics_improvements"] = risk_improvements
 
-            # Test statistical significance
-            significance = await self._test_trading_significance(
+        # Test statistical significance
+            significance, await self._test_trading_significance(
                 before_optimization,
                 after_optimization,
             )
             improvements["statistical_significance"] = significance
 
-            # Generate trading recommendations
+        # Generate trading recommendations
             improvements[
                 "recommendations"
             ] = await self._generate_trading_recommendations(improvements)
 
-            # Store results
-            self.comparison_results["trading_improvements"] = improvements
+        # Store results
+        self.comparison_results["trading_improvements"] = improvements
 
-            self.logger.info("✅ Trading performance improvements measured")
-            return improvements
+        self.logger.info("✅ Trading performance improvements measured")
+        return improvements
 
         except Exception as e:
-            self.logger.exception(
+        self.logger.exception(
                 f"Error measuring trading performance improvements: {e}",
             )
-            return {}
+        return {}
 
     async def _calculate_model_metrics(
         self,
@@ -346,50 +347,50 @@ class PerformanceComparison:
     ) -> PerformanceMetrics:
         """Calculate comprehensive model metrics."""
         try:
-            # Simulate model predictions (in real implementation, use actual model)
-            predictions = np.random.choice([0, 1], size=len(test_data), p=[0.4, 0.6])
+        # Simulate model predictions (in real implementation, use actual model)
+            predictions, np.random.choice([0, 1], size=len(test_data), p=[0.4, 0.6])
             np.random.uniform(0.3, 0.9, size=len(test_data))
 
-            # Calculate basic metrics
-            accuracy = np.mean(
+        # Calculate basic metrics
+            accuracy, np.mean(
                 predictions == np.random.choice([0, 1], size=len(test_data)),
             )
-            precision = np.random.uniform(0.6, 0.9)
-            recall = np.random.uniform(0.5, 0.8)
-            f1_score = 2 * (precision * recall) / (precision + recall)
-            auc = np.random.uniform(0.65, 0.95)
+            precision, np.random.uniform(0.6, 0.9)
+            recall, np.random.uniform(0.5, 0.8)
+            f1_score, 2 * (precision * recall) / (precision + recall)
+            auc, np.random.uniform(0.65, 0.95)
 
-            # Calculate trading metrics
-            returns = np.random.normal(0.001, 0.02, size=len(test_data))
+        # Calculate trading metrics
+            returns, np.random.normal(0.001, 0.02, size=len(test_data))
             sharpe_ratio = (
                 np.mean(returns) / np.std(returns) if np.std(returns) > 0 else 0
             )
-            max_drawdown = np.min(np.cumsum(returns))
-            total_return = np.sum(returns)
-            win_rate = np.mean(returns > 0)
+            max_drawdown, np.min(np.cumsum(returns))
+            total_return, np.sum(returns)
+            win_rate, np.mean(returns > 0)
             profit_factor = (
                 np.sum(returns[returns > 0]) / abs(np.sum(returns[returns < 0]))
-                if np.sum(returns[returns < 0]) != 0
+        if np.sum(returns[returns < 0]) != 0
                 else float("inf")
             )
 
-            # Calculate additional metrics
-            calmar_ratio = total_return / abs(max_drawdown) if max_drawdown != 0 else 0
+        # Calculate additional metrics
+            calmar_ratio, total_return / abs(max_drawdown) if max_drawdown != 0 else 0
             sortino_ratio = (
                 np.mean(returns) / np.std(returns[returns < 0])
-                if np.std(returns[returns < 0]) > 0
+        if np.std(returns[returns < 0]) > 0
                 else 0
             )
             information_ratio = (
                 np.mean(returns) / np.std(returns) if np.std(returns) > 0 else 0
             )
 
-            # Model complexity and timing
-            model_complexity = np.random.uniform(0.1, 1.0)
-            training_time = np.random.uniform(10, 300)
-            inference_time = np.random.uniform(0.001, 0.1)
+        # Model complexity and timing
+            model_complexity, np.random.uniform(0.1, 1.0)
+            training_time, np.random.uniform(10, 300)
+            inference_time, np.random.uniform(0.001, 0.1)
 
-            return PerformanceMetrics(
+        return PerformanceMetrics(
                 accuracy=accuracy,
                 precision=precision,
                 recall=recall,
@@ -409,10 +410,10 @@ class PerformanceComparison:
             )
 
         except Exception as e:
-            error_msg = f"Error calculating model metrics: {e}"
-            self.logger.exception(error_msg)
-            self.print(error(error_msg))
-            return PerformanceMetrics(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+            error_msg, f"Error calculating model metrics: {e}"
+        self.logger.exception(error_msg)
+        self.print(error(error_msg))
+        return PerformanceMetrics(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
     async def _calculate_improvements(
         self,
@@ -424,10 +425,10 @@ class PerformanceComparison:
 
         # Calculate percentage improvements
         for field in current_metrics.__dataclass_fields__:
-            current_value = getattr(current_metrics, field)
-            baseline_value = getattr(baseline_metrics, field)
+            current_value, getattr(current_metrics, field)
+            baseline_value, getattr(baseline_metrics, field)
 
-            if baseline_value != 0:
+        if baseline_value != 0:
                 improvement = ((current_value - baseline_value) / baseline_value) * 100
                 improvements[f"{field}_improvement"] = improvement
 
@@ -457,7 +458,7 @@ class PerformanceComparison:
             "win_rate",
             "profit_factor",
         ]:
-            sorted_models = sorted(
+            sorted_models, sorted(
                 model_metrics.items(),
                 key=lambda x: getattr(x[1], metric),
                 reverse=True,
@@ -498,14 +499,14 @@ class PerformanceComparison:
         # Simulate statistical significance testing
         for metric in ["accuracy", "f1_score", "sharpe_ratio"]:
             values = [getattr(metrics, metric) for metrics in model_metrics.values()]
-            mean_value = np.mean(values)
-            std_value = np.std(values)
+            mean_value, np.mean(values)
+            std_value, np.std(values)
 
             significance_results[metric] = {
                 "mean": mean_value,
                 "std": std_value,
                 "coefficient_of_variation": std_value / mean_value
-                if mean_value != 0
+        if mean_value != 0
                 else 0,
                 "significant_differences": len(
                     [v for v in values if abs(v - mean_value) > 2 * std_value],
@@ -523,20 +524,20 @@ class PerformanceComparison:
 
         # Find best performing model
         if "rankings" in comparison_results:
-            best_model = comparison_results["rankings"]["composite_ranking"][0]
+            best_model, comparison_results["rankings"]["composite_ranking"][0]
             recommendations.append(f"Best overall model: {best_model}")
 
         # Check for significant improvements
         if "improvements" in comparison_results:
             significant_improvements = []
-            for model, improvements in comparison_results["improvements"].items():
-                for metric, improvement in improvements.items():
-                    if improvement > 10:  # 10% improvement threshold
+        for model, improvements in comparison_results["improvements"].items():
+        for metric, improvement in improvements.items():
+        if improvement > 10:  # 10% improvement threshold
                         significant_improvements.append(
                             f"{model}: {metric} = {improvement:.1f}%",
                         )
 
-            if significant_improvements:
+        if significant_improvements:
                 recommendations.append("Significant improvements detected:")
                 recommendations.extend(significant_improvements)
 
@@ -554,14 +555,14 @@ class PerformanceComparison:
     async def generate_performance_report(self) -> dict[str, Any]:
         """Generate comprehensive performance report."""
         try:
-            self.logger.info("📊 Generating comprehensive performance report")
+        self.logger.info("📊 Generating comprehensive performance report")
 
             report = {
                 "summary": {
                     "total_models_evaluated": len(self.model_performances),
                     "total_ensembles_evaluated": len(self.ensemble_performances),
                     "total_optimizations_evaluated": len(
-                        self.optimization_performances,
+        self.optimization_performances,
                     ),
                     "generation_timestamp": datetime.now().isoformat(),
                 },
@@ -572,19 +573,19 @@ class PerformanceComparison:
                 "recommendations": await self._generate_final_recommendations(),
             }
 
-            # Save report
-            report_path = Path("reports/performance_comparison_report.json")
-            with open(report_path, "w") as f:
+        # Save report
+            report_path, Path("reports/performance_comparison_report.json")
+        with open(report_path, "w") as f:
                 json.dump(report, f, indent=2, default=str)
 
-            self.logger.info(f"✅ Performance report saved to {report_path}")
-            return report
+        self.logger.info(f"✅ Performance report saved to {report_path}")
+        return report
 
         except Exception as e:
-            error_msg = f"Error generating performance report: {e}"
-            self.logger.exception(error_msg)
-            self.print(error(error_msg))
-            return {}
+            error_msg, f"Error generating performance report: {e}"
+        self.logger.exception(error_msg)
+        self.print(error(error_msg))
+        return {}
 
     async def _generate_final_recommendations(self) -> list[str]:
         """Generate final recommendations based on all comparisons."""
@@ -723,11 +724,11 @@ class PerformanceComparison:
 
 
 # Global performance comparison instance
-performance_comparison: PerformanceComparison | None = None
+performance_comparison: PerformanceComparison | None, None
 
 
 async def setup_performance_comparison(
-    config: dict[str, Any] | None = None,
+    config: dict[str, Any] | None, None,
 ) -> PerformanceComparison | None:
     """Setup global performance comparison instance."""
     global performance_comparison
@@ -736,11 +737,11 @@ async def setup_performance_comparison(
         if config is None:
             config = {}
 
-        performance_comparison = PerformanceComparison(config)
-        success = await performance_comparison.initialize()
+        performance_comparison, PerformanceComparison(config)
+        success, await performance_comparison.initialize()
 
         if success:
-            return performance_comparison
+        return performance_comparison
         return None
 
     except Exception:

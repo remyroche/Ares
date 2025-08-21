@@ -1,6 +1,7 @@
 """Data Preparation for Step1_5.
 
 Prepares data for step1_5_data_converter.py processing. This module focuses on:
+    pass
 1. Loading and validating klines data
 2. Ensuring data is properly formatted for step1_5 processing
 3. Optimizing data storage and access patterns
@@ -17,7 +18,7 @@ import pandas as pd
 from src.utils.logger import system_logger
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent.parent
+project_root, Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
@@ -31,7 +32,7 @@ from src.utils.centralized_decorators import (
     with_tracing_span,
 )
 
-logger = system_logger.getChild("DataPreparation")
+logger, system_logger.getChild("DataPreparation")
 
 
 class DataPreparation:
@@ -64,7 +65,7 @@ class DataPreparation:
     }
 
     def __init__(self, data_cache_path: str = "data_cache") -> None:
-        self.data_cache_path = Path(data_cache_path)
+        self.data_cache_path, Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok=True)
 
     @with_tracing_span("get_klines_files")
@@ -72,12 +73,12 @@ class DataPreparation:
         self, symbol: str, exchange: str, interval: str = "1m",
     ) -> list[Path]:
         """Get all klines files for a symbol and exchange."""
-        pattern = f"klines_{exchange}_{symbol}_{interval}_*.csv"
-        csv_files = list(self.data_cache_path.glob(pattern))
+        pattern, f"klines_{exchange}_{symbol}_{interval}_*.csv"
+        csv_files, list(self.data_cache_path.glob(pattern))
 
         # Also get parquet files if they exist
-        pattern_parquet = f"klines_{exchange}_{symbol}_{interval}_*.parquet"
-        parquet_files = list(self.data_cache_path.glob(pattern_parquet))
+        pattern_parquet, f"klines_{exchange}_{symbol}_{interval}_*.parquet"
+        parquet_files, list(self.data_cache_path.glob(pattern_parquet))
 
         return sorted(csv_files + parquet_files)
 
@@ -102,8 +103,8 @@ class DataPreparation:
         self,
         symbol: str,
         exchange: str,
-        start_date: datetime | None = None,
-        end_date: datetime | None = None,
+        start_date: datetime | None, None,
+        end_date: datetime | None, None,
     ) -> pd.DataFrame:
         """Load and combine klines data from multiple files.
 
@@ -119,45 +120,45 @@ class DataPreparation:
         """
         logger.info(f"📊 Loading klines data for {exchange}_{symbol}")
 
-        klines_files = self.get_klines_files(symbol, exchange)
+        klines_files, self.get_klines_files(symbol, exchange)
         logger.info(f"📁 Found {len(klines_files)} klines files")
 
         if not klines_files:
             logger.warning(f"⚠️ No klines files found for {exchange}_{symbol}")
-            return pd.DataFrame()
+        return pd.DataFrame()
 
         # Load all files
         dataframes = []
         for file_path in klines_files:
-            try:
-                if file_path.suffix.lower() == ".csv":
-                    df = pd.read_csv(file_path, parse_dates=["timestamp"])
+        try:
+        if file_path.suffix.lower() == ".csv":
+                    df, pd.read_csv(file_path, parse_dates=["timestamp"])
                 else:
-                    df = pd.read_parquet(file_path)
+                    df, pd.read_parquet(file_path)
 
-                # Apply date filters if specified
-                if start_date:
-                    df = df[df["timestamp"] >= start_date]
-                if end_date:
-                    df = df[df["timestamp"] <= end_date]
+        # Apply date filters if specified
+        if start_date:
+                    df, df[df["timestamp"] >= start_date]
+        if end_date:
+                    df, df[df["timestamp"] <= end_date]
 
-                if len(df) > 0:
+        if len(df) > 0:
                     dataframes.append(df)
                     logger.debug(f"✅ Loaded {file_path.name}: {len(df)} rows")
 
-            except Exception as e:
+        except Exception as e:
                 logger.exception(f"❌ Error loading {file_path.name}: {e}")
                 continue
 
         if not dataframes:
             logger.warning(f"⚠️ No valid data loaded for {exchange}_{symbol}")
-            return pd.DataFrame()
+        return pd.DataFrame()
 
         # Combine all dataframes
-        combined_df = pd.concat(dataframes, ignore_index=True)
+        combined_df, pd.concat(dataframes, ignore_index=True)
 
         # Sort by timestamp and remove duplicates
-        combined_df = combined_df.sort_values("timestamp").drop_duplicates(
+        combined_df, combined_df.sort_values("timestamp").drop_duplicates(
             subset=["timestamp"],
         )
 
@@ -211,7 +212,7 @@ class DataPreparation:
         }
 
         # Check klines data availability
-        klines_files = self.get_klines_files(symbol, exchange)
+        klines_files, self.get_klines_files(symbol, exchange)
         preparation_result["data_summary"]["klines_files"] = len(klines_files)
 
         if not klines_files:
@@ -220,25 +221,25 @@ class DataPreparation:
 
         # Validate klines data format
         for file_path in klines_files[:3]:  # Check first 3 files
-            try:
-                if file_path.suffix.lower() == ".csv":
-                    df = pd.read_csv(file_path, parse_dates=["timestamp"])
+        try:
+        if file_path.suffix.lower() == ".csv":
+                    df, pd.read_csv(file_path, parse_dates=["timestamp"])
                 else:
-                    df = pd.read_parquet(file_path)
+                    df, pd.read_parquet(file_path)
 
-                # Check columns
-                if list(df.columns) != self.EXPECTED_KLINES_COLUMNS:
+        # Check columns
+        if list(df.columns) != self.EXPECTED_KLINES_COLUMNS:
                     preparation_result["issues"].append(
                         f"Invalid klines format in {file_path.name}",
                     )
 
-                # Check data types
-                if not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
+        # Check data types
+        if not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
                     preparation_result["issues"].append(
                         f"Invalid timestamp format in {file_path.name}",
                     )
 
-            except Exception as e:
+        except Exception as e:
                 preparation_result["issues"].append(
                     f"Error reading {file_path.name}: {e}",
                 )
@@ -247,7 +248,7 @@ class DataPreparation:
             logger.info("✅ Data preparation for step1_5 completed successfully")
         else:
             logger.warning("⚠️ Data preparation for step1_5 found issues")
-            for issue in preparation_result["issues"]:
+        for issue in preparation_result["issues"]:
                 logger.warning(f"  - {issue}")
 
         return preparation_result
@@ -289,28 +290,28 @@ class DataPreparation:
         """
         if len(df) == 0:
             logger.warning("⚠️ Empty DataFrame provided for saving")
-            return None
+        return None
 
         # Create output directory (save directly to data_cache for step1_5 compatibility)
-        output_dir = self.data_cache_path
+        output_dir, self.data_cache_path
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Generate filename
         if output_format.lower() == "parquet":
-            filename = f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
+            filename, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
         else:
-            filename = f"klines_{exchange}_{symbol}_{timeframe}_consolidated.csv"
+            filename, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.csv"
 
-        output_path = output_dir / filename
+        output_path, output_dir / filename
 
         # Ensure proper column order and types
         expected_columns = ["timestamp", "open", "high", "low", "close", "volume"]
         if list(df.columns) != expected_columns:
-            if all(col in df.columns for col in expected_columns):
-                df = df[expected_columns]
+        if all(col in df.columns for col in expected_columns):
+                df, df[expected_columns]
             else:
                 logger.error(f"❌ Missing required columns for {timeframe} data")
-                return None
+        return None
 
         # Ensure proper data types
         df["timestamp"] = pd.to_datetime(df["timestamp"])
@@ -319,24 +320,24 @@ class DataPreparation:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
         # Remove any rows with NaN values
-        df = df.dropna()
+        df, df.dropna()
 
         # Sort by timestamp
-        df = df.sort_values("timestamp")
+        df, df.sort_values("timestamp")
 
         # Save file
         try:
-            if output_format.lower() == "parquet":
+        if output_format.lower() == "parquet":
                 df.to_parquet(output_path, compression="zstd", index=False)
             else:
                 df.to_csv(output_path, index=False)
 
             logger.info(f"✅ Saved {timeframe} data: {output_path} ({len(df)} rows)")
-            return output_path
+        return output_path
 
         except Exception as e:
             logger.exception(f"❌ Error saving {timeframe} data: {e}")
-            return None
+        return None
 
     @optimize_memory_usage
     @with_tracing_span("create_partitioned_dataset")
@@ -362,16 +363,16 @@ class DataPreparation:
         """
         if len(df) == 0:
             logger.warning("⚠️ Empty DataFrame provided for partitioning")
-            return None
+        return None
 
         # Create partitioned dataset directory
         dataset_dir = (
-            self.data_cache_path / "partitioned" / exchange / symbol / timeframe
+        self.data_cache_path / "partitioned" / exchange / symbol / timeframe
         )
         dataset_dir.mkdir(parents=True, exist_ok=True)
 
         # Add partitioning columns
-        df_partitioned = df.copy()
+        df_partitioned, df.copy()
         df_partitioned["year"] = df_partitioned["timestamp"].dt.year
         df_partitioned["month"] = df_partitioned["timestamp"].dt.month
         df_partitioned["day"] = df_partitioned["timestamp"].dt.day
@@ -388,11 +389,11 @@ class DataPreparation:
             logger.info(
                 f"✅ Created partitioned dataset: {dataset_dir} ({len(df)} rows)",
             )
-            return dataset_dir
+        return dataset_dir
 
         except Exception as e:
             logger.exception(f"❌ Error creating partitioned dataset: {e}")
-            return None
+        return None
 
     @comprehensive_data_validation
     @optimize_memory_usage
@@ -424,10 +425,10 @@ class DataPreparation:
         self,
         symbol: str,
         exchange: str,
-        timeframes: list[str] | None = None,
-        start_date: datetime | None = None,
-        end_date: datetime | None = None,
-        create_partitions: bool = True,
+        timeframes: list[str] | None, None,
+        start_date: datetime | None, None,
+        end_date: datetime | None, None,
+        create_partitions: bool, True,
     ) -> dict:
         """Resample data to all specified timeframes.
 
@@ -449,11 +450,11 @@ class DataPreparation:
         logger.info(f"🔄 Resampling {exchange}_{symbol} to timeframes: {timeframes}")
 
         # Load source data
-        source_df = self.load_klines_data(symbol, exchange, start_date, end_date)
+        source_df, self.load_klines_data(symbol, exchange, start_date, end_date)
 
         if len(source_df) == 0:
             logger.error(f"❌ No source data available for {exchange}_{symbol}")
-            return {
+        return {
                 "symbol": symbol,
                 "exchange": exchange,
                 "timeframes": timeframes,
@@ -473,37 +474,37 @@ class DataPreparation:
 
         # Resample to each timeframe
         for timeframe in timeframes:
-            try:
+        try:
                 logger.info(f"🔄 Resampling to {timeframe}...")
 
-                # Resample data
-                resampled_df = self.resample_to_timeframe(source_df, timeframe)
+        # Resample data
+                resampled_df, self.resample_to_timeframe(source_df, timeframe)
 
-                if len(resampled_df) == 0:
+        if len(resampled_df) == 0:
                     logger.warning(f"⚠️ No data after resampling to {timeframe}")
                     continue
 
-                # Save resampled data
-                output_path = self.save_resampled_data(
+        # Save resampled data
+                output_path, self.save_resampled_data(
                     resampled_df, symbol, exchange, timeframe,
                 )
 
-                if output_path:
+        if output_path:
                     results["resampled_files"][timeframe] = str(output_path)
 
-                # Create partitioned dataset if requested
-                if create_partitions:
-                    partition_path = self.create_partitioned_dataset(
+        # Create partitioned dataset if requested
+        if create_partitions:
+                    partition_path, self.create_partitioned_dataset(
                         resampled_df, symbol, exchange, timeframe,
                     )
-                    if partition_path:
+        if partition_path:
                         results["partitioned_datasets"][timeframe] = str(partition_path)
 
                 logger.info(
                     f"✅ Completed {timeframe} resampling: {len(resampled_df)} rows",
                 )
 
-            except Exception as e:
+        except Exception as e:
                 logger.exception(f"❌ Error resampling to {timeframe}: {e}")
                 results["success"] = False
                 results["error"] = str(e)
@@ -553,16 +554,16 @@ class DataPreparation:
         logger.info(f"🔍 Validating {timeframe} resampled data for {exchange}_{symbol}")
 
         # Find resampled file
-        output_dir = self.data_cache_path / "resampled" / exchange / symbol
-        filename = f"klines_{exchange}_{symbol}_{timeframe}_resampled.parquet"
-        file_path = output_dir / filename
+        output_dir, self.data_cache_path / "resampled" / exchange / symbol
+        filename, f"klines_{exchange}_{symbol}_{timeframe}_resampled.parquet"
+        file_path, output_dir / filename
 
         if not file_path.exists():
-            return {"valid": False, "error": f"File not found: {file_path}"}
+        return {"valid": False, "error": f"File not found: {file_path}"}
 
         try:
-            # Load and validate data
-            df = pd.read_parquet(file_path)
+        # Load and validate data
+            df, pd.read_parquet(file_path)
 
             validation_result = {
                 "valid": True,
@@ -575,54 +576,54 @@ class DataPreparation:
                 "issues": [],
             }
 
-            # Check for required columns
+        # Check for required columns
             required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
             missing_columns = [col for col in required_columns if col not in df.columns]
-            if missing_columns:
+        if missing_columns:
                 validation_result["valid"] = False
                 validation_result["issues"].append(
                     f"Missing columns: {missing_columns}",
                 )
 
-            # Check for null values
-            null_counts = df[required_columns].isnull().sum()
-            if null_counts.any():
+        # Check for null values
+            null_counts, df[required_columns].isnull().sum()
+        if null_counts.any():
                 validation_result["issues"].append(
                     f"Null values found: {null_counts.to_dict()}",
                 )
 
-            # Check timestamp ordering
-            if not df["timestamp"].is_monotonic_increasing:
+        # Check timestamp ordering
+        if not df["timestamp"].is_monotonic_increasing:
                 validation_result["issues"].append("Timestamps not in ascending order")
 
-            # Check for price anomalies
-            if "high" in df.columns and "low" in df.columns:
-                invalid_prices = df[df["high"] < df["low"]]
-                if len(invalid_prices) > 0:
+        # Check for price anomalies
+        if "high" in df.columns and "low" in df.columns:
+                invalid_prices, df[df["high"] < df["low"]]
+        if len(invalid_prices) > 0:
                     validation_result["issues"].append(
                         f"Invalid prices: {len(invalid_prices)} rows where high < low",
                     )
 
-            # Check timeframe consistency
-            if len(df) > 1:
-                time_diffs = df["timestamp"].diff().dropna()
-                expected_diff = pd.Timedelta(self.TIMEFRAME_MAPPINGS[timeframe])
-                inconsistent_gaps = time_diffs[time_diffs != expected_diff]
-                if len(inconsistent_gaps) > 0:
+        # Check timeframe consistency
+        if len(df) > 1:
+                time_diffs, df["timestamp"].diff().dropna()
+                expected_diff, pd.Timedelta(self.TIMEFRAME_MAPPINGS[timeframe])
+                inconsistent_gaps, time_diffs[time_diffs != expected_diff]
+        if len(inconsistent_gaps) > 0:
                     validation_result["issues"].append(
                         f"Inconsistent time gaps: {len(inconsistent_gaps)} rows",
                     )
 
-            if validation_result["issues"]:
+        if validation_result["issues"]:
                 validation_result["valid"] = False
 
             logger.info(
                 f"📊 Validation result: {'✅ Valid' if validation_result['valid'] else '❌ Invalid'}",
             )
-            return validation_result
+        return validation_result
 
         except Exception as e:
-            return {"valid": False, "error": f"Error reading file: {e}"}
+        return {"valid": False, "error": f"Error reading file: {e}"}
 
     @validate_data_quality()
     @guard_dataframe_nulls(mode="warn", arg_index=0)
@@ -645,24 +646,24 @@ class DataPreparation:
         """
         if timeframe not in self.SUPPORTED_TIMEFRAMES:
             logger.error(f"❌ Unsupported timeframe: {timeframe}")
-            return pd.DataFrame()
+        return pd.DataFrame()
 
         if len(df) == 0:
             logger.warning("⚠️ Empty DataFrame provided for resampling")
-            return pd.DataFrame()
+        return pd.DataFrame()
 
         try:
             logger.info(f"🔄 Resampling to {timeframe}...")
 
-            # Ensure timestamp is the index for resampling
-            df_resampled = df.copy()
-            df_resampled = df_resampled.set_index("timestamp")
+        # Ensure timestamp is the index for resampling
+            df_resampled, df.copy()
+            df_resampled, df_resampled.set_index("timestamp")
 
-            # Get the pandas offset string for the timeframe
-            offset_str = self.TIMEFRAME_MAPPINGS[timeframe]
+        # Get the pandas offset string for the timeframe
+            offset_str, self.TIMEFRAME_MAPPINGS[timeframe]
 
-            # Resample OHLCV data
-            resampled = df_resampled.resample(offset_str).agg(
+        # Resample OHLCV data
+            resampled, df_resampled.resample(offset_str).agg(
                 {
                     "open": "first",
                     "high": "max",
@@ -672,22 +673,22 @@ class DataPreparation:
                 },
             )
 
-            # Remove any periods with no data
-            resampled = resampled.dropna()
+        # Remove any periods with no data
+            resampled, resampled.dropna()
 
-            # Reset index to get timestamp back as a column
-            resampled = resampled.reset_index()
+        # Reset index to get timestamp back as a column
+            resampled, resampled.reset_index()
 
-            # Ensure proper column order
+        # Ensure proper column order
             expected_columns = ["timestamp", "open", "high", "low", "close", "volume"]
-            resampled = resampled[expected_columns]
+            resampled, resampled[expected_columns]
 
             logger.info(f"✅ Resampled to {timeframe}: {len(resampled)} rows")
-            return resampled
+        return resampled
 
         except Exception as e:
             logger.exception(f"❌ Error resampling to {timeframe}: {e}")
-            return pd.DataFrame()
+        return pd.DataFrame()
 
     @validate_data_quality()
     @with_tracing_span("validate_resampled_data_quality")
@@ -718,7 +719,7 @@ class DataPreparation:
         if len(df) == 0:
             validation_result["valid"] = False
             validation_result["issues"].append("Empty DataFrame")
-            return validation_result
+        return validation_result
 
         # Check for required columns
         required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
@@ -728,7 +729,7 @@ class DataPreparation:
             validation_result["issues"].append(f"Missing columns: {missing_columns}")
 
         # Check for null values
-        null_counts = df[required_columns].isnull().sum()
+        null_counts, df[required_columns].isnull().sum()
         if null_counts.any():
             validation_result["issues"].append(
                 f"Null values found: {null_counts.to_dict()}",
@@ -740,18 +741,18 @@ class DataPreparation:
 
         # Check for price anomalies
         if "high" in df.columns and "low" in df.columns:
-            invalid_prices = df[df["high"] < df["low"]]
-            if len(invalid_prices) > 0:
+            invalid_prices, df[df["high"] < df["low"]]
+        if len(invalid_prices) > 0:
                 validation_result["issues"].append(
                     f"Invalid prices: {len(invalid_prices)} rows where high < low",
                 )
 
         # Check timeframe consistency
         if len(df) > 1:
-            time_diffs = df["timestamp"].diff().dropna()
-            expected_diff = pd.Timedelta(self.TIMEFRAME_MAPPINGS[timeframe])
-            inconsistent_gaps = time_diffs[time_diffs != expected_diff]
-            if len(inconsistent_gaps) > 0:
+            time_diffs, df["timestamp"].diff().dropna()
+            expected_diff, pd.Timedelta(self.TIMEFRAME_MAPPINGS[timeframe])
+            inconsistent_gaps, time_diffs[time_diffs != expected_diff]
+        if len(inconsistent_gaps) > 0:
                 validation_result["warnings"].append(
                     f"Inconsistent time gaps: {len(inconsistent_gaps)} rows",
                 )
@@ -759,7 +760,7 @@ class DataPreparation:
         # Check for extreme values
         if "volume" in df.columns:
             zero_volume = (df["volume"] == 0).sum()
-            if zero_volume > len(df) * 0.1:  # More than 10% zero volume
+        if zero_volume > len(df) * 0.1:  # More than 10% zero volume
                 validation_result["warnings"].append(
                     f"High number of zero volume periods: {zero_volume}",
                 )
@@ -771,24 +772,25 @@ class DataPreparation:
 
     def generate_resampling_report(self, symbol: str, exchange: str) -> str:
         """Generate a comprehensive resampling report."""
-        report = f"""
+        report, f"""
 🔄 RESAMPLING REPORT FOR {exchange}_{symbol}
 {'='*60}
 
 📊 AVAILABLE TIMEFRAMES:
+    pass
 """
 
         for timeframe in self.SUPPORTED_TIMEFRAMES:
-            # Check if resampled file exists
-            output_dir = self.data_cache_path / "resampled" / exchange / symbol
-            filename = f"klines_{exchange}_{symbol}_{timeframe}_resampled.parquet"
-            file_path = output_dir / filename
+        # Check if resampled file exists
+            output_dir, self.data_cache_path / "resampled" / exchange / symbol
+            filename, f"klines_{exchange}_{symbol}_{timeframe}_resampled.parquet"
+            file_path, output_dir / filename
 
-            if file_path.exists():
-                try:
-                    df = pd.read_parquet(file_path)
+        if file_path.exists():
+        try:
+                    df, pd.read_parquet(file_path)
                     report += f"• {timeframe}: ✅ Available ({len(df)} rows)\n"
-                except:
+        except:
                     report += f"• {timeframe}: ❌ Corrupted\n"
             else:
                 report += f"• {timeframe}: ❌ Not available\n"
@@ -844,46 +846,46 @@ class DataPreparation:
         }
 
         try:
-            # Load all klines data
-            klines_df = self.load_klines_data(symbol, exchange)
+        # Load all klines data
+            klines_df, self.load_klines_data(symbol, exchange)
 
-            if len(klines_df) == 0:
+        if len(klines_df) == 0:
                 consolidation_result["error"] = "No klines data available"
                 logger.error("❌ No klines data available for 1m consolidation")
-                return consolidation_result
+        return consolidation_result
 
-            # Ensure proper column order and types
+        # Ensure proper column order and types
             expected_columns = ["timestamp", "open", "high", "low", "close", "volume"]
-            if list(klines_df.columns) != expected_columns:
-                if all(col in klines_df.columns for col in expected_columns):
-                    klines_df = klines_df[expected_columns]
+        if list(klines_df.columns) != expected_columns:
+        if all(col in klines_df.columns for col in expected_columns):
+                    klines_df, klines_df[expected_columns]
                 else:
                     consolidation_result["error"] = "Missing required columns"
                     logger.error("❌ Missing required columns for 1m consolidation")
-                    return consolidation_result
+        return consolidation_result
 
-            # Ensure proper data types
+        # Ensure proper data types
             klines_df["timestamp"] = pd.to_datetime(klines_df["timestamp"])
             numeric_columns = ["open", "high", "low", "close", "volume"]
-            for col in numeric_columns:
+        for col in numeric_columns:
                 klines_df[col] = pd.to_numeric(klines_df[col], errors="coerce")
 
-            # Remove any rows with NaN values
-            klines_df = klines_df.dropna()
+        # Remove any rows with NaN values
+            klines_df, klines_df.dropna()
 
-            # Sort by timestamp
-            klines_df = klines_df.sort_values("timestamp")
+        # Sort by timestamp
+            klines_df, klines_df.sort_values("timestamp")
 
-            # Remove duplicates
-            klines_df = klines_df.drop_duplicates(subset=["timestamp"])
+        # Remove duplicates
+            klines_df, klines_df.drop_duplicates(subset=["timestamp"])
 
-            # Create output path
+        # Create output path
             output_path = (
-                self.data_cache_path
+        self.data_cache_path
                 / f"klines_{exchange}_{symbol}_1m_consolidated.parquet"
             )
 
-            # Save consolidated data
+        # Save consolidated data
             klines_df.to_parquet(output_path, compression="zstd", index=False)
 
             consolidation_result["success"] = True

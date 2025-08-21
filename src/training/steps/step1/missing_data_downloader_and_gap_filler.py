@@ -1,6 +1,7 @@
 """Missing Data Downloader and Gap Filler.
 
 Automatically downloads missing data and fills gaps:
+    pass
 1. Downloads missing days of aggtrades (up to 2 days ago)
 2. Downloads missing months of klines (up to 2 days ago)
 3. Downloads missing months of futures (up to 2 days ago)
@@ -117,13 +118,13 @@ class MissingDataDownloaderAndGapFiller:
         # Download limits and retry settings
         self.max_retries = 3
         self.retry_delay = 1.0  # seconds
-        self.rate_limit_delay = 0.1  # seconds between requests
+        self.rate_limit_delay, 0.1  # seconds between requests
 
         # Gap detection settings
-        self.min_gap_seconds = 10
+        self.min_gap_seconds, 10
 
         # Exchange initialization flag
-        self._exchange_initialized = False
+        self._exchange_initialized, False
 
     @handle_errors(
         exceptions=(OSError, ValueError, TypeError, KeyError),
@@ -133,21 +134,21 @@ class MissingDataDownloaderAndGapFiller:
     async def _ensure_exchange_initialized(self) -> bool:
         """Ensure the exchange is properly initialized."""
         if not self._exchange_initialized:
-            try:
+        try:
                 logger.info("🔧 Initializing Binance exchange connection...")
-                if self.exchange:
-                    success = await self.exchange.initialize()
-                    if success:
-                        self._exchange_initialized = True
+        if self.exchange:
+                    success, await self.exchange.initialize()
+        if success:
+        self._exchange_initialized, True
                         logger.info("✅ Binance exchange initialized successfully")
-                        return True
+        return True
                     logger.error("❌ Failed to initialize Binance exchange")
-                    return False
+        return False
                 logger.warning("⚠️ Exchange not available")
-                return False
-            except Exception as e:
+        return False
+        except Exception as e:
                 logger.exception(f"❌ Error initializing exchange: {e}")
-                return False
+        return False
         return True
 
     @secure_data_processing
@@ -160,16 +161,16 @@ class MissingDataDownloaderAndGapFiller:
     def get_current_timestamp(self) -> datetime:
         """Get current timestamp from exchange to determine 'today'."""
         try:
-            # Get server time from exchange
-            if self.exchange:
-                server_time = self.exchange.get_server_time()
-                if server_time:
-                    return datetime.fromtimestamp(server_time / 1000)
-            # Fallback to local time
-            return datetime.now()
+        # Get server time from exchange
+        if self.exchange:
+                server_time, self.exchange.get_server_time()
+        if server_time:
+        return datetime.fromtimestamp(server_time / 1000)
+        # Fallback to local time
+        return datetime.now()
         except Exception as e:
             logger.warning(f"⚠️ Could not get server time, using local time: {e}")
-            return datetime.now()
+        return datetime.now()
 
     @validate_data_structure
     @with_tracing_span("identify_missing_data")
@@ -180,7 +181,7 @@ class MissingDataDownloaderAndGapFiller:
         context="missing_data_downloader.identify_missing_data",
     )
     def identify_missing_data(self, symbol: str, exchange: str,
-                            end_date: datetime | None = None) -> dict:
+                            end_date: datetime | None, None) -> dict:
         """Identify all missing data periods.
 
         Args:
@@ -193,24 +194,24 @@ class MissingDataDownloaderAndGapFiller:
 
         """
         if end_date is None:
-            current_time = self.get_current_timestamp()
-            end_date = current_time - timedelta(days=2)
+            current_time, self.get_current_timestamp()
+            end_date, current_time - timedelta(days=2)
 
-        start_date = end_date - timedelta(days=365*2)  # 2 years back
+        start_date, end_date - timedelta(days=365*2)  # 2 years back
 
         logger.info(f"🔍 Identifying missing data for {exchange}_{symbol} from {start_date.date()} to {end_date.date()}")
 
         # Import gap detector to reuse existing logic
         if DataGapDetector:
-            gap_detector = DataGapDetector(str(self.data_cache_path))
+            gap_detector, DataGapDetector(str(self.data_cache_path))
 
-            # Get missing data periods
-            missing_data = gap_detector.detect_missing_data(symbol, exchange, start_date, end_date)
+        # Get missing data periods
+            missing_data, gap_detector.detect_missing_data(symbol, exchange, start_date, end_date)
 
-            # Get aggtrades gaps
-            aggtrades_gaps = gap_detector.detect_aggtrades_gaps(symbol, exchange, self.min_gap_seconds)
+        # Get aggtrades gaps
+            aggtrades_gaps, gap_detector.detect_aggtrades_gaps(symbol, exchange, self.min_gap_seconds)
 
-            return {
+        return {
                 "symbol": symbol,
                 "exchange": exchange,
                 "start_date": start_date,
@@ -261,7 +262,7 @@ class MissingDataDownloaderAndGapFiller:
         """
         # Ensure exchange is initialized
         if not await self._ensure_exchange_initialized():
-            return {
+        return {
                 "downloaded_days": 0,
                 "failed_days": 0,
                 "total_rows": 0,
@@ -278,26 +279,26 @@ class MissingDataDownloaderAndGapFiller:
         }
 
         for date in missing_days:
-            try:
+        try:
                 logger.info(f"📥 Downloading aggtrades for {date.date()}")
 
-                # Download aggtrades for the day
-                aggtrades_data = await self.exchange.get_aggregate_trades(
+        # Download aggtrades for the day
+                aggtrades_data, await self.exchange.get_aggregate_trades(
                     symbol=symbol,
                     start_time=date,
                     end_time=date + timedelta(days=1),
                 )
 
-                if aggtrades_data and len(aggtrades_data) > 0:
-                    # Convert to DataFrame
-                    df = pd.DataFrame(aggtrades_data)
+        if aggtrades_data and len(aggtrades_data) > 0:
+        # Convert to DataFrame
+                    df, pd.DataFrame(aggtrades_data)
 
-                    # Ensure proper column names and types
-                    df = self._standardize_aggtrades_format(df)
+        # Ensure proper column names and types
+                    df, self._standardize_aggtrades_format(df)
 
-                    # Save to file
-                    filename = f"aggtrades_{exchange}_{symbol}_{date.strftime('%Y%m%d')}.parquet"
-                    file_path = self.data_cache_path / filename
+        # Save to file
+                    filename, f"aggtrades_{exchange}_{symbol}_{date.strftime('%Y%m%d')}.parquet"
+                    file_path, self.data_cache_path / filename
 
                     df.to_parquet(file_path, compression="zstd", index=False)
 
@@ -306,14 +307,14 @@ class MissingDataDownloaderAndGapFiller:
 
                     logger.info(f"✅ Downloaded {len(df)} aggtrades for {date.date()}")
 
-                    # Rate limiting
-                    await asyncio.sleep(self.rate_limit_delay)
+        # Rate limiting
+        await asyncio.sleep(self.rate_limit_delay)
 
                 else:
                     logger.warning(f"⚠️ No aggtrades data available for {date.date()}")
                     results["failed_days"] += 1
 
-            except Exception as e:
+        except Exception as e:
                 logger.exception(f"❌ Error downloading aggtrades for {date.date()}: {e}")
                 results["failed_days"] += 1
                 results["errors"].append(f"{date.date()}: {e}")
@@ -344,85 +345,85 @@ class MissingDataDownloaderAndGapFiller:
         """
         # Ensure exchange is initialized
         if not await self._ensure_exchange_initialized():
-            return {
+        return {
                 "success": False,
                 "error": "Failed to initialize exchange connection",
                 "rows_added": 0,
             }
 
         try:
-            gap_start = gap_info["gap_start"]
-            gap_end = gap_info["gap_end"]
-            file_name = gap_info["file"]
+            gap_start, gap_info["gap_start"]
+            gap_end, gap_info["gap_end"]
+            file_name, gap_info["file"]
 
-            # Convert datetime to milliseconds
-            if isinstance(gap_start, str):
-                gap_start = pd.to_datetime(gap_start)
-            if isinstance(gap_end, str):
-                gap_end = pd.to_datetime(gap_end)
+        # Convert datetime to milliseconds
+        if isinstance(gap_start, str):
+                gap_start, pd.to_datetime(gap_start)
+        if isinstance(gap_end, str):
+                gap_end, pd.to_datetime(gap_end)
 
-            start_time_ms = int(gap_start.timestamp() * 1000)
-            end_time_ms = int(gap_end.timestamp() * 1000)
+            start_time_ms, int(gap_start.timestamp() * 1000)
+            end_time_ms, int(gap_end.timestamp() * 1000)
 
-            missing_data = None
+            missing_data, None
 
-            # Try to download missing data for the gap period
-            try:
+        # Try to download missing data for the gap period
+        try:
                 logger.info(f"🔍 Trying to download data for gap: {gap_start} to {gap_end}")
-                missing_data = await self.exchange.get_aggregate_trades(
+                missing_data, await self.exchange.get_aggregate_trades(
                     symbol=symbol,
                     start_time_ms=start_time_ms,
                     end_time_ms=end_time_ms,
                 )
 
-                if missing_data and len(missing_data) > 0:
+        if missing_data and len(missing_data) > 0:
                     logger.info(f"✅ API successful: {len(missing_data)} trades found")
                 else:
                     logger.info("⚠️ API returned no data")
 
-            except Exception as e:
+        except Exception as e:
                 logger.warning(f"⚠️ API failed: {e}")
 
-            if missing_data and len(missing_data) > 0:
-                # Convert to DataFrame
-                df_missing = pd.DataFrame(missing_data)
-                df_missing = self._standardize_aggtrades_format(df_missing)
+        if missing_data and len(missing_data) > 0:
+        # Convert to DataFrame
+                df_missing, pd.DataFrame(missing_data)
+                df_missing, self._standardize_aggtrades_format(df_missing)
 
-                # Load existing file
-                file_path = self.data_cache_path / file_name
-                if file_path.exists():
-                    df_existing = pd.read_parquet(file_path)
+        # Load existing file
+                file_path, self.data_cache_path / file_name
+        if file_path.exists():
+                    df_existing, pd.read_parquet(file_path)
 
-                    # Combine existing and new data
-                    df_combined = pd.concat([df_existing, df_missing], ignore_index=True)
+        # Combine existing and new data
+                    df_combined, pd.concat([df_existing, df_missing], ignore_index=True)
 
-                    # Sort by timestamp and remove duplicates
-                    df_combined = df_combined.sort_values("timestamp").drop_duplicates(subset=["timestamp"])
+        # Sort by timestamp and remove duplicates
+                    df_combined, df_combined.sort_values("timestamp").drop_duplicates(subset=["timestamp"])
 
-                    # Save back to file
+        # Save back to file
                     df_combined.to_parquet(file_path, compression="zstd", index=False)
 
-                    # Rate limiting
-                    await asyncio.sleep(self.rate_limit_delay)
+        # Rate limiting
+        await asyncio.sleep(self.rate_limit_delay)
 
-                    return {
+        return {
                         "success": True,
                         "rows_added": len(df_missing),
                         "gap_duration": gap_info.get("gap_duration_seconds", 0),
                     }
-                return {
+        return {
                     "success": False,
                     "error": f"Could not find existing file: {file_name}",
                     "rows_added": 0,
                 }
-            return {
+        return {
                 "success": False,
                 "error": "No data available to fill gap",
                 "rows_added": 0,
             }
 
         except Exception as e:
-            return {
+        return {
                 "success": False,
                 "error": str(e),
                 "rows_added": 0,
@@ -451,12 +452,12 @@ class MissingDataDownloaderAndGapFiller:
             "m": "is_buyer_maker",
         }
 
-        df = df.rename(columns=column_mapping)
+        df, df.rename(columns=column_mapping)
 
         # Ensure all required columns exist
         for col in expected_columns:
-            if col not in df.columns:
-                if col == "is_buyer_maker":
+        if col not in df.columns:
+        if col == "is_buyer_maker":
                     df[col] = False  # Default value
                 else:
                     df[col] = 0  # Default value
@@ -472,9 +473,9 @@ class MissingDataDownloaderAndGapFiller:
 
         # Remove any rows with NaN values in critical columns
         critical_columns = ["timestamp", "price", "quantity"]
-        df = df.dropna(subset=critical_columns)
+        df, df.dropna(subset=critical_columns)
 
         # Sort by timestamp
-        df = df.sort_values("timestamp")
+        df, df.sort_values("timestamp")
 
         return df[expected_columns]

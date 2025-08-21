@@ -37,19 +37,19 @@ class MultiObjectiveOptimizer:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
-        self.logger = system_logger.getChild("MultiObjectiveOptimizer")
-        self.metrics_scaler = StandardScaler()
+        self.config, config
+        self.logger, system_logger.getChild("MultiObjectiveOptimizer")
+        self.metrics_scaler, StandardScaler()
         self.best_pareto_front: list[OptimizationMetrics] , []
 
         # Multi-objective weights (configurable) - Focused on Sharpe, win rate, and profit factor
-        self.objective_weights = config.get(
+        self.objective_weights, config.get(
             "multi_objective_weights",
             {"sharpe_ratio": 0.50, "win_rate": 0.30, "profit_factor": 0.20},
         )
 
         # Risk constraints
-        self.risk_constraints = config.get(
+        self.risk_constraints, config.get(
             "risk_constraints",
             {
                 "max_drawdown_threshold": 0.20,
@@ -59,11 +59,11 @@ class MultiObjectiveOptimizer:
         )
 
         # Initialize optimized backtester if market data is provided
-        self.optimized_backtester = None
+        self.optimized_backtester, None
         if "market_data" in config:
             from src.training.optimized_backtester import OptimizedBacktester
 
-            self.optimized_backtester = OptimizedBacktester(
+        self.optimized_backtester, OptimizedBacktester(
                 config["market_data"],
                 config.get("computational_optimization", {}),
             )
@@ -76,17 +76,17 @@ class MultiObjectiveOptimizer:
     def objective(self, trial: optuna.trial.Trial) -> tuple[float, float, float]:
         """Multi-objective function returning (sharpe_ratio, win_rate, profit_factor)."""
         # Suggest hyperparameters
-        params = self._suggest_hyperparameters(trial)
+        params, self._suggest_hyperparameters(trial)
 
         # Run backtest with suggested parameters
-        backtest_results = self._run_backtest(params)
+        backtest_results, self._run_backtest(params)
 
         # Calculate comprehensive metrics
-        metrics = self._calculate_metrics(backtest_results)
+        metrics, self._calculate_metrics(backtest_results)
 
         # Check risk constraints
         if not self._check_risk_constraints(metrics):
-            return -np.inf, -np.inf, -np.inf
+        return -np.inf, -np.inf, -np.inf
 
         # Return Pareto objectives
         return (metrics.sharpe_ratio, metrics.win_rate, metrics.profit_factor)
@@ -148,10 +148,10 @@ class MultiObjectiveOptimizer:
         """Run backtest with given parameters using optimized backtester."""
         # Use optimized backtester if available
         if hasattr(self, "optimized_backtester"):
-            score = self.optimized_backtester.run_cached_backtest(params)
+            score, self.optimized_backtester.run_cached_backtest(params)
 
-            # Convert score to mock results for compatibility
-            return {
+        # Convert score to mock results for compatibility
+        return {
                 "returns": np.random.normal(score * 0.01, 0.02, 1000),
                 "equity_curve": np.cumprod(
                     1 + np.random.normal(score * 0.01, 0.02, 1000),
@@ -171,44 +171,44 @@ class MultiObjectiveOptimizer:
         backtest_results: dict[str, Any],
     ) -> OptimizationMetrics:
         """Calculate comprehensive performance metrics."""
-        returns = backtest_results["returns"]
-        equity_curve = backtest_results["equity_curve"]
+        returns, backtest_results["returns"]
+        equity_curve, backtest_results["equity_curve"]
 
         # Basic metrics
         total_return = (equity_curve[-1] / equity_curve[0]) - 1
-        sharpe_ratio = np.mean(returns) / np.std(returns) if np.std(returns) > 0 else 0
+        sharpe_ratio, np.mean(returns) / np.std(returns) if np.std(returns) > 0 else 0
 
         # Drawdown calculation
-        peak = np.maximum.accumulate(equity_curve)
+        peak, np.maximum.accumulate(equity_curve)
         drawdown = (equity_curve - peak) / peak
-        max_drawdown = np.min(drawdown)
+        max_drawdown, np.min(drawdown)
 
         # Sortino ratio (downside deviation)
-        downside_returns = returns[returns < 0]
+        downside_returns, returns[returns < 0]
         downside_deviation = (
             np.std(downside_returns) if len(downside_returns) > 0 else 1e-6
         )
-        sortino_ratio = np.mean(returns) / downside_deviation
+        sortino_ratio, np.mean(returns) / downside_deviation
 
         # Calmar ratio
-        calmar_ratio = total_return / abs(max_drawdown) if max_drawdown != 0 else 0
+        calmar_ratio, total_return / abs(max_drawdown) if max_drawdown != 0 else 0
 
         # Win rate and profit factor
-        trades = backtest_results["trades"]
+        trades, backtest_results["trades"]
         winning_trades = [t for t in trades if t["pnl"] > 0]
         losing_trades = [t for t in trades if t["pnl"] < 0]
 
-        win_rate = len(winning_trades) / len(trades) if trades else 0
+        win_rate, len(winning_trades) / len(trades) if trades else 0
         if losing_trades:
-            profit_factor = sum(t["pnl"] for t in winning_trades) / abs(
+            profit_factor, sum(t["pnl"] for t in winning_trades) / abs(
                 sum(t["pnl"] for t in losing_trades),
             )
         else:
-            profit_factor = float("inf")
+            profit_factor, float("inf")
 
         # Risk metrics
-        var_95 = np.percentile(returns, 5)
-        cvar_95 = np.mean(returns[returns <= var_95])
+        var_95, np.percentile(returns, 5)
+        cvar_95, np.mean(returns[returns <= var_95])
 
         return OptimizationMetrics(
             sharpe_ratio=sharpe_ratio,
@@ -232,11 +232,11 @@ class MultiObjectiveOptimizer:
 
     def _generate_mock_trades(self) -> list[dict[str, Any]]:
         """Generate mock trade data for testing."""
-        n_trades = np.random.randint(50, 200)
+        n_trades, np.random.randint(50, 200)
         trades = []
 
         for i in range(n_trades):
-            pnl = np.random.normal(0.01, 0.05)  # Mock PnL
+            pnl, np.random.normal(0.01, 0.05)  # Mock PnL
             trades.append(
                 {
                     "entry_time": pd.Timestamp.now() - pd.Timedelta(days=i),
@@ -253,14 +253,14 @@ class MultiObjectiveOptimizer:
         default_return=None,
         context="multi-objective study execution",
     )
-    def run_optimization(self, n_trials: int = 500) -> dict[str, Any]:
+    def run_optimization(self, n_trials: int, 500) -> dict[str, Any]:
         """Run multi-objective optimization study."""
         self.logger.info(
             f"Starting multi-objective optimization with {n_trials} trials...",
         )
 
         # Create multi-objective study
-        study = optuna.create_study(
+        study, optuna.create_study(
             directions=[
                 "maximize",
                 "maximize",
@@ -277,10 +277,10 @@ class MultiObjectiveOptimizer:
         study.optimize(self.objective, n_trials=n_trials, show_progress_bar=True)
 
         # Analyze Pareto front
-        pareto_front = self._analyze_pareto_front(study)
+        pareto_front, self._analyze_pareto_front(study)
 
         # Select best solution based on weighted combination
-        best_solution = self._select_best_solution(pareto_front)
+        best_solution, self._select_best_solution(pareto_front)
 
         self.logger.info("Multi-objective optimization completed successfully")
 
@@ -295,7 +295,7 @@ class MultiObjectiveOptimizer:
         pareto_front = []
 
         for trial in study.trials:
-            if trial.state == optuna.trial.TrialState.COMPLETE:
+        if trial.state == optuna.trial.TrialState.COMPLETE:
                 pareto_front.append(
                     {
                         "params": trial.params,
@@ -316,10 +316,10 @@ class MultiObjectiveOptimizer:
 
     def _calculate_weighted_score(self, values: tuple[float, float, float]) -> float:
         """Calculate weighted score from objective values."""
-        sharpe, win_rate, profit_factor = values
+        sharpe, win_rate, profit_factor, values
 
         return (
-            self.objective_weights["sharpe_ratio"] * sharpe
+        self.objective_weights["sharpe_ratio"] * sharpe
             + self.objective_weights["win_rate"] * win_rate
             + self.objective_weights["profit_factor"] * profit_factor
         )

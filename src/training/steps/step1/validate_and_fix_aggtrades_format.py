@@ -5,6 +5,7 @@ Enhanced aggtrades validation and fixing script specifically designed to ensure
 compatibility with step1_5, step2, step3, and step4 requirements.
 
 This script validates and fixes:
+    pass
 1. Column structure and data types
 2. Time format consistency
 3. String size optimization
@@ -23,7 +24,7 @@ import numpy as np
 import pandas as pd
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent.parent
+project_root, Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
@@ -39,7 +40,7 @@ from src.utils.centralized_decorators import (
     quality_gate
 )
 
-logger = system_logger.getChild("ValidateAndFixAggtradesFormat")
+logger, system_logger.getChild("ValidateAndFixAggtradesFormat")
 
 class ValidateAndFixAggtradesFormat:
     """Enhanced aggtrades validation and fixing for step1_5, step2, step3, step4 compatibility"""
@@ -80,19 +81,19 @@ class ValidateAndFixAggtradesFormat:
     
 
     def __init__(self, data_cache_path: str = "data_cache"):
-        self.data_cache_path = Path(data_cache_path)
+        self.data_cache_path, Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok=True)
         
     @with_tracing_span("get_aggtrades_files")
 
     def get_aggtrades_files(self, symbol: str, exchange: str) -> List[Path]:
         """Get all aggtrades files for a symbol and exchange"""
-        pattern = f"aggtrades_{exchange}_{symbol}_*.csv"
-        csv_files = list(self.data_cache_path.glob(pattern))
+        pattern, f"aggtrades_{exchange}_{symbol}_*.csv"
+        csv_files, list(self.data_cache_path.glob(pattern))
         
         # Also get parquet files if they exist
-        pattern_parquet = f"aggtrades_{exchange}_{symbol}_*.parquet"
-        parquet_files = list(self.data_cache_path.glob(pattern_parquet))
+        pattern_parquet, f"aggtrades_{exchange}_{symbol}_*.parquet"
+        parquet_files, list(self.data_cache_path.glob(pattern_parquet))
         
         return sorted(csv_files + parquet_files)
     
@@ -126,76 +127,76 @@ class ValidateAndFixAggtradesFormat:
         }
         
         try:
-            # Check file size
+        # Check file size
             result['file_size'] = file_path.stat().st_size
             
-            if result['file_size'] == 0:
+        if result['file_size'] == 0:
                 result['issues'].append("Empty file")
-                return result
+        return result
             
-            # Read the file
-            if file_path.suffix.lower() == '.csv':
-                df = pd.read_csv(file_path, parse_dates=['timestamp'])
+        # Read the file
+        if file_path.suffix.lower() == '.csv':
+                df, pd.read_csv(file_path, parse_dates=['timestamp'])
             elif file_path.suffix.lower() == '.parquet':
-                df = pd.read_parquet(file_path)
+                df, pd.read_parquet(file_path)
             else:
                 result['issues'].append(f"Unsupported file format: {file_path.suffix}")
-                return result
+        return result
             
             result['row_count'] = len(df)
             result['memory_usage_mb'] = df.memory_usage(deep=True).sum() / 1024 / 1024
             
-            if len(df) == 0:
+        if len(df) == 0:
                 result['issues'].append("No data rows")
-                return result
+        return result
             
-            # Step 1: Basic column validation
-            if list(df.columns) != self.EXPECTED_COLUMNS:
+        # Step 1: Basic column validation
+        if list(df.columns) != self.EXPECTED_COLUMNS:
                 result['issues'].append(
                     f"Invalid columns: expected {self.EXPECTED_COLUMNS}, found {list(df.columns)}"
                 )
             
-            # Step 2: Data type validation
-            for col , expected_dtype in self.EXPECTED_DTYPES.items():
-                if col in df.columns:
-                    if str(df[col].dtype) != expected_dtype:
+        # Step 2: Data type validation
+        for col , expected_dtype in self.EXPECTED_DTYPES.items():
+        if col in df.columns:
+        if str(df[col].dtype) != expected_dtype:
                         result['issues'].append(
                             f"Invalid dtype for {col}: expected {expected_dtype}, found {df[col].dtype}"
                         )
                 else:
                     result['issues'].append(f"Missing column: {col}")
             
-            # Step 3: Step1_5 specific validation
-            step1_5_issues = self._validate_step1_5_requirements(df)
+        # Step 3: Step1_5 specific validation
+            step1_5_issues, self._validate_step1_5_requirements(df)
             result['issues'].extend(step1_5_issues)
             
-            # Step 4: Step2 compatibility (feature engineering requirements)
-            step2_issues = self._validate_step2_compatibility(df)
+        # Step 4: Step2 compatibility (feature engineering requirements)
+            step2_issues, self._validate_step2_compatibility(df)
             result['issues'].extend(step2_issues)
             
-            # Step 5: Step3 compatibility (regime discovery requirements)
-            step3_issues = self._validate_step3_compatibility(df)
+        # Step 5: Step3 compatibility (regime discovery requirements)
+            step3_issues, self._validate_step3_compatibility(df)
             result['issues'].extend(step3_issues)
             
-            # Step 6: Step4 compatibility (labeling requirements)
-            step4_issues = self._validate_step4_compatibility(df)
+        # Step 6: Step4 compatibility (labeling requirements)
+            step4_issues, self._validate_step4_compatibility(df)
             result['issues'].extend(step4_issues)
             
-            # Step 7: Data quality checks
-            quality_issues = self._validate_data_quality(df)
+        # Step 7: Data quality checks
+            quality_issues, self._validate_data_quality(df)
             result['issues'].extend(quality_issues)
             
-            # Step 8: Memory optimization warnings
-            memory_warnings = self._check_memory_optimization(df)
+        # Step 8: Memory optimization warnings
+            memory_warnings, self._check_memory_optimization(df)
             result['warnings'].extend(memory_warnings)
             
-            # Determine compatibility
+        # Determine compatibility
             result['step1_5_compatible'] = len([i for i in result['issues'] if 'step1_5' in i.lower()]) == 0
             result['step2_compatible'] = len([i for i in result['issues'] if 'step2' in i.lower()]) == 0
             result['step3_compatible'] = len([i for i in result['issues'] if 'step3' in i.lower()]) == 0
             result['step4_compatible'] = len([i for i in result['issues'] if 'step4' in i.lower()]) == 0
             
-            # Overall validity
+        # Overall validity
             result['valid'] = len(result['issues']) == 0
                 
         except Exception as e:
@@ -209,40 +210,40 @@ class ValidateAndFixAggtradesFormat:
         issues = []
         
         if 'timestamp' in df.columns:
-            # Check timestamp range
-            min_timestamp = pd.to_datetime(self.STEP1_5_REQUIREMENTS['min_timestamp'])
-            max_timestamp = pd.to_datetime(self.STEP1_5_REQUIREMENTS['max_timestamp'])
+        # Check timestamp range
+            min_timestamp, pd.to_datetime(self.STEP1_5_REQUIREMENTS['min_timestamp'])
+            max_timestamp, pd.to_datetime(self.STEP1_5_REQUIREMENTS['max_timestamp'])
             
-            if df['timestamp'].min() < min_timestamp:
+        if df['timestamp'].min() < min_timestamp:
                 issues.append(f"step1_5: Timestamps before {min_timestamp} not supported")
             
-            if df['timestamp'].max() > max_timestamp:
+        if df['timestamp'].max() > max_timestamp:
                 issues.append(f"step1_5: Timestamps after {max_timestamp} not supported")
             
-            # Check timestamp ordering
-            if not df['timestamp'].is_monotonic_increasing:
+        # Check timestamp ordering
+        if not df['timestamp'].is_monotonic_increasing:
                 issues.append("step1_5: Timestamps not in ascending order")
         
         if 'price' in df.columns:
-            # Check price range
-            min_price = self.STEP1_5_REQUIREMENTS['min_price']
-            max_price = self.STEP1_5_REQUIREMENTS['max_price']
+        # Check price range
+            min_price, self.STEP1_5_REQUIREMENTS['min_price']
+            max_price, self.STEP1_5_REQUIREMENTS['max_price']
             
-            if df['price'].min() < min_price:
+        if df['price'].min() < min_price:
                 issues.append(f"step1_5: Prices below {min_price} not supported")
             
-            if df['price'].max() > max_price:
+        if df['price'].max() > max_price:
                 issues.append(f"step1_5: Prices above {max_price} not supported")
         
         if 'quantity' in df.columns:
-            # Check quantity range
-            min_quantity = self.STEP1_5_REQUIREMENTS['min_quantity']
-            max_quantity = self.STEP1_5_REQUIREMENTS['max_quantity']
+        # Check quantity range
+            min_quantity, self.STEP1_5_REQUIREMENTS['min_quantity']
+            max_quantity, self.STEP1_5_REQUIREMENTS['max_quantity']
             
-            if df['quantity'].min() < min_quantity:
+        if df['quantity'].min() < min_quantity:
                 issues.append(f"step1_5: Quantities below {min_quantity} not supported")
             
-            if df['quantity'].max() > max_quantity:
+        if df['quantity'].max() > max_quantity:
                 issues.append(f"step1_5: Quantities above {max_quantity} not supported")
         
         return issues
@@ -259,14 +260,14 @@ class ValidateAndFixAggtradesFormat:
         # Step2 requires no null values in critical columns
         critical_columns = ['timestamp', 'price', 'quantity']
         for col in critical_columns:
-            if col in df.columns and df[col].isnull().any():
-                null_count = df[col].isnull().sum()
+        if col in df.columns and df[col].isnull().any():
+                null_count, df[col].isnull().sum()
                 issues.append(f"step2: Null values in {col}: {null_count}")
         
         # Step2 requires reasonable price movements
         if 'price' in df.columns and len(df) > 1:
-            price_changes = df['price'].pct_change().abs()
-            if price_changes.max() > 0.5:  # 50% price change
+            price_changes, df['price'].pct_change().abs()
+        if price_changes.max() > 0.5:  # 50% price change
                 issues.append("step2: Extreme price changes detected (>50%)")
         
         return issues
@@ -282,8 +283,8 @@ class ValidateAndFixAggtradesFormat:
         
         # Step3 requires consistent time intervals
         if 'timestamp' in df.columns and len(df) > 1:
-            time_diffs = df['timestamp'].diff().dropna()
-            if time_diffs.std() > pd.Timedelta(seconds=60):
+            time_diffs, df['timestamp'].diff().dropna()
+        if time_diffs.std() > pd.Timedelta(seconds=60):
                 issues.append("step3: Inconsistent time intervals detected")
         
         return issues
@@ -299,7 +300,7 @@ class ValidateAndFixAggtradesFormat:
         
         # Step4 requires volume data for labeling
         if 'quantity' in df.columns:
-            if df['quantity'].sum() == 0:
+        if df['quantity'].sum() == 0:
                 issues.append("step4: No volume data available for labeling")
         
         return issues
@@ -311,20 +312,20 @@ class ValidateAndFixAggtradesFormat:
         
         # Check for duplicate timestamps
         if 'timestamp' in df.columns:
-            duplicates = df['timestamp'].duplicated().sum()
-            if duplicates > 0:
+            duplicates, df['timestamp'].duplicated().sum()
+        if duplicates > 0:
                 issues.append(f"Data quality: {duplicates} duplicate timestamps found")
         
         # Check for negative prices
         if 'price' in df.columns:
             negative_prices = (df['price'] <= 0).sum()
-            if negative_prices > 0:
+        if negative_prices > 0:
                 issues.append(f"Data quality: {negative_prices} negative or zero prices found")
         
         # Check for negative quantities
         if 'quantity' in df.columns:
             negative_quantities = (df['quantity'] <= 0).sum()
-            if negative_quantities > 0:
+        if negative_quantities > 0:
                 issues.append(f"Data quality: {negative_quantities} negative or zero quantities found")
         
         return issues
@@ -336,11 +337,11 @@ class ValidateAndFixAggtradesFormat:
         
         # Check for string columns that could be optimized
         for col in df.columns:
-            if df[col].dtype == 'object':
+        if df[col].dtype == 'object':
                 warnings.append(f"Memory optimization: Column '{col}' is object type, consider optimization")
         
         # Check for large memory usage
-        memory_mb = df.memory_usage(deep=True).sum() / 1024 / 1024
+        memory_mb, df.memory_usage(deep=True).sum() / 1024 / 1024
         if memory_mb > 100:
             warnings.append(f"Memory optimization: Large memory usage ({memory_mb:.1f}MB)")
         
@@ -363,47 +364,47 @@ class ValidateAndFixAggtradesFormat:
         try:
             logger.info(f"🔧 Comprehensive format fixing for {file_path.name}")
             
-            # Read the file
-            if file_path.suffix.lower() == '.csv':
-                df = pd.read_csv(file_path, parse_dates=['timestamp'])
+        # Read the file
+        if file_path.suffix.lower() == '.csv':
+                df, pd.read_csv(file_path, parse_dates=['timestamp'])
             elif file_path.suffix.lower() == '.parquet':
-                df = pd.read_parquet(file_path)
+                df, pd.read_parquet(file_path)
             else:
                 logger.error(f"❌ Unsupported file format: {file_path.suffix}")
-                return False
+        return False
             
-            # Step 1: Ensure correct column order
-            if list(df.columns) != self.EXPECTED_COLUMNS:
-                if all(col in df.columns for col in self.EXPECTED_COLUMNS):
-                    df = df[self.EXPECTED_COLUMNS]
+        # Step 1: Ensure correct column order
+        if list(df.columns) != self.EXPECTED_COLUMNS:
+        if all(col in df.columns for col in self.EXPECTED_COLUMNS):
+                    df, df[self.EXPECTED_COLUMNS]
                 else:
                     logger.error(f"❌ Cannot fix {file_path}: missing required columns")
-                    return False
+        return False
             
-            # Step 2: Fix data types
-            df = self._fix_data_types(df)
+        # Step 2: Fix data types
+            df, self._fix_data_types(df)
             
-            # Step 3: Apply step1_5 requirements
-            df = self._apply_step1_5_requirements(df)
+        # Step 3: Apply step1_5 requirements
+            df, self._apply_step1_5_requirements(df)
             
-            # Step 4: Optimize memory usage
-            df = self._optimize_memory_usage(df)
+        # Step 4: Optimize memory usage
+            df, self._optimize_memory_usage(df)
             
-            # Step 5: Remove duplicates and sort
-            df = df.drop_duplicates(subset=['timestamp']).sort_values('timestamp')
+        # Step 5: Remove duplicates and sort
+            df, df.drop_duplicates(subset=['timestamp']).sort_values('timestamp')
             
-            # Step 6: Save with proper format
-            if file_path.suffix.lower() == '.csv':
+        # Step 6: Save with proper format
+        if file_path.suffix.lower() == '.csv':
                 df.to_csv(file_path, index=False)
             else:
                 df.to_parquet(file_path, compression="zstd", index=False)
             
             logger.info(f"✅ Successfully fixed {file_path.name}")
-            return True
+        return True
             
         except Exception as e:
             logger.error(f"❌ Error fixing format for {file_path}: {e}")
-            return False
+        return False
     
 
     def _fix_data_types(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -437,7 +438,7 @@ class ValidateAndFixAggtradesFormat:
             df['timestamp'] = pd.to_datetime(df['timestamp'])
         except:
             logger.error("❌ Cannot fix timestamp")
-            return df
+        return df
         
         try:
             df['is_buyer_maker'] = df['is_buyer_maker'].astype('bool')
@@ -450,22 +451,22 @@ class ValidateAndFixAggtradesFormat:
     def _apply_step1_5_requirements(self, df: pd.DataFrame) -> pd.DataFrame:
         """Apply step1_5 specific requirements"""
         # Filter by timestamp range
-        min_timestamp = pd.to_datetime(self.STEP1_5_REQUIREMENTS['min_timestamp'])
-        max_timestamp = pd.to_datetime(self.STEP1_5_REQUIREMENTS['max_timestamp'])
+        min_timestamp, pd.to_datetime(self.STEP1_5_REQUIREMENTS['min_timestamp'])
+        max_timestamp, pd.to_datetime(self.STEP1_5_REQUIREMENTS['max_timestamp'])
         
-        df = df[(df['timestamp'] >= min_timestamp) & (df['timestamp'] <= max_timestamp)]
+        df, df[(df['timestamp'] >= min_timestamp) & (df['timestamp'] <= max_timestamp)]
         
         # Filter by price range
-        min_price = self.STEP1_5_REQUIREMENTS['min_price']
-        max_price = self.STEP1_5_REQUIREMENTS['max_price']
+        min_price, self.STEP1_5_REQUIREMENTS['min_price']
+        max_price, self.STEP1_5_REQUIREMENTS['max_price']
         
-        df = df[(df['price'] >= min_price) & (df['price'] <= max_price)]
+        df, df[(df['price'] >= min_price) & (df['price'] <= max_price)]
         
         # Filter by quantity range
-        min_quantity = self.STEP1_5_REQUIREMENTS['min_quantity']
-        max_quantity = self.STEP1_5_REQUIREMENTS['max_quantity']
+        min_quantity, self.STEP1_5_REQUIREMENTS['min_quantity']
+        max_quantity, self.STEP1_5_REQUIREMENTS['max_quantity']
         
-        df = df[(df['quantity'] >= min_quantity) & (df['quantity'] <= max_quantity)]
+        df, df[(df['quantity'] >= min_quantity) & (df['quantity'] <= max_quantity)]
         
         return df
     
@@ -475,9 +476,9 @@ class ValidateAndFixAggtradesFormat:
         # Remove null values from critical columns
         critical_columns = ['timestamp', 'price', 'quantity']
         for col in critical_columns:
-            if df[col].isnull().any():
+        if df[col].isnull().any():
                 logger.warning(f"⚠️ Removing {df[col].isnull().sum()} null values from {col}")
-                df = df.dropna(subset=[col])
+                df, df.dropna(subset=[col])
         
         return df
     
@@ -485,7 +486,7 @@ class ValidateAndFixAggtradesFormat:
     @with_tracing_span("validate_all_aggtrades_comprehensive")
     @handle_errors
 
-    def validate_all_aggtrades_comprehensive(self, symbol: str, exchange: str, auto_fix: bool = True) -> Dict:
+    def validate_all_aggtrades_comprehensive(self, symbol: str, exchange: str, auto_fix: bool, True) -> Dict:
         """
         Comprehensive validation of all aggtrades files
         
@@ -500,29 +501,29 @@ class ValidateAndFixAggtradesFormat:
         logger.info(f"🔍 Comprehensive validation of all aggtrades files for {exchange}_{symbol}")
         
         # Get all aggtrades files
-        aggtrades_files = self.get_aggtrades_files(symbol, exchange)
+        aggtrades_files, self.get_aggtrades_files(symbol, exchange)
         logger.info(f"📊 Found {len(aggtrades_files)} aggtrades files to validate")
         
         # Validate all files
         validation_results = []
         for file_path in aggtrades_files:
-            result = self.validate_file_format_comprehensive(file_path)
+            result, self.validate_file_format_comprehensive(file_path)
             validation_results.append(result)
             
-            if result['valid']:
+        if result['valid']:
                 logger.info(f"✅ {file_path.name}: Valid ({result['row_count']} rows)")
             else:
                 logger.warning(f"❌ {file_path.name}: {len(result['issues'])} issues")
         
         # Count results
-        valid_files = sum(1 for r in validation_results if r['valid'])
-        invalid_files = len(validation_results) - valid_files
+        valid_files, sum(1 for r in validation_results if r['valid'])
+        invalid_files, len(validation_results) - valid_files
         
         # Count step compatibility
-        step1_5_compatible = sum(1 for r in validation_results if r['step1_5_compatible'])
-        step2_compatible = sum(1 for r in validation_results if r['step2_compatible'])
-        step3_compatible = sum(1 for r in validation_results if r['step3_compatible'])
-        step4_compatible = sum(1 for r in validation_results if r['step4_compatible'])
+        step1_5_compatible, sum(1 for r in validation_results if r['step1_5_compatible'])
+        step2_compatible, sum(1 for r in validation_results if r['step2_compatible'])
+        step3_compatible, sum(1 for r in validation_results if r['step3_compatible'])
+        step4_compatible, sum(1 for r in validation_results if r['step4_compatible'])
         
         logger.info(f"📊 COMPREHENSIVE VALIDATION SUMMARY:")
         logger.info(f"   Valid Files: {valid_files}/{len(validation_results)}")
@@ -535,17 +536,17 @@ class ValidateAndFixAggtradesFormat:
         if auto_fix and invalid_files > 0:
             logger.info(f"🔧 AUTO-FIXING {invalid_files} INVALID FILES...")
             
-            fixed_count = 0
-            for result in validation_results:
-                if not result['valid']:
-                    file_path = Path(result['file'])
+            fixed_count, 0
+        for result in validation_results:
+        if not result['valid']:
+                    file_path, Path(result['file'])
                     
-                    if self.fix_file_format_comprehensive(file_path):
+        if self.fix_file_format_comprehensive(file_path):
                         fixed_count += 1
                         
-                        # Re-validate
-                        new_result = self.validate_file_format_comprehensive(file_path)
-                        if new_result['valid']:
+        # Re-validate
+                        new_result, self.validate_file_format_comprehensive(file_path)
+        if new_result['valid']:
                             result['valid'] = True
                             result['issues'] = []
                             logger.info(f"✅ {file_path.name}: Now valid after fixing")
@@ -571,34 +572,37 @@ class ValidateAndFixAggtradesFormat:
 
     def generate_comprehensive_report(self, symbol: str, exchange: str) -> str:
         """Generate a comprehensive validation report"""
-        validation_results = self.validate_all_aggtrades_comprehensive(symbol, exchange, auto_fix=False)
+        validation_results, self.validate_all_aggtrades_comprehensive(symbol, exchange, auto_fix=False)
         
-        report = f"""
+        report, f"""
 🔍 COMPREHENSIVE AGGTRADES VALIDATION REPORT FOR {exchange}_{symbol}
 {'='*80}
 
 📊 VALIDATION SUMMARY:
+    pass
 • Total Files: {validation_results['total_files']}
 • Valid Files: {validation_results['valid_files']}
 • Invalid Files: {validation_results['invalid_files']}
 
 🎯 STEP COMPATIBILITY:
+    pass
 • Step1_5 Compatible: {validation_results['step1_5_compatible']}/{validation_results['total_files']}
 • Step2 Compatible: {validation_results['step2_compatible']}/{validation_results['total_files']}
 • Step3 Compatible: {validation_results['step3_compatible']}/{validation_results['total_files']}
 • Step4 Compatible: {validation_results['step4_compatible']}/{validation_results['total_files']}
 
 📋 INVALID FILES:
+    pass
 """
         
         for result in validation_results['validation_results']:
-            if not result['valid']:
+        if not result['valid']:
                 report += f"• {Path(result['file']).name}:\n"
-                for issue in result['issues']:
+        for issue in result['issues']:
                     report += f"  - {issue}\n"
-                if result['warnings']:
+        if result['warnings']:
                     report += f"  Warnings:\n"
-                    for warning in result['warnings']:
+        for warning in result['warnings']:
                         report += f"    - {warning}\n"
         
         report += f"""
@@ -610,25 +614,25 @@ class ValidateAndFixAggtradesFormat:
 def main():
     """Main function for command line usage"""
     
-    parser = argparse.ArgumentParser(description='Validate and fix aggtrades format')
+    parser, argparse.ArgumentParser(description='Validate and fix aggtrades format')
     parser.add_argument('symbol', help='Trading symbol (e.g., ETHUSDT)')
     parser.add_argument('exchange', help='Exchange name (e.g., BINANCE)')
     parser.add_argument('--data-cache', default='data_cache', help='Data cache path')
     parser.add_argument('--auto-fix', action='store_true', help='Automatically fix issues')
     parser.add_argument('--report', action='store_true', help='Generate comprehensive report')
     
-    args = parser.parse_args()
+    args, parser.parse_args()
     
     # Initialize validator
-    validator = ValidateAndFixAggtradesFormat(args.data_cache)
+    validator, ValidateAndFixAggtradesFormat(args.data_cache)
     
     if args.report:
         # Generate comprehensive report
-        report = validator.generate_comprehensive_report(args.symbol, args.exchange)
+        report, validator.generate_comprehensive_report(args.symbol, args.exchange)
         print(report)
     else:
         # Run comprehensive validation
-        results = validator.validate_all_aggtrades_comprehensive(
+        results, validator.validate_all_aggtrades_comprehensive(
             args.symbol, args.exchange, auto_fix=args.auto_fix
         )
         

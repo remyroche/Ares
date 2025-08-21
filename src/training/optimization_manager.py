@@ -28,10 +28,10 @@ class OptimizationManager:
 
         """
         self.config: dict[str, Any] = config
-        self.logger = system_logger.getChild("OptimizationManager")
+        self.logger, system_logger.getChild("OptimizationManager")
 
         # Optimization state
-        self.is_optimizing: bool = False
+        self.is_optimizing: bool, False
         self.optimization_results: dict[str, Any] = {}
 
         # Configuration
@@ -39,15 +39,15 @@ class OptimizationManager:
             "optimization_manager",
             {},
         )
-        self.enable_hyperparameter_optimization: bool = self.optimization_config.get(
+        self.enable_hyperparameter_optimization: bool, self.optimization_config.get(
             "enable_hyperparameter_optimization",
             True,
         )
-        self.enable_feature_selection: bool = self.optimization_config.get(
+        self.enable_feature_selection: bool, self.optimization_config.get(
             "enable_feature_selection",
             True,
         )
-        self.enable_ensemble_optimization: bool = self.optimization_config.get(
+        self.enable_ensemble_optimization: bool, self.optimization_config.get(
             "enable_ensemble_optimization",
             True,
         )
@@ -73,22 +73,22 @@ class OptimizationManager:
 
         """
         try:
-            self.logger.info("Initializing Optimization Manager...")
+        self.logger.info("Initializing Optimization Manager...")
 
-            # Validate configuration
-            if not self._validate_configuration():
-                self.print(invalid("Invalid configuration for optimization manager"))
-                return False
+        # Validate configuration
+        if not self._validate_configuration():
+        self.print(invalid("Invalid configuration for optimization manager"))
+        return False
 
-            # Initialize optimization components
-            await self._initialize_optimization_components()
+        # Initialize optimization components
+        await self._initialize_optimization_components()
 
-            self.logger.info("✅ Optimization Manager initialized successfully")
-            return True
+        self.logger.info("✅ Optimization Manager initialized successfully")
+        return True
 
         except Exception as e:
-            self.print(failed(f"❌ Optimization Manager initialization failed: {e}"))
-            return False
+        self.print(failed(f"❌ Optimization Manager initialization failed: {e}"))
+        return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -103,22 +103,22 @@ class OptimizationManager:
 
         """
         try:
-            # Validate optimization manager specific settings
-            if not any(
+        # Validate optimization manager specific settings
+        if not any(
                 [
-                    self.enable_hyperparameter_optimization,
-                    self.enable_feature_selection,
-                    self.enable_ensemble_optimization,
+        self.enable_hyperparameter_optimization,
+        self.enable_feature_selection,
+        self.enable_ensemble_optimization,
                 ],
             ):
-                self.print(error("At least one optimization type must be enabled"))
-                return False
+        self.print(error("At least one optimization type must be enabled"))
+        return False
 
-            return True
+        return True
 
         except Exception as e:
-            self.print(failed(f"Configuration validation failed: {e}"))
-            return False
+        self.print(failed(f"Configuration validation failed: {e}"))
+        return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -128,22 +128,22 @@ class OptimizationManager:
     async def _initialize_optimization_components(self) -> None:
         """Initialize optimization components."""
         try:
-            # Initialize Optuna for hyperparameter optimization
-            if self.enable_hyperparameter_optimization:
-                self.logger.info(
+        # Initialize Optuna for hyperparameter optimization
+        if self.enable_hyperparameter_optimization:
+        self.logger.info(
                     "✅ Optuna initialized for hyperparameter optimization",
                 )
 
-            # Initialize feature selection components
-            if self.enable_feature_selection:
-                self.logger.info("✅ Feature selection components initialized")
+        # Initialize feature selection components
+        if self.enable_feature_selection:
+        self.logger.info("✅ Feature selection components initialized")
 
-            # Initialize ensemble optimization components
-            if self.enable_ensemble_optimization:
-                self.logger.info("✅ Ensemble optimization components initialized")
+        # Initialize ensemble optimization components
+        if self.enable_ensemble_optimization:
+        self.logger.info("✅ Ensemble optimization components initialized")
 
         except Exception as e:
-            self.logger.exception(
+        self.logger.exception(
                 f"❌ Failed to initialize optimization components: {e}",
             )
             raise
@@ -173,38 +173,38 @@ class OptimizationManager:
 
         """
         try:
-            self.logger.info("🔧 Starting model optimization...")
-            self.is_optimizing = True
+        self.logger.info("🔧 Starting model optimization...")
+        self.is_optimizing, True
 
-            # Validate inputs
-            if not self._validate_optimization_inputs(model_results, training_input):
-                return None
+        # Validate inputs
+        if not self._validate_optimization_inputs(model_results, training_input):
+        return None
 
-            # Perform hyperparameter optimization
-            hyperparameter_results = None
-            if self.enable_hyperparameter_optimization:
-                hyperparameter_results = await self._optimize_hyperparameters(
+        # Perform hyperparameter optimization
+            hyperparameter_results, None
+        if self.enable_hyperparameter_optimization:
+                hyperparameter_results, await self._optimize_hyperparameters(
                     model_results,
                     training_input,
                 )
 
-            # Perform feature selection
-            feature_selection_results = None
-            if self.enable_feature_selection:
-                feature_selection_results = await self._optimize_feature_selection(
+        # Perform feature selection
+            feature_selection_results, None
+        if self.enable_feature_selection:
+                feature_selection_results, await self._optimize_feature_selection(
                     model_results,
                     training_input,
                 )
 
-            # Perform ensemble optimization
-            ensemble_optimization_results = None
-            if self.enable_ensemble_optimization:
-                ensemble_optimization_results = await self._optimize_ensembles(
+        # Perform ensemble optimization
+            ensemble_optimization_results, None
+        if self.enable_ensemble_optimization:
+                ensemble_optimization_results, await self._optimize_ensembles(
                     model_results,
                     training_input,
                 )
 
-            # Combine results
+        # Combine results
             optimization_results = {
                 "hyperparameter_optimization": hyperparameter_results,
                 "feature_selection": feature_selection_results,
@@ -213,17 +213,17 @@ class OptimizationManager:
                 "optimization_timestamp": datetime.now().isoformat(),
             }
 
-            # Store optimization results
-            await self._store_optimization_results(optimization_results)
+        # Store optimization results
+        await self._store_optimization_results(optimization_results)
 
-            self.is_optimizing = False
-            self.logger.info("✅ Model optimization completed successfully")
-            return optimization_results
+        self.is_optimizing, False
+        self.logger.info("✅ Model optimization completed successfully")
+        return optimization_results
 
         except Exception as e:
-            self.print(failed(f"❌ Model optimization failed: {e}"))
-            self.is_optimizing = False
-            return None
+        self.print(failed(f"❌ Model optimization failed: {e}"))
+        self.is_optimizing, False
+        return None
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -246,28 +246,28 @@ class OptimizationManager:
 
         """
         try:
-            # Validate model results
-            if not model_results:
-                self.print(error("Model results are empty"))
-                return False
+        # Validate model results
+        if not model_results:
+        self.print(error("Model results are empty"))
+        return False
 
-            # Validate training input
-            if not training_input:
-                self.print(error("Training input is empty"))
-                return False
+        # Validate training input
+        if not training_input:
+        self.print(error("Training input is empty"))
+        return False
 
-            # Check for required model results
-            if not model_results.get("analyst_models") and not model_results.get(
+        # Check for required model results
+        if not model_results.get("analyst_models") and not model_results.get(
                 "tactician_models",
             ):
-                self.print(error("No trained models found in results"))
-                return False
+        self.print(error("No trained models found in results"))
+        return False
 
-            return True
+        return True
 
         except Exception as e:
-            self.print(failed(f"Optimization inputs validation failed: {e}"))
-            return False
+        self.print(failed(f"Optimization inputs validation failed: {e}"))
+        return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -290,10 +290,10 @@ class OptimizationManager:
 
         """
         try:
-            self.logger.info("🔧 Performing hyperparameter optimization...")
+        self.logger.info("🔧 Performing hyperparameter optimization...")
 
-            # This would implement actual hyperparameter optimization logic
-            # For now, return a placeholder result
+        # This would implement actual hyperparameter optimization logic
+        # For now, return a placeholder result
             optimization_results = {
                 "optimization_status": "completed",
                 "best_parameters": {
@@ -308,40 +308,40 @@ class OptimizationManager:
                 "optimized_models": {},
             }
 
-            # Optimize analyst models
-            if model_results.get("analyst_models"):
-                for timeframe, model_result in model_results["analyst_models"].items():
-                    optimized_model = await self._optimize_single_model_hyperparameters(
+        # Optimize analyst models
+        if model_results.get("analyst_models"):
+        for timeframe, model_result in model_results["analyst_models"].items():
+                    optimized_model, await self._optimize_single_model_hyperparameters(
                         model_result,
                         timeframe,
                         "analyst",
                     )
-                    if optimized_model:
+        if optimized_model:
                         optimization_results["optimized_models"][
                             f"analyst_{timeframe}"
                         ] = optimized_model
 
-            # Optimize tactician models
-            if model_results.get("tactician_models"):
-                for timeframe, model_result in model_results[
+        # Optimize tactician models
+        if model_results.get("tactician_models"):
+        for timeframe, model_result in model_results[
                     "tactician_models"
                 ].items():
-                    optimized_model = await self._optimize_single_model_hyperparameters(
+                    optimized_model, await self._optimize_single_model_hyperparameters(
                         model_result,
                         timeframe,
                         "tactician",
                     )
-                    if optimized_model:
+        if optimized_model:
                         optimization_results["optimized_models"][
                             f"tactician_{timeframe}"
                         ] = optimized_model
 
-            self.logger.info("✅ Hyperparameter optimization completed")
-            return optimization_results
+        self.logger.info("✅ Hyperparameter optimization completed")
+        return optimization_results
 
         except Exception as e:
-            self.print(failed(f"❌ Hyperparameter optimization failed: {e}"))
-            return None
+        self.print(failed(f"❌ Hyperparameter optimization failed: {e}"))
+        return None
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -366,13 +366,13 @@ class OptimizationManager:
 
         """
         try:
-            self.logger.info(
+        self.logger.info(
                 f"🔧 Optimizing hyperparameters for {model_type} {timeframe} model...",
             )
 
-            # This would implement actual hyperparameter optimization logic
-            # For now, return a placeholder result
-            return {
+        # This would implement actual hyperparameter optimization logic
+        # For now, return a placeholder result
+        return {
                 "original_model": model_result,
                 "optimized_parameters": {
                     "learning_rate": 0.01,
@@ -387,10 +387,10 @@ class OptimizationManager:
             }
 
         except Exception as e:
-            self.logger.exception(
+        self.logger.exception(
                 f"❌ Failed to optimize hyperparameters for {model_type} {timeframe}: {e}",
             )
-            return None
+        return None
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -413,10 +413,10 @@ class OptimizationManager:
 
         """
         try:
-            self.logger.info("🔧 Performing feature selection optimization...")
+        self.logger.info("🔧 Performing feature selection optimization...")
 
-            # This would implement actual feature selection logic
-            # For now, return a placeholder result
+        # This would implement actual feature selection logic
+        # For now, return a placeholder result
             feature_selection_results = {
                 "feature_selection_status": "completed",
                 "selected_features": {
@@ -436,12 +436,12 @@ class OptimizationManager:
                 },
             }
 
-            self.logger.info("✅ Feature selection optimization completed")
-            return feature_selection_results
+        self.logger.info("✅ Feature selection optimization completed")
+        return feature_selection_results
 
         except Exception as e:
-            self.print(failed(f"❌ Feature selection optimization failed: {e}"))
-            return None
+        self.print(failed(f"❌ Feature selection optimization failed: {e}"))
+        return None
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -464,10 +464,10 @@ class OptimizationManager:
 
         """
         try:
-            self.logger.info("🔧 Performing ensemble optimization...")
+        self.logger.info("🔧 Performing ensemble optimization...")
 
-            # This would implement actual ensemble optimization logic
-            # For now, return a placeholder result
+        # This would implement actual ensemble optimization logic
+        # For now, return a placeholder result
             ensemble_optimization_results = {
                 "ensemble_optimization_status": "completed",
                 "optimal_ensemble_config": {
@@ -483,28 +483,28 @@ class OptimizationManager:
                 "optimized_ensembles": {},
             }
 
-            # Optimize analyst ensembles
-            if model_results.get("analyst_models"):
+        # Optimize analyst ensembles
+        if model_results.get("analyst_models"):
                 ensemble_optimization_results["optimized_ensembles"][
                     "analyst"
                 ] = await self._optimize_analyst_ensembles(
                     model_results["analyst_models"],
                 )
 
-            # Optimize tactician ensembles
-            if model_results.get("tactician_models"):
+        # Optimize tactician ensembles
+        if model_results.get("tactician_models"):
                 ensemble_optimization_results["optimized_ensembles"][
                     "tactician"
                 ] = await self._optimize_tactician_ensembles(
                     model_results["tactician_models"],
                 )
 
-            self.logger.info("✅ Ensemble optimization completed")
-            return ensemble_optimization_results
+        self.logger.info("✅ Ensemble optimization completed")
+        return ensemble_optimization_results
 
         except Exception as e:
-            self.print(failed(f"❌ Ensemble optimization failed: {e}"))
-            return None
+        self.print(failed(f"❌ Ensemble optimization failed: {e}"))
+        return None
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -525,10 +525,10 @@ class OptimizationManager:
 
         """
         try:
-            self.logger.info("🔧 Optimizing analyst ensembles...")
+        self.logger.info("🔧 Optimizing analyst ensembles...")
 
-            # This would implement actual ensemble optimization logic for analyst models
-            return {
+        # This would implement actual ensemble optimization logic for analyst models
+        return {
                 "ensemble_type": "multi_timeframe_weighted",
                 "timeframe_weights": {
                     "1h": 0.3,
@@ -544,8 +544,8 @@ class OptimizationManager:
             }
 
         except Exception as e:
-            self.print(failed(f"❌ Failed to optimize analyst ensembles: {e}"))
-            return None
+        self.print(failed(f"❌ Failed to optimize analyst ensembles: {e}"))
+        return None
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -566,10 +566,10 @@ class OptimizationManager:
 
         """
         try:
-            self.logger.info("🔧 Optimizing tactician ensembles...")
+        self.logger.info("🔧 Optimizing tactician ensembles...")
 
-            # This would implement actual ensemble optimization logic for tactician models
-            return {
+        # This would implement actual ensemble optimization logic for tactician models
+        return {
                 "ensemble_type": "single_timeframe_weighted",
                 "model_weights": {
                     "random_forest": 0.4,
@@ -584,8 +584,8 @@ class OptimizationManager:
             }
 
         except Exception as e:
-            self.print(failed(f"❌ Failed to optimize tactician ensembles: {e}"))
-            return None
+        self.print(failed(f"❌ Failed to optimize tactician ensembles: {e}"))
+        return None
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -603,16 +603,16 @@ class OptimizationManager:
 
         """
         try:
-            self.logger.info("📁 Storing optimization results...")
+        self.logger.info("📁 Storing optimization results...")
 
-            # Store optimization results in memory for now
-            # In practice, this would store to database or file system
-            self.optimization_results = optimization_results.copy()
+        # Store optimization results in memory for now
+        # In practice, this would store to database or file system
+        self.optimization_results, optimization_results.copy()
 
-            self.logger.info("✅ Optimization results stored successfully")
+        self.logger.info("✅ Optimization results stored successfully")
 
         except Exception as e:
-            self.print(failed(f"❌ Failed to store optimization results: {e}"))
+        self.print(failed(f"❌ Failed to store optimization results: {e}"))
 
     def get_optimization_status(self) -> dict[str, Any]:
         """Get current optimization status.
@@ -646,11 +646,11 @@ class OptimizationManager:
     async def stop(self) -> None:
         """Stop the optimization manager and cleanup resources."""
         try:
-            self.logger.info("🛑 Stopping Optimization Manager...")
-            self.is_optimizing = False
-            self.logger.info("✅ Optimization Manager stopped successfully")
+        self.logger.info("🛑 Stopping Optimization Manager...")
+        self.is_optimizing, False
+        self.logger.info("✅ Optimization Manager stopped successfully")
         except Exception as e:
-            self.print(failed(f"❌ Failed to stop Optimization Manager: {e}"))
+        self.print(failed(f"❌ Failed to stop Optimization Manager: {e}"))
 
 
 @handle_errors(
@@ -659,7 +659,7 @@ class OptimizationManager:
     context="optimization manager setup",
 )
 async def setup_optimization_manager(
-    config: dict[str, Any] | None = None,
+    config: dict[str, Any] | None, None,
 ) -> OptimizationManager | None:
     """Setup and return a configured OptimizationManager instance.
 
@@ -671,9 +671,9 @@ async def setup_optimization_manager(
 
     """
     try:
-        manager = OptimizationManager(config or {})
+        manager, OptimizationManager(config or {})
         if await manager.initialize():
-            return manager
+        return manager
         return None
     except Exception as e:
         system_logger.exception(f"Failed to setup optimization manager: {e}")

@@ -20,7 +20,7 @@ class TestRegimeChangePrediction:
     def sample_hmm_data(self):
         """Create sample HMM data for testing."""
         # Create sample data with regime changes
-        dates = pd.date_range(start="2024-01-01", end="2024-01-31", freq="1H")
+        dates, pd.date_range(start="2024-01-01", end="2024-01-31", freq="1H")
 
         # Create regime changes every few hours
         regimes = []
@@ -52,7 +52,7 @@ class TestRegimeChangePrediction:
     @pytest.fixture
     def sample_feature_data(self):
         """Create sample feature data for testing."""
-        dates = pd.date_range(start="2024-01-01", end="2024-01-31", freq="1H")
+        dates, pd.date_range(start="2024-01-01", end="2024-01-31", freq="1H")
 
         # Create sample features
         features = {}
@@ -81,10 +81,10 @@ class TestRegimeChangePrediction:
             },
         }
 
-        step = HMMLMGeneralistTrainingStep(config)
+        step, HMMLMGeneralistTrainingStep(config)
 
         # Test regime change detection
-        regime_changes = step._detect_regime_changes(sample_hmm_data)
+        regime_changes, step._detect_regime_changes(sample_hmm_data)
 
         # Should detect regime changes
         assert len(regime_changes) > 0
@@ -111,10 +111,10 @@ class TestRegimeChangePrediction:
             },
         }
 
-        step = HMMLMGeneralistTrainingStep(config)
+        step, HMMLMGeneralistTrainingStep(config)
 
         # Check vocabulary size
-        expected_size = 3 * 2 + 4  # 3 states * 2 (enter/exit) + 4 special tokens
+        expected_size, 3 * 2 + 4  # 3 states * 2 (enter/exit) + 4 special tokens
         assert len(step.regime_change_vocab) == expected_size
 
         # Check vocabulary content
@@ -141,10 +141,10 @@ class TestRegimeChangePrediction:
             },
         }
 
-        step = HMMLMGeneralistTrainingStep(config)
+        step, HMMLMGeneralistTrainingStep(config)
 
         # Create sequences
-        sequences = step._create_regime_change_sequences({"1m": sample_hmm_data})
+        sequences, step._create_regime_change_sequences({"1m": sample_hmm_data})
 
         # Should create sequences
         assert len(sequences) > 0
@@ -156,7 +156,7 @@ class TestRegimeChangePrediction:
             assert "timestamp" in seq
             assert "timeframe" in seq
 
-            # Check sequence data
+        # Check sequence data
             assert len(seq["sequence"]) == 10  # sequence_length
             assert seq["target"] in step.regime_change_vocab
 
@@ -172,10 +172,10 @@ class TestRegimeChangePrediction:
             },
         }
 
-        step = HMMLMGeneralistTrainingStep(config)
+        step, HMMLMGeneralistTrainingStep(config)
 
         # Test feature conversion
-        features = step._sequence_to_features(sample_hmm_data)
+        features, step._sequence_to_features(sample_hmm_data)
 
         # Should return numpy array
         assert isinstance(features, np.ndarray)
@@ -200,7 +200,7 @@ class TestRegimeChangePrediction:
             },
         }
 
-        step = HMMBasedTrainingStep(config)
+        step, HMMBasedTrainingStep(config)
         await step.initialize()
 
         # Save sample data
@@ -210,7 +210,7 @@ class TestRegimeChangePrediction:
         )
 
         # Test regime change feature addition
-        enhanced_data = await step._add_regime_change_features(sample_hmm_data, "1m")
+        enhanced_data, await step._add_regime_change_features(sample_hmm_data, "1m")
 
         # Should have regime change features
         assert "regime_change" in enhanced_data.columns
@@ -223,16 +223,16 @@ class TestRegimeChangePrediction:
         """Test configuration integration."""
         from src.config import get_complete_config
 
-        config = get_complete_config()
+        config, get_complete_config()
 
         # Check if HMM_LM config is present
         assert "HMM_LM" in config
 
-        hmm_lm_config = config["HMM_LM"]
+        hmm_lm_config, config["HMM_LM"]
 
         # Check generalist config
         assert "generalist" in hmm_lm_config
-        generalist = hmm_lm_config["generalist"]
+        generalist, hmm_lm_config["generalist"]
         assert "enabled" in generalist
         assert "hmm_states" in generalist
         assert "sequence_length" in generalist
@@ -240,7 +240,7 @@ class TestRegimeChangePrediction:
 
         # Check specialist models config
         assert "specialist_models" in hmm_lm_config
-        specialist = hmm_lm_config["specialist_models"]
+        specialist, hmm_lm_config["specialist_models"]
         assert "1m" in specialist
         assert "5m" in specialist
         assert "15m" in specialist
@@ -256,16 +256,16 @@ class TestRegimeChangePrediction:
         """Test step order integration in training pipeline."""
         from src.config import get_complete_config
 
-        config = get_complete_config()
-        hmm_lm_config = config["HMM_LM"]
+        config, get_complete_config()
+        hmm_lm_config, config["HMM_LM"]
 
         # Check training pipeline config
         assert "training_pipeline" in hmm_lm_config
-        pipeline_config = hmm_lm_config["training_pipeline"]
+        pipeline_config, hmm_lm_config["training_pipeline"]
 
         # Check step order
         assert "step_order" in pipeline_config
-        step_order = pipeline_config["step_order"]
+        step_order, pipeline_config["step_order"]
 
         # Should include new step 9.5
         assert "9.5" in step_order

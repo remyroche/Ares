@@ -24,10 +24,10 @@ def show_timeframe_config():
     print("=" * 60)
 
     # Get configuration
-    timeframes = CONFIG.get("TIMEFRAMES", {})
-    timeframe_sets = CONFIG.get("TIMEFRAME_SETS", {})
-    default_set = CONFIG.get("DEFAULT_TIMEFRAME_SET", "swing")
-    mtf_config = CONFIG.get("MULTI_TIMEFRAME_TRAINING", {})
+    timeframes, CONFIG.get("TIMEFRAMES", {})
+    timeframe_sets, CONFIG.get("TIMEFRAME_SETS", {})
+    default_set, CONFIG.get("DEFAULT_TIMEFRAME_SET", "swing")
+    mtf_config, CONFIG.get("MULTI_TIMEFRAME_TRAINING", {})
 
     print("\n📊 Multi-Timeframe Training Settings:")
     print("-" * 40)
@@ -106,7 +106,7 @@ def show_timeframe_config():
 
 def show_timeframe_details(timeframe: str):
     """Show detailed information about a specific timeframe."""
-    timeframes = CONFIG.get("TIMEFRAMES", {})
+    timeframes, CONFIG.get("TIMEFRAMES", {})
 
     if timeframe not in timeframes:
         print(missing("Timeframe '{timeframe}' not found in configuration"))

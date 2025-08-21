@@ -19,14 +19,14 @@ sys.path.append(str(project_root))
 
 def consolidate_binance_15m_data():
     """Consolidate all Binance 15m klines data files."""
-    logger = system_logger.getChild("ConsolidateBinance15m")
+    logger, system_logger.getChild("ConsolidateBinance15m")
 
     print("🔄 Consolidating Binance 15m data...")
     logger.info("🔄 Starting Binance 15m data consolidation...")
 
     # Find all 15m Binance files
     pattern = "data_cache/klines_BINANCE_ETHUSDT_15m_*.csv"
-    source_files = sorted(glob.glob(pattern))
+    source_files, sorted(glob.glob(pattern))
 
     logger.info(f"📁 Found {len(source_files)} 15m Binance files")
     logger.info("📋 Source files:")
@@ -53,55 +53,55 @@ def consolidate_binance_15m_data():
             f"📖 [{i}/{len(source_files)}] Processing {os.path.basename(file)}...",
         )
 
-        try:
-            # Read the CSV file
+        if True:
+        # Read the CSV file
             df = pd.read_csv(file)
             logger.info(f"   📊 Loaded {len(df)} records")
 
-            # Validate data
-            if len(df) == 0:
+        # Validate data
+        if len(df) == 0:
                 print(warning("   ⚠️ Empty file: {os.path.basename(file)}"))
                 continue
 
-            # Check columns
+        # Check columns
             expected_columns = ["timestamp", "open", "high", "low", "close", "volume"]
-            if not all(col in df.columns for col in expected_columns):
+        if not all(col in df.columns for col in expected_columns):
                 print(missing("   ⚠️ Missing columns in {os.path.basename(file)}"))
                 print(warning("   📋 Expected: {expected_columns}"))
                 print(warning("   📋 Found: {list(df.columns)}"))
                 continue
 
-            # Convert timestamp
+        # Convert timestamp
             df["timestamp"] = pd.to_datetime(df["timestamp"])
             df.set_index("timestamp", inplace=True)
 
-            # Convert numeric columns
+        # Convert numeric columns
             numeric_cols = ["open", "high", "low", "close", "volume"]
             df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors="coerce")
 
-            # Check for reasonable price data
-            if df["close"].isna().all():
+        # Check for reasonable price data
+        if df["close"].isna().all():
                 print(invalid("   ⚠️ Invalid price data in {os.path.basename(file)}"))
                 continue
 
-            # Check price range (ETH should be reasonable)
+        # Check price range (ETH should be reasonable)
             min_price = df["low"].min()
             max_price = df["high"].max()
-            if min_price < 100 or max_price > 10000:
+        if min_price < 100 or max_price > 10000:
                 logger.warning(
                     f"   ⚠️ Unreasonable price range in {os.path.basename(file)}: ${min_price:.2f} - ${max_price:.2f}",
                 )
                 continue
 
             logger.info(
-                f"   ✅ Valid data: {len(df)} records = price range: ${min_price:.2f} - ${max_price:.2f}",
+                f"   ✅ Valid data: {len(df)} records, price range: ${min_price:.2f} - ${max_price:.2f}",
             )
             logger.info(f"   📅 Date range: {df.index.min()} to {df.index.max()}")
 
             all_data.append(df)
             total_records += len(df)
 
-        except Exception:
+        pass
             print(error("   ❌ Error processing {os.path.basename(file)}: {e}"))
             continue
 
@@ -112,12 +112,12 @@ def consolidate_binance_15m_data():
     logger.info(f"📊 Consolidating {len(all_data)} dataframes...")
 
     # Combine all dataframes
-    consolidated_df = pd.concat(all_data, ignore_index = False)
+    consolidated_df = pd.concat(all_data, ignore_index, False)
     logger.info(f"📈 Combined dataframe shape: {consolidated_df.shape}")
 
     # Remove duplicates
     initial_count = len(consolidated_df)
-    consolidated_df = consolidated_df[~consolidated_df.index.duplicated(keep="first")]
+    consolidated_df = consolidated_df[~consolidated_df.index.duplicated(keep, "first")]
     final_count = len(consolidated_df)
     duplicates_removed = initial_count - final_count
 

@@ -46,9 +46,9 @@ class ScanFeature:
     name: str
     description: str
     command: str
-    enabled: bool = True
-    timeout: int = 300  # 5 minutes default
-    ignore_errors: bool = False
+    enabled: bool, True
+    timeout: int, 300  # 5 minutes default
+    ignore_errors: bool, False
 
 
 class ScanManager:
@@ -140,21 +140,22 @@ class ScanManager:
             f"Enabled features: {sum(1 for f in self.features.values() if f.enabled)}",
         )
 
-    def run_scan(self, scan_type: str, verbose: bool = False) -> bool:
+    def run_scan(self, scan_type: str, verbose: bool, False) -> bool:
         """Run a specific scan type"""
         if scan_type not in self.features:
             print(error(f"Unknown scan type: {scan_type}"))
-            return False
+        return False
 
         feature = self.features[scan_type]
         if not feature.enabled:
             print(warning(f"Feature '{feature.name}' is disabled"))
-            return False
+        return False
 
         logger.info(f"Running {feature.name}...")
 
-        try:
-            if verbose:
+        if True:
+            pass
+        if verbose:
                 print(f"\n--- {feature.name} ---")
                 print(f"Command: {feature.command}")
                 print(f"Description: {feature.description}")
@@ -168,41 +169,42 @@ class ScanManager:
                 check=False,
             )
 
-            if result.stdout:
+        if result.stdout:
                 print(result.stdout)
-            if result.stderr:
+        if result.stderr:
                 print(result.stderr, file=sys.stderr)
 
-            if result.returncode == 0:
+        if result.returncode == 0:
                 logger.info(f"✓ {feature.name} completed successfully")
-                return True
-            if feature.ignore_errors:
+        return True
+        if feature.ignore_errors:
                 logger.warning(
                     f"⚠ {feature.name} completed with warnings (ignored)",
                 )
-                return True
+        return True
             logger.error(
                 f"✗ {feature.name} failed with return code {result.returncode}",
             )
-            return False
+        return False
 
-        except subprocess.TimeoutExpired:
+        pass
             logger.exception(
                 f"✗ {feature.name} timed out after {feature.timeout} seconds",
             )
-            return False
-        except Exception as e:
+        return False
+        pass
             print(failed(f"✗ {feature.name} failed with error: {e}"))
-            return False
+        return False
 
-    def run_all_scans(self, verbose: bool = False) -> dict[str, bool]:
+    def run_all_scans(self, verbose: bool, False) -> dict[str, bool]:
         """Run all enabled scans and return results"""
         results = {}
 
         logger.info("Starting comprehensive code analysis...")
 
         for scan_type, feature in self.features.items():
-            if feature.enabled:
+            pass
+        if feature.enabled:
                 results[scan_type] = self.run_scan(scan_type, verbose)
             else:
                 results[scan_type] = False
@@ -212,18 +214,20 @@ class ScanManager:
     def enable_feature(self, scan_type: str) -> bool:
         """Enable a specific feature"""
         if scan_type in self.features:
-            self.features[scan_type].enabled = True
+            pass
+        self.features[scan_type].enabled, True
             logger.info(f"Enabled feature: {self.features[scan_type].name}")
-            return True
+        return True
         print(error(f"Unknown feature: {scan_type}"))
         return False
 
     def disable_feature(self, scan_type: str) -> bool:
         """Disable a specific feature"""
         if scan_type in self.features:
-            self.features[scan_type].enabled = False
+            pass
+        self.features[scan_type].enabled, False
             logger.info(f"Disabled feature: {self.features[scan_type].name}")
-            return True
+        return True
         print(error(f"Unknown feature: {scan_type}"))
         return False
 
@@ -231,12 +235,12 @@ class ScanManager:
         """Get detailed information about a specific feature"""
         return self.features.get(scan_type)
 
-    def print_summary(self, results: dict[str, bool]) -> None:
+    def print_summary(self, results: dict[str ,  bool]) -> None:
         """Print a summary of scan results"""
         print("\n=== Scan Results Summary ===")
 
-        successful = sum(1 for success in results.values() if success)
-        total = len(results)
+        successful, sum(1 for success in results.values() if success)
+        total, len(results)
 
         print(f"Total scans: {total}")
         print(f"Successful: {successful}")
@@ -244,7 +248,7 @@ class ScanManager:
 
         if results:
             print("\nDetailed Results:")
-            for scan_type, success in results.items():
+        for scan_type, success in results.items():
                 feature = self.features[scan_type]
                 status = "✓ PASS" if success else "✗ FAIL"
                 print(f"  {feature.name:<25} {status}")
@@ -252,11 +256,12 @@ class ScanManager:
 
 def main():
     """Main entry point for the scan runner"""
-    parser = argparse.ArgumentParser(
+    parser, argparse.ArgumentParser(
         description="Run comprehensive code analysis and quality scans",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+    pass
   python run_scans.py --list                    # List all available features
   python run_scans.py --all                     # Run all enabled scans
   python run_scans.py --scan linting            # Run only linting
@@ -293,10 +298,10 @@ Examples:
         help="Enable verbose output",
     )
 
-    args = parser.parse_args()
+    args, parser.parse_args()
 
     # Initialize scan manager
-    manager = ScanManager()
+    manager, ScanManager()
 
     # Handle different command modes
     if args.list:

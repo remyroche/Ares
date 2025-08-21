@@ -1,5 +1,7 @@
+from typing import Any
+
 from src.config import get_complete_config
-from .binance import BinanceExchange
+
 from .gateio import GateioExchange
 from .mexc import MexcExchange
 from .okx import OkxExchange
@@ -8,34 +10,39 @@ from .okx import OkxExchange
 class ExchangeFactory:
     @staticmethod
     def get_exchange(exchange_name: str):
-        exchange_name = exchange_name.lower()
-        ares_config = get_complete_config()
-        config = ares_config.get("exchanges", {}).get(exchange_name, {})
+        name = (exchange_name or "").lower()
+        cfg: dict[str, Any] = get_complete_config()
+        env = cfg.get("environment", {})
+        exchanges_cfg = cfg.get("exchanges", {})
+        ex_cfg = exchanges_cfg.get(name, {})
+        symbol = env.get("trade_symbol", "BTCUSDT")
 
-        if exchange_name == "binance":
-            return BinanceExchange(
-                api_key=config.get("api_key"),
-                api_secret=config.get("api_secret"),
-                trade_symbol=ares_config.get("environment", {}).get("trade_symbol")
-            )
-        if exchange_name == "okx":
+        if name == "binance":
+            # Prefer the refactored, canonical implementation
+            from src.exchange.binance import BinanceExchange as CleanBinance
+
+            return CleanBinance(cfg)
+
+        if name == "okx":
             return OkxExchange(
-                api_key=config.get("api_key"),
-                api_secret=config.get("api_secret"),
-                password=config.get("password"),
-                trade_symbol=ares_config.get("environment", {}).get("trade_symbol")
+                api_key=str(ex_cfg.get("api_key", "")),
+                api_secret=str(ex_cfg.get("api_secret", "")),
+                trade_symbol=str(symbol),
+                password=str(ex_cfg.get("password", "")) or None,
             )
-        if exchange_name == "gateio":
+
+        if name == "gateio":
             return GateioExchange(
-                api_key=config.get("api_key"),
-                api_secret=config.get("api_secret"),
-                trade_symbol=ares_config.get("environment", {}).get("trade_symbol")
+                api_key=str(ex_cfg.get("api_key", "")),
+                api_secret=str(ex_cfg.get("api_secret", "")),
+                trade_symbol=str(symbol),
             )
-        if exchange_name == "mexc":
+
+        if name == "mexc":
             return MexcExchange(
-                api_key=config.get("api_key"),
-                api_secret=config.get("api_secret"),
-                trade_symbol=ares_config.get("environment", {}).get("trade_symbol")
+                api_key=str(ex_cfg.get("api_key", "")),
+                api_secret=str(ex_cfg.get("api_secret", "")),
+                trade_symbol=str(symbol),
             )
-        msg = f"Unsupported exchange: {exchange_name}"
-        raise ValueError(msg)
+
+        raise ValueError(f"Unsupported exchange: {exchange_name}")

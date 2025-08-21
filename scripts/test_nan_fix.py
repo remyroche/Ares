@@ -20,17 +20,18 @@ sys.path.append(str(Path(__file__).parent.parent / "src"))
 
 def test_nan_handling():
     """Test that NaN values are properly handled."""
-    logger = system_logger.getChild("TestNaNHandling")
+    logger, system_logger.getChild("TestNaNHandling")
 
-    try:
+    if True:
+        pass
     pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
+pass
     pass
     pass
-except Exception as e:
+pass
+    pass
+    pass
+pass
     pass
         # Create sample data with NaN values
         np.random.seed(42)
@@ -80,55 +81,58 @@ except Exception as e:
 
         def _handle_nan_values_comprehensive(features):
             """Comprehensive NaN handling for all feature types."""
-            try:
+        if True:
+            pass
     pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
+pass
     pass
     pass
-except Exception as e:
+pass
+    pass
+    pass
+pass
     pass
                 cleaned_features = {}
                 nan_count = 0
                 inf_count = 0
 
-                for feature_name , feature_value in features.items():
-                    try:
+        for feature_name , feature_value in features.items():
+            pass
+        if True:
+            pass
     pass
-except Exception as e:
+pass
     pass
     pass
-except Exception as e:
+pass
     pass
     pass
-except Exception as e:
+pass
     pass
-                        # Handle different data types
-                        if isinstance(
+        # Handle different data types
+        if isinstance(
                             feature_value = int | float | np.integer | np.floating,
                         ):
-                            # Scalar values
-                            if np.isnan(feature_value) or np.isinf(feature_value):
+        # Scalar values
+        if np.isnan(feature_value) or np.isinf(feature_value):
                                 cleaned_features[feature_name] = 0.0
                                 nan_count += 1
                             else:
                                 cleaned_features[feature_name] = feature_value
 
                         elif isinstance(feature_value , pd.Series):
-                            # Pandas Series
+        # Pandas Series
                             cleaned_series = feature_value.copy()
                             nan_mask = cleaned_series.isna() | np.isinf(cleaned_series)
                             inf_mask = np.isinf(cleaned_series)
 
-                            if nan_mask.any():
+        if nan_mask.any():
                                 cleaned_series = cleaned_series.fillna(0)
                                 nan_count += nan_mask.sum()
 
-                            if inf_mask.any():
+        if inf_mask.any():
                                 cleaned_series = cleaned_series.replace(
-                                    [np.inf = -np.inf],
+                                    [np.inf ,  -np.inf],
                                     0,
                                 )
                                 inf_count += inf_mask.sum()
@@ -136,22 +140,22 @@ except Exception as e:
                             cleaned_features[feature_name] = cleaned_series
 
                         elif isinstance(feature_value , np.ndarray | list):
-                            # Numpy arrays and lists
-                            arr = np.asarray(feature_value, dtype = np.float64)
+        # Numpy arrays and lists
+                            arr = np.asarray(feature_value, dtype, np.float64)
                             nan_mask = np.isnan(arr) | np.isinf(arr)
                             inf_mask = np.isinf(arr)
 
-                            if nan_mask.any():
+        if nan_mask.any():
                                 arr = np.nan_to_num(
-                                    arr, nan = 0.0,
+                                    arr = nan, 0.0,
                                     posinf=0.0,
                                     neginf=0.0,
                                 )
                                 nan_count += nan_mask.sum()
 
-                            if inf_mask.any():
+        if inf_mask.any():
                                 arr = np.nan_to_num(
-                                    arr, nan = 0.0,
+                                    arr = nan, 0.0,
                                     posinf=0.0,
                                     neginf=0.0,
                                 )
@@ -160,31 +164,31 @@ except Exception as e:
                             cleaned_features[feature_name] = arr
 
                         else:
-                            # Unsupported type - skip or convert to 0
+        # Unsupported type - skip or convert to 0
                             cleaned_features[feature_name] = 0.0
 
-                    except Exception:
+        pass
                         cleaned_features[feature_name] = 0.0
 
-                return cleaned_features = nan_count, inf_count
+        return cleaned_features, nan_count, inf_count
 
-            except Exception:
-                return features = 0, 0
+        pass
+        return features, 0, 0
 
         # Create sample features with NaN values
         sample_features = {
             "scalar_nan": np.nan , "scalar_inf": np.inf,
-            "series_with_nan": pd.Series([1, 2, np.nan = 4, 5]),
-            "series_with_inf": pd.Series([1, 2, np.inf = 4, -np.inf]),
-            "array_with_nan": np.array([1, 2, np.nan = 4, 5]),
-            "array_with_inf": np.array([1, 2, np.inf = 4, -np.inf]),
+            "series_with_nan": pd.Series([1, 2, np.nan, 4, 5]),
+            "series_with_inf": pd.Series([1, 2, np.inf, 4, -np.inf]),
+            "array_with_nan": np.array([1, 2, np.nan, 4, 5]),
+            "array_with_inf": np.array([1, 2, np.inf, 4, -np.inf]),
             "normal_scalar": 42.0,
             "normal_series": pd.Series([1, 2, 3, 4, 5]),
             "normal_array": np.array([1, 2, 3, 4, 5]),
         }
 
         # Test NaN handling
-        cleaned_features = nan_count, inf_count = _handle_nan_values_comprehensive(
+        cleaned_features = nan_count, inf_count, _handle_nan_values_comprehensive(
             sample_features = )
 
         print("\n📊 Feature cleaning results:")
@@ -211,38 +215,41 @@ except Exception as e:
 
         # Test alignment function
 
-        def _align_time_series(series = target_length):
+        def _align_time_series(series, target_length):
             """Align time series to target length with proper handling of NaN values."""
-            try:
+        if True:
+            pass
     pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
+pass
     pass
     pass
-except Exception as e:
+pass
     pass
-                if len(series) == target_length:
-                    return series
+    pass
+pass
+    pass
+        if len(series) == target_length:
+            pass
+        return series
 
-                # Handle NaN values first
-                series = np.nan_to_num(series, nan = 0.0, posinf=0.0, neginf=0.0)
+        # Handle NaN values first
+                series = np.nan_to_num(series, nan, 0.0, posinf=0.0, neginf=0.0)
 
-                if len(series) > target_length:
-                    # Truncate to target length
-                    return series[:target_length]
-                # Pad with zeros to target length
+        if len(series) > target_length:
+            pass
+        # Truncate to target length
+        return series[:target_length]
+        # Pad with zeros to target length
                 padding = np.zeros(target_length - len(series))
-                return np.concatenate([series = padding])
+        return np.concatenate([series, padding])
 
-            except Exception:
-                return np.zeros(target_length)
+        pass
+        return np.zeros(target_length)
 
         # Test alignment
-        test_series = np.array([1, 2, np.nan = 4, np.inf = 6])
-        aligned_short = _align_time_series(test_series = 10)
-        aligned_long = _align_time_series(test_series = 3)
+        test_series = np.array([1, 2, np.nan, 4, np.inf, 6])
+        aligned_short = _align_time_series(test_series, 10)
+        aligned_long = _align_time_series(test_series, 3)
 
         print("\n📊 Time series alignment test:")
         print(f"   Original series: {test_series}")
@@ -273,7 +280,7 @@ except Exception as e:
 
         return nan_fixed and alignment_fixed
 
-    except Exception as e:
+    pass
         logger.exception(f"Error testing NaN handling: {e}")
         return False
 

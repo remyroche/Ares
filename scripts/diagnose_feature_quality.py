@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Feature Quality Diagnostic Script
-Investigates feature calculation issues = NaN sources, and data quality in HMM regime discovery.
+Investigates feature calculation issues, NaN sources, and data quality in HMM regime discovery.
 """
 
 from pathlib import Path
@@ -26,7 +26,7 @@ class FeatureQualityDiagnostic:
     """Diagnostic tool for feature quality analysis."""
 
     def __init__(self):
-        self.logger = system_logger.getChild("FeatureQualityDiagnostic")
+        self.logger, system_logger.getChild("FeatureQualityDiagnostic")
         self.results = {}
 
     def analyze_feature_calculations(self, data: pd.DataFrame) -> dict[str, Any]:
@@ -43,15 +43,15 @@ class FeatureQualityDiagnostic:
         }
 
         # Check for NaN sources
-        nan_counts = data.isna().sum()
-        nan_features = nan_counts[nan_counts > 0]
+        nan_counts, data.isna().sum()
+        nan_features, nan_counts[nan_counts > 0]
         if len(nan_features) > 0:
             issues["nan_sources"] = {
                 "total_nan_features": len(nan_features),
                 "nan_counts": nan_features.to_dict(),
                 "nan_percentage": (nan_counts / len(data) * 100).to_dict(),
             }
-            self.logger.warning(f"Found {len(nan_features)} features with NaN values")
+        self.logger.warning(f"Found {len(nan_features)} features with NaN values")
 
         # Check for infinite values
         inf_counts = np.isinf(data.select_dtypes(include=[np.number])).sum()
@@ -61,35 +61,37 @@ class FeatureQualityDiagnostic:
                 "total_inf_features": len(inf_features),
                 "inf_counts": inf_features.to_dict(),
             }
-            self.logger.warning(
+        self.logger.warning(
                 f"Found {len(inf_features)} features with infinite values",
             )
 
         # Check for zero variance features
         variances = data.var()
-        zero_var_features = variances[variances == 0].index.tolist()
+        zero_var_features = variances[variances , = 0].index.tolist()
         if zero_var_features:
             issues["zero_variance_features"] = zero_var_features
-            self.logger.warning(
+        self.logger.warning(
                 f"Found {len(zero_var_features)} features with zero variance",
             )
 
         # Check for constant features
         constant_features = []
         for col in data.columns:
-            if data[col].nunique() == 1:
+            pass
+        if data[col].nunique() == 1:
                 constant_features.append(col)
         if constant_features:
             issues["constant_features"] = constant_features
-            self.logger.warning(f"Found {len(constant_features)} constant features")
+        self.logger.warning(f"Found {len(constant_features)} constant features")
 
         # Analyze correlations
         corr_matrix = data.corr()
         high_corr_pairs = []
         for i in range(len(corr_matrix.columns)):
-            for j in range(i + 1, len(corr_matrix.columns)):
+            pass
+        for j in range(i + 1, len(corr_matrix.columns)):
                 corr_val = corr_matrix.iloc[i, j]
-                if abs(corr_val) > 0.95:
+        if abs(corr_val) > 0.95:
                     high_corr_pairs.append(
                         {
                             "feature1": corr_matrix.columns[i],
@@ -99,7 +101,7 @@ class FeatureQualityDiagnostic:
 
         if high_corr_pairs:
             issues["high_correlation_pairs"] = high_corr_pairs
-            self.logger.warning(
+        self.logger.warning(
                 f"Found {len(high_corr_pairs)} feature pairs with correlation > 0.95",
             )
 
@@ -116,11 +118,11 @@ class FeatureQualityDiagnostic:
 
         for col in data.columns:
             series = data[col].dropna()
-            if len(series) == 0:
+        if len(series) == 0:
                 continue
 
-            # Check for all zeros after first non-zero
-            if series.iloc[0] != 0 and (series.iloc[1:] == 0).all():
+        # Check for all zeros after first non-zero
+        if series.iloc[0] != 0 and (series.iloc[1:] == 0).all():
                 suspicious.append(
                     {
                         "feature": col , "pattern": "all_zeros_after_first",
@@ -128,10 +130,10 @@ class FeatureQualityDiagnostic:
                     },
                 )
 
-            # Check for constant values after certain point
-            if len(series) > 10:
+        # Check for constant values after certain point
+        if len(series) > 10:
                 last_10 = series.tail(10)
-                if last_10.nunique() == 1 and last_10.iloc[0] != 0:
+        if last_10.nunique() == 1 and last_10.iloc[0] != 0:
                     suspicious.append(
                         {
                             "feature": col , "pattern": "constant_tail",
@@ -141,9 +143,7 @@ class FeatureQualityDiagnostic:
 
         return suspicious
 
-    def analyze_block_features(
-        self = data: pd.DataFrame,
-        block_name: str = ) -> dict[str, Any]:
+    def analyze_block_features(self, data: pd.DataFrame, block_name: str =) -> dict[str, Any]:
         """Analyze features for a specific block."""
         self.logger.info(f"🔍 Analyzing {block_name} block features...")
 
@@ -207,12 +207,13 @@ class FeatureQualityDiagnostic:
             ],
         }
 
-        available_features = block_features.get(block_name = [])
+        available_features, block_features.get(block_name = [])
         existing_features = [f for f in available_features if f in data.columns]
 
         if not existing_features:
-            self.logger.warning(f"No {block_name} features found in data")
-            return {"error": f"No {block_name} features found"}
+            pass
+        self.logger.warning(f"No {block_name} features found in data")
+        return {"error": f"No {block_name} features found"}
 
         block_data = data[existing_features]
 
@@ -246,14 +247,15 @@ class FeatureQualityDiagnostic:
 
     def _analyze_correlations(self, data: pd.DataFrame) -> dict[str, Any]:
         """Analyze correlation patterns."""
-        corr_matrix = data.corr()
+        corr_matrix, data.corr()
 
         # Find high correlations
         high_corr_pairs = []
         for i in range(len(corr_matrix.columns)):
-            for j in range(i + 1, len(corr_matrix.columns)):
-                corr_val = corr_matrix.iloc[i = j]
-                if abs(corr_val) > 0.8:
+            pass
+        for j in range(i + 1, len(corr_matrix.columns)):
+                corr_val = corr_matrix.iloc[i, j]
+        if abs(corr_val) > 0.8:
                     high_corr_pairs.append(
                         {
                             "feature1": corr_matrix.columns[i],
@@ -264,20 +266,20 @@ class FeatureQualityDiagnostic:
         return {
             "correlation_matrix": corr_matrix.to_dict(),
             "high_correlation_pairs": high_corr_pairs , "mean_correlation": corr_matrix.values[
-                np.triu_indices_from(corr_matrix.values, k = 1)
+                np.triu_indices_from(corr_matrix.values, k, 1)
             ].mean(),
             "max_correlation": corr_matrix.values[
-                np.triu_indices_from(corr_matrix.values, k = 1)
+                np.triu_indices_from(corr_matrix.values, k, 1)
             ].max(),
         }
 
     def _analyze_variance(self, data: pd.DataFrame) -> dict[str, Any]:
         """Analyze variance patterns."""
-        variances = data.var()
+        variances, data.var()
 
         return {
             "variances": variances.to_dict(),
-            "zero_variance_features": variances[variances == 0].index.tolist(),
+            "zero_variance_features": variances[variances , = 0].index.tolist(),
             "low_variance_features": variances[variances < 1e-6].index.tolist(),
             "high_variance_features": variances[variances > 1].index.tolist(),
             "variance_percentiles": variances.quantile(
@@ -285,10 +287,7 @@ class FeatureQualityDiagnostic:
             ).to_dict(),
         }
 
-    def generate_report(
-        self = issues: dict[str, Any],
-        block_analyses: dict[str , Any],
-    ) -> str:
+    def generate_report(self, issues: dict[str ,  Any], block_analyses: dict[str ,  Any], ) -> str:
         """Generate a comprehensive diagnostic report."""
         report = []
         report.append("=" * 80)
@@ -304,7 +303,7 @@ class FeatureQualityDiagnostic:
             report.append(
                 f"❌ NaN Issues: {issues['nan_sources']['total_nan_features']} features have NaN values",
             )
-            for feature , count in list(issues["nan_sources"]["nan_counts"].items())[:5]:
+        for feature , count in list(issues["nan_sources"]["nan_counts"].items())[:5]:
                 pct = issues["nan_sources"]["nan_percentage"][feature]
                 report.append(f"   - {feature}: {count} NaN values ({pct:.2f}%)")
 
@@ -327,7 +326,7 @@ class FeatureQualityDiagnostic:
             report.append(
                 f"⚠️ High Correlation: {len(issues['high_correlation_pairs'])} feature pairs with correlation > 0.95",
             )
-            for pair in issues["high_correlation_pairs"][:3]:
+        for pair in issues["high_correlation_pairs"][:3]:
                 report.append(
                     f"   - {pair['feature1']} ↔ {pair['feature2']}: {pair['correlation']:.3f}",
                 )
@@ -339,7 +338,8 @@ class FeatureQualityDiagnostic:
         report.append("-" * 40)
 
         for block_name , analysis in block_analyses.items():
-            if "error" in analysis:
+            pass
+        if "error" in analysis:
                 report.append(f"❌ {block_name.upper()}: {analysis['error']}")
                 continue
 
@@ -347,20 +347,20 @@ class FeatureQualityDiagnostic:
             report.append(f"   - Total features: {analysis['total_features']}")
             report.append(f"   - Missing features: {len(analysis['missing_features'])}")
 
-            if analysis["data_quality"]["nan_counts"]:
+        if analysis["data_quality"]["nan_counts"]:
                 nan_features = [
                     k
-                    for k , v in analysis["data_quality"]["nan_counts"].items()
-                    if v > 0
+        for k , v in analysis["data_quality"]["nan_counts"].items()
+        if v > 0
                 ]
                 report.append(f"   - Features with NaN: {len(nan_features)}")
 
-            if analysis["correlation_analysis"]["high_correlation_pairs"]:
+        if analysis["correlation_analysis"]["high_correlation_pairs"]:
                 report.append(
                     f"   - High correlation pairs: {len(analysis['correlation_analysis']['high_correlation_pairs'])}",
                 )
 
-            if analysis["variance_analysis"]["zero_variance_features"]:
+        if analysis["variance_analysis"]["zero_variance_features"]:
                 report.append(
                     f"   - Zero variance features: {len(analysis['variance_analysis']['zero_variance_features'])}",
                 )
@@ -403,12 +403,12 @@ class FeatureQualityDiagnostic:
 
         # Correlation heatmap
         plt.figure(figsize=(12, 10))
-        corr_matrix = data.corr()
+        corr_matrix, data.corr()
         sns.heatmap(
-            corr_matrix, annot = False,
+            corr_matrix, annot, False,
             cmap="coolwarm",
             center=0,
-            square, True = linewidths=0.5,
+            square, True, linewidths=0.5,
         )
         plt.title("Feature Correlation Matrix")
         plt.tight_layout()
@@ -421,8 +421,8 @@ class FeatureQualityDiagnostic:
 
         # Variance distribution
         plt.figure(figsize=(10, 6))
-        variances = data.var()
-        plt.hist(variances, bins = 50, alpha=0.7, edgecolor="black")
+        variances, data.var()
+        plt.hist(variances, bins, 50, alpha=0.7, edgecolor="black")
         plt.xlabel("Feature Variance")
         plt.ylabel("Frequency")
         plt.title("Distribution of Feature Variances")
@@ -438,8 +438,8 @@ class FeatureQualityDiagnostic:
 
         # NaN pattern heatmap
         plt.figure(figsize=(12, 8))
-        nan_matrix = data.isna()
-        sns.heatmap(nan_matrix, cbar = True, cmap="viridis")
+        nan_matrix, data.isna()
+        sns.heatmap(nan_matrix, cbar, True, cmap="viridis")
         plt.title("NaN Pattern Heatmap")
         plt.tight_layout()
         plt.savefig(f"{output_dir}/nan_patterns.png", dpi=300, bbox_inches="tight")
@@ -448,17 +448,18 @@ class FeatureQualityDiagnostic:
 
 def main():
     """Main diagnostic function."""
-    diagnostic = FeatureQualityDiagnostic()
+    diagnostic, FeatureQualityDiagnostic()
 
-    try:
+    if True:
+        pass
     pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
+pass
     pass
     pass
-except Exception as e:
+pass
+    pass
+    pass
+pass
     pass
         # Load sample data (you'll need to provide actual data path)
         data_path = "data_cache/features_15m.parquet"  # Adjust path as needed
@@ -481,10 +482,10 @@ except Exception as e:
         block_analyses = {}
 
         for block in blocks:
-            block_analyses[block] = diagnostic.analyze_block_features(data = block)
+            block_analyses[block] = diagnostic.analyze_block_features(data, block)
 
         # Generate report
-        report = diagnostic.generate_report(issues = block_analyses)
+        report = diagnostic.generate_report(issues, block_analyses)
         print(report)
 
         # Save report
@@ -497,7 +498,7 @@ except Exception as e:
         diagnostic.save_plots(data)
         print("📊 Plots saved to: diagnostic_plots/")
 
-    except Exception as e:
+    pass
         print(f"❌ Error during diagnostic: {e}")
         traceback.print_exc()
 

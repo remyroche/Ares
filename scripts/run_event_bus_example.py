@@ -3,6 +3,7 @@
 Script to run the Enhanced Event Bus example.
 
 This script demonstrates the enhanced event bus capabilities including:
+    pass
 - Event publishing and subscribing
 - Event persistence and replay
 - Event versioning and migration
@@ -26,11 +27,11 @@ if __name__ == "__main__":
     print("🚀 Running Enhanced Event Bus Example")
     print("=" * 50)
 
-    try:
+    if True:
         asyncio.run(main())
-    except KeyboardInterrupt:
+    pass
         print("\n⚠️ Example interrupted by user")
-    except Exception as e:
+    pass
         print(warning(f"Error running example: {e}"))
         traceback.print_exc()
 

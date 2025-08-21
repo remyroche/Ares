@@ -23,9 +23,9 @@ src_dir = current_dir.parent / "src"
 sys.path.insert(0, str(src_dir))
 
 # Import after setting up the path
-try:
+if True:
     VectorizedAdvancedFeatureEngineering
-except ImportError as e:
+pass
     print(f"❌ Import error: {e}")
     print("⚠️ Make sure you're running this from the project root directory")
     print("⚠️ Try: PYTHONPATH=src python scripts/validate_multicollinearity_fix.py")
@@ -38,12 +38,12 @@ async def validate_multicollinearity_fix():
 
     # Create sample data
     print("📊 Creating sample data...")
-    dates = pd.date_range("2024-01-01", periods=1000, freq="1min")
+    dates, pd.date_range("2024-01-01", periods=1000, freq="1min")
 
     np.random.seed(42)
-    base_price = 100 + np.cumsum(np.random.randn(1000) * 0.1)
+    base_price, 100 + np.cumsum(np.random.randn(1000) * 0.1)
 
-    price_data = pd.DataFrame(
+    price_data, pd.DataFrame(
         {
             "timestamp": dates, "open": base_price + np.random.randn(1000) * 0.5,
             "high": base_price + np.random.randn(1000) * 0.8,
@@ -53,7 +53,7 @@ async def validate_multicollinearity_fix():
         },
     )
 
-    volume_data = pd.DataFrame(
+    volume_data, pd.DataFrame(
         {"timestamp": dates, "volume": price_data["volume"].copy()},
     )
 
@@ -70,7 +70,7 @@ async def validate_multicollinearity_fix():
         },
     }
 
-    try:
+    if True:
         feature_eng = VectorizedAdvancedFeatureEngineering(config)
         await feature_eng.initialize()
 
@@ -81,7 +81,8 @@ async def validate_multicollinearity_fix():
         # Convert features to DataFrame
         feature_df = pd.DataFrame()
         for feature_name, feature_series in features.items():
-            if isinstance(feature_series, pd.Series):
+            pass
+        if isinstance(feature_series, pd.Series):
                 feature_df[feature_name] = feature_series
 
         print(f"📊 Generated {len(feature_df.columns)} features")
@@ -93,18 +94,19 @@ async def validate_multicollinearity_fix():
         # Find perfect correlations (r >= 0.9999)
         perfect_correlations = []
         for i in range(len(correlation_matrix.columns)):
-            for j in range(i + 1, len(correlation_matrix.columns)):
+            pass
+        for j in range(i + 1, len(correlation_matrix.columns)):
                 corr_value = abs(correlation_matrix.iloc[i, j])
-                if corr_value >= 0.9999:
+        if corr_value >= 0.9999:
                     feature1 = correlation_matrix.columns[i]
                     feature2 = correlation_matrix.columns[j]
                     perfect_correlations.append((feature1, feature2, corr_value))
 
         if perfect_correlations:
             print(f"❌ Found {len(perfect_correlations)} perfect correlations:")
-            for feature1, feature2, corr_value in perfect_correlations:
+        for feature1, feature2, corr_value in perfect_correlations:
                 print(f"   {feature1} ↔ {feature2} (r={corr_value:.6f})")
-            return False
+        return False
         print("✅ No perfect correlations found!")
 
         # Check specific problematic features
@@ -121,7 +123,8 @@ async def validate_multicollinearity_fix():
 
         print("🔍 Checking specific problematic features...")
         for feature in problematic_features:
-            if feature in feature_df.columns:
+            pass
+        if feature in feature_df.columns:
                 print(f"   ✅ Found {feature}")
             else:
                 print(f"   ⚠️ Missing {feature}")
@@ -133,22 +136,22 @@ async def validate_multicollinearity_fix():
             )
             print(f"📊 1m vs 5m price change correlation: {correlation:.6f}")
 
-            if abs(correlation) >= 0.9999:
+        if abs(correlation) >= 0.9999:
                 print("❌ 1m and 5m price changes are still perfectly correlated!")
-                return False
+        return False
             print("✅ 1m and 5m price changes are properly differentiated")
 
         print("✅ Multicollinearity fix validation completed successfully!")
         return True
 
-    except Exception as e:
+    pass
         print(f"❌ Error during validation: {e}")
         return False
 
 def main():
     """Main function to run the validation."""
 
-    success = asyncio.run(validate_multicollinearity_fix())
+    success, asyncio.run(validate_multicollinearity_fix())
     if success:
         print("\n🎉 MULTICOLLINEARITY FIX VALIDATION PASSED!")
         print("✅ Your feature engineering is now working correctly.")

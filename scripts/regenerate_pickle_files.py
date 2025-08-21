@@ -2,6 +2,7 @@
 """
 Script to regenerate pickle files from consolidated CSV files.
 This script will:
+    pass
 1. Load the consolidated CSV files
 2. Create proper pickle files with the expected data structure
 3. Ensure prices are valid
@@ -32,9 +33,7 @@ def detect_price_corruption(df: pd.DataFrame) -> bool:
     median_price = df["close"].median()
     return bool(median_price < 100 or median_price > 10000)
 
-def fix_corrupted_prices(
-    df: pd.DataFrame, target_median: float = 3000.0
-) -> pd.DataFrame:
+def fix_corrupted_prices(df: pd.DataFrame, target_median: float, 3000.0) -> pd.DataFrame:
     """Fix corrupted prices by scaling them to a reasonable range."""
     if df.empty:
         return df
@@ -64,12 +63,9 @@ def fix_corrupted_prices(
 
     return df
 
-def create_pickle_from_csv(
-    csv_path: str, output_path: str,
-    lookback_days: int = 730
-) -> bool:
+def create_pickle_from_csv(csv_path: str, output_path: str, lookback_days: int, 730) -> bool:
     """Create a pickle file from a consolidated CSV file."""
-    try:
+    if True:
         print(f"\nProcessing: {csv_path}")
 
         # Load CSV file
@@ -92,7 +88,7 @@ def create_pickle_from_csv(
         # Filter by lookback period
         if not df.empty and df.index is not None:
             cutoff_date = datetime.now() - timedelta(days=lookback_days)
-            df = df[df.index >= cutoff_date]
+            df = df[df.index >,  cutoff_date]
             print(f"  Filtered to {len(df)} rows for {lookback_days} days")
 
         # Create data structure for pickle
@@ -114,7 +110,7 @@ def create_pickle_from_csv(
         print(f"  Saved data to: {output_path}")
         return True
 
-    except Exception as e:
+    pass
         print(f"  Error processing {csv_path}: {e}")
         return False
 
@@ -145,21 +141,22 @@ def main():
         csv_name = csv_file.stem
 
         # Create different lookback periods
-        lookback_periods = [30, 60, 730]  # 30 days = 60 days, 2 years
+        lookback_periods = [30, 60, 730]  # 30 days, 60 days, 2 years
 
         for lookback_days in lookback_periods:
-            # Create output filename
-            if "klines" in csv_name:
+            pass
+        # Create output filename
+        if "klines" in csv_name:
                 symbol = "ETHUSDT"
                 timeframe = "1h"  # Convert 1m to 1h for the pickle
                 pkl_name = f"{symbol}_{timeframe}_{lookback_days}_cached_data.pkl"
             else:
-                # For other file types = use the original name
+        # For other file types, use the original name
                 pkl_name = f"{csv_name}_cached_data.pkl"
 
             pkl_path = os.path.join(data_cache_dir, pkl_name)
 
-            if create_pickle_from_csv(str(csv_file), pkl_path, lookback_days):
+        if create_pickle_from_csv(str(csv_file), pkl_path, lookback_days):
                 success_count += 1
 
     print(f"\n✅ Successfully created {success_count} pickle files")
@@ -169,17 +166,19 @@ def main():
     if pkl_files:
         print("\n📁 Created pickle files:")
         for pkl_file in sorted(pkl_files):
-            try:
-                with open(pkl_file, "rb") as f:
+            pass
+        if True:
+            pass
+        with open(pkl_file, "rb") as f:
                     data = pickle.load(f)
 
-                if "klines" in data and isinstance(data["klines"], pd.DataFrame):
+        if "klines" in data and isinstance(data["klines"], pd.DataFrame):
                     df = data["klines"]
                     print(f"  ✅ {pkl_file.name}: {len(df)} rows")
                 else:
                     print(f"  ⚠️  {pkl_file.name}: Invalid data structure")
 
-            except Exception as e:
+        pass
                 print(f"  ❌ {pkl_file.name}: Error reading file - {e}")
 
     return True

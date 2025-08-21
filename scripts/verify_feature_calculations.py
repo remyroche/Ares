@@ -24,7 +24,7 @@ class FeatureCalculationVerifier:
     """Verifies feature calculations and identifies specific issues."""
 
     def __init__(self):
-        self.logger = system_logger.getChild("FeatureCalculationVerifier")
+        self.logger, system_logger.getChild("FeatureCalculationVerifier")
 
     def verify_momentum_features(self, data: pd.DataFrame) -> dict[str, Any]:
         """Verify momentum feature calculations."""
@@ -55,13 +55,15 @@ class FeatureCalculationVerifier:
 
         # Check availability
         for feature in momentum_features:
-            if feature in data.columns:
+            pass
+        if feature in data.columns:
                 results["available_features"].append(feature)
             else:
                 results["missing_features"].append(feature)
 
         if not results["available_features"]:
-            return results
+            pass
+        return results
 
         momentum_data = data[results["available_features"]]
 
@@ -109,13 +111,15 @@ class FeatureCalculationVerifier:
 
         # Check availability
         for feature in volatility_features:
-            if feature in data.columns:
+            pass
+        if feature in data.columns:
                 results["available_features"].append(feature)
             else:
                 results["missing_features"].append(feature)
 
         if not results["available_features"]:
-            return results
+            pass
+        return results
 
         volatility_data = data[results["available_features"]]
 
@@ -161,13 +165,15 @@ class FeatureCalculationVerifier:
 
         # Check availability
         for feature in liquidity_features:
-            if feature in data.columns:
+            pass
+        if feature in data.columns:
                 results["available_features"].append(feature)
             else:
                 results["missing_features"].append(feature)
 
         if not results["available_features"]:
-            return results
+            pass
+        return results
 
         liquidity_data = data[results["available_features"]]
 
@@ -190,11 +196,11 @@ class FeatureCalculationVerifier:
         # Check for expected patterns in momentum features
         for col in data.columns:
             series = data[col].dropna()
-            if len(series) == 0:
+        if len(series) == 0:
                 continue
 
-            # Check for all zeros
-            if (series == 0).all():
+        # Check for all zeros
+        if (series == 0).all():
                 issues.append(
                     {
                         "feature": col , "issue": "all_zeros",
@@ -202,8 +208,8 @@ class FeatureCalculationVerifier:
                     },
                 )
 
-            # Check for constant values
-            if series.nunique() == 1:
+        # Check for constant values
+        if series.nunique() == 1:
                 issues.append(
                     {
                         "feature": col , "issue": "constant",
@@ -211,8 +217,8 @@ class FeatureCalculationVerifier:
                     },
                 )
 
-            # Check for infinite values
-            if np.isinf(series).any():
+        # Check for infinite values
+        if np.isinf(series).any():
                 issues.append(
                     {
                         "feature": col , "issue": "infinite_values",
@@ -220,8 +226,8 @@ class FeatureCalculationVerifier:
                     },
                 )
 
-            # Check for extreme values
-            if series.abs().max() > 1e6:
+        # Check for extreme values
+        if series.abs().max() > 1e6:
                 issues.append(
                     {
                         "feature": col , "issue": "extreme_values",
@@ -237,11 +243,11 @@ class FeatureCalculationVerifier:
 
         for col in data.columns:
             series = data[col].dropna()
-            if len(series) == 0:
+        if len(series) == 0:
                 continue
 
-            # Volatility should be non-negative
-            if (series < 0).any():
+        # Volatility should be non-negative
+        if (series < 0).any():
                 issues.append(
                     {
                         "feature": col , "issue": "negative_volatility",
@@ -249,8 +255,8 @@ class FeatureCalculationVerifier:
                     },
                 )
 
-            # Check for all zeros
-            if (series == 0).all():
+        # Check for all zeros
+        if (series == 0).all():
                 issues.append(
                     {
                         "feature": col , "issue": "all_zeros",
@@ -258,8 +264,8 @@ class FeatureCalculationVerifier:
                     },
                 )
 
-            # Check for infinite values
-            if np.isinf(series).any():
+        # Check for infinite values
+        if np.isinf(series).any():
                 issues.append(
                     {
                         "feature": col , "issue": "infinite_values",
@@ -275,11 +281,11 @@ class FeatureCalculationVerifier:
 
         for col in data.columns:
             series = data[col].dropna()
-            if len(series) == 0:
+        if len(series) == 0:
                 continue
 
-            # Check for all zeros
-            if (series == 0).all():
+        # Check for all zeros
+        if (series == 0).all():
                 issues.append(
                     {
                         "feature": col , "issue": "all_zeros",
@@ -287,8 +293,8 @@ class FeatureCalculationVerifier:
                     },
                 )
 
-            # Check for infinite values
-            if np.isinf(series).any():
+        # Check for infinite values
+        if np.isinf(series).any():
                 issues.append(
                     {
                         "feature": col , "issue": "infinite_values",
@@ -296,8 +302,8 @@ class FeatureCalculationVerifier:
                     },
                 )
 
-            # Check for extreme values
-            if series.abs().max() > 1e6:
+        # Check for extreme values
+        if series.abs().max() > 1e6:
                 issues.append(
                     {
                         "feature": col , "issue": "extreme_values",
@@ -310,16 +316,18 @@ class FeatureCalculationVerifier:
     def _analyze_correlations(self, data: pd.DataFrame) -> dict[str, Any]:
         """Analyze correlations between features."""
         if len(data.columns) < 2:
-            return {"error": "Not enough features for correlation analysis"}
+            pass
+        return {"error": "Not enough features for correlation analysis"}
 
         corr_matrix = data.corr()
 
         # Find high correlations
         high_corr_pairs = []
         for i in range(len(corr_matrix.columns)):
-            for j in range(i + 1, len(corr_matrix.columns)):
+            pass
+        for j in range(i + 1, len(corr_matrix.columns)):
                 corr_val = corr_matrix.iloc[i, j]
-                if abs(corr_val) > 0.8:
+        if abs(corr_val) > 0.8:
                     high_corr_pairs.append(
                         {
                             "feature1": corr_matrix.columns[i],
@@ -331,20 +339,20 @@ class FeatureCalculationVerifier:
         return {
             "correlation_matrix": corr_matrix.to_dict(),
             "high_correlation_pairs": high_corr_pairs , "mean_correlation": corr_matrix.values[
-                np.triu_indices_from(corr_matrix.values, k = 1)
+                np.triu_indices_from(corr_matrix.values, k, 1)
             ].mean(),
             "max_correlation": corr_matrix.values[
-                np.triu_indices_from(corr_matrix.values, k = 1)
+                np.triu_indices_from(corr_matrix.values, k, 1)
             ].max(),
         }
 
     def _analyze_variance(self, data: pd.DataFrame) -> dict[str, Any]:
         """Analyze variance patterns."""
-        variances = data.var()
+        variances, data.var()
 
         return {
             "variances": variances.to_dict(),
-            "zero_variance_features": variances[variances == 0].index.tolist(),
+            "zero_variance_features": variances[variances , = 0].index.tolist(),
             "low_variance_features": variances[variances < 1e-6].index.tolist(),
             "high_variance_features": variances[variances > 1].index.tolist(),
             "variance_percentiles": variances.quantile(
@@ -362,7 +370,7 @@ class FeatureCalculationVerifier:
         """Verify if variance thresholds are appropriate."""
         self.logger.info("🔍 Verifying variance thresholds...")
 
-        variances = data.var()
+        variances, data.var()
 
         # Test different variance thresholds
         thresholds = [1e-8, 1e-6, 1e-4, 1e-2, 1e-1]
@@ -404,7 +412,7 @@ class FeatureCalculationVerifier:
 
         return results
 
-    def generate_verification_report(self, results: dict[str, Any]) -> str:
+    def generate_verification_report(self, results: dict[str ,  Any]) -> str:
         """Generate a comprehensive verification report."""
         report = []
         report.append("=" * 80)
@@ -416,9 +424,10 @@ class FeatureCalculationVerifier:
         report.append("📊 OVERALL SUMMARY:")
         report.append("-" * 40)
 
-        total_issues = 0
+        total_issues, 0
         for block_name , block_results in results.items():
-            if (
+            pass
+        if (
                 isinstance(block_results , dict)
                 and "calculation_issues" in block_results
             ):
@@ -429,13 +438,14 @@ class FeatureCalculationVerifier:
 
         # Block-specific results
         for block_name , block_results in results.items():
-            if not isinstance(block_results , dict):
+            pass
+        if not isinstance(block_results , dict):
                 continue
 
             report.append(f"🔍 {block_name.upper()} BLOCK:")
             report.append("-" * 30)
 
-            if "available_features" in block_results:
+        if "available_features" in block_results:
                 report.append(
                     f"Available features: {len(block_results['available_features'])}",
                 )
@@ -443,19 +453,19 @@ class FeatureCalculationVerifier:
                     f"Missing features: {len(block_results['missing_features'])}",
                 )
 
-            if (
+        if (
                 "calculation_issues" in block_results
                 and block_results["calculation_issues"]
             ):
                 report.append(
                     f"Calculation issues: {len(block_results['calculation_issues'])}",
                 )
-                for issue in block_results["calculation_issues"][:3]:  # Show first 3
+        for issue in block_results["calculation_issues"][:3]:  # Show first 3
                     report.append(
                         f"  - {issue['feature']}: {issue['issue']} - {issue['description']}",
                     )
 
-            if (
+        if (
                 "correlation_analysis" in block_results
                 and "high_correlation_pairs" in block_results["correlation_analysis"]
             ):
@@ -463,12 +473,12 @@ class FeatureCalculationVerifier:
                     "high_correlation_pairs"
                 ]
                 report.append(f"High correlation pairs: {len(high_corr)}")
-                for pair in high_corr[:3]:  # Show first 3
+        for pair in high_corr[:3]:  # Show first 3
                     report.append(
                         f"  - {pair['feature1']} ↔ {pair['feature2']}: {pair['correlation']:.3f}",
                     )
 
-            if (
+        if (
                 "variance_analysis" in block_results
                 and "zero_variance_features" in block_results["variance_analysis"]
             ):
@@ -483,15 +493,15 @@ class FeatureCalculationVerifier:
             report.append("-" * 40)
 
             threshold_analysis = results["variance_thresholds"]["threshold_analysis"]
-            for threshold , analysis in threshold_analysis.items():
+        for threshold , analysis in threshold_analysis.items():
                 report.append(
                     f"Threshold {threshold}: {analysis['features_removed']} features removed ({analysis['percentage_removed']:.1f}%)",
                 )
 
-            if results["variance_thresholds"]["recommendations"]:
+        if results["variance_thresholds"]["recommendations"]:
                 report.append("")
                 report.append("💡 RECOMMENDATIONS:")
-                for rec in results["variance_thresholds"]["recommendations"]:
+        for rec in results["variance_thresholds"]["recommendations"]:
                     report.append(f"  - {rec}")
 
         return "\n".join(report)
@@ -499,9 +509,9 @@ class FeatureCalculationVerifier:
 
 def main():
     """Main verification function."""
-    verifier = FeatureCalculationVerifier()
+    verifier, FeatureCalculationVerifier()
 
-    try:
+    if True:
         # Load sample data (you'll need to provide actual data path)
         data_path = "data_cache/features_15m.parquet"  # Adjust path as needed
 
@@ -538,7 +548,7 @@ def main():
             f.write(report)
         print("📄 Report saved to: feature_verification_report.txt")
 
-    except Exception as e:
+    pass
         print(f"❌ Error during verification: {e}")
         traceback.print_exc()
 

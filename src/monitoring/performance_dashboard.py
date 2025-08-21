@@ -17,6 +17,8 @@ from src.utils.error_handler import handle_errors
 from src.utils.centralized_decorators import (
     performance_monitor,
     PerformanceLevel,
+    resource_monitor,
+    memory_efficient,
 )
 from src.utils.logger import system_logger
 
@@ -69,6 +71,8 @@ class PerformanceDashboard:
         self.export_dir.mkdir(exist_ok=True)
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
+    @resource_monitor()
+    @memory_efficient()
     @handle_errors(exceptions=(Exception,), default_return=False, context="performance_dashboard.initialize")
     async def initialize(self) -> bool:
         """Initialize performance dashboard."""

@@ -16,6 +16,8 @@ from src.utils.error_handler import handle_errors
 from src.utils.centralized_decorators import (
     performance_monitor,
     PerformanceLevel,
+    resource_monitor,
+    memory_efficient,
 )
 from src.utils.logger import system_logger
 
@@ -67,6 +69,8 @@ class PerformanceMonitor:
         )
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
+    @resource_monitor()
+    @memory_efficient()
     @handle_errors(exceptions=(Exception,), default_return=False, context="performance_monitor.initialize")
     async def initialize(self) -> bool:
         self.logger.info("📈 Initializing Performance Monitor ...")

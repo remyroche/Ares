@@ -17,6 +17,7 @@ from src.utils.error_handler import handle_errors
 from src.utils.centralized_decorators import (
     performance_monitor,
     PerformanceLevel,
+    memory_efficient,
 )
 from src.utils.logger import system_logger
 
@@ -49,6 +50,7 @@ class CSVExporter:
         self.export_history: List[Dict[str, Any]] = []
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
+    @memory_efficient()
     @handle_errors(exceptions=(Exception,), default_return=False, context="csv_exporter.initialize")
     async def initialize(self) -> bool:
         """Initialize CSV exporter."""
@@ -71,6 +73,7 @@ class CSVExporter:
         return True
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
+    @memory_efficient()
     @handle_errors(exceptions=(Exception,), default_return=None, context="csv_exporter.export_performance")
     async def export_performance_metrics(
         self,

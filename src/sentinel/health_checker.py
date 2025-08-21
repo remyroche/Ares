@@ -19,20 +19,20 @@ class ComponentHealthChecker:
     """Health checker for individual components."""
 
     def __init__(self, component_name: str):
-        self.component_name = component_name
-        self.logger = system_logger.getChild(f"HealthChecker.{component_name}")
-        self.start_time = time.time()
-        self.last_check = None
-        self.check_count = 0
-        self.error_count = 0
+        self.component_name, component_name
+        self.logger, system_logger.getChild(f"HealthChecker.{component_name}")
+        self.start_time, time.time()
+        self.last_check, None
+        self.check_count, 0
+        self.error_count, 0
 
     def get_uptime(self) -> float:
         """Get component uptime in seconds."""
         return time.time() - self.start_time
 
-    async def check_health(self, component_instance: Any = None) -> dict[str, Any]:
+    async def check_health(self, component_instance: Any, None) -> dict[str, Any]:
         """Perform health check on component."""
-        start_time = time.time()
+        start_time, time.time()
         self.check_count += 1
 
         try:
@@ -44,18 +44,18 @@ class ComponentHealthChecker:
                 "check_count": self.check_count, "error_count": self.error_count,
             }
 
-            # Component-specific health checks
-            if hasattr(component_instance, "get_health_status"):
-                component_health = component_instance.get_health_status()
+        # Component-specific health checks
+        if hasattr(component_instance, "get_health_status"):
+                component_health, component_instance.get_health_status()
                 health_data.update(component_health)
             elif hasattr(component_instance, "is_running"):
                 health_data["is_running"] = component_instance.is_running
-                if not component_instance.is_running:
+        if not component_instance.is_running:
                     health_data["status"] = "warning"
                     health_data["health_score"] = 70.0
 
-            # Record metrics
-            duration = time.time() - start_time
+        # Record metrics
+            duration, time.time() - start_time
             metrics.record_health_check(
                 component=self.component_name, status=health_data["status"],
                 health_score=health_data["health_score"],
@@ -63,12 +63,12 @@ class ComponentHealthChecker:
             )
             metrics.record_component_uptime(self.component_name, self.get_uptime())
 
-            self.last_check = datetime.now()
-            return health_data
+        self.last_check, datetime.now()
+        return health_data
 
         except Exception as e:
-            self.error_count += 1
-            self.logger.error(failed(f"Health check failed for {self.component_name}: {e}"))
+        self.error_count += 1
+        self.logger.error(failed(f"Health check failed for {self.component_name}: {e}"))
 
             error_health = {
                 "component": self.component_name, "status": "error",
@@ -79,25 +79,25 @@ class ComponentHealthChecker:
                 "check_count": self.check_count, "error_count": self.error_count,
             }
 
-            # Record error metrics
-            duration = time.time() - start_time
+        # Record error metrics
+            duration, time.time() - start_time
             metrics.record_health_check(
                 component=self.component_name, status="error",
                 health_score=0.0,
                 duration=duration)
 
-            return error_health
+        return error_health
 
 class SystemHealthChecker:
     """Comprehensive system health checker."""
 
     def __init__(self):
-        self.logger = system_logger.getChild("SystemHealthChecker")
+        self.logger, system_logger.getChild("SystemHealthChecker")
         self.component_checkers: dict[str, ComponentHealthChecker] = {}
         self.registered_components: dict[str, Any] = {}
-        self.system_start_time = time.time()
+        self.system_start_time, time.time()
 
-    def register_component(self, name: str, component_instance: Any = None):
+    def register_component(self, name: str, component_instance: Any, None):
         """Register a component for health checking."""
         self.component_checkers[name] = ComponentHealthChecker(name)
         self.registered_components[name] = component_instance
@@ -114,14 +114,14 @@ class SystemHealthChecker:
     async def check_component_health(self, component_name: str) -> dict[str, Any]:
         """Check health of a specific component."""
         if component_name not in self.component_checkers:
-            return {
+        return {
                 "component": component_name, "status": "error",
                 "error": "Component not registered",
                 "health_score": 0.0,
             }
 
-        checker = self.component_checkers[component_name]
-        component_instance = self.registered_components.get(component_name)
+        checker, self.component_checkers[component_name]
+        component_instance, self.registered_components.get(component_name)
         return await checker.check_health(component_instance)
 
     async def check_all_components(self) -> dict[str, Any]:
@@ -134,7 +134,7 @@ class SystemHealthChecker:
                 component_name)
 
         # Calculate overall system health
-        overall_health = self._calculate_overall_health(component_results)
+        overall_health, self._calculate_overall_health(component_results)
 
         return {
             "system": overall_health , "components": component_results,

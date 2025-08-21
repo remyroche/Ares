@@ -1,8 +1,6 @@
 # src/training/steps/step6_hmm_based_training_validator.py
 
-"""
-Validator for Step 6: HMM-Based Training
-"""
+"""Validator for Step 6: HMM-Based Training."""
 
 import asyncio
 import os
@@ -31,7 +29,7 @@ from src.utils.base_validator import BaseValidator
 class Step6HMMBasedTrainingValidator(BaseValidator):
     """Validator for Step 6: HMM-Based Training."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step6_hmm_based_training", config)
 
     async def validate(
@@ -39,8 +37,7 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
     ) -> bool:
-        """
-        Validate the HMM-based training step.
+        """Validate the HMM-based training step.
 
         Args:
             training_input: Training input parameters
@@ -48,6 +45,7 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
 
         Returns:
             bool: True if validation passed, False otherwise
+
         """
         self.logger.info("🔍 Validating Step 6 HMM-based training...")
 
@@ -128,16 +126,16 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
                     "exchange": exchange,
                     "status": status_value,
                     "has_success_indicators": outcome_metrics.get(
-                        "has_success_indicators"
+                        "has_success_indicators",
                     ),
                     "has_error_indicators": outcome_metrics.get("has_error_indicators"),
                     "success_indicators": outcome_metrics.get("success_indicators"),
                     "error_indicators": outcome_metrics.get("error_indicators"),
                     "step_metrics_keys": list(
-                        outcome_metrics.get("step_metrics", {}).keys()
+                        outcome_metrics.get("step_metrics", {}).keys(),
                     ),
                     "performance_metrics_keys": list(
-                        outcome_metrics.get("performance_metrics", {}).keys()
+                        outcome_metrics.get("performance_metrics", {}).keys(),
                     ),
                     "error_message": (
                         str(error_value)[:500] if error_value is not None else None
@@ -190,10 +188,10 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
                         "status=='SUCCESS'",
                     ],
                     "step_metrics_keys": list(
-                        outcome_metrics.get("step_metrics", {}).keys()
+                        outcome_metrics.get("step_metrics", {}).keys(),
                     ),
                     "performance_metrics_keys": list(
-                        outcome_metrics.get("performance_metrics", {}).keys()
+                        outcome_metrics.get("performance_metrics", {}).keys(),
                     ),
                 },
             )
@@ -208,8 +206,7 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate that all expected HMM model files exist.
+        """Validate that all expected HMM model files exist.
 
         Args:
             symbol: Trading symbol
@@ -218,6 +215,7 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
 
         Returns:
             bool: True if all files exist
+
         """
         try:
             # Expected HMM model file patterns - updated to match what Step 1_7 actually creates
@@ -229,7 +227,7 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
                         f"{data_dir}/{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet",
                         f"{data_dir}/{exchange}_{symbol}_hmm_composite_intensity_{timeframe}.parquet",
                         f"{data_dir}/{exchange}_{symbol}_hmm_composite_meta_{timeframe}.json",
-                    ]
+                    ],
                 )
 
             missing_files = []
@@ -243,7 +241,7 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
 
             if missing_files:
                 self.logger.error(
-                    missing(f"❌ Missing HMM model files: {missing_files}")
+                    missing(f"❌ Missing HMM model files: {missing_files}"),
                 )
                 return False
 
@@ -251,8 +249,8 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
             return True
 
         except Exception as e:
-            self.logger.error(
-                error(f"❌ Error validating HMM model files existence: {e}")
+            self.logger.exception(
+                error(f"❌ Error validating HMM model files existence: {e}"),
             )
             return False
 
@@ -262,8 +260,7 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate HMM model performance metrics.
+        """Validate HMM model performance metrics.
 
         Args:
             symbol: Trading symbol
@@ -272,6 +269,7 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
 
         Returns:
             bool: True if performance is acceptable
+
         """
         try:
             # Load training history - updated to use composite meta file
@@ -307,7 +305,7 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
 
                     if not accuracy_passed:
                         self.logger.error(
-                            error(f"❌ HMM model accuracy too low: {accuracy:.3f}")
+                            error(f"❌ HMM model accuracy too low: {accuracy:.3f}"),
                         )
                         return False
 
@@ -325,7 +323,7 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
 
                     if not loss_passed:
                         self.logger.error(
-                            error(f"❌ HMM model loss too high: {loss:.3f}")
+                            error(f"❌ HMM model loss too high: {loss:.3f}"),
                         )
                         return False
 
@@ -350,9 +348,9 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
             return True
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 validation_error(
-                    f"❌ Error during HMM model performance validation: {e}"
+                    f"❌ Error during HMM model performance validation: {e}",
                 ),
             )
             return False
@@ -363,8 +361,7 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate HMM training metrics and convergence.
+        """Validate HMM training metrics and convergence.
 
         Args:
             symbol: Trading symbol
@@ -373,6 +370,7 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
 
         Returns:
             bool: True if training metrics are acceptable
+
         """
         try:
             history_file = (
@@ -424,20 +422,20 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
                 training_time = training_history["training_time"]
                 if training_time > 3600:  # More than 1 hour
                     self.logger.warning(
-                        f"⚠️ Long HMM training time: {training_time:.1f}s"
+                        f"⚠️ Long HMM training time: {training_time:.1f}s",
                     )
                 elif training_time < 60:  # Less than 1 minute
                     self.logger.warning(
-                        f"⚠️ Short HMM training time: {training_time:.1f}s"
+                        f"⚠️ Short HMM training time: {training_time:.1f}s",
                     )
 
             self.logger.info("✅ HMM training metrics validation passed")
             return True
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 validation_error(
-                    f"❌ Error during HMM training metrics validation: {e}"
+                    f"❌ Error during HMM training metrics validation: {e}",
                 ),
             )
             return False
@@ -448,8 +446,7 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate HMM model quality characteristics.
+        """Validate HMM model quality characteristics.
 
         Args:
             symbol: Trading symbol
@@ -458,6 +455,7 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
 
         Returns:
             bool: True if model quality is acceptable
+
         """
         try:
             # Load model metadata
@@ -482,11 +480,11 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
                     param_count = len(params)
                     if param_count < 100:
                         self.logger.warning(
-                            f"⚠️ Few HMM model parameters: {param_count}"
+                            f"⚠️ Few HMM model parameters: {param_count}",
                         )
                     elif param_count > 1000000:
                         self.logger.warning(
-                            f"⚠️ Many HMM model parameters: {param_count}"
+                            f"⚠️ Many HMM model parameters: {param_count}",
                         )
 
                 # Check model size
@@ -494,11 +492,11 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
                     model_size = metadata["model_size_mb"]
                     if model_size > 100:  # More than 100MB
                         self.logger.warning(
-                            f"⚠️ Large HMM model size: {model_size:.1f}MB"
+                            f"⚠️ Large HMM model size: {model_size:.1f}MB",
                         )
                     elif model_size < 0.1:  # Less than 0.1MB
                         self.logger.warning(
-                            f"⚠️ Small HMM model size: {model_size:.1f}MB"
+                            f"⚠️ Small HMM model size: {model_size:.1f}MB",
                         )
 
                 # Check feature importance
@@ -531,7 +529,7 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
                         self.logger.info("✅ HMM model has predict method")
                     else:
                         self.logger.error(
-                            missing("❌ HMM model missing predict method")
+                            missing("❌ HMM model missing predict method"),
                         )
                         return False
 
@@ -551,14 +549,14 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
                                 )
 
                 except Exception as e:
-                    self.logger.error(error(f"❌ Error loading HMM model: {e}"))
+                    self.logger.exception(error(f"❌ Error loading HMM model: {e}"))
                     return False
 
             self.logger.info("✅ HMM model quality validation passed")
             return True
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 validation_error(f"❌ Error during HMM model quality validation: {e}"),
             )
             return False
@@ -571,8 +569,7 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
         model_name: str,
         is_loss: bool = False,
     ) -> tuple[bool, dict[str, Any]]:
-        """
-        Validate a performance metric against a threshold.
+        """Validate a performance metric against a threshold.
 
         Args:
             metric_value: The metric value to validate
@@ -583,6 +580,7 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
 
         Returns:
             Tuple[bool, Dict[str, Any]]: (passed, metrics)
+
         """
         try:
             # For loss metrics, lower is better
@@ -618,14 +616,13 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
             return passed, metrics
 
         except Exception as e:
-            self.logger.error(
+            self.logger.exception(
                 validation_error(f"❌ Error in performance metric validation: {e}"),
             )
             return False, {"error": str(e)}
 
     def _unwrap_estimator(self, artifact: Any) -> Any:
-        """
-        Unwrap a potentially wrapped model artifact to get the estimator.
+        """Unwrap a potentially wrapped model artifact to get the estimator.
 
         Supports:
         - Dicts with keys 'model', 'estimator', 'clf', 'pipeline'
@@ -659,7 +656,7 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
                     return inner
 
             # Tuple/list first element
-            if isinstance(artifact, (list, tuple)) and artifact:
+            if isinstance(artifact, list | tuple) and artifact:
                 first = artifact[0]
                 if callable(getattr(first, "predict", None)):
                     return first
@@ -673,16 +670,7 @@ async def run_validator(
     training_input: dict[str, Any],
     pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
-    """
-    Run the step5_hmm_based_training validator - IMPROVED VERSION.
-
-    IMPROVEMENTS:
-    - Enhanced configuration management with validation
-    - Better error handling and logging
-    - Performance monitoring and metrics
-    - Memory management and cleanup
-    - Parallel processing capabilities
-    - Advanced validation checks
+    """Run the step5_hmm_based_training validator.
 
     Args:
         training_input: Training input parameters
@@ -690,117 +678,25 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
+
     """
-    import time
-    start_time = time.time()
-    
-    try:
-        from src.utils.logger import system_logger
-        
-        # Enhanced configuration with validation
-        config = {
-            "enable_parallel_processing": training_input.get("enable_parallel_processing", True),
-            "max_workers": training_input.get("max_workers", 4),
-            "memory_limit_gb": training_input.get("memory_limit_gb", 16.0),
-            "validation_config": {
-                "enable_model_validation": training_input.get("enable_model_validation", True),
-                "enable_performance_validation": training_input.get("enable_performance_validation", True),
-                "enable_quality_validation": training_input.get("enable_quality_validation", True),
-                "performance_thresholds": {
-                    "min_accuracy": training_input.get("min_accuracy", 0.6),
-                    "min_f1_score": training_input.get("min_f1_score", 0.5),
-                    "max_overfitting": training_input.get("max_overfitting", 0.1),
-                },
-                "quality_thresholds": {
-                    "min_completeness": training_input.get("min_completeness", 0.9),
-                    "min_consistency": training_input.get("min_consistency", 0.8),
-                },
-            },
-            "random_state": training_input.get("random_state", 42),
-        }
-        
-        # Validate configuration
-        if config["memory_limit_gb"] <= 0:
-            raise ValueError("Memory limit must be positive")
-        
-        if config["max_workers"] <= 0:
-            raise ValueError("Max workers must be positive")
-        
-        system_logger.info("🚀 Starting HMM-based Training Validator - IMPROVED VERSION")
-        system_logger.info(f"📋 Configuration: {len(config)} parameters")
-        system_logger.info(f"   - Parallel processing: {'Enabled' if config['enable_parallel_processing'] else 'Disabled'}")
-        system_logger.info(f"   - Model validation: {'Enabled' if config['validation_config']['enable_model_validation'] else 'Disabled'}")
-        system_logger.info(f"   - Performance validation: {'Enabled' if config['validation_config']['enable_performance_validation'] else 'Disabled'}")
+    validator = Step5HMMBasedTrainingValidator(CONFIG)
+    validation_passed = await validator.validate(training_input, pipeline_state)
 
-        # Create validator with enhanced error handling
-        try:
-            validator = Step5HMMBasedTrainingValidator(CONFIG)
-            system_logger.info("✅ HMM-based training validator initialized successfully")
-        except Exception as e:
-            system_logger.error(f"❌ Failed to initialize HMM-based training validator: {e}")
-            raise
-
-        # Run validation with enhanced monitoring
-        try:
-            validation_passed = await validator.validate(training_input, pipeline_state)
-            
-            # Calculate duration
-            duration = time.time() - start_time
-            
-            # Log completion metrics
-            system_logger.info("✅ HMM-based training validation completed")
-            system_logger.info(f"   ⏱️ Total time: {duration:.2f}s")
-            system_logger.info(f"   📊 Configuration: {len(config)} parameters")
-            system_logger.info(f"   🔧 Parallel processing: {'Enabled' if config['enable_parallel_processing'] else 'Disabled'}")
-            
-            # Log validation results
-            if validation_passed:
-                system_logger.info("   ✅ Validation passed")
-            else:
-                system_logger.error("   ❌ Validation failed")
-            
-            # Memory cleanup
-            import gc
-            gc.collect()
-            
-            return {
-                "step_name": "step5_hmm_based_training",
-                "validation_passed": validation_passed,
-                "validation_results": validator.validation_results,
-                "duration": duration,
-                "timestamp": asyncio.get_event_loop().time(),
-                "config": config,
-            }
-                
-        except Exception as e:
-            system_logger.error(f"❌ Error during HMM-based training validation: {e}")
-            return {
-                "step_name": "step5_hmm_based_training",
-                "validation_passed": False,
-                "validation_results": {"error": str(e)},
-                "duration": time.time() - start_time,
-                "timestamp": asyncio.get_event_loop().time(),
-                "config": config,
-            }
-
-    except Exception as e:
-        total_time = time.time() - start_time
-        system_logger.error(f"❌ Error in HMM-based training validator: {e}")
-        system_logger.error(f"   Execution time: {total_time:.2f}s")
-        return {
-            "step_name": "step5_hmm_based_training",
-            "validation_passed": False,
-            "validation_results": {"error": str(e)},
-            "duration": total_time,
-            "timestamp": asyncio.get_event_loop().time(),
-        }
+    return {
+        "step_name": "step5_hmm_based_training",
+        "validation_passed": validation_passed,
+        "validation_results": validator.validation_results,
+        "duration": 0,  # Could be enhanced to track actual duration
+        "timestamp": asyncio.get_event_loop().time(),
+    }
 
 
 if __name__ == "__main__":
     import asyncio
 
     # Example usage
-    async def test_validator():
+    async def test_validator() -> None:
         training_input = {
             "symbol": "ETHUSDT",
             "exchange": "BINANCE",
@@ -811,7 +707,6 @@ if __name__ == "__main__":
             "hmm_based_training": {"status": "SUCCESS", "duration": 300.5},
         }
 
-        result = await run_validator(training_input, pipeline_state)
-        print(f"Validation result: {result}")
+        await run_validator(training_input, pipeline_state)
 
     asyncio.run(test_validator())

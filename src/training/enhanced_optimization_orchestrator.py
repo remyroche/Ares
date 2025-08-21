@@ -18,8 +18,7 @@ from src.utils.warning_symbols import (
 
 
 class EnhancedOptimizationOrchestrator:
-    """
-    Orchestrates multiple advanced hyperparameter optimization techniques.
+    """Orchestrates multiple advanced hyperparameter optimization techniques.
 
     Combines:
     - Multi-objective optimization
@@ -28,7 +27,7 @@ class EnhancedOptimizationOrchestrator:
     - Performance tracking and analysis
     """
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("EnhancedOptimizationOrchestrator")
 
@@ -45,9 +44,8 @@ class EnhancedOptimizationOrchestrator:
         # Initialize optimizers based on configuration
         self._initialize_optimizers()
 
-    def _initialize_optimizers(self):
+    def _initialize_optimizers(self) -> None:
         """Initialize optimization components based on configuration."""
-
         opt_config = self.config.get("hyperparameter_optimization", {})
 
         # Initialize multi-objective optimizer
@@ -75,8 +73,7 @@ class EnhancedOptimizationOrchestrator:
         market_data: pd.DataFrame,
         optimization_type: str = "comprehensive",
     ) -> dict[str, Any]:
-        """
-        Run comprehensive hyperparameter optimization using multiple techniques.
+        """Run comprehensive hyperparameter optimization using multiple techniques.
 
         Args:
             market_data: Historical market data for optimization
@@ -86,8 +83,8 @@ class EnhancedOptimizationOrchestrator:
                 - "bayesian": Only Bayesian optimization
                 - "adaptive": Only adaptive optimization
                 - "quick": Quick optimization with reduced trials
-        """
 
+        """
         self.logger.info(f"Starting {optimization_type} optimization...")
 
         results = {
@@ -136,7 +133,6 @@ class EnhancedOptimizationOrchestrator:
         market_data: pd.DataFrame,
     ) -> dict[str, Any]:
         """Run all optimization techniques and combine results."""
-
         results = {}
 
         # Run multi-objective optimization
@@ -182,7 +178,6 @@ class EnhancedOptimizationOrchestrator:
         market_data: pd.DataFrame,
     ) -> dict[str, Any]:
         """Run multi-objective optimization."""
-
         if not self.multi_objective_optimizer:
             msg = "Multi-objective optimizer not initialized"
             raise ValueError(msg)
@@ -201,7 +196,6 @@ class EnhancedOptimizationOrchestrator:
         market_data: pd.DataFrame,
     ) -> dict[str, Any]:
         """Run Bayesian optimization."""
-
         if not self.bayesian_optimizer:
             msg = "Bayesian optimizer not initialized"
             raise ValueError(msg)
@@ -221,7 +215,6 @@ class EnhancedOptimizationOrchestrator:
         market_data: pd.DataFrame,
     ) -> dict[str, Any]:
         """Run adaptive optimization based on market regimes."""
-
         if not self.adaptive_optimizer:
             msg = "Adaptive optimizer not initialized"
             raise ValueError(msg)
@@ -245,7 +238,6 @@ class EnhancedOptimizationOrchestrator:
         market_data: pd.DataFrame,
     ) -> dict[str, Any]:
         """Run quick optimization with reduced trials."""
-
         results = {}
 
         # Quick Bayesian optimization
@@ -272,7 +264,6 @@ class EnhancedOptimizationOrchestrator:
 
     def _combine_optimization_results(self, results: dict[str, Any]) -> dict[str, Any]:
         """Combine results from different optimization techniques."""
-
         combined_results = {
             "best_parameters": {},
             "performance_comparison": {},
@@ -316,7 +307,6 @@ class EnhancedOptimizationOrchestrator:
 
     def _extract_optimization_metrics(self, results: dict[str, Any]) -> dict[str, Any]:
         """Extract key metrics from optimization results."""
-
         metrics = {}
 
         if "pareto_front" in results:
@@ -334,7 +324,6 @@ class EnhancedOptimizationOrchestrator:
 
     def _analyze_optimization_results(self, results: dict[str, Any]) -> dict[str, Any]:
         """Analyze and summarize optimization results."""
-
         summary = {
             "total_optimizations": len(results),
             "successful_optimizations": 0,
@@ -368,7 +357,6 @@ class EnhancedOptimizationOrchestrator:
 
     def _assess_optimization_quality(self, result: dict[str, Any]) -> str:
         """Assess the quality of optimization results."""
-
         if "best_score" in result:
             score = result["best_score"]
             if score > 0.8:
@@ -386,7 +374,6 @@ class EnhancedOptimizationOrchestrator:
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
         """Get optimization history."""
-
         if limit:
             return self.optimization_history[-limit:]
 
@@ -394,7 +381,6 @@ class EnhancedOptimizationOrchestrator:
 
     def get_performance_trends(self) -> dict[str, Any]:
         """Analyze performance trends over time."""
-
         if not self.optimization_history:
             return {"message": "No optimization history available"}
 
@@ -426,7 +412,6 @@ class EnhancedOptimizationOrchestrator:
         schedule_type: str = "daily",
     ) -> dict[str, Any]:
         """Run optimization based on schedule."""
-
         schedule_config = self.config.get("hyperparameter_optimization", {}).get(
             "optimization_schedules",
             {},
@@ -451,7 +436,6 @@ class EnhancedOptimizationOrchestrator:
 
     def _load_market_data_for_optimization(self) -> pd.DataFrame:
         """Load market data for optimization (placeholder)."""
-
         # This would integrate with your existing data loading infrastructure
         # For now, returning mock data
         dates = pd.date_range(start="2024-01-01", end="2024-12-31", freq="1H")

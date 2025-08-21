@@ -9,25 +9,27 @@ from typing import Any
 
 import numpy as np
 
+from src.config.constants import (
+    DEFAULT_COMMISSION_RATE,
+    DEFAULT_INITIAL_BALANCE,
+    DEFAULT_MAX_POSITION_SIZE,
+    DEFAULT_SLIPPAGE_RATE,
+)
 from src.utils.error_handler import (
     handle_errors,
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.trading_decorators import (
+    ExecutionMode,
+    comprehensive_trading_decorator,
+    get_trade_tracker,
+)
 from src.utils.warning_symbols import (
     execution_error,
     initialization_error,
     invalid,
     validation_error,
-)
-from src.utils.trading_decorators import (
-    comprehensive_trade_decorator,
-    track_trade,
-    monitor_performance,
-    validate_trade_parameters,
-    get_trade_tracker,
-    TradeSide,
-    ExecutionMode
 )
 
 
@@ -54,21 +56,25 @@ class PaperTrader:
         self.equity_history: list[float] = []
         self.prices: dict[str, float] = {}
 
-        # Import constants
-        from src.config.constants import (
-            DEFAULT_INITIAL_BALANCE,
-            DEFAULT_MAX_POSITION_SIZE,
-            DEFAULT_COMMISSION_RATE,
-            DEFAULT_SLIPPAGE_RATE,
-        )
-        
         # Configuration
         self.trader_config: dict[str, Any] = self.config.get("paper_trader", {})
-        self.initial_balance: float = self.trader_config.get("initial_balance", DEFAULT_INITIAL_BALANCE)
-        self.max_position_size: float = self.trader_config.get("max_position_size", DEFAULT_MAX_POSITION_SIZE)
-        self.commission_rate: float = self.trader_config.get("commission_rate", DEFAULT_COMMISSION_RATE)
-        self.slippage_rate: float = self.trader_config.get("slippage_rate", DEFAULT_SLIPPAGE_RATE)
-        
+        self.initial_balance: float = self.trader_config.get(
+            "initial_balance",
+            DEFAULT_INITIAL_BALANCE
+        )
+        self.max_position_size: float = self.trader_config.get(
+            "max_position_size",
+            DEFAULT_MAX_POSITION_SIZE
+        )
+        self.commission_rate: float = self.trader_config.get(
+            "commission_rate",
+            DEFAULT_COMMISSION_RATE
+        )
+        self.slippage_rate: float = self.trader_config.get(
+            "slippage_rate",
+            DEFAULT_SLIPPAGE_RATE
+        )
+
         # Trade tracking
         self.trade_tracker = get_trade_tracker()
 
@@ -78,8 +84,7 @@ class PaperTrader:
             AttributeError: (False, "Missing required trader parameters"),
             KeyError: (False, "Missing configuration keys"),
         },
-        default_return=False,
-        context="paper trader initialization",
+        default_return=False, context="paper trader initialization",
     )
     async def initialize(self) -> bool:
         """
@@ -113,8 +118,7 @@ class PaperTrader:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="trader configuration loading",
+        default_return=None, context="trader configuration loading",
     )
     async def _load_trader_configuration(self) -> None:
         """Load trader configuration."""
@@ -142,8 +146,7 @@ class PaperTrader:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
+        default_return=False, context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
         """
@@ -155,22 +158,22 @@ class PaperTrader:
         try:
             # Validate initial balance
             if self.initial_balance <= 0:
-                self.print(invalid("Invalid initial balance"))
+                self.logger.error(invalid("Invalid initial balance"))
                 return False
 
             # Validate position size
             if self.max_position_size <= 0 or self.max_position_size > 1:
-                self.print(invalid("Invalid max position size"))
+                self.logger.error(invalid("Invalid max position size"))
                 return False
 
             # Validate commission rate
             if self.commission_rate < 0 or self.commission_rate > 0.1:
-                self.print(invalid("Invalid commission rate"))
+                self.logger.error(invalid("Invalid commission rate"))
                 return False
 
             # Validate slippage rate
             if self.slippage_rate < 0 or self.slippage_rate > 0.01:
-                self.print(invalid("Invalid slippage rate"))
+                self.logger.error(invalid("Invalid slippage rate"))
                 return False
 
             self.logger.info("Configuration validation successful")
@@ -184,8 +187,7 @@ class PaperTrader:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="trading state initialization",
+        default_return=None, context="trading state initialization",
     )
     async def _initialize_trading_state(self) -> None:
         """Initialize trading state."""
@@ -208,15 +210,14 @@ class PaperTrader:
                 initialization_error(f"Error initializing trading state: {e}"),
             )
 
-    @comprehensive_trade_decorator(
+    @comprehensive_trading_decorator(
         enable_error_handling=True,
-        enable_tracking=True,
         enable_performance_monitoring=True,
-        enable_validation=True,
-        enable_rate_limiting=False,  # Not needed for paper trading
-        enable_circuit_breaker=True,
-        retry_attempts=3,
-        alert_threshold_ms=3000.0
+        enable_trade_logging=True,
+        enable_risk_management=True,
+        enable_regime_awareness=True,
+        max_drawdown=0.2,
+        max_position_size=0.1,
     )
     async def execute_buy_order(
         self,
@@ -224,7 +225,7 @@ class PaperTrader:
         quantity: float,
         price: float,
         timestamp: datetime,
-        trade_context: TradeContext = None
+        trade_context: Any = None,
     ) -> bool:
         """
         Execute a buy order.
@@ -234,6 +235,7 @@ class PaperTrader:
             quantity: Quantity to buy
             price: Price per unit
             timestamp: Order timestamp
+            trade_context: Optional trade context
 
         Returns:
             bool: True if successful, False otherwise
@@ -294,12 +296,20 @@ class PaperTrader:
                 "balance_after": self.balance,
                 "execution_mode": ExecutionMode.PAPER.value,
                 "model_weights": trade_context.model_weights if trade_context else {},
-                "model_confidences": trade_context.model_confidences if trade_context else {},
-                "regime_analysis": trade_context.regime_analysis if trade_context else {},
+                "model_confidences": trade_context.model_confidences
+                if trade_context
+                else {},
+                "regime_analysis": trade_context.regime_analysis
+                if trade_context
+                else {},
                 "hmm_regime": trade_context.hmm_regime if trade_context else "",
-                "support_resistance_levels": trade_context.support_resistance_levels if trade_context else {},
-                "market_conditions": trade_context.market_conditions if trade_context else {},
-                "risk_metrics": trade_context.risk_metrics if trade_context else {}
+                "support_resistance_levels": trade_context.support_resistance_levels
+                if trade_context
+                else {},
+                "market_conditions": trade_context.market_conditions
+                if trade_context
+                else {},
+                "risk_metrics": trade_context.risk_metrics if trade_context else {},
             }
             self.trade_history.append(trade_record)
 
@@ -312,15 +322,14 @@ class PaperTrader:
             self.logger.exception(execution_error(f"Error executing buy order: {e}"))
             return False
 
-    @comprehensive_trade_decorator(
+    @comprehensive_trading_decorator(
         enable_error_handling=True,
-        enable_tracking=True,
         enable_performance_monitoring=True,
-        enable_validation=True,
-        enable_rate_limiting=False,  # Not needed for paper trading
-        enable_circuit_breaker=True,
-        retry_attempts=3,
-        alert_threshold_ms=3000.0
+        enable_trade_logging=True,
+        enable_risk_management=True,
+        enable_regime_awareness=True,
+        max_drawdown=0.2,
+        max_position_size=0.1,
     )
     async def execute_sell_order(
         self,
@@ -328,7 +337,7 @@ class PaperTrader:
         quantity: float,
         price: float,
         timestamp: datetime,
-        trade_context: TradeContext = None
+        trade_context: Any = None,
     ) -> bool:
         """
         Execute a sell order.
@@ -338,6 +347,7 @@ class PaperTrader:
             quantity: Quantity to sell
             price: Price per unit
             timestamp: Order timestamp
+            trade_context: Optional trade context
 
         Returns:
             bool: True if successful, False otherwise
@@ -406,12 +416,20 @@ class PaperTrader:
                 "balance_after": self.balance,
                 "execution_mode": ExecutionMode.PAPER.value,
                 "model_weights": trade_context.model_weights if trade_context else {},
-                "model_confidences": trade_context.model_confidences if trade_context else {},
-                "regime_analysis": trade_context.regime_analysis if trade_context else {},
+                "model_confidences": trade_context.model_confidences
+                if trade_context
+                else {},
+                "regime_analysis": trade_context.regime_analysis
+                if trade_context
+                else {},
                 "hmm_regime": trade_context.hmm_regime if trade_context else "",
-                "support_resistance_levels": trade_context.support_resistance_levels if trade_context else {},
-                "market_conditions": trade_context.market_conditions if trade_context else {},
-                "risk_metrics": trade_context.risk_metrics if trade_context else {}
+                "support_resistance_levels": trade_context.support_resistance_levels
+                if trade_context
+                else {},
+                "market_conditions": trade_context.market_conditions
+                if trade_context
+                else {},
+                "risk_metrics": trade_context.risk_metrics if trade_context else {},
             }
             self.trade_history.append(trade_record)
 
@@ -426,8 +444,7 @@ class PaperTrader:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="order validation",
+        default_return=False, context="order validation",
     )
     def _validate_order(self, symbol: str, quantity: float, price: float) -> bool:
         """
@@ -444,17 +461,17 @@ class PaperTrader:
         try:
             # Validate symbol
             if not symbol or len(symbol) == 0:
-                self.print(invalid("Invalid symbol"))
+                self.logger.error(invalid("Invalid symbol"))
                 return False
 
             # Validate quantity
             if quantity <= 0:
-                self.print(invalid("Invalid quantity"))
+                self.logger.error(invalid("Invalid quantity"))
                 return False
 
             # Validate price
             if price <= 0:
-                self.print(invalid("Invalid price"))
+                self.logger.error(invalid("Invalid price"))
                 return False
 
             # Check position size limits
@@ -475,8 +492,7 @@ class PaperTrader:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="position getting",
+        default_return=None, context="position getting",
     )
     def get_position(self, symbol: str) -> dict[str, Any] | None:
         """
@@ -525,8 +541,7 @@ class PaperTrader:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="all positions getting",
+        default_return=None, context="all positions getting",
     )
     def get_all_positions(self) -> dict[str, dict[str, Any]]:
         """
@@ -544,8 +559,7 @@ class PaperTrader:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="balance getting",
+        default_return=None, context="balance getting",
     )
     def get_balance(self) -> float:
         """
@@ -563,8 +577,7 @@ class PaperTrader:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="trade history getting",
+        default_return=None, context="trade history getting",
     )
     def get_trade_history(self, symbol: str | None = None) -> list[dict[str, Any]]:
         """
@@ -693,8 +706,7 @@ class PaperTrader:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="paper trader cleanup",
+        default_return=None, context="paper trader cleanup",
     )
     async def stop(self) -> None:
         """Stop the paper trader."""
@@ -720,8 +732,7 @@ paper_trader: PaperTrader | None = None
 
 @handle_errors(
     exceptions=(Exception,),
-    default_return=None,
-    context="paper trader setup",
+    default_return=None, context="paper trader setup",
 )
 async def setup_paper_trader(
     config: dict[str, Any] | None = None,

@@ -3,22 +3,10 @@
 Check for ARES Bot notifications and alert AI Assistant
 """
 
-import json
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
 from pathlib import Path
+import json
+
+from src.utils.warning_symbols import missing, warning
 
 
 def check_notifications():
@@ -55,7 +43,7 @@ def check_notifications():
             print(f"   ✅ Notification marked as read: {read_file}")
 
         except Exception as e:
-            print(warning("Error reading notification file: {e}"))
+            print(warning(f"Error reading notification file: {e}"))
     else:
         print("✅ No new notifications")
 
@@ -73,7 +61,7 @@ def check_notifications():
                 print(f"   Recent Issues: {len(status['issues'])}")
 
         except Exception as e:
-            print(warning("Error reading status file: {e}"))
+            print(warning(f"Error reading status file: {e}"))
 
 
 def check_logs_for_errors():
@@ -113,7 +101,7 @@ def check_logs_for_errors():
                         print(f"   {line}")
 
         except Exception as e:
-            print(warning("Error reading {log_file}: {e}"))
+            print(warning(f"Error reading {log_file}: {e}"))
 
 
 if __name__ == "__main__":

@@ -34,7 +34,7 @@ logger = logging.getLogger("OptimizedDataDownloader")
 try:
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
     from src.config import CONFIG
-    from src.utils.logger import get_logger, setup_logging
+    from src.utils.logger import get_logger
     from src.utils.warning_symbols import (
         connection_error,
         critical,
@@ -843,10 +843,10 @@ class CleanDataDownloader:
                                 )
 
                             print(
-                                f"✅ Downloaded current funding rate via fetch_funding_rate"
+                                "✅ Downloaded current funding rate via fetch_funding_rate"
                             )
                             logger.info(
-                                f"✅ Downloaded current funding rate via fetch_funding_rate"
+                                "✅ Downloaded current funding rate via fetch_funding_rate"
                             )
 
                         except Exception as e:

@@ -16,7 +16,7 @@ from optuna.pruners import SuccessiveHalvingPruner
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
-from sklearn.model_selection import TimeSeriesSplit, train_test_split
+from sklearn.model_selection import TimeSeriesSplit
 
 # Import neural network models (with fallback handling)
 try:
@@ -53,8 +53,7 @@ from src.utils.warning_symbols import (
 
 
 class EnhancedCoarseOptimizer:
-    """
-    Enhanced coarse optimization with multi-model approach, advanced feature pruning,
+    """Enhanced coarse optimization with multi-model approach, advanced feature pruning,
     and wider hyperparameter search. Uses functional programming approach and multiprocessing.
     """
 
@@ -68,10 +67,8 @@ class EnhancedCoarseOptimizer:
         agg_trades_data: pd.DataFrame,
         futures_data: pd.DataFrame,
         blank_training_mode: bool = False,
-    ):
-        """
-        Initializes the Enhanced Coarse Optimizer.
-        """
+    ) -> None:
+        """Initializes the Enhanced Coarse Optimizer."""
         self.db_manager = db_manager
         self.symbol = symbol
         self.timeframe = timeframe
@@ -261,8 +258,8 @@ class EnhancedCoarseOptimizer:
         self,
         stage: str,
         progress: float,
-        details: dict[str, Any] = None,
-    ):
+        details: dict[str, Any] | None = None,
+    ) -> None:
         """Track optimization progress with detailed metrics."""
         self.optimization_progress = progress
         self.current_stage = stage
@@ -503,7 +500,6 @@ class EnhancedCoarseOptimizer:
         y: pd.Series,
     ) -> dict[str, dict[str, float]]:
         """Enhanced cross-validation with multiple metrics."""
-
         # Enhanced time series cross-validation for financial data
         tscv = TimeSeriesSplit(
             n_splits=5,
@@ -926,9 +922,9 @@ class EnhancedCoarseOptimizer:
             # FIXED: Use time-based split to prevent lookahead bias
             split_idx = int(len(X_selected) * 0.8)
             X_train = X_selected.iloc[:split_idx]
-            X_val = X_selected.iloc[split_idx:]
+            X_selected.iloc[split_idx:]
             y_train = y.iloc[:split_idx]
-            y_val = y.iloc[split_idx:]
+            y.iloc[split_idx:]
 
             n_classes = len(y.unique())
             self.logger.info(
@@ -1001,7 +997,7 @@ class EnhancedCoarseOptimizer:
             )
 
             # Add progress callback
-            def progress_callback(study, trial):
+            def progress_callback(study, trial) -> None:
                 progress = (trial.number + 1) / n_trials * 100
                 self._track_optimization_progress(
                     "Hyperparameter Optimization",
@@ -1099,8 +1095,7 @@ class EnhancedCoarseOptimizer:
             return {}
 
     def run(self) -> tuple[list[str], dict[str, Any]]:
-        """
-        Main entry point for the enhanced coarse optimization process.
+        """Main entry point for the enhanced coarse optimization process.
         Uses functional programming approach and multiprocessing.
         """
         self.logger.info(
@@ -1150,7 +1145,7 @@ class EnhancedCoarseOptimizer:
         self,
         selected_features: list[str],
         best_params: dict[str, Any],
-    ):
+    ) -> None:
         """Generate comprehensive optimization report."""
         self.logger.info("📊 ENHANCED OPTIMIZATION REPORT:")
         self.logger.info("=" * 60)

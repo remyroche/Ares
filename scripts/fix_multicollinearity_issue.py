@@ -3,22 +3,20 @@
 Fix Multicollinearity Issue in Feature Engineering
 
 This script fixes the critical bug where all multi-timeframe price_change and volume_change
-features are identical, causing perfect multicollinearity (VIF = inf).
+features are identical = causing perfect multicollinearity (VIF = inf).
 
 Usage:
     python scripts/fix_multicollinearity_issue.py
 """
 
-import sys
-import os
 from pathlib import Path
+from src.utils.logger import system_logger
+import sys
 
 # Add the src directory to the Python path
 current_dir = Path(__file__).parent
 src_dir = current_dir.parent / "src"
 sys.path.insert(0, str(src_dir))
-
-from src.utils.logger import system_logger
 
 
 def fix_feature_engineering_code():
@@ -38,7 +36,7 @@ def fix_feature_engineering_code():
 
     try:
         # Read the current file
-        with open(feature_eng_file, "r") as f:
+        with open(feature_eng_file) as f:
             content = f.read()
 
         logger.info("📖 Reading current feature engineering code...")
@@ -52,7 +50,7 @@ def fix_feature_engineering_code():
                 "15m": 15,   # 15-period change for 15m
                 "30m": 30,   # 30-period change for 30m
             }
-            
+
             periods = timeframe_periods.get(timeframe, 1)
             price_changes = price_data[price_column].pct_change(periods=periods)"""
 
@@ -78,7 +76,7 @@ def fix_feature_engineering_code():
         return True
 
     except Exception as e:
-        logger.error(f"❌ Error fixing multicollinearity issue: {e}")
+        logger.exception(f"❌ Error fixing multicollinearity issue: {e}")
         return False
 
 
@@ -91,18 +89,17 @@ def main():
     if fix_feature_engineering_code():
         logger.info("🎉 Multicollinearity fix completed successfully!")
         logger.info(
-            "📋 The issue was in the _calculate_timeframe_features_vectorized method"
+            "📋 The issue was in the _calculate_timeframe_features_vectorized method",
         )
         logger.info(
-            "📋 All timeframes were using the same pct_change() without periods"
+            "📋 All timeframes were using the same pct_change() without periods",
         )
         logger.info(
-            "📋 Now each timeframe uses proper periods: 1m=1, 5m=5, 15m=15, 30m=30"
+            "📋 Now each timeframe uses proper periods: 1m=1, 5m=5, 15m=15, 30m=30",
         )
         return True
-    else:
-        logger.error("❌ Multicollinearity fix failed!")
-        return False
+    logger.error("❌ Multicollinearity fix failed!")
+    return False
 
 
 if __name__ == "__main__":

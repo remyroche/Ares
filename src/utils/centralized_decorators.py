@@ -30,7 +30,6 @@ from src.utils.training_pipeline_decorators import (
 
 from src.utils.data_quality_decorators import (
     validate_data_quality,
-    validate_feature_engineering_with_lookahead_bias_detection,
 )
 
 from src.utils.decorators import (
@@ -108,7 +107,6 @@ __all__ = [
     
     # Data quality decorators
     "validate_data_quality",
-    "validate_feature_engineering_with_lookahead_bias_detection",
     
     # General decorators
     "validate_call_or_runtime_types",

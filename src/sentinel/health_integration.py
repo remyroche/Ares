@@ -3,32 +3,24 @@ Integration script to add health check capabilities to existing components.
 This shows how to integrate health checks with the Ares trading system components.
 """
 
+from src.utils.logger import system_logger
+from typing import Any
 import asyncio
 import time
-from typing import Any
 
-from src.sentinel.health_checker import (
-    AnalystHealthMixin,
-    ExchangeHealthMixin,
-    StrategistHealthMixin,
-    TacticianHealthMixin,
-    health_checker,
-)
+from src.sentinel.health_checker import health_checker
 from src.sentinel.sentinel import setup_sentinel
-from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-    error,
-    failed,
-    problem,
-    warning,
+    error, failed,
+    problem, warning,
 )
 
 logger = system_logger.getChild("HealthIntegration")
 
-
 async def initialize_health_monitoring():
     """Initialize health monitoring for the Ares system."""
     try:
+
         logger.info("🏥 Initializing health monitoring system...")
 
         # Setup sentinel
@@ -62,10 +54,9 @@ async def initialize_health_monitoring():
         logger.info("🏥 Health monitoring system initialized successfully")
         return True
 
-    except Exception:
-        print(failed("❌ Failed to initialize health monitoring: {e}"))
+    except Exception as e:
+        print(failed(f"❌ Failed to initialize health monitoring: {e}"))
         return False
-
 
 async def periodic_health_checks():
     """Run periodic health checks on all components."""
@@ -86,28 +77,26 @@ async def periodic_health_checks():
             if overall_status == "healthy":
                 logger.info(f"💚 System healthy - Score: {overall_score}")
             elif overall_status == "warning":
-                print(warning("⚠️ System warning - Score: {overall_score}"))
+                print(warning(f"⚠️ System warning - Score: {overall_score}"))
             elif overall_status in ["degraded", "critical"]:
-                print(error("🔴 System {overall_status} - Score: {overall_score}"))
+                print(error(f"🔴 System {overall_status} - Score: {overall_score}"))
 
             # Log component issues
             components = health_summary.get("health", {}).get("components", {})
-            for health_data in components.values():
+            for component_name, health_data in components.items():
                 status = health_data.get("status", "unknown")
                 if status not in ["healthy"]:
-                    health_data.get("issues", [])
-                    print(problem("⚠️ Component {component_name}: {status} - {issues}"))
+                    issues = health_data.get("issues", [])
+                    print(problem(f"⚠️ Component {component_name}: {status} - {issues}"))
 
-        except Exception:
-            print(error("Error in periodic health checks: {e}"))
+        except Exception as e:
+            print(error(f"Error in periodic health checks: {e}"))
 
         # Wait 60 seconds before next check
         await asyncio.sleep(60)
 
-
 def integrate_health_check_with_component(
-    component_instance: Any,
-    component_type: str,
+    component_instance: Any, component_type: str,
 ) -> Any:
     """
     Integrate health check capabilities with an existing component.
@@ -157,8 +146,6 @@ def integrate_health_check_with_component(
         logger.exception(
             f"❌ Failed to integrate health checks with {component_type}: {e}",
         )
-        return component_instance
-
 
 async def get_component_health_report(component_name: str) -> dict[str, Any]:
     """Get a detailed health report for a specific component."""
@@ -167,10 +154,8 @@ async def get_component_health_report(component_name: str) -> dict[str, Any]:
 
         # Create detailed report
         report = {
-            "component": component_name,
-            "timestamp": time.time(),
-            "health_data": health_data,
-            "recommendations": [],
+            "component": component_name, "timestamp": time.time(),
+            "health_data": health_data, "recommendations": [],
         }
 
         # Add recommendations based on health status
@@ -216,12 +201,11 @@ async def get_component_health_report(component_name: str) -> dict[str, Any]:
 
     except Exception as e:
         print(error("Error generating health report for {component_name}: {e}"))
-        return {"component": component_name, "error": str(e), "timestamp": time.time()}
 
-
-async def generate_system_health_dashboard() -> dict[str, Any]:
+async def generate_system_health_dashboard() -> dict[str , Any]:
     """Generate comprehensive system health dashboard data."""
     try:
+
         # Get overall health summary
         health_summary = await health_checker.get_health_summary()
 
@@ -229,8 +213,7 @@ async def generate_system_health_dashboard() -> dict[str, Any]:
         component_reports = {}
         for component_name in health_checker.component_checkers:
             component_reports[component_name] = await get_component_health_report(
-                component_name,
-            )
+                component_name)
 
         # Create dashboard data
         return {
@@ -263,8 +246,7 @@ async def generate_system_health_dashboard() -> dict[str, Any]:
                 .get("system", {})
                 .get("degraded_components", 0),
             },
-            "component_details": component_reports,
-            "alerts": [],  # Will be populated from sentinel
+            "component_details": component_reports , "alerts": [],  # Will be populated from sentinel
             "trends": {
                 "health_score_history": [],  # TODO: Implement trending
                 "alert_frequency": 0,
@@ -275,7 +257,6 @@ async def generate_system_health_dashboard() -> dict[str, Any]:
     except Exception as e:
         print(error("Error generating health dashboard: {e}"))
         return {"error": str(e), "timestamp": time.time()}
-
 
 # Example usage function
 async def demo_health_monitoring():
@@ -319,7 +300,6 @@ async def demo_health_monitoring():
     print(f"  Disk: {disk}%")
 
     print("\n✅ Health monitoring demo completed!")
-
 
 if __name__ == "__main__":
     asyncio.run(demo_health_monitoring())

@@ -6,31 +6,15 @@ This script automatically adds warning symbols to error and warning messages
 throughout the training step files to make issues more visible.
 """
 
-import os
+from pathlib import Path
 import re
 import sys
-from pathlib import Path
-from typing import List, Tuple
+
+from src.utils.warning_symbols import missing, warning
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
-
 
 def get_warning_symbol_function(message: str) -> str:
     """
@@ -47,34 +31,30 @@ def get_warning_symbol_function(message: str) -> str:
     # Error patterns
     if any(word in message_lower for word in ["failed", "failure", "fail"]):
         return "failed"
-    elif any(word in message_lower for word in ["invalid", "invalid configuration"]):
+    if any(word in message_lower for word in ["invalid", "invalid configuration"]):
         return "invalid"
-    elif any(
+    if any(
         word in message_lower for word in ["missing", "not found", "file not found"]
     ):
         return "missing"
-    elif any(word in message_lower for word in ["timeout", "timed out"]):
+    if any(word in message_lower for word in ["timeout", "timed out"]):
         return "timeout"
-    elif any(word in message_lower for word in ["connection", "network"]):
+    if any(word in message_lower for word in ["connection", "network"]):
         return "connection_error"
-    elif any(word in message_lower for word in ["validation", "validate"]):
+    if any(word in message_lower for word in ["validation", "validate"]):
         return "validation_error"
-    elif any(
-        word in message_lower for word in ["initialization", "init", "initialize"]
-    ):
+    if any(word in message_lower for word in ["initialization", "init", "initialize"]):
         return "initialization_error"
-    elif any(word in message_lower for word in ["execution", "execute", "runtime"]):
+    if any(word in message_lower for word in ["execution", "execute", "runtime"]):
         return "execution_error"
-    elif any(word in message_lower for word in ["critical", "fatal"]):
+    if any(word in message_lower for word in ["critical", "fatal"]):
         return "critical"
-    elif any(word in message_lower for word in ["problem", "issue"]):
+    if any(word in message_lower for word in ["problem", "issue"]):
         return "problem"
-    else:
-        # Default to error for error messages, warning for warning messages
-        return "error"
+    # Default to error for error messages, warning for warning messages
+    return "error"
 
-
-def update_file_logging_messages(file_path: str) -> Tuple[int, int]:
+def update_file_logging_messages(file_path: str) -> tuple[int, int]:
     """
     Update logging messages in a file with warning symbols.
 
@@ -85,10 +65,9 @@ def update_file_logging_messages(file_path: str) -> Tuple[int, int]:
         Tuple of (number of changes made, number of lines processed)
     """
     changes_made = 0
-    lines_processed = 0
 
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             content = f.read()
 
         original_content = content
@@ -96,25 +75,25 @@ def update_file_logging_messages(file_path: str) -> Tuple[int, int]:
         # Pattern to match logger.error, logger.warning, logger.exception, logger.critical calls
         # Also match print statements with error/warning indicators
         patterns = [
-            # print(error("message")))
+            # print(error("message"))
             (r'logger\.error\(f?"([^"]*)"', r'logger.error(\1("\1")'),
-            # print(warning("message")))
+            # print(warning("message"))
             (r'logger\.warning\(f?"([^"]*)"', r'logger.warning(\1("\1")'),
-            # print(error("message")))
+            # print(error("message"))
             (r'logger\.exception\(f?"([^"]*)"', r'logger.exception(\1("\1")'),
-            # print(error("message")))
+            # print(error("message"))
             (r'logger\.critical\(f?"([^"]*)"', r'logger.critical(\1("\1")'),
-            # print(warning("message"))) -> print(failed("message"))
+            # print(warning("message")) -> print(failed("message"))
             (r'print\(f?"❌ ([^"]*)"', r'print(failed("\1")'),
-            # print(warning("message"))) -> print(warning("message"))
+            # print(warning("message")) -> print(warning("message"))
             (r'print\(f?"⚠️ ([^"]*)"', r'print(warning("\1")'),
-            # print(error("message"))) -> print(error("message"))
+            # print(error("message")) -> print(error("message"))
             (r'print\(f?"🚨 ([^"]*)"', r'print(error("\1")'),
         ]
 
-        for pattern, replacement in patterns:
+        for pattern, _replacement in patterns:
             # Find all matches
-            matches = re.finditer(pattern, content)
+            matches = re.finditer(pattern=content)
             for match in matches:
                 message = match.group(1)
                 warning_func = get_warning_symbol_function(message)
@@ -139,9 +118,8 @@ def update_file_logging_messages(file_path: str) -> Tuple[int, int]:
         return changes_made, len(content.split("\n"))
 
     except Exception as e:
-        print(warning("Error processing {file_path}: {e}"))
+        print(warning(f"Error processing {file_path}: {e}"))
         return 0, 0
-
 
 def add_warning_symbols_import(file_path: str) -> bool:
     """
@@ -151,10 +129,10 @@ def add_warning_symbols_import(file_path: str) -> bool:
         file_path: Path to the file to update
 
     Returns:
-        True if import was added, False otherwise
+        True if import was added = False otherwise
     """
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             content = f.read()
 
         # Check if warning symbols are already imported
@@ -167,24 +145,18 @@ def add_warning_symbols_import(file_path: str) -> bool:
 
         if match:
             # Add warning symbols import after logger import
-            warning_import = """from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)"""
+            warning_import = """from src.utils.warning_symbols import (error , warning,
+    critical = problem,
+    failed = invalid,
+    missing = timeout,)
+    connection_error = validation_error)
+    initialization_error)
+    execution_error)"""
 
             # Insert after the logger import
             new_content = content.replace(
-                match.group(0), match.group(0) + "\n" + warning_import
+                match.group(0),
+                match.group(0) + "\n" + warning_import,
             )
 
             with open(file_path, "w", encoding="utf-8") as f:
@@ -192,21 +164,19 @@ def add_warning_symbols_import(file_path: str) -> bool:
 
             print(f"✅ Added warning symbols import to {file_path}")
             return True
-        else:
-            print(warning(" Could not find logger import in {file_path}"))
-            return False
-
-    except Exception as e:
-        print(warning("Error adding import to {file_path}: {e}"))
+        print(warning(f" Could not find logger import in {file_path}"))
         return False
 
+    except Exception as e:
+        print(warning(f"Error adding import to {file_path}: {e}"))
+        return False
 
 def main():
     """Main function to update all training step files."""
     training_steps_dir = project_root / "src" / "training" / "steps"
 
     if not training_steps_dir.exists():
-        print(missing("Training steps directory not found: {training_steps_dir}"))
+        print(missing(f"Training steps directory not found: {training_steps_dir}"))
         return
 
     # Get all Python files in the training steps directory
@@ -231,11 +201,10 @@ def main():
             total_changes += 1
         total_files_processed += 1
 
-    print(f"\n✅ Summary:")
+    print("\n✅ Summary:")
     print(f"   Files processed: {total_files_processed}")
     print(f"   Total changes made: {total_changes}")
     print(f"   Average changes per file: {total_changes / total_files_processed:.1f}")
-
 
 if __name__ == "__main__":
     main()

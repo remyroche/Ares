@@ -4,43 +4,28 @@ Download aggregated trades from MEXC with the same format as Binance.
 This script ensures compatibility with existing data processing pipelines.
 """
 
+import argparse
+from datetime import datetime, timedelta
+from pathlib import Path
+from src.utils.logger import system_logger
 import asyncio
 import os
 import sys
-from datetime import datetime, timedelta
-from pathlib import Path
 
+from exchange.factory import ExchangeFactory
+from src.utils.error_handler import handle_errors
+from src.utils.warning_symbols import error, failed, missing, warning
 import pandas as pd
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from exchange.factory import ExchangeFactory
-from src.utils.error_handler import handle_errors
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
-
 logger = system_logger.getChild("MEXCAggTradesDownloader")
-
 
 @handle_errors(
     exceptions=(Exception,),
-    default_return=False,
-    context="download_mexc_agg_trades",
+    default_return=False, context="download_mexc_agg_trades",
 )
 async def download_mexc_agg_trades(
     symbol: str = "BTCUSDT",
@@ -81,10 +66,8 @@ async def download_mexc_agg_trades(
         logger.info("📥 Downloading aggregated trades from MEXC...")
 
         trades = await exchange.get_historical_agg_trades(
-            symbol=symbol,
-            start_time_ms=start_time_ms,
-            end_time_ms=end_time_ms,
-            limit=1000,
+            symbol, start_time_ms=start_time_ms,
+            end_time_ms=end_time_ms, limit=1000,
         )
 
         if not trades:
@@ -101,7 +84,7 @@ async def download_mexc_agg_trades(
         missing_columns = [col for col in expected_columns if col not in df.columns]
 
         if missing_columns:
-            print(missing("⚠️ Missing columns in MEXC data: {missing_columns}"))
+            print(missing(f"⚠️ Missing columns in MEXC data: {missing_columns}"))
             # Add missing columns with default values
             for col in missing_columns:
                 df[col] = 0
@@ -167,13 +150,11 @@ async def download_mexc_agg_trades(
         return True
 
     except Exception as e:
-        print(error("❌ Error downloading MEXC aggregated trades: {e}"))
+        print(error(f"❌ Error downloading MEXC aggregated trades: {e}"))
         return False
-
 
 async def main():
     """Main function to run the download script."""
-    import argparse
 
     parser = argparse.ArgumentParser(description="Download MEXC aggregated trades")
     parser.add_argument("--symbol", default="BTCUSDT", help="Trading symbol")
@@ -188,9 +169,8 @@ async def main():
     args = parser.parse_args()
 
     success = await download_mexc_agg_trades(
-        symbol=args.symbol,
-        lookback_days=args.days,
-        output_dir=args.output,
+        symbol=args.symbol, lookback_days=args.days,
+        output_dir=args.output
     )
 
     if success:
@@ -199,7 +179,6 @@ async def main():
     else:
         print(failed("❌ MEXC aggregated trades download failed!"))
         sys.exit(1)
-
 
 if __name__ == "__main__":
     asyncio.run(main())

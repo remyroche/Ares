@@ -1,19 +1,16 @@
 # src/training/tests/test_regime_change_prediction.py
 
-import asyncio
 import os
 import tempfile
-from datetime import datetime, timedelta
-from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
 import pytest
 
+from src.training.steps.step5_hmm_based_training import HMMBasedTrainingStep
 from src.training.steps.step9_5_hmm_lm_generalist_training import (
     HMMLMGeneralistTrainingStep,
 )
-from src.training.steps.step5_hmm_based_training import HMMBasedTrainingStep
 
 
 class TestRegimeChangePrediction:
@@ -42,16 +39,15 @@ class TestRegimeChangePrediction:
             regime_data[f"momentum_p_state_{i}"] = np.random.rand(len(dates))
             regime_data[f"volatility_p_state_{i}"] = np.random.rand(len(dates))
 
-        df = pd.DataFrame(
+        return pd.DataFrame(
             {
                 "timestamp": dates,
                 "composite_cluster_id": regimes,
                 **intensity_data,
                 **regime_data,
-            }
+            },
         )
 
-        return df
 
     @pytest.fixture
     def sample_feature_data(self):
@@ -63,9 +59,8 @@ class TestRegimeChangePrediction:
         for i in range(50):  # 50 features
             features[f"feature_{i}"] = np.random.rand(len(dates))
 
-        df = pd.DataFrame({"timestamp": dates, **features})
+        return pd.DataFrame({"timestamp": dates, **features})
 
-        return df
 
     @pytest.fixture
     def temp_data_dir(self):
@@ -73,7 +68,7 @@ class TestRegimeChangePrediction:
         with tempfile.TemporaryDirectory() as temp_dir:
             yield temp_dir
 
-    def test_regime_change_detection(self, sample_hmm_data):
+    def test_regime_change_detection(self, sample_hmm_data) -> None:
         """Test regime change detection functionality."""
         # Create step instance
         config = {
@@ -82,8 +77,8 @@ class TestRegimeChangePrediction:
                     "hmm_states": 5,
                     "sequence_length": 20,
                     "timeframes": ["1m", "5m", "15m", "30m"],
-                }
-            }
+                },
+            },
         }
 
         step = HMMLMGeneralistTrainingStep(config)
@@ -104,7 +99,7 @@ class TestRegimeChangePrediction:
         assert len(enter_events) > 0
         assert len(exit_events) > 0
 
-    def test_vocabulary_creation(self):
+    def test_vocabulary_creation(self) -> None:
         """Test regime change vocabulary creation."""
         config = {
             "HMM_LM": {
@@ -112,8 +107,8 @@ class TestRegimeChangePrediction:
                     "hmm_states": 3,
                     "sequence_length": 20,
                     "timeframes": ["1m", "5m"],
-                }
-            }
+                },
+            },
         }
 
         step = HMMLMGeneralistTrainingStep(config)
@@ -134,7 +129,7 @@ class TestRegimeChangePrediction:
         assert "<START>" in step.regime_change_vocab
         assert "<END>" in step.regime_change_vocab
 
-    def test_sequence_creation(self, sample_hmm_data):
+    def test_sequence_creation(self, sample_hmm_data) -> None:
         """Test sequence creation for training."""
         config = {
             "HMM_LM": {
@@ -142,8 +137,8 @@ class TestRegimeChangePrediction:
                     "hmm_states": 5,
                     "sequence_length": 10,
                     "timeframes": ["1m"],
-                }
-            }
+                },
+            },
         }
 
         step = HMMLMGeneralistTrainingStep(config)
@@ -165,7 +160,7 @@ class TestRegimeChangePrediction:
             assert len(seq["sequence"]) == 10  # sequence_length
             assert seq["target"] in step.regime_change_vocab
 
-    def test_feature_preparation(self, sample_hmm_data):
+    def test_feature_preparation(self, sample_hmm_data) -> None:
         """Test feature preparation for language model."""
         config = {
             "HMM_LM": {
@@ -173,8 +168,8 @@ class TestRegimeChangePrediction:
                     "hmm_states": 5,
                     "sequence_length": 10,
                     "timeframes": ["1m"],
-                }
-            }
+                },
+            },
         }
 
         step = HMMLMGeneralistTrainingStep(config)
@@ -191,8 +186,8 @@ class TestRegimeChangePrediction:
 
     @pytest.mark.asyncio
     async def test_hmm_based_training_step(
-        self, sample_hmm_data, sample_feature_data, temp_data_dir
-    ):
+        self, sample_hmm_data, sample_feature_data, temp_data_dir,
+    ) -> None:
         """Test HMM-based training step with regime change features."""
         config = {
             "HMM_LM": {
@@ -201,8 +196,8 @@ class TestRegimeChangePrediction:
                     "5m": {"architecture": "TCN"},
                     "15m": {"architecture": "Transformer"},
                     "30m": {"architecture": "LightGBM"},
-                }
-            }
+                },
+            },
         }
 
         step = HMMBasedTrainingStep(config)
@@ -211,7 +206,7 @@ class TestRegimeChangePrediction:
         # Save sample data
         sample_hmm_data.to_parquet(os.path.join(temp_data_dir, "test_hmm_data.parquet"))
         sample_feature_data.to_parquet(
-            os.path.join(temp_data_dir, "test_feature_data.parquet")
+            os.path.join(temp_data_dir, "test_feature_data.parquet"),
         )
 
         # Test regime change feature addition
@@ -224,7 +219,7 @@ class TestRegimeChangePrediction:
         assert "regime_stability" in enhanced_data.columns
         assert "regime_volatility" in enhanced_data.columns
 
-    def test_config_integration(self):
+    def test_config_integration(self) -> None:
         """Test configuration integration."""
         from src.config import get_complete_config
 
@@ -257,7 +252,7 @@ class TestRegimeChangePrediction:
         assert specialist["15m"]["architecture"] == "Transformer"
         assert specialist["30m"]["architecture"] == "LightGBM"
 
-    def test_step_order_integration(self):
+    def test_step_order_integration(self) -> None:
         """Test step order integration in training pipeline."""
         from src.config import get_complete_config
 

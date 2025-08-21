@@ -167,7 +167,22 @@ class FeatureEngineeringOrchestrator:
                         f"✅ Multi-timeframe features generated. Shape: {features_df.shape}",
                     )
 
-            # 5. Meta-labeling deprecated: skip
+            # 5. Generate meta-labeling features (if enabled)
+            if self.config.get("enable_meta_labeling", True):
+                self.logger.info("🏷️ Generating meta-labeling features...")
+                meta_labeling_features = await self._calculate_meta_labeling_features(
+                    klines_df,
+                    agg_trades_df,
+                    None,
+                )
+                if not meta_labeling_features.empty:
+                    features_df = pd.concat(
+                        [features_df, meta_labeling_features],
+                        axis=1,
+                    )
+                    self.logger.info(
+                        f"✅ Meta-labeling features generated. Shape: {features_df.shape}",
+                    )
 
             # 6. Final cleanup and validation
             features_df = self._cleanup_features(features_df)
@@ -279,10 +294,10 @@ class FeatureEngineeringOrchestrator:
     ) -> pd.DataFrame:
         """Calculate meta-labeling features."""
         try:
-            from src.analyst.meta_labeling_system import CompositeHMMRegimeSystem
+            from src.analyst.meta_labeling_system import MetaLabelingSystem
 
-            # Initialize composite HMM regime system
-            meta_labeling = CompositeHMMRegimeSystem(self.config)
+            # Initialize meta-labeling system
+            meta_labeling = MetaLabelingSystem(self.config)
             await meta_labeling.initialize()
 
             # Generate meta-labels
@@ -409,11 +424,11 @@ class FeatureEngineeringOrchestrator:
     def _calculate_volatility_regime_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Calculate volatility regime indicators."""
         try:
-            # Calculate rolling volatility - FIXED: Use only past data to prevent lookahead bias
+            # Calculate rolling volatility
             returns = df["close"].pct_change()
-            df["volatility_5"] = returns.shift(1).rolling(window=5).std()
-            df["volatility_10"] = returns.shift(1).rolling(window=10).std()
-            df["volatility_20"] = returns.shift(1).rolling(window=20).std()
+            df["volatility_5"] = returns.rolling(window=5).std()
+            df["volatility_10"] = returns.rolling(window=10).std()
+            df["volatility_20"] = returns.rolling(window=20).std()
 
             # Volatility regime classification
             def classify_vol_regime(vol):
@@ -455,9 +470,9 @@ class FeatureEngineeringOrchestrator:
             # Target volatility (annual to daily)
             target_vol_daily = target_volatility / np.sqrt(252)
 
-            # Current volatility - FIXED: Use only past data to prevent lookahead bias
+            # Current volatility
             returns = df["close"].pct_change()
-            current_vol = returns.shift(1).rolling(window=20).std()
+            current_vol = returns.rolling(window=20).std()
 
             # Volatility targeting ratio
             df["vol_target_ratio"] = current_vol / target_vol_daily

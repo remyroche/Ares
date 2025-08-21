@@ -6,33 +6,16 @@ This script demonstrates how to set up and use the advanced monitoring and track
 for the Ares trading bot.
 """
 
+from datetime import datetime
+from src.utils.logger import system_logger
+from typing import Any
 import asyncio
 import signal
 import sys
 import time
-from datetime import datetime
-from typing import Any
 
-from src.monitoring import (
-    MonitoringIntegrationManager,
-    setup_monitoring_integration_manager,
-)
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
-
+from src.monitoring import MonitoringIntegrationManager
+from src.utils.warning_symbols import error, failed, initialization_error, warning
 
 class AdvancedMonitoringLauncher:
     """
@@ -60,37 +43,30 @@ class AdvancedMonitoringLauncher:
         """Get default monitoring configuration."""
         return {
             "monitoring": {
-                "enabled": True,
-                # Metrics Dashboard Configuration
+                "enabled": True,  # Metrics Dashboard Configuration
                 "metrics_dashboard": {
                     "update_interval": 5,
                     "max_metric_history": 1000,
-                    "enable_real_time_updates": True,
-                    "enable_websocket_broadcast": True,
+                    "enable_real_time_updates": True, "enable_websocket_broadcast": True,
                 },
                 # Advanced Tracer Configuration
                 "advanced_tracer": {
-                    "enable_tracing": True,
-                    "correlation_id_header": "X-Correlation-ID",
+                    "enable_tracing": True, "correlation_id_header": "X-Correlation-ID",
                     "trace_sampling_rate": 1.0,
                     "max_trace_history": 10000,
-                    "enable_performance_tracing": True,
-                    "enable_error_tracing": True,
+                    "enable_performance_tracing": True, "enable_error_tracing": True,
                 },
                 # Correlation Manager Configuration
                 "correlation_manager": {
-                    "enable_correlation_tracking": True,
-                    "correlation_timeout": 300,
+                    "enable_correlation_tracking": True, "correlation_timeout": 300,
                     "max_correlation_history": 10000,
-                    "enable_performance_analysis": True,
-                    "enable_debug_aggregation": True,
+                    "enable_performance_analysis": True, "enable_debug_aggregation": True,
                 },
                 # ML Monitor Configuration
                 "ml_monitor": {
                     "enable_online_learning": True,
                     "drift_detection_enabled": True,
-                    "feature_importance_tracking": True,
-                    "auto_retraining_enabled": True,
+                    "feature_importance_tracking": True, "auto_retraining_enabled": True,
                     "drift_threshold": 0.1,
                     "drift_check_interval": 300,
                     "performance_check_interval": 60,
@@ -106,17 +82,14 @@ class AdvancedMonitoringLauncher:
                 },
                 # Tracking System Configuration
                 "tracking_system": {
-                    "enable_correlation_tracking": True,
-                    "enable_ensemble_tracking": True,
-                    "enable_regime_tracking": True,
-                    "enable_decision_path_tracking": True,
+                    "enable_correlation_tracking": True, "enable_ensemble_tracking": True,
+                    "enable_regime_tracking": True, "enable_decision_path_tracking": True,
                     "max_tracking_history": 50000,
                 },
                 # Integration Manager Configuration
                 "monitoring_integration": {
-                    "enable_unified_monitoring": True,
-                    "enable_cross_component_tracking": True,
-                    "enable_performance_correlation": True,
+                    "enable_unified_monitoring": True, "enable_cross_component_tracking": True,
+                    "enable_performance_correlation": True
                 },
             },
         }
@@ -130,9 +103,8 @@ class AdvancedMonitoringLauncher:
             config = self._get_default_config()
 
             # Setup integration manager
-            self.integration_manager = await setup_monitoring_integration_manager(
-                config,
-            )
+            self.integration_manager = await MonitoringIntegrationManager.setup_monitoring_integration_manager(
+                config=config)
 
             if not self.integration_manager:
                 self.print(failed("Failed to setup monitoring integration manager"))
@@ -141,7 +113,7 @@ class AdvancedMonitoringLauncher:
             self.logger.info("✅ Advanced monitoring system setup completed")
             return True
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error setting up monitoring: {e}"))
             return False
 
@@ -164,7 +136,7 @@ class AdvancedMonitoringLauncher:
             self.print(failed("Failed to start monitoring integration"))
             return False
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error starting monitoring: {e}"))
             return False
 
@@ -184,7 +156,7 @@ class AdvancedMonitoringLauncher:
 
                     # Print status every 10 seconds
                     if demo_counter % 10 == 0:
-                        self._print_status(dashboard_data, demo_counter)
+                        self._print_status(dashboard_data = demo_counter)
 
                     # Simulate some activity
                     await self._simulate_activity()
@@ -192,11 +164,11 @@ class AdvancedMonitoringLauncher:
                     await asyncio.sleep(5)  # Update every 5 seconds
                     demo_counter += 1
 
-                except Exception as e:
+                except Exception:
                     self.print(error("Error in demo loop: {e}"))
                     await asyncio.sleep(5)
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error running demo: {e}"))
 
     def _print_status(self, dashboard_data: dict[str, Any], counter: int) -> None:
@@ -218,7 +190,7 @@ class AdvancedMonitoringLauncher:
             # Print component status
             components = integration_status.get("components", {})
             print("\nComponent Status:")
-            for component, active in components.items():
+            for component , active in components.items():
                 status = "✅ Active" if active else "❌ Inactive"
                 print(f"  {component.replace('_', ' ').title()}: {status}")
 
@@ -263,7 +235,7 @@ class AdvancedMonitoringLauncher:
             correlations = dashboard_data.get("performance_correlations", {})
             if correlations:
                 print(f"\nPerformance Correlations: {len(correlations)}")
-                for correlation_key, correlation_data in list(correlations.items())[
+                for correlation_key , correlation_data in list(correlations.items())[
                     :3
                 ]:  # Show first 3
                     corr_value = correlation_data.get("correlation", 0)
@@ -271,7 +243,7 @@ class AdvancedMonitoringLauncher:
 
             print(f"{'='*60}\n")
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error printing status: {e}"))
 
     async def _simulate_activity(self) -> None:
@@ -284,8 +256,7 @@ class AdvancedMonitoringLauncher:
             if self.integration_manager.components.correlation_manager:
                 correlation_id = f"demo_corr_{int(time.time())}"
                 await self.integration_manager.components.correlation_manager.track_correlation_request(
-                    correlation_id=correlation_id,
-                    component_path=["analyst", "strategist", "tactician"],
+                    correlation_id, component_path=["analyst", "strategist", "tactician"],
                     request_data={"demo": True},
                     metadata={"simulation": True},
                 )
@@ -293,10 +264,8 @@ class AdvancedMonitoringLauncher:
                 # Simulate response after a short delay
                 await asyncio.sleep(0.1)
                 await self.integration_manager.components.correlation_manager.track_correlation_response(
-                    correlation_id=correlation_id,
-                    response_data={"result": "success"},
-                    error_info=None,
-                )
+                    correlation_id, response_data={"result": "success"},
+                    error_info=None)
 
             # Simulate ensemble tracking
             if self.integration_manager.components.tracking_system:
@@ -322,7 +291,7 @@ class AdvancedMonitoringLauncher:
                     regime_transition_probability=0.1,
                 )
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error simulating activity: {e}"))
 
     async def stop_monitoring(self) -> None:
@@ -337,7 +306,7 @@ class AdvancedMonitoringLauncher:
 
             self.logger.info("🛑 Advanced monitoring system stopped")
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error stopping monitoring: {e}"))
 
     async def run(self) -> None:
@@ -358,23 +327,21 @@ class AdvancedMonitoringLauncher:
             # Run demo
             await self.run_demo()
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error running launcher: {e}"))
         finally:
             await self.stop_monitoring()
-
 
 async def main():
     """Main function."""
     launcher = AdvancedMonitoringLauncher()
     await launcher.run()
 
-
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\n🛑 Advanced Monitoring Launcher interrupted by user")
-    except Exception as e:
+    except Exception:
         print(warning("Error running Advanced Monitoring Launcher: {e}"))
         sys.exit(1)

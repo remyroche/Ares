@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""
-Step Orchestrator for Training Pipeline
+"""Step Orchestrator for Training Pipeline.
 
 This module orchestrates the execution of training steps with progress saving
 and resuming capabilities. Now uses EnhancedTrainingManager for 16-step pipeline.
 """
 
 import importlib
-import os
 import inspect
+import os
 from typing import Any
 
 from src.training.progress_manager import ProgressManager
@@ -22,7 +21,7 @@ from src.utils.warning_symbols import (
 class StepOrchestrator:
     """Orchestrates training step execution with progress management using EnhancedTrainingManager."""
 
-    def __init__(self, symbol: str, exchange: str, data_dir: str = "data/training"):
+    def __init__(self, symbol: str, exchange: str, data_dir: str = "data/training") -> None:
         self.symbol = symbol
         self.exchange = exchange
         self.data_dir = data_dir
@@ -34,6 +33,7 @@ class StepOrchestrator:
         # Define available steps in order (for reference)
         self.available_steps = [
             "step1_data_collection",
+            "step1_5_data_converter",
             "step2_feature_engineering",
             "step3_hmm_regime_discovery",
             "step4_processing_labeling",
@@ -61,14 +61,14 @@ class StepOrchestrator:
         self.logger.info(message)
 
     async def _setup_enhanced_training_manager(self, config: dict[str, Any]) -> bool:
-        """
-        Set up the enhanced training manager.
+        """Set up the enhanced training manager.
 
         Args:
             config: Configuration dictionary
 
         Returns:
             True if setup successful, False otherwise
+
         """
         try:
             from src.training.enhanced_training_manager import (
@@ -95,14 +95,14 @@ class StepOrchestrator:
             return False
 
     def get_step_module(self, step_name: str) -> Any | None:
-        """
-        Import and return a step module.
+        """Import and return a step module.
 
         Args:
             step_name: Name of the step (e.g., 'step1_data_collection')
 
         Returns:
             Step module if found, None otherwise
+
         """
         try:
             module_path = f"src.training.steps.{step_name}"
@@ -114,14 +114,14 @@ class StepOrchestrator:
             return None
 
     def get_step_class(self, step_name: str) -> Any | None:
-        """
-        Get the main step class from a step module.
+        """Get the main step class from a step module.
 
         Args:
             step_name: Name of the step
 
         Returns:
             Step class if found, None otherwise
+
         """
         module = self.get_step_module(step_name)
         if not module:
@@ -148,8 +148,7 @@ class StepOrchestrator:
         config: dict[str, Any],
         force_rerun: bool = False,
     ) -> bool:
-        """
-        Execute a single training step using enhanced training manager.
+        """Execute a single training step using enhanced training manager.
 
         Args:
             step_name: Name of the step to execute
@@ -158,6 +157,7 @@ class StepOrchestrator:
 
         Returns:
             True if step executed successfully, False otherwise
+
         """
         self.logger.info(f"🚀 Executing step: {step_name}")
 
@@ -225,14 +225,14 @@ class StepOrchestrator:
             return False
 
     def _build_pipeline_state(self, current_step: str) -> dict[str, Any]:
-        """
-        Build pipeline state from previous step progress.
+        """Build pipeline state from previous step progress.
 
         Args:
             current_step: Current step being executed
 
         Returns:
             Pipeline state dictionary
+
         """
         pipeline_state = {}
 
@@ -258,8 +258,7 @@ class StepOrchestrator:
         config: dict[str, Any],
         force_rerun: bool = False,
     ) -> bool:
-        """
-        Execute training pipeline starting from a specific step using enhanced training manager.
+        """Execute training pipeline starting from a specific step using enhanced training manager.
 
         Args:
             start_step: Step to start from
@@ -268,6 +267,7 @@ class StepOrchestrator:
 
         Returns:
             True if all steps completed successfully, False otherwise
+
         """
         self.logger.info(f"🚀 Starting execution from step: {start_step}")
 
@@ -285,10 +285,9 @@ class StepOrchestrator:
 
         # Prepare training input for enhanced training manager
         # Use proper lookback_days based on training mode
-        import os
         from src.config.constants import (
-            FULL_TRAINING_LOOKBACK_DAYS,
             BLANK_TRAINING_LOOKBACK_DAYS,
+            FULL_TRAINING_LOOKBACK_DAYS,
         )
 
         # Determine lookback_days based on training mode
@@ -326,8 +325,7 @@ class StepOrchestrator:
         config: dict[str, Any],
         force_rerun: bool = False,
     ) -> bool:
-        """
-        Execute all training steps from the beginning using enhanced training manager.
+        """Execute all training steps from the beginning using enhanced training manager.
 
         Args:
             config: Configuration dictionary
@@ -335,6 +333,7 @@ class StepOrchestrator:
 
         Returns:
             True if all steps completed successfully, False otherwise
+
         """
         return await self.execute_from_step(
             self.available_steps[0],
@@ -343,11 +342,11 @@ class StepOrchestrator:
         )
 
     def get_execution_status(self) -> dict[str, Any]:
-        """
-        Get the current execution status.
+        """Get the current execution status.
 
         Returns:
             Dictionary with execution status information
+
         """
         status = {
             "symbol": self.symbol,
@@ -371,22 +370,22 @@ class StepOrchestrator:
         return status
 
     def clear_progress(self, step_name: str | None = None) -> bool:
-        """
-        Clear progress for specific step or all steps.
+        """Clear progress for specific step or all steps.
 
         Args:
             step_name: Step name to clear, or None to clear all
 
         Returns:
             True if cleared successfully, False otherwise
+
         """
         return self.progress_manager.clear_progress(step_name)
 
     def list_available_steps(self) -> list[str]:
-        """
-        Get list of available steps.
+        """Get list of available steps.
 
         Returns:
             List of available step names
+
         """
         return self.available_steps.copy()

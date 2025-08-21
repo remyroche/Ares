@@ -20,7 +20,7 @@ class MarketRegime:
         trend_strength: float,
         regime_type: str,
         optimal_params: dict[str, Any],
-    ):
+    ) -> None:
         self.name = name
         self.volatility = volatility
         self.trend_strength = trend_strength
@@ -30,11 +30,9 @@ class MarketRegime:
 
 
 class AdaptiveOptimizer:
-    """
-    Adaptive hyperparameter optimizer that adjusts parameters based on market regime detection.
-    """
+    """Adaptive hyperparameter optimizer that adjusts parameters based on market regime detection."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("AdaptiveOptimizer")
 
@@ -57,7 +55,7 @@ class AdaptiveOptimizer:
         # Initialize regime templates
         self._initialize_regime_templates()
 
-    def _initialize_regime_templates(self):
+    def _initialize_regime_templates(self) -> None:
         """Initialize predefined regime templates."""
         self.regime_templates = {
             "bull": MarketRegime(
@@ -104,7 +102,6 @@ class AdaptiveOptimizer:
     )
     def detect_market_regime(self, market_data: pd.DataFrame) -> MarketRegime:
         """Detect current market regime using multiple indicators."""
-
         # Calculate regime features
         features = self._calculate_regime_features(market_data)
 
@@ -129,7 +126,6 @@ class AdaptiveOptimizer:
 
     def _calculate_regime_features(self, market_data: pd.DataFrame) -> dict[str, float]:
         """Calculate features for regime detection."""
-
         # Calculate volatility (rolling standard deviation of returns)
         returns = market_data["close"].pct_change().dropna()
         volatility = returns.rolling(window=20).std().iloc[-1]
@@ -155,7 +151,6 @@ class AdaptiveOptimizer:
 
     def _classify_regime(self, features: dict[str, float]) -> str:
         """Classify market regime based on features."""
-
         volatility = features["volatility"]
         trend_strength = features["trend_strength"]
         momentum_short = features["momentum_short"]
@@ -178,7 +173,6 @@ class AdaptiveOptimizer:
         features: dict[str, float],
     ) -> dict[str, Any]:
         """Get optimal parameters for detected regime."""
-
         base_params = self.regime_templates[regime_type].optimal_params.copy()
 
         # Adapt parameters based on feature values
@@ -212,7 +206,6 @@ class AdaptiveOptimizer:
         regime_type: str,
     ) -> float:
         """Calculate confidence in regime classification."""
-
         confidence = 0.7
 
         if regime_type == "volatile":
@@ -238,7 +231,6 @@ class AdaptiveOptimizer:
         market_data: pd.DataFrame,
     ) -> dict[str, Any]:
         """Optimize hyperparameters for specific market regime."""
-
         # Create regime-specific optimizer
         optimizer = RegimeSpecificOptimizer(regime, self.config)
 
@@ -250,7 +242,7 @@ class AdaptiveOptimizer:
 
         return results
 
-    def _update_regime_performance(self, regime_name: str, results: dict[str, Any]):
+    def _update_regime_performance(self, regime_name: str, results: dict[str, Any]) -> None:
         """Update performance tracking for regime."""
         if regime_name not in self.regime_performance:
             self.regime_performance[regime_name] = []
@@ -265,7 +257,6 @@ class AdaptiveOptimizer:
 
     def get_regime_insights(self) -> dict[str, Any]:
         """Get insights about regime performance."""
-
         insights = {
             "current_regime": self.current_regime.name if self.current_regime else None,
             "regime_performance": {},
@@ -292,7 +283,7 @@ class AdaptiveOptimizer:
 class RegimeSpecificOptimizer:
     """Optimizer specialized for a specific market regime."""
 
-    def __init__(self, regime: MarketRegime, config: dict[str, Any]):
+    def __init__(self, regime: MarketRegime, config: dict[str, Any]) -> None:
         self.regime = regime
         self.config = config
         self.logger = system_logger.getChild(f"RegimeOptimizer_{regime.name}")
@@ -302,7 +293,6 @@ class RegimeSpecificOptimizer:
 
     def _get_regime_constraints(self, regime: MarketRegime) -> dict[str, Any]:
         """Get optimization constraints for specific regime."""
-
         if regime.regime_type == "trending":
             return {
                 "tp_multiplier_range": (2.0, 5.0),
@@ -329,7 +319,6 @@ class RegimeSpecificOptimizer:
 
     def run_optimization(self, market_data: pd.DataFrame) -> dict[str, Any]:
         """Run optimization for specific regime."""
-
         # Create study
         study = optuna.create_study(direction="maximize")
 
@@ -351,7 +340,6 @@ class RegimeSpecificOptimizer:
         market_data: pd.DataFrame,
     ) -> float:
         """Objective function for regime-specific optimization."""
-
         # Suggest parameters within regime constraints
         params = self._suggest_regime_parameters(trial)
 
@@ -360,7 +348,6 @@ class RegimeSpecificOptimizer:
 
     def _suggest_regime_parameters(self, trial: optuna.trial.Trial) -> dict[str, Any]:
         """Suggest parameters within regime-specific constraints."""
-
         params = {}
 
         # Trading parameters with regime-specific ranges
@@ -401,7 +388,6 @@ class RegimeSpecificOptimizer:
         market_data: pd.DataFrame,
     ) -> float:
         """Evaluate parameters for specific regime."""
-
         # Mock evaluation - would integrate with your backtesting
         base_score = 0.5
 

@@ -4,16 +4,12 @@ Analyze Impact of Strict Validation Thresholds
 Analyzes the impact of new thresholds: WARNING >0.1%, ERROR >1% missing values
 """
 
-import json
-import re
-import pandas as pd
 from collections import defaultdict
-from typing import Dict, List, Any
+from typing import Any
 import argparse
-from pathlib import Path
 
 
-def analyze_threshold_impact(log_file_path: str) -> Dict[str, Any]:
+def analyze_threshold_impact(log_file_path: str) -> dict[str, Any]:
     """Analyze the impact of strict thresholds on validation results"""
 
     # New thresholds
@@ -47,9 +43,9 @@ def analyze_threshold_impact(log_file_path: str) -> Dict[str, Any]:
         f"❌  ERROR threshold is now {error_impact:.0f}x more strict (1% vs 50%)",
         "",
         "🔍 EXPECTED IMPACT:",
-        f"   - Features with 0.1-10% missing values: Now WARNINGS (was OK)",
-        f"   - Features with 1-50% missing values: Now ERRORS (was WARNINGS)",
-        f"   - Total validation issues will increase significantly",
+        "   - Features with 0.1-10% missing values: Now WARNINGS (was OK)",
+        "   - Features with 1-50% missing values: Now ERRORS (was WARNINGS)",
+        "   - Total validation issues will increase significantly",
         "",
         "🎯 SPECIFIC RECOMMENDATIONS:",
         "   1. Wavelet features will likely trigger many warnings",
@@ -70,7 +66,7 @@ def analyze_threshold_impact(log_file_path: str) -> Dict[str, Any]:
 def create_feature_specific_thresholds():
     """Create feature-specific threshold recommendations"""
 
-    thresholds = {
+    return {
         "wavelet_features": {
             "missing_warning": 0.05,  # 5% - more lenient for wavelets
             "missing_error": 0.20,  # 20% - more lenient for wavelets
@@ -94,8 +90,6 @@ def create_feature_specific_thresholds():
         },
     }
 
-    return thresholds
-
 
 def main():
     parser = argparse.ArgumentParser(description="Analyze strict validation thresholds")
@@ -110,70 +104,45 @@ def main():
 
     # Analyze threshold impact
     analysis = analyze_threshold_impact(args.log_file)
+
+    # Get feature-specific thresholds
     feature_thresholds = create_feature_specific_thresholds()
 
-    # Write analysis report
+    # Write analysis to file
     with open(args.output, "w") as f:
         f.write("=" * 80 + "\n")
-        f.write("STRICT THRESHOLD IMPACT ANALYSIS\n")
+        f.write("STRICT VALIDATION THRESHOLD ANALYSIS\n")
         f.write("=" * 80 + "\n\n")
 
-        f.write("📊 THRESHOLD COMPARISON:\n")
+        # Threshold comparison
+        f.write("THRESHOLD COMPARISON:\n")
         f.write("-" * 40 + "\n")
-        f.write(
-            f"OLD WARNING: {analysis['threshold_comparison']['old']['warning']*100:.1f}%\n"
-        )
-        f.write(
-            f"NEW WARNING: {analysis['threshold_comparison']['new']['warning']*100:.1f}%\n"
-        )
-        f.write(
-            f"OLD ERROR:   {analysis['threshold_comparison']['old']['error']*100:.1f}%\n"
-        )
-        f.write(
-            f"NEW ERROR:   {analysis['threshold_comparison']['new']['error']*100:.1f}%\n\n"
-        )
+        f.write(f"Old WARNING threshold: {analysis['threshold_comparison']['old']['warning']:.1%}\n")
+        f.write(f"New WARNING threshold: {analysis['threshold_comparison']['new']['warning']:.1%}\n")
+        f.write(f"Old ERROR threshold: {analysis['threshold_comparison']['old']['error']:.1%}\n")
+        f.write(f"New ERROR threshold: {analysis['threshold_comparison']['new']['error']:.1%}\n")
+        f.write(f"WARNING impact: {analysis['threshold_comparison']['impact']['warning_multiplier']:.0f}x more strict\n")
+        f.write(f"ERROR impact: {analysis['threshold_comparison']['impact']['error_multiplier']:.0f}x more strict\n\n")
 
-        f.write("🚨 IMPACT MULTIPLIERS:\n")
-        f.write("-" * 40 + "\n")
-        f.write(
-            f"WARNING: {analysis['threshold_comparison']['impact']['warning_multiplier']:.0f}x more strict\n"
-        )
-        f.write(
-            f"ERROR:   {analysis['threshold_comparison']['impact']['error_multiplier']:.0f}x more strict\n\n"
-        )
-
-        f.write("💡 RECOMMENDATIONS:\n")
+        # Recommendations
+        f.write("RECOMMENDATIONS:\n")
         f.write("-" * 40 + "\n")
         for rec in analysis["recommendations"]:
-            f.write(f"{rec}\n")
+            f.write(rec + "\n")
+        f.write("\n")
 
-        f.write("\n" + "=" * 80 + "\n")
-        f.write("FEATURE-SPECIFIC THRESHOLD RECOMMENDATIONS\n")
-        f.write("=" * 80 + "\n\n")
-
-        for feature_type, config in feature_thresholds.items():
-            f.write(f"🔧 {feature_type.upper().replace('_', ' ')}:\n")
-            f.write(f"   Warning: {config['missing_warning']*100:.1f}%\n")
-            f.write(f"   Error:   {config['missing_error']*100:.1f}%\n")
-            if "variance_threshold" in config:
-                f.write(f"   Variance: {config['variance_threshold']}\n")
-            f.write(f"   Reason:  {config['reason']}\n\n")
-
-        f.write("🎯 IMPLEMENTATION STRATEGY:\n")
+        # Feature-specific thresholds
+        f.write("FEATURE-SPECIFIC THRESHOLDS:\n")
         f.write("-" * 40 + "\n")
-        f.write("1. Implement feature-type detection in validation\n")
-        f.write("2. Apply different thresholds based on feature type\n")
-        f.write("3. Log which threshold was applied to each feature\n")
-        f.write("4. Consider feature importance in final filtering\n")
-        f.write("5. Monitor false positive rates with new thresholds\n")
+        for feature_type, thresholds in feature_thresholds.items():
+            f.write(f"\n{feature_type.upper()}:\n")
+            f.write(f"  Warning threshold: {thresholds['missing_warning']:.1%}\n")
+            f.write(f"  Error threshold: {thresholds['missing_error']:.1%}\n")
+            f.write(f"  Reason: {thresholds['reason']}\n")
+            if 'variance_threshold' in thresholds:
+                f.write(f"  Variance threshold: {thresholds['variance_threshold']}\n")
 
-    print(f"✅ Strict threshold analysis written to: {args.output}")
-    print(
-        f"📊 Key finding: WARNING threshold is now {analysis['threshold_comparison']['impact']['warning_multiplier']:.0f}x more strict"
-    )
-    print(
-        f"📊 Key finding: ERROR threshold is now {analysis['threshold_comparison']['impact']['error_multiplier']:.0f}x more strict"
-    )
+    print(f"Analysis written to {args.output}")
 
 
 if __name__ == "__main__":

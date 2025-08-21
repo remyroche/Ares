@@ -4,24 +4,11 @@ Launch ARES Bot with monitoring enabled
 """
 
 import signal
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
 import subprocess
 import sys
 import time
 
+from src.utils.warning_symbols import warning
 
 def launch_bot_with_monitoring():
     """Launch the bot and start monitoring"""
@@ -30,8 +17,7 @@ def launch_bot_with_monitoring():
     # Start the bot in background
     bot_process = subprocess.Popen(
         [
-            sys.executable,
-            "ares_launcher.py",
+            sys.executable, "ares_launcher.py",
             "blank",
             "--symbol",
             "ETHUSDT",

@@ -1,17 +1,14 @@
 # src/transition/event_window_dataset.py
 
 from __future__ import annotations
-
-from dataclasses import dataclass
-from typing import Any, Iterable
-
-import numpy as np
-import pandas as pd
-
 from src.transition.state_sequence_builder import StateSequenceBuilder
 from src.utils.logger import system_logger
-import os
+from typing import Any
 import json
+import os
+from dataclasses import dataclass
+import numpy as np
+import pandas as pd
 
 
 @dataclass
@@ -27,13 +24,16 @@ class EventWindowDatasetBuilder:
     """
     Creates a dataset of pre/post windows centered on event triggers.
     - Builds per-timestep HMM states and coarse regimes
-    - Preserves secondary labels as a multi-hot vector at t=0
+    - Preserves secondary labels as a multi-hot vector at t , 0
     - Early pruning: drop incomplete windows; optional down-sampling of near-duplicate X_pre
     - Produces tensors and RF-friendly pooled features
     """
 
     def __init__(
-        self, config: dict[str, Any], exchange: str = "UNKNOWN", symbol: str = "UNKNOWN"
+        self,
+        config: dict[str, Any],
+        exchange: str = "UNKNOWN",
+        symbol: str = "UNKNOWN",
     ) -> None:
         self.config = config
         self.logger = system_logger.getChild("EventWindowDatasetBuilder")
@@ -44,22 +44,26 @@ class EventWindowDatasetBuilder:
             max_events_per_label=int(tm_cfg.get("max_events_per_label", 10000)),
             duplicate_similarity_threshold=float(
                 tm_cfg.get("early_pruning", {}).get(
-                    "duplicate_similarity_threshold", 0.98
-                )
+                    "duplicate_similarity_threshold",
+                    0.98,
+                ),
             ),
             downsample_near_duplicates=bool(
                 tm_cfg.get("early_pruning", {}).get(
-                    "downsample_near_duplicate_sequences", True
-                )
+                    "downsample_near_duplicate_sequences",
+                    True,
+                ),
             ),
         )
         self.state_builder = StateSequenceBuilder(
-            config, exchange=exchange, symbol=symbol
+            config, exchange=exchange,
+            symbol=symbol,
         )
         self.cache_dir = str(
             (tm_cfg.get("cache", {}) or {}).get(
-                "cache_dir", "checkpoints/transition_cache"
-            )
+                "cache_dir",
+                "checkpoints/transition_cache",
+            ),
         )
         bcfg = tm_cfg.get("barriers", {}) or {}
         self.pt_mult = float(bcfg.get("profit_take_multiplier", 0.002))
@@ -121,7 +125,7 @@ class EventWindowDatasetBuilder:
                 p = os.path.join(self.cache_dir, key)
                 meta_p = os.path.join(self.cache_dir, key + ".meta.json")
                 if os.path.exists(p) and os.path.exists(meta_p):
-                    with open(meta_p, "r") as f:
+                    with open(meta_p) as f:
                         meta = json.load(f)
                     # Minimal load path: return meta only; samples remain to be regenerated if needed
                     if meta.get("label_index"):
@@ -129,7 +133,8 @@ class EventWindowDatasetBuilder:
                             "samples": [],
                             "label_index": meta.get("label_index", []),
                             "numeric_feature_names": meta.get(
-                                "numeric_feature_names", []
+                                "numeric_feature_names",
+                                [],
                             ),
                         }
         except Exception:
@@ -165,11 +170,12 @@ class EventWindowDatasetBuilder:
 
         # Prepare multi-hot vector template
         all_labels = sorted(
-            {lab for lab in event_index["event_label"].unique()}.union(
+            set(event_index["event_label"].unique()).union(
                 *event_index.get(
-                    "secondary_labels", pd.Series([[]] * len(event_index))
-                ).tolist()
-            )
+                    "secondary_labels",
+                    pd.Series([[]] * len(event_index)),
+                ).tolist(),
+            ),
         )
         label_to_idx = {l: i for i, l in enumerate(all_labels)}
 
@@ -183,7 +189,7 @@ class EventWindowDatasetBuilder:
 
         # Optional cap per label
         capped = []
-        for lab, grp in valid_events.groupby("event_label"):
+        for _lab, grp in valid_events.groupby("event_label"):
             capped.append(grp.head(self.ds_cfg.max_events_per_label))
         valid_events = pd.concat(capped).sort_values("row_index")
 
@@ -200,7 +206,8 @@ class EventWindowDatasetBuilder:
             if present_numeric:
                 X_num = (
                     pd.to_numeric(
-                        combined_num[present_numeric].iloc[pre_slice], errors="coerce"
+                        combined_num[present_numeric].iloc[pre_slice],
+                        errors="coerce",
                     )
                     .fillna(0.0)
                     .to_numpy(dtype=float)
@@ -231,14 +238,14 @@ class EventWindowDatasetBuilder:
                         and "1h_hmm_state" in combined_num.columns
                     ):
                         macro_cols.append(
-                            [float(combined_num["1h_hmm_state"].iloc[i0])]
+                            [float(combined_num["1h_hmm_state"].iloc[i0])],
                         )
                     if (
                         bool(self.ctx_cfg.get("also_include_4h", False))
                         and "4h_hmm_state" in combined_num.columns
                     ):
                         macro_cols.append(
-                            [float(combined_num["4h_hmm_state"].iloc[i0])]
+                            [float(combined_num["4h_hmm_state"].iloc[i0])],
                         )
                     if macro_cols:
                         macro_vec = np.concatenate(macro_cols, axis=0).astype(float)
@@ -282,9 +289,9 @@ class EventWindowDatasetBuilder:
                     "multi_hot_labels": mh.copy(),
                     "rf_features": rf_feats,
                     "weighted_intensity": float(
-                        ev.get("weighted_intensity", ev.get("intensity", 0.0))
+                        ev.get("weighted_intensity", ev.get("intensity", 0.0)),
                     ),
-                }
+                },
             )
 
         # Optional down-sampling of near-duplicate pre sequences using cosine similarity on rf_features vector

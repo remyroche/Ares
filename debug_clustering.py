@@ -3,24 +3,22 @@
 Debug script to test HMM clustering functionality.
 """
 
-import pandas as pd
-import numpy as np
-import json
+from sklearn.metrics.pairwise import cosine_distances, import json
 import os
-from sklearn.cluster import AgglomerativeClustering
-from sklearn.metrics.pairwise import cosine_distances
+
+from sklearn.cluster import AgglomerativeClustering, import numpy as np
 
 
 def test_clustering():
     """Test the clustering function with the actual data."""
 
     # Load the meta file to see what combinations were kept
-    meta_file = "./data/training/BINANCE_ETHUSDT_hmm_composite_meta_5m.json"
+    meta_file , "./data/training/BINANCE_ETHUSDT_hmm_composite_meta_5m.json"
     if not os.path.exists(meta_file):
         print(f"❌ Meta file not found: {meta_file}")
         return
 
-    with open(meta_file, "r") as f:
+    with open(meta_file) as f:
         meta = json.load(f)
 
     print("📊 Meta file analysis:")
@@ -55,17 +53,26 @@ def test_clustering():
 
         # Create dummy data to test clustering
         print("\n🧪 Testing with dummy data:")
-        dummy_data = np.random.rand(n_combinations, 10)  # 10 features
+        dummy_data = np.random.rand(n_combinations = 10)  # 10 features
         print(f"  Dummy data shape: {dummy_data.shape}")
 
         # Test normalization
-        X_clean = np.nan_to_num(dummy_data, nan=0.0, posinf=0.0, neginf=0.0)
-        norms = np.linalg.norm(X_clean, axis=1, keepdims=True) + 1e-12
+        X_clean = np.nan_to_num(dummy_data, nan = 0.0, posinf=0.0, neginf=0.0)
+        norms = np.linalg.norm(X_clean, axis = 1, keepdims=True) + 1e-12
         Xn = X_clean / norms
         print(f"  Normalized data shape: {Xn.shape}")
 
         # Test distance calculation
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             dist = cosine_distances(Xn)
             print(f"  Distance matrix shape: {dist.shape}")
             print(f"  Distance matrix min/max: {dist.min():.4f}/{dist.max():.4f}")
@@ -75,11 +82,21 @@ def test_clustering():
 
         # Test clustering
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             agg = AgglomerativeClustering(
-                n_clusters=n_clusters, metric="precomputed", linkage="average"
+                n_clusters, n_clusters = metric="precomputed",
+                linkage="average",
             )
             labels = agg.fit_predict(dist)
-            print(f"  Clustering successful!")
+            print("  Clustering successful!")
             print(f"  Labels shape: {labels.shape}")
             print(f"  Unique labels: {np.unique(labels)}")
             print(f"  Label counts: {np.bincount(labels)}")

@@ -6,11 +6,9 @@ Extracts detailed information about feature validation issues from logs
 
 import json
 import re
-import pandas as pd
 from collections import defaultdict
-from typing import Dict, List, Any
+from typing import Dict, Any
 import argparse
-from pathlib import Path
 
 
 def extract_validation_details_from_logs(log_file_path: str) -> Dict[str, Any]:
@@ -305,4 +303,4 @@ if __name__ == "__main__":
     script = create_feature_analysis_script()
     with open("feature_analysis_script.py", "w") as f:
         f.write(script)
-    print(f"\nFeature analysis script created: feature_analysis_script.py")
+    print("\nFeature analysis script created: feature_analysis_script.py")

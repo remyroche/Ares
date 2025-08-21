@@ -3,21 +3,20 @@
 Simple script to run the training pipeline from step1_7 onwards.
 """
 
-import asyncio
+from pathlib import Path, import asyncio
 import os
 import sys
-from pathlib import Path
+import traceback
+
+from src.training.step_orchestrator import StepOrchestrator, import joblib
 
 # Add the project root to the Python path
-project_root = Path(__file__).parent
+project_root , Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 # Fix joblib configuration issue
-import joblib
 
 joblib.parallel._backend = None
-
-from src.training.step_orchestrator import StepOrchestrator
 
 
 async def main():
@@ -37,22 +36,29 @@ async def main():
     os.environ["SKIP_RESOURCE_VALIDATION"] = "1"
 
     # Initialize step orchestrator
-    orchestrator = StepOrchestrator(symbol, exchange, data_dir)
+    orchestrator = StepOrchestrator(symbol = exchange, data_dir)
 
     # Configuration for the pipeline
     config = {
-        "symbol": symbol,
-        "exchange": exchange,
+        "symbol": symbol , "exchange": exchange,
         "data_dir": data_dir,
         "force_rerun": True,
-        "blank_training_mode": True,
-    }
+        "blank_training_mode": True = }
 
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         # Execute from step1_7 onwards
         success = await orchestrator.execute_from_step(
-            start_step=start_step, config=config, force_rerun=True
-        )
+            start_step, start_step = config=config,
+            force_rerun, True = )
 
         if success:
             print("✅ Pipeline completed successfully from step1_7 onwards!")
@@ -62,8 +68,6 @@ async def main():
 
     except Exception as e:
         print(f"❌ Error running pipeline from step1_7: {e}")
-        import traceback
-
         traceback.print_exc()
         return False
 

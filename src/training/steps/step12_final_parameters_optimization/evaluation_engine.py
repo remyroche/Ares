@@ -1,7 +1,6 @@
 # src/training/steps/step12_final_parameters_optimization/evaluation_engine.py
 
-"""
-Advanced Evaluation Engine for Hyperparameter Optimization
+"""Advanced Evaluation Engine for Hyperparameter Optimization.
 
 This module provides comprehensive evaluation capabilities for assessing the performance
 of different parameter combinations during hyperparameter optimization.
@@ -90,7 +89,7 @@ class PerformanceMetrics:
 class AdvancedEvaluationEngine:
     """Advanced evaluation engine for hyperparameter optimization."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("EvaluationEngine")
 
@@ -116,8 +115,7 @@ class AdvancedEvaluationEngine:
         calibration_results: dict[str, Any],
         backtest_data: pd.DataFrame | None = None,
     ) -> PerformanceMetrics:
-        """
-        Evaluate a set of parameters using comprehensive metrics.
+        """Evaluate a set of parameters using comprehensive metrics.
 
         Args:
             parameters: Parameters to evaluate
@@ -126,6 +124,7 @@ class AdvancedEvaluationEngine:
 
         Returns:
             PerformanceMetrics object with evaluation results
+
         """
         try:
             self.logger.info(f"Evaluating parameters: {list(parameters.keys())}")
@@ -660,18 +659,10 @@ if __name__ == "__main__":
     # Generate report
     report = engine.generate_evaluation_report(metrics)
 
-    print("Evaluation Results:")
-    print(f"  Win Rate: {metrics.win_rate:.3f}")
-    print(f"  Profit Factor: {metrics.profit_factor:.3f}")
-    print(f"  Sharpe Ratio: {metrics.sharpe_ratio:.3f}")
-    print(f"  Max Drawdown: {metrics.max_drawdown:.3f}")
-    print(f"  Composite Score: {engine.calculate_composite_score(metrics):.3f}")
 
-    print("\nDetailed Report:")
-    for section, data in report.items():
+    for data in report.values():
         if isinstance(data, dict):
-            print(f"\n{section}:")
-            for key, value in data.items():
-                print(f"  {key}: {value}")
+            for _key, _value in data.items():
+                pass
         else:
-            print(f"{section}: {data}")
+            pass

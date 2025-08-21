@@ -1,22 +1,11 @@
 # src/components/modular_strategist.py
 
 from datetime import datetime, timedelta
-from typing import Any
-
-import numpy as np
-
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    initialization_error,
-    invalid,
-    missing,
-)
-
+from typing import Any
+from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.warning_symbols import error, initialization_error, invalid, missing
+import numpy as np
 
 class ModularStrategist:
     """
@@ -83,7 +72,7 @@ class ModularStrategist:
 
         # Validate configuration
         if not self._validate_configuration():
-            self.print(invalid("Invalid configuration for modular strategist"))
+            self.logger.error(invalid("Invalid configuration for modular strategist"))
             return False
 
         # Initialize strategy modules
@@ -131,12 +120,12 @@ class ModularStrategist:
         """
         # Validate strategy interval
         if self.strategy_interval <= 0:
-            self.print(invalid("Invalid strategy interval"))
+            self.logger.error(invalid("Invalid strategy interval"))
             return False
 
         # Validate max strategy history
         if self.max_strategy_history <= 0:
-            self.print(invalid("Invalid max strategy history"))
+            self.logger.error(invalid("Invalid max strategy history"))
             return False
 
         # Validate that at least one strategy type is enabled
@@ -148,7 +137,7 @@ class ModularStrategist:
                 self.strategist_config.get("enable_dynamic_rebalancing", True),
             ],
         ):
-            self.print(error("At least one strategy type must be enabled"))
+            self.logger.error(error("At least one strategy type must be enabled"))
             return False
 
         self.logger.info("Configuration validation successful")
@@ -180,8 +169,8 @@ class ModularStrategist:
 
             self.logger.info("Strategy modules initialized successfully")
 
-        except Exception:
-            self.print(initialization_error("Error initializing strategy modules: {e}"))
+        except Exception as e:
+            self.logger.error(initialization_error(f"Error initializing strategy modules: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -201,8 +190,8 @@ class ModularStrategist:
 
             self.logger.info("Position sizing module initialized")
 
-        except Exception:
-            self.print(initialization_error("Error initializing position sizing: {e}"))
+        except Exception as e:
+            self.logger.error(initialization_error(f"Error initializing position sizing: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -222,8 +211,8 @@ class ModularStrategist:
 
             self.logger.info("Risk management module initialized")
 
-        except Exception:
-            self.print(initialization_error("Error initializing risk management: {e}"))
+        except Exception as e:
+            self.logger.error(initialization_error(f"Error initializing risk management: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -243,9 +232,9 @@ class ModularStrategist:
 
             self.logger.info("Portfolio optimization module initialized")
 
-        except Exception:
-            self.print(
-                initialization_error("Error initializing portfolio optimization: {e}"),
+        except Exception as e:
+            self.logger.error(
+                initialization_error(f"Error initializing portfolio optimization: {e}"),
             )
 
     @handle_errors(
@@ -266,9 +255,9 @@ class ModularStrategist:
 
             self.logger.info("Dynamic rebalancing module initialized")
 
-        except Exception:
-            self.print(
-                initialization_error("Error initializing dynamic rebalancing: {e}"),
+        except Exception as e:
+            self.logger.error(
+                initialization_error(f"Error initializing dynamic rebalancing: {e}"),
             )
 
     @handle_specific_errors(
@@ -341,8 +330,8 @@ class ModularStrategist:
             self.logger.info("✅ Strategy execution completed successfully")
             return True
 
-        except Exception:
-            self.print(error("Error executing strategy: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error executing strategy: {e}"))
             self.is_strategizing = False
             return False
 
@@ -371,29 +360,29 @@ class ModularStrategist:
             required_market_fields = ["symbol", "price", "volume", "timestamp"]
             for field in required_market_fields:
                 if field not in market_data:
-                    self.print(missing("Missing required market data field: {field}"))
+                    self.logger.error(missing(f"Missing required market data field: {field}"))
                     return False
 
             # Check required analysis data fields
             required_analysis_fields = ["signal", "confidence"]
             for field in required_analysis_fields:
                 if field not in analysis_data:
-                    self.print(missing("Missing required analysis data field: {field}"))
+                    self.logger.error(missing(f"Missing required analysis data field: {field}"))
                     return False
 
             # Validate data types
-            if not isinstance(market_data["price"], int | float):
-                self.print(invalid("Invalid price data type"))
+            if not isinstance(market_data["price"], (int, float)):
+                self.logger.error(invalid("Invalid price data type"))
                 return False
 
-            if not isinstance(analysis_data["confidence"], int | float):
-                self.print(invalid("Invalid confidence data type"))
+            if not isinstance(analysis_data["confidence"], (int, float)):
+                self.logger.error(invalid("Invalid confidence data type"))
                 return False
 
             return True
 
-        except Exception:
-            self.print(error("Error validating strategy inputs: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error validating strategy inputs: {e}"))
             return False
 
     @handle_errors(
@@ -450,8 +439,8 @@ class ModularStrategist:
             self.logger.info("Position sizing completed")
             return results
 
-        except Exception:
-            self.print(error("Error performing position sizing: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error performing position sizing: {e}"))
             return {}
 
     @handle_errors(
@@ -508,8 +497,8 @@ class ModularStrategist:
             self.logger.info("Risk management completed")
             return results
 
-        except Exception:
-            self.print(error("Error performing risk management: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error performing risk management: {e}"))
             return {}
 
     @handle_errors(
@@ -566,8 +555,8 @@ class ModularStrategist:
             self.logger.info("Portfolio optimization completed")
             return results
 
-        except Exception:
-            self.print(error("Error performing portfolio optimization: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error performing portfolio optimization: {e}"))
             return {}
 
     @handle_errors(
@@ -622,11 +611,12 @@ class ModularStrategist:
             self.logger.info("Dynamic rebalancing completed")
             return results
 
-        except Exception:
-            self.print(error("Error performing dynamic rebalancing: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error performing dynamic rebalancing: {e}"))
             return {}
 
     # Position sizing calculation methods
+
     def _calculate_kelly_criterion(
         self,
         market_data: dict[str, Any],
@@ -641,8 +631,8 @@ class ModularStrategist:
 
             kelly_fraction = (win_rate * avg_win - (1 - win_rate) * avg_loss) / avg_win
             return max(0, min(kelly_fraction, 0.25))  # Cap at 25%
-        except Exception:
-            self.print(error("Error calculating Kelly Criterion: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error calculating Kelly Criterion: {e}"))
             return 0.0
 
     def _calculate_fixed_fraction(
@@ -657,8 +647,8 @@ class ModularStrategist:
             base_fraction = 0.1  # 10% base position
 
             return base_fraction * confidence
-        except Exception:
-            self.print(error("Error calculating Fixed Fraction: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error calculating Fixed Fraction: {e}"))
             return 0.0
 
     def _calculate_volatility_targeting(
@@ -673,8 +663,8 @@ class ModularStrategist:
             target_volatility = 0.01  # 1% target volatility
 
             return target_volatility / volatility
-        except Exception:
-            self.print(error("Error calculating Volatility Targeting: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error calculating Volatility Targeting: {e}"))
             return 0.0
 
     def _calculate_risk_parity(
@@ -687,11 +677,12 @@ class ModularStrategist:
             # Simulate Risk Parity calculation
             return 0.5  # Equal risk contribution
 
-        except Exception:
-            self.print(error("Error calculating Risk Parity: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error calculating Risk Parity: {e}"))
             return 0.0
 
     # Risk management calculation methods
+
     def _calculate_stop_loss(
         self,
         market_data: dict[str, Any],
@@ -704,8 +695,8 @@ class ModularStrategist:
             stop_loss_pct = 0.02  # 2% stop loss
 
             return current_price * (1 - stop_loss_pct)
-        except Exception:
-            self.print(error("Error calculating Stop Loss: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error calculating Stop Loss: {e}"))
             return 0.0
 
     def _calculate_take_profit(
@@ -720,8 +711,8 @@ class ModularStrategist:
             take_profit_pct = 0.04  # 4% take profit
 
             return current_price * (1 + take_profit_pct)
-        except Exception:
-            self.print(error("Error calculating Take Profit: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error calculating Take Profit: {e}"))
             return 0.0
 
     def _calculate_trailing_stop(
@@ -736,8 +727,8 @@ class ModularStrategist:
             trailing_pct = 0.015  # 1.5% trailing stop
 
             return current_price * (1 - trailing_pct)
-        except Exception:
-            self.print(error("Error calculating Trailing Stop: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error calculating Trailing Stop: {e}"))
             return 0.0
 
     def _calculate_position_limits(
@@ -753,11 +744,12 @@ class ModularStrategist:
                 "max_leverage": 3.0,  # 3x max leverage
                 "max_drawdown": 0.1,  # 10% max drawdown
             }
-        except Exception:
-            self.print(error("Error calculating Position Limits: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error calculating Position Limits: {e}"))
             return {"max_position_size": 0.0, "max_leverage": 0.0, "max_drawdown": 0.0}
 
     # Portfolio optimization calculation methods
+
     def _calculate_mean_variance(
         self,
         market_data: dict[str, Any],
@@ -772,8 +764,8 @@ class ModularStrategist:
                 "volatility": 0.15,
                 "sharpe_ratio": 0.53,
             }
-        except Exception:
-            self.print(error("Error calculating Mean Variance: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error calculating Mean Variance: {e}"))
             return {
                 "optimal_weight": 0.0,
                 "expected_return": 0.0,
@@ -795,8 +787,8 @@ class ModularStrategist:
                 "volatility": 0.14,
                 "confidence": 0.8,
             }
-        except Exception:
-            self.print(error("Error calculating Black Litterman: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error calculating Black Litterman: {e}"))
             return {
                 "optimal_weight": 0.0,
                 "expected_return": 0.0,
@@ -817,8 +809,8 @@ class ModularStrategist:
                 "volatility": 0.12,
                 "diversification_ratio": 1.2,
             }
-        except Exception:
-            self.print(error("Error calculating Portfolio Risk Parity: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error calculating Portfolio Risk Parity: {e}"))
             return {
                 "risk_contribution": 0.0,
                 "volatility": 0.0,
@@ -839,8 +831,8 @@ class ModularStrategist:
                 "volatility": 0.16,
                 "sharpe_ratio": 0.56,
             }
-        except Exception:
-            self.print(error("Error calculating Maximum Sharpe: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error calculating Maximum Sharpe: {e}"))
             return {
                 "optimal_weight": 0.0,
                 "expected_return": 0.0,
@@ -849,6 +841,7 @@ class ModularStrategist:
             }
 
     # Dynamic rebalancing calculation methods
+
     def _calculate_threshold_rebalancing(
         self,
         market_data: dict[str, Any],
@@ -861,8 +854,8 @@ class ModularStrategist:
             threshold = 0.05  # 5% threshold
 
             return drift > threshold
-        except Exception:
-            self.print(error("Error calculating Threshold Rebalancing: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error calculating Threshold Rebalancing: {e}"))
             return False
 
     def _calculate_calendar_rebalancing(
@@ -878,8 +871,8 @@ class ModularStrategist:
             rebalance_interval = timedelta(days=7)  # Weekly rebalancing
 
             return (current_time - last_rebalance) > rebalance_interval
-        except Exception:
-            self.print(error("Error calculating Calendar Rebalancing: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error calculating Calendar Rebalancing: {e}"))
             return False
 
     def _calculate_drift_rebalancing(
@@ -894,8 +887,8 @@ class ModularStrategist:
             max_drift = 0.03  # 3% max drift
 
             return drift > max_drift
-        except Exception:
-            self.print(error("Error calculating Drift Rebalancing: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error calculating Drift Rebalancing: {e}"))
             return False
 
     def _calculate_volatility_rebalancing(
@@ -911,8 +904,8 @@ class ModularStrategist:
             threshold = 0.01  # 1% threshold
 
             return abs(current_volatility - target_volatility) > threshold
-        except Exception:
-            self.print(error("Error calculating Volatility Rebalancing: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error calculating Volatility Rebalancing: {e}"))
             return False
 
     @handle_errors(
@@ -935,8 +928,8 @@ class ModularStrategist:
 
             self.logger.info("Strategy results stored successfully")
 
-        except Exception:
-            self.print(error("Error storing strategy results: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error storing strategy results: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -961,8 +954,8 @@ class ModularStrategist:
                 return self.strategy_results.get(strategy_type, {})
             return self.strategy_results.copy()
 
-        except Exception:
-            self.print(error("Error getting strategy results: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error getting strategy results: {e}"))
             return {}
 
     @handle_errors(
@@ -988,8 +981,8 @@ class ModularStrategist:
 
             return history
 
-        except Exception:
-            self.print(error("Error getting strategy history: {e}"))
+        except Exception as e:
+            self.logger.error(error(f"Error getting strategy history: {e}"))
             return []
 
     def get_strategist_status(self) -> dict[str, Any]:
@@ -1037,13 +1030,11 @@ class ModularStrategist:
 
             self.logger.info("✅ Modular Strategist stopped successfully")
 
-        except Exception:
-            self.print(error("Error stopping modular strategist: {e}"))
-
+        except Exception as e:
+            self.logger.error(error(f"Error stopping modular strategist: {e}"))
 
 # Global modular strategist instance
 modular_strategist: ModularStrategist | None = None
-
 
 @handle_errors(
     exceptions=(Exception,),

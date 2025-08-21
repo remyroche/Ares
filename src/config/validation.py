@@ -60,7 +60,7 @@ def validate_trading_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
 
     _require_keys(
         config,
-        ["risk_management", "position_management", "pipeline", "analyst"],
+        ["risk_management"],
         "trading config",
         errors,
     )

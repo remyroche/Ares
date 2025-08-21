@@ -1,57 +1,24 @@
-"""
-Configuration constants for the Ares trading system.
+"""Constants for the Ares trading system.
 
-This module contains all the constants and default values used throughout the system,
-replacing hardcoded values with centralized, configurable constants.
+This module contains all the constants used throughout the system
+to ensure consistency and maintainability.
 """
 
 from typing import Final
-
-# Trading Constants
-DEFAULT_INITIAL_BALANCE: Final[float] = 10000.0
-DEFAULT_MAX_POSITION_SIZE: Final[float] = 0.1
-DEFAULT_COMMISSION_RATE: Final[float] = 0.001
-DEFAULT_SLIPPAGE_RATE: Final[float] = 0.0005
-DEFAULT_MAX_LEVERAGE: Final[float] = 10.0
-
-# Risk Management Constants
-DEFAULT_STOP_LOSS_DISTANCE: Final[float] = 0.01
-DEFAULT_TAKE_PROFIT_DISTANCE: Final[float] = 0.02
-DEFAULT_MAX_DAILY_LOSS: Final[float] = 0.02
-DEFAULT_MAX_POSITION_RISK: Final[float] = 0.05
-DEFAULT_STOP_LOSS_MULTIPLIER: Final[float] = 1.0
-
-# Confidence Thresholds
-DEFAULT_MIN_CONFIDENCE_THRESHOLD: Final[float] = 0.7
-DEFAULT_ANALYST_CONFIDENCE_THRESHOLD: Final[float] = 0.5
-DEFAULT_TACTICIAN_CONFIDENCE_THRESHOLD: Final[float] = 0.6
-DEFAULT_NEUTRAL_SIGNAL_THRESHOLD: Final[float] = 0.5
-DEFAULT_CLOSE_SIGNAL_THRESHOLD: Final[float] = 0.4
-DEFAULT_POSITION_CLOSE_CONFIDENCE_THRESHOLD: Final[float] = 0.6
-
-# Note: Regime confidence multipliers removed - per-regime distinct LM models handle regime-specific confidence
-
-# Note: Risk adjustment multipliers removed - per-regime distinct LM models handle regime-specific adjustments
-
-# Data Quality Thresholds
-DEFAULT_MISSING_ERROR_THRESHOLD: Final[float] = 0.10
-DEFAULT_MISSING_WARNING_THRESHOLD: Final[float] = 0.01
-DEFAULT_INFINITE_ERROR_THRESHOLD: Final[float] = 0.01
-DEFAULT_NAN_THRESHOLD: Final[float] = 0.1
-DEFAULT_INFINITE_THRESHOLD: Final[float] = 0.01
-
-# Database Constants
-DEFAULT_DATABASE_PATH: Final[str] = "data/ares.db"
-DEFAULT_MAX_CONNECTIONS: Final[int] = 10
-DEFAULT_BACKUP_INTERVAL: Final[int] = 3600
-DEFAULT_MAX_RECOVERY_ATTEMPTS: Final[int] = 3
-DEFAULT_RECOVERY_COOLDOWN: Final[int] = 60
 
 # Time Constants
 DEFAULT_SIGNAL_VALIDITY_DURATION: Final[int] = 120
 DEFAULT_SIGNAL_CHECK_INTERVAL: Final[int] = 10
 DEFAULT_MAX_SIGNAL_AGE: Final[float] = 300.0  # 5 minutes
 DEFAULT_COMPUTATION_TIME_THRESHOLD: Final[float] = 0.1  # 100ms
+
+# Data Configuration Constants
+# Centralized lookback windows to ensure a single source of truth across the project
+# Note: Keep this consistent with usages in config and training steps
+DEFAULT_LOOKBACK_DAYS: Final[int] = 730  # 2 years default lookback window
+FULL_TRAINING_LOOKBACK_DAYS: Final[int] = 730  # Full training horizon
+BLANK_TRAINING_LOOKBACK_DAYS: Final[int] = 180  # 6 months for blank/quick training
+SHORT_BLANK_LOOKBACK_DAYS: Final[int] = 30  # Short runs for quick experiments
 
 # Feature Engineering Constants
 DEFAULT_IMPORTANCE_THRESHOLD: Final[float] = 0.15
@@ -131,6 +98,12 @@ DEFAULT_WRITE_TIMEOUT: Final[float] = 60.0
 
 # Security Constants
 DEFAULT_ENCRYPTION_KEY_SIZE: Final[int] = 32
+
+# Paper Trading Constants
+DEFAULT_INITIAL_BALANCE: Final[float] = 10000.0
+DEFAULT_MAX_POSITION_SIZE: Final[float] = 0.1
+DEFAULT_COMMISSION_RATE: Final[float] = 0.001
+DEFAULT_SLIPPAGE_RATE: Final[float] = 0.0005
 DEFAULT_HASH_ALGORITHM: Final[str] = "sha256"
 DEFAULT_TOKEN_EXPIRY_HOURS: Final[int] = 24
 

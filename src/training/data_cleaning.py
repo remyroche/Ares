@@ -3,18 +3,13 @@ from typing import Any
 
 import pandas as pd
 
-from src.utils.warning_symbols import (
-    warning,
-)
-
 
 def handle_missing_data(
     df: pd.DataFrame,
     strategy: str = "fill",
     fill_value: Any | None = 0,
 ) -> pd.DataFrame:
-    """
-    Handle missing data in a DataFrame with various strategies.
+    """Handle missing data in a DataFrame with various strategies.
     Supported strategies: 'drop', 'fill', 'mean', 'median', 'mode', 'ffill', 'bfill', 'knn' (placeholder).
     Logs missing data rates and strategy used.
     """
@@ -37,6 +32,5 @@ def handle_missing_data(
     if strategy == "bfill":
         return df.fillna(method="bfill")
     if strategy == "knn":
-        print(warning("KNN imputation not implemented; falling back to mean."))
         return df.fillna(df.mean(numeric_only=True))
     return df

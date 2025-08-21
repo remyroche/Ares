@@ -9,11 +9,13 @@ Usage:
     python scripts/validate_multicollinearity_fix.py
 """
 
-import sys
-import os
+from training.steps.vectorized_advanced_feature_engineering import VectorizedAdvancedFeatureEngineering
+import asyncio
 from pathlib import Path
-import pandas as pd
+import sys
+
 import numpy as np
+import pandas as pd
 
 # Add the src directory to the Python path
 current_dir = Path(__file__).parent
@@ -22,15 +24,12 @@ sys.path.insert(0, str(src_dir))
 
 # Import after setting up the path
 try:
-    from training.steps.vectorized_advanced_feature_engineering import (
-        VectorizedAdvancedFeatureEngineering,
-    )
+    VectorizedAdvancedFeatureEngineering
 except ImportError as e:
     print(f"❌ Import error: {e}")
     print("⚠️ Make sure you're running this from the project root directory")
     print("⚠️ Try: PYTHONPATH=src python scripts/validate_multicollinearity_fix.py")
     sys.exit(1)
-
 
 async def validate_multicollinearity_fix():
     """Validate that the multicollinearity issue has been fixed."""
@@ -46,17 +45,16 @@ async def validate_multicollinearity_fix():
 
     price_data = pd.DataFrame(
         {
-            "timestamp": dates,
-            "open": base_price + np.random.randn(1000) * 0.5,
+            "timestamp": dates, "open": base_price + np.random.randn(1000) * 0.5,
             "high": base_price + np.random.randn(1000) * 0.8,
             "low": base_price - np.random.randn(1000) * 0.8,
             "close": base_price + np.random.randn(1000) * 0.5,
             "volume": np.random.randint(100, 1000, 1000),
-        }
+        },
     )
 
     volume_data = pd.DataFrame(
-        {"timestamp": dates, "volume": price_data["volume"].copy()}
+        {"timestamp": dates, "volume": price_data["volume"].copy()},
     )
 
     # Set timestamp as index
@@ -66,12 +64,10 @@ async def validate_multicollinearity_fix():
     # Initialize feature engineering
     config = {
         "vectorized_advanced_feature_engineering": {
-            "enable_multi_timeframe_features": True,
-            "timeframes": ["1m", "5m", "15m", "30m"],
-            "enable_microstructure_features": True,
-            "enable_adaptive_indicators": True,
+            "enable_multi_timeframe_features": True, "timeframes": ["1m", "5m", "15m", "30m"],
+            "enable_microstructure_features": True, "enable_adaptive_indicators": True,
             "enable_wavelet_features": False,  # Disable for faster testing
-        }
+        },
     }
 
     try:
@@ -80,7 +76,7 @@ async def validate_multicollinearity_fix():
 
         # Engineer features
         print("🔧 Engineering features...")
-        features = await feature_eng.engineer_features(price_data, volume_data)
+        features = await feature_eng.engineer_features(price_data=volume_data)
 
         # Convert features to DataFrame
         feature_df = pd.DataFrame()
@@ -109,8 +105,7 @@ async def validate_multicollinearity_fix():
             for feature1, feature2, corr_value in perfect_correlations:
                 print(f"   {feature1} ↔ {feature2} (r={corr_value:.6f})")
             return False
-        else:
-            print("✅ No perfect correlations found!")
+        print("✅ No perfect correlations found!")
 
         # Check specific problematic features
         problematic_features = [
@@ -134,15 +129,14 @@ async def validate_multicollinearity_fix():
         # Check that the features are different
         if all(f in feature_df.columns for f in ["1m_price_change", "5m_price_change"]):
             correlation = feature_df["1m_price_change"].corr(
-                feature_df["5m_price_change"]
+                feature_df["5m_price_change"],
             )
             print(f"📊 1m vs 5m price change correlation: {correlation:.6f}")
 
             if abs(correlation) >= 0.9999:
                 print("❌ 1m and 5m price changes are still perfectly correlated!")
                 return False
-            else:
-                print("✅ 1m and 5m price changes are properly differentiated")
+            print("✅ 1m and 5m price changes are properly differentiated")
 
         print("✅ Multicollinearity fix validation completed successfully!")
         return True
@@ -151,10 +145,8 @@ async def validate_multicollinearity_fix():
         print(f"❌ Error during validation: {e}")
         return False
 
-
 def main():
     """Main function to run the validation."""
-    import asyncio
 
     success = asyncio.run(validate_multicollinearity_fix())
     if success:
@@ -164,7 +156,6 @@ def main():
         print("\n❌ MULTICOLLINEARITY FIX VALIDATION FAILED!")
         print("❌ There are still issues with the feature engineering.")
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()

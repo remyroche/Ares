@@ -13,15 +13,12 @@ from src.utils.logger import system_logger
 dotenv_path = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
 if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path)
-    print(".env file loaded.")
 else:
-    print(".env file not found. Using environment variables or defaults.")
+    pass
 
 
 class EnvironmentSettings(BaseSettings):
-    """
-    Manages all environment-specific settings using Pydantic.
-    """
+    """Manages all environment-specific settings using Pydantic."""
 
     # --- Basic Trading Settings ---
     log_level: str = Field(default="INFO", env="LOG_LEVEL")
@@ -108,7 +105,7 @@ class EnvironmentSettings(BaseSettings):
     # --- Derived Properties ---
     @property
     def is_live_mode(self) -> bool:
-        """Check if running in live trading mode."""
+        """Check if running in live mode."""
         return self.trading_environment == "LIVE"
 
     @property
@@ -118,178 +115,133 @@ class EnvironmentSettings(BaseSettings):
 
     @property
     def is_paper_mode(self) -> bool:
-        """Check if running in paper trading mode."""
+        """Check if running in paper mode."""
         return self.trading_environment == "PAPER"
 
-    @property
-    def current_exchange_credentials(self) -> dict[str, Any]:
-        """Get credentials for the current exchange."""
-        exchange = self.exchange_name.lower()
+    def get_exchange_credentials(self, exchange_name: str) -> dict[str, str | None]:
+        """Get credentials for a specific exchange.
 
-        if exchange == "gateio":
+        Args:
+            exchange_name: Name of the exchange
+
+        Returns:
+            dict: Exchange credentials
+
+        """
+        exchange_name_lower = exchange_name.lower()
+
+        if exchange_name_lower == "binance":
+            return {
+                "api_key": self.binance_api_key,
+                "api_secret": self.binance_api_secret,
+            }
+        if exchange_name_lower == "gateio":
             return {
                 "api_key": self.gateio_api_key,
                 "api_secret": self.gateio_api_secret,
             }
-        if exchange == "mexc":
+        if exchange_name_lower == "mexc":
             return {
                 "api_key": self.mexc_api_key,
                 "api_secret": self.mexc_api_secret,
             }
-        if exchange == "okx":
+        if exchange_name_lower == "okx":
             return {
                 "api_key": self.okx_api_key,
                 "api_secret": self.okx_api_secret,
                 "password": self.okx_password,
             }
-        if exchange == "binance":
+        return {"api_key": None, "api_secret": None}
+
+    def validate_credentials(self, exchange_name: str) -> bool:
+        """Validate that credentials are available for the specified exchange.
+
+        Args:
+            exchange_name: Name of the exchange
+
+        Returns:
+            bool: True if credentials are available
+
+        """
+        credentials = self.get_exchange_credentials(exchange_name)
+        return (
+            credentials["api_key"] is not None and credentials["api_secret"] is not None
+        )
+
+    def get_database_config(self, database_type: str) -> dict[str, Any]:
+        """Get database configuration for a specific database type.
+
+        Args:
+            database_type: Type of database (firestore, influxdb, etc.)
+
+        Returns:
+            dict: Database configuration
+
+        """
+        if database_type.lower() == "firestore":
             return {
-                "api_key": self.binance_api_key,
-                "api_secret": self.binance_api_secret,
+                "project_id": self.firestore_project_id,
+                "credentials_path": self.google_application_credentials,
+            }
+        if database_type.lower() == "influxdb":
+            return {
+                "url": self.influxdb_url,
+                "token": self.influxdb_token,
+                "org": self.influxdb_org,
+                "bucket": self.influxdb_bucket,
             }
         return {}
 
-    # --- Validators ---
+    def get_email_config(self) -> dict[str, str | None]:
+        """Get email configuration.
+
+        Returns:
+            dict: Email configuration
+
+        """
+        return {
+            "sender_address": self.email_sender_address,
+            "sender_password": self.email_sender_password,
+            "recipient_address": self.email_recipient_address,
+        }
+
+    def get_mlflow_config(self) -> dict[str, str | None]:
+        """Get MLflow configuration.
+
+        Returns:
+            dict: MLflow configuration
+
+        """
+        return {
+            "tracking_uri": self.mlflow_tracking_uri,
+            "experiment_name": self.mlflow_experiment_name,
+        }
+
     class Config:
-        case_sensitive = True
+        """Pydantic configuration."""
 
-
-# --- Global Settings Instance ---
-try:
-    settings = EnvironmentSettings()
-    system_logger.info(
-        f"Environment configuration loaded successfully. "
-        f"Trading Environment: {settings.trading_environment}, "
-        f"Exchange: {settings.exchange_name}",
-    )
-except Exception as e:
-    system_logger.error(f"Failed to load or validate environment configuration: {e}")
-    raise
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+        case_sensitive = False
+        extra = "ignore"
 
 
 def get_environment_settings() -> EnvironmentSettings:
-    """
-    Get the global environment settings instance.
+    """Get environment settings instance.
 
     Returns:
-        EnvironmentSettings: The global settings instance
+        EnvironmentSettings: Environment settings instance
+
     """
-    return settings
-
-
-def get_trading_environment() -> str:
-    """
-    Get the current trading environment.
-
-    Returns:
-        str: The trading environment (LIVE, TESTNET, or PAPER)
-    """
-    return settings.trading_environment
-
-
-def get_exchange_name() -> str:
-    """
-    Get the current exchange name.
-
-    Returns:
-        str: The exchange name
-    """
-    return settings.exchange_name
-
-
-def get_trade_symbol() -> str:
-    """
-    Get the current trade symbol.
-
-    Returns:
-        str: The trade symbol
-    """
-    return settings.trade_symbol
-
-
-def get_timeframe() -> str:
-    """
-    Get the current timeframe.
-
-    Returns:
-        str: The timeframe
-    """
-    return settings.timeframe
-
-
-def get_initial_equity() -> float:
-    """
-    Get the initial equity.
-
-    Returns:
-        float: The initial equity
-    """
-    return settings.initial_equity
-
-
-def is_live_mode() -> bool:
-    """
-    Check if running in live mode.
-
-    Returns:
-        bool: True if in live mode, False otherwise
-    """
-    return settings.is_live_mode
-
-
-def get_exchange_credentials() -> dict[str, Any]:
-    """
-    Get credentials for the current exchange.
-
-    Returns:
-        dict: Exchange credentials
-    """
-    return settings.current_exchange_credentials
-
-
-def get_database_config() -> dict[str, Any]:
-    """
-    Get database configuration.
-
-    Returns:
-        dict: Database configuration
-    """
-    return {
-        "influxdb": {
-            "url": settings.influxdb_url,
-            "token": settings.influxdb_token,
-            "org": settings.influxdb_org,
-            "bucket": settings.influxdb_bucket,
-        },
-        "firestore": {
-            "credentials": settings.google_application_credentials,
-            "project_id": settings.firestore_project_id,
-        },
-    }
-
-
-def get_mlflow_config() -> dict[str, Any]:
-    """
-    Get MLflow configuration.
-
-    Returns:
-        dict: MLflow configuration
-    """
-    return {
-        "tracking_uri": settings.mlflow_tracking_uri,
-        "experiment_name": settings.mlflow_experiment_name,
-    }
-
-
-def get_email_config() -> dict[str, Any]:
-    """
-    Get email configuration.
-
-    Returns:
-        dict: Email configuration
-    """
-    return {
-        "sender_address": settings.email_sender_address,
-        "sender_password": settings.email_sender_password,
-        "recipient_address": settings.email_recipient_address,
-    }
+    try:
+        return EnvironmentSettings()
+    except Exception as e:
+        system_logger.error(f"Error loading environment settings: {e}")
+        # Return default settings
+        return EnvironmentSettings(
+            trading_environment="PAPER",
+            trade_symbol="ETHUSDT",
+            exchange_name="BINANCE",
+            timeframe="15m",
+            initial_equity=100.0,
+        )

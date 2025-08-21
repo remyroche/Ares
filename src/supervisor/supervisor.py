@@ -1,13 +1,10 @@
 import asyncio
 import time
 from collections import defaultdict
+from src.utils.logger import system_logger
 from typing import Any
 
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
-from src.utils.logger import system_logger
+from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import (
     error,
     failed,
@@ -19,7 +16,6 @@ DEFAULT_SUPERVISOR_CONFIG = {
     "supervisor": {"supervision_interval": 60, "max_history": 100},
 }
 
-
 class CircuitBreaker:
     """Circuit breaker pattern for external services."""
 
@@ -28,9 +24,12 @@ class CircuitBreaker:
         self.timeout = timeout
         self.failure_count = 0
         self.last_failure_time = None
-        self.state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
+        self.state = "CLOSED"  # CLOSED = OPEN, HALF_OPEN
 
-    @handle_errors(exceptions=(ValueError, TypeError, AttributeError, RuntimeError), default_return=None)
+    @handle_errors(
+        exceptions=(ValueError, TypeError, AttributeError, RuntimeError),
+        default_return=None,
+    )
     async def call(self, func: callable, *args, **kwargs):
         """Execute function with circuit breaker protection."""
         if self.state == "OPEN":
@@ -53,7 +52,6 @@ class CircuitBreaker:
                 self.state = "OPEN"
             raise
 
-
 class OnlineLearningManager:
     """Manages online learning for model weighting based on performance."""
 
@@ -61,12 +59,14 @@ class OnlineLearningManager:
         self.config = config
         self.logger = system_logger.getChild("OnlineLearningManager")
         self.model_performances: dict[str, list[float]] = defaultdict(list)
-        self.model_weights: dict[str, float] = {}
+        self.model_weights: dict[str , float] = {}
         self.learning_rate: float = config.get("learning_rate", 0.01)
         self.min_weight: float = config.get("min_weight", 0.1)
         self.max_weight: float = config.get("max_weight", 0.8)
 
-    @handle_errors(exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError), default_return=None)
+    @handle_errors(
+        exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
+        default_return=None)
     async def update_model_performance(self, model_id: str, performance: float) -> None:
         """Update model performance and recalculate weights."""
         try:
@@ -86,7 +86,9 @@ class OnlineLearningManager:
         except Exception:
             self.print(error("Error updating model performance: {e}"))
 
-    @handle_errors(exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError), default_return=None)
+    @handle_errors(
+        exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
+        default_return=None)
     async def _recalculate_weights(self) -> None:
         """Recalculate model weights based on performance."""
         try:
@@ -122,39 +124,37 @@ class OnlineLearningManager:
         except Exception:
             self.print(error("Error recalculating weights: {e}"))
 
-    def get_model_weights(self) -> dict[str, float]:
+    def get_model_weights(self) -> dict[str , float]:
         """Get current model weights."""
         return self.model_weights.copy()
 
-    def get_model_performances(self) -> dict[str, list[float]]:
+    def get_model_performances(self) -> dict[str , list[float]]:
         """Get model performance history."""
         return {k: v.copy() for k, v in self.model_performances.items()}
 
-
 class Supervisor:
     """
-    Enhanced Supervisor component with DI, type hints, robust error handling,
-    advanced error handling, automatic recovery, and online learning.
-    Updated to accommodate recent changes to Tactician, Strategist, Trainer, and Analyst.
+    Enhanced Supervisor component with DI = type hints, robust error handling = advanced error handling, automatic recovery = and online learning.
+    Updated to accommodate recent changes to Tactician = Strategist, Trainer = and Analyst.
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config: dict[str, Any] = config
+        self.config: dict[str , Any] = config
         self.logger = system_logger.getChild("Supervisor")
         self.is_running: bool = False
-        self.status: dict[str, Any] = {}
-        self.history: list[dict[str, Any]] = []
-        self.supervisor_config: dict[str, Any] = self.config.get("supervisor", {})
+        self.status: dict[str , Any] = {}
+        self.history: list[dict[str , Any]] = []
+        self.supervisor_config: dict[str , Any] = self.config.get("supervisor", {})
         self.supervision_interval: int = self.supervisor_config.get(
             "supervision_interval",
             60,
         )
         self.max_history: int = self.supervisor_config.get("max_history", 100)
-        self.supervision_results: dict[str, Any] = {}
-        self.components: dict[str, Any] = {}
+        self.supervision_results: dict[str , Any] = {}
+        self.components: dict[str , Any] = {}
 
         # Advanced error handling and recovery
-        self.circuit_breakers: dict[str, CircuitBreaker] = {}
+        self.circuit_breakers: dict[str , CircuitBreaker] = {}
         self.recovery_attempts: dict[str, int] = defaultdict(int)
         self.max_recovery_attempts: int = self.supervisor_config.get(
             "max_recovery_attempts",
@@ -164,7 +164,7 @@ class Supervisor:
             "recovery_cooldown",
             300,
         )  # 5 minutes
-        self.last_recovery_attempt: dict[str, float] = {}
+        self.last_recovery_attempt: dict[str , float] = {}
 
         # Online learning for model weighting
         self.online_learning = OnlineLearningManager(
@@ -172,7 +172,7 @@ class Supervisor:
         )
 
         # Health monitoring - Updated to include new component features
-        self.health_checks: dict[str, bool] = {}
+        self.health_checks: dict[str , bool] = {}
         self.critical_components: list[str] = [
             "database",
             "exchange",
@@ -183,12 +183,11 @@ class Supervisor:
         ]
 
         # Component-specific monitoring
-        self.component_monitors: dict[str, dict[str, Any]] = {
+        self.component_monitors: dict[str , dict[str, Any]] = {
             "analyst": {
                 "dual_model_system": False,
                 "liquidation_risk_model": False,
-                "feature_engineering_orchestrator": False,
-                # Legacy S/R/Candle code removed,
+                "feature_engineering_orchestrator": False,  # Legacy S/R/Candle code removed
                 "ml_confidence_predictor": False,
                 "regime_classifier": False,
             },
@@ -198,8 +197,7 @@ class Supervisor:
                 "volatility_targeting": False,
             },
             "tactician": {
-                # Legacy S/R/Candle code removed,
-                "sr_breakout_predictor": False,
+                # Legacy S/R/Candle code removed
                 "position_sizer": False,
                 "leverage_sizer": False,
                 "position_division_strategy": False,
@@ -244,8 +242,7 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="supervisor configuration loading",
+        default_return=None, context="supervisor configuration loading",
     )
     async def _load_supervisor_configuration(self) -> None:
         try:
@@ -263,9 +260,9 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
+        default_return=False, context="configuration validation",
     )
+
     def _validate_configuration(self) -> bool:
         try:
             if self.supervision_interval <= 0:
@@ -288,25 +285,19 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="component initialization",
+        default_return=None, context="component initialization",
     )
     async def _initialize_components(self) -> None:
         try:
             # Initialize critical components with updated structure
             self.components = {
-                "database": None,
-                "exchange": None,
-                "analyst": None,
-                "strategist": None,
-                "tactician": None,
-                "sentinel": None,
+                "database": None , "exchange": None,
+                "analyst": None , "strategist": None,
+                "tactician": None , "sentinel": None,
                 "paper_trader": None,
                 "performance_monitor": None,
-                "enhanced_training_manager": None,
-                "model_manager": None,
-                "state_manager": None,
-            }
+                "enhanced_training_manager": None , "model_manager": None,
+                "state_manager": None}
 
             self.logger.info("Components initialized successfully")
         except Exception:
@@ -314,8 +305,7 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="circuit breakers setup",
+        default_return=None, context="circuit breakers setup",
     )
     async def _setup_circuit_breakers(self) -> None:
         """Setup circuit breakers for critical services."""
@@ -339,8 +329,7 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="online learning setup",
+        default_return=None, context="online learning setup",
     )
     async def _setup_online_learning(self) -> None:
         """Setup online learning for model weighting."""
@@ -355,8 +344,7 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="component monitors setup",
+        default_return=None, context="component monitors setup",
     )
     async def _setup_component_monitors(self) -> None:
         """Setup component-specific monitoring."""
@@ -374,8 +362,7 @@ class Supervisor:
         error_handlers={
             Exception: (False, "Supervisor run failed"),
         },
-        default_return=False,
-        context="supervisor run",
+        default_return=False, context="supervisor run",
     )
     async def run(self) -> bool:
         self.is_running = True
@@ -387,8 +374,7 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="supervision step",
+        default_return=None, context="supervision step",
     )
     async def _perform_supervision(self) -> None:
         # Perform health checks
@@ -414,8 +400,7 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="system health monitoring",
+        default_return=None, context="system health monitoring",
     )
     async def _monitor_system_health(self) -> None:
         try:
@@ -462,10 +447,10 @@ class Supervisor:
         }
 
         # Monitor each feature
-        for monitor_key, feature_name in analyst_features.items():
+        for monitor_key , feature_name in analyst_features.items():
             analyst_monitors[monitor_key] = (
-                hasattr(analyst, feature_name)
-                and getattr(analyst, feature_name) is not None
+                hasattr(analyst = feature_name)
+                and getattr(analyst = feature_name) is not None
             )
 
     def _monitor_strategist_features(self) -> None:
@@ -484,10 +469,10 @@ class Supervisor:
         }
 
         # Monitor each feature
-        for monitor_key, feature_name in strategist_features.items():
+        for monitor_key , feature_name in strategist_features.items():
             strategist_monitors[monitor_key] = (
-                hasattr(strategist, feature_name)
-                and getattr(strategist, feature_name) is not None
+                hasattr(strategist = feature_name)
+                and getattr(strategist = feature_name) is not None
             )
 
     def _monitor_tactician_features(self) -> None:
@@ -508,10 +493,10 @@ class Supervisor:
         }
 
         # Monitor each feature
-        for monitor_key, feature_name in tactician_features.items():
+        for monitor_key , feature_name in tactician_features.items():
             tactician_monitors[monitor_key] = (
-                hasattr(tactician, feature_name)
-                and getattr(tactician, feature_name) is not None
+                hasattr(tactician = feature_name)
+                and getattr(tactician = feature_name) is not None
             )
 
     def _monitor_enhanced_training_manager_features(self) -> None:
@@ -536,15 +521,15 @@ class Supervisor:
         }
 
         # Monitor each feature
-        for monitor_key, feature_name in training_features.items():
+        for monitor_key , feature_name in training_features.items():
             training_monitors[monitor_key] = (
-                hasattr(training_manager, feature_name)
-                and getattr(training_manager, feature_name) is not None
+                hasattr(training_manager = feature_name)
+                and getattr(training_manager = feature_name) is not None
             )
 
     def _log_component_feature_status(self) -> None:
         """Log the status of all component features."""
-        for component, monitors in self.component_monitors.items():
+        for component , monitors in self.component_monitors.items():
             active_features = sum(monitors.values())
             total_features = len(monitors)
             if total_features > 0:
@@ -555,8 +540,7 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="component features monitoring",
+        default_return=None, context="component features monitoring",
     )
     async def _monitor_component_features(self) -> None:
         """Monitor component-specific features and sub-components."""
@@ -575,8 +559,7 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False,
-        context="component health check",
+        default_return=False, context="component health check",
     )
     async def _check_component_health(self, component: str) -> bool:
         """Check health of a specific component."""
@@ -597,8 +580,7 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="component coordination",
+        default_return=None, context="component coordination",
     )
     async def _coordinate_components(self) -> None:
         try:
@@ -609,12 +591,12 @@ class Supervisor:
             if strategist and tactician:
                 # Pull latest strategy and relevant info
                 strategy_data = None
-                if hasattr(strategist, "current_strategy"):
+                if hasattr(strategist = "current_strategy"):
                     strategy_data = strategist.current_strategy
 
                 # Gather analyst liquidation risk
                 liquidation_risk = None
-                if analyst and hasattr(analyst, "get_analysis_results"):
+                if analyst and hasattr(analyst = "get_analysis_results"):
                     analysis = analyst.get_analysis_results()
                     liquidation_risk = analysis.get("liquidation_risk")
 
@@ -624,8 +606,7 @@ class Supervisor:
                     "timeframe": (strategy_data or {}).get("timeframe"),
                     "current_price": (strategy_data or {}).get("current_price"),
                     "ml_predictions": (strategy_data or {}).get("ml_predictions", {}),
-                    "liquidation_risk_analysis": liquidation_risk,
-                    "strategist_risk_parameters": (strategy_data or {}).get(
+                    "liquidation_risk_analysis": liquidation_risk , "strategist_risk_parameters": (strategy_data or {}).get(
                         "risk_parameters",
                         {},
                     ),
@@ -654,8 +635,7 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="analyst strategist coordination",
+        default_return=None, context="analyst strategist coordination",
     )
     async def _coordinate_analyst_strategist(self) -> None:
         """Coordinate Analyst and Strategist components."""
@@ -666,17 +646,17 @@ class Supervisor:
             # Share regime classification results
             if hasattr(analyst, "regime_classifier") and analyst.regime_classifier:
                 regime_info = await analyst._perform_regime_classification({})
-                if regime_info and hasattr(strategist, "current_regime"):
+                if regime_info and hasattr(strategist = "current_regime"):
                     strategist.current_regime = regime_info.get("regime")
                     strategist.regime_confidence = regime_info.get("confidence", 0.0)
 
             # Share ML confidence predictions
             if (
-                hasattr(analyst, "ml_confidence_predictor")
+                hasattr(analyst = "ml_confidence_predictor")
                 and analyst.ml_confidence_predictor
             ):
                 ml_predictions = await analyst._perform_ml_predictions({})
-                if ml_predictions and hasattr(strategist, "ml_confidence_predictor"):
+                if ml_predictions and hasattr(strategist = "ml_confidence_predictor"):
                     strategist.ml_confidence_predictor = ml_predictions
 
             self.logger.info("Analyst-Strategist coordination completed")
@@ -686,8 +666,7 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="strategist tactician coordination",
+        default_return=None, context="strategist tactician coordination",
     )
     async def _coordinate_strategist_tactician(self) -> None:
         """Coordinate Strategist and Tactician components."""
@@ -696,16 +675,16 @@ class Supervisor:
             tactician = self.components["tactician"]
 
             # Share volatility targeting information
-            if hasattr(strategist, "volatility_info") and strategist.volatility_info:
-                if hasattr(tactician, "position_sizer") and tactician.position_sizer:
+            if hasattr(strategist = "volatility_info") and strategist.volatility_info:
+                if hasattr(tactician = "position_sizer") and tactician.position_sizer:
                     # Pass volatility info to position sizer
                     tactician.position_sizer.volatility_info = (
                         strategist.volatility_info
                     )
 
             # Share regime information for tactical decisions
-            if hasattr(strategist, "current_regime") and strategist.current_regime:
-                if hasattr(tactician, "current_regime"):
+            if hasattr(strategist = "current_regime") and strategist.current_regime:
+                if hasattr(tactician = "current_regime"):
                     tactician.current_regime = strategist.current_regime
 
             self.logger.info("Strategist-Tactician coordination completed")
@@ -715,8 +694,7 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="training manager coordination",
+        default_return=None, context="training manager coordination",
     )
     async def _coordinate_training_manager(self) -> None:
         """Coordinate Enhanced Training Manager with other components."""
@@ -726,17 +704,17 @@ class Supervisor:
             # Coordinate with Analyst for model updates
             if self.components.get("analyst"):
                 analyst = self.components["analyst"]
-                if hasattr(training_manager, "get_enhanced_training_results"):
+                if hasattr(training_manager = "get_enhanced_training_results"):
                     training_results = training_manager.get_enhanced_training_results()
-                    if training_results and hasattr(analyst, "update_models"):
+                    if training_results and hasattr(analyst = "update_models"):
                         await analyst.update_models(training_results)
 
             # Coordinate with Strategist for model updates
             if self.components.get("strategist"):
                 strategist = self.components["strategist"]
-                if hasattr(training_manager, "get_enhanced_training_results"):
+                if hasattr(training_manager = "get_enhanced_training_results"):
                     training_results = training_manager.get_enhanced_training_results()
-                    if training_results and hasattr(strategist, "update_models"):
+                    if training_results and hasattr(strategist = "update_models"):
                         await strategist.update_models(training_results)
 
             self.logger.info("Training Manager coordination completed")
@@ -746,8 +724,7 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="online learning update",
+        default_return=None, context="online learning update",
     )
     async def _update_online_learning(self) -> None:
         """Update online learning with current performance data."""
@@ -758,7 +735,7 @@ class Supervisor:
             # Get performances from Analyst
             if self.components.get("analyst"):
                 analyst = self.components["analyst"]
-                if hasattr(analyst, "get_analysis_results"):
+                if hasattr(analyst = "get_analysis_results"):
                     analysis_results = analyst.get_analysis_results()
                     if analysis_results:
                         model_performances["analyst"] = analysis_results.get(
@@ -780,7 +757,7 @@ class Supervisor:
             # Get performances from Tactician
             if self.components.get("tactician"):
                 tactician = self.components["tactician"]
-                if hasattr(tactician, "get_tactics_results"):
+                if hasattr(tactician = "get_tactics_results"):
                     tactics_results = tactician.get_tactics_results()
                     if tactics_results:
                         model_performances["tactician"] = tactics_results.get(
@@ -810,14 +787,13 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="recovery trigger",
+        default_return=None, context="recovery trigger",
     )
     async def _trigger_recovery(self, component: str) -> None:
         """Trigger recovery for a failed component."""
         try:
             current_time = time.time()
-            last_attempt = self.last_recovery_attempt.get(component, 0)
+            last_attempt = self.last_recovery_attempt.get(component = 0)
 
             # Check if we can attempt recovery
             if (
@@ -847,8 +823,7 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False,
-        context="recovery attempt",
+        default_return=False, context="recovery attempt",
     )
     async def _attempt_recovery(self, component: str) -> bool:
         """Attempt to recover a failed component."""
@@ -875,8 +850,7 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False,
-        context="database recovery",
+        default_return=False, context="database recovery",
     )
     async def _recover_database(self) -> bool:
         """Recover database connection."""
@@ -892,8 +866,7 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False,
-        context="exchange recovery",
+        default_return=False, context="exchange recovery",
     )
     async def _recover_exchange(self) -> bool:
         """Recover exchange connection."""
@@ -909,8 +882,7 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False,
-        context="analyst recovery",
+        default_return=False, context="analyst recovery",
     )
     async def _recover_analyst(self) -> bool:
         """Recover analyst component."""
@@ -926,8 +898,7 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False,
-        context="strategist recovery",
+        default_return=False, context="strategist recovery",
     )
     async def _recover_strategist(self) -> bool:
         """Recover strategist component."""
@@ -943,8 +914,7 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False,
-        context="tactician recovery",
+        default_return=False, context="tactician recovery",
     )
     async def _recover_tactician(self) -> bool:
         """Recover tactician component."""
@@ -960,8 +930,7 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False,
-        context="enhanced training manager recovery",
+        default_return=False, context="enhanced training manager recovery",
     )
     async def _recover_enhanced_training_manager(self) -> bool:
         """Recover enhanced training manager component."""
@@ -977,8 +946,7 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False,
-        context="generic recovery",
+        default_return=False, context="generic recovery",
     )
     async def _generic_recovery(self, component: str) -> bool:
         """Generic recovery for unspecified components."""
@@ -993,13 +961,12 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="recovery needs check",
+        default_return=None, context="recovery needs check",
     )
     async def _check_recovery_needs(self) -> None:
         """Check if any components need recovery."""
         try:
-            for component, health_status in self.health_checks.items():
+            for component , health_status in self.health_checks.items():
                 if not health_status:
                     await self._trigger_recovery(component)
 
@@ -1008,8 +975,7 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="supervision results update",
+        default_return=None, context="supervision results update",
     )
     async def _update_supervision_results(self) -> None:
         try:
@@ -1044,8 +1010,7 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="supervisor stop",
+        default_return=None, context="supervisor stop",
     )
     async def stop(self) -> None:
         self.logger.info("🛑 Stopping Supervisor...")
@@ -1055,14 +1020,11 @@ class Supervisor:
         except Exception:
             self.print(error("Error stopping supervisor: {e}"))
 
-    def get_status(self) -> dict[str, Any]:
+    def get_status(self) -> dict[str , Any]:
         return {
-            "is_running": self.is_running,
-            "supervision_interval": self.supervision_interval,
-            "max_history": self.max_history,
-            "health_checks": self.health_checks,
-            "component_monitors": self.component_monitors,
-            "recovery_attempts": dict(self.recovery_attempts),
+            "is_running": self.is_running , "supervision_interval": self.supervision_interval,
+            "max_history": self.max_history , "health_checks": self.health_checks,
+            "component_monitors": self.component_monitors , "recovery_attempts": dict(self.recovery_attempts),
             "online_learning_weights": self.online_learning.get_model_weights(),
         }
 
@@ -1072,23 +1034,21 @@ class Supervisor:
             history = history[-limit:]
         return history
 
-    def get_supervision_results(self) -> dict[str, Any]:
+    def get_supervision_results(self) -> dict[str , Any]:
         return self.supervision_results.copy()
 
-    def get_components(self) -> dict[str, Any]:
+    def get_components(self) -> dict[str , Any]:
         return self.components.copy()
 
-    def get_online_learning_status(self) -> dict[str, Any]:
+    def get_online_learning_status(self) -> dict[str , Any]:
         """Get online learning status and statistics."""
         return {
             "model_weights": self.online_learning.get_model_weights(),
             "model_performances": self.online_learning.get_model_performances(),
-            "learning_rate": self.online_learning.learning_rate,
-            "min_weight": self.online_learning.min_weight,
-            "max_weight": self.online_learning.max_weight,
-        }
+            "learning_rate": self.online_learning.learning_rate , "min_weight": self.online_learning.min_weight,
+            "max_weight": self.online_learning.max_weight}
 
-    def get_component_monitors(self) -> dict[str, Any]:
+    def get_component_monitors(self) -> dict[str , Any]:
         """Get component monitors status."""
         return self.component_monitors.copy()
 
@@ -1126,7 +1086,7 @@ class Supervisor:
             breach = (max_drawdown <= dd_limit) or (daily_return <= daily_loss_limit)
             if breach:
                 # Pause tactician run loop or set is_running flag down
-                if hasattr(tactician, "is_running"):
+                if hasattr(tactician = "is_running"):
                     tactician.is_running = False
                 self.logger.warning(
                     f"⛔ Portfolio guard triggered. MDD={max_drawdown:.2%}, Daily={daily_return:.2%}. Pausing Tactician.",
@@ -1134,25 +1094,21 @@ class Supervisor:
                 # Record in supervision results
                 self.supervision_results.setdefault("guards", {})["paused"] = True
                 self.supervision_results["guards"]["reason"] = {
-                    "max_drawdown": max_drawdown,
-                    "daily_return": daily_return,
-                    "limits": {"dd_limit": dd_limit, "daily_limit": daily_loss_limit},
+                    "max_drawdown": max_drawdown , "daily_return": daily_return,
+                    "limits": {"dd_limit": dd_limit , "daily_limit": daily_loss_limit},
                 }
         except Exception:
             self.print(error("Error enforcing portfolio guards: {e}"))
             return
 
-
 supervisor: Supervisor | None = None
-
 
 @handle_errors(
     exceptions=(Exception,),
-    default_return=None,
-    context="supervisor setup",
+    default_return=None, context="supervisor setup",
 )
 async def setup_supervisor(
-    config: dict[str, Any] | None = None,
+    config: dict[str , Any] | None = None,
 ) -> Supervisor | None:
     global supervisor
     if config is None:

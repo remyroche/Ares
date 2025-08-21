@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Progress Manager for Training Steps
+"""Progress Manager for Training Steps.
 
 This module handles saving and loading progress for each training step,
 allowing the training pipeline to resume from any step.
@@ -21,7 +20,7 @@ from src.utils.warning_symbols import (
 class ProgressManager:
     """Manages progress saving and loading for training steps."""
 
-    def __init__(self, symbol: str, exchange: str, data_dir: str = "data/training"):
+    def __init__(self, symbol: str, exchange: str, data_dir: str = "data/training") -> None:
         self.symbol = symbol
         self.exchange = exchange
         self.data_dir = data_dir
@@ -40,8 +39,7 @@ class ProgressManager:
         step_data: dict[str, Any],
         metadata: dict[str, Any] | None = None,
     ) -> bool:
-        """
-        Save progress for a specific step.
+        """Save progress for a specific step.
 
         Args:
             step_name: Name of the step (e.g., 'step1_data_collection')
@@ -50,6 +48,7 @@ class ProgressManager:
 
         Returns:
             True if saved successfully, False otherwise
+
         """
         try:
             timestamp = datetime.now().isoformat()
@@ -84,14 +83,14 @@ class ProgressManager:
             return False
 
     def load_step_progress(self, step_name: str) -> dict[str, Any] | None:
-        """
-        Load progress for a specific step.
+        """Load progress for a specific step.
 
         Args:
             step_name: Name of the step to load
 
         Returns:
             Progress data if found, None otherwise
+
         """
         try:
             # Try pickle file first (for complex objects)
@@ -120,11 +119,11 @@ class ProgressManager:
             return None
 
     def get_latest_step(self) -> str | None:
-        """
-        Get the name of the latest completed step.
+        """Get the name of the latest completed step.
 
         Returns:
             Name of the latest step, or None if no progress found
+
         """
         try:
             step_files = list(self.progress_dir.glob("*.pkl"))
@@ -145,11 +144,11 @@ class ProgressManager:
             return None
 
     def get_all_progress(self) -> dict[str, dict[str, Any]]:
-        """
-        Get all saved progress data.
+        """Get all saved progress data.
 
         Returns:
             Dictionary mapping step names to their progress data
+
         """
         progress_data = {}
 
@@ -170,14 +169,14 @@ class ProgressManager:
             return {}
 
     def clear_progress(self, step_name: str | None = None) -> bool:
-        """
-        Clear progress for a specific step or all steps.
+        """Clear progress for a specific step or all steps.
 
         Args:
             step_name: Step name to clear, or None to clear all
 
         Returns:
             True if cleared successfully, False otherwise
+
         """
         try:
             if step_name:
@@ -205,28 +204,28 @@ class ProgressManager:
             return False
 
     def step_exists(self, step_name: str) -> bool:
-        """
-        Check if progress exists for a specific step.
+        """Check if progress exists for a specific step.
 
         Args:
             step_name: Name of the step to check
 
         Returns:
             True if progress exists, False otherwise
+
         """
         pickle_file = self.progress_dir / f"{step_name}.pkl"
         json_file = self.progress_dir / f"{step_name}.json"
         return pickle_file.exists() or json_file.exists()
 
     def get_step_timestamp(self, step_name: str) -> str | None:
-        """
-        Get the timestamp when a step was completed.
+        """Get the timestamp when a step was completed.
 
         Args:
             step_name: Name of the step
 
         Returns:
             Timestamp string if found, None otherwise
+
         """
         progress = self.load_step_progress(step_name)
         if progress:

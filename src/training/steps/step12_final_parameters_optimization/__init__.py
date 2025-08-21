@@ -1,7 +1,6 @@
 # src/training/steps/step12_final_parameters_optimization/__init__.py
 
-"""
-Step 12: Final Parameters Optimization Package
+"""Step 12: Final Parameters Optimization Package.
 
 This package contains efficiency optimizers and evaluation engines for final model optimization.
 """
@@ -31,6 +30,6 @@ from .optimized_optuna_optimization import (
 __all__ = [
     "EfficiencyOptimizer",
     "EvaluationEngine",
-    "OptimizedOptunaOptimization",
     "HyperparameterOptimizationConfig",
+    "OptimizedOptunaOptimization",
 ]

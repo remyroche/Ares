@@ -5,10 +5,13 @@ Legacy configuration module for backward compatibility.
 This module now uses the new modular configuration structure.
 """
 
+from src.utils.logger import system_logger
 from typing import Any
+from src.config.environment import get_environment_settings, get_env_settings
+from dataclasses import dataclass
 
 # Import the new modular configuration
-from src.config import (
+from src.config.modular_config import (
     CONFIG,
     AresConfig,
     get_complete_config,
@@ -47,8 +50,8 @@ __all__ = [
     "get_enhanced_training_config",
 ]
 
-
 # Legacy compatibility - maintain the old CONFIG structure
+
 def get_config() -> dict[str, Any]:
     """
     Get the complete configuration (legacy function).
@@ -58,7 +61,6 @@ def get_config() -> dict[str, Any]:
     """
     return get_complete_config()
 
-
 def get_environment_settings():
     """
     Get environment settings (legacy function).
@@ -66,14 +68,9 @@ def get_environment_settings():
     Returns:
         EnvironmentSettings: Environment settings instance
     """
-    from src.config.environment import get_environment_settings as get_env_settings
-
     return get_env_settings()
 
-
 # Legacy dataclass definitions for backward compatibility
-from dataclasses import dataclass
-
 
 @dataclass
 class DatabaseConfig:
@@ -87,7 +84,6 @@ class DatabaseConfig:
     max_connections: int = 10
     connection_timeout: int = 30
 
-
 @dataclass
 class ExchangeConfig:
     """Exchange configuration settings."""
@@ -98,7 +94,6 @@ class ExchangeConfig:
     testnet: bool = True
     rate_limit: int = 1200
     timeout: int = 30
-
 
 @dataclass
 class ModelTrainingConfig:
@@ -111,60 +106,50 @@ class ModelTrainingConfig:
     batch_size: int = 64
     epochs: int = 100
     learning_rate: float = 0.001
-    
+
     # Enhanced optimization settings
     enhanced_lm_optimizer: dict[str, Any] = None
-    
+
     def __post_init__(self):
         if self.enhanced_lm_optimizer is None:
             self.enhanced_lm_optimizer = {
                 "feature_selection": {
-                    "enable": True,
-                    "methods": ["mutual_info", "lasso", "random_forest", "shap"],
-                    "target_features": {
-                        "step6": 80,
-                        "step6_5": 100,
-                        "step9": 90
-                    },
+                    "enable": True, "methods": ["mutual_info", "lasso", "random_forest", "shap"],
+                    "target_features": {"step6": 80, "step6_5": 100, "step9": 90},
                     "vif_threshold": 10.0,
                     "correlation_threshold": 0.95,
                     "variance_threshold": 0.01,
                     "mutual_info_threshold": 0.001,
-                    "shap_threshold": 0.001
+                    "shap_threshold": 0.001,
                 },
                 "regularization": {
-                    "enable": True,
-                    "l1_alpha_range": [0.001, 0.1],
+                    "enable": True, "l1_alpha_range": [0.001, 0.1],
                     "l2_alpha_range": [0.0001, 0.01],
                     "dropout_range": [0.1, 0.5],
                     "model_specific": {
                         "lightgbm": {
                             "reg_alpha_range": [0.001, 0.1],
-                            "reg_lambda_range": [0.0001, 0.01]
+                            "reg_lambda_range": [0.0001, 0.01],
                         },
                         "neural_networks": {
                             "weight_decay_range": [1e-6, 1e-3],
-                            "dropout_range": [0.1, 0.5]
-                        }
-                    }
+                            "dropout_range": [0.1, 0.5],
+                        },
+                    },
                 },
                 "optuna": {
-                    "enable": True,
-                    "n_trials_per_batch": 50,
+                    "enable": True, "n_trials_per_batch": 50,
                     "n_batches": 3,
                     "timeout_per_batch": 300,  # 5 minutes per batch
                     "sampler": "tpe",
                     "pruner": "median",
-                    "storage": None  # Can be set to database URL
+                    "storage": None, # Can be set to database URL
                 },
                 "vectorization": {
-                    "enable": True,
-                    "batch_size": 1024,
-                    "use_gpu": True,
-                    "memory_efficient": True
-                }
+                    "enable": True, "batch_size": 1024,
+                    "use_gpu": True, "memory_efficient": True,
+                },
             }
-
 
 @dataclass
 class RiskConfig:
@@ -176,19 +161,9 @@ class RiskConfig:
     take_profit_pct: float = 0.1
     max_leverage: int = 10
 
-
 # Legacy ConfigurationManager class for backward compatibility
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    failed,
-    invalid,
-    warning,
-)
-
+from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.warning_symbols import invalid, warning, failed
 
 class ConfigurationManager:
     """
@@ -225,20 +200,18 @@ class ConfigurationManager:
         error_handlers={
             ValueError: (False, "Invalid configuration manager configuration"),
             AttributeError: (
-                False,
-                "Missing required configuration manager parameters",
+                False, "Missing required configuration manager parameters",
             ),
             KeyError: (False, "Missing configuration keys"),
         },
-        default_return=False,
-        context="configuration manager initialization",
+        default_return=False, context="configuration manager initialization",
     )
     async def initialize(self) -> bool:
         """
         Initialize configuration manager.
 
         Returns:
-            bool: True if initialization successful, False otherwise
+            bool: True if initialization successful = False otherwise
         """
         try:
             self.logger.info("Initializing Configuration Manager...")
@@ -266,7 +239,7 @@ class ConfigurationManager:
                 f"❌ Configuration Manager initialization failed - Invalid configuration: {e}",
             )
             return False
-        except (OSError, IOError) as e:
+        except OSError as e:
             self.logger.exception(
                 f"❌ Configuration Manager initialization failed - File system error: {e}",
             )
@@ -279,8 +252,7 @@ class ConfigurationManager:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="config manager configuration loading",
+        default_return=None, context="config manager configuration loading",
     )
     async def _load_config_manager_configuration(self) -> None:
         """Load configuration manager specific configuration."""
@@ -301,15 +273,15 @@ class ConfigurationManager:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
+        default_return=False, context="configuration validation",
     )
+
     def _validate_configuration(self) -> bool:
         """
         Validate configuration manager configuration.
 
         Returns:
-            bool: True if configuration is valid, False otherwise
+            bool: True if configuration is valid = False otherwise
         """
         try:
             # Validate configuration manager specific settings
@@ -323,13 +295,14 @@ class ConfigurationManager:
             self.print(failed(f"Configuration validation failed - Invalid value: {e}"))
             return False
         except Exception as e:
-            self.print(failed(f"Configuration validation failed - Unexpected error: {e}"))
+            self.print(
+                failed(f"Configuration validation failed - Unexpected error: {e}"),
+            )
             return False
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="config sections initialization",
+        default_return=None, context="config sections initialization",
     )
     async def _initialize_config_sections(self) -> None:
         """Initialize configuration sections."""
@@ -352,8 +325,7 @@ class ConfigurationManager:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="config service initialization",
+        default_return=None, context="config service initialization",
     )
     async def _initialize_config_service(self) -> None:
         """Initialize configuration service."""
@@ -369,15 +341,14 @@ class ConfigurationManager:
         error_handlers={
             Exception: (False, "Configuration manager run failed"),
         },
-        default_return=False,
-        context="configuration manager run",
+        default_return=False, context="configuration manager run",
     )
     async def run(self) -> bool:
         """
         Run the configuration manager.
 
         Returns:
-            bool: True if successful, False otherwise
+            bool: True if successful = False otherwise
         """
         try:
             self.logger.info("🚀 Starting Configuration Manager...")
@@ -400,8 +371,7 @@ class ConfigurationManager:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="configuration update",
+        default_return=None, context="configuration update",
     )
     async def _update_configuration(self) -> None:
         """Update configuration."""
@@ -427,8 +397,7 @@ class ConfigurationManager:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="configuration reload",
+        default_return=None, context="configuration reload",
     )
     async def _reload_configuration(self) -> None:
         """Reload configuration."""
@@ -443,8 +412,7 @@ class ConfigurationManager:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="configuration sections validation",
+        default_return=None, context="configuration sections validation",
     )
     async def _validate_configuration_sections(self) -> None:
         """Validate configuration sections."""
@@ -465,8 +433,7 @@ class ConfigurationManager:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="config service update",
+        default_return=None, context="config service update",
     )
     async def _update_config_service(self) -> None:
         """Update configuration service."""
@@ -479,8 +446,7 @@ class ConfigurationManager:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="configuration manager stop",
+        default_return=None, context="configuration manager stop",
     )
     async def stop(self) -> None:
         """Stop the configuration manager and cleanup resources."""
@@ -495,8 +461,7 @@ class ConfigurationManager:
     def get_status(self) -> dict[str, Any]:
         """Get configuration manager status."""
         return {
-            "is_initialized": self.is_initialized,
-            "config_sections_count": len(self.config_sections),
+            "is_initialized": self.is_initialized, "config_sections_count": len(self.config_sections),
             "history_count": len(self.config_history),
         }
 
@@ -552,12 +517,10 @@ class ConfigurationManager:
         """Get complete configuration."""
         return get_complete_config()
 
-
 # Legacy setup function
 @handle_errors(
     exceptions=(Exception,),
-    default_return=None,
-    context="configuration manager setup",
+    default_return=None, context="configuration manager setup",
 )
 async def setup_configuration_manager(
     config: dict[str, Any] | None = None,

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Model Training Integrator for Ares Trading System.
+"""Model Training Integrator for Ares Trading System.
 Enables full functionality with trained models.
 """
 
@@ -18,7 +17,7 @@ from catboost import CatBoostClassifier
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
-from sklearn.model_selection import cross_val_score, train_test_split
+from sklearn.model_selection import cross_val_score
 
 from src.utils.comprehensive_logger import get_component_logger
 from src.utils.data_optimizer import get_data_optimizer
@@ -31,11 +30,9 @@ from src.utils.warning_symbols import (
 
 
 class ModelTrainingIntegrator:
-    """
-    Model Training Integrator for enabling full functionality with trained models.
-    """
+    """Model Training Integrator for enabling full functionality with trained models."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         """Initialize Model Training Integrator."""
         self.config = config
         self.logger = get_component_logger("ModelTrainingIntegrator")
@@ -277,13 +274,13 @@ class ModelTrainingIntegrator:
             y_test = y.iloc[split_idx:]
 
             self.logger.info(
-                f"🔀 Time-based train/test split: {len(X_train)}/{len(X_test)} samples"
+                f"🔀 Time-based train/test split: {len(X_train)}/{len(X_test)} samples",
             )
             self.logger.info(
-                f"   → Train period: {X_train.index[0] if len(X_train) > 0 else 'N/A'} to {X_train.index[-1] if len(X_train) > 0 else 'N/A'}"
+                f"   → Train period: {X_train.index[0] if len(X_train) > 0 else 'N/A'} to {X_train.index[-1] if len(X_train) > 0 else 'N/A'}",
             )
             self.logger.info(
-                f"   → Test period: {X_test.index[0] if len(X_test) > 0 else 'N/A'} to {X_test.index[-1] if len(X_test) > 0 else 'N/A'}"
+                f"   → Test period: {X_test.index[0] if len(X_test) > 0 else 'N/A'} to {X_test.index[-1] if len(X_test) > 0 else 'N/A'}",
             )
 
             trained_models = {}
@@ -455,7 +452,7 @@ class ModelTrainingIntegrator:
 
             # Create a simple model interface for ML Confidence Predictor
             class TrainedModelWrapper:
-                def __init__(self, model, model_name):
+                def __init__(self, model, model_name) -> None:
                     self.model = model
                     self.model_name = model_name
                     self.is_trained = True

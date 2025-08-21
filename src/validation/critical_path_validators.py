@@ -4,29 +4,27 @@
 Critical path type validators for trading system safety.
 """
 
-import logging
 from collections.abc import Callable
 from datetime import datetime
 from functools import wraps
 from typing import Any, TypeVar
 
-from src.custom_types import (
-    OrderRequest,
-    PositionInfo,
-    TradeDecision,
-    TradingSignal,
-)
 from src.custom_types.validation import (
     RuntimeTypeError,
     TypeValidator,
     validate_market_data,
     validate_model_input,
 )
-from src.utils.structured_logging import get_correlation_id
-from src.utils.warning_symbols import (
-    error,
-    failed,
+from src.custom_types import (
+    OrderRequest,
+    PositionInfo,
+    TradeDecision,
+    TradingSignal,
 )
+from src.utils.structured_logging import get_correlation_id
+from src.utils.warning_symbols import error, failed
+
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +39,7 @@ class CriticalPathValidator:
         """Validate trading signal with comprehensive checks."""
         try:
             validated_signal = TypeValidator.validate_type(
-                signal,
-                TradingSignal,
-                "trading_signal",
+                signal, TradingSignal, "trading_signal"
             )
 
             # Additional business logic validation
@@ -67,9 +63,7 @@ class CriticalPathValidator:
             return validated_signal
 
         except Exception as e:
-            logger.exception(
-                f"Trading signal validation failed: {e}",
-            )
+            logger.exception(f"Trading signal validation failed: {e}")
             raise
 
     @staticmethod
@@ -77,9 +71,7 @@ class CriticalPathValidator:
         """Validate trade decision with risk checks."""
         try:
             validated_decision = TypeValidator.validate_type(
-                decision,
-                TradeDecision,
-                "trade_decision",
+                decision, TradeDecision, "trade_decision"
             )
 
             # Risk validation
@@ -116,7 +108,8 @@ class CriticalPathValidator:
                 elif (
                     validated_decision["action"] in ["open_short"]
                     and validated_decision["stop_loss"]
-                ) and validated_decision["stop_loss"] <= validated_decision["price"]:
+                    and validated_decision["stop_loss"] <= validated_decision["price"]
+                ):
                     raise RuntimeTypeError(
                         TradeDecision,
                         decision,
@@ -126,9 +119,7 @@ class CriticalPathValidator:
             return validated_decision
 
         except Exception as e:
-            logger.exception(
-                f"Trade decision validation failed: {e}",
-            )
+            logger.exception(f"Trade decision validation failed: {e}")
             raise
 
     @staticmethod
@@ -136,9 +127,7 @@ class CriticalPathValidator:
         """Validate order request for execution safety."""
         try:
             validated_order = TypeValidator.validate_type(
-                order,
-                OrderRequest,
-                "order_request",
+                order, OrderRequest, "order_request"
             )
 
             # Order validation
@@ -169,9 +158,7 @@ class CriticalPathValidator:
             return validated_order
 
         except Exception as e:
-            logger.exception(
-                f"Order request validation failed: {e}",
-            )
+            logger.exception(f"Order request validation failed: {e}")
             raise
 
     @staticmethod
@@ -179,9 +166,7 @@ class CriticalPathValidator:
         """Validate position information."""
         try:
             validated_position = TypeValidator.validate_type(
-                position,
-                PositionInfo,
-                "position_info",
+                position, PositionInfo, "position_info"
             )
 
             # Position validation
@@ -202,9 +187,7 @@ class CriticalPathValidator:
             return validated_position
 
         except Exception as e:
-            logger.exception(
-                f"Position info validation failed: {e}",
-            )
+            logger.exception(f"Position info validation failed: {e}")
             raise
 
 
@@ -291,7 +274,7 @@ class TypeSafetyMonitor:
                 "context": violation.context,
                 "message": str(violation),
                 "correlation_id": get_correlation_id(),
-            },
+            }
         )
 
         # Count violations by type
@@ -301,9 +284,7 @@ class TypeSafetyMonitor:
         )
 
         # Log critical violations (correlation_id is included by filter)
-        logger.warning(
-            f"Type safety violation: {violation}",
-        )
+        logger.warning(f"Type safety violation: {violation}")
 
     def get_violation_summary(self) -> dict:
         """Get summary of type safety violations."""
@@ -344,8 +325,8 @@ def safe_execute_with_validation(func: Callable[..., T], *args, **kwargs) -> T |
         return func(*args, **kwargs)
     except RuntimeTypeError as e:
         _type_safety_monitor.record_violation(e)
-        print(failed("Type validation failed in {func.__name__}: {e}"))
+        print(failed(f"Type validation failed in {func.__name__}: {e}"))
         return None
-    except Exception:
-        print(error("Unexpected error in {func.__name__}: {e}"))
+    except Exception as e:
+        print(error(f"Unexpected error in {func.__name__}: {e}"))
         return None

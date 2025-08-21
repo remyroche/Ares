@@ -1,24 +1,20 @@
 # src/transition/state_sequence_builder.py
 
 from __future__ import annotations
-
-from dataclasses import dataclass
-from typing import Any
-
-import numpy as np
-import pandas as pd
-
+from sklearn.preprocessing import StandardScaler
+import asyncio
 from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
 from src.utils.logger import system_logger
+from typing import Any
 import os
-
+from dataclasses import dataclass
+import pandas as pd
 
 @dataclass
 class StateBuilderConfig:
     hmm_n_states: int
     use_existing_urc_models: bool
-    cache_dir: str | None = None
-
+    cache_dir: str | None
 
 class StateSequenceBuilder:
     """
@@ -27,7 +23,10 @@ class StateSequenceBuilder:
     """
 
     def __init__(
-        self, config: dict[str, Any], exchange: str = "UNKNOWN", symbol: str = "UNKNOWN"
+        self,
+        config: dict[str, Any],
+        exchange: str = "UNKNOWN",
+        symbol: str = "UNKNOWN",
     ) -> None:
         self.config = config
         self.logger = system_logger.getChild("StateSequenceBuilder")
@@ -37,8 +36,9 @@ class StateSequenceBuilder:
             use_existing_urc_models=bool(tm_cfg.get("use_existing_urc_models", True)),
             cache_dir=str(
                 (tm_cfg.get("cache", {}) or {}).get(
-                    "cache_dir", "checkpoints/transition_cache"
-                )
+                    "cache_dir",
+                    "checkpoints/transition_cache",
+                ),
             ),
         )
         self.exchange = exchange
@@ -58,11 +58,9 @@ class StateSequenceBuilder:
         try:
             desired_states = self.sb_cfg.hmm_n_states
             # Force n_states if available
-            setattr(self.urc, "n_states", max(3, int(desired_states)))
+            self.urc.n_states = max(3, int(desired_states))
             if not getattr(self.urc, "trained", False):
                 # Minimal training using available history
-                import asyncio
-
                 loop = asyncio.get_event_loop()
                 loop.run_until_complete(self.urc.train_complete_system(klines_df))
         except Exception as e:
@@ -76,7 +74,7 @@ class StateSequenceBuilder:
         """
         if klines_df is None or klines_df.empty:
             return pd.DataFrame(
-                index=pd.Index([], name=getattr(klines_df, "index", None))
+                index=pd.Index([], name=getattr(klines_df, "index", None)),
             )
         # Cache key: hash of index
         cache_dir = self.sb_cfg.cache_dir
@@ -116,15 +114,11 @@ class StateSequenceBuilder:
             if self.urc.scaler is not None:
                 X_scaled = self.urc.scaler.transform(X)
             else:
-                from sklearn.preprocessing import StandardScaler
-
                 self.urc.scaler = StandardScaler().fit(X)
                 X_scaled = self.urc.scaler.transform(X)
             hmm_model = self.urc.hmm_model
             if hmm_model is None:
                 # Train minimal HMM labeler if missing
-                import asyncio
-
                 loop = asyncio.get_event_loop()
                 loop.run_until_complete(self.urc.train_hmm_labeler(klines_df))
                 hmm_model = self.urc.hmm_model

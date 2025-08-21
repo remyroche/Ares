@@ -1,5 +1,4 @@
-"""
-Wavelet Feature Selection Demo
+"""Wavelet Feature Selection Demo.
 
 This script demonstrates the complete wavelet feature selection workflow using the two-model strategy:
 1. Run full wavelet analysis
@@ -23,30 +22,15 @@ from src.training.wavelet_feature_selection_workflow import (
     WaveletFeatureSelectionWorkflow,
 )
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
 
 
 class WaveletFeatureSelectionDemo:
-    """
-    Demo class for the wavelet feature selection workflow using two-model strategy.
+    """Demo class for the wavelet feature selection workflow using two-model strategy.
 
     Demonstrates the complete process from full analysis to optimized live configurations.
     """
 
-    def __init__(self, config_path: str = "src/config/trading.yaml"):
+    def __init__(self, config_path: str = "src/config/trading.yaml") -> None:
         self.config_path = config_path
         self.config = self._load_config()
         self.logger = system_logger.getChild("WaveletFeatureSelectionDemo")
@@ -65,7 +49,7 @@ class WaveletFeatureSelectionDemo:
             with open(self.config_path) as f:
                 return yaml.safe_load(f)
         except Exception as e:
-            self.logger.error(f"Error loading config: {e}")
+            self.logger.exception(f"Error loading config: {e}")
             return {}
 
     async def initialize(self) -> bool:
@@ -88,7 +72,7 @@ class WaveletFeatureSelectionDemo:
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Error initializing demo: {e}")
+            self.logger.exception(f"❌ Error initializing demo: {e}")
             return False
 
     def _generate_demo_data(self) -> None:
@@ -156,7 +140,7 @@ class WaveletFeatureSelectionDemo:
             )
 
         except Exception as e:
-            self.logger.error(f"Error generating demo data: {e}")
+            self.logger.exception(f"Error generating demo data: {e}")
 
     def _generate_labels(self, prices: np.ndarray) -> pd.Series:
         """Generate trading labels based on price movements."""
@@ -182,7 +166,7 @@ class WaveletFeatureSelectionDemo:
             return pd.Series(labels, index=self.price_data.index)
 
         except Exception as e:
-            self.logger.error(f"Error generating labels: {e}")
+            self.logger.exception(f"Error generating labels: {e}")
             return pd.Series([0] * len(prices), index=self.price_data.index)
 
     async def run_complete_workflow(self) -> None:
@@ -211,7 +195,7 @@ class WaveletFeatureSelectionDemo:
             self.logger.info(f"✅ Complete workflow finished in {total_time:.2f}s")
 
         except Exception as e:
-            self.logger.error(f"Error running complete workflow: {e}")
+            self.logger.exception(f"Error running complete workflow: {e}")
 
     def _display_results(self, results: dict[str, Any]) -> None:
         """Display comprehensive workflow results."""
@@ -366,7 +350,7 @@ class WaveletFeatureSelectionDemo:
             self.logger.info("=" * 80)
 
         except Exception as e:
-            self.logger.error(f"Error displaying results: {e}")
+            self.logger.exception(f"Error displaying results: {e}")
 
     def save_results(self, results: dict[str, Any]) -> None:
         """Save workflow results to files."""
@@ -420,10 +404,10 @@ class WaveletFeatureSelectionDemo:
             self.logger.info(f"💾 Results saved to {self.workflow.output_dir}")
 
         except Exception as e:
-            self.logger.error(f"Error saving results: {e}")
+            self.logger.exception(f"Error saving results: {e}")
 
 
-async def main():
+async def main() -> None:
     """Main demo function."""
     try:
         # Create and initialize demo
@@ -431,16 +415,15 @@ async def main():
 
         success = await demo.initialize()
         if not success:
-            print(failed("Failed to initialize demo"))
             return
 
         # Run complete workflow
         await demo.run_complete_workflow()
 
     except KeyboardInterrupt:
-        print("\n🛑 Demo interrupted by user")
-    except Exception as e:
-        print(warning("Error in demo: {e}"))
+        pass
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

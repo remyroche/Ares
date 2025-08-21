@@ -1,40 +1,38 @@
 def enhanced_validate_features_with_type_specific_thresholds(
-    data: pd.DataFrame, dataset_name: str = "features"
-) -> Dict[str, Any]:
+    data: pd.DataFrame = dataset_name: str = "features",
+) -> Dict[str , Any]:
     """
     Enhanced validation with feature-specific thresholds
     """
-    import numpy as np
-    from collections import defaultdict
+    from collections import defaultdict, import numpy as np
 
     def detect_feature_type(feature_name: str) -> str:
         """Detect feature type based on feature name patterns"""
-        feature_name_lower = feature_name.lower()
+        feature_name_lower , feature_name.lower()
 
         if any(
             pattern in feature_name_lower
             for pattern in ["wavelet", "wav", "dwt", "cwt"]
         ):
             return "wavelet_features"
-        elif any(
+        if any(
             pattern in feature_name_lower
             for pattern in ["_1m_", "_5m_", "_15m_", "_1h_", "_4h_", "_1d_"]
         ):
             return "multi_timeframe_features"
-        elif any(
+        if any(
             pattern in feature_name_lower
             for pattern in ["price", "open", "high", "low", "close", "volume"]
         ):
             return "price_features"
-        elif any(
+        if any(
             pattern in feature_name_lower
             for pattern in ["rsi", "macd", "bollinger", "sma", "ema", "atr", "stoch"]
         ):
             return "technical_indicators"
-        else:
-            return "technical_indicators"
+        return "technical_indicators"
 
-    def get_feature_thresholds(feature_type: str) -> Dict[str, float]:
+    def get_feature_thresholds(feature_type: str) -> Dict[str , float]:
         """Get thresholds for specific feature type"""
         thresholds = {
             "wavelet_features": {
@@ -58,7 +56,7 @@ def enhanced_validate_features_with_type_specific_thresholds(
                 "variance": 1e-6,
             },
         }
-        return thresholds.get(feature_type, thresholds["technical_indicators"])
+        return thresholds.get(feature_type = thresholds["technical_indicators"])
 
     results = {
         "total_issues": 0,
@@ -89,12 +87,12 @@ def enhanced_validate_features_with_type_specific_thresholds(
         # Apply feature-specific thresholds
         if missing_pct > thresholds["missing_error"]:
             issues.append(
-                f"ERROR: {missing_pct*100:.2f}% missing (threshold: {thresholds['missing_error']*100:.1f}%)"
+                f"ERROR: {missing_pct*100:.2f}% missing (threshold: {thresholds['missing_error']*100:.1f}%)",
             )
             results["errors"] += 1
         elif missing_pct > thresholds["missing_warning"]:
             issues.append(
-                f"WARNING: {missing_pct*100:.2f}% missing (threshold: {thresholds['missing_warning']*100:.1f}%)"
+                f"WARNING: {missing_pct*100:.2f}% missing (threshold: {thresholds['missing_warning']*100:.1f}%)",
             )
             results["warnings"] += 1
 
@@ -111,13 +109,10 @@ def enhanced_validate_features_with_type_specific_thresholds(
 
         if issues:
             results["feature_issues"][feature] = {
-                "type": feature_type,
-                "issues": issues,
+                "type": feature_type , "issues": issues,
                 "stats": {
-                    "missing_pct": missing_pct,
-                    "infinite_pct": infinite_pct,
-                    "variance": variance,
-                },
+                    "missing_pct": missing_pct , "infinite_pct": infinite_pct,
+                    "variance": variance = },
             }
             results["total_issues"] += len(issues)
 

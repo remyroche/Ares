@@ -6,11 +6,11 @@ from src.config.environment import get_environment_settings
 
 
 def get_trading_config() -> dict[str, Any]:
-    """
-    Get the complete trading configuration.
+    """Get the complete trading configuration.
 
     Returns:
         dict: Complete trading configuration
+
     """
     settings = get_environment_settings()
 
@@ -113,199 +113,114 @@ def get_trading_config() -> dict[str, Any]:
                 "drawdown_adjustment": {
                     "enable_drawdown_scaling": True,
                     "drawdown_thresholds": {
-                        "warning": 0.1,  # 10% drawdown - warning
-                        "reduction": 0.2,  # 20% drawdown - reduce position sizes
-                        "aggressive": 0.3,  # 30% drawdown - aggressive reduction
-                        "emergency": 0.4,  # 40% drawdown - emergency mode
+                        "light": 0.05,  # 5% drawdown
+                        "moderate": 0.15,  # 15% drawdown
+                        "severe": 0.25,  # 25% drawdown
                     },
-                    "size_reduction_factors": {
-                        "warning": 0.9,  # Reduce to 90% of normal size
-                        "reduction": 0.7,  # Reduce to 70% of normal size
-                        "aggressive": 0.5,  # Reduce to 50% of normal size
-                        "emergency": 0.2,  # Reduce to 20% of normal size
-                    },
-                },
-                "performance_adjustment": {
-                    "enable_performance_scaling": True,
-                    "performance_thresholds": {
-                        "excellent": 0.2,  # 20% profit - excellent performance
-                        "good": 0.1,  # 10% profit - good performance
-                        "neutral": 0.0,  # 0% profit - neutral performance
-                        "poor": -0.1,  # -10% profit - poor performance
-                    },
-                    "size_adjustment_factors": {
-                        "excellent": 1.2,  # Increase to 120% of normal size
-                        "good": 1.1,  # Increase to 110% of normal size
-                        "neutral": 1.0,  # Normal size
-                        "poor": 0.8,  # Reduce to 80% of normal size
+                    "position_size_reductions": {
+                        "light": 0.8,  # Reduce to 80% of normal size
+                        "moderate": 0.5,  # Reduce to 50% of normal size
+                        "severe": 0.2,  # Reduce to 20% of normal size
                     },
                 },
             },
         },
-        # --- Position Management Configuration ---
-        "position_management": {
-            "position_closing": {
-                "enable_dynamic_closing": True,
-                "confidence_based_closing": True,
-                "time_based_closing": True,
-                "profit_taking": {
-                    "enable_profit_taking": True,
-                    "profit_targets": {
-                        "conservative": 0.02,  # 2% profit target
-                        "moderate": 0.05,  # 5% profit target
-                        "aggressive": 0.10,  # 10% profit target
-                    },
-                    "partial_profit_taking": {
-                        "enable_partial_taking": True,
-                        "partial_targets": [0.02, 0.05, 0.08],  # Multiple targets
-                        "partial_sizes": [0.3, 0.3, 0.4],  # Size to take at each target
-                    },
-                },
-                "stop_loss": {
-                    "enable_stop_loss": True,
-                    "stop_loss_types": {
-                        "fixed": 0.02,  # 2% fixed stop loss
-                        "trailing": 0.015,  # 1.5% trailing stop loss
-                        "atr_based": 2.0,  # 2x ATR stop loss
-                    },
-                    "dynamic_stop_loss": {
-                        "enable_dynamic_stop": True,
-                        "confidence_based_stop": True,
-                        "regime_based_stop": True,
-                    },
-                },
-            },
-            "position_monitoring": {
-                "enable_real_time_monitoring": True,
-                "monitoring_interval_seconds": 10,
-                "alert_thresholds": {
-                    "drawdown_warning": 0.05,  # 5% drawdown warning
-                    "drawdown_critical": 0.15,  # 15% drawdown critical
-                    "profit_warning": 0.20,  # 20% profit warning
-                    "profit_critical": 0.50,  # 50% profit critical
-                },
-                "auto_rebalancing": {
-                    "enable_auto_rebalancing": True,
-                    "rebalancing_threshold": 0.1,  # 10% deviation triggers rebalancing
-                    "rebalancing_interval_hours": 24,  # Rebalance every 24 hours
-                },
+        # --- Stop Loss and Take Profit Configuration ---
+        "stop_loss": {
+            "enable_stop_loss": True,
+            "stop_loss_type": "trailing",  # 'fixed' or 'trailing'
+            "fixed_stop_loss_pct": 0.02,  # 2% fixed stop loss
+            "trailing_stop_config": {
+                "activation_threshold": 0.01,  # Activate trailing stop at 1% profit
+                "trailing_distance": 0.005,  # 0.5% trailing distance
+                "lock_profit_threshold": 0.03,  # Lock profit at 3% gain
             },
         },
-        # --- Pipeline Configuration ---
-        "pipeline": {
-            "loop_interval_seconds": 10,  # Main loop interval for live trading
-            "max_retries": 3,  # Maximum retries for failed operations
-            "timeout_seconds": 30,  # Timeout for operations
-        },
-        # --- Analyst Configuration ---
-        "analyst": {
-            "unified_regime_classifier": {
-                "min_data_points": 500,  # Reduced from 1000 to allow smaller datasets
-                "n_states": 3,  # BULL, BEAR, SIDEWAYS
-                "n_iter": 100,
-                "random_state": 42,
-                "target_timeframe": "1h",
-                "volatility_period": 10,
-                "enable_sr_integration": True,
-                # Regime thresholds (tunable)
-                "adx_sideways_threshold": 18,  # Lowered for better regime balance (was 20)
-                "volatility_threshold": 0.020,  # Threshold for volatility-based regime classification
-                "atr_normalized_threshold": 0.028,  # ATR/close threshold for regime classification
-                "volatility_percentile_threshold": 0.75,  # Top 25% vol considered high
+        "take_profit": {
+            "enable_take_profit": True,
+            "take_profit_type": "dynamic",  # 'fixed' or 'dynamic'
+            "fixed_take_profit_pct": 0.05,  # 5% fixed take profit
+            "dynamic_take_profit_config": {
+                "base_take_profit": 0.03,  # 3% base take profit
+                "volatility_multiplier": 1.5,  # Multiply by volatility
+                "max_take_profit": 0.15,  # Maximum 15% take profit
             },
-            "analysis_interval": 3600,
-            "max_analysis_history": 100,
-            "enable_technical_analysis": True,
-            "enable_dual_model_system": True,
-            "enable_market_health_analysis": False,
-            "enable_liquidation_risk_analysis": True,
+        },
+        # --- Time-based Exit Configuration ---
+        "time_based_exit": {
+            "enable_time_exit": True,
+            "max_holding_time_hours": 24,  # Maximum holding time
+            "profit_lock_time_hours": 4,  # Lock profit after 4 hours
+            "loss_cut_time_hours": 2,  # Cut loss after 2 hours
         },
     }
 
 
-def get_risk_management_config() -> dict[str, Any]:
+def get_exchange_config(exchange_name: str) -> dict[str, Any]:
+    """Get configuration for a specific exchange.
+
+    Args:
+        exchange_name: Name of the exchange
+
+    Returns:
+        dict: Exchange configuration
+
     """
-    Get risk management configuration.
+    trading_config = get_trading_config()
+    exchanges = trading_config.get("exchanges", {})
+    return exchanges.get(exchange_name.lower(), {})
+
+
+def get_risk_management_config() -> dict[str, Any]:
+    """Get risk management configuration.
 
     Returns:
         dict: Risk management configuration
+
     """
     trading_config = get_trading_config()
     return trading_config.get("risk_management", {})
 
 
-def get_position_management_config() -> dict[str, Any]:
-    """
-    Get position management configuration.
-
-    Returns:
-        dict: Position management configuration
-    """
-    trading_config = get_trading_config()
-    return trading_config.get("position_management", {})
-
-
-def get_exchange_config() -> dict[str, Any]:
-    """
-    Get exchange configuration.
-
-    Returns:
-        dict: Exchange configuration
-    """
-    trading_config = get_trading_config()
-    return trading_config.get("exchanges", {})
-
-
-def get_pipeline_config() -> dict[str, Any]:
-    """
-    Get pipeline configuration.
-
-    Returns:
-        dict: Pipeline configuration
-    """
-    trading_config = get_trading_config()
-    return trading_config.get("pipeline", {})
-
-
 def get_position_sizing_config() -> dict[str, Any]:
-    """
-    Get position sizing configuration.
+    """Get position sizing configuration.
 
     Returns:
         dict: Position sizing configuration
+
     """
     risk_config = get_risk_management_config()
     return risk_config.get("position_sizing", {})
 
 
-def get_dynamic_risk_config() -> dict[str, Any]:
-    """
-    Get dynamic risk management configuration.
+def get_stop_loss_config() -> dict[str, Any]:
+    """Get stop loss configuration.
 
     Returns:
-        dict: Dynamic risk management configuration
+        dict: Stop loss configuration
+
     """
-    risk_config = get_risk_management_config()
-    return risk_config.get("dynamic_risk_management", {})
+    trading_config = get_trading_config()
+    return trading_config.get("stop_loss", {})
 
 
-def get_position_closing_config() -> dict[str, Any]:
-    """
-    Get position closing configuration.
+def get_take_profit_config() -> dict[str, Any]:
+    """Get take profit configuration.
 
     Returns:
-        dict: Position closing configuration
+        dict: Take profit configuration
+
     """
-    position_config = get_position_management_config()
-    return position_config.get("position_closing", {})
+    trading_config = get_trading_config()
+    return trading_config.get("take_profit", {})
 
 
-def get_position_monitoring_config() -> dict[str, Any]:
-    """
-    Get position monitoring configuration.
+def get_time_based_exit_config() -> dict[str, Any]:
+    """Get time-based exit configuration.
 
     Returns:
-        dict: Position monitoring configuration
+        dict: Time-based exit configuration
+
     """
-    position_config = get_position_management_config()
-    return position_config.get("position_monitoring", {})
+    trading_config = get_trading_config()
+    return trading_config.get("time_based_exit", {})

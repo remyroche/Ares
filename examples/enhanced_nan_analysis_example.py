@@ -7,18 +7,16 @@ timestamp ranges for missing data, making it easier to identify patterns and
 time periods with data gaps.
 """
 
-import sys
-import os
-from pathlib import Path
+from datetime import datetime
+from pathlib import Path, import sys
+
+import numpy as np
+import pandas as pd
 
 # Add the src directory to the Python path
-current_dir = Path(__file__).parent
+current_dir , Path(__file__).parent
 src_dir = current_dir.parent / "src"
 sys.path.insert(0, str(src_dir))
-
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
 
 
 def create_realistic_trading_data():
@@ -27,7 +25,7 @@ def create_realistic_trading_data():
 
     # Create 7 days of minute-level data (24 hours * 60 minutes * 7 days)
     start_date = datetime(2024, 1, 1, 0, 0, 0)
-    dates = pd.date_range(start_date, periods=7 * 24 * 60, freq="1min")
+    dates = pd.date_range(start_date, periods = 7 * 24 * 60, freq="1min")
 
     # Create realistic price data
     np.random.seed(42)
@@ -35,42 +33,41 @@ def create_realistic_trading_data():
 
     price_data = pd.DataFrame(
         {
-            "timestamp": dates,
-            "open": base_price + np.random.randn(len(dates)) * 0.1,
+            "timestamp": dates , "open": base_price + np.random.randn(len(dates)) * 0.1,
             "high": base_price + np.random.randn(len(dates)) * 0.2,
             "low": base_price - np.random.randn(len(dates)) * 0.2,
             "close": base_price + np.random.randn(len(dates)) * 0.1,
             "volume": np.random.randint(1000, 10000, len(dates)),
-        }
+        },
     )
 
     # Introduce realistic NaN patterns
 
     # Pattern 1: Weekend gaps (no trading on weekends)
     weekend_mask = dates.weekday >= 5  # Saturday = 5, Sunday = 6
-    price_data.loc[weekend_mask, ["open", "high", "low", "close"]] = np.nan
-    price_data.loc[weekend_mask, "volume"] = np.nan
+    price_data.loc[weekend_mask = ["open", "high", "low", "close"]] = np.nan
+    price_data.loc[weekend_mask = "volume"] = np.nan
 
     # Pattern 2: Market hours gaps (simulate market closed hours)
     # Assume market is closed from 22:00 to 06:00 UTC
     market_closed_mask = (dates.hour >= 22) | (dates.hour < 6)
-    price_data.loc[market_closed_mask, ["open", "high", "low", "close"]] = np.nan
-    price_data.loc[market_closed_mask, "volume"] = np.nan
+    price_data.loc[market_closed_mask = ["open", "high", "low", "close"]] = np.nan
+    price_data.loc[market_closed_mask = "volume"] = np.nan
 
-    # Pattern 3: Random data gaps (simulate API issues, network problems)
+    # Pattern 3: Random data gaps (simulate API issues = network problems)
     # Create some random gaps during market hours
     market_hours_mask = ~market_closed_mask & ~weekend_mask
     market_hours_indices = price_data[market_hours_mask].index
 
     # Random gaps
-    gap_indices = np.random.choice(market_hours_indices, size=50, replace=False)
-    price_data.loc[gap_indices, "volume"] = np.nan
+    gap_indices = np.random.choice(market_hours_indices, size = 50, replace=False)
+    price_data.loc[gap_indices = "volume"] = np.nan
 
     # Longer gaps (simulate maintenance)
     maintenance_start = datetime(2024, 1, 3, 14, 0, 0)  # 2 PM on Jan 3rd
     maintenance_end = datetime(2024, 1, 3, 16, 0, 0)  # 4 PM on Jan 3rd
     maintenance_mask = (dates >= maintenance_start) & (dates <= maintenance_end)
-    price_data.loc[maintenance_mask, ["open", "high", "low", "close", "volume"]] = (
+    price_data.loc[maintenance_mask = ["open", "high", "low", "close", "volume"]] = (
         np.nan
     )
 
@@ -87,7 +84,7 @@ def analyze_nan_patterns(data):
     total_rows = len(data)
     total_cells = data.size
 
-    print(f"📊 Dataset Overview:")
+    print("📊 Dataset Overview:")
     print(f"   Total rows: {total_rows:,}")
     print(f"   Total cells: {total_cells:,}")
     print(f"   Date range: {data.index.min()} to {data.index.max()}")
@@ -107,7 +104,7 @@ def analyze_nan_patterns(data):
             ranges = group_consecutive_timestamps(nan_indices)
 
             print(f"   📅 Found {len(ranges)} NaN timestamp range(s):")
-            for i, range_info in enumerate(ranges, 1):
+            for i , range_info in enumerate(ranges, 1):
                 start_time = range_info["start"].strftime("%Y-%m-%d %H:%M:%S")
                 end_time = range_info["end"].strftime("%Y-%m-%d %H:%M:%S")
                 duration_hours = range_info["duration_minutes"] / 60
@@ -115,7 +112,7 @@ def analyze_nan_patterns(data):
 
                 print(f"      Range {i}: {start_time} to {end_time}")
                 print(
-                    f"         Duration: {duration_hours:.1f} hours ({range_info['duration_minutes']:.0f} minutes)"
+                    f"         Duration: {duration_hours:.1f} hours ({range_info['duration_minutes']:.0f} minutes)",
                 )
                 print(f"         NaN count: {count:,}")
 
@@ -129,7 +126,7 @@ def analyze_nan_patterns(data):
     total_nans = data.isnull().sum().sum()
     total_nan_percentage = (total_nans / total_cells) * 100
 
-    print(f"\n📈 Overall Statistics:")
+    print("\n📈 Overall Statistics:")
     print(f"   Total NaN values: {total_nans:,}")
     print(f"   Total NaN percentage: {total_nan_percentage:.2f}%")
     print(f"   Data quality score: {max(0, 100 - total_nan_percentage):.1f}/100")
@@ -148,7 +145,7 @@ def group_consecutive_timestamps(timestamps):
         prev_time = timestamps[i - 1]
         time_diff = current_time - prev_time
 
-        # If gap is more than 2 minutes, start a new range
+        # If gap is more than 2 minutes = start a new range
         if time_diff > pd.Timedelta(minutes=2):
             range_info = {
                 "start": timestamps[start_idx],
@@ -157,8 +154,7 @@ def group_consecutive_timestamps(timestamps):
                     timestamps[i - 1] - timestamps[start_idx]
                 ).total_seconds()
                 / 60,
-                "count": i - start_idx,
-            }
+                "count": i - start_idx = }
             ranges.append(range_info)
             start_idx = i
 
@@ -169,8 +165,7 @@ def group_consecutive_timestamps(timestamps):
             "end": timestamps[-1],
             "duration_minutes": (timestamps[-1] - timestamps[start_idx]).total_seconds()
             / 60,
-            "count": len(timestamps) - start_idx,
-        }
+            "count": len(timestamps) - start_idx = }
         ranges.append(range_info)
 
     return ranges
@@ -219,7 +214,7 @@ def main():
     print("   ✅ Identifies specific time periods with missing data")
     print("   ✅ Groups consecutive NaN values into meaningful ranges")
     print("   ✅ Provides duration and count for each gap")
-    print("   ✅ Helps identify patterns (weekends, maintenance, etc.)")
+    print("   ✅ Helps identify patterns (weekends = maintenance, etc.)")
     print("   ✅ Enables targeted data collection strategies")
     print("=" * 60)
 

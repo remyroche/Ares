@@ -4,39 +4,37 @@ from datetime import datetime
 from typing import Any
 
 # Add multi-timeframe feature engineering and regime integration imports
-from src.analyst.multi_timeframe_feature_engineering import (
-    MultiTimeframeFeatureEngineering,
-)
-from src.analyst.multi_timeframe_regime_integration import (
-    MultiTimeframeRegimeIntegration,
-)
+# Temporarily commented out due to syntax errors
+# from src.analyst.multi_timeframe_feature_engineering import (
+#     MultiTimeframeFeatureEngineering,
+# )
+# from src.analyst.multi_timeframe_regime_integration import (
+#     MultiTimeframeRegimeIntegration,
+# )
 from src.utils.error_handler import (
     handle_errors,
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+
+# Import StepDependencyValidator for step dependency validation
+from src.utils.step_dependency_validator import step_dependency_validator
 from src.utils.warning_symbols import (
     error,
-    initialization_error,
     invalid,
     validation_error,
 )
 
-# Import StepDependencyValidator for step dependency validation
-from src.utils.step_dependency_validator import step_dependency_validator
-
 
 class MultiTimeframeTrainingManager:
-    """
-    Multi-timeframe training manager with comprehensive error handling and type safety.
-    """
+    """Multi-timeframe training manager with comprehensive error handling and type safety."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
-        Initialize multi-timeframe training manager with enhanced type safety.
+        """Initialize multi-timeframe training manager with enhanced type safety.
 
         Args:
             config: Configuration dictionary
+
         """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("MultiTimeframeTrainingManager")
@@ -69,8 +67,9 @@ class MultiTimeframeTrainingManager:
         )
 
         # Initialize multi-timeframe feature engineering and regime integration
-        self.mtf_feature_engine = MultiTimeframeFeatureEngineering(config)
-        self.mtf_regime_integration = MultiTimeframeRegimeIntegration(config)
+        # Temporarily commented out due to syntax errors
+        # self.mtf_feature_engine = MultiTimeframeFeatureEngineering(config)
+        # self.mtf_regime_integration = MultiTimeframeRegimeIntegration(config)
 
         # Initialize StepDependencyValidator for step dependency validation
         self.step_dependency_validator = step_dependency_validator
@@ -91,11 +90,11 @@ class MultiTimeframeTrainingManager:
         context="multi-timeframe training manager initialization",
     )
     async def initialize(self) -> bool:
-        """
-        Initialize multi-timeframe training manager with enhanced error handling.
+        """Initialize multi-timeframe training manager with enhanced error handling.
 
         Returns:
             bool: True if initialization successful, False otherwise
+
         """
         try:
             self.logger.info("Initializing Multi-Timeframe Training Manager...")
@@ -178,11 +177,11 @@ class MultiTimeframeTrainingManager:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """
-        Validate multi-timeframe training configuration.
+        """Validate multi-timeframe training configuration.
 
         Returns:
             bool: True if configuration is valid, False otherwise
+
         """
         try:
             # Validate multi-timeframe interval
@@ -275,7 +274,7 @@ class MultiTimeframeTrainingManager:
                 f"Error initializing timeframe analysis: {e}",
             )
             # Log specific error details for debugging
-            self.logger.error(f"Timeframe analysis initialization failed: {type(e).__name__}: {str(e)}")
+            self.logger.exception(f"Timeframe analysis initialization failed: {type(e).__name__}: {e!s}")
             # Re-raise the exception to prevent silent failures
             raise
 
@@ -302,7 +301,7 @@ class MultiTimeframeTrainingManager:
                 f"Error initializing cross timeframe features: {e}",
             )
             # Log specific error details for debugging
-            self.logger.error(f"Cross timeframe features initialization failed: {type(e).__name__}: {str(e)}")
+            self.logger.exception(f"Cross timeframe features initialization failed: {type(e).__name__}: {e!s}")
             # Re-raise the exception to prevent silent failures
             raise
 
@@ -329,7 +328,7 @@ class MultiTimeframeTrainingManager:
                 f"Error initializing timeframe ensemble: {e}",
             )
             # Log specific error details for debugging
-            self.logger.error(f"Timeframe ensemble initialization failed: {type(e).__name__}: {str(e)}")
+            self.logger.exception(f"Timeframe ensemble initialization failed: {type(e).__name__}: {e!s}")
             # Re-raise the exception to prevent silent failures
             raise
 
@@ -356,7 +355,7 @@ class MultiTimeframeTrainingManager:
                 f"Error initializing timeframe optimization: {e}",
             )
             # Log specific error details for debugging
-            self.logger.error(f"Timeframe optimization initialization failed: {type(e).__name__}: {str(e)}")
+            self.logger.exception(f"Timeframe optimization initialization failed: {type(e).__name__}: {e!s}")
             # Re-raise the exception to prevent silent failures
             raise
 
@@ -389,7 +388,7 @@ class MultiTimeframeTrainingManager:
                 f"Error initializing multi-timeframe components: {e}",
             )
             # Log specific error details for debugging
-            self.logger.error(f"Multi-timeframe components initialization failed: {type(e).__name__}: {str(e)}")
+            self.logger.exception(f"Multi-timeframe components initialization failed: {type(e).__name__}: {e!s}")
             # Re-raise the exception to prevent silent failures
             raise
 
@@ -398,8 +397,7 @@ class MultiTimeframeTrainingManager:
         data_dict: dict[str, Any],
         symbol: str,
     ) -> dict[str, Any]:
-        """
-        Generate multi-timeframe features for training data.
+        """Generate multi-timeframe features for training data.
 
         Args:
             data_dict: Dictionary with timeframe -> DataFrame mapping
@@ -407,6 +405,7 @@ class MultiTimeframeTrainingManager:
 
         Returns:
             Dictionary with timeframe -> features DataFrame mapping
+
         """
         try:
             self.logger.info(f"🎯 Generating multi-timeframe features for {symbol}")
@@ -469,14 +468,14 @@ class MultiTimeframeTrainingManager:
         self,
         multi_timeframe_training_input: dict[str, Any],
     ) -> bool:
-        """
-        Execute multi-timeframe training operations.
+        """Execute multi-timeframe training operations.
 
         Args:
             multi_timeframe_training_input: Multi-timeframe training input dictionary
 
         Returns:
             bool: True if successful, False otherwise
+
         """
         try:
             if not self._validate_multi_timeframe_training_inputs(
@@ -548,14 +547,14 @@ class MultiTimeframeTrainingManager:
         self,
         multi_timeframe_training_input: dict[str, Any],
     ) -> bool:
-        """
-        Validate multi-timeframe training inputs.
+        """Validate multi-timeframe training inputs.
 
         Args:
             multi_timeframe_training_input: Multi-timeframe training input dictionary
 
         Returns:
             bool: True if valid, False otherwise
+
         """
         try:
             # Check required multi-timeframe training input fields
@@ -600,14 +599,14 @@ class MultiTimeframeTrainingManager:
         self,
         multi_timeframe_training_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Perform timeframe analysis.
+        """Perform timeframe analysis.
 
         Args:
             multi_timeframe_training_input: Multi-timeframe training input dictionary
 
         Returns:
             Dict[str, Any]: Timeframe analysis results
+
         """
         try:
             results = {}
@@ -652,14 +651,14 @@ class MultiTimeframeTrainingManager:
         self,
         multi_timeframe_training_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Perform cross timeframe features.
+        """Perform cross timeframe features.
 
         Args:
             multi_timeframe_training_input: Multi-timeframe training input dictionary
 
         Returns:
             Dict[str, Any]: Cross timeframe features results
+
         """
         try:
             results = {}
@@ -713,14 +712,14 @@ class MultiTimeframeTrainingManager:
         self,
         multi_timeframe_training_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Perform timeframe ensemble.
+        """Perform timeframe ensemble.
 
         Args:
             multi_timeframe_training_input: Multi-timeframe training input dictionary
 
         Returns:
             Dict[str, Any]: Timeframe ensemble results
+
         """
         try:
             results = {}
@@ -765,14 +764,14 @@ class MultiTimeframeTrainingManager:
         self,
         multi_timeframe_training_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Perform timeframe optimization.
+        """Perform timeframe optimization.
 
         Args:
             multi_timeframe_training_input: Multi-timeframe training input dictionary
 
         Returns:
             Dict[str, Any]: Timeframe optimization results
+
         """
         try:
             results = {}
@@ -1140,14 +1139,14 @@ class MultiTimeframeTrainingManager:
         self,
         multi_timeframe_training_type: str | None = None,
     ) -> dict[str, Any]:
-        """
-        Get multi-timeframe training results.
+        """Get multi-timeframe training results.
 
         Args:
             multi_timeframe_training_type: Optional multi-timeframe training type filter
 
         Returns:
             Dict[str, Any]: Multi-timeframe training results
+
         """
         try:
             if multi_timeframe_training_type:
@@ -1172,14 +1171,14 @@ class MultiTimeframeTrainingManager:
         self,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
-        """
-        Get multi-timeframe training history.
+        """Get multi-timeframe training history.
 
         Args:
             limit: Optional limit on number of records
 
         Returns:
             List[Dict[str, Any]]: Multi-timeframe training history
+
         """
         try:
             history = self.multi_timeframe_training_history.copy()
@@ -1196,11 +1195,11 @@ class MultiTimeframeTrainingManager:
             return []
 
     def get_multi_timeframe_training_status(self) -> dict[str, Any]:
-        """
-        Get multi-timeframe training status information.
+        """Get multi-timeframe training status information.
 
         Returns:
             Dict[str, Any]: Multi-timeframe training status
+
         """
         return {
             "is_training": self.is_training,
@@ -1248,10 +1247,9 @@ class MultiTimeframeTrainingManager:
             )
 
     async def _validate_step_dependencies(
-        self, step_name: str, pipeline_state: dict[str, Any]
+        self, step_name: str, pipeline_state: dict[str, Any],
     ) -> bool:
-        """
-        Validate that all prerequisites for a step are met using StepDependencyValidator.
+        """Validate that all prerequisites for a step are met using StepDependencyValidator.
 
         Args:
             step_name: Name of the step to validate
@@ -1259,31 +1257,31 @@ class MultiTimeframeTrainingManager:
 
         Returns:
             bool: True if all dependencies are met, False otherwise
+
         """
         try:
             self.logger.info(f"🔍 Validating dependencies for {step_name}")
-            
+
             # Use StepDependencyValidator to check prerequisites
             validation_result = await self.step_dependency_validator.validate_step_prerequisites(
                 step_name=step_name,
                 pipeline_state=pipeline_state,
-                checkpoint_dir="checkpoints"
+                checkpoint_dir="checkpoints",
             )
-            
+
             if validation_result["valid"]:
                 self.logger.info(f"✅ Dependencies validated for {step_name}: {validation_result['reason']}")
                 return True
-            else:
-                self.logger.error(f"❌ Dependencies failed for {step_name}: {validation_result['reason']}")
-                
-                # Log failed prerequisites for debugging
-                if "failed_steps" in validation_result:
-                    self.logger.error(f"   Failed prerequisites: {validation_result['failed_steps']}")
-                
-                return False
-                
+            self.logger.error(f"❌ Dependencies failed for {step_name}: {validation_result['reason']}")
+
+            # Log failed prerequisites for debugging
+            if "failed_steps" in validation_result:
+                self.logger.error(f"   Failed prerequisites: {validation_result['failed_steps']}")
+
+            return False
+
         except Exception as e:
-            self.logger.error(f"🚨 Error validating dependencies for {step_name}: {e}")
+            self.logger.exception(f"🚨 Error validating dependencies for {step_name}: {e}")
             return False
 
 
@@ -1299,14 +1297,14 @@ multi_timeframe_training_manager: MultiTimeframeTrainingManager | None = None
 async def setup_multi_timeframe_training_manager(
     config: dict[str, Any] | None = None,
 ) -> MultiTimeframeTrainingManager | None:
-    """
-    Setup global multi-timeframe training manager.
+    """Setup global multi-timeframe training manager.
 
     Args:
         config: Optional configuration dictionary
 
     Returns:
         Optional[MultiTimeframeTrainingManager]: Global multi-timeframe training manager instance
+
     """
     try:
         global multi_timeframe_training_manager
@@ -1332,6 +1330,5 @@ async def setup_multi_timeframe_training_manager(
             return multi_timeframe_training_manager
         return None
 
-    except Exception as e:
-        print(f"Error setting up multi-timeframe training manager: {e}")
+    except Exception:
         return None

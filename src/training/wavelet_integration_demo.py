@@ -1,7 +1,6 @@
 # src/training/wavelet_integration_demo.py
 
-"""
-Comprehensive Wavelet Transform Integration Demo
+"""Comprehensive Wavelet Transform Integration Demo
 Demonstrates the complete wavelet workflow with all advanced features integrated.
 
 This script shows:
@@ -30,23 +29,13 @@ from src.training.steps.vectorized_advanced_feature_engineering import (
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
-    warning,
-    critical,
-    problem,
     failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
+    problem,
 )
 
 
 class WaveletIntegrationDemo:
-    """
-    Comprehensive demonstration of the complete wavelet workflow integration.
+    """Comprehensive demonstration of the complete wavelet workflow integration.
     Shows all features from advanced_feature_engineering.py and feature_engineering_orchestrator.py
     using price differences instead of raw prices.
     """
@@ -142,7 +131,7 @@ class WaveletIntegrationDemo:
             return data, volume_data
 
         except Exception as e:
-            self.logger.error(f"Error creating sample data: {e}")
+            self.logger.exception(f"Error creating sample data: {e}")
             return pd.DataFrame(), pd.DataFrame()
 
     async def demonstrate_price_differences_usage(
@@ -190,7 +179,7 @@ class WaveletIntegrationDemo:
             )
 
         except Exception as e:
-            self.logger.error(f"Error demonstrating price differences: {e}")
+            self.logger.exception(f"Error demonstrating price differences: {e}")
 
     async def demonstrate_complete_feature_integration(
         self,
@@ -244,7 +233,7 @@ class WaveletIntegrationDemo:
                     self.logger.info(f"📊 {category}: {len(features)} features")
                     self.logger.info(f"   Examples: {features[:3]}")
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error demonstrating feature integration: {e}"))
 
     async def demonstrate_wavelet_workflow(
@@ -300,7 +289,7 @@ class WaveletIntegrationDemo:
             cache_stats = self.wavelet_cache.get_cache_stats()
             self.logger.info(f"📊 Cache statistics: {cache_stats}")
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error demonstrating wavelet workflow: {e}"))
 
     async def demonstrate_live_trading_integration(
@@ -357,7 +346,7 @@ class WaveletIntegrationDemo:
                     else:
                         self.logger.info("📉 Low wavelet energy - market may be stable")
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error demonstrating live trading integration: {e}"))
 
     async def demonstrate_extensive_wavelet_techniques(
@@ -470,11 +459,11 @@ class WaveletIntegrationDemo:
             self.logger.info("   ✅ Extensive wavelet techniques implemented")
             self.logger.info("   ✅ Live trading integration demonstrated")
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error running complete demo: {e}"))
 
 
-async def main():
+async def main() -> None:
     """Main function to run the wavelet integration demo."""
     try:
         # Load configuration
@@ -524,8 +513,8 @@ async def main():
         await demo.initialize()
         await demo.run_complete_demo()
 
-    except Exception as e:
-        print(f"Error in main: {e}")
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

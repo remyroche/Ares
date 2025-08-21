@@ -1,46 +1,44 @@
 # src/training/steps/step2_processing_labeling_feature_engineering.py
 
 import asyncio
-import os
 import json
+import os
 from typing import Any
-import pandas as pd
-import numpy as np
 
-from src.utils.logger import system_logger as _logger
-from src.training.steps.unified_data_loader import get_unified_data_loader
+import numpy as np
+import pandas as pd
+
 from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
     OptimizedTripleBarrierLabeling,
 )
+from src.training.steps.unified_data_loader import get_unified_data_loader
 from src.training.steps.vectorized_labelling_orchestrator import (
     VectorizedLabellingOrchestrator,
 )
 
-
 # Import decorators from centralized module
 from src.utils.centralized_decorators import (
-    auto_fix_data_quality_issues,
-    deterministic_seed,
-    idempotent_step,
-    artifact_write_lock,
-    nan_inf_and_constant_guard,
     artifact_versioning,
-    time_budget_watchdog,
-    validate_step_prerequisites,
-    secure_data_processing,
-    prevent_data_leakage,
-    resource_monitor,
-    memory_efficient,
-    debug_training_step,
+    artifact_write_lock,
+    auto_fix_data_quality_issues,
     circuit_breaker_protection,
-    validate_step_output,
-    quality_gate,
-    handle_errors,
-    validate_data_quality,
-    validate_feature_engineering_pipeline,
-    with_tracing_span,
+    debug_training_step,
+    deterministic_seed,
     guard_dataframe_nulls,
+    handle_errors,
+    idempotent_step,
+    memory_efficient,
+    nan_inf_and_constant_guard,
+    prevent_data_leakage,
+    quality_gate,
+    resource_monitor,
+    secure_data_processing,
+    time_budget_watchdog,
+    validate_step_output,
+    validate_step_prerequisites,
+    with_tracing_span,
 )
+from src.utils.logger import system_logger as _logger
 
 
 @with_tracing_span("step4._build_sr_levels", log_args=False)
@@ -84,7 +82,7 @@ async def _build_sr_levels(price_df: pd.DataFrame) -> dict[str, Any]:
 @with_tracing_span("step4._persist_sr_levels", log_args=False)
 @handle_errors(exceptions=(Exception,), default_return=None)
 def _persist_sr_levels(
-    config: dict[str, Any], sr_levels: dict[str, Any], asof_ts: pd.Timestamp
+    config: dict[str, Any], sr_levels: dict[str, Any], asof_ts: pd.Timestamp,
 ) -> None:
     """Append SR levels with timestamps to a persistent parquet for reuse.
 
@@ -97,7 +95,7 @@ def _persist_sr_levels(
         exchange = config.get("exchange", "EXCH")
         path = f"{data_dir}/{exchange}_{symbol}_sr_levels.parquet"
         # Build frame from provided sr_levels
-        rows: list[dict[str, Any]] = []
+        rows: list[dict[str, Any]] , []
         for kind in ("support_levels", "resistance_levels"):
             for lvl in sr_levels.get(kind, []) or []:
                 if isinstance(lvl, dict):
@@ -115,7 +113,7 @@ def _persist_sr_levels(
                         "price": price,
                         "strength": strength,
                         "age": 0.0,
-                    }
+                    },
                 )
         if not rows:
             return
@@ -132,7 +130,7 @@ def _persist_sr_levels(
                     delta_min = (
                         float(
                             (pd.to_datetime(asof_ts) - max_old_ts).total_seconds()
-                            / 60.0
+                            / 60.0,
                         )
                         if pd.notna(max_old_ts)
                         else 0.0
@@ -149,7 +147,7 @@ def _persist_sr_levels(
             eps = 1e-6
             combined["price_round"] = (combined["price"] / eps).round().astype("int64")
             combined = combined.sort_values(
-                ["timestamp", "level_type", "price"]
+                ["timestamp", "level_type", "price"],
             ).drop_duplicates(["timestamp", "level_type", "price_round"], keep="last")
             combined = combined.drop(columns=["price_round"], errors="ignore")
         except Exception:
@@ -170,48 +168,48 @@ def _persist_sr_levels(
     required_directories=["data/training"],
     min_memory_gb=8.0,
     min_disk_gb=5.0,
-    data_quality_checks={"check_data_completeness": True}
+    data_quality_checks={"check_data_completeness": True},
 )
 @secure_data_processing(
     backup_before=True,
     integrity_checks=True,
     memory_cleanup=True,
-    data_validation=True
+    data_validation=True,
 )
 @prevent_data_leakage(
     temporal_validation=True,
     feature_leakage_detection=True,
     cross_validation_isolation=True,
-    lookahead_bias_prevention=True
+    lookahead_bias_prevention=True,
 )
 @resource_monitor(
     memory_threshold_gb=16.0,
     cpu_threshold_percent=90.0,
     disk_threshold_gb=10.0,
-    auto_cleanup=True
+    auto_cleanup=True,
 )
 @memory_efficient(
     chunk_size=1000,
     streaming_processing=True,
     memory_pool=True,
-    cleanup_frequency=10
+    cleanup_frequency=10,
 )
 @debug_training_step(
     log_intermediate_results=True,
     save_debug_artifacts=True,
-    performance_profiling=True
+    performance_profiling=True,
 )
 @circuit_breaker_protection(
     failure_threshold=3,
-    recovery_timeout=300.0
+    recovery_timeout=300.0,
 )
 @validate_step_output(
     required_files=["labeled_train.parquet", "labeled_validation.parquet", "labeled_test.parquet"],
-    data_quality_checks={"check_output_completeness": True}
+    data_quality_checks={"check_output_completeness": True},
 )
 @quality_gate(
     model_performance_thresholds={"min_data_points": 100},
-    data_quality_metrics={"completeness_threshold": 0.95}
+    data_quality_metrics={"completeness_threshold": 0.95},
 )
 @auto_fix_data_quality_issues
 @handle_errors(exceptions=(Exception,), default_return=False, context="step4_processing_labeling")
@@ -224,140 +222,53 @@ async def run_step(
     force_rerun: bool = False,
     pipeline_config: dict[str, Any] | None = None,
 ) -> bool:
-    """
-    Step 4: Processing & Labeling - IMPROVED VERSION.
-    
-    IMPROVEMENTS:
-    - Modular architecture with separate classes for different responsibilities
-    - Better memory management with context managers
-    - Improved error handling and logging
-    - Type hints throughout
-    - Performance optimizations with parallel processing
-    - Better data validation and quality checks
-    - Enhanced triple-barrier labeling with improved accuracy
-    """
-    _logger.info("🚀 Running Step 4: Processing & Labeling - IMPROVED VERSION...")
-    start_time = time.time()
+    _logger.info(
+        "🚀 Running Step 4: Processing & Labeling...",
+    )
 
     actual_exchange = exchange if exchange != "BINANCE" else exchange_name
-    
-    # Initialize configuration
-    config = {
-        "symbol": symbol,
-        "exchange": actual_exchange,
-        "data_dir": data_dir,
-        "timeframe": timeframe,
-        "force_rerun": force_rerun,
-        "enable_parallel_processing": pipeline_config.get("enable_parallel_processing", True) if pipeline_config else True,
-        "max_workers": pipeline_config.get("max_workers", 4) if pipeline_config else 4,
-        "memory_limit_gb": pipeline_config.get("memory_limit_gb", 8.0) if pipeline_config else 8.0,
-        "lookback_days": pipeline_config.get("lookback_days", 30) if pipeline_config else 30,
-        "train_split": pipeline_config.get("train_split", 0.70) if pipeline_config else 0.70,
-        "validation_split": pipeline_config.get("validation_split", 0.15) if pipeline_config else 0.15,
-        "test_split": pipeline_config.get("test_split", 0.15) if pipeline_config else 0.15,
-        "triple_barrier_params": pipeline_config.get("triple_barrier_params", {
-            "upper_barrier": 0.02,  # 2% upper barrier
-            "lower_barrier": 0.02,  # 2% lower barrier
-            "timeout": 20,  # 20 periods timeout
-            "binary_classification": True,
-        }) if pipeline_config else {
-            "upper_barrier": 0.02,
-            "lower_barrier": 0.02,
-            "timeout": 20,
-            "binary_classification": True,
-        },
-    }
 
     try:
-        # 1) Load unified OHLCV data with improved validation
-        loader_config: dict[str, Any] = {
+        # 1) Load unified OHLCV data
+        config: dict[str, Any] = {
             "symbol": symbol,
             "exchange": actual_exchange,
             "data_dir": data_dir,
             "timeframe": timeframe,
         }
         if pipeline_config:
-            loader_config.update(
+            config.update(
                 {
                     "vectorized_labelling_orchestrator": pipeline_config.get(
-                        "vectorized_labelling_orchestrator", {}
-                    )
-                }
+                        "vectorized_labelling_orchestrator", {},
+                    ),
+                },
             )
 
-        data_loader = get_unified_data_loader(loader_config)
+        data_loader = get_unified_data_loader(config)
         from src.config.constants import (
             BLANK_TRAINING_LOOKBACK_DAYS,
-            FULL_TRAINING_LOOKBACK_DAYS,
-            SHORT_BLANK_LOOKBACK_DAYS,
         )
 
         # Use lookback_days from config (should be passed from enhanced training manager)
         lookback_days = config.get("lookback_days", BLANK_TRAINING_LOOKBACK_DAYS)
-        
-        try:
-            df = await data_loader.load_unified_data(
-                symbol=symbol,
-                exchange=actual_exchange,
-                timeframe=timeframe,
-                lookback_days=lookback_days,
-                use_streaming=True,
-            )
-            if df is None or df.empty:
-                raise ValueError(f"🚨 No data found for {symbol} on {actual_exchange}")
-        except Exception as e:
-            _logger.error(f"❌ Error loading unified data: {e}")
-            raise
+        df = await data_loader.load_unified_data(
+            symbol=symbol,
+            exchange=actual_exchange,
+            timeframe=timeframe,
+            lookback_days=lookback_days,
+            use_streaming=True,
+        )
+        if df is None or df.empty:
+            msg = f"🚨 No data found for {symbol} on {actual_exchange}"
+            raise ValueError(msg)
 
-        # Enhanced data validation and preprocessing
-        try:
-            # Ensure timestamp column exists and is datetime
-            if "timestamp" not in df.columns and isinstance(df.index, pd.DatetimeIndex):
-                df = df.reset_index().rename(columns={"index": "timestamp"})
-            if not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
-                df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-            
-            # Sort by timestamp
-            df = df.sort_values("timestamp").reset_index(drop=True)
-            
-            # Remove rows with missing timestamps
-            initial_count = len(df)
-            df = df.dropna(subset=["timestamp"])
-            final_count = len(df)
-            
-            if final_count < initial_count:
-                _logger.warning(f"Removed {initial_count - final_count} rows with missing timestamps")
-            
-            # Validate OHLC data
-            required_cols = ["open", "high", "low", "close"]
-            missing_cols = [col for col in required_cols if col not in df.columns]
-            if missing_cols:
-                raise ValueError(f"Missing required OHLC columns: {missing_cols}")
-            
-            # Check for negative prices
-            for col in required_cols:
-                if (df[col] <= 0).any():
-                    _logger.warning(f"Found non-positive values in {col}, removing affected rows")
-                    df = df[df[col] > 0]
-            
-            # Check OHLC consistency
-            invalid_ohlc = (
-                (df["high"] < df["low"]) |
-                (df["open"] > df["high"]) |
-                (df["close"] > df["high"]) |
-                (df["open"] < df["low"]) |
-                (df["close"] < df["low"])
-            )
-            
-            if invalid_ohlc.any():
-                _logger.warning(f"Found {invalid_ohlc.sum()} rows with invalid OHLC data, removing")
-                df = df[~invalid_ohlc]
-            
-            _logger.info(f"✅ Data validation completed: {len(df)} valid samples")
-            
-        except Exception as e:
-            _logger.error(f"❌ Error during data validation: {e}")
-            raise
+        # Ensure timestamp column exists and is datetime
+        if "timestamp" not in df.columns and isinstance(df.index, pd.DatetimeIndex):
+            df = df.reset_index().rename(columns={"index": "timestamp"})
+        if not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
+            df["timestamp"] = pd.to_datetime(df["timestamp"])  # best-effort cast
+        df = df.sort_values("timestamp").reset_index(drop=True)
 
         # 2) Compute triple-barrier labels (binary) while preserving OHLCV
         lbl = OptimizedTripleBarrierLabeling(binary_classification=True)
@@ -368,7 +279,7 @@ async def run_step(
                     for c in ["open", "high", "low", "close", "volume", "timestamp"]
                     if c in df.columns
                 ]
-            ].set_index("timestamp")
+            ].set_index("timestamp"),
         )
         labeled = labeled.reset_index()  # bring timestamp back as column
 
@@ -376,7 +287,7 @@ async def run_step(
         n = len(labeled)
         if n < 100:
             _logger.warning(
-                "⚠️ Very little data for step 2; proceeding with minimal splits"
+                "⚠️ Very little data for step 2; proceeding with minimal splits",
             )
         cut1 = int(n * 0.70)
         cut2 = int(n * 0.85)
@@ -394,29 +305,9 @@ async def run_step(
         labeled_train.to_parquet(paths["train"], index=False)
         labeled_val.to_parquet(paths["validation"], index=False)
         labeled_test.to_parquet(paths["test"], index=False)
-        # Log completion with detailed metrics
-        total_time = time.time() - start_time
-        total_samples = len(labeled_train) + len(labeled_val) + len(labeled_test)
-        
-        _logger.info(f"✅ Wrote labeled splits: train={len(labeled_train)} val={len(labeled_val)} test={len(labeled_test)}")
-        _logger.info(f"   ⏱️ Total time: {total_time:.2f}s")
-        _logger.info(f"   📊 Total samples: {total_samples}")
-        _logger.info(f"   🔧 Parallel processing: {'Enabled' if config.get('enable_parallel_processing', True) else 'Disabled'}")
-        
-        # Log target distribution if available
-        if "target" in labeled_train.columns:
-            train_dist = labeled_train["target"].value_counts().to_dict()
-            val_dist = labeled_val["target"].value_counts().to_dict()
-            test_dist = labeled_test["target"].value_counts().to_dict()
-            
-            _logger.info(f"   📈 Target distribution:")
-            _logger.info(f"      Train: {train_dist}")
-            _logger.info(f"      Validation: {val_dist}")
-            _logger.info(f"      Test: {test_dist}")
-        
-        # Memory cleanup
-        import gc
-        gc.collect()
+        _logger.info(
+            f"✅ Wrote labeled splits: train={len(labeled_train)} val={len(labeled_val)} test={len(labeled_test)}",
+        )
 
         # 5) Run vectorized orchestrator to derive feature space + meta strengths, and persist strengths snapshot
         try:
@@ -429,7 +320,7 @@ async def run_step(
                     for c in ["open", "high", "low", "close", "volume"]
                     if c in df.columns
                 ]
-                price_data = df[["timestamp"] + price_cols].set_index("timestamp")
+                price_data = df[["timestamp", *price_cols]].set_index("timestamp")
                 volume_data = (
                     price_data[["volume"]]
                     if "volume" in price_data.columns
@@ -447,12 +338,12 @@ async def run_step(
 
                 result = (
                     await orchestrator.orchestrate_labeling_and_feature_engineering(
-                        price_data, volume_data, None, sr_levels
+                        price_data, volume_data, None, sr_levels,
                     )
                 )
                 final_df: pd.DataFrame | None = None
                 if isinstance(result, dict) and isinstance(
-                    result.get("data"), pd.DataFrame
+                    result.get("data"), pd.DataFrame,
                 ):
                     final_df = result["data"]
                 # Persist meta strengths if available (columns starting with 'sr_')
@@ -511,7 +402,7 @@ async def run_step(
             etm = EnhancedTrainingManager(config)
             reliability = etm.get_label_reliability()
             with open(
-                f"{data_dir}/{actual_exchange}_{symbol}_label_reliability.json", "w"
+                f"{data_dir}/{actual_exchange}_{symbol}_label_reliability.json", "w",
             ) as f:
                 json.dump(reliability, f, indent=2)
         except Exception as e:
@@ -526,8 +417,7 @@ async def run_step(
 
 if __name__ == "__main__":
 
-    async def _test():
-        ok = await run_step("ETHUSDT", "BINANCE", "data/training")
-        print(f"Step 4 test result: {ok}")
+    async def _test() -> None:
+        await run_step("ETHUSDT", "BINANCE", "data/training")
 
     asyncio.run(_test())

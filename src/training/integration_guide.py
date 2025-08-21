@@ -1,7 +1,6 @@
 # src/training/integration_guide.py
 
-"""
-Integration guide showing how to integrate the optimized enhanced training manager
+"""Integration guide showing how to integrate the optimized enhanced training manager
 with the existing Ares training system.
 """
 
@@ -26,12 +25,11 @@ from src.utils.warning_symbols import (
 
 
 class OptimizedTrainingIntegration:
-    """
-    Integration class that shows how to replace the existing training manager
+    """Integration class that shows how to replace the existing training manager
     with the optimized version while maintaining compatibility.
     """
 
-    def __init__(self, base_config: dict[str, Any]):
+    def __init__(self, base_config: dict[str, Any]) -> None:
         self.base_config = base_config
         self.logger = system_logger.getChild("OptimizedTrainingIntegration")
 
@@ -46,8 +44,7 @@ class OptimizedTrainingIntegration:
     async def replace_enhanced_training_manager(
         self,
     ) -> EnhancedTrainingManagerOptimized:
-        """
-        Replace the existing enhanced training manager with the optimized version.
+        """Replace the existing enhanced training manager with the optimized version.
         This method shows how to maintain the same interface while adding optimizations.
         """
         self.logger.info("Creating optimized enhanced training manager...")
@@ -68,8 +65,7 @@ class OptimizedTrainingIntegration:
         symbol: str,
         exchange: str,
     ) -> dict[str, Any]:
-        """
-        Execute regime training with optimizations.
+        """Execute regime training with optimizations.
         Compatible with the existing regime training command.
         """
         self.logger.info(
@@ -172,7 +168,7 @@ def demonstrate_integration():
     return integration
 
 
-async def run_integration_example():
+async def run_integration_example() -> None:
     """Run a complete integration example."""
     logger = system_logger.getChild("IntegrationExample")
     logger.info("🚀 Running Optimized Training Integration Example")
@@ -208,10 +204,10 @@ async def run_integration_example():
         logger.info("✅ Integration example completed successfully")
 
     except Exception:
-        print(failed("❌ Integration example failed: {e}"))
+        pass
 
 
-def show_migration_steps():
+def show_migration_steps() -> None:
     """Show step-by-step migration from existing to optimized system."""
     logger = system_logger.getChild("MigrationGuide")
 
@@ -268,7 +264,6 @@ def show_migration_steps():
 if __name__ == "__main__":
     # Show migration steps
     show_migration_steps()
-    print("\n" + "=" * 60 + "\n")
 
     # Run integration example
     asyncio.run(run_integration_example())

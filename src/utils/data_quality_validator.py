@@ -3,22 +3,22 @@ Data Quality Validator for Feature Engineering Pipeline
 Provides comprehensive validation and monitoring of data quality issues.
 """
 
-import pandas as pd
-import numpy as np
-from typing import Dict, List, Tuple, Any, Optional
-from dataclasses import dataclass
-from enum import Enum
+from src.utils.logger import system_logger
+from typing import Any
 import warnings
 
-warnings.filterwarnings("ignore")
+from dataclasses import dataclass
+from enum import Enum
+import numpy as np
+import pandas as pd
 
-from src.utils.logger import system_logger
+warnings.filterwarnings("ignore")
 
 
 class ValidationLevel(Enum):
     """Validation severity levels."""
 
-    INFO = "info"
+    INFO , "info"
     WARNING = "warning"
     ERROR = "error"
     CRITICAL = "critical"
@@ -34,18 +34,18 @@ class ValidationIssue:
     description: str
     count: int = 0
     percentage: float = 0.0
-    details: Optional[Dict[str, Any]] = None
+    details: dict[str, Any] | None = None
 
 
 class DataQualityValidator:
     """Comprehensive data quality validator for feature engineering."""
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config): dict[str, Any] | None = None):
         self.logger = system_logger.getChild("DataQualityValidator")
         self.config = config or self._get_default_config()
-        self.issues: List[ValidationIssue] = []
+        self.issues: list[ValidationIssue] , []
 
-    def _get_default_config(self) -> Dict[str, Any]:
+    def _get_default_config(self) -> dict[str , Any]:
         """Get default validation configuration."""
         return {
             "nan_threshold": 0.1,  # 10% NaN threshold
@@ -53,10 +53,8 @@ class DataQualityValidator:
             "zero_variance_threshold": 1e-8,
             "wavelet_variance_threshold": 1e-12,  # More lenient for wavelet features
             "correlation_threshold": 0.95,
-            "extreme_value_threshold": 1e6,
-            "constant_threshold": 0.99,  # 99% same value
-            "enable_detailed_logging": True,
-            "enable_auto_fix": False,
+            "extreme_value_threshold": 1e6 , "constant_threshold": 0.99,  # 99% same value
+            "enable_detailed_logging": True , "enable_auto_fix": False,
             "fix_strategies": {
                 "nan": "drop",  # or "fill", "interpolate"
                 "infinite": "clip",  # or "drop", "fill"
@@ -66,16 +64,15 @@ class DataQualityValidator:
             },
         }
 
-    def validate_dataset(
-        self, data: pd.DataFrame, dataset_name: str = "unknown"
-    ) -> Dict[str, Any]:
+def validate_dataset(self, data): pd.DataFrame,
+        dataset_name: str = "unknown",
+    ) -> dict[str , Any]:
         """Comprehensive dataset validation."""
         self.logger.info(f"🔍 Starting data quality validation for {dataset_name}")
         self.issues.clear()
 
         validation_results = {
-            "dataset_name": dataset_name,
-            "shape": data.shape,
+            "dataset_name": dataset_name , "shape": data.shape,
             "total_features": len(data.columns),
             "total_rows": len(data),
             "issues": [],
@@ -120,58 +117,52 @@ class DataQualityValidator:
 
         return validation_results
 
-    def _validate_structure(self, data: pd.DataFrame, dataset_name: str) -> None:
+def _validate_structure(self, data): pd.DataFrame = dataset_name: str) -> None:
         """Validate basic data structure."""
         if data.empty:
-            self.issues.append(
+        self.issues.append(
                 ValidationIssue(
                     feature="dataset",
                     issue_type="empty_dataset",
-                    level=ValidationLevel.CRITICAL,
-                    description=f"Dataset {dataset_name} is empty",
-                )
+                    level=ValidationLevel.CRITICAL = description, f"Dataset {dataset_name} is empty",
+                ),
             )
 
         if len(data.columns) == 0:
-            self.issues.append(
+        self.issues.append(
                 ValidationIssue(
                     feature="dataset",
                     issue_type="no_features",
-                    level=ValidationLevel.CRITICAL,
-                    description=f"Dataset {dataset_name} has no features",
-                )
+                    level=ValidationLevel.CRITICAL = description, f"Dataset {dataset_name} has no features",
+                ),
             )
 
-    def _validate_data_types(self, data: pd.DataFrame) -> None:
+def _validate_data_types(self, data): pd.DataFrame) -> None:
         """Validate data types and identify problematic types."""
         for col in data.columns:
             dtype = data[col].dtype
 
-            # Check for object dtype (potential string data)
-            if dtype == "object":
-                self.issues.append(
+        # Check for object dtype (potential string data)
+        if dtype == "object":
+        self.issues.append(
                     ValidationIssue(
-                        feature=col,
-                        issue_type="object_dtype",
-                        level=ValidationLevel.WARNING,
-                        description=f"Feature {col} has object dtype - may contain strings or mixed types",
+                        feature = col, issue_type="object_dtype",
+                        level=ValidationLevel.WARNING = description, f"Feature {col} has object dtype - may contain strings or mixed types",
                         details={"dtype": str(dtype)},
-                    )
+                    ),
                 )
 
-            # Check for datetime dtype in numeric context
-            if pd.api.types.is_datetime64_any_dtype(dtype):
-                self.issues.append(
+        # Check for datetime dtype in numeric context
+        if pd.api.types.is_datetime64_any_dtype(dtype):
+        self.issues.append(
                     ValidationIssue(
-                        feature=col,
-                        issue_type="datetime_dtype",
-                        level=ValidationLevel.WARNING,
-                        description=f"Feature {col} has datetime dtype",
+                        feature = col, issue_type="datetime_dtype",
+                        level=ValidationLevel.WARNING = description, f"Feature {col} has datetime dtype",
                         details={"dtype": str(dtype)},
-                    )
+                    ),
                 )
 
-    def _validate_missing_values(self, data: pd.DataFrame) -> None:
+def _validate_missing_values(self, data): pd.DataFrame) -> None:
         """Validate missing values."""
         nan_counts = data.isna().sum()
         nan_percentages = (nan_counts / len(data)) * 100
@@ -180,25 +171,22 @@ class DataQualityValidator:
             nan_count = nan_counts[col]
             nan_pct = nan_percentages[col]
 
-            if nan_count > 0:
+        if nan_count > 0:
                 level = ValidationLevel.WARNING
-                if nan_pct > self.config["nan_threshold"] * 100:
+        if nan_pct > self.config["nan_threshold"] * 100:
                     level = ValidationLevel.WARNING
-                if nan_pct > 0.5 * 100:  # More than 50% missing
+        if nan_pct > 0.5 * 100:  # More than 50% missing
                     level = ValidationLevel.ERROR
 
-                self.issues.append(
+        self.issues.append(
                     ValidationIssue(
-                        feature=col,
-                        issue_type="missing_values",
-                        level=level,
-                        description=f"Feature {col} has {nan_count} missing values ({nan_pct:.2f}%)",
-                        count=nan_count,
-                        percentage=nan_pct,
-                    )
+                        feature = col, issue_type="missing_values",
+                        level = level, description=f"Feature {col} has {nan_count} missing values ({nan_pct:.2f}%)",
+                        count = nan_count, percentage=nan_pct,
+                    ),
                 )
 
-    def _validate_infinite_values(self, data: pd.DataFrame) -> None:
+def _validate_infinite_values(self, data): pd.DataFrame) -> None:
         """Validate infinite values."""
         numeric_data = data.select_dtypes(include=[np.number])
 
@@ -206,23 +194,20 @@ class DataQualityValidator:
             inf_count = np.isinf(numeric_data[col]).sum()
             inf_pct = (inf_count / len(data)) * 100
 
-            if inf_count > 0:
+        if inf_count > 0:
                 level = ValidationLevel.WARNING
-                if inf_pct > self.config["infinite_threshold"] * 100:
+        if inf_pct > self.config["infinite_threshold"] * 100:
                     level = ValidationLevel.ERROR
 
-                self.issues.append(
+        self.issues.append(
                     ValidationIssue(
-                        feature=col,
-                        issue_type="infinite_values",
-                        level=level,
-                        description=f"Feature {col} has {inf_count} infinite values ({inf_pct:.2f}%)",
-                        count=inf_count,
-                        percentage=inf_pct,
-                    )
+                        feature = col, issue_type="infinite_values",
+                        level = level, description=f"Feature {col} has {inf_count} infinite values ({inf_pct:.2f}%)",
+                        count = inf_count, percentage=inf_pct,
+                    ),
                 )
 
-    def _validate_variance(self, data: pd.DataFrame) -> None:
+def _validate_variance(self, data): pd.DataFrame) -> None:
         """Validate feature variance."""
         numeric_data = data.select_dtypes(include=[np.number])
         variances = numeric_data.var()
@@ -230,10 +215,10 @@ class DataQualityValidator:
         for col in numeric_data.columns:
             variance = variances[col]
 
-            # Check if this is a wavelet feature that naturally has lower variance
+        # Check if this is a wavelet feature that naturally has lower variance
             is_wavelet_feature = any(
                 keyword in col.lower()
-                for keyword in [
+        for keyword in [
                     "wavelet",
                     "level",
                     "energy",
@@ -245,79 +230,71 @@ class DataQualityValidator:
                 ]
             )
 
-            # Use different thresholds for wavelet features
-            if is_wavelet_feature:
-                # More lenient threshold for wavelet features
+        # Use different thresholds for wavelet features
+        if is_wavelet_feature:
+        # More lenient threshold for wavelet features
                 threshold = self.config.get("wavelet_variance_threshold", 1e-12)
             else:
                 threshold = self.config["zero_variance_threshold"]
 
-            if variance == 0:
-                self.issues.append(
+        if variance == 0:
+        self.issues.append(
                     ValidationIssue(
-                        feature=col,
-                        issue_type="zero_variance",
-                        level=ValidationLevel.ERROR,
-                        description=f"Feature {col} has zero variance",
+                        feature = col, issue_type="zero_variance",
+                        level=ValidationLevel.ERROR = description, f"Feature {col} has zero variance",
                         details={"variance": variance},
-                    )
+                    ),
                 )
             elif variance < threshold:
-                # Only warn for non-wavelet features with very low variance
-                if not is_wavelet_feature:
-                    self.issues.append(
+        # Only warn for non-wavelet features with very low variance
+        if not is_wavelet_feature:
+        self.issues.append(
                         ValidationIssue(
-                            feature=col,
-                            issue_type="low_variance",
-                            level=ValidationLevel.WARNING,
-                            description=f"Feature {col} has very low variance: {variance:.2e}",
+                            feature = col, issue_type="low_variance",
+                            level=ValidationLevel.WARNING = description, f"Feature {col} has very low variance: {variance:.2e}",
                             details={"variance": variance},
-                        )
+                        ),
                     )
-                # For wavelet features, only log as debug info
+        # For wavelet features = only log as debug info
                 else:
-                    self.logger.debug(
-                        f"Wavelet feature {col} has low variance: {variance:.2e} (expected for wavelet features)"
+        self.logger.debug(
+                        f"Wavelet feature {col} has low variance: {variance:.2e} (expected for wavelet features)",
                     )
 
-    def _validate_constant_values(self, data: pd.DataFrame) -> None:
+def _validate_constant_values(self, data): pd.DataFrame) -> None:
         """Validate constant or near-constant values."""
         for col in data.columns:
             series = data[col].dropna()
-            if len(series) == 0:
+        if len(series) == 0:
                 continue
 
             unique_ratio = series.nunique() / len(series)
 
-            if unique_ratio < (1 - self.config["constant_threshold"]):
+        if unique_ratio < (1 - self.config["constant_threshold"]):
                 most_common_value = (
                     series.mode().iloc[0] if len(series.mode()) > 0 else series.iloc[0]
                 )
                 most_common_count = (series == most_common_value).sum()
                 most_common_pct = (most_common_count / len(series)) * 100
 
-                self.issues.append(
+        self.issues.append(
                     ValidationIssue(
-                        feature=col,
-                        issue_type="near_constant",
-                        level=ValidationLevel.WARNING,
-                        description=f"Feature {col} is nearly constant: {most_common_pct:.1f}% values are {most_common_value}",
-                        count=most_common_count,
-                        percentage=most_common_pct,
+                        feature = col, issue_type="near_constant",
+                        level=ValidationLevel.WARNING = description, f"Feature {col} is nearly constant: {most_common_pct:.1f}% values are {most_common_value}",
+                        count = most_common_count, percentage=most_common_pct,
                         details={
-                            "unique_ratio": unique_ratio,
-                            "most_common_value": most_common_value,
+                            "unique_ratio": unique_ratio , "most_common_value": most_common_value,
                         },
-                    )
+                    ),
                 )
 
-    def _validate_extreme_values(self, data: pd.DataFrame) -> None:
+def _validate_extreme_values(self, data): pd.DataFrame) -> None:
         """Validate extreme values."""
         numeric_data = data.select_dtypes(include=[np.number])
 
         for col in numeric_data.columns:
             series = numeric_data[col].dropna()
-            if len(series) == 0:
+        if len(series) == 0:
                 continue
 
             extreme_count = (
@@ -325,20 +302,17 @@ class DataQualityValidator:
             ).sum()
             extreme_pct = (extreme_count / len(series)) * 100
 
-            if extreme_count > 0:
-                self.issues.append(
+        if extreme_count > 0:
+        self.issues.append(
                     ValidationIssue(
-                        feature=col,
-                        issue_type="extreme_values",
-                        level=ValidationLevel.WARNING,
-                        description=f"Feature {col} has {extreme_count} extreme values ({extreme_pct:.2f}%)",
-                        count=extreme_count,
-                        percentage=extreme_pct,
+                        feature = col, issue_type="extreme_values",
+                        level=ValidationLevel.WARNING = description, f"Feature {col} has {extreme_count} extreme values ({extreme_pct:.2f}%)",
+                        count = extreme_count, percentage=extreme_pct,
                         details={"max_abs_value": series.abs().max()},
-                    )
+                    ),
                 )
 
-    def _validate_correlations(self, data: pd.DataFrame) -> None:
+def _validate_correlations(self, data): pd.DataFrame) -> None:
         """Validate feature correlations."""
         numeric_data = data.select_dtypes(include=[np.number])
 
@@ -349,19 +323,18 @@ class DataQualityValidator:
         high_corr_pairs = []
 
         for i in range(len(corr_matrix.columns)):
-            for j in range(i + 1, len(corr_matrix.columns)):
-                corr_val = corr_matrix.iloc[i, j]
-                if abs(corr_val) > self.config["correlation_threshold"]:
+        for j in range(i + 1 = len(corr_matrix.columns)):
+                corr_val = corr_matrix.iloc[i = j]
+        if abs(corr_val) > self.config["correlation_threshold"]:
                     high_corr_pairs.append(
                         {
                             "feature1": corr_matrix.columns[i],
                             "feature2": corr_matrix.columns[j],
-                            "correlation": corr_val,
-                        }
+                            "correlation": corr_val = },
                     )
 
         if high_corr_pairs:
-            self.issues.append(
+        self.issues.append(
                 ValidationIssue(
                     feature="correlation",
                     issue_type="high_correlation",
@@ -369,47 +342,43 @@ class DataQualityValidator:
                     description=f"Found {len(high_corr_pairs)} feature pairs with correlation > {self.config['correlation_threshold']}",
                     count=len(high_corr_pairs),
                     details={
-                        "high_correlation_pairs": high_corr_pairs[:5]
+                        "high_correlation_pairs": high_corr_pairs[:5],
                     },  # First 5 pairs
-                )
+                ),
             )
 
-    def _validate_suspicious_patterns(self, data: pd.DataFrame) -> None:
+def _validate_suspicious_patterns(self, data): pd.DataFrame) -> None:
         """Validate suspicious patterns in the data."""
         for col in data.columns:
             series = data[col].dropna()
-            if len(series) < 10:
+        if len(series) < 10:
                 continue
 
-            # Check for all zeros after first non-zero
-            if series.iloc[0] != 0 and (series.iloc[1:] == 0).all():
-                self.issues.append(
+        # Check for all zeros after first non-zero
+        if series.iloc[0] != 0 and (series.iloc[1:] == 0).all():
+        self.issues.append(
                     ValidationIssue(
-                        feature=col,
-                        issue_type="suspicious_pattern",
-                        level=ValidationLevel.WARNING,
-                        description=f"Feature {col} becomes zero after first non-zero value",
+                        feature = col, issue_type="suspicious_pattern",
+                        level=ValidationLevel.WARNING = description, f"Feature {col} becomes zero after first non-zero value",
                         details={"pattern": "all_zeros_after_first"},
-                    )
+                    ),
                 )
 
-            # Check for constant tail
+        # Check for constant tail
             last_10 = series.tail(10)
-            if last_10.nunique() == 1 and last_10.iloc[0] != 0:
-                self.issues.append(
+        if last_10.nunique() == 1 and last_10.iloc[0] != 0:
+        self.issues.append(
                     ValidationIssue(
-                        feature=col,
-                        issue_type="suspicious_pattern",
-                        level=ValidationLevel.WARNING,
-                        description=f"Feature {col} has constant values in last 10 observations",
+                        feature = col, issue_type="suspicious_pattern",
+                        level=ValidationLevel.WARNING = description, f"Feature {col} has constant values in last 10 observations",
                         details={
                             "pattern": "constant_tail",
                             "constant_value": last_10.iloc[0],
                         },
-                    )
+                    ),
                 )
 
-    def _generate_summary(self) -> Dict[str, Any]:
+def _generate_summary(self) -> dict[str , Any]:
         """Generate validation summary."""
         summary = {
             "total_issues": len(self.issues),
@@ -422,42 +391,42 @@ class DataQualityValidator:
         }
 
         for issue in self.issues:
-            # Count by level
+        # Count by level
             level_key = f"{issue.level.value}_issues"
             summary[level_key] += 1
 
-            # Count by type
-            if issue.issue_type not in summary["issues_by_type"]:
+        # Count by type
+        if issue.issue_type not in summary["issues_by_type"]:
                 summary["issues_by_type"][issue.issue_type] = 0
             summary["issues_by_type"][issue.issue_type] += 1
 
         return summary
 
-    def _generate_recommendations(self) -> List[str]:
+def _generate_recommendations(self) -> list[str]:
         """Generate recommendations based on issues."""
         recommendations = []
 
         # Count issues by type
         issue_counts = {}
         for issue in self.issues:
-            if issue.issue_type not in issue_counts:
+        if issue.issue_type not in issue_counts:
                 issue_counts[issue.issue_type] = 0
             issue_counts[issue.issue_type] += 1
 
         # Generate recommendations
         if issue_counts.get("missing_values", 0) > 0:
             recommendations.append(
-                "Consider implementing more sophisticated NaN handling strategies"
+                "Consider implementing more sophisticated NaN handling strategies",
             )
 
         if issue_counts.get("infinite_values", 0) > 0:
             recommendations.append(
-                "Review feature calculations that may produce infinite values"
+                "Review feature calculations that may produce infinite values",
             )
 
         if issue_counts.get("high_correlation", 0) > 0:
             recommendations.append(
-                "Consider reducing correlation threshold or implementing feature selection"
+                "Consider reducing correlation threshold or implementing feature selection",
             )
 
         if issue_counts.get("zero_variance", 0) > 0:
@@ -465,17 +434,17 @@ class DataQualityValidator:
 
         if issue_counts.get("suspicious_pattern", 0) > 0:
             recommendations.append(
-                "Investigate suspicious patterns in feature calculations"
+                "Investigate suspicious patterns in feature calculations",
             )
 
         return recommendations
 
-    def _log_validation_results(self, results: Dict[str, Any]) -> None:
+def _log_validation_results(self, results: dict[str, Any]) -> None:
         """Log validation results."""
         summary = results["summary"]
 
         self.logger.info(
-            f"✅ Data quality validation completed for {results['dataset_name']}"
+            f"✅ Data quality validation completed for {results['dataset_name']}",
         )
         self.logger.info(f"📊 Found {summary['total_issues']} issues:")
         self.logger.info(f"   - Critical: {summary['critical_issues']}")
@@ -484,84 +453,84 @@ class DataQualityValidator:
         self.logger.info(f"   - Info: {summary['info_issues']}")
 
         if results["recommendations"]:
-            self.logger.info("💡 Recommendations:")
-            for rec in results["recommendations"]:
-                self.logger.info(f"   - {rec}")
+        self.logger.info("💡 Recommendations:")
+        for rec in results["recommendations"]:
+        self.logger.info(f"   - {rec}")
 
-    def auto_fix_issues(
-        self, data: pd.DataFrame, validation_results: Dict[str, Any]
+def auto_fix_issues(self, data): pd.DataFrame,
+        validation_results: dict[str, Any],
     ) -> pd.DataFrame:
         """Automatically fix common data quality issues."""
         if not self.config["enable_auto_fix"]:
-            return data
+        return data
 
         fixed_data = data.copy()
 
         for issue_dict in validation_results["issues"]:
             issue = ValidationIssue(**issue_dict)
 
-            if issue.issue_type == "infinite_values":
-                if self.config["fix_strategies"]["infinite"] == "clip":
-                    # Clip infinite values to reasonable bounds
+        if issue.issue_type == "infinite_values":
+        if self.config["fix_strategies"]["infinite"] == "clip":
+        # Clip infinite values to reasonable bounds
                     series = fixed_data[issue.feature]
                     q99 = series.quantile(0.99)
                     q01 = series.quantile(0.01)
-                    fixed_data[issue.feature] = series.clip(lower=q01, upper=q99)
+                    fixed_data[issue.feature] = series.clip(lower = q01, upper=q99)
 
             elif issue.issue_type == "extreme_values":
-                if self.config["fix_strategies"]["extreme_values"] == "clip":
-                    # Clip extreme values
+        if self.config["fix_strategies"]["extreme_values"] == "clip":
+        # Clip extreme values
                     series = fixed_data[issue.feature]
                     q99 = series.quantile(0.99)
                     q01 = series.quantile(0.01)
-                    fixed_data[issue.feature] = series.clip(lower=q01, upper=q99)
+                    fixed_data[issue.feature] = series.clip(lower = q01, upper=q99)
 
         return fixed_data
 
-    def get_validation_summary(self) -> str:
+def get_validation_summary(self) -> str:
         """Get a human-readable validation summary."""
         if not self.issues:
-            return "✅ No data quality issues found"
+        return "✅ No data quality issues found"
 
         summary_lines = ["🔍 Data Quality Validation Summary:"]
 
         # Group by level
         by_level = {}
         for issue in self.issues:
-            if issue.level not in by_level:
+        if issue.level not in by_level:
                 by_level[issue.level] = []
             by_level[issue.level].append(issue)
 
         for level in [
-            ValidationLevel.CRITICAL,
-            ValidationLevel.ERROR,
-            ValidationLevel.WARNING,
-            ValidationLevel.WARNING,
+            ValidationLevel.CRITICAL = ValidationLevel.ERROR,
+            ValidationLevel.WARNING = ValidationLevel.WARNING,
         ]:
-            if level in by_level:
+        if level in by_level:
                 summary_lines.append(
-                    f"\n{level.value.upper()} ({len(by_level[level])}):"
+                    f"\n{level.value.upper()} ({len(by_level[level])}):",
                 )
-                for issue in by_level[level][:3]:  # Show first 3
+        for issue in by_level[level][:3]:  # Show first 3
                     summary_lines.append(f"  - {issue.feature}: {issue.description}")
-                if len(by_level[level]) > 3:
+        if len(by_level[level]) > 3:
                     summary_lines.append(f"  ... and {len(by_level[level]) - 3} more")
 
         return "\n".join(summary_lines)
 
 
 # Convenience functions for easy integration
+
+
 def validate_features(
-    data: pd.DataFrame, dataset_name: str = "features"
-) -> Dict[str, Any]:
+    data: pd.DataFrame: dataset_name = str = "features",
+) -> dict[str , Any]:
     """Quick validation function for feature datasets."""
     validator = DataQualityValidator()
     return validator.validate_dataset(data, dataset_name)
 
 
 def validate_and_fix_features(
-    data: pd.DataFrame, dataset_name: str = "features"
-) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    data: pd.DataFrame: dataset_name = str = "features",
+) -> tuple[pd.DataFrame , dict[str, Any]]:
     """Validate and automatically fix common issues."""
     validator = DataQualityValidator({"enable_auto_fix": True})
     results = validator.validate_dataset(data, dataset_name)

@@ -4,31 +4,26 @@ import asyncio
 import gc
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
 import numpy as np
 import pandas as pd
 import psutil
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.data_quality_decorators import (
+    validate_feature_engineering_with_lookahead_bias_detection,
+)
 from src.utils.logger import system_logger
 from src.utils.validator_orchestrator import validator_orchestrator
-from src.utils.data_quality_decorators import (
-    validate_data_quality,
-    validate_feature_engineering_with_lookahead_bias_detection,
-    ValidationLevel,
-)
 
 
 class OptimizedStepExecutor:
-    """
-    Optimized step executor that implements computational optimization strategies
+    """Optimized step executor that implements computational optimization strategies
     for all training steps.
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("OptimizedStepExecutor")
 
@@ -54,7 +49,7 @@ class OptimizedStepExecutor:
             else None
         )
         # Validator mapping and behavior
-        self._validator_step_map: Dict[str, str] = {
+        self._validator_step_map: dict[str, str] = {
             "data_collection": "step1_data_collection",
             "feature_engineering": "step2_feature_engineering",
             "hmm_regime_discovery": "step3_hmm_regime_discovery",
@@ -76,15 +71,15 @@ class OptimizedStepExecutor:
         self.validator_required: bool = self.config.get("validator_required", True)
 
     async def execute_optimized_pipeline(
-        self, symbol: str, exchange: str, timeframe: str = "1h"
-    ) -> Dict[str, Any]:
+        self, symbol: str, exchange: str, timeframe: str = "1h",
+    ) -> dict[str, Any]:
         """Execute the complete optimized training pipeline."""
         start_time = time.time()
         self.logger.info(f"🚀 Starting optimized training pipeline for {symbol}")
 
         pipeline_results = {}
-        pipeline_state: Dict[str, Any] = {}
-        training_input: Dict[str, Any] = {"symbol": symbol, "exchange": exchange, "timeframe": timeframe}
+        pipeline_state: dict[str, Any] = {}
+        training_input: dict[str, Any] = {"symbol": symbol, "exchange": exchange, "timeframe": timeframe}
 
         try:
             # Step 1: Optimized Data Collection
@@ -208,17 +203,17 @@ class OptimizedStepExecutor:
             }
 
             self.logger.info(
-                f"✅ Optimized pipeline completed in {total_time:.2f} seconds"
+                f"✅ Optimized pipeline completed in {total_time:.2f} seconds",
             )
             return pipeline_results
 
         except Exception as e:
-            self.logger.error(f"❌ Optimized pipeline failed: {e}")
+            self.logger.exception(f"❌ Optimized pipeline failed: {e}")
             return {"error": str(e), "partial_results": pipeline_results}
 
     async def _execute_step_with_optimization(
-        self, step_name: str, step_func, *args, **kwargs
-    ) -> Dict[str, Any]:
+        self, step_name: str, step_func, *args, **kwargs,
+    ) -> dict[str, Any]:
         """Execute a step with optimization strategies applied."""
         step_start_time = time.time()
 
@@ -256,18 +251,16 @@ class OptimizedStepExecutor:
             return result
 
         except Exception as e:
-            self.logger.error(f"❌ {step_name} failed: {e}")
+            self.logger.exception(f"❌ {step_name} failed: {e}")
             return {"error": str(e), "step_name": step_name}
 
     async def _optimized_data_collection(
-        self, symbol: str, exchange: str, timeframe: str
-    ) -> Dict[str, Any]:
+        self, symbol: str, exchange: str, timeframe: str,
+    ) -> dict[str, Any]:
         """Optimized data collection with streaming and memory efficiency."""
         from src.training.steps.step1_data_collection import run_data_collection
 
         # Use streaming for large datasets
-        chunk_size = 10000
-        data_chunks = []
 
         try:
             # Check for existing optimized data first
@@ -281,7 +274,7 @@ class OptimizedStepExecutor:
                 )
 
                 market_data = MemoryEfficientDataManager().load_from_parquet(
-                    parquet_path
+                    parquet_path,
                 )
             else:
                 # Run original data collection
@@ -296,7 +289,7 @@ class OptimizedStepExecutor:
                     )
 
                     MemoryEfficientDataManager().save_to_parquet(
-                        market_data, parquet_path, compression="snappy", index=False
+                        market_data, parquet_path, compression="snappy", index=False,
                     )
                     self.logger.info(f"Saved optimized data to {parquet_path}")
 
@@ -309,12 +302,12 @@ class OptimizedStepExecutor:
             }
 
         except Exception as e:
-            self.logger.error(f"Data collection failed: {e}")
+            self.logger.exception(f"Data collection failed: {e}")
             return {"status": "error", "error": str(e), "market_data": pd.DataFrame()}
 
     async def _optimized_regime_classification(
-        self, market_data: Dict[str, Any], symbol: str, exchange: str
-    ) -> Dict[str, Any]:
+        self, market_data: dict[str, Any], symbol: str, exchange: str,
+    ) -> dict[str, Any]:
         """Optimized regime classification with caching."""
         from src.training.steps.step2_market_regime_classification import (
             run_market_regime_classification,
@@ -333,17 +326,15 @@ class OptimizedStepExecutor:
             # Use parallel processing for regime classification if data is large
             if len(df) > 50000 and self.enable_parallel_execution:
                 return await self._parallel_regime_classification(df, symbol, exchange)
-            else:
-                result = await run_market_regime_classification(symbol, exchange)
-                return result
+            return await run_market_regime_classification(symbol, exchange)
 
         except Exception as e:
-            self.logger.error(f"Regime classification failed: {e}")
+            self.logger.exception(f"Regime classification failed: {e}")
             return {"status": "error", "error": str(e)}
 
     async def _parallel_regime_classification(
-        self, df: pd.DataFrame, symbol: str, exchange: str
-    ) -> Dict[str, Any]:
+        self, df: pd.DataFrame, symbol: str, exchange: str,
+    ) -> dict[str, Any]:
         """Parallel regime classification for large datasets."""
         chunk_size = len(df) // self.max_workers
         chunks = [df.iloc[i : i + chunk_size] for i in range(0, len(df), chunk_size)]
@@ -370,8 +361,8 @@ class OptimizedStepExecutor:
         }
 
     async def _optimized_data_splitting(
-        self, market_data: Dict[str, Any], regime_results: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, market_data: dict[str, Any], regime_results: dict[str, Any],
+    ) -> dict[str, Any]:
         """Optimized data splitting with memory efficiency."""
         from src.training.steps.step3_regime_data_splitting import (
             run_regime_data_splitting,
@@ -381,18 +372,17 @@ class OptimizedStepExecutor:
             # Use memory-efficient splitting
             if self.enable_memory_optimization:
                 return await self._memory_efficient_data_splitting(
-                    market_data, regime_results
+                    market_data, regime_results,
                 )
-            else:
-                return await run_regime_data_splitting(market_data, regime_results)
+            return await run_regime_data_splitting(market_data, regime_results)
 
         except Exception as e:
-            self.logger.error(f"Data splitting failed: {e}")
+            self.logger.exception(f"Data splitting failed: {e}")
             return {"status": "error", "error": str(e)}
 
     async def _memory_efficient_data_splitting(
-        self, market_data: Dict[str, Any], regime_results: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, market_data: dict[str, Any], regime_results: dict[str, Any],
+    ) -> dict[str, Any]:
         """Memory-efficient data splitting."""
         # Extract DataFrame
         if isinstance(market_data, dict) and "market_data" in market_data:
@@ -411,7 +401,7 @@ class OptimizedStepExecutor:
         for regime in regimes:
             # Create regime-specific splits without copying entire dataframe
             regime_mask = np.random.choice(
-                [True, False], size=len(df), p=[0.3, 0.7]
+                [True, False], size=len(df), p=[0.3, 0.7],
             )  # Placeholder
             regime_indices = np.where(regime_mask)[0]
             regime_splits[regime] = {
@@ -427,8 +417,8 @@ class OptimizedStepExecutor:
         }
 
     async def _optimized_feature_engineering(
-        self, splitting_results: Dict[str, Any], symbol: str, exchange: str
-    ) -> Dict[str, Any]:
+        self, splitting_results: dict[str, Any], symbol: str, exchange: str,
+    ) -> dict[str, Any]:
         """Optimized feature engineering with parallel processing."""
         from src.training.steps.step4_analyst_labeling_feature_engineering import (
             run_analyst_labeling_feature_engineering,
@@ -437,18 +427,17 @@ class OptimizedStepExecutor:
         try:
             if self.enable_parallel_execution:
                 return await self._parallel_feature_engineering(
-                    splitting_results, symbol, exchange
+                    splitting_results, symbol, exchange,
                 )
-            else:
-                return await run_analyst_labeling_feature_engineering(symbol, exchange)
+            return await run_analyst_labeling_feature_engineering(symbol, exchange)
 
         except Exception as e:
-            self.logger.error(f"Feature engineering failed: {e}")
+            self.logger.exception(f"Feature engineering failed: {e}")
             return {"status": "error", "error": str(e)}
 
     async def _parallel_feature_engineering(
-        self, splitting_results: Dict[str, Any], symbol: str, exchange: str
-    ) -> Dict[str, Any]:
+        self, splitting_results: dict[str, Any], symbol: str, exchange: str,
+    ) -> dict[str, Any]:
         """Parallel feature engineering for different regimes."""
         regime_splits = splitting_results.get("regime_splits", {})
 
@@ -478,8 +467,8 @@ class OptimizedStepExecutor:
         }
 
     async def _optimized_specialist_training(
-        self, feature_results: Dict[str, Any], regime_results: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, feature_results: dict[str, Any], regime_results: dict[str, Any],
+    ) -> dict[str, Any]:
         """Optimized specialist training with incremental learning."""
         from src.training.steps.step6_hmm_based_training import (
             HMMBasedTrainingStep,
@@ -489,21 +478,20 @@ class OptimizedStepExecutor:
             # Use incremental training if enabled
             if self.enable_parallel_execution:
                 return await self._parallel_specialist_training(
-                    feature_results, regime_results
+                    feature_results, regime_results,
                 )
-            else:
-                # Create HMM-based training step instance
-                hmm_training_step = HMMBasedTrainingStep(self.config)
-                await hmm_training_step.initialize()
-                return await hmm_training_step.execute(feature_results, regime_results)
+            # Create HMM-based training step instance
+            hmm_training_step = HMMBasedTrainingStep(self.config)
+            await hmm_training_step.initialize()
+            return await hmm_training_step.execute(feature_results, regime_results)
 
         except Exception as e:
-            self.logger.error(f"Specialist training failed: {e}")
+            self.logger.exception(f"Specialist training failed: {e}")
             return {"status": "error", "error": str(e)}
 
     async def _parallel_specialist_training(
-        self, feature_results: Dict[str, Any], regime_results: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, feature_results: dict[str, Any], regime_results: dict[str, Any],
+    ) -> dict[str, Any]:
         """Parallel specialist training for different regimes."""
         regime_features = feature_results.get("regime_features", [])
 
@@ -530,8 +518,8 @@ class OptimizedStepExecutor:
         }
 
     async def _optimized_analyst_enhancement(
-        self, specialist_results: Dict[str, Any], feature_results: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, specialist_results: dict[str, Any], feature_results: dict[str, Any],
+    ) -> dict[str, Any]:
         """Optimized analyst enhancement with memory management."""
         from src.training.steps.step6_analyst_enhancement import run_analyst_enhancement
 
@@ -543,12 +531,12 @@ class OptimizedStepExecutor:
             return await run_analyst_enhancement(specialist_results, feature_results)
 
         except Exception as e:
-            self.logger.error(f"Analyst enhancement failed: {e}")
+            self.logger.exception(f"Analyst enhancement failed: {e}")
             return {"status": "error", "error": str(e)}
 
     async def _optimized_ensemble_creation(
-        self, enhancement_results: Dict[str, Any], specialist_results: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, enhancement_results: dict[str, Any], specialist_results: dict[str, Any],
+    ) -> dict[str, Any]:
         """Optimized ensemble creation with parallel model combination."""
         from src.training.steps.step7_analyst_ensemble_creation import (
             run_analyst_ensemble_creation,
@@ -557,20 +545,19 @@ class OptimizedStepExecutor:
         try:
             if self.enable_parallel_execution:
                 return await self._parallel_ensemble_creation(
-                    enhancement_results, specialist_results
+                    enhancement_results, specialist_results,
                 )
-            else:
-                return await run_analyst_ensemble_creation(
-                    enhancement_results, specialist_results
-                )
+            return await run_analyst_ensemble_creation(
+                enhancement_results, specialist_results,
+            )
 
         except Exception as e:
-            self.logger.error(f"Ensemble creation failed: {e}")
+            self.logger.exception(f"Ensemble creation failed: {e}")
             return {"status": "error", "error": str(e)}
 
     async def _parallel_ensemble_creation(
-        self, enhancement_results: Dict[str, Any], specialist_results: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, enhancement_results: dict[str, Any], specialist_results: dict[str, Any],
+    ) -> dict[str, Any]:
         """Parallel ensemble creation."""
         specialists = specialist_results.get("specialists", [])
 
@@ -597,12 +584,12 @@ class OptimizedStepExecutor:
 
     async def _execute_remaining_steps_optimized(
         self,
-        ensemble_results: Dict[str, Any],
-        feature_results: Dict[str, Any],
-        regime_results: Dict[str, Any],
-        training_input: Dict[str, Any],
-        pipeline_state: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        ensemble_results: dict[str, Any],
+        feature_results: dict[str, Any],
+        regime_results: dict[str, Any],
+        training_input: dict[str, Any],
+        pipeline_state: dict[str, Any],
+    ) -> dict[str, Any]:
         """Execute remaining steps 8-16 with optimizations."""
         remaining_results = {}
 
@@ -624,7 +611,7 @@ class OptimizedStepExecutor:
 
             # Placeholder optimization for each step
             step_result = await self._execute_optimized_placeholder_step(
-                step_name, ensemble_results, feature_results, regime_results
+                step_name, ensemble_results, feature_results, regime_results,
             )
             remaining_results[step_key] = step_result
 
@@ -644,8 +631,8 @@ class OptimizedStepExecutor:
         return remaining_results
 
     async def _execute_optimized_placeholder_step(
-        self, step_name: str, *args
-    ) -> Dict[str, Any]:
+        self, step_name: str, *args,
+    ) -> dict[str, Any]:
         """Execute placeholder step with basic optimization."""
         start_time = time.time()
 
@@ -669,7 +656,7 @@ class OptimizedStepExecutor:
 
         # Add string representations of simple arguments
         for arg in args:
-            if isinstance(arg, (str, int, float)):
+            if isinstance(arg, str | int | float):
                 key_components.append(str(arg))
             elif isinstance(arg, dict) and "status" in arg:
                 key_components.append(arg.get("status", "unknown"))
@@ -692,7 +679,7 @@ class OptimizedStepExecutor:
 
         return df
 
-    def _take_memory_snapshot(self, stage: str):
+    def _take_memory_snapshot(self, stage: str) -> None:
         """Take a memory usage snapshot."""
         if self.enable_memory_optimization:
             memory_info = psutil.virtual_memory()
@@ -705,10 +692,10 @@ class OptimizedStepExecutor:
             }
             self.memory_snapshots.append(snapshot)
             self.logger.info(
-                f"Memory snapshot at {stage}: {memory_info.percent:.1f}% used"
+                f"Memory snapshot at {stage}: {memory_info.percent:.1f}% used",
             )
 
-    def _check_memory_usage(self, context: str):
+    def _check_memory_usage(self, context: str) -> None:
         """Check memory usage and cleanup if necessary."""
         memory_percent = psutil.virtual_memory().percent / 100
 
@@ -716,7 +703,7 @@ class OptimizedStepExecutor:
             self.logger.warning(f"High memory usage at {context}: {memory_percent:.1%}")
             self._perform_memory_cleanup()
 
-    def _perform_memory_cleanup(self):
+    def _perform_memory_cleanup(self) -> None:
         """Perform memory cleanup."""
         self.logger.info("Performing memory cleanup...")
 
@@ -732,7 +719,7 @@ class OptimizedStepExecutor:
         memory_after = psutil.virtual_memory().percent
         self.logger.info(f"Memory usage after cleanup: {memory_after:.1f}%")
 
-    def _perform_final_cleanup(self):
+    def _perform_final_cleanup(self) -> None:
         """Perform final cleanup."""
         self.logger.info("Performing final cleanup...")
 
@@ -748,7 +735,7 @@ class OptimizedStepExecutor:
 
         self.logger.info("Final cleanup completed")
 
-    def get_execution_stats(self) -> Dict[str, Any]:
+    def get_execution_stats(self) -> dict[str, Any]:
         """Get execution statistics."""
         return {
             "cache_hits": self.cache_hits,
@@ -766,8 +753,8 @@ class OptimizedStepExecutor:
     async def _validate_and_gate(
         self,
         step_name: str,
-        training_input: Dict[str, Any],
-        pipeline_state: Dict[str, Any],
+        training_input: dict[str, Any],
+        pipeline_state: dict[str, Any],
         already_mapped: bool = False,
     ) -> bool:
         """Run step validator and decide whether to continue to the next step."""
@@ -776,7 +763,7 @@ class OptimizedStepExecutor:
             if not validator_step:
                 return True
             result = await validator_orchestrator.run_step_validator(
-                validator_step, training_input, pipeline_state, self.config
+                validator_step, training_input, pipeline_state, self.config,
             )
             passed = bool(result.get("validation_passed", False)) if isinstance(result, dict) else bool(result)
             if passed:
@@ -790,7 +777,7 @@ class OptimizedStepExecutor:
             return True
         except Exception as e:
             if self.validator_required:
-                self.logger.error(f"Validator error for {step_name}: {e}")
+                self.logger.exception(f"Validator error for {step_name}: {e}")
                 return False
             self.logger.warning(f"Validator error for {step_name}: {e}; continuing")
             return True

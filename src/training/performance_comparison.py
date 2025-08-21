@@ -1,7 +1,6 @@
 # src/training/performance_comparison.py
 
-"""
-Performance Comparison Module
+"""Performance Comparison Module.
 
 This module provides comprehensive performance comparison capabilities for:
 1. Model performance across different optimization strategies
@@ -52,7 +51,7 @@ class PerformanceMetrics:
 class PerformanceComparison:
     """Comprehensive performance comparison system."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = get_logger("PerformanceComparison")
         self.comparison_results = {}
@@ -160,7 +159,7 @@ class PerformanceComparison:
 
         except Exception as e:
             error_msg = f"Error comparing model performances: {e}"
-            self.logger.error(error_msg)
+            self.logger.exception(error_msg)
             self.print(error(error_msg))
             return {}
 
@@ -215,7 +214,7 @@ class PerformanceComparison:
 
         except Exception as e:
             error_msg = f"Error comparing ensemble methods: {e}"
-            self.logger.error(error_msg)
+            self.logger.exception(error_msg)
             self.print(error(error_msg))
             return {}
 
@@ -274,7 +273,7 @@ class PerformanceComparison:
 
         except Exception as e:
             error_msg = f"Error comparing optimization strategies: {e}"
-            self.logger.error(error_msg)
+            self.logger.exception(error_msg)
             self.print(error(error_msg))
             return {}
 
@@ -411,7 +410,7 @@ class PerformanceComparison:
 
         except Exception as e:
             error_msg = f"Error calculating model metrics: {e}"
-            self.logger.error(error_msg)
+            self.logger.exception(error_msg)
             self.print(error(error_msg))
             return PerformanceMetrics(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
@@ -583,7 +582,7 @@ class PerformanceComparison:
 
         except Exception as e:
             error_msg = f"Error generating performance report: {e}"
-            self.logger.error(error_msg)
+            self.logger.exception(error_msg)
             self.print(error(error_msg))
             return {}
 
@@ -744,6 +743,5 @@ async def setup_performance_comparison(
             return performance_comparison
         return None
 
-    except Exception as e:
-        print(f"Error setting up performance comparison: {e}")
+    except Exception:
         return None

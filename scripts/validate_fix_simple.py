@@ -9,8 +9,8 @@ Usage:
     python scripts/validate_fix_simple.py
 """
 
-import sys
 from pathlib import Path
+import sys
 
 
 def validate_fix():
@@ -20,7 +20,7 @@ def validate_fix():
 
     # Path to the feature engineering file
     feature_eng_file = Path(
-        "src/training/steps/vectorized_advanced_feature_engineering.py"
+        "src/training/steps/vectorized_advanced_feature_engineering.py",
     )
 
     if not feature_eng_file.exists():
@@ -29,7 +29,7 @@ def validate_fix():
 
     try:
         # Read the file
-        with open(feature_eng_file, "r") as f:
+        with open(feature_eng_file) as f:
             content = f.read()
 
         print("📖 Reading feature engineering code...")
@@ -97,7 +97,7 @@ def check_feature_selection_config():
         return False
 
     try:
-        with open(config_file, "r") as f:
+        with open(config_file) as f:
             content = f.read()
 
         # Check for updated settings
@@ -144,10 +144,10 @@ def main():
         print("✅ Your feature selection config has been updated.")
         print("\n📋 Summary of fixes applied:")
         print(
-            "   1. ✅ Fixed multi-timeframe price_change calculations with proper periods"
+            "   1. ✅ Fixed multi-timeframe price_change calculations with proper periods",
         )
         print(
-            "   2. ✅ Fixed multi-timeframe volume_change calculations with proper periods"
+            "   2. ✅ Fixed multi-timeframe volume_change calculations with proper periods",
         )
         print("   3. ✅ Increased max_removal_percentage from 0.3 to 0.7")
         print("   4. ✅ Added emergency override settings for perfect correlations")
@@ -156,10 +156,9 @@ def main():
         print("   2. Monitor the logs for any remaining issues")
         print("   3. The VIF should no longer be infinite")
         return True
-    else:
-        print("\n❌ MULTICOLLINEARITY FIX VALIDATION FAILED!")
-        print("❌ Some fixes were not applied correctly.")
-        sys.exit(1)
+    print("\n❌ MULTICOLLINEARITY FIX VALIDATION FAILED!")
+    print("❌ Some fixes were not applied correctly.")
+    sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -1289,28 +1289,7 @@ class AresLauncher:
             self.logger.error(f"❌ Failed to run blank training: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="run_enhanced_blank_training",
-    )
-    def run_enhanced_blank_training(
-        self,
-        symbol: str,
-        exchange: str,
-        with_gui: bool = False,
-    ):
-        """Run enhanced blank training using unified training method."""
-        # Note: The system still processes all available data files during consolidation,
-        # but then filters to the specified lookback period. For blank training,
-        # we use a smaller lookback period to reduce processing time.
-        return self._run_unified_training(
-            symbol=symbol,
-            exchange=exchange,
-            training_mode="blank",
-            lookback_days=180,  # 180 days for blank training (6 months for better regime coverage)
-            with_gui=with_gui,
-        )
+
 
     @handle_errors(
         exceptions=(Exception,),

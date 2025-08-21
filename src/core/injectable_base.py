@@ -7,19 +7,14 @@ This module provides base classes that make it easy for trading components
 to participate in the dependency injection system.
 """
 
+import sys
 from abc import ABC
+from src.utils.logger import system_logger
 from typing import Any
-
 from src.interfaces.base_interfaces import (
     IEventBus,
     IExchangeClient,
-    IPerformanceReporter,
     IStateManager,
-)
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    warning,
 )
 
 
@@ -41,8 +36,6 @@ class InjectableBase(ABC):
                 try:
                     self.logger.error(str(message))
                 except Exception as e:
-                    import sys
-
                     print(f"Logger failed in shim_print: {e}", file=sys.stderr)
                     print(f"Original message: {message}", file=sys.stderr)
 
@@ -99,124 +92,21 @@ class TradingComponentBase(InjectableBase):
 
     async def start(self) -> None:
         """Start the trading component."""
-        if not self._initialized:
-            await self.initialize()
-
         if self.is_running:
-            self.print(warning("{self.__class__.__name__} is already running"))
             return
 
         self.logger.info(f"Starting {self.__class__.__name__}")
         self.is_running = True
 
-        # Perform component-specific startup
-        await self._start_component()
-
     async def stop(self) -> None:
         """Stop the trading component."""
         if not self.is_running:
-            self.print(warning("{self.__class__.__name__} is not running"))
             return
 
         self.logger.info(f"Stopping {self.__class__.__name__}")
         self.is_running = False
 
-        # Perform component-specific shutdown
-        await self._stop_component()
-
-    async def _start_component(self) -> None:
-        """Override in subclasses for component-specific startup logic."""
-
-    async def _stop_component(self) -> None:
-        """Override in subclasses for component-specific shutdown logic."""
-
-    def _validate_dependencies(self) -> bool:
-        """Validate that all required dependencies are available."""
-        if not self.exchange_client:
-            self.print(error("Exchange client dependency not available"))
-            return False
-
-        if not self.state_manager:
-            self.print(error("State manager dependency not available"))
-            return False
-
-        return True
-
-
-class AnalystBase(TradingComponentBase):
-    """Base class for analyst implementations with dependency injection support."""
-
-    async def initialize(self) -> bool:
-        """Initialize analyst with dependency validation."""
-        if not await super().initialize():
-            return False
-
-        if not self._validate_dependencies():
-            return False
-
-        self.logger.info("Analyst initialized successfully")
-        return True
-
-
-class StrategistBase(TradingComponentBase):
-    """Base class for strategist implementations with dependency injection support."""
-
-    async def initialize(self) -> bool:
-        """Initialize strategist with dependency validation."""
-        if not await super().initialize():
-            return False
-
-        if not self._validate_dependencies():
-            return False
-
-        self.logger.info("Strategist initialized successfully")
-        return True
-
-
-class TacticianBase(TradingComponentBase):
-    """Base class for tactician implementations with dependency injection support."""
-
-    def __init__(
-        self,
-        config: dict[str, Any] | None = None,
-        exchange_client: IExchangeClient | None = None,
-        state_manager: IStateManager | None = None,
-        event_bus: IEventBus | None = None,
-        performance_reporter: IPerformanceReporter | None = None,
-    ):
-        super().__init__(config, exchange_client, state_manager, event_bus)
-        self.performance_reporter = performance_reporter
-
-    async def initialize(self) -> bool:
-        """Initialize tactician with dependency validation."""
-        if not await super().initialize():
-            return False
-
-        if not self._validate_dependencies():
-            return False
-
-        if not self.performance_reporter:
-            self.print(error("Performance reporter dependency not available"))
-            return False
-
-        self.logger.info("Tactician initialized successfully")
-        return True
-
-
-class SupervisorBase(TradingComponentBase):
-    """Base class for supervisor implementations with dependency injection support."""
-
-    async def initialize(self) -> bool:
-        """Initialize supervisor with dependency validation."""
-        if not await super().initialize():
-            return False
-
-        if not self._validate_dependencies():
-            return False
-
-        if not self.event_bus:
-            self.print(error("Event bus dependency not available"))
-            return False
-
-        self.logger.info("Supervisor initialized successfully")
-        return True
+    @property
+    def is_active(self) -> bool:
+        """Check if component is active and running."""
+        return self.is_running and self.is_initialized

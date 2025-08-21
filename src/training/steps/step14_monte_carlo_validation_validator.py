@@ -1,6 +1,4 @@
-"""
-Validator for Step 14: Monte Carlo Validation
-"""
+"""Validator for Step 14: Monte Carlo Validation."""
 
 import asyncio
 import os
@@ -25,7 +23,7 @@ from src.utils.base_validator import BaseValidator
 class Step14MonteCarloValidationValidator(BaseValidator):
     """Validator for Step 14: Monte Carlo Validation."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step14_monte_carlo_validation", config)
 
     async def validate(
@@ -33,8 +31,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
     ) -> bool:
-        """
-        Validate the Monte Carlo validation step.
+        """Validate the Monte Carlo validation step.
 
         Args:
             training_input: Training input parameters
@@ -42,6 +39,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
 
         Returns:
             bool: True if validation passed, False otherwise
+
         """
         self.logger.info("🔍 Validating Monte Carlo validation step...")
 
@@ -122,8 +120,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate that Monte Carlo validation files exist.
+        """Validate that Monte Carlo validation files exist.
 
         Args:
             symbol: Trading symbol
@@ -132,6 +129,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
 
         Returns:
             bool: True if files exist
+
         """
         try:
             # Expected Monte Carlo validation file patterns
@@ -171,8 +169,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate statistical significance of Monte Carlo results.
+        """Validate statistical significance of Monte Carlo results.
 
         Args:
             symbol: Trading symbol
@@ -181,6 +178,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
 
         Returns:
             bool: True if statistical significance is acceptable
+
         """
         try:
             # Load Monte Carlo results
@@ -259,8 +257,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate performance distribution from Monte Carlo simulations.
+        """Validate performance distribution from Monte Carlo simulations.
 
         Args:
             symbol: Trading symbol
@@ -269,6 +266,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
 
         Returns:
             bool: True if performance distribution is acceptable
+
         """
         try:
             # Load Monte Carlo performance results
@@ -375,8 +373,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate Monte Carlo simulation robustness.
+        """Validate Monte Carlo simulation robustness.
 
         Args:
             symbol: Trading symbol
@@ -385,6 +382,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
 
         Returns:
             bool: True if robustness is acceptable
+
         """
         try:
             # Load Monte Carlo metadata
@@ -468,8 +466,7 @@ async def run_validator(
     training_input: dict[str, Any],
     pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
-    """
-    Run the step14_monte_carlo_validation validator.
+    """Run the step14_monte_carlo_validation validator.
 
     Args:
         training_input: Training input parameters
@@ -477,6 +474,7 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
+
     """
     validator = Step14MonteCarloValidationValidator(CONFIG)
     validation_passed = await validator.validate(training_input, pipeline_state)
@@ -494,7 +492,7 @@ if __name__ == "__main__":
     import asyncio
 
     # Example usage
-    async def test_validator():
+    async def test_validator() -> None:
         training_input = {
             "symbol": "ETHUSDT",
             "exchange": "BINANCE",
@@ -505,7 +503,6 @@ if __name__ == "__main__":
             "monte_carlo_validation": {"status": "SUCCESS", "duration": 1500.5},
         }
 
-        result = await run_validator(training_input, pipeline_state)
-        print(f"Validation result: {result}")
+        await run_validator(training_input, pipeline_state)
 
     asyncio.run(test_validator())

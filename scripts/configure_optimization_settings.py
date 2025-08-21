@@ -7,31 +7,18 @@ in src/config.py for enhanced hyperparameter optimization and computational opti
 """
 
 import asyncio
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
 import logging
 import os
 import sys
 
-# Add src to path for imports
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
-
 from config import CONFIG
+from src.utils.warning_symbols import error, failed, initialization_error, warning
 from training.bayesian_optimizer import AdvancedBayesianOptimizer
 from training.multi_objective_optimizer import MultiObjectiveOptimizer
 from training.optimized_backtester import OptimizedBacktester
+
+# Add src to path for imports
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 
 # Configure logging
 logging.basicConfig(
@@ -39,7 +26,6 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
-
 
 class ConfigurationUsageExample:
     """Example class demonstrating configuration usage"""
@@ -60,9 +46,7 @@ class ConfigurationUsageExample:
             for section in required_sections:
                 if section not in self.config:
                     msg = f"Missing required configuration section: {section}"
-                    raise ValueError(
-                        msg,
-                    )
+                    raise ValueError(msg)
 
             # Validate hyperparameter optimization
             hpo_config = self.hpo_config
@@ -84,7 +68,7 @@ class ConfigurationUsageExample:
             logger.info("Configuration validation passed")
             return True
 
-        except Exception as e:
+        except Exception:
             print(failed("Configuration validation failed: {e}"))
             return False
 
@@ -202,7 +186,7 @@ class ConfigurationUsageExample:
             # Risk constraints
             risk_constraints = multi_obj_config["risk_constraints"]
             print("\n🛡️  Risk Constraints:")
-            for constraint, value in risk_constraints.items():
+            for constraint , value in risk_constraints.items():
                 print(f"  {constraint}: {value}")
         else:
             print(warning("Multi-objective optimization is disabled"))
@@ -227,14 +211,14 @@ class ConfigurationUsageExample:
             search_spaces = self.hpo_config["search_spaces"]
             print("\n🔍 Search Spaces:")
 
-            for space_name, space_config in search_spaces.items():
+            for space_name , space_config in search_spaces.items():
                 print(f"\n  {space_name.upper()}:")
-                for param_name, param_config in space_config.items():
-                    if isinstance(param_config, dict) and "low" in param_config:
+                for param_name , param_config in space_config.items():
+                    if isinstance(param_config , dict) and "low" in param_config:
                         print(
                             f"    {param_name}: {param_config['low']} to {param_config['high']} ({param_config['type']})",
                         )
-                    elif isinstance(param_config, dict) and "choices" in param_config:
+                    elif isinstance(param_config , dict) and "choices" in param_config:
                         print(f"    {param_name}: {param_config['choices']}")
         else:
             print(warning("Bayesian optimization is disabled"))
@@ -253,16 +237,16 @@ class ConfigurationUsageExample:
             # Regime detection settings
             regime_detection = adaptive_config["regime_detection"]
             print("\n🎯 Regime Detection Settings:")
-            for setting, value in regime_detection.items():
+            for setting , value in regime_detection.items():
                 print(f"  {setting}: {value}")
 
             # Regime-specific constraints
             regime_constraints = adaptive_config["regime_specific_constraints"]
             print("\n📊 Regime-Specific Constraints:")
 
-            for regime, constraints in regime_constraints.items():
+            for regime , constraints in regime_constraints.items():
                 print(f"\n  {regime.upper()} REGIME:")
-                for constraint_name, constraint_range in constraints.items():
+                for constraint_name , constraint_range in constraints.items():
                     print(f"    {constraint_name}: {constraint_range}")
         else:
             print(warning("Adaptive optimization is disabled"))
@@ -310,9 +294,9 @@ class ConfigurationUsageExample:
             print("\n✅ Progressive evaluation is enabled")
             stages = progressive_config["stages"]
             print("  Stages:")
-            for i, stage in enumerate(stages, 1):
+            for i , stage in enumerate(stages, 1):
                 print(
-                    f"    Stage {i}: {stage['data_ratio']*100}% data, weight {stage['weight']}",
+                    f"    Stage {i}: {stage['data_ratio']*100}% data = weight {stage['weight']}",
                 )
         else:
             print("\n❌ Progressive evaluation is disabled")
@@ -326,29 +310,46 @@ class ConfigurationUsageExample:
         # Example 1: Multi-objective optimization
         print("\n📊 Example 1: Multi-Objective Optimization")
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # This would normally use real market data
             mock_market_data = {"symbol": "ETHUSDT", "data": []}
 
             MultiObjectiveOptimizer(
-                config=self.hpo_config,
-                market_data=mock_market_data,
+                config=self.hpo_config, market_data = mock_market_data,
             )
 
             print("✅ Multi-objective optimizer initialized successfully")
             print("  Configuration loaded from config file")
-            print("  Objectives: Sharpe ratio, Win rate, Profit factor")
+            print("  Objectives: Sharpe ratio = Win rate, Profit factor")
             print("  Weights: 50%, 30%, 20% respectively")
 
-        except Exception as e:
+        except Exception:
             print(
                 initialization_error(
-                    "Error initializing multi-objective optimizer: {e}"
-                )
+                    "Error initializing multi-objective optimizer: {e}",
+                ),
             )
 
         # Example 2: Bayesian optimization
         print("\n🔍 Example 2: Bayesian Optimization")
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             AdvancedBayesianOptimizer(
                 config=self.hpo_config["bayesian_optimization"],
                 search_space=self.hpo_config["search_spaces"],
@@ -362,15 +363,23 @@ class ConfigurationUsageExample:
                 f"  Max trials: {self.hpo_config['bayesian_optimization']['max_trials']}",
             )
 
-        except Exception as e:
+        except Exception:
             print(initialization_error("Error initializing Bayesian optimizer: {e}"))
 
         # Example 3: Computational optimization
         print("\n⚡ Example 3: Computational Optimization")
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             OptimizedBacktester(
-                market_data=mock_market_data,
-                config=self.comp_config,
+                market_data, mock_market_data = config=self.comp_config,
             )
 
             print("✅ Optimized backtester initialized successfully")
@@ -384,7 +393,7 @@ class ConfigurationUsageExample:
                 f"  Memory management: {'Enabled' if self.comp_config['memory_management']['enabled'] else 'Disabled'}",
             )
 
-        except Exception as e:
+        except Exception:
             print(initialization_error("Error initializing optimized backtester: {e}"))
 
     def demonstrate_configuration_modification(self):
@@ -464,10 +473,18 @@ class ConfigurationUsageExample:
 
         return True
 
-
 def main():
     """Main function to run the configuration usage example"""
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         example = ConfigurationUsageExample()
         success = example.run_all_demonstrations()
 
@@ -482,10 +499,9 @@ def main():
             print("\n❌ Configuration usage demonstration failed!")
             sys.exit(1)
 
-    except Exception as e:
+    except Exception:
         print(error("Error running configuration usage example: {e}"))
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()

@@ -10,17 +10,12 @@ from typing import Any
 import pandas as pd
 
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    failed,
-)
-from src.training.steps.unified_data_loader import get_unified_data_loader
 
 
 class SavingStep:
     """Step 16: Saving using existing step9_save_results."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
 
@@ -34,8 +29,7 @@ class SavingStep:
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Execute saving of all training results.
+        """Execute saving of all training results.
 
         Args:
             training_input: Training input parameters
@@ -43,6 +37,7 @@ class SavingStep:
 
         Returns:
             Dict containing saving results
+
         """
         self.logger.info("🔄 Executing Saving...")
 
@@ -135,7 +130,7 @@ class SavingStep:
 
             return summary
 
-        except Exception as e:
+        except Exception:
             self.logger.exception("Error creating training summary")
             raise
 
@@ -185,7 +180,7 @@ class SavingStep:
 
             return results
 
-        except Exception as e:
+        except Exception:
             self.logger.exception("Error saving comprehensive results")
             raise
 
@@ -205,11 +200,11 @@ class SavingStep:
             # Attempt to import mlflow; if unavailable, raise a hard error
             try:
                 import mlflow  # type: ignore
-            except Exception as import_error:
-                self.logger.error(
+            except Exception:
+                self.logger.exception(
                     "🚨 MLflow is required but not installed. Install it with: 'poetry add mlflow'",
                 )
-                raise import_error
+                raise
 
             # Set up MLflow
             tracking_uri = config.get("tracking_uri") or "file:./mlruns"
@@ -231,7 +226,7 @@ class SavingStep:
                     for metric_name, metric_value in training_summary[
                         "metrics"
                     ].items():
-                        if isinstance(metric_value, (int, float)):
+                        if isinstance(metric_value, int | float):
                             mlflow.log_metric(metric_name, metric_value)
 
                 # Log training summary as artifact
@@ -251,7 +246,7 @@ class SavingStep:
 
                 self.logger.info("✅ Training results saved to MLflow successfully")
 
-        except Exception as e:
+        except Exception:
             self.logger.exception("🚨 MLflow saving failed")
             raise
 
@@ -313,28 +308,28 @@ class SavingStep:
 
             return {"report": report, "report_file": report_file}
 
-        except Exception as e:
+        except Exception:
             self.logger.exception("Error creating training report")
             raise
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
-    validate_step_prerequisites,
-    secure_data_processing,
-    prevent_data_leakage,
-    resource_monitor,
-    memory_efficient,
-    debug_training_step,
+    artifact_versioning,
+    artifact_write_lock,
     circuit_breaker_protection,
-    validate_step_output,
-    quality_gate,
+    debug_training_step,
     deterministic_seed,
     idempotent_step,
-    artifact_write_lock,
+    memory_efficient,
     nan_inf_and_constant_guard,
-    artifact_versioning,
+    prevent_data_leakage,
+    quality_gate,
+    resource_monitor,
+    secure_data_processing,
     time_budget_watchdog,
+    validate_step_output,
+    validate_step_prerequisites,
 )
 
 
@@ -357,7 +352,7 @@ from src.utils.training_pipeline_decorators import (
     context="Saving Results",
 )
 @secure_data_processing(
-    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True
+    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
 @prevent_data_leakage(
     temporal_validation=True,
@@ -372,7 +367,7 @@ from src.utils.training_pipeline_decorators import (
     auto_cleanup=True,
 )
 @memory_efficient(
-    chunk_size=20000, streaming_processing=True, memory_pool=True, cleanup_frequency=40
+    chunk_size=20000, streaming_processing=True, memory_pool=True, cleanup_frequency=40,
 )
 @debug_training_step(
     log_intermediate_results=True,
@@ -407,8 +402,7 @@ async def run_step(
     force_rerun: bool = False,
     **kwargs,
 ) -> bool:
-    """
-    Run the saving step.
+    """Run the saving step.
 
     Args:
         symbol: Trading symbol
@@ -418,6 +412,7 @@ async def run_step(
 
     Returns:
         bool: True if successful, False otherwise
+
     """
     try:
         # Create step instance
@@ -439,15 +434,13 @@ async def run_step(
 
         return result.get("status") == "SUCCESS"
 
-    except Exception as e:
-        print(failed(f"Saving failed: {e}"))
+    except Exception:
         return False
 
 
 if __name__ == "__main__":
     # Test the step
-    async def test():
-        result = await run_step("ETHUSDT", "BINANCE", "data/training")
-        print(f"Test result: {result}")
+    async def test() -> None:
+        await run_step("ETHUSDT", "BINANCE", "data/training")
 
     asyncio.run(test())

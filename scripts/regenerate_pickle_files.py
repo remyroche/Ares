@@ -7,32 +7,18 @@ This script will:
 3. Ensure prices are valid
 """
 
-import os
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
-import pickle
-import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-
+import os
+import sys
 import pandas as pd
+import pickle
+
+from src.utils.warning_symbols import missing, warning
 
 # Add the project root to the path
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
-
 
 def detect_price_corruption(df: pd.DataFrame) -> bool:
     """Detect if price data is corrupted."""
@@ -46,10 +32,8 @@ def detect_price_corruption(df: pd.DataFrame) -> bool:
     median_price = df["close"].median()
     return bool(median_price < 100 or median_price > 10000)
 
-
 def fix_corrupted_prices(
-    df: pd.DataFrame,
-    target_median: float = 3000.0,
+    df: pd.DataFrame, target_median: float = 3000.0
 ) -> pd.DataFrame:
     """Fix corrupted prices by scaling them to a reasonable range."""
     if df.empty:
@@ -80,11 +64,9 @@ def fix_corrupted_prices(
 
     return df
 
-
 def create_pickle_from_csv(
-    csv_path: str,
-    output_path: str,
-    lookback_days: int = 730,
+    csv_path: str, output_path: str,
+    lookback_days: int = 730
 ) -> bool:
     """Create a pickle file from a consolidated CSV file."""
     try:
@@ -115,8 +97,7 @@ def create_pickle_from_csv(
 
         # Create data structure for pickle
         data = {
-            "klines": df,
-            "agg_trades": pd.DataFrame(),  # Empty for now
+            "klines": df, "agg_trades": pd.DataFrame(),  # Empty for now
             "futures": pd.DataFrame(),  # Empty for now
             "metadata": {
                 "source_file": csv_path,
@@ -136,7 +117,6 @@ def create_pickle_from_csv(
     except Exception as e:
         print(f"  Error processing {csv_path}: {e}")
         return False
-
 
 def main():
     """Main function to regenerate pickle files."""
@@ -165,7 +145,7 @@ def main():
         csv_name = csv_file.stem
 
         # Create different lookback periods
-        lookback_periods = [30, 60, 730]  # 30 days, 60 days, 2 years
+        lookback_periods = [30, 60, 730]  # 30 days = 60 days, 2 years
 
         for lookback_days in lookback_periods:
             # Create output filename
@@ -174,7 +154,7 @@ def main():
                 timeframe = "1h"  # Convert 1m to 1h for the pickle
                 pkl_name = f"{symbol}_{timeframe}_{lookback_days}_cached_data.pkl"
             else:
-                # For other file types, use the original name
+                # For other file types = use the original name
                 pkl_name = f"{csv_name}_cached_data.pkl"
 
             pkl_path = os.path.join(data_cache_dir, pkl_name)
@@ -203,7 +183,6 @@ def main():
                 print(f"  ❌ {pkl_file.name}: Error reading file - {e}")
 
     return True
-
 
 if __name__ == "__main__":
     success = main()

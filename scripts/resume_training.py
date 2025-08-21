@@ -14,36 +14,20 @@ Usage:
     Example: python scripts/resume_training.py BTCUSDT BINANCE
 """
 
+from pathlib import Path
+from src.training.steps.step1_data_collection import run_step as run_data_collection_step
+from src.utils.logger import setup_logging, system_logger
 import asyncio
 import sys
-from pathlib import Path
-
-# Add the project root to the Python path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
 
 from src.config import CONFIG
 from src.database.sqlite_manager import SQLiteManager
 from src.training.enhanced_training_manager import EnhancedTrainingManager
-from src.training.steps.step1_data_collection import (
-    run_step as run_data_collection_step,
-)
-from src.utils.logger import setup_logging, system_logger
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
+from src.utils.warning_symbols import error, failed
 
+# Add the project root to the Python path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 async def main():
     """Main function to run the resumed training pipeline."""
@@ -67,12 +51,10 @@ async def main():
     min_data_points = str(CONFIG["MODEL_TRAINING"]["min_data_points"])
 
     # Run data collection step WITHOUT downloading new data.
-    klines_df, _, _ = await run_data_collection_step(
-        symbol=symbol,
-        exchange_name=exchange,
-        min_data_points=min_data_points,
-        data_dir=data_dir,
-        download_new_data=False,
+    klines_df, _ = await run_data_collection_step(
+        symbol, exchange_name=exchange,
+        min_data_points=min_data_points, data_dir=data_dir,
+        download_new_data=False
     )
 
     if klines_df is None:
@@ -98,12 +80,11 @@ async def main():
                 f"Resumed training pipeline completed successfully for {symbol}. MLflow Run ID: {run_id}",
             )
         else:
-            print(failed("Resumed training pipeline failed for {symbol}."))
+            print(failed(f"Resumed training pipeline failed for {symbol}."))
             sys.exit(1)
     finally:
         if db_manager:
             await db_manager.close()
-
 
 if __name__ == "__main__":
     asyncio.run(main())

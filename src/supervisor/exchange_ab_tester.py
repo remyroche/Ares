@@ -5,19 +5,14 @@ Exchange A/B Testing Framework
 Simplified A/B testing framework for comparing model performance across exchanges.
 """
 
-import json
-from dataclasses import asdict, dataclass
+import os
 from datetime import datetime
-from typing import Any
-
-import pandas as pd
-
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    failed,
-)
+from typing import Any
+import json
 
+from dataclasses import asdict, dataclass
+import pandas as pd
 
 @dataclass
 class ABTestConfig:
@@ -30,7 +25,6 @@ class ABTestConfig:
     sample_interval_seconds: int = 60
     min_confidence_threshold: float = 0.6
     max_position_size: float = 0.05
-
 
 @dataclass
 class ExchangeResult:
@@ -45,7 +39,6 @@ class ExchangeResult:
     profit_loss: float | None = None
     slippage: float | None = None
     error_message: str | None = None
-
 
 class ExchangeABTester:
     """A/B testing framework for comparing model performance across exchanges."""
@@ -76,27 +69,25 @@ class ExchangeABTester:
             self.logger.info("Initializing Exchange A/B Tester...")
 
             # Create result storage directory
-            import os
-
             os.makedirs(self.result_storage_path, exist_ok=True)
 
             self.logger.info("✅ Exchange A/B Tester initialization completed")
             return True
 
-        except Exception:
-            self.print(failed("❌ Exchange A/B Tester initialization failed: {e}"))
+        except Exception as e:
+            self.logger.error(f"❌ Exchange A/B Tester initialization failed: {e}")
             return False
 
     async def start_ab_test(self, test_config: ABTestConfig) -> bool:
         """Start a new A/B test."""
         try:
             if self.is_running:
-                self.print(error("A/B test already running"))
+                self.logger.error("A/B test already running")
                 return False
 
             # Validate test configuration
             if len(test_config.exchanges) < 2:
-                self.print(error("A/B test requires at least 2 exchanges"))
+                self.logger.error("A/B test requires at least 2 exchanges")
                 return False
 
             # Initialize test state
@@ -121,15 +112,13 @@ class ExchangeABTester:
 
             return True
 
-        except Exception:
-            self.print(error("Error starting A/B test: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error starting A/B test: {e}")
             return False
 
     async def process_prediction(
-        self,
-        exchange: str,
-        prediction: float,
-        confidence: float,
+        self, exchange: str,
+        prediction: float, confidence: float,
         market_data: dict[str, Any],
     ) -> ExchangeResult:
         """Process a model prediction for a specific exchange."""
@@ -195,7 +184,7 @@ class ExchangeABTester:
             return result
 
         except Exception as e:
-            self.print(error("Error processing prediction for {exchange}: {e}"))
+            self.logger.error(f"Error processing prediction for {exchange}: {e}")
             return ExchangeResult(
                 exchange=exchange,
                 timestamp=datetime.now(),
@@ -237,8 +226,8 @@ class ExchangeABTester:
                             metrics["accuracy"] * (metrics["total_executions"] - 1) + 0
                         ) / metrics["total_executions"]
 
-        except Exception:
-            self.print(error("Error updating metrics: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error updating metrics: {e}")
 
     async def stop_ab_test(self) -> bool:
         """Stop the current A/B test and generate results."""
@@ -258,8 +247,8 @@ class ExchangeABTester:
             self.logger.info("✅ A/B test completed successfully")
             return True
 
-        except Exception:
-            self.print(error("Error stopping A/B test: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error stopping A/B test: {e}")
             return False
 
     async def _generate_results(self) -> None:
@@ -312,8 +301,8 @@ class ExchangeABTester:
                     f"🎯 Best Accuracy: {best_accuracy['exchange']} ({best_accuracy['accuracy']:.3f})",
                 )
 
-        except Exception:
-            self.print(error("Error generating results: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error generating results: {e}")
 
     async def _save_results(self) -> None:
         """Save test results to file."""
@@ -341,8 +330,8 @@ class ExchangeABTester:
 
             self.logger.info(f"💾 Test results saved to {filename}")
 
-        except Exception:
-            self.print(error("Error saving results: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error saving results: {e}")
 
     def get_test_status(self) -> dict[str, Any]:
         """Get current test status."""
@@ -362,7 +351,7 @@ class ExchangeABTester:
                 },
             }
         except Exception as e:
-            self.print(error("Error getting test status: {e}"))
+            self.logger.error(f"Error getting test status: {e}")
             return {"error": str(e)}
 
     async def cleanup(self) -> None:
@@ -375,9 +364,8 @@ class ExchangeABTester:
             self.performance_metrics.clear()
             self.logger.info("✅ Exchange A/B Tester cleanup completed")
 
-        except Exception:
-            self.print(error("Error during cleanup: {e}"))
-
+        except Exception as e:
+            self.logger.error(f"Error during cleanup: {e}")
 
 async def setup_exchange_ab_tester(
     config: dict[str, Any] = None,
@@ -392,6 +380,6 @@ async def setup_exchange_ab_tester(
             return tester
         return None
 
-    except Exception:
-        system_logger.exception(error("Error setting up exchange A/B tester: {e}"))
+    except Exception as e:
+        system_logger.exception(f"Error setting up exchange A/B tester: {e}")
         return None

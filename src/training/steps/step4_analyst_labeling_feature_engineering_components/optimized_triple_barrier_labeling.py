@@ -1,13 +1,14 @@
 # src/training/steps/optimized_triple_barrier_labeling.py
 
-from datetime import timedelta
+
+import contextlib
 
 import numpy as np
 import pandas as pd
-from src.utils.logger import get_logger
-from src.utils.error_handler import handle_errors
-from src.utils.logger import system_logger
+
 from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
+from src.utils.error_handler import handle_errors
+from src.utils.logger import get_logger
 
 try:
     import numba  # type: ignore
@@ -48,8 +49,7 @@ if "numba" in globals() and numba is not None:
 
 
 class OptimizedTripleBarrierLabeling:
-    """
-    Optimized Triple Barrier Method for labeling using vectorized operations.
+    """Optimized Triple Barrier Method for labeling using vectorized operations.
 
     This implementation provides significant performance improvements over the
     original O(n²) implementation by using NumPy vectorized operations.
@@ -63,9 +63,8 @@ class OptimizedTripleBarrierLabeling:
         time_barrier_minutes: int = 30,
         max_lookahead: int = 100,
         binary_classification: bool = True,  # Default to True to fix label imbalance
-    ):
-        """
-        Initialize the optimized triple barrier labeling.
+    ) -> None:
+        """Initialize the optimized triple barrier labeling.
 
         Args:
             profit_take_multiplier: Multiplier for profit take barrier (default: 0.2%)
@@ -78,6 +77,7 @@ class OptimizedTripleBarrierLabeling:
         Note:
             binary_classification=True is now the default to address label imbalance issues.
             This automatically filters out HOLD samples to create a balanced binary classification.
+
         """
         self.profit_take_multiplier = profit_take_multiplier
         self.stop_loss_multiplier = stop_loss_multiplier
@@ -88,17 +88,17 @@ class OptimizedTripleBarrierLabeling:
 
         if self.binary_classification:
             self.logger.info(
-                "🔖 Triple barrier labeling configured for binary classification (BUY/SELL only)"
+                "🔖 Triple barrier labeling configured for binary classification (BUY/SELL only)",
             )
             self.logger.info("   → HOLD samples will be automatically filtered out")
             self.logger.info("   → This addresses label imbalance issues")
         else:
             self.logger.warning(
-                "⚠️ Triple barrier labeling configured for ternary classification (BUY/HOLD/SELL)"
+                "⚠️ Triple barrier labeling configured for ternary classification (BUY/HOLD/SELL)",
             )
             self.logger.warning("   → This may lead to label imbalance issues")
             self.logger.warning(
-                "   → Consider using binary_classification=True for better results"
+                "   → Consider using binary_classification=True for better results",
             )
 
     @handle_errors(
@@ -112,8 +112,7 @@ class OptimizedTripleBarrierLabeling:
         self,
         data: pd.DataFrame,
     ) -> pd.DataFrame:
-        """
-        Apply a correct forward-looking Triple Barrier Method.
+        """Apply a correct forward-looking Triple Barrier Method.
 
         Scans forward up to the earlier of the time barrier and max_lookahead
         to find the first barrier hit (profit-take or stop-loss). If neither is
@@ -153,10 +152,8 @@ class OptimizedTripleBarrierLabeling:
         missing_columns = [col for col in required_columns if col not in data.columns]
         if missing_columns:
             msg = f"Missing required OHLC columns {missing_columns}; cannot perform labeling"
-            try:
+            with contextlib.suppress(Exception):
                 self.logger.error(msg)
-            except Exception:
-                pass
             raise ValueError(msg)
 
         labeled_data = data.copy()
@@ -186,7 +183,7 @@ class OptimizedTripleBarrierLabeling:
             try:
                 idx_ns = idx.view(np.int64)
                 delta_ns = np.int64(self.time_barrier_minutes) * np.int64(
-                    60_000_000_000
+                    60_000_000_000,
                 )
                 end_times = idx_ns + delta_ns
                 end_by_time = np.searchsorted(idx_ns, end_times, side="right")
@@ -249,18 +246,18 @@ class OptimizedTripleBarrierLabeling:
         filtered_count = len(labeled_data)
 
         # Log the filtering results
-        self.logger.info(f"📊 Label distribution after filtering:")
+        self.logger.info("📊 Label distribution after filtering:")
         self.logger.info(f"   BUY (1): {(labeled_data['label'] == 1).sum()} samples")
         self.logger.info(f"   SELL (-1): {(labeled_data['label'] == -1).sum()} samples")
         self.logger.info(f"   HOLD (0): {hold_samples} samples (removed)")
         self.logger.info(f"   Total samples: {filtered_count} (from {original_count})")
         self.logger.info(
-            f"   Filtering ratio: {hold_samples/original_count:.1%} HOLD samples removed"
+            f"   Filtering ratio: {hold_samples/original_count:.1%} HOLD samples removed",
         )
         if self.binary_classification:
             self.logger.info(
                 "   Reason: binary_classification=True. HOLDs occur when neither profit-take nor stop-loss was hit before the time barrier;"
-                " removing them balances the dataset for BUY vs SELL classification."
+                " removing them balances the dataset for BUY vs SELL classification.",
             )
 
         # Diagnostics: distribution and basic directional alignment with next-bar return
@@ -271,8 +268,8 @@ class OptimizedTripleBarrierLabeling:
         next_sign_filtered = next_sign_series.reindex(labeled_data.index).to_numpy()
 
         labels_arr = labeled_data["label"].to_numpy()
-        long_mask = labels_arr == 1
-        short_mask = labels_arr == -1
+        long_mask, labels_arr = 1
+        short_mask, labels_arr = -1
         long_agree = (
             float(np.mean(next_sign_filtered[long_mask] > 0))
             if long_mask.any()
@@ -286,8 +283,8 @@ class OptimizedTripleBarrierLabeling:
         overall_agree = float(
             np.mean(
                 ((next_sign_filtered > 0) & long_mask)
-                | ((next_sign_filtered < 0) & short_mask)
-            )
+                | ((next_sign_filtered < 0) & short_mask),
+            ),
         )
         self.logger.info(
             {
@@ -305,7 +302,7 @@ class OptimizedTripleBarrierLabeling:
         self.logger.info(
             "Diagnostics meaning: 'distribution' is BUY/SELL counts after HOLD removal;"
             " '*_nextbar_agree' is the fraction of signals whose direction matches the immediate next-bar return;"
-            " 'overall' aggregates both sides."
+            " 'overall' aggregates both sides.",
         )
         return labeled_data
 
@@ -323,8 +320,7 @@ class OptimizedTripleBarrierLabeling:
         data: pd.DataFrame,
         n_jobs: int = -1,
     ) -> pd.DataFrame:
-        """
-        Apply parallel Triple Barrier Method for labeling.
+        """Apply parallel Triple Barrier Method for labeling.
 
         Args:
             data: Market data
@@ -332,6 +328,7 @@ class OptimizedTripleBarrierLabeling:
 
         Returns:
             DataFrame with labels added
+
         """
         # Disabled due to boundary lookahead correctness issues.
         return self.apply_triple_barrier_labeling_vectorized(data)
@@ -342,27 +339,27 @@ class OptimizedTripleBarrierLabeling:
         context="optimized_triple_barrier_labeling.process_chunk",
     )
     def _process_chunk(self, chunk: pd.DataFrame) -> pd.DataFrame:
-        """
-        Process a single chunk of data.
+        """Process a single chunk of data.
 
         Args:
             chunk: Data chunk to process
 
         Returns:
             Processed chunk with labels
+
         """
         return self.apply_triple_barrier_labeling_vectorized(chunk)
 
 
 def benchmark_triple_barrier_methods(data: pd.DataFrame) -> dict[str, float]:
-    """
-    Benchmark different triple barrier labeling methods.
+    """Benchmark different triple barrier labeling methods.
 
     Args:
         data: Market data to test
 
     Returns:
         Dictionary with timing results
+
     """
     import time
 
@@ -413,10 +410,6 @@ if __name__ == "__main__":
     optimizer = OptimizedTripleBarrierLabeling()
     labeled_data = optimizer.apply_triple_barrier_labeling_vectorized(data)
 
-    print(f"Original data shape: {data.shape}")
-    print(f"Labeled data shape: {labeled_data.shape}")
-    print(f"Label distribution: {labeled_data['label'].value_counts().to_dict()}")
 
     # Benchmark
     results = benchmark_triple_barrier_methods(data)
-    print(f"Benchmark results: {results}")

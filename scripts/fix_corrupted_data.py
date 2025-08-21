@@ -7,34 +7,19 @@ This script will:
 3. Regenerate the pickle files with corrected data
 """
 
-import os
-import pickle
-import sys
 from datetime import datetime
 from pathlib import Path
-
+from src.utils.logger import setup_logging, system_logger
+import os
+import sys
 import pandas as pd
+import pickle
 
 # Add the project root to the path
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-from src.utils.logger import setup_logging, system_logger
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
-
+from src.utils.warning_symbols import warning
 
 def detect_price_corruption(df: pd.DataFrame) -> bool:
     """
@@ -61,10 +46,8 @@ def detect_price_corruption(df: pd.DataFrame) -> bool:
     # If median is outside this range, data is corrupted
     return bool(median_price < 100 or median_price > 10000)
 
-
 def fix_corrupted_prices(
-    df: pd.DataFrame,
-    target_median: float = 3000.0,
+    df: pd.DataFrame, target_median: float = 3000.0
 ) -> pd.DataFrame:
     """
     Fix corrupted prices by scaling them to a reasonable range.
@@ -109,7 +92,6 @@ def fix_corrupted_prices(
 
     return df
 
-
 def process_csv_file(csv_path: str, output_dir: str) -> bool:
     """
     Process a single CSV file and create corrected pickle file.
@@ -119,7 +101,7 @@ def process_csv_file(csv_path: str, output_dir: str) -> bool:
         output_dir: Directory to save the pickle file
 
     Returns:
-        bool: True if successful, False otherwise
+        bool: True if successful = False otherwise
     """
     try:
         print(f"\nProcessing: {csv_path}")
@@ -131,15 +113,14 @@ def process_csv_file(csv_path: str, output_dir: str) -> bool:
 
         # Check for price corruption
         if detect_price_corruption(df):
-            print("  Detected corrupted prices, fixing...")
+            print("  Detected corrupted prices = fixing...")
             df = fix_corrupted_prices(df)
         else:
             print("  Prices appear to be valid")
 
         # Create data structure for pickle
         data = {
-            "klines": df,
-            "agg_trades": pd.DataFrame(),  # Empty for now
+            "klines": df, "agg_trades": pd.DataFrame(),  # Empty for now
             "futures": pd.DataFrame(),  # Empty for now
             "metadata": {
                 "source_file": csv_path,
@@ -164,7 +145,6 @@ def process_csv_file(csv_path: str, output_dir: str) -> bool:
         print(f"  Error processing {csv_path}: {e}")
         return False
 
-
 def main():
     """Main function to fix corrupted data files."""
     setup_logging()
@@ -176,7 +156,7 @@ def main():
     # Check for CSV files in data_cache
     data_cache_dir = "data_cache"
     if not os.path.exists(data_cache_dir):
-        print(missing("Data cache directory not found: {data_cache_dir}"))
+        print(warning(f"Data cache directory not found: {data_cache_dir}"))
         return False
 
     # Find CSV files
@@ -185,7 +165,7 @@ def main():
         csv_files.extend(Path(data_cache_dir).glob(pattern))
 
     if not csv_files:
-        print(warning("No CSV files found in {data_cache_dir}"))
+        print(warning(f"No CSV files found in {data_cache_dir}"))
         return False
 
     print(f"📁 Found {len(csv_files)} CSV files to process")
@@ -222,7 +202,6 @@ def main():
                 print(f"  ❌ {pkl_file.name}: Error reading file - {e}")
 
     return True
-
 
 if __name__ == "__main__":
     success = main()

@@ -3,36 +3,22 @@
 ARES Bot Monitor - Notifies AI Assistant when bot stops or encounters issues
 """
 
+from datetime import datetime
+from pathlib import Path
+from src.utils.logger import system_logger
 import json
 import sys
 import time
-from datetime import datetime
-from pathlib import Path
-
 import psutil
 
 # Add the project root to the path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
-
+from src.utils.warning_symbols import error, warning
 
 class BotMonitor:
+
     def __init__(self):
         self.logger = system_logger.getChild("BotMonitor")
         self.project_root = project_root
@@ -47,7 +33,7 @@ class BotMonitor:
                 with open(self.status_file) as f:
                     return json.load(f)
             except Exception as e:
-                self.print(error("Error loading status file: {e}"))
+                self.print(error(f"Error loading status file: {e}"))
         return {"running": False, "last_check": None, "issues": []}
 
     def _save_status(self, status):
@@ -56,7 +42,7 @@ class BotMonitor:
             with open(self.status_file, "w") as f:
                 json.dump(status, f, indent=2, default=str)
         except Exception as e:
-            self.print(error("Error saving status file: {e}"))
+            self.print(error(f"Error saving status file: {e}"))
 
     def _check_python_processes(self):
         """Check if any ARES-related Python processes are running"""
@@ -73,8 +59,7 @@ class BotMonitor:
                     ares_processes.append(
                         {
                             "pid": proc.info["pid"],
-                            "cmdline": cmdline,
-                            "status": proc.status(),
+                            "cmdline": cmdline, "status": proc.status(),
                         },
                     )
             except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -112,15 +97,14 @@ class BotMonitor:
                             ):
                                 issues.append(
                                     {
-                                        "file": log_file.name,
-                                        "line": line.strip(),
+                                        "file": log_file.name, "line": line.strip(),
                                         "timestamp": datetime.fromtimestamp(
                                             log_file.stat().st_mtime,
                                         ).isoformat(),
                                     },
                                 )
             except Exception as e:
-                self.print(error("Error reading log file {log_file}: {e}"))
+                self.print(error(f"Error reading log file {log_file}: {e}"))
 
         return issues
 
@@ -128,10 +112,9 @@ class BotMonitor:
         """Notify the AI assistant about issues"""
         notification = {
             "timestamp": datetime.now().isoformat(),
-            "message": message,
-            "issues": issues or [],
+            "message": message, "issues": issues or [],
             "bot_status": self._load_status(),
-            "action_required": True,
+            "action_required": True
         }
 
         # Save notification to a file that the AI assistant can read
@@ -154,7 +137,7 @@ class BotMonitor:
             )
 
         except Exception as e:
-            self.print(error("Error saving notification: {e}"))
+            self.print(error(f"Error saving notification: {e}"))
 
     def monitor(self):
         """Main monitoring loop"""
@@ -175,14 +158,12 @@ class BotMonitor:
                 current_status = {
                     "running": is_running,
                     "last_check": current_time.isoformat(),
-                    "processes": ares_processes,
-                    "issues": recent_issues,
+                    "processes": ares_processes, "issues": recent_issues,
                 }
 
                 # Check if status changed
                 status_changed = self.last_status.get("running") != is_running or len(
-                    recent_issues,
-                ) > len(self.last_status.get("issues", []))
+                    recent_issues) > len(self.last_status.get("issues", []))
 
                 if status_changed:
                     if not is_running and self.last_status.get("running"):
@@ -221,15 +202,13 @@ class BotMonitor:
                 self.logger.info("🛑 Bot monitor stopped by user")
                 break
             except Exception as e:
-                self.print(error("Error in monitoring loop: {e}"))
+                self.print(error(f"Error in monitoring loop: {e}"))
                 time.sleep(self.monitor_interval)
-
 
 def main():
     """Main entry point"""
     monitor = BotMonitor()
     monitor.monitor()
-
 
 if __name__ == "__main__":
     main()

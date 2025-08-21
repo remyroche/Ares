@@ -1,24 +1,19 @@
 # src/training/steps/step14_monte_carlo_validation.py
 
 import asyncio
+import contextlib
 import json
 import os
-import pickle
 from datetime import datetime
 from typing import Any
 
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    failed,
-    validation_error,
-)
-from src.training.steps.unified_data_loader import get_unified_data_loader
 
 
 class MonteCarloValidationStep:
     """Step 14: Monte Carlo Validation using existing step7_monte_carlo_validation."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
 
@@ -39,8 +34,7 @@ class MonteCarloValidationStep:
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Execute Monte Carlo validation.
+        """Execute Monte Carlo validation.
 
         Args:
             training_input: Training input parameters
@@ -48,6 +42,7 @@ class MonteCarloValidationStep:
 
         Returns:
             Dict containing validation results
+
         """
         try:
             self.logger.info("🔄 Executing Monte Carlo Validation...")
@@ -123,19 +118,18 @@ class MonteCarloValidationStep:
                 json.dump(mc_performance, f, indent=2)
             with open(mc_metadata_file, "w") as f:
                 json.dump(mc_metadata, f, indent=2)
-            try:
+            with contextlib.suppress(Exception):
                 self.logger.info(
                     f"Monte Carlo results prepared: overall_metrics={mc_results.get('overall_metrics', {})}",
                 )
-            except Exception:
-                pass
 
             # Persist Monte Carlo scenario distributions as partitioned Parquet for pruning
             try:
+                import pandas as pd
+
                 from src.training.enhanced_training_manager_optimized import (
                     ParquetDatasetManager,
                 )
-                import pandas as pd
 
                 pdm = ParquetDatasetManager(logger=self.logger)
                 mc_base = os.path.join(data_dir, "parquet", "mc")
@@ -149,7 +143,7 @@ class MonteCarloValidationStep:
                                 "scenario_id": scenario_id,
                                 "seed": seed,
                                 "pnl": 0.0,
-                            }
+                            },
                         )
                 if scenario_rows:
                     scen_df = pd.DataFrame(scenario_rows)
@@ -163,7 +157,7 @@ class MonteCarloValidationStep:
                         metadata={"schema_version": "1", "validation_method": "mc"},
                     )
                 self.logger.info(
-                    f"✅ Monte Carlo scenario partitions persisted to {mc_base}"
+                    f"✅ Monte Carlo scenario partitions persisted to {mc_base}",
                 )
             except Exception:
                 pass
@@ -184,27 +178,27 @@ class MonteCarloValidationStep:
             }
 
         except Exception as e:
-            self.logger.error(f"🚨 Error in Monte Carlo Validation: {e}")
+            self.logger.exception(f"🚨 Error in Monte Carlo Validation: {e}")
             return {"status": "FAILED", "error": str(e), "duration": 0.0}
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
-    validate_step_prerequisites,
-    secure_data_processing,
-    prevent_data_leakage,
-    resource_monitor,
-    memory_efficient,
-    debug_training_step,
+    artifact_versioning,
+    artifact_write_lock,
     circuit_breaker_protection,
-    validate_step_output,
-    quality_gate,
+    debug_training_step,
     deterministic_seed,
     idempotent_step,
-    artifact_write_lock,
+    memory_efficient,
     nan_inf_and_constant_guard,
-    artifact_versioning,
+    prevent_data_leakage,
+    quality_gate,
+    resource_monitor,
+    secure_data_processing,
     time_budget_watchdog,
+    validate_step_output,
+    validate_step_prerequisites,
 )
 
 
@@ -227,7 +221,7 @@ from src.utils.training_pipeline_decorators import (
     context="Monte Carlo Validation",
 )
 @secure_data_processing(
-    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True
+    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
 @prevent_data_leakage(
     temporal_validation=True,
@@ -243,7 +237,7 @@ from src.utils.training_pipeline_decorators import (
     auto_cleanup=True,
 )
 @memory_efficient(
-    chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=25
+    chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=25,
 )
 @debug_training_step(
     log_intermediate_results=True,
@@ -278,8 +272,7 @@ async def run_step(
     force_rerun: bool = False,
     **kwargs,
 ) -> bool:
-    """
-    Run the Monte Carlo validation step.
+    """Run the Monte Carlo validation step.
 
     Args:
         symbol: Trading symbol
@@ -289,6 +282,7 @@ async def run_step(
 
     Returns:
         bool: True if successful, False otherwise
+
     """
     try:
         # Create step instance
@@ -310,15 +304,13 @@ async def run_step(
 
         return result.get("status") == "SUCCESS"
 
-    except Exception as e:
-        print(failed(f"Monte Carlo validation failed: {e}"))
+    except Exception:
         return False
 
 
 if __name__ == "__main__":
     # Test the step
-    async def test():
-        result = await run_step("ETHUSDT", "BINANCE", "data/training")
-        print(f"Test result: {result}")
+    async def test() -> None:
+        await run_step("ETHUSDT", "BINANCE", "data/training")
 
     asyncio.run(test())

@@ -1,6 +1,4 @@
-"""
-Validator for Step 2: Market Regime Classification
-"""
+"""Validator for Step 2: Market Regime Classification."""
 
 import asyncio
 import json
@@ -23,7 +21,7 @@ from src.utils.base_validator import BaseValidator
 class Step2MarketRegimeClassificationValidator(BaseValidator):
     """Validator for Step 2: Market Regime Classification."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step2_market_regime_classification", config)
         # Fine-tuned parameters for ML training (more lenient to avoid stopping training)
         self.max_regime_dominance = (
@@ -43,8 +41,7 @@ class Step2MarketRegimeClassificationValidator(BaseValidator):
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
     ) -> bool:
-        """
-        Validate the market regime classification step.
+        """Validate the market regime classification step.
 
         Args:
             training_input: Training input parameters
@@ -52,6 +49,7 @@ class Step2MarketRegimeClassificationValidator(BaseValidator):
 
         Returns:
             bool: True if validation passed, False otherwise
+
         """
         self.logger.info("🔍 Validating market regime classification step...")
 
@@ -103,8 +101,9 @@ class Step2MarketRegimeClassificationValidator(BaseValidator):
         try:
             # Load results from Parquet or JSON depending on what exists
             if regime_file_path.endswith(".parquet"):
-                import pandas as pd
                 import os
+
+                import pandas as pd
 
                 # Prefer dataset scan from partitioned store if available
                 try:
@@ -124,7 +123,7 @@ class Step2MarketRegimeClassificationValidator(BaseValidator):
                         from src.utils.data_optimizer import regime_columns
 
                         regime_df = pdm.scan_dataset(
-                            base_dir, columns=regime_columns(), to_pandas=True
+                            base_dir, columns=regime_columns(), to_pandas=True,
                         )
                     else:
                         try:
@@ -138,13 +137,13 @@ class Step2MarketRegimeClassificationValidator(BaseValidator):
                                 columns="regime_columns",
                             ):
                                 regime_df = pd.read_parquet(
-                                    regime_file_path, columns=regime_columns()
+                                    regime_file_path, columns=regime_columns(),
                                 )  # minimize
                         except Exception:
                             from src.utils.logger import log_io_operation
 
                             with log_io_operation(
-                                self.logger, "read_parquet", regime_file_path
+                                self.logger, "read_parquet", regime_file_path,
                             ):
                                 regime_df = pd.read_parquet(regime_file_path)
                 except Exception:
@@ -159,13 +158,13 @@ class Step2MarketRegimeClassificationValidator(BaseValidator):
                             columns="regime_columns",
                         ):
                             regime_df = pd.read_parquet(
-                                regime_file_path, columns=regime_columns()
+                                regime_file_path, columns=regime_columns(),
                             )  # minimize
                     except Exception:
                         from src.utils.logger import log_io_operation
 
                         with log_io_operation(
-                            self.logger, "read_parquet", regime_file_path
+                            self.logger, "read_parquet", regime_file_path,
                         ):
                             regime_df = pd.read_parquet(regime_file_path)
 
@@ -240,14 +239,14 @@ class Step2MarketRegimeClassificationValidator(BaseValidator):
         self,
         regime_results: dict[str, Any],
     ) -> tuple[bool, dict[str, Any]]:
-        """
-        Validate regime classification results.
+        """Validate regime classification results.
 
         Args:
             regime_results: Regime classification results
 
         Returns:
             Tuple of (passed, metrics_dict)
+
         """
         try:
             # Check if results contain required keys - updated to match actual file structure
@@ -327,17 +326,17 @@ class Step2MarketRegimeClassificationValidator(BaseValidator):
             return True, metrics_dict
 
         except Exception as e:
-            return False, {"error": f"Error validating regime classification: {str(e)}"}
+            return False, {"error": f"Error validating regime classification: {e!s}"}
 
     def _validate_regime_distribution(self, regime_results: dict[str, Any]) -> bool:
-        """
-        Validate regime distribution characteristics.
+        """Validate regime distribution characteristics.
 
         Args:
             regime_results: Regime classification results
 
         Returns:
             bool: True if distribution is valid
+
         """
         try:
             regimes = regime_results.get(
@@ -394,14 +393,14 @@ class Step2MarketRegimeClassificationValidator(BaseValidator):
             return False
 
     def _validate_regime_transitions(self, regime_results: dict[str, Any]) -> bool:
-        """
-        Validate regime transition characteristics.
+        """Validate regime transition characteristics.
 
         Args:
             regime_results: Regime classification results
 
         Returns:
             bool: True if transitions are valid
+
         """
         try:
             regimes = regime_results.get(
@@ -474,8 +473,7 @@ async def run_validator(
     training_input: dict[str, Any],
     pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
-    """
-    Run the Step 2 Market Regime Classification validator.
+    """Run the Step 2 Market Regime Classification validator.
 
     Args:
         training_input: Training input parameters
@@ -483,6 +481,7 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
+
     """
     validator = Step2MarketRegimeClassificationValidator(CONFIG)
     validation_passed = await validator.validate(training_input, pipeline_state)
@@ -525,7 +524,7 @@ if __name__ == "__main__":
     import asyncio
 
     # Example usage
-    async def test_validator():
+    async def test_validator() -> None:
         training_input = {
             "symbol": "ETHUSDT",
             "exchange": "BINANCE",
@@ -536,7 +535,6 @@ if __name__ == "__main__":
             "regime_classification": {"status": "SUCCESS", "duration": 45.2},
         }
 
-        result = await run_validator(training_input, pipeline_state)
-        print(f"Validation result: {result}")
+        await run_validator(training_input, pipeline_state)
 
     asyncio.run(test_validator())

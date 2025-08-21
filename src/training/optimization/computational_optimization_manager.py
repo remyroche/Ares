@@ -1,10 +1,10 @@
 # src/training/optimization/computational_optimization_manager.py
 
-"""
-Computational Optimization Manager for Enhanced Training Pipeline.
-Implements all optimization strategies from computational_optimization_strategies.md
+"""Computational Optimization Manager for Enhanced Training Pipeline.
+Implements all optimization strategies from computational_optimization_strategies.md.
 """
 
+import contextlib
 import gc
 import hashlib
 import json
@@ -22,27 +22,17 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel
 
+from src.utils.decorators import (
+    enforce_ndarray,
+    guard_array_nan_inf,
+    guard_dataframe_nulls,
+    with_tracing_span,
+)
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
-    warning,
-    critical,
-    problem,
     failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
-from src.utils.decorators import (
-    enforce_ndarray,
-    guard_array_nan_inf,
-    with_tracing_span,
-    guard_dataframe_nulls,
 )
 
 
@@ -139,7 +129,7 @@ class CachedBacktester:
         self,
         market_data: pd.DataFrame,
         config: ComputationalOptimizationConfig,
-    ):
+    ) -> None:
         self.market_data = market_data
         self.config = config
         self.cache = {}
@@ -277,7 +267,7 @@ class CachedBacktester:
         # Calculate Sharpe ratio
         return np.mean(strategy_returns) / (np.std(strategy_returns) + 1e-8)
 
-    def _cleanup_cache(self):
+    def _cleanup_cache(self) -> None:
         """Clean up old cache entries."""
         if len(self.cache) > self.config.max_cache_size:
             # Remove oldest entries
@@ -293,7 +283,7 @@ class ProgressiveEvaluator:
         self,
         full_data: pd.DataFrame,
         config: ComputationalOptimizationConfig,
-    ):
+    ) -> None:
         self.full_data = full_data
         self.config = config
         self.logger = system_logger.getChild("ProgressiveEvaluator")
@@ -371,7 +361,7 @@ class ProgressiveEvaluator:
 class ParallelBacktester:
     """Parallel backtesting for multiple parameter combinations."""
 
-    def __init__(self, config: ComputationalOptimizationConfig):
+    def __init__(self, config: ComputationalOptimizationConfig) -> None:
         self.config = config
         self.logger = system_logger.getChild("ParallelBacktester")
 
@@ -391,7 +381,7 @@ class ParallelBacktester:
             self.executor = ProcessPoolExecutor(max_workers=self.n_workers)
         return self.executor
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         """Clean up resources properly."""
         if self.executor is not None:
             self.executor.shutdown(wait=True)
@@ -404,7 +394,6 @@ class ParallelBacktester:
         market_data: pd.DataFrame,
     ) -> list[float]:
         """Evaluate multiple parameter sets in parallel."""
-
         # Prepare data for parallel processing
         data_pickle = pickle.dumps(market_data)
 
@@ -425,7 +414,7 @@ class ParallelBacktester:
             try:
                 result = future.result(timeout=300)  # 5 minute timeout
                 results.append(result)
-            except Exception as e:
+            except Exception:
                 self.print(error("Error in parallel evaluation: {e}"))
                 results.append(-1.0)  # Default to poor performance
 
@@ -479,7 +468,7 @@ class IncrementalTrainer:
         self,
         base_model_config: dict[str, Any],
         config: ComputationalOptimizationConfig,
-    ):
+    ) -> None:
         self.base_config = base_model_config
         self.config = config
         self.model_cache = {}
@@ -492,7 +481,6 @@ class IncrementalTrainer:
         y: np.ndarray,
     ) -> Any:
         """Train model incrementally from cached state."""
-
         # Generate model key based on core parameters
         model_key = self._generate_model_key(params)
 
@@ -543,7 +531,7 @@ class IncrementalTrainer:
 class AdaptiveModelComplexity:
     """Adaptive model complexity based on data size and performance."""
 
-    def __init__(self, config: ComputationalOptimizationConfig):
+    def __init__(self, config: ComputationalOptimizationConfig) -> None:
         self.config = config
         self.logger = system_logger.getChild("AdaptiveModelComplexity")
 
@@ -562,7 +550,6 @@ class AdaptiveModelComplexity:
         previous_performance: float,
     ) -> dict[str, Any]:
         """Get adaptive model parameters based on context."""
-
         if data_size < 1000 or previous_performance < 0.3:
             self.logger.debug("Using light complexity model")
             return self.complexity_levels["light"]
@@ -580,14 +567,14 @@ class PrecomputedFeatureEngine:
         self,
         market_data: pd.DataFrame,
         config: ComputationalOptimizationConfig,
-    ):
+    ) -> None:
         self.market_data = market_data
         self.config = config
         self.feature_cache = {}
         self.logger = system_logger.getChild("PrecomputedFeatureEngine")
         self._precompute_all_features()
 
-    def _precompute_all_features(self):
+    def _precompute_all_features(self) -> None:
         """Precompute all possible technical indicators."""
         self.logger.info("Precomputing all features...")
 
@@ -661,7 +648,7 @@ class PrecomputedFeatureEngine:
 class FeatureSelectionCache:
     """Cache feature selection results."""
 
-    def __init__(self, config: ComputationalOptimizationConfig):
+    def __init__(self, config: ComputationalOptimizationConfig) -> None:
         self.config = config
         self.selection_cache = {}
         self.logger = system_logger.getChild("FeatureSelectionCache")
@@ -672,7 +659,6 @@ class FeatureSelectionCache:
         threshold: float,
     ) -> np.ndarray:
         """Get cached feature selection result."""
-
         cache_key = (tuple(sorted(feature_list)), threshold)
 
         if cache_key in self.selection_cache:
@@ -695,7 +681,7 @@ class FeatureSelectionCache:
 class SurrogateOptimizer:
     """Use surrogate models to reduce expensive evaluations."""
 
-    def __init__(self, config: ComputationalOptimizationConfig):
+    def __init__(self, config: ComputationalOptimizationConfig) -> None:
         self.config = config
         self.logger = system_logger.getChild("SurrogateOptimizer")
         self.n_expensive_trials = config.expensive_trials
@@ -705,7 +691,6 @@ class SurrogateOptimizer:
 
     def optimize_with_surrogates(self, objective_func, n_trials: int) -> dict[str, Any]:
         """Optimize using surrogate models for expensive evaluations."""
-
         self.logger.info(f"Starting surrogate optimization with {n_trials} trials")
 
         # Initial expensive evaluations
@@ -741,7 +726,7 @@ class SurrogateOptimizer:
             "rsi_threshold": np.random.uniform(20, 80),
         }
 
-    def _train_surrogate_model(self):
+    def _train_surrogate_model(self) -> None:
         """Train surrogate model on expensive evaluations."""
         if len(self.expensive_evaluations) < 10:
             return
@@ -771,7 +756,7 @@ class SurrogateOptimizer:
         prediction, _ = self.surrogate_model.predict(X, return_std=True)
         return prediction[0]
 
-    def _update_surrogate_model(self, params: dict[str, Any], result: float):
+    def _update_surrogate_model(self, params: dict[str, Any], result: float) -> None:
         """Update surrogate model with new evaluation."""
         self.expensive_evaluations.append((params, result))
         self._train_surrogate_model()
@@ -792,7 +777,7 @@ class SurrogateOptimizer:
 class AdaptiveSampler:
     """Adaptive sampling to focus on promising regions."""
 
-    def __init__(self, config: ComputationalOptimizationConfig):
+    def __init__(self, config: ComputationalOptimizationConfig) -> None:
         self.config = config
         self.logger = system_logger.getChild("AdaptiveSampler")
         self.initial_samples = 100
@@ -800,7 +785,6 @@ class AdaptiveSampler:
 
     def suggest_parameters(self, trial_history: list[dict]) -> dict[str, Any]:
         """Suggest parameters based on promising regions."""
-
         if len(trial_history) < self.initial_samples:
             # Random sampling for initial exploration
             return self._random_sampling()
@@ -817,7 +801,6 @@ class AdaptiveSampler:
 
     def _adaptive_sampling(self, trial_history: list[dict]) -> dict[str, Any]:
         """Sample from promising regions identified in history."""
-
         # Identify promising regions
         good_trials = [t for t in trial_history if t.get("score", 0) > 0.5]
 
@@ -849,7 +832,7 @@ class MemoryEfficientData:
         self,
         market_data: pd.DataFrame,
         config: ComputationalOptimizationConfig,
-    ):
+    ) -> None:
         self.config = config
         self.logger = system_logger.getChild("MemoryEfficientData")
         self.data = self._optimize_dataframe(market_data)
@@ -857,7 +840,6 @@ class MemoryEfficientData:
     @guard_dataframe_nulls(mode="warn", arg_index=1)
     def _optimize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame for memory usage."""
-
         # Use appropriate dtypes
         for col in df.select_dtypes(include=["float64"]).columns:
             df[col] = pd.to_numeric(df[col], downcast="float")
@@ -866,10 +848,8 @@ class MemoryEfficientData:
             df[col] = pd.to_numeric(df[col], downcast="integer")
 
         # Reduce noise: move to debug and include shape
-        try:
+        with contextlib.suppress(Exception):
             self.logger.debug(f"Optimized DataFrame memory usage: shape={df.shape}")
-        except Exception:
-            pass
         return df
 
     def get_subset(self, start_idx: int, end_idx: int) -> np.ndarray:
@@ -880,14 +860,14 @@ class MemoryEfficientData:
 class MemoryManager:
     """Manage memory usage during optimization."""
 
-    def __init__(self, config: ComputationalOptimizationConfig):
+    def __init__(self, config: ComputationalOptimizationConfig) -> None:
         self.config = config
         self.logger = system_logger.getChild("MemoryManager")
         self.memory_threshold = config.memory_threshold
         self.cleanup_frequency = config.cleanup_frequency
         self.evaluation_count = 0
 
-    def check_memory_usage(self):
+    def check_memory_usage(self) -> None:
         """Check and manage memory usage."""
         self.evaluation_count += 1
 
@@ -900,18 +880,16 @@ class MemoryManager:
                 )
                 self._cleanup_memory()
 
-    def _cleanup_memory(self):
+    def _cleanup_memory(self) -> None:
         """Clean up memory by forcing garbage collection."""
         gc.collect()
         self.logger.info("Memory cleanup completed")
 
 
 class ComputationalOptimizationManager:
-    """
-    Main computational optimization manager that integrates all strategies.
-    """
+    """Main computational optimization manager that integrates all strategies."""
 
-    def __init__(self, config: ComputationalOptimizationConfig):
+    def __init__(self, config: ComputationalOptimizationConfig) -> None:
         self.config = config
         self.logger = system_logger.getChild("ComputationalOptimizationManager")
 
@@ -1006,7 +984,7 @@ class ComputationalOptimizationManager:
                 n_trials,
             )
 
-        except Exception as e:
+        except Exception:
             self.print(failed("Parameter optimization failed: {e}"))
             return {}
 
@@ -1050,7 +1028,7 @@ class ComputationalOptimizationManager:
             else 0,
         }
 
-    async def cleanup(self):
+    async def cleanup(self) -> None:
         """Cleanup resources."""
         try:
             if self.parallel_backtester:
@@ -1061,7 +1039,7 @@ class ComputationalOptimizationManager:
 
             self.logger.info("Computational optimization manager cleanup completed")
 
-        except Exception as e:
+        except Exception:
             self.print(failed("Cleanup failed: {e}"))
 
 
@@ -1072,7 +1050,6 @@ async def create_computational_optimization_manager(
     model_config: dict[str, Any],
 ) -> ComputationalOptimizationManager:
     """Create and initialize a computational optimization manager."""
-
     # Extract the computational_optimization config and flatten nested structures
     optimization_config_raw = config.get("computational_optimization", {})
 

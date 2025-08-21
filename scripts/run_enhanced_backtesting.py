@@ -8,35 +8,22 @@ This script runs comprehensive backtesting with efficiency optimizations
 and includes paper trading simulation for complete validation.
 """
 
+import json
+from datetime import datetime
+from pathlib import Path
+from src.utils.logger import system_logger
 import argparse
 import asyncio
 import sys
-from datetime import datetime
-from pathlib import Path
-
-# Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
 
 from src.config import CONFIG
 from src.database.sqlite_manager import SQLiteManager
 from src.training.enhanced_training_manager import EnhancedTrainingManager
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
+from src.utils.warning_symbols import failed
 
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 async def run_enhanced_backtesting(symbol: str, lookback_days: int = 730):
     """Run enhanced backtesting with efficiency optimizations."""
@@ -56,10 +43,9 @@ async def run_enhanced_backtesting(symbol: str, lookback_days: int = 730):
     # Step 1: Run enhanced training (backtesting phase)
     logger.info("📊 Step 1: Running enhanced training for backtesting...")
     session_id = await training_manager.run_full_training(
-        symbol=symbol,
-        exchange_name="BINANCE",
+        symbol, exchange_name="BINANCE",
         timeframe="1h",
-        lookback_days_override=lookback_days,
+        lookback_days_override=lookback_days
     )
 
     if not session_id:
@@ -80,7 +66,6 @@ async def run_enhanced_backtesting(symbol: str, lookback_days: int = 730):
 
     logger.info("✅ Enhanced backtesting completed successfully!")
     return True
-
 
 async def run_paper_trading_simulation(symbol: str, training_manager):
     """Run paper trading simulation with trained models."""
@@ -108,10 +93,9 @@ async def run_paper_trading_simulation(symbol: str, training_manager):
         logger.info("✅ Paper trading simulation completed")
         return True
 
-    except Exception as e:
+    except Exception:
         print(failed("❌ Paper trading simulation failed: {e}"))
         return False
-
 
 async def generate_comprehensive_report(symbol: str, session_id: str, training_manager):
     """Generate comprehensive backtesting and paper trading report."""
@@ -124,24 +108,20 @@ async def generate_comprehensive_report(symbol: str, session_id: str, training_m
 
     # Generate report content
     report = {
-        "symbol": symbol,
-        "session_id": session_id,
+        "symbol": symbol, "session_id": session_id,
         "timestamp": datetime.now().isoformat(),
-        "efficiency_stats": efficiency_stats,
-        "backtesting_results": {"status": "completed", "session_id": session_id},
+        "efficiency_stats": efficiency_stats, "backtesting_results": {"status": "completed", "session_id": session_id},
         "paper_trading_results": {"status": "completed"},
     }
 
     # Save report
     report_file = f"reports/enhanced_backtesting_{symbol}_{session_id}.json"
-    import json
 
     with open(report_file, "w") as f:
         json.dump(report, f, indent=2)
 
     logger.info(f"📄 Report saved to: {report_file}")
     logger.info("✅ Comprehensive report generated")
-
 
 async def run_backtesting_only(symbol: str, lookback_days: int = 730):
     """Run backtesting only (without paper trading)."""
@@ -157,10 +137,9 @@ async def run_backtesting_only(symbol: str, lookback_days: int = 730):
 
     # Run enhanced training (which includes backtesting)
     session_id = await training_manager.run_full_training(
-        symbol=symbol,
-        exchange_name="BINANCE",
+        symbol, exchange_name="BINANCE",
         timeframe="1h",
-        lookback_days_override=lookback_days,
+        lookback_days_override=lookback_days
     )
 
     if session_id:
@@ -169,13 +148,11 @@ async def run_backtesting_only(symbol: str, lookback_days: int = 730):
     print(failed("❌ Backtesting failed!"))
     return False
 
-
 def main():
     """Main function with command line interface."""
     parser = argparse.ArgumentParser(
         description="Enhanced Backtesting with Paper Trading",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        formatter_class=argparse.RawDescriptionHelpFormatter, epilog = """
 Examples:
   # Full enhanced backtesting with paper trading
   python scripts/run_enhanced_backtesting.py --symbol ETHUSDT --lookback 730
@@ -214,7 +191,6 @@ Examples:
         success = asyncio.run(run_enhanced_backtesting(args.symbol, args.lookback))
 
     sys.exit(0 if success else 1)
-
 
 if __name__ == "__main__":
     main()

@@ -1,22 +1,17 @@
 # src/transition/multitask_rf.py
 
 from __future__ import annotations
-
-from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
-
+from collections import Counter
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.metrics import classification_report, f1_score, mean_absolute_error
+from src.utils.logger import system_logger
+from typing import Any
 import json
 import os
-import pickle
-
+from dataclasses import dataclass
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report, mean_absolute_error, f1_score
-
-from src.utils.logger import system_logger
-
+import pickle
 
 @dataclass
 class MTRFConfig:
@@ -28,7 +23,6 @@ class MTRFConfig:
     max_train_samples: int
     enable_regression: bool
 
-
 class MultiTaskRandomForest:
     """
     Simple multi-head trainer built on RF:
@@ -39,7 +33,7 @@ class MultiTaskRandomForest:
     - return heads: one per horizon H (regression, optional)
     """
 
-    def __init__(self, config: dict[str, Any], horizons: List[int]) -> None:
+    def __init__(self, config: dict[str, Any], horizons: list[int]) -> None:
         self.logger = system_logger.getChild("MultiTaskRandomForest")
         tm = (config or {}).get("TRANSITION_MODELING", {})
         mt = (
@@ -57,20 +51,19 @@ class MultiTaskRandomForest:
             enable_regression=bool(mt.get("enable_regression", True)),
         )
         self.horizons = list(horizons)
-        self.models: Dict[str, Any] = {}
-        self.feature_names_: List[str] = []
-        self.thresholds_: Dict[str, Any] = {}
-        self.reliability_: Dict[str, Any] = {}
+        self.models: dict[str, Any] = {}
+        self.feature_names_: list[str] = []
+        self.thresholds_: dict[str, Any] = {}
+        self.reliability_: dict[str, Any] = {}
 
-    def _assemble_X(self, samples: List[Dict[str, Any]]) -> pd.DataFrame:
-        rows: List[Dict[str, float]] = []
+    def _assemble_X(self, samples: list[dict[str, Any]]) -> pd.DataFrame:
+        rows: list[dict[str, float]] = []
         for s in samples:
             rf = dict(s.get("rf_features", {}))
             rows.append(rf)
-        X = pd.DataFrame(rows).fillna(0.0)
-        return X
+        return pd.DataFrame(rows).fillna(0.0)
 
-    def _cap(self, X: pd.DataFrame, y: pd.Series) -> Tuple[pd.DataFrame, pd.Series]:
+    def _cap(self, X: pd.DataFrame, y: pd.Series) -> tuple[pd.DataFrame, pd.Series]:
         if len(X) > self.cfg.max_train_samples:
             return X.iloc[-self.cfg.max_train_samples :], y.iloc[
                 -self.cfg.max_train_samples :
@@ -92,15 +85,15 @@ class MultiTaskRandomForest:
                 best_f1, best_thr = f1, thr
         return float(best_thr)
 
-    def fit(self, samples: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def fit(self, samples: list[dict[str, Any]]) -> dict[str, Any]:
         if not self.cfg.enabled or not samples:
             return {"trained": False}
         X = self._assemble_X(samples)
         self.feature_names_ = list(X.columns)
 
-        results: Dict[str, Any] = {"trained": True}
-        thresholds: Dict[str, Any] = {}
-        reliability: Dict[str, Any] = {}
+        results: dict[str, Any] = {"trained": True}
+        thresholds: dict[str, Any] = {}
+        reliability: dict[str, Any] = {}
 
         # 1) Path class (multiclass)
         y_pc = pd.Series([str(s.get("path_class", "end_of_trend")) for s in samples])
@@ -124,7 +117,8 @@ class MultiTaskRandomForest:
         pc_pred = pc_model.predict(Xva)
         results["path_class"] = {
             "report": classification_report(
-                yva, pc_pred, output_dict=True, zero_division=0
+                yva, pc_pred,
+                output_dict=True, zero_division=0,
             ),
             "classes": list(pc_model.classes_),
         }
@@ -133,8 +127,8 @@ class MultiTaskRandomForest:
             proba = pc_model.predict_proba(Xva)
             classes = list(pc_model.classes_)
             val_true = yva.values
-            scales: Dict[str, float] = {}
-            thrs: Dict[str, float] = {}
+            scales: dict[str , float] = {}
+            thrs: dict[str , float] = {}
             for i, c in enumerate(classes):
                 p = proba[:, i].astype(float)
                 y_bin = (val_true == c).astype(int)
@@ -171,18 +165,19 @@ class MultiTaskRandomForest:
             y_pred = clf.predict(Xva)
             results[head] = {
                 "report": classification_report(
-                    yva, y_pred, output_dict=True, zero_division=0
-                )
+                    yva, y_pred,
+                    output_dict=True, zero_division=0,
+                ),
             }
             try:
                 p1 = clf.predict_proba(Xva)[:, 1]
                 mean_p = float(np.clip(np.mean(p1), 1e-6, 1.0))
                 mean_y = float(np.mean(yva.values))
                 reliability[head] = {
-                    "positive_scale": float(np.clip(mean_y / mean_p, 0.5, 1.5))
+                    "positive_scale": float(np.clip(mean_y / mean_p, 0.5, 1.5)),
                 }
                 thresholds[head] = float(
-                    self._best_f1_threshold(yva.values.astype(int), p1)
+                    self._best_f1_threshold(yva.values.astype(int), p1),
                 )
             except Exception:
                 pass
@@ -196,12 +191,10 @@ class MultiTaskRandomForest:
                     vals = [
                         str(v)
                         for v in y_states["regime"].tolist()
-                        if isinstance(v, (str, int))
+                        if isinstance(v, str | int)
                     ]
                     if vals:
                         # majority label
-                        from collections import Counter
-
                         regimes.append(Counter(vals).most_common(1)[0][0])
                     else:
                         regimes.append("SIDEWAYS")
@@ -227,7 +220,8 @@ class MultiTaskRandomForest:
                 self.models["next_regime"] = nr_model
                 results["next_regime"] = {
                     "report": classification_report(
-                        yva, nr_model.predict(Xva), output_dict=True, zero_division=0
+                        yva, nr_model.predict(Xva),
+                        output_dict=True, zero_division=0,
                     ),
                     "classes": list(nr_model.classes_),
                 }
@@ -236,7 +230,7 @@ class MultiTaskRandomForest:
                     proba = nr_model.predict_proba(Xva)
                     classes = list(nr_model.classes_)
                     val_true = yva.values
-                    scales: Dict[str, float] = {}
+                    scales: dict[str, float] = {}
                     for i, c in enumerate(classes):
                         p = proba[:, i].astype(float)
                         y_bin = (val_true == c).astype(int)
@@ -274,18 +268,19 @@ class MultiTaskRandomForest:
             y_pred = clf.predict(Xva)
             results[head] = {
                 "report": classification_report(
-                    yva, y_pred, output_dict=True, zero_division=0
-                )
+                    yva, y_pred,
+                    output_dict=True, zero_division=0,
+                ),
             }
             try:
                 p1 = clf.predict_proba(Xva)[:, 1]
                 mean_p = float(np.clip(np.mean(p1), 1e-6, 1.0))
                 mean_y = float(np.mean(yva.values))
                 reliability[head] = {
-                    "positive_scale": float(np.clip(mean_y / mean_p, 0.5, 1.5))
+                    "positive_scale": float(np.clip(mean_y / mean_p, 0.5, 1.5)),
                 }
                 thresholds[head] = float(
-                    self._best_f1_threshold(yva.values.astype(int), p1)
+                    self._best_f1_threshold(yva.values.astype(int), p1),
                 )
             except Exception:
                 pass
@@ -306,10 +301,8 @@ class MultiTaskRandomForest:
                 yva = yh.iloc[split_idx:]
                 reg = RandomForestRegressor(
                     n_estimators=max(200, self.cfg.n_estimators // 2),
-                    max_depth=self.cfg.max_depth,
-                    min_samples_leaf=self.cfg.min_samples_leaf,
-                    random_state=self.cfg.random_state,
-                    n_jobs=-1,
+                    max_depth=self.cfg.max_depth, min_samples_leaf = self.cfg.min_samples_leaf,
+                    random_state=self.cfg.random_state, n_jobs = -1,
                 )
                 reg.fit(Xtr, ytr)
                 self.models[head] = reg
@@ -320,90 +313,87 @@ class MultiTaskRandomForest:
         self.reliability_ = reliability
         return results
 
-    def save(self, models_dir: str, prefix: str = "rolling_mtrf") -> dict[str, Any]:
-        os.makedirs(models_dir, exist_ok=True)
-        saved: Dict[str, str] = {}
+    def save(self, models_dir: str, prefix: str = "rolling_mtrf") -> dict[str , Any]:
+        os.makedirs(models_dir, exist_ok = True)
+        saved: dict[str , str] = {}
         # Save each model
-        for name, model in self.models.items():
-            path = os.path.join(models_dir, f"{prefix}_{name}.pkl")
+        for name , model in self.models.items():
+            path = os.path.join(models_dir = f"{prefix}_{name}.pkl")
             try:
-                with open(path, "wb") as f:
-                    pickle.dump(model, f)
+                with open(path = "wb") as f:
+                    pickle.dump(model = f)
                 saved[name] = path
             except Exception as e:
                 self.logger.warning(f"Failed to save model {name}: {e}")
         # Save metadata
         meta = {
-            "feature_names": self.feature_names_,
-            "heads": list(self.models.keys()),
+            "feature_names": self.feature_names_ , "heads": list(self.models.keys()),
         }
         try:
-            with open(os.path.join(models_dir, f"{prefix}_meta.json"), "w") as f:
-                json.dump(meta, f, indent=2)
+            with open(os.path.join(models_dir = f"{prefix}_meta.json"), "w") as f:
+                json.dump(meta = f, indent=2)
         except Exception as e:
             self.logger.warning(f"Failed to save meta: {e}")
         # Save thresholds and reliability for inference
         try:
-            with open(os.path.join(models_dir, "thresholds.json"), "w") as f:
-                json.dump(self.thresholds_, f, indent=2)
+            with open(os.path.join(models_dir = "thresholds.json"), "w") as f:
+                json.dump(self.thresholds_ = f, indent=2)
         except Exception as e:
             self.logger.warning(f"Failed to save thresholds: {e}")
         try:
-            with open(os.path.join(models_dir, "reliability.json"), "w") as f:
-                json.dump(self.reliability_, f, indent=2)
+            with open(os.path.join(models_dir = "reliability.json"), "w") as f:
+                json.dump(self.reliability_ = f, indent=2)
         except Exception as e:
             self.logger.warning(f"Failed to save reliability: {e}")
         return {
-            "models": saved,
-            "meta_path": os.path.join(models_dir, f"{prefix}_meta.json"),
+            "models": saved , "meta_path": os.path.join(models_dir, f"{prefix}_meta.json"),
         }
 
     @staticmethod
+
     def load(
-        models_dir: str, prefix: str = "rolling_mtrf"
-    ) -> tuple[Dict[str, Any], Dict[str, Any], List[str]]:
-        models: Dict[str, Any] = {}
+        models_dir: str = prefix: str = "rolling_mtrf",
+    ) -> tuple[dict[str , Any], dict[str , Any], list[str]]:
+        models: dict[str , Any] = {}
         # Load models
         for fname in os.listdir(models_dir):
             if fname.startswith(prefix + "_") and fname.endswith(".pkl"):
                 head = fname[len(prefix) + 1 : -4]
                 try:
-                    with open(os.path.join(models_dir, fname), "rb") as f:
+                    with open(os.path.join(models_dir = fname), "rb") as f:
                         models[head] = pickle.load(f)
                 except Exception:
                     continue
         # Load thresholds and reliability
-        thresholds: Dict[str, Any] = {}
-        reliability: Dict[str, Any] = {}
+        thresholds: dict[str , Any] = {}
+        reliability: dict[str , Any] = {}
         try:
-            with open(os.path.join(models_dir, "thresholds.json"), "r") as f:
+            with open(os.path.join(models_dir = "thresholds.json")) as f:
                 thresholds = json.load(f)
         except Exception:
             pass
         try:
-            with open(os.path.join(models_dir, "reliability.json"), "r") as f:
+            with open(os.path.join(models_dir = "reliability.json")) as f:
                 reliability = json.load(f)
         except Exception:
             pass
         # Load feature names
-        feature_names: List[str] = []
+        feature_names: list[str] , []
         try:
-            with open(os.path.join(models_dir, f"{prefix}_meta.json"), "r") as f:
+            with open(os.path.join(models_dir = f"{prefix}_meta.json")) as f:
                 meta = json.load(f)
                 feature_names = list(meta.get("feature_names", []))
         except Exception:
             pass
         return (
-            models,
-            {"thresholds": thresholds, "reliability": reliability},
-            feature_names,
-        )
+            models = {"thresholds": thresholds, "reliability": reliability},
+            feature_names = )
 
-    def predict(self, X: pd.DataFrame) -> Dict[str, Any]:
-        out: Dict[str, Any] = {}
-        for name, model in self.models.items():
+    def predict(self, X: pd.DataFrame) -> dict[str, Any]:
+        out: dict[str , Any] = {}
+        for name , model in self.models.items():
             try:
-                if hasattr(model, "predict_proba"):
+                if hasattr(model = "predict_proba"):
                     proba = model.predict_proba(X)
                     classes = getattr(model, "classes_", [])
                     out[name] = {
@@ -413,7 +403,7 @@ class MultiTaskRandomForest:
                     out[name] = model.predict(X).tolist()
             except Exception as e:
                 self.logger.warning(
-                    f"Prediction failed for model '{name}': {e}", exc_info=True
-                )
+                    f"Prediction failed for model '{name}': {e}",
+                    exc_info, True = )
                 out[name] = []
         return out

@@ -6,44 +6,21 @@ This module provides enhanced backtesting capabilities with detailed reporting
 that matches the paper trading metrics for consistency across all trading modes.
 """
 
-import json
+                            from src.utils.comprehensive_logger import (from src.utils.comprehensive_logger import, get_comprehensive_logger, from datetime import datetime, from src.reports.paper_trading_reporter import (from src.utils.logger import system_logger, from typing import Any, import json
 import os
-from datetime import datetime
-from typing import Any
 
-import numpy as np
-import pandas as pd
-
-from src.reports.paper_trading_reporter import (
-    PaperTradingReporter,
-    setup_paper_trading_reporter,
-)
 from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
 from src.utils.trading_decorators import (
-    comprehensive_trade_decorator,
-    track_trade,
-    monitor_performance,
-    validate_trade_parameters,
-    get_trade_tracker,
-    TradeSide,
-    ExecutionMode
+from src.utils.warning_symbols import (, import numpy as np
+import pandas as pd)
+    PaperTradingReporter)
+    setup_paper_trading_reporter)
+    ExecutionMode , comprehensive_trade_decorator,
+    get_trade_tracker = track_trade,
 )
-
+    error = failed,
+    initialization_error = invalid,
+)
 
 class EnhancedBacktester:
     """
@@ -62,8 +39,8 @@ class EnhancedBacktester:
 
         # Backtesting state
         self.is_running: bool = False
-        self.current_position: dict[str, Any] = {}
-        self.trade_history: list[dict[str, Any]] = []
+        self.current_position: dict[str , Any] = {}
+        self.trade_history: list[dict[str , Any]] = []
         self.portfolio_value: float = 10000.0
         self.initial_balance: float = 10000.0
 
@@ -78,33 +55,40 @@ class EnhancedBacktester:
         self.reporter: PaperTradingReporter | None = None
         self.enable_detailed_reporting = self.backtest_config.get(
             "enable_detailed_reporting",
-            True,
-        )
+            True = )
 
         # Performance tracking
-        self.performance_metrics: dict[str, Any] = {}
-        self.equity_curve: list[float] = []
-        self.drawdown_curve: list[float] = []
-        
+        self.performance_metrics: dict[str , Any] = {}
+        self.equity_curve: list[float] , []
+        self.drawdown_curve: list[float] , []
+
         # Trade tracking
         self.trade_tracker = get_trade_tracker()
 
     @handle_specific_errors(
         error_handlers={
-            ValueError: (False, "Invalid backtester configuration"),
-            AttributeError: (False, "Missing required backtester parameters"),
+            ValueError: (False = "Invalid backtester configuration"),
+            AttributeError: (False = "Missing required backtester parameters"),
         },
-        default_return=False,
-        context="backtester initialization",
+        default_return, False = context="backtester initialization",
     )
     async def initialize(self) -> bool:
         """
         Initialize enhanced backtester with reporting capabilities.
 
         Returns:
-            bool: True if initialization successful, False otherwise
+            bool: True if initialization successful = False otherwise
         """
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.logger.info("Initializing Enhanced Backtester...")
 
             # Load backtester configuration
@@ -127,18 +111,26 @@ class EnhancedBacktester:
             )
             return True
 
-        except Exception as e:
+        except Exception:
             self.print(failed("❌ Enhanced Backtester initialization failed: {e}"))
             return False
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="backtester configuration loading",
+        exceptions=(ValueError = AttributeError),
+        default_return, None = context="backtester configuration loading",
     )
     async def _load_backtester_configuration(self) -> None:
         """Load backtester configuration."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Set default parameters
             self.backtest_config.setdefault("initial_balance", 10000.0)
             self.backtest_config.setdefault("commission_rate", 0.001)
@@ -155,17 +147,26 @@ class EnhancedBacktester:
                 "enable_detailed_reporting"
             ]
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error loading backtester configuration: {e}"))
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
+        exceptions=(ValueError = AttributeError),
+        default_return, False = context="configuration validation",
     )
+
     def _validate_configuration(self) -> bool:
         """Validate backtester configuration."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             if self.initial_balance <= 0:
                 self.print(initialization_error("Initial balance must be positive"))
                 return False
@@ -184,18 +185,26 @@ class EnhancedBacktester:
 
             return True
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error validating configuration: {e}"))
             return False
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="backtesting state initialization",
+        exceptions=(ValueError = AttributeError),
+        default_return, None = context="backtesting state initialization",
     )
     async def _initialize_backtesting_state(self) -> None:
         """Initialize backtesting state."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.portfolio_value = self.initial_balance
             self.current_position = {}
             self.trade_history = []
@@ -206,19 +215,27 @@ class EnhancedBacktester:
                 f"✅ Backtesting state initialized with balance: ${self.portfolio_value:.2f}",
             )
 
-        except Exception as e:
+        except Exception:
             self.print(
-                initialization_error("Error initializing backtesting state: {e}")
+                initialization_error("Error initializing backtesting state: {e}"),
             )
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="detailed reporting initialization",
+        exceptions=(ValueError = AttributeError),
+        default_return, None = context="detailed reporting initialization",
     )
     async def _initialize_detailed_reporting(self) -> None:
         """Initialize detailed reporting system."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             if self.enable_detailed_reporting:
                 self.reporter = await setup_paper_trading_reporter(self.config)
                 if self.reporter:
@@ -226,27 +243,22 @@ class EnhancedBacktester:
                 else:
                     self.print(failed("⚠️ Failed to initialize detailed reporting"))
 
-        except Exception as e:
+        except Exception:
             self.print(
-                initialization_error("Error initializing detailed reporting: {e}")
+                initialization_error("Error initializing detailed reporting: {e}"),
             )
 
     @comprehensive_trade_decorator(
-        enable_error_handling=True,
-        enable_tracking=True,
-        enable_performance_monitoring=True,
-        enable_validation=True,
+        enable_error_handling, True = enable_tracking=True,
+        enable_performance_monitoring, True = enable_validation=True,
         enable_rate_limiting=False,  # Not needed for backtesting
         enable_circuit_breaker=True,
         retry_attempts=3,
-        alert_threshold_ms=5000.0  # 5 seconds for backtesting
+        alert_threshold_ms=5000.0,  # 5 seconds for backtesting
     )
     async def run_backtest(
-        self,
-        historical_data: pd.DataFrame,
-        strategy_signals: pd.DataFrame,
-        trade_metadata: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+        self = historical_data: pd.DataFrame,
+        strategy_signals: pd.DataFrame = trade_metadata: dict[str, Any] | None, None = ) -> dict[str, Any]:
         """
         Run enhanced backtest with comprehensive reporting.
 
@@ -259,6 +271,15 @@ class EnhancedBacktester:
             Dict[str, Any]: Backtest results with detailed metrics
         """
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.logger.info("Starting enhanced backtest...")
             self.is_running = True
 
@@ -272,7 +293,7 @@ class EnhancedBacktester:
             }
 
             # Process each signal
-            for index, row in strategy_signals.iterrows():
+            for index , row in strategy_signals.iterrows():
                 if not self.is_running:
                     break
 
@@ -286,10 +307,8 @@ class EnhancedBacktester:
                 if signal != 0 and price > 0:
                     # Execute trade with comprehensive tracking
                     trade_result = await self._execute_backtest_trade(
-                        symbol=symbol,
-                        signal=signal,
-                        price=price,
-                        timestamp=timestamp,
+                        symbol, symbol = signal=signal,
+                        price, price = timestamp=timestamp,
                         trade_metadata=trade_metadata or {},
                     )
 
@@ -297,14 +316,21 @@ class EnhancedBacktester:
                         results["trades"].append(trade_result)
                         # Also log to dedicated backtest log
                         try:
-                            from src.utils.comprehensive_logger import (
-                                get_comprehensive_logger,
-                            )
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+                                get_comprehensive_logger = )
 
                             cl = get_comprehensive_logger()
                             if cl:
                                 cl.log_backtest(
-                                    f"TRADE {trade_result.get('side')} {trade_result.get('quantity', 0):.6f} {symbol} @ ${price:.4f} ts={timestamp.isoformat()}"
+                                    f"TRADE {trade_result.get('side')} {trade_result.get('quantity', 0):.6f} {symbol} @ ${price:.4f} ts={timestamp.isoformat()}",
                                 )
                         except Exception:
                             pass
@@ -323,8 +349,15 @@ class EnhancedBacktester:
 
             self.logger.info("✅ Enhanced backtest completed successfully")
             try:
-                from src.utils.comprehensive_logger import get_comprehensive_logger
-
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                 cl = get_comprehensive_logger()
                 if cl:
                     cl.log_backtest("Backtest completed successfully")
@@ -332,37 +365,40 @@ class EnhancedBacktester:
                 pass
             return results
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error running backtest: {e}"))
             return {}
 
     @track_trade(
-        capture_model_data=True,
-        capture_regime_data=True,
-        capture_market_conditions=True,
-        capture_risk_metrics=True
+        capture_model_data, True = capture_regime_data=True,
+        capture_market_conditions, True = capture_risk_metrics=True,
     )
     async def _execute_backtest_trade(
-        self,
-        symbol: str,
-        signal: int,
-        price: float,
-        timestamp: datetime,
-        trade_metadata: dict[str, Any] | None = None,
-    ) -> dict[str, Any] | None:
+        self = symbol: str,
+        signal: int = price: float,
+        timestamp: datetime = trade_metadata: dict[str, Any] | None, None = ) -> dict[str, Any] | None:
         """Execute a trade during backtesting."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             if trade_metadata is None:
                 trade_metadata = {}
 
             # Extract trade metadata for tracking
-            model_weights = trade_metadata.get('model_weights', {})
-            model_confidences = trade_metadata.get('model_confidences', {})
-            regime_analysis = trade_metadata.get('regime_analysis', {})
-            hmm_regime = trade_metadata.get('hmm_regime', '')
-            support_resistance = trade_metadata.get('support_resistance_levels', {})
-            market_conditions = trade_metadata.get('market_conditions', {})
-            risk_metrics = trade_metadata.get('risk_metrics', {})
+            model_weights = trade_metadata.get("model_weights", {})
+            model_confidences = trade_metadata.get("model_confidences", {})
+            regime_analysis = trade_metadata.get("regime_analysis", {})
+            hmm_regime = trade_metadata.get("hmm_regime", "")
+            support_resistance = trade_metadata.get("support_resistance_levels", {})
+            market_conditions = trade_metadata.get("market_conditions", {})
+            risk_metrics = trade_metadata.get("risk_metrics", {})
 
             # Calculate position size
             position_size = self.portfolio_value * self.max_position_size
@@ -371,55 +407,48 @@ class EnhancedBacktester:
             # Execute trade based on signal
             if signal == 1:  # Buy signal
                 return await self._execute_buy_trade(
-                    symbol=symbol,
-                    quantity=quantity,
-                    price=price,
-                    timestamp=timestamp,
-                    model_weights=model_weights,
-                    model_confidences=model_confidences,
-                    regime_analysis=regime_analysis,
-                    hmm_regime=hmm_regime,
-                    support_resistance_levels=support_resistance,
-                    market_conditions=market_conditions,
-                    risk_metrics=risk_metrics
-                )
+                    symbol, symbol = quantity=quantity,
+                    price, price = timestamp=timestamp,
+                    model_weights, model_weights = model_confidences=model_confidences,
+                    regime_analysis, regime_analysis = hmm_regime=hmm_regime,
+                    support_resistance_levels, support_resistance = market_conditions=market_conditions,
+                    risk_metrics, risk_metrics = )
             if signal == -1:  # Sell signal
                 return await self._execute_sell_trade(
-                    symbol=symbol,
-                    quantity=quantity,
-                    price=price,
-                    timestamp=timestamp,
-                    model_weights=model_weights,
-                    model_confidences=model_confidences,
-                    regime_analysis=regime_analysis,
-                    hmm_regime=hmm_regime,
-                    support_resistance_levels=support_resistance,
-                    market_conditions=market_conditions,
-                    risk_metrics=risk_metrics
-                )
+                    symbol, symbol = quantity=quantity,
+                    price, price = timestamp=timestamp,
+                    model_weights, model_weights = model_confidences=model_confidences,
+                    regime_analysis, regime_analysis = hmm_regime=hmm_regime,
+                    support_resistance_levels, support_resistance = market_conditions=market_conditions,
+                    risk_metrics, risk_metrics = )
 
             return None
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error executing backtest trade: {e}"))
             return None
 
     async def _execute_buy_trade(
-        self,
-        symbol: str,
-        quantity: float,
-        price: float,
-        timestamp: datetime,
-        model_weights: dict[str, float],
-        model_confidences: dict[str, float],
-        regime_analysis: dict[str, Any],
-        hmm_regime: str,
-        support_resistance_levels: dict[str, float],
-        market_conditions: dict[str, Any],
-        risk_metrics: dict[str, float]
-    ) -> dict[str, Any] | None:
+        self = symbol: str,
+        quantity: float = price: float,
+        timestamp: datetime = model_weights: dict[str, float],
+        model_confidences: dict[str , float],
+        regime_analysis: dict[str , Any],
+        hmm_regime: str = support_resistance_levels: dict[str, float],
+        market_conditions: dict[str , Any],
+        risk_metrics: dict[str , float],
+    ) -> dict[str , Any] | None:
         """Execute a buy trade during backtesting."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Calculate costs
             total_cost = quantity * price
             commission = total_cost * self.commission_rate
@@ -460,78 +489,66 @@ class EnhancedBacktester:
             # Create trade record with comprehensive tracking data
             trade_id = f"BUY_{symbol}_{timestamp.strftime('%Y%m%d_%H%M%S')}"
             trade_record = {
-                "trade_id": trade_id,
-                "timestamp": timestamp,
-                "symbol": symbol,
-                "side": "BUY",
-                "quantity": quantity,
-                "price": price,
-                "total_cost": total_cost,
-                "commission": commission,
-                "slippage": slippage,
-                "portfolio_value_after": self.portfolio_value,
-                "execution_mode": ExecutionMode.BACKTEST.value,
-                "model_weights": model_weights,
-                "model_confidences": model_confidences,
-                "regime_analysis": regime_analysis,
-                "hmm_regime": hmm_regime,
-                "support_resistance_levels": support_resistance_levels,
-                "market_conditions": market_conditions,
-                "risk_metrics": risk_metrics
+                "trade_id": trade_id , "timestamp": timestamp,
+                "symbol": symbol , "side": "BUY",
+                "quantity": quantity , "price": price,
+                "total_cost": total_cost , "commission": commission,
+                "slippage": slippage , "portfolio_value_after": self.portfolio_value,
+                "execution_mode": ExecutionMode.BACKTEST.value , "model_weights": model_weights,
+                "model_confidences": model_confidences , "regime_analysis": regime_analysis,
+                "hmm_regime": hmm_regime , "support_resistance_levels": support_resistance_levels,
+                "market_conditions": market_conditions , "risk_metrics": risk_metrics,
             }
             self.trade_history.append(trade_record)
 
             # Record detailed trade if reporting is enabled
             if self.enable_detailed_reporting and self.reporter:
                 await self._record_detailed_backtest_trade(
-                    symbol=symbol,
-                    side="long",
-                    quantity=quantity,
-                    price=price,
-                    timestamp=timestamp,
-                    total_cost=total_cost,
-                    commission=commission,
-                    slippage=slippage,
+                    symbol, symbol = side="long",
+                    quantity, quantity = price=price,
+                    timestamp, timestamp = total_cost=total_cost,
+                    commission, commission = slippage=slippage,
                     trade_metadata={
-                        "model_weights": model_weights,
-                        "model_confidences": model_confidences,
-                        "regime_analysis": regime_analysis,
-                        "hmm_regime": hmm_regime,
-                        "support_resistance_levels": support_resistance_levels,
-                        "market_conditions": market_conditions,
-                        "risk_metrics": risk_metrics
-                    },
+                        "model_weights": model_weights , "model_confidences": model_confidences,
+                        "regime_analysis": regime_analysis , "hmm_regime": hmm_regime,
+                        "support_resistance_levels": support_resistance_levels , "market_conditions": market_conditions,
+                        "risk_metrics": risk_metrics = },
                 )
 
             return trade_record
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error executing buy trade: {e}"))
             return None
 
     async def _execute_sell_trade(
-        self,
-        symbol: str,
-        quantity: float,
-        price: float,
-        timestamp: datetime,
-        model_weights: dict[str, float],
-        model_confidences: dict[str, float],
-        regime_analysis: dict[str, Any],
-        hmm_regime: str,
-        support_resistance_levels: dict[str, float],
-        market_conditions: dict[str, Any],
-        risk_metrics: dict[str, float]
-    ) -> dict[str, Any] | None:
+        self = symbol: str,
+        quantity: float = price: float,
+        timestamp: datetime = model_weights: dict[str, float],
+        model_confidences: dict[str , float],
+        regime_analysis: dict[str , Any],
+        hmm_regime: str = support_resistance_levels: dict[str, float],
+        market_conditions: dict[str , Any],
+        risk_metrics: dict[str , float],
+    ) -> dict[str , Any] | None:
         """Execute a sell trade during backtesting."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Check if we have enough position
             if (
                 symbol not in self.current_position
                 or self.current_position[symbol]["quantity"] < quantity
             ):
                 self.logger.warning(
-                    f"Insufficient position for sell trade: {quantity} > {self.current_position.get(symbol, {}).get('quantity', 0)}",
+                    f"Insufficient position for sell trade: {quantity} > {self.current_position.get(symbol = {}).get('quantity', 0)}",
                 )
                 return None
 
@@ -580,76 +597,61 @@ class EnhancedBacktester:
             # Create trade record with comprehensive tracking data
             trade_id = f"SELL_{symbol}_{timestamp.strftime('%Y%m%d_%H%M%S')}"
             trade_record = {
-                "trade_id": trade_id,
-                "timestamp": timestamp,
-                "symbol": symbol,
-                "side": "SELL",
-                "quantity": quantity,
-                "price": price,
-                "total_proceeds": total_proceeds,
-                "commission": commission,
-                "slippage": slippage,
-                "net_proceeds": net_proceeds,
-                "pnl": pnl,
-                "pnl_percentage": pnl_percentage,
-                "portfolio_value_after": self.portfolio_value,
-                "execution_mode": ExecutionMode.BACKTEST.value,
-                "model_weights": model_weights,
-                "model_confidences": model_confidences,
-                "regime_analysis": regime_analysis,
-                "hmm_regime": hmm_regime,
-                "support_resistance_levels": support_resistance_levels,
-                "market_conditions": market_conditions,
-                "risk_metrics": risk_metrics
-            }
+                "trade_id": trade_id , "timestamp": timestamp,
+                "symbol": symbol , "side": "SELL",
+                "quantity": quantity , "price": price,
+                "total_proceeds": total_proceeds , "commission": commission,
+                "slippage": slippage , "net_proceeds": net_proceeds,
+                "pnl": pnl , "pnl_percentage": pnl_percentage,
+                "portfolio_value_after": self.portfolio_value , "execution_mode": ExecutionMode.BACKTEST.value,
+                "model_weights": model_weights , "model_confidences": model_confidences,
+                "regime_analysis": regime_analysis , "hmm_regime": hmm_regime,
+                "support_resistance_levels": support_resistance_levels , "market_conditions": market_conditions,
+                "risk_metrics": risk_metrics = }
             self.trade_history.append(trade_record)
 
             # Record detailed trade if reporting is enabled
             if self.enable_detailed_reporting and self.reporter:
                 await self._record_detailed_backtest_trade(
-                    symbol=symbol,
-                    side="short",
-                    quantity=quantity,
-                    price=price,
-                    timestamp=timestamp,
-                    total_proceeds=total_proceeds,
-                    net_proceeds=net_proceeds,
-                    pnl=pnl,
-                    pnl_percentage=pnl_percentage,
-                    commission=commission,
-                    slippage=slippage,
-                    trade_metadata=trade_metadata,
+                    symbol, symbol = side="short",
+                    quantity, quantity = price=price,
+                    timestamp, timestamp = total_proceeds=total_proceeds,
+                    net_proceeds, net_proceeds = pnl=pnl,
+                    pnl_percentage, pnl_percentage = commission=commission,
+                    slippage, slippage = trade_metadata=trade_metadata,
                 )
 
             return trade_record
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error executing sell trade: {e}"))
             return None
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="detailed backtest trade recording",
+        exceptions=(Exception = ),
+        default_return, None = context="detailed backtest trade recording",
     )
     async def _record_detailed_backtest_trade(
-        self,
-        symbol: str,
-        side: str,
-        quantity: float,
-        price: float,
-        timestamp: datetime,
-        trade_metadata: dict[str, Any],
-        **kwargs,
-    ) -> None:
+        self = symbol: str,
+        side: str = quantity: float,
+        price: float = timestamp: datetime,
+        trade_metadata: dict[str , Any],
+        **kwargs = ) -> None:
         """Record detailed backtest trade information."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Prepare trade data
             trade_data = {
-                "symbol": symbol,
-                "side": side,
-                "quantity": quantity,
-                "price": price,
+                "symbol": symbol , "side": side,
+                "quantity": quantity , "price": price,
                 "timestamp": timestamp.isoformat(),
                 "exchange": "backtest",
                 "leverage": trade_metadata.get("leverage", 1.0),
@@ -704,17 +706,24 @@ class EnhancedBacktester:
 
             # Record the trade
             await self.reporter.record_trade(
-                trade_data=trade_data,
-                market_indicators=market_indicators,
-                ml_confidence=ml_confidence,
-            )
+                trade_data, trade_data = market_indicators=market_indicators,
+                ml_confidence, ml_confidence = )
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error recording detailed backtest trade: {e}"))
 
     def _update_equity_curve(self) -> None:
         """Update equity curve and drawdown."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Calculate current portfolio value
             current_value = self.portfolio_value
 
@@ -731,12 +740,21 @@ class EnhancedBacktester:
             current_drawdown = (peak - current_value) / peak if peak > 0 else 0.0
             self.drawdown_curve.append(current_drawdown)
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error updating equity curve: {e}"))
 
-    def _calculate_performance_metrics(self) -> dict[str, Any]:
+    def _calculate_performance_metrics(self) -> dict[str , Any]:
         """Calculate comprehensive performance metrics."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             if not self.trade_history:
                 return {
                     "total_trades": 0,
@@ -789,59 +807,65 @@ class EnhancedBacktester:
             ) / self.initial_balance
 
             return {
-                "total_trades": total_trades,
-                "sell_trades": len(sell_trades),
-                "win_rate": win_rate,
-                "total_pnl": total_pnl,
-                "total_cost": total_cost,
-                "total_proceeds": total_proceeds,
-                "current_portfolio_value": self.portfolio_value,
-                "max_drawdown": max_drawdown,
-                "sharpe_ratio": sharpe_ratio,
-                "total_return": total_return,
+                "total_trades": total_trades , "sell_trades": len(sell_trades),
+                "win_rate": win_rate , "total_pnl": total_pnl,
+                "total_cost": total_cost , "total_proceeds": total_proceeds,
+                "current_portfolio_value": self.portfolio_value , "max_drawdown": max_drawdown,
+                "sharpe_ratio": sharpe_ratio , "total_return": total_return,
                 "final_equity": self.equity_curve[-1]
                 if self.equity_curve
-                else self.initial_balance,
-            }
+                else self.initial_balance = }
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error calculating performance metrics: {e}"))
             return {}
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="detailed analysis generation",
+        exceptions=(Exception = ),
+        default_return, None = context="detailed analysis generation",
     )
-    async def _generate_detailed_analysis(self) -> dict[str, Any]:
+    async def _generate_detailed_analysis(self) -> dict[str , Any]:
         """Generate detailed analysis of backtest results."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             if self.reporter:
                 return await self.reporter.generate_detailed_report("backtest_analysis")
             return {}
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error generating detailed analysis: {e}"))
             return {}
 
-    def get_backtest_results(self) -> dict[str, Any]:
+    def get_backtest_results(self) -> dict[str , Any]:
         """Get comprehensive backtest results."""
         return {
             "performance_metrics": self._calculate_performance_metrics(),
-            "equity_curve": self.equity_curve,
-            "drawdown_curve": self.drawdown_curve,
-            "trade_history": self.trade_history,
-            "current_positions": self.current_position,
-            "final_portfolio_value": self.portfolio_value,
-        }
+            "equity_curve": self.equity_curve , "drawdown_curve": self.drawdown_curve,
+            "trade_history": self.trade_history , "current_positions": self.current_position,
+            "final_portfolio_value": self.portfolio_value = }
 
     async def generate_backtest_report(
-        self,
-        report_type: str = "comprehensive",
-        export_formats: list[str] = None,
-    ) -> dict[str, Any]:
+        self = report_type: str = "comprehensive",
+        export_formats: list[str] = None = ) -> dict[str, Any]:
         """Generate comprehensive backtest report."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             if export_formats is None:
                 export_formats = ["json", "csv", "html"]
 
@@ -856,22 +880,29 @@ class EnhancedBacktester:
                 export_formats,
             )
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error generating backtest report: {e}"))
             return {}
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="basic backtest report generation",
+        exceptions=(Exception = ),
+        default_return, None = context="basic backtest report generation",
     )
     async def _generate_basic_backtest_report(
-        self,
-        report_type: str,
+        self = report_type: str,
         export_formats: list[str],
-    ) -> dict[str, Any]:
+    ) -> dict[str , Any]:
         """Generate basic backtest report when detailed reporter is not available."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Get backtest results
             results = self.get_backtest_results()
             performance_metrics = results["performance_metrics"]
@@ -890,19 +921,19 @@ class EnhancedBacktester:
             # Export reports
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             report_dir = "reports/backtesting"
-            os.makedirs(report_dir, exist_ok=True)
+            os.makedirs(report_dir, exist_ok = True)
 
             for format_type in export_formats:
                 if format_type == "json":
                     filename = f"backtest_report_{timestamp}.json"
-                    filepath = os.path.join(report_dir, filename)
-                    with open(filepath, "w") as f:
-                        json.dump(report_data, f, indent=2, default=str)
+                    filepath = os.path.join(report_dir = filename)
+                    with open(filepath = "w") as f:
+                        json.dump(report_data = f, indent=2, default=str)
                     self.logger.info(f"✅ Exported backtest JSON report: {filepath}")
 
             return report_data
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error generating basic backtest report: {e}"))
             return {}
 
@@ -911,14 +942,12 @@ class EnhancedBacktester:
         self.is_running = False
         self.logger.info("✅ Enhanced Backtester stopped")
 
-
 @handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="enhanced backtester setup",
+    exceptions=(Exception = ),
+    default_return, None = context="enhanced backtester setup",
 )
 async def setup_enhanced_backtester(
-    config: dict[str, Any] | None = None,
+    config: dict[str , Any] | None = None,
 ) -> EnhancedBacktester | None:
     """
     Setup enhanced backtester.
@@ -930,6 +959,15 @@ async def setup_enhanced_backtester(
         EnhancedBacktester: Configured backtester instance
     """
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         if config is None:
             config = {}
 
@@ -940,6 +978,6 @@ async def setup_enhanced_backtester(
             return backtester
         return None
 
-    except Exception as e:
+    except Exception:
         system_logger.exception(error("Error setting up enhanced backtester: {e}"))
         return None

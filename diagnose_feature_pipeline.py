@@ -4,16 +4,12 @@ Diagnostic script to understand the feature pipeline issue.
 This script helps identify why only cluster features are reaching the autoencoder.
 """
 
-import pandas as pd
-import numpy as np
 import logging
-from pathlib import Path
-import json
-from typing import List, Dict, Any
 
 # Set up logging
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
@@ -30,7 +26,7 @@ def analyze_feature_pipeline_issue():
 
     print("\n📋 ISSUE SUMMARY:")
     print(
-        "   ❌ Autoencoder receiving only cluster features (intensity_cluster_*, hmm_composite_cluster_id)"
+        "   ❌ Autoencoder receiving only cluster features (intensity_cluster_*, hmm_composite_cluster_id)",
     )
     print("   ❌ 0 price features found by PriceReturnConverter")
     print("   ❌ 0 volume features found by PriceReturnConverter")
@@ -38,32 +34,32 @@ def analyze_feature_pipeline_issue():
 
     print("\n🔍 ROOT CAUSE ANALYSIS:")
     print(
-        "   1. Autoencoder is designed to work with ENGINEERED features, not raw OHLCV data"
+        "   1. Autoencoder is designed to work with ENGINEERED features = not raw OHLCV data",
     )
     print(
-        "   2. Raw OHLCV columns (open, high, low, close, volume) are correctly filtered out"
+        "   2. Raw OHLCV columns (open = high, low = close, volume) are correctly filtered out",
     )
     print(
-        "   3. Expected: Technical indicators, momentum features, volatility features, etc."
+        "   3. Expected: Technical indicators = momentum features, volatility features = etc.",
     )
     print("   4. Actual: Only cluster features are being passed to autoencoder")
     print("   5. This indicates a data pipeline issue upstream")
 
     print("\n📊 EXPECTED FEATURE TYPES:")
-    print("   ✅ Technical Indicators: RSI, MACD, Bollinger Bands, ATR, etc.")
-    print("   ✅ Momentum Features: Price momentum, volume momentum, etc.")
-    print("   ✅ Volatility Features: Realized volatility, volatility regimes, etc.")
-    print("   ✅ Order Flow Features: OBV, volume ratios, etc.")
-    print("   ✅ Time-based Features: Hour sin/cos, day of week, etc.")
+    print("   ✅ Technical Indicators: RSI = MACD, Bollinger Bands = ATR, etc.")
+    print("   ✅ Momentum Features: Price momentum = volume momentum, etc.")
+    print("   ✅ Volatility Features: Realized volatility = volatility regimes, etc.")
+    print("   ✅ Order Flow Features: OBV = volume ratios, etc.")
+    print("   ✅ Time-based Features: Hour sin/cos = day of week, etc.")
     print(
-        "   ❌ Cluster Features: intensity_cluster_*, hmm_composite_cluster_id (should be minimal)"
+        "   ❌ Cluster Features: intensity_cluster_*, hmm_composite_cluster_id (should be minimal)",
     )
 
     print("\n🚨 PROBLEM IDENTIFICATION:")
     print(
-        "   The feature engineering pipeline is not generating the expected engineered features."
+        "   The feature engineering pipeline is not generating the expected engineered features.",
     )
-    print("   Only cluster features are reaching the autoencoder, which causes:")
+    print("   Only cluster features are reaching the autoencoder = which causes:")
     print("   - 0 price features found (no raw OHLCV data)")
     print("   - 0 volume features found (no raw OHLCV data)")
     print("   - Low variance in cluster features (categorical nature)")
@@ -173,7 +169,7 @@ def check_expected_features():
         ],
     }
 
-    for category, features in expected_features.items():
+    for category , features in expected_features.items():
         print(f"   {category}: {len(features)} features")
         if len(features) <= 8:
             print(f"      {', '.join(features)}")

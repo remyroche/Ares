@@ -7,28 +7,15 @@ Show Timeframe Configuration
 This script displays the current timeframe configuration in a user-friendly format.
 """
 
-import sys
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
 from pathlib import Path
+import sys
+
+from src.config import CONFIG
+from src.utils.warning_symbols import missing
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-from src.config import CONFIG
 
 
 def show_timeframe_config():

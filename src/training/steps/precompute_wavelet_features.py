@@ -1,7 +1,6 @@
 # src/training/steps/precompute_wavelet_features.py
 
-"""
-Pre-computation script for wavelet features.
+"""Pre-computation script for wavelet features.
 Generates and caches expensive wavelet calculations once for the entire dataset,
 enabling fast loading during backtesting without recalculation.
 """
@@ -14,24 +13,23 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from src.utils.data_optimizer import ohlcv_columns
 
 from src.training.steps.vectorized_advanced_feature_engineering import (
     VectorizedAdvancedFeatureEngineering,
     WaveletFeatureCache,
 )
+from src.utils.data_optimizer import ohlcv_columns
+from src.utils.data_quality_decorators import validate_wavelet_data_quality
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     failed,
     initialization_error,
 )
-from src.utils.data_quality_decorators import validate_wavelet_data_quality
 
 
 class WaveletFeaturePrecomputer:
-    """
-    Pre-computation system for wavelet features.
+    """Pre-computation system for wavelet features.
     Processes entire datasets and caches results for fast backtesting.
     """
 
@@ -95,8 +93,7 @@ class WaveletFeaturePrecomputer:
         start_date: str | None = None,
         end_date: str | None = None,
     ) -> bool:
-        """
-        Pre-compute wavelet features for an entire dataset.
+        """Pre-compute wavelet features for an entire dataset.
 
         Args:
             data_path: Path to the dataset file
@@ -107,6 +104,7 @@ class WaveletFeaturePrecomputer:
 
         Returns:
             True if successful, False otherwise
+
         """
         try:
             self.logger.info(f"📊 Starting pre-computation for dataset: {data_path}")
@@ -154,7 +152,7 @@ class WaveletFeaturePrecomputer:
                     columns = ohlcv_columns()
                     if file_path.is_dir():
                         dataset = pdm.scan_dataset(
-                            str(file_path), columns=columns, to_pandas=True
+                            str(file_path), columns=columns, to_pandas=True,
                         )
                     else:
                         from src.utils.logger import log_io_operation
@@ -380,14 +378,14 @@ class WaveletFeaturePrecomputer:
         self,
         dataset_configs: list[dict[str, Any]],
     ) -> bool:
-        """
-        Pre-compute wavelet features for multiple datasets.
+        """Pre-compute wavelet features for multiple datasets.
 
         Args:
             dataset_configs: List of dataset configurations
 
         Returns:
             True if all successful, False otherwise
+
         """
         try:
             self.logger.info(
@@ -458,7 +456,7 @@ class WaveletFeaturePrecomputer:
             return False
 
 
-async def main():
+async def main() -> None:
     """Main function for pre-computation script."""
     try:
         # Configuration
@@ -514,16 +512,14 @@ async def main():
         success = await precomputer.precompute_multiple_datasets(dataset_configs)
 
         if success:
-            print("✅ Pre-computation completed successfully!")
 
             # Print statistics
-            stats = precomputer.get_precomputation_stats()
-            print(f"📊 Cache Statistics: {stats}")
+            precomputer.get_precomputation_stats()
         else:
-            print(failed("Pre-computation failed!"))
+            pass
 
     except Exception:
-        print(error("Error in main: {e}"))
+        pass
 
 
 if __name__ == "__main__":

@@ -1,7 +1,6 @@
 # src/training/di_training_manager.py
 
-"""
-Dependency injection-aware training manager.
+"""Dependency injection-aware training manager.
 
 This module provides a training manager that uses proper dependency injection
 patterns for managing the training pipeline and its components.
@@ -23,8 +22,7 @@ from src.utils.warning_symbols import (
 
 
 class DITrainingManager(InjectableBase):
-    """
-    Dependency injection-aware training manager.
+    """Dependency injection-aware training manager.
 
     This training manager uses proper dependency injection patterns
     for creating and managing training pipeline components.
@@ -36,7 +34,7 @@ class DITrainingManager(InjectableBase):
         container: DependencyContainer | None = None,
         state_manager: IStateManager | None = None,
         exchange_client: IExchangeClient | None = None,
-    ):
+    ) -> None:
         super().__init__(config)
 
         self.container = container
@@ -182,7 +180,7 @@ class DITrainingManager(InjectableBase):
             for dir_name in required_dirs:
                 dir_path = self.training_config.get(f"{dir_name}_directory", dir_name)
                 if not dir_path:
-                    self.print(missing("Missing {dir_name} directory configuration"))
+                    self.print(missing(f"Missing {dir_name} directory configuration"))
                     return False
 
             return True
@@ -202,8 +200,7 @@ class DITrainingManager(InjectableBase):
         exchange: str,
         training_type: str = "full",
     ) -> bool:
-        """
-        Run the complete training pipeline.
+        """Run the complete training pipeline.
 
         Args:
             symbol: Trading symbol
@@ -212,6 +209,7 @@ class DITrainingManager(InjectableBase):
 
         Returns:
             True if training completed successfully
+
         """
         if self.is_training:
             self.print(warning("Training already in progress"))
@@ -286,7 +284,7 @@ class DITrainingManager(InjectableBase):
             for step_name in pipeline_steps:
                 step = self.training_steps.get(step_name)
                 if not step:
-                    self.print(warning("Training step {step_name} not available"))
+                    self.print(warning(f"Training step {step_name} not available"))
                     continue
 
                 self.logger.info(f"Executing {step_name}")
@@ -297,7 +295,7 @@ class DITrainingManager(InjectableBase):
                     success = await step.run(context)
 
                 if not success:
-                    self.print(failed("Training step {step_name} failed"))
+                    self.print(failed(f"Training step {step_name} failed"))
                     return False
 
                 self.logger.info(f"Completed {step_name}")
@@ -338,7 +336,7 @@ class DITrainingManager(InjectableBase):
                     success = await step.run(context)
 
                 if not success:
-                    self.print(failed("Incremental step {step_name} failed"))
+                    self.print(failed(f"Incremental step {step_name} failed"))
                     return False
 
             return True
@@ -375,7 +373,7 @@ class DITrainingManager(InjectableBase):
                     success = await step.run(context)
 
                 if not success:
-                    self.print(failed("Optimization step {step_name} failed"))
+                    self.print(failed(f"Optimization step {step_name} failed"))
                     return False
 
             return True

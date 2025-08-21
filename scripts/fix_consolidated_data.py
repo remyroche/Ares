@@ -4,31 +4,17 @@ Script to fix corrupted consolidated CSV files by regenerating them from raw CSV
 The issue is that the consolidated files have wrong column mapping and corrupted data.
 """
 
+from pathlib import Path
 import glob
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
 import os
 import sys
-from pathlib import Path
 
+from src.utils.warning_symbols import warning, failed
 import pandas as pd
 
 # Add the project root to the path
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
-
 
 def fix_consolidated_klines():
     """Fix the consolidated klines CSV file by regenerating it from raw CSV files."""
@@ -49,7 +35,7 @@ def fix_consolidated_klines():
             df = pd.read_csv(file)
             print(f"📊 Loaded {len(df)} records from {os.path.basename(file)}")
             all_data.append(df)
-        except Exception as e:
+        except Exception:
             print(warning("Error reading {file}: {e}"))
             continue
 
@@ -84,7 +70,6 @@ def fix_consolidated_klines():
 
     return True
 
-
 def main():
     """Main function to fix consolidated data."""
     print("🚀 Starting consolidated data fix...")
@@ -98,7 +83,6 @@ def main():
         return 1
 
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

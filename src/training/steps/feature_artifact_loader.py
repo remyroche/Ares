@@ -1,29 +1,30 @@
 # src/training/steps/feature_artifact_loader.py
 
-"""
-Feature Artifact Loader
+"""Feature Artifact Loader.
 
 This module provides utilities for loading feature artifacts created by Step 2.
 Other steps can use this to load features without re-engineering them.
 """
 
-import os
+import contextlib
 import json
+import os
+
 import pandas as pd
-from typing import Dict, Optional, Tuple
+
 from src.utils.logger import system_logger
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
-    validate_step_prerequisites,
-    secure_data_processing,
-    prevent_data_leakage,
-    resource_monitor,
-    memory_efficient,
-    debug_training_step,
     circuit_breaker_protection,
-    validate_step_output,
+    debug_training_step,
+    memory_efficient,
+    prevent_data_leakage,
     quality_gate,
+    resource_monitor,
+    secure_data_processing,
+    validate_step_output,
+    validate_step_prerequisites,
 )
 
 logger = system_logger.getChild("FeatureArtifactLoader")
@@ -41,7 +42,7 @@ logger = system_logger.getChild("FeatureArtifactLoader")
     context="Feature Artifact Loading",
 )
 @secure_data_processing(
-    backup_before=False, integrity_checks=True, memory_cleanup=True, data_validation=True
+    backup_before=False, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
 @prevent_data_leakage(
     temporal_validation=False,
@@ -56,7 +57,7 @@ logger = system_logger.getChild("FeatureArtifactLoader")
     auto_cleanup=True,
 )
 @memory_efficient(
-    chunk_size=5000, streaming_processing=False, memory_pool=True, cleanup_frequency=10
+    chunk_size=5000, streaming_processing=False, memory_pool=True, cleanup_frequency=10,
 )
 @debug_training_step(
     log_intermediate_results=True,
@@ -80,34 +81,35 @@ logger = system_logger.getChild("FeatureArtifactLoader")
     data_quality_metrics={"completeness": 0.8, "consistency": 0.7},
     validation_score_requirements={"feature_quality": 0.6},
 )
-def get_feature_artifact_paths(symbol: str, exchange: str, data_dir: str) -> Dict[str, str]:
-    """
-    Get the paths for feature artifacts.
-    
+def get_feature_artifact_paths(symbol: str, exchange: str, data_dir: str) -> dict[str, str]:
+    """Get the paths for feature artifacts.
+
     Args:
         symbol: Trading symbol
         exchange: Exchange name
         data_dir: Data directory
-        
+
     Returns:
         Dict containing paths for train, validation, test, metadata, and hash files
+
     """
     try:
         base_name = f"{exchange}_{symbol}_features"
         paths = {
             "train": f"{data_dir}/{base_name}_train.parquet",
-            "validation": f"{data_dir}/{base_name}_validation.parquet", 
+            "validation": f"{data_dir}/{base_name}_validation.parquet",
             "test": f"{data_dir}/{base_name}_test.parquet",
             "metadata": f"{data_dir}/{base_name}_metadata.json",
             "hash": f"{data_dir}/{base_name}_hash.txt",
         }
-        
+
         logger.debug(f"Generated artifact paths for {exchange}_{symbol}: {list(paths.keys())}")
         return paths
-        
+
     except Exception as e:
-        logger.error(f"Failed to generate artifact paths for {exchange}_{symbol}: {e}")
-        raise RuntimeError(f"Artifact path generation failed: {e}")
+        logger.exception(f"Failed to generate artifact paths for {exchange}_{symbol}: {e}")
+        msg = f"Artifact path generation failed: {e}"
+        raise RuntimeError(msg)
 
 
 @validate_step_prerequisites(
@@ -122,7 +124,7 @@ def get_feature_artifact_paths(symbol: str, exchange: str, data_dir: str) -> Dic
     context="Feature Artifact Validation",
 )
 @secure_data_processing(
-    backup_before=False, integrity_checks=True, memory_cleanup=True, data_validation=True
+    backup_before=False, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
 @prevent_data_leakage(
     temporal_validation=False,
@@ -137,7 +139,7 @@ def get_feature_artifact_paths(symbol: str, exchange: str, data_dir: str) -> Dic
     auto_cleanup=True,
 )
 @memory_efficient(
-    chunk_size=5000, streaming_processing=False, memory_pool=True, cleanup_frequency=10
+    chunk_size=5000, streaming_processing=False, memory_pool=True, cleanup_frequency=10,
 )
 @debug_training_step(
     log_intermediate_results=True,
@@ -162,27 +164,27 @@ def get_feature_artifact_paths(symbol: str, exchange: str, data_dir: str) -> Dic
     validation_score_requirements={"feature_quality": 0.6},
 )
 def check_feature_artifacts_exist(symbol: str, exchange: str, data_dir: str) -> bool:
-    """
-    Check if all required feature artifacts exist and are valid.
-    
+    """Check if all required feature artifacts exist and are valid.
+
     Args:
         symbol: Trading symbol
         exchange: Exchange name
         data_dir: Data directory
-        
+
     Returns:
         True if all artifacts exist and are valid, False otherwise
+
     """
     try:
         paths = get_feature_artifact_paths(symbol, exchange, data_dir)
-        
+
         # Check if all required files exist
         required_files = ["train", "validation", "test", "metadata", "hash"]
         for file_type in required_files:
             if not os.path.exists(paths[file_type]):
                 logger.debug(f"Missing artifact file: {paths[file_type]}")
                 return False
-        
+
         # Validate that the files are not empty
         for file_type in ["train", "validation", "test"]:
             try:
@@ -193,12 +195,12 @@ def check_feature_artifacts_exist(symbol: str, exchange: str, data_dir: str) -> 
             except Exception as e:
                 logger.warning(f"Failed to read artifact file {paths[file_type]}: {e}")
                 return False
-        
+
         logger.info(f"✅ All feature artifacts exist and are valid for {exchange}_{symbol}")
         return True
-        
+
     except Exception as e:
-        logger.error(f"Failed to check feature artifacts for {exchange}_{symbol}: {e}")
+        logger.exception(f"Failed to check feature artifacts for {exchange}_{symbol}: {e}")
         return False
 
 
@@ -214,7 +216,7 @@ def check_feature_artifacts_exist(symbol: str, exchange: str, data_dir: str) -> 
     context="Feature Artifact Loading",
 )
 @secure_data_processing(
-    backup_before=False, integrity_checks=True, memory_cleanup=True, data_validation=True
+    backup_before=False, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
 @prevent_data_leakage(
     temporal_validation=False,
@@ -229,7 +231,7 @@ def check_feature_artifacts_exist(symbol: str, exchange: str, data_dir: str) -> 
     auto_cleanup=True,
 )
 @memory_efficient(
-    chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=20
+    chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=20,
 )
 @debug_training_step(
     log_intermediate_results=True,
@@ -253,26 +255,27 @@ def check_feature_artifacts_exist(symbol: str, exchange: str, data_dir: str) -> 
     data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     validation_score_requirements={"feature_quality": 0.7},
 )
-def load_feature_artifacts(symbol: str, exchange: str, data_dir: str) -> Dict[str, pd.DataFrame]:
-    """
-    Load existing feature artifacts.
-    
+def load_feature_artifacts(symbol: str, exchange: str, data_dir: str) -> dict[str, pd.DataFrame]:
+    """Load existing feature artifacts.
+
     Args:
         symbol: Trading symbol
         exchange: Exchange name
         data_dir: Data directory
-    
+
     Returns:
         Dict containing 'train', 'validation', and 'test' DataFrames
-        
+
     Raises:
         FileNotFoundError: If feature artifacts don't exist
         RuntimeError: If loading fails
+
     """
     try:
         if not check_feature_artifacts_exist(symbol, exchange, data_dir):
-            raise FileNotFoundError(f"Feature artifacts not found for {exchange}_{symbol}")
-        
+            msg = f"Feature artifacts not found for {exchange}_{symbol}"
+            raise FileNotFoundError(msg)
+
         paths = get_feature_artifact_paths(symbol, exchange, data_dir)
 
         # Load metadata for canonical feature columns
@@ -284,7 +287,7 @@ def load_feature_artifacts(symbol: str, exchange: str, data_dir: str) -> Dict[st
             metadata = {}
             canonical_columns = []
 
-        artifacts: Dict[str, pd.DataFrame] = {}
+        artifacts: dict[str, pd.DataFrame] = {}
         for split in ["train", "validation", "test"]:
             logger.info(f"Loading {split} features from {paths[split]}")
             df = pd.read_parquet(paths[split])
@@ -297,21 +300,22 @@ def load_feature_artifacts(symbol: str, exchange: str, data_dir: str) -> Dict[st
                 extras = list(current_cols - canonical_set)
                 if missing or extras:
                     logger.info(
-                        f"🔧 Aligning {split} features to metadata columns: missing={len(missing)}, extras={len(extras)}"
+                        f"🔧 Aligning {split} features to metadata columns: missing={len(missing)}, extras={len(extras)}",
                     )
                 # Reindex and fill missing with 0.0
                 df = df.reindex(columns=canonical_columns).fillna(0.0)
 
             artifacts[split] = df
             logger.info(
-                f"📦 Loaded {split} features: {len(df)} rows, {len(df.columns)} features"
+                f"📦 Loaded {split} features: {len(df)} rows, {len(df.columns)} features",
             )
 
         return artifacts
-        
+
     except Exception as e:
-        logger.error(f"Failed to load feature artifacts for {exchange}_{symbol}: {e}")
-        raise RuntimeError(f"Feature artifact loading failed: {e}")
+        logger.exception(f"Failed to load feature artifacts for {exchange}_{symbol}: {e}")
+        msg = f"Feature artifact loading failed: {e}"
+        raise RuntimeError(msg)
 
 
 @validate_step_prerequisites(
@@ -326,7 +330,7 @@ def load_feature_artifacts(symbol: str, exchange: str, data_dir: str) -> Dict[st
     context="Feature Metadata Loading",
 )
 @secure_data_processing(
-    backup_before=False, integrity_checks=True, memory_cleanup=False, data_validation=True
+    backup_before=False, integrity_checks=True, memory_cleanup=False, data_validation=True,
 )
 @prevent_data_leakage(
     temporal_validation=False,
@@ -341,7 +345,7 @@ def load_feature_artifacts(symbol: str, exchange: str, data_dir: str) -> Dict[st
     auto_cleanup=False,
 )
 @memory_efficient(
-    chunk_size=1000, streaming_processing=False, memory_pool=False, cleanup_frequency=5
+    chunk_size=1000, streaming_processing=False, memory_pool=False, cleanup_frequency=5,
 )
 @debug_training_step(
     log_intermediate_results=False,
@@ -365,37 +369,39 @@ def load_feature_artifacts(symbol: str, exchange: str, data_dir: str) -> Dict[st
     data_quality_metrics={"completeness": 0.5, "consistency": 0.5},
     validation_score_requirements={"feature_quality": 0.3},
 )
-def load_feature_metadata(symbol: str, exchange: str, data_dir: str) -> Dict:
-    """
-    Load feature metadata.
-    
+def load_feature_metadata(symbol: str, exchange: str, data_dir: str) -> dict:
+    """Load feature metadata.
+
     Args:
         symbol: Trading symbol
         exchange: Exchange name
         data_dir: Data directory
-    
+
     Returns:
         Dict containing metadata about the features
-        
+
     Raises:
         FileNotFoundError: If metadata file doesn't exist
         RuntimeError: If loading fails
+
     """
     try:
         paths = get_feature_artifact_paths(symbol, exchange, data_dir)
-        
+
         if not os.path.exists(paths["metadata"]):
-            raise FileNotFoundError(f"Feature metadata not found for {exchange}_{symbol}")
-        
-        with open(paths["metadata"], "r") as f:
+            msg = f"Feature metadata not found for {exchange}_{symbol}"
+            raise FileNotFoundError(msg)
+
+        with open(paths["metadata"]) as f:
             metadata = json.load(f)
-        
+
         logger.debug(f"Loaded metadata for {exchange}_{symbol}: {list(metadata.keys())}")
         return metadata
-        
+
     except Exception as e:
-        logger.error(f"Failed to load feature metadata for {exchange}_{symbol}: {e}")
-        raise RuntimeError(f"Feature metadata loading failed: {e}")
+        logger.exception(f"Failed to load feature metadata for {exchange}_{symbol}: {e}")
+        msg = f"Feature metadata loading failed: {e}"
+        raise RuntimeError(msg)
 
 
 @validate_step_prerequisites(
@@ -410,7 +416,7 @@ def load_feature_metadata(symbol: str, exchange: str, data_dir: str) -> Dict:
     context="Feature Column Extraction",
 )
 @secure_data_processing(
-    backup_before=False, integrity_checks=False, memory_cleanup=False, data_validation=False
+    backup_before=False, integrity_checks=False, memory_cleanup=False, data_validation=False,
 )
 @prevent_data_leakage(
     temporal_validation=False,
@@ -425,7 +431,7 @@ def load_feature_metadata(symbol: str, exchange: str, data_dir: str) -> Dict:
     auto_cleanup=False,
 )
 @memory_efficient(
-    chunk_size=100, streaming_processing=False, memory_pool=False, cleanup_frequency=1
+    chunk_size=100, streaming_processing=False, memory_pool=False, cleanup_frequency=1,
 )
 @debug_training_step(
     log_intermediate_results=False,
@@ -450,23 +456,23 @@ def load_feature_metadata(symbol: str, exchange: str, data_dir: str) -> Dict:
     validation_score_requirements={"feature_quality": 0.2},
 )
 def get_feature_columns(symbol: str, exchange: str, data_dir: str) -> list[str]:
-    """
-    Get the list of feature columns.
-    
+    """Get the list of feature columns.
+
     Args:
         symbol: Trading symbol
         exchange: Exchange name
         data_dir: Data directory
-    
+
     Returns:
         List of feature column names
+
     """
     try:
         metadata = load_feature_metadata(symbol, exchange, data_dir)
         columns = metadata.get("feature_columns", [])
         logger.debug(f"Extracted {len(columns)} feature columns for {exchange}_{symbol}")
         return columns
-        
+
     except Exception as e:
         logger.warning(f"Failed to get feature columns for {exchange}_{symbol}: {e}")
         return []
@@ -484,7 +490,7 @@ def get_feature_columns(symbol: str, exchange: str, data_dir: str) -> list[str]:
     context="Feature Count Extraction",
 )
 @secure_data_processing(
-    backup_before=False, integrity_checks=False, memory_cleanup=False, data_validation=False
+    backup_before=False, integrity_checks=False, memory_cleanup=False, data_validation=False,
 )
 @prevent_data_leakage(
     temporal_validation=False,
@@ -499,7 +505,7 @@ def get_feature_columns(symbol: str, exchange: str, data_dir: str) -> list[str]:
     auto_cleanup=False,
 )
 @memory_efficient(
-    chunk_size=100, streaming_processing=False, memory_pool=False, cleanup_frequency=1
+    chunk_size=100, streaming_processing=False, memory_pool=False, cleanup_frequency=1,
 )
 @debug_training_step(
     log_intermediate_results=False,
@@ -523,24 +529,24 @@ def get_feature_columns(symbol: str, exchange: str, data_dir: str) -> list[str]:
     data_quality_metrics={"completeness": 0.3, "consistency": 0.3},
     validation_score_requirements={"feature_quality": 0.2},
 )
-def get_feature_counts(symbol: str, exchange: str, data_dir: str) -> Dict[str, int]:
-    """
-    Get feature counts for each split.
-    
+def get_feature_counts(symbol: str, exchange: str, data_dir: str) -> dict[str, int]:
+    """Get feature counts for each split.
+
     Args:
         symbol: Trading symbol
         exchange: Exchange name
         data_dir: Data directory
-    
+
     Returns:
         Dict with feature counts for 'train', 'validation', 'test'
+
     """
     try:
         metadata = load_feature_metadata(symbol, exchange, data_dir)
         counts = metadata.get("feature_counts", {})
         logger.debug(f"Extracted feature counts for {exchange}_{symbol}: {counts}")
         return counts
-        
+
     except Exception as e:
         logger.warning(f"Failed to get feature counts for {exchange}_{symbol}: {e}")
         return {}
@@ -558,7 +564,7 @@ def get_feature_counts(symbol: str, exchange: str, data_dir: str) -> Dict[str, i
     context="Feature Artifact Validation",
 )
 @secure_data_processing(
-    backup_before=False, integrity_checks=True, memory_cleanup=True, data_validation=True
+    backup_before=False, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
 @prevent_data_leakage(
     temporal_validation=False,
@@ -573,7 +579,7 @@ def get_feature_counts(symbol: str, exchange: str, data_dir: str) -> Dict[str, i
     auto_cleanup=True,
 )
 @memory_efficient(
-    chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=20
+    chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=20,
 )
 @debug_training_step(
     log_intermediate_results=True,
@@ -597,40 +603,40 @@ def get_feature_counts(symbol: str, exchange: str, data_dir: str) -> Dict[str, i
     data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     validation_score_requirements={"feature_quality": 0.7},
 )
-def validate_feature_artifacts(symbol: str, exchange: str, data_dir: str) -> Tuple[bool, str]:
-    """
-    Validate feature artifacts and return status with message.
-    
+def validate_feature_artifacts(symbol: str, exchange: str, data_dir: str) -> tuple[bool, str]:
+    """Validate feature artifacts and return status with message.
+
     Args:
         symbol: Trading symbol
         exchange: Exchange name
         data_dir: Data directory
-    
+
     Returns:
         Tuple of (is_valid, message)
+
     """
     try:
         if not check_feature_artifacts_exist(symbol, exchange, data_dir):
             return False, "Feature artifacts do not exist"
-        
+
         metadata = load_feature_metadata(symbol, exchange, data_dir)
         artifacts = load_feature_artifacts(symbol, exchange, data_dir)
-        
+
         # Basic validation
         for split, df in artifacts.items():
             if df.empty:
                 return False, f"{split} features are empty"
-            
+
             expected_count = metadata.get("feature_counts", {}).get(split, 0)
             if len(df.columns) != expected_count:
                 return False, f"{split} feature count mismatch: expected {expected_count}, got {len(df.columns)}"
-        
+
         logger.info(f"✅ Feature artifacts validation passed for {exchange}_{symbol}")
         return True, "Feature artifacts are valid"
-        
+
     except Exception as e:
-        logger.error(f"Feature artifacts validation failed for {exchange}_{symbol}: {e}")
-        return False, f"Validation failed: {str(e)}"
+        logger.exception(f"Feature artifacts validation failed for {exchange}_{symbol}: {e}")
+        return False, f"Validation failed: {e!s}"
 
 
 @validate_step_prerequisites(
@@ -645,7 +651,7 @@ def validate_feature_artifacts(symbol: str, exchange: str, data_dir: str) -> Tup
     context="Feature Artifact Information",
 )
 @secure_data_processing(
-    backup_before=False, integrity_checks=True, memory_cleanup=True, data_validation=True
+    backup_before=False, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
 @prevent_data_leakage(
     temporal_validation=False,
@@ -660,7 +666,7 @@ def validate_feature_artifacts(symbol: str, exchange: str, data_dir: str) -> Tup
     auto_cleanup=True,
 )
 @memory_efficient(
-    chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=20
+    chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=20,
 )
 @debug_training_step(
     log_intermediate_results=True,
@@ -684,25 +690,25 @@ def validate_feature_artifacts(symbol: str, exchange: str, data_dir: str) -> Tup
     data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     validation_score_requirements={"feature_quality": 0.7},
 )
-def get_feature_artifact_info(symbol: str, exchange: str, data_dir: str) -> Dict:
-    """
-    Get comprehensive information about feature artifacts.
-    
+def get_feature_artifact_info(symbol: str, exchange: str, data_dir: str) -> dict:
+    """Get comprehensive information about feature artifacts.
+
     Args:
         symbol: Trading symbol
         exchange: Exchange name
         data_dir: Data directory
-    
+
     Returns:
         Dict with artifact information
+
     """
     try:
         if not check_feature_artifacts_exist(symbol, exchange, data_dir):
             return {"exists": False, "error": "Artifacts not found"}
-        
+
         metadata = load_feature_metadata(symbol, exchange, data_dir)
-        artifacts = load_feature_artifacts(symbol, exchange, data_dir)
-        
+        load_feature_artifacts(symbol, exchange, data_dir)
+
         info = {
             "exists": True,
             "symbol": symbol,
@@ -714,12 +720,12 @@ def get_feature_artifact_info(symbol: str, exchange: str, data_dir: str) -> Dict
             "feature_columns": metadata.get("feature_columns", []),
             "total_features": len(metadata.get("feature_columns", [])),
         }
-        
+
         logger.info(f"✅ Retrieved comprehensive artifact info for {exchange}_{symbol}")
         return info
-        
+
     except Exception as e:
-        logger.error(f"Failed to get artifact info for {exchange}_{symbol}: {e}")
+        logger.exception(f"Failed to get artifact info for {exchange}_{symbol}: {e}")
         return {"exists": False, "error": str(e)}
 
 
@@ -736,7 +742,7 @@ def get_feature_artifact_info(symbol: str, exchange: str, data_dir: str) -> Dict
     context="Feature Loading for Step",
 )
 @secure_data_processing(
-    backup_before=False, integrity_checks=True, memory_cleanup=True, data_validation=True
+    backup_before=False, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
 @prevent_data_leakage(
     temporal_validation=False,
@@ -751,7 +757,7 @@ def get_feature_artifact_info(symbol: str, exchange: str, data_dir: str) -> Dict
     auto_cleanup=True,
 )
 @memory_efficient(
-    chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=20
+    chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=20,
 )
 @debug_training_step(
     log_intermediate_results=True,
@@ -775,38 +781,36 @@ def get_feature_artifact_info(symbol: str, exchange: str, data_dir: str) -> Dict
     data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     validation_score_requirements={"feature_quality": 0.7},
 )
-def load_features_for_step(symbol: str, exchange: str, data_dir: str, step_name: str = "unknown") -> Dict[str, pd.DataFrame]:
-    """
-    Load features for a specific step with proper logging.
-    
+def load_features_for_step(symbol: str, exchange: str, data_dir: str, step_name: str = "unknown") -> dict[str, pd.DataFrame]:
+    """Load features for a specific step with proper logging.
+
     Args:
         symbol: Trading symbol
         exchange: Exchange name
         data_dir: Data directory
         step_name: Name of the step requesting features
-    
+
     Returns:
         Dict containing 'train', 'validation', 'test' feature DataFrames
-        
+
     Raises:
         RuntimeError: If feature artifacts are not available
+
     """
     logger.info(f"🔍 {step_name}: Loading feature artifacts for {exchange}_{symbol}")
-    
+
     try:
         features = load_feature_artifacts(symbol, exchange, data_dir)
         logger.info(f"✅ {step_name}: Successfully loaded feature artifacts")
         return features
-        
+
     except Exception as e:
-        logger.error(f"❌ {step_name}: Failed to load feature artifacts: {e}")
-        raise RuntimeError(f"Feature artifacts not available for {step_name}. Please run Step 2 first.")
+        logger.exception(f"❌ {step_name}: Failed to load feature artifacts: {e}")
+        msg = f"Feature artifacts not available for {step_name}. Please run Step 2 first."
+        raise RuntimeError(msg)
 
 
 if __name__ == "__main__":
     # Test the loader
-    try:
+    with contextlib.suppress(Exception):
         info = get_feature_artifact_info("ETHUSDT", "BINANCE", "data/training")
-        print("Feature artifact info:", json.dumps(info, indent=2))
-    except Exception as e:
-        print(f"Test failed: {e}")

@@ -1,8 +1,7 @@
+from src.utils.logger import system_logger
+from typing import Any
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List
-
-from src.utils.logger import system_logger
 
 
 class OrderBookAnalyzer:
@@ -18,7 +17,11 @@ class OrderBookAnalyzer:
         self.logger = system_logger.getChild("OrderBookAnalyzer")
 
     def identify_walls(
-        self, book_df: pd.DataFrame, price_col: str, size_col: str, top_k: int = 5
+        self,
+        book_df: pd.DataFrame,
+        price_col: str,
+        size_col: str,
+        top_k: int = 5,
     ) -> pd.DataFrame:
         """Identify top-K size clusters (walls) on one side of the book."""
         try:
@@ -28,12 +31,11 @@ class OrderBookAnalyzer:
             # Group by price level if needed; take max size per price
             grouped = df.groupby(price_col, as_index=False)[size_col].sum()
             grouped = grouped.rename(columns={price_col: "price", size_col: "size"})
-            walls = (
+            return (
                 grouped.sort_values("size", ascending=False)
                 .head(top_k)
                 .reset_index(drop=True)
             )
-            return walls
         except Exception as e:
             self.logger.warning(f"identify_walls failed: {e}")
             return pd.DataFrame(columns=["price", "size"])  # empty
@@ -43,10 +45,10 @@ class OrderBookAnalyzer:
         mid_price: float,
         bid_walls: pd.DataFrame,
         ask_walls: pd.DataFrame,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """Compute nearest wall distances/sizes and imbalance features."""
         try:
-            features: Dict[str, float] = {
+            features: dict[str, float] = {
                 "nearest_bid_wall_dist_pct": 1.0,
                 "nearest_ask_wall_dist_pct": 1.0,
                 "nearest_bid_wall_size": 0.0,
@@ -64,8 +66,7 @@ class OrderBookAnalyzer:
                     ]
                     features["nearest_bid_wall_size"] = float(nearest_bid["size"])
                     features["nearest_bid_wall_dist_pct"] = float(
-                        (mid_price - nearest_bid["price"]) / mid_price
-                    )
+                        (mid_price - nearest_bid["price"]) / mid_price)
             if ask_walls is not None and not ask_walls.empty:
                 above = ask_walls[ask_walls["price"] >= mid_price]
                 if not above.empty:
@@ -74,8 +75,7 @@ class OrderBookAnalyzer:
                     ]
                     features["nearest_ask_wall_size"] = float(nearest_ask["size"])
                     features["nearest_ask_wall_dist_pct"] = float(
-                        (nearest_ask["price"] - mid_price) / mid_price
-                    )
+                        (nearest_ask["price"] - mid_price) / mid_price)
 
             total_bid = (
                 float(bid_walls["size"].sum())
@@ -102,10 +102,10 @@ class OrderBookAnalyzer:
 
     def correlate_walls_with_sr(
         self,
-        wall_prices: List[float],
-        sr_centers: List[float],
+        wall_prices: list[float],
+        sr_centers: list[float],
         tol_pct: float = 0.002,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """Compute simple correlation/overlap metrics between wall locations and S/R centers."""
         try:
             if not wall_prices or not sr_centers:
@@ -128,8 +128,10 @@ class OrderBookAnalyzer:
             return {"overlap_ratio": 0.0, "avg_min_dist_to_sr": 1.0}
 
     def correlate_from_files(
-        self, sr_zones_file: str, book_file: str
-    ) -> Dict[str, float]:
+        self,
+        sr_zones_file: str,
+        book_file: str,
+    ) -> dict[str, float]:
         """Load SR zones and order book walls from files and compute correlation metrics."""
         try:
             sr = (
@@ -150,17 +152,23 @@ class OrderBookAnalyzer:
             )
             # Identify top walls from book snapshot
             bid_walls = self.identify_walls(
-                book, price_col="bid_price", size_col="bid_size", top_k=10
+                book,
+                price_col="bid_price",
+                size_col="bid_size",
+                top_k=10,
             )
             ask_walls = self.identify_walls(
-                book, price_col="ask_price", size_col="ask_size", top_k=10
+                book,
+                price_col="ask_price",
+                size_col="ask_size",
+                top_k=10,
             )
             wall_prices = []
             wall_prices.extend(
-                bid_walls.get("price", pd.Series([])).astype(float).tolist()
+                bid_walls.get("price", pd.Series([])).astype(float).tolist(),
             )
             wall_prices.extend(
-                ask_walls.get("price", pd.Series([])).astype(float).tolist()
+                ask_walls.get("price", pd.Series([])).astype(float).tolist(),
             )
             metrics = self.correlate_walls_with_sr(wall_prices, centers)
             self.logger.info(f"Order book vs SR correlation: {metrics}")

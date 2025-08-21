@@ -1,7 +1,6 @@
 # src/training/steps/backtesting_with_cached_features.py
 
-"""
-Backtesting integration with cached wavelet features.
+"""Backtesting integration with cached wavelet features.
 Demonstrates how to use pre-computed wavelet features for fast backtesting
 without recalculating expensive wavelet transforms.
 """
@@ -14,33 +13,17 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from src.utils.data_optimizer import ohlcv_columns
 
 from src.training.steps.vectorized_advanced_feature_engineering import (
     VectorizedAdvancedFeatureEngineering,
     WaveletFeatureCache,
 )
+from src.utils.data_optimizer import ohlcv_columns
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
 
 
 class BacktestingWithCachedFeatures:
-    """
-    Backtesting system that leverages pre-computed wavelet features for fast execution.
-    """
+    """Backtesting system that leverages pre-computed wavelet features for fast execution."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -97,7 +80,7 @@ class BacktestingWithCachedFeatures:
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Error initializing backtesting system: {e}")
+            self.logger.exception(f"❌ Error initializing backtesting system: {e}")
             return False
 
     async def run_backtest(
@@ -106,8 +89,7 @@ class BacktestingWithCachedFeatures:
         volume_data: pd.DataFrame | None = None,
         strategy_config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """
-        Run backtest using cached wavelet features.
+        """Run backtest using cached wavelet features.
 
         Args:
             price_data: Price data for backtesting
@@ -116,6 +98,7 @@ class BacktestingWithCachedFeatures:
 
         Returns:
             Backtest results dictionary
+
         """
         try:
             start_time = time.time()
@@ -148,7 +131,7 @@ class BacktestingWithCachedFeatures:
             return backtest_results
 
         except Exception as e:
-            self.logger.error(f"Error in backtest: {e}")
+            self.logger.exception(f"Error in backtest: {e}")
             return {"error": str(e)}
 
     async def _get_cached_wavelet_features(
@@ -156,8 +139,7 @@ class BacktestingWithCachedFeatures:
         price_data: pd.DataFrame,
         volume_data: pd.DataFrame | None = None,
     ) -> dict[str, Any]:
-        """
-        Get wavelet features with caching support.
+        """Get wavelet features with caching support.
 
         Args:
             price_data: Price data
@@ -165,6 +147,7 @@ class BacktestingWithCachedFeatures:
 
         Returns:
             Dictionary containing wavelet features
+
         """
         try:
             if not self.wavelet_cache:
@@ -236,7 +219,7 @@ class BacktestingWithCachedFeatures:
             return wavelet_features
 
         except Exception as e:
-            self.logger.error(f"Error getting cached wavelet features: {e}")
+            self.logger.exception(f"Error getting cached wavelet features: {e}")
             return {}
 
     async def _run_strategy_backtest(
@@ -246,8 +229,7 @@ class BacktestingWithCachedFeatures:
         wavelet_features: dict[str, Any],
         strategy_config: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        """
-        Run strategy backtest using wavelet features.
+        """Run strategy backtest using wavelet features.
 
         Args:
             price_data: Price data
@@ -257,6 +239,7 @@ class BacktestingWithCachedFeatures:
 
         Returns:
             Backtest results
+
         """
         try:
             # Combine all features
@@ -283,7 +266,7 @@ class BacktestingWithCachedFeatures:
             }
 
         except Exception as e:
-            self.logger.error(f"Error running strategy backtest: {e}")
+            self.logger.exception(f"Error running strategy backtest: {e}")
             return {"error": str(e)}
 
     async def _execute_simple_strategy(
@@ -292,8 +275,7 @@ class BacktestingWithCachedFeatures:
         features: dict[str, Any],
         strategy_config: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        """
-        Execute a simple trading strategy using wavelet features.
+        """Execute a simple trading strategy using wavelet features.
 
         Args:
             price_data: Price data
@@ -302,6 +284,7 @@ class BacktestingWithCachedFeatures:
 
         Returns:
             Strategy results
+
         """
         try:
             # Extract key wavelet features for strategy
@@ -366,21 +349,21 @@ class BacktestingWithCachedFeatures:
             }
 
         except Exception as e:
-            self.logger.error(f"Error executing strategy: {e}")
+            self.logger.exception(f"Error executing strategy: {e}")
             return {"error": str(e)}
 
     async def run_multiple_backtests(
         self,
         backtest_configs: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        """
-        Run multiple backtests with different configurations.
+        """Run multiple backtests with different configurations.
 
         Args:
             backtest_configs: List of backtest configurations
 
         Returns:
             List of backtest results
+
         """
         try:
             self.logger.info(f"🚀 Starting {len(backtest_configs)} backtests")
@@ -412,7 +395,7 @@ class BacktestingWithCachedFeatures:
             return results
 
         except Exception as e:
-            self.logger.error(f"Error in multiple backtests: {e}")
+            self.logger.exception(f"Error in multiple backtests: {e}")
             return []
 
     async def _load_backtest_data(self, data_path: str) -> pd.DataFrame | None:
@@ -434,7 +417,7 @@ class BacktestingWithCachedFeatures:
                     # If data_path points to a directory, perform a dataset scan
                     if Path(data_path).is_dir():
                         return pdm.scan_dataset(
-                            base_dir=data_path, columns=columns, to_pandas=True
+                            base_dir=data_path, columns=columns, to_pandas=True,
                         )
                 except Exception:
                     pass
@@ -442,7 +425,7 @@ class BacktestingWithCachedFeatures:
                     from src.utils.logger import log_io_operation
 
                     with log_io_operation(
-                        self.logger, "read_parquet", data_path, columns="ohlcv_columns"
+                        self.logger, "read_parquet", data_path, columns="ohlcv_columns",
                     ):
                         return pd.read_parquet(data_path, columns=ohlcv_columns())
                 except Exception:
@@ -459,7 +442,7 @@ class BacktestingWithCachedFeatures:
             return None
 
         except Exception as e:
-            self.logger.error(f"Error loading backtest data: {e}")
+            self.logger.exception(f"Error loading backtest data: {e}")
             return None
 
     async def _load_volume_data(self, volume_path: str) -> pd.DataFrame | None:
@@ -471,7 +454,7 @@ class BacktestingWithCachedFeatures:
             return await self._load_backtest_data(volume_path)
 
         except Exception as e:
-            self.logger.error(f"Error loading volume data: {e}")
+            self.logger.exception(f"Error loading volume data: {e}")
             return None
 
     def get_performance_stats(self) -> dict[str, Any]:
@@ -498,7 +481,7 @@ class BacktestingWithCachedFeatures:
             return stats
 
         except Exception as e:
-            self.logger.error(f"Error getting performance stats: {e}")
+            self.logger.exception(f"Error getting performance stats: {e}")
             return {"error": str(e)}
 
     def clear_cache(self) -> bool:
@@ -509,11 +492,11 @@ class BacktestingWithCachedFeatures:
             return False
 
         except Exception as e:
-            self.logger.error(f"Error clearing cache: {e}")
+            self.logger.exception(f"Error clearing cache: {e}")
             return False
 
 
-async def main():
+async def main() -> None:
     """Main function for backtesting with cached features."""
     try:
         # Configuration
@@ -572,30 +555,14 @@ async def main():
         results = await backtester.run_multiple_backtests(backtest_configs)
 
         # Print results
-        print("📊 Backtest Results:")
-        for i, result in enumerate(results):
-            print(f"  Backtest {i + 1}:")
-            print(
-                f"    Total Return: {result.get('strategy_results', {}).get('total_return', 0):.4f}",
-            )
-            print(
-                f"    Sharpe Ratio: {result.get('strategy_results', {}).get('sharpe_ratio', 0):.4f}",
-            )
-            print(
-                f"    Max Drawdown: {result.get('strategy_results', {}).get('max_drawdown', 0):.4f}",
-            )
-            print(f"    Feature Count: {result.get('feature_count', 0)}")
+        for _i, _result in enumerate(results):
+            pass
 
         # Print performance stats
-        stats = backtester.get_performance_stats()
-        print("\n📈 Performance Statistics:")
-        print(f"  Cache Hit Rate: {stats.get('cache_hit_rate', 0):.2%}")
-        print(f"  Avg Backtest Time: {stats.get('avg_backtest_time', 0):.3f}s")
-        print(f"  Avg Feature Load Time: {stats.get('avg_feature_load_time', 0):.3f}s")
-        print(f"  Iterations Completed: {stats.get('iterations_completed', 0)}")
+        backtester.get_performance_stats()
 
-    except Exception as e:
-        print(error("Error in main: {e}"))
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

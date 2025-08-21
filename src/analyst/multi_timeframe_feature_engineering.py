@@ -1,7 +1,6 @@
 # src/analyst/multi_timeframe_feature_engineering.py
 
-"""
-Multi-Timeframe Feature Engineering System
+"""Multi-Timeframe Feature Engineering System.
 
 This module provides timeframe-specific feature engineering that adapts indicators
 to the defined timeframes:
@@ -22,34 +21,29 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-# Add the project root to the Python path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
 from src.analyst.feature_engineering_orchestrator import FeatureEngineeringEngine
 from src.config import CONFIG
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    warning,
-)
+from src.utils.warning_symbols import error
 
+# Add the project root to the Python path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 class MultiTimeframeFeatureEngineering:
-    """
-    Multi-timeframe feature engineering system that adapts indicators to specific timeframes.
+    """Multi-timeframe feature engineering system that adapts indicators to specific timeframes.
 
-    This system ensures that technical indicators, volume analysis, and other features
+    This system ensures that technical indicators = volume analysis, and other features
     are calculated with appropriate parameters for each timeframe's characteristics.
     """
 
-    def __init__(self, config: dict[str, Any]):
-        """
-        Initialize the multi-timeframe feature engineering system.
+    def __init__(self, config: dict[str, Any]) -> None:
+        """Initialize the multi-timeframe feature engineering system.
 
         Args:
             config: Configuration dictionary
+
         """
         self.config = config
         self.logger = system_logger.getChild("MultiTimeframeFeatureEngineering")
@@ -66,8 +60,7 @@ class MultiTimeframeFeatureEngineering:
         self.enable_mtf_features = self.mtf_config.get("enable_mtf_features", True)
         self.enable_timeframe_adaptation = self.mtf_config.get(
             "enable_timeframe_adaptation",
-            True,
-        )
+            True)
 
         # Timeframe-specific parameter mappings
         self.timeframe_parameters = self._initialize_timeframe_parameters()
@@ -81,11 +74,11 @@ class MultiTimeframeFeatureEngineering:
         self.logger.info(f"📊 Timeframe adaptation: {self.enable_timeframe_adaptation}")
 
     def _initialize_timeframe_parameters(self) -> dict[str, dict[str, Any]]:
-        """
-        Initialize timeframe-specific parameters for indicators.
+        """Initialize timeframe-specific parameters for indicators.
 
         Returns:
             Dictionary with timeframe-specific parameter mappings
+
         """
         return {
             # Execution timeframes (1m)
@@ -304,14 +297,11 @@ class MultiTimeframeFeatureEngineering:
         context="multi-timeframe feature generation",
     )
     async def generate_multi_timeframe_features(
-        self,
-        data_dict: dict[str, pd.DataFrame],
+        self, data_dict: dict[str, pd.DataFrame],
         agg_trades_dict: dict[str, pd.DataFrame] | None = None,
         futures_dict: dict[str, pd.DataFrame] | None = None,
-        sr_levels: list[float] | None = None,
-    ) -> dict[str, pd.DataFrame]:
-        """
-        Generate features for multiple timeframes with appropriate adaptations.
+        sr_levels: list[float] | None = None) -> dict[str, pd.DataFrame]:
+        """Generate features for multiple timeframes with appropriate adaptations.
 
         Args:
             data_dict: Dictionary with timeframe -> DataFrame mapping
@@ -321,6 +311,7 @@ class MultiTimeframeFeatureEngineering:
 
         Returns:
             Dictionary with timeframe -> features DataFrame mapping
+
         """
         try:
             self.logger.info("🎯 Generating multi-timeframe features...")
@@ -332,7 +323,7 @@ class MultiTimeframeFeatureEngineering:
 
             for timeframe, data in data_dict.items():
                 if data.empty:
-                    self.print(warning("Empty data for {timeframe}, skipping"))
+                    self.logger.warning(f"Empty data for {timeframe}, skipping")
                     continue
 
                 self.logger.info(f"📊 Generating features for {timeframe}...")
@@ -342,26 +333,20 @@ class MultiTimeframeFeatureEngineering:
 
                 # Generate base features first
                 base_features = await self._generate_base_features(
-                    timeframe,
-                    data,
+                    timeframe, data,
                     agg_trades_dict.get(timeframe) if agg_trades_dict else None,
                     futures_dict.get(timeframe) if futures_dict else None,
-                    sr_levels,
-                )
+                    sr_levels)
 
                 # Generate timeframe-specific features
                 tf_features = await self._generate_timeframe_specific_features(
-                    timeframe,
-                    base_features,
-                    tf_params,
-                )
+                    timeframe, base_features,
+                    tf_params)
 
                 # Add timeframe metadata
                 tf_features = self._add_timeframe_metadata(
-                    tf_features,
-                    timeframe,
-                    tf_params,
-                )
+                    tf_features, timeframe,
+                    tf_params)
 
                 features_dict[timeframe] = tf_features
 
@@ -374,20 +359,16 @@ class MultiTimeframeFeatureEngineering:
 
             return features_dict
 
-        except Exception:
-            self.print(error("Error generating multi-timeframe features: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error generating multi-timeframe features: {e}")
             return {}
 
     async def _generate_base_features(
-        self,
-        timeframe: str,
-        data: pd.DataFrame,
-        agg_trades: pd.DataFrame | None = None,
-        futures: pd.DataFrame | None = None,
-        sr_levels: list[float] | None = None,
+        self, timeframe: str,
+        data: pd.DataFrame, agg_trades: pd.DataFrame | None = None,
+        futures: pd.DataFrame | None = None, sr_levels: list[float] | None = None,
     ) -> pd.DataFrame:
-        """
-        Generate base features using the standard feature engineering engine.
+        """Generate base features using the standard feature engineering engine.
 
         Args:
             timeframe: Timeframe identifier
@@ -398,12 +379,12 @@ class MultiTimeframeFeatureEngineering:
 
         Returns:
             DataFrame with base features
+
         """
         try:
             # Use base feature engineering engine
             return self.base_feature_engine.generate_all_features(
-                klines_df=data,
-                agg_trades_df=agg_trades or pd.DataFrame(),
+                klines_df=data, agg_trades_df=agg_trades or pd.DataFrame(),
                 futures_df=futures or pd.DataFrame(),
                 sr_levels=sr_levels or [],
             )
@@ -415,13 +396,10 @@ class MultiTimeframeFeatureEngineering:
             return data.copy()
 
     async def _generate_timeframe_specific_features(
-        self,
-        timeframe: str,
-        base_features: pd.DataFrame,
-        tf_params: dict[str, Any],
+        self, timeframe: str,
+        base_features: pd.DataFrame, tf_params: dict[str, Any],
     ) -> pd.DataFrame:
-        """
-        Generate timeframe-specific features with adapted parameters.
+        """Generate timeframe-specific features with adapted parameters.
 
         Args:
             timeframe: Timeframe identifier
@@ -430,6 +408,7 @@ class MultiTimeframeFeatureEngineering:
 
         Returns:
             DataFrame with timeframe-specific features
+
         """
         try:
             features = base_features.copy()
@@ -439,38 +418,28 @@ class MultiTimeframeFeatureEngineering:
 
             # Calculate timeframe-specific technical indicators
             features = self._calculate_timeframe_technical_indicators(
-                features,
-                timeframe,
-                indicator_params,
-            )
+                features, timeframe,
+                indicator_params)
 
             # Calculate timeframe-specific volume indicators
             features = self._calculate_timeframe_volume_indicators(
-                features,
-                timeframe,
-                indicator_params,
-            )
+                features, timeframe,
+                indicator_params)
 
             # Calculate timeframe-specific volatility indicators
             features = self._calculate_timeframe_volatility_indicators(
-                features,
-                timeframe,
-                indicator_params,
-            )
+                features, timeframe,
+                indicator_params)
 
             # Calculate timeframe-specific momentum indicators
             features = self._calculate_timeframe_momentum_indicators(
-                features,
-                timeframe,
-                indicator_params,
-            )
+                features, timeframe,
+                indicator_params)
 
             # Calculate timeframe-specific trend indicators
             return self._calculate_timeframe_trend_indicators(
-                features,
-                timeframe,
-                indicator_params,
-            )
+                features, timeframe,
+                indicator_params)
 
         except Exception as e:
             self.logger.exception(
@@ -479,13 +448,10 @@ class MultiTimeframeFeatureEngineering:
             return base_features
 
     def _calculate_timeframe_technical_indicators(
-        self,
-        df: pd.DataFrame,
-        timeframe: str,
-        indicator_params: dict[str, Any],
+        self, df: pd.DataFrame,
+        timeframe: str, indicator_params: dict[str, Any],
     ) -> pd.DataFrame:
-        """
-        Calculate timeframe-specific technical indicators using price differences.
+        """Calculate timeframe-specific technical indicators using price differences.
 
         Args:
             df: Features DataFrame
@@ -494,8 +460,10 @@ class MultiTimeframeFeatureEngineering:
 
         Returns:
             DataFrame with technical indicators
+
         """
         try:
+
             # Convert price data to differences for technical indicators
             close_diff = df["close"].diff().fillna(0)
             high_diff = df["high"].diff().fillna(0)
@@ -511,7 +479,8 @@ class MultiTimeframeFeatureEngineering:
             rsi_params = indicator_params.get("rsi", {})
             rsi_length = rsi_params.get("length", 14)
             df[f"rsi_{timeframe}"] = temp_df.ta.rsi(
-                close=temp_df["close"], length=rsi_length
+                close=temp_df["close"],
+                length=rsi_length,
             )
 
             # MACD using price differences
@@ -587,13 +556,10 @@ class MultiTimeframeFeatureEngineering:
             return df
 
     def _calculate_timeframe_volume_indicators(
-        self,
-        df: pd.DataFrame,
-        timeframe: str,
-        indicator_params: dict[str, Any],
+        self, df: pd.DataFrame,
+        timeframe: str, indicator_params: dict[str, Any],
     ) -> pd.DataFrame:
-        """
-        Calculate timeframe-specific volume indicators.
+        """Calculate timeframe-specific volume indicators.
 
         Args:
             df: Features DataFrame
@@ -602,6 +568,7 @@ class MultiTimeframeFeatureEngineering:
 
         Returns:
             DataFrame with volume indicators
+
         """
         try:
             # Volume SMA
@@ -636,16 +603,12 @@ class MultiTimeframeFeatureEngineering:
             self.logger.exception(
                 f"Error calculating volume indicators for {timeframe}: {e}",
             )
-            return df
 
     def _calculate_timeframe_volatility_indicators(
-        self,
-        df: pd.DataFrame,
-        timeframe: str,
-        indicator_params: dict[str, Any],
+        self, df: pd.DataFrame,
+        timeframe: str, indicator_params: dict[str, Any],
     ) -> pd.DataFrame:
-        """
-        Calculate timeframe-specific volatility indicators.
+        """Calculate timeframe-specific volatility indicators.
 
         Args:
             df: Features DataFrame
@@ -654,8 +617,10 @@ class MultiTimeframeFeatureEngineering:
 
         Returns:
             DataFrame with volatility indicators
+
         """
         try:
+
             # Volatility window
             vol_params = indicator_params.get("volatility", {})
             vol_window = vol_params.get("window", 20)
@@ -681,16 +646,12 @@ class MultiTimeframeFeatureEngineering:
             self.logger.exception(
                 f"Error calculating volatility indicators for {timeframe}: {e}",
             )
-            return df
 
     def _calculate_timeframe_momentum_indicators(
-        self,
-        df: pd.DataFrame,
-        timeframe: str,
-        indicator_params: dict[str, Any],
+        self, df: pd.DataFrame,
+        timeframe: str, indicator_params: dict[str, Any],
     ) -> pd.DataFrame:
-        """
-        Calculate timeframe-specific momentum indicators.
+        """Calculate timeframe-specific momentum indicators.
 
         Args:
             df: Features DataFrame
@@ -699,8 +660,10 @@ class MultiTimeframeFeatureEngineering:
 
         Returns:
             DataFrame with momentum indicators
+
         """
         try:
+
             # Price momentum
             df[f"price_momentum_{timeframe}"] = df["close"].pct_change(5)
             df[f"price_acceleration_{timeframe}"] = df[
@@ -730,16 +693,12 @@ class MultiTimeframeFeatureEngineering:
             self.logger.exception(
                 f"Error calculating momentum indicators for {timeframe}: {e}",
             )
-            return df
 
     def _calculate_timeframe_trend_indicators(
-        self,
-        df: pd.DataFrame,
-        timeframe: str,
-        indicator_params: dict[str, Any],
+        self, df: pd.DataFrame,
+        timeframe: str, indicator_params: dict[str, Any],
     ) -> pd.DataFrame:
-        """
-        Calculate timeframe-specific trend indicators.
+        """Calculate timeframe-specific trend indicators.
 
         Args:
             df: Features DataFrame
@@ -748,8 +707,10 @@ class MultiTimeframeFeatureEngineering:
 
         Returns:
             DataFrame with trend indicators
+
         """
         try:
+
             # SMA indicators
             sma_params = indicator_params.get("sma", {})
             sma_lengths = sma_params.get("lengths", [10, 20, 50])
@@ -788,16 +749,12 @@ class MultiTimeframeFeatureEngineering:
             self.logger.exception(
                 f"Error calculating trend indicators for {timeframe}: {e}",
             )
-            return df
 
     def _add_timeframe_metadata(
-        self,
-        df: pd.DataFrame,
-        timeframe: str,
-        tf_params: dict[str, Any],
+        self, df: pd.DataFrame,
+        timeframe: str, tf_params: dict[str, Any],
     ) -> pd.DataFrame:
-        """
-        Add timeframe metadata to the features DataFrame.
+        """Add timeframe metadata to the features DataFrame.
 
         Args:
             df: Features DataFrame
@@ -806,8 +763,10 @@ class MultiTimeframeFeatureEngineering:
 
         Returns:
             DataFrame with metadata added
+
         """
         try:
+
             # Add timeframe information
             df["timeframe"] = timeframe
             df["trading_style"] = tf_params.get("trading_style", "unknown")
@@ -837,17 +796,17 @@ class MultiTimeframeFeatureEngineering:
             self.logger.exception(
                 f"Error adding timeframe metadata for {timeframe}: {e}",
             )
-            return df
 
     def _cache_features(self, timeframe: str, features: pd.DataFrame) -> None:
-        """
-        Cache features for performance optimization.
+        """Cache features for performance optimization.
 
         Args:
             timeframe: Timeframe identifier
             features: Features DataFrame
+
         """
         try:
+
             cache_key = f"{timeframe}_{datetime.now().strftime('%Y%m%d_%H%M')}"
             self.feature_cache[cache_key] = features.copy()
 
@@ -862,6 +821,7 @@ class MultiTimeframeFeatureEngineering:
     def _clean_cache(self) -> None:
         """Clean old entries from the feature cache."""
         try:
+
             current_time = datetime.now()
             if (current_time - self.last_cache_cleanup) > timedelta(minutes=10):
                 keys_to_remove = []
@@ -869,6 +829,7 @@ class MultiTimeframeFeatureEngineering:
                 for key in self.feature_cache:
                     # Extract timestamp from key
                     try:
+
                         timestamp_str = key.split("_")[-2] + "_" + key.split("_")[-1]
                         cache_time = datetime.strptime(timestamp_str, "%Y%m%d_%H%M")
 
@@ -886,32 +847,32 @@ class MultiTimeframeFeatureEngineering:
             self.print(error("Error cleaning cache: {e}"))
 
     def get_timeframe_parameters(self, timeframe: str) -> dict[str, Any]:
-        """
-        Get parameters for a specific timeframe.
+        """Get parameters for a specific timeframe.
 
         Args:
             timeframe: Timeframe identifier
 
         Returns:
             Dictionary with timeframe parameters
+
         """
         return self.timeframe_parameters.get(timeframe, {})
 
     def get_supported_timeframes(self) -> list[str]:
-        """
-        Get list of supported timeframes.
+        """Get list of supported timeframes.
 
         Returns:
             List of supported timeframe identifiers
+
         """
         return list(self.timeframe_parameters.keys())
 
     def get_feature_statistics(self) -> dict[str, Any]:
-        """
-        Get statistics about the multi-timeframe feature engineering system.
+        """Get statistics about the multi-timeframe feature engineering system.
 
         Returns:
             Dictionary with system statistics
+
         """
         return {
             "supported_timeframes": self.get_supported_timeframes(),

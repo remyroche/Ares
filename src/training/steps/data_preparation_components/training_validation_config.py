@@ -1,5 +1,4 @@
-"""
-Training validation configuration and rules.
+"""Training validation configuration and rules.
 Defines error thresholds, validation criteria, and step progression rules.
 """
 
@@ -174,7 +173,7 @@ ERROR_SEVERITY_LEVELS = {
 class DataValidator:
     """Class to handle data validation with focused methods."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.errors = []
 
     def validate_data_format(self, data: dict[str, Any]) -> tuple[bool, list[str]]:
@@ -349,7 +348,7 @@ def validate_imports() -> tuple[bool, list[str]]:
         try:
             __import__(module)
         except ImportError as e:
-            errors.append(f"Missing required module: {module} - {str(e)}")
+            errors.append(f"Missing required module: {module} - {e!s}")
 
     return len(errors) == 0, errors
 
@@ -375,7 +374,7 @@ def validate_file_paths(data_dir: str) -> tuple[bool, list[str]]:
             try:
                 os.makedirs(subdir_path, exist_ok=True)
             except Exception as e:
-                errors.append(f"Cannot create required directory {subdir}: {str(e)}")
+                errors.append(f"Cannot create required directory {subdir}: {e!s}")
 
     return len(errors) == 0, errors
 
@@ -395,28 +394,17 @@ def validate_system_resources() -> tuple[bool, list[str]]:
     blank_mode = os.getenv("BLANK_TRAINING_MODE", "0") == "1"
 
     # Debug logging
-    print(
-        f"🔍 DEBUG: BLANK_TRAINING_MODE environment variable: {os.getenv('BLANK_TRAINING_MODE', 'not set')}",
-    )
-    print(f"🔍 DEBUG: blank_mode detected: {blank_mode}")
-    print(f"🔍 DEBUG: Available memory: {memory.available / (1024**3):.1f}GB")
 
     if blank_mode:
         # More lenient requirements for blank mode
         min_memory_gb = 2
         min_disk_gb = 5
         min_cpu_cores = 2
-        print(
-            f"🔍 DEBUG: Using blank mode requirements: {min_memory_gb}GB RAM, {min_disk_gb}GB disk, {min_cpu_cores} CPU cores",
-        )
     else:
         # Full requirements for production training
         min_memory_gb = 4
         min_disk_gb = 10
         min_cpu_cores = 4
-        print(
-            f"🔍 DEBUG: Using production requirements: {min_memory_gb}GB RAM, {min_disk_gb}GB disk, {min_cpu_cores} CPU cores",
-        )
 
     if memory.available < min_memory_gb * 1024 * 1024 * 1024:
         errors.append(

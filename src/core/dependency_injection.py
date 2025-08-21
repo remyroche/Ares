@@ -1,25 +1,15 @@
 # src/core/dependency_injection.py
 
-import asyncio
 from collections.abc import Callable
-from dataclasses import dataclass
+from src.utils.logger import system_logger
 from typing import Any, TypeVar
 
+from dataclasses import dataclass
 from src.interfaces import (
-    EventBus,
-    EventType,
     IAnalyst,
-    IEventBus,
-    IExchangeClient,
-    IPerformanceReporter,
-    IStateManager,
     IStrategist,
     ISupervisor,
     ITactician,
-)
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    failed,
 )
 
 T = TypeVar("T")
@@ -178,8 +168,7 @@ class DependencyContainer:
 
             # Scoped instances
             if self._current_scope and service_name in self._scoped_instances.get(
-                self._current_scope,
-                {},
+                self._current_scope, {},
             ):
                 return self._scoped_instances[self._current_scope][service_name]
 
@@ -192,16 +181,14 @@ class DependencyContainer:
 
             if not service_reg:
                 msg = f"Service '{getattr(service_name, '__name__', service_name)}' not registered"
-                raise ValueError(
-                    msg,
-                )
+                raise ValueError(msg)
 
             # Instance already provided
             if service_reg.instance is not None:
                 instance = service_reg.instance
             else:
                 # Create instance
-                instance = self._create_instance(service_name, service_reg)
+                instance = self._create_instance(service_reg)
 
             # Store instance based on lifetime
             if service_reg.lifetime == ServiceLifetime.SINGLETON:
@@ -217,16 +204,12 @@ class DependencyContainer:
             )
             raise
 
-    def _create_instance(
-        self,
-        service_name: Any,
-        service_reg: ServiceRegistration,
-    ) -> Any:
+    def _create_instance(self, service_reg: ServiceRegistration) -> Any:
         """Create service instance with dependency injection."""
         try:
             # Use factory function if available
-            if service_name in self._factories:
-                factory_func = self._factories[service_name]
+            if service_reg.factory:
+                factory_func = service_reg.factory
                 try:
                     # Try calling with container
                     return factory_func(self)
@@ -239,7 +222,7 @@ class DependencyContainer:
                         return factory_func()
 
             # Get constructor parameters
-            constructor_params = self._get_constructor_params(service_name, service_reg)
+            constructor_params = self._get_constructor_params(service_reg)
 
             # Create instance
             if constructor_params:
@@ -255,15 +238,11 @@ class DependencyContainer:
 
         except Exception as e:
             self.logger.exception(
-                f"Failed to create instance for '{getattr(service_name, '__name__', service_name)}': {e}",
+                f"Failed to create instance for '{service_reg.service_type.__name__}': {e}",
             )
             raise
 
-    def _get_constructor_params(
-        self,
-        service_name: Any,
-        service_reg: ServiceRegistration,
-    ) -> dict[str, Any]:
+    def _get_constructor_params(self, service_reg: ServiceRegistration) -> dict[str, Any]:
         """Get constructor parameters for service creation."""
         params = {}
 
@@ -284,325 +263,58 @@ class DependencyContainer:
         return params
 
     def _inject_config(self, instance: Any, config: dict[str, Any]) -> None:
-        """Inject configuration into service instance."""
-        try:
-            if hasattr(instance, "config"):
-                instance.config = config
-            elif hasattr(instance, "_config"):
-                instance._config = config
-        except Exception as e:
-            self.logger.warning(f"Failed to inject config into instance: {e}")
-
-    def register_config_service(self, config: dict[str, Any]) -> None:
-        """Register configuration as a service."""
-        self._config.update(config)
-        self.logger.info(f"Registered configuration with {len(config)} keys")
-
-    def get_all_services(self) -> dict[Any, ServiceRegistration]:
-        """Get all registered services."""
-        return self._services.copy()
-
-    def clear(self) -> None:
-        """Clear all registered services and instances."""
-        self._services.clear()
-        self._instances.clear()
-        self._scoped_instances.clear()
-        self._factories.clear()
-        self.logger.info("Cleared all services and instances")
-
-
-class ServiceLocator:
-    """Service locator pattern implementation."""
-
-    def __init__(self, container: DependencyContainer):
-        self.container = container
-        self.logger = system_logger.getChild("ServiceLocator")
-
-    def get_service(self, service_name: str) -> Any:
-        """Get service from container."""
-        return self.container.resolve(service_name)
-
-    def get_config(self, key: str, default: Any = None) -> Any:
-        """Get configuration value."""
-        return self.container.get_config(key, default)
-
-
-class AsyncServiceContainer(DependencyContainer):
-    """Async-aware dependency container."""
-
-    async def resolve_async(self, service_name: Any) -> Any:
-        """Resolve service asynchronously."""
-        try:
-            # Check if instance already exists
-            if service_name in self._instances:
-                return self._instances[service_name]
-
-            # Scoped instances
-            if self._current_scope and service_name in self._scoped_instances.get(
-                self._current_scope,
-                {},
-            ):
-                return self._scoped_instances[self._current_scope][service_name]
-
-            # Get service registration
-            service_reg = self._services.get(service_name)
-            if not service_reg and service_name in self._factories:
-                self.register_factory(service_name, self._factories[service_name])
-                service_reg = self._services.get(service_name)
-
-            if not service_reg:
-                msg = f"Service '{getattr(service_name, '__name__', service_name)}' not registered"
-                raise ValueError(
-                    msg,
-                )
-
-            # Instance already provided
-            if service_reg.instance is not None:
-                instance = service_reg.instance
-            else:
-                # Create instance (potentially async)
-                instance = await self._create_instance_async(service_name, service_reg)
-
-            # Store instance if singleton or scoped
-            if service_reg.lifetime == ServiceLifetime.SINGLETON:
-                self._instances[service_name] = instance
-            elif service_reg.lifetime == ServiceLifetime.SCOPED and self._current_scope:
-                self._scoped_instances[self._current_scope][service_name] = instance
-
-            return instance
-
-        except Exception as e:
-            self.logger.exception(
-                f"Failed to resolve async service '{getattr(service_name, '__name__', service_name)}': {e}",
-            )
-            raise
-
-    async def _create_instance_async(
-        self,
-        service_name: Any,
-        service_reg: ServiceRegistration,
-    ) -> Any:
-        """Create service instance asynchronously."""
-        try:
-            # Use factory function if available
-            if service_name in self._factories:
-                factory_func = self._factories[service_name]
-                try:
-                    # If factory is async and expects container
-                    if asyncio.iscoroutinefunction(factory_func):
-                        return await factory_func(self)
-                    return factory_func(self)
-                except TypeError:
-                    try:
-                        if asyncio.iscoroutinefunction(factory_func):
-                            return await factory_func(self._config)
-                        return factory_func(self._config)
-                    except TypeError:
-                        if asyncio.iscoroutinefunction(factory_func):
-                            return await factory_func()
-                        return factory_func()
-
-            # Get constructor parameters
-            constructor_params = self._get_constructor_params(service_name, service_reg)
-
-            # Create instance
-            if constructor_params:
-                instance = service_reg.implementation(**constructor_params)
-            else:
-                instance = service_reg.implementation()
-
-            # Initialize async if needed
-            if hasattr(instance, "initialize") and asyncio.iscoroutinefunction(
-                instance.initialize,
-            ):
-                await instance.initialize()
-
-            # Inject service-specific configuration
-            if service_reg.config:
-                self._inject_config(instance, service_reg.config)
-
-            return instance
-
-        except Exception as e:
-            self.logger.exception(
-                f"Failed to create async instance for '{getattr(service_name, '__name__', service_name)}': {e}",
-            )
-            raise
+        """Inject configuration into an instance."""
+        if hasattr(instance, "configure"):
+            instance.configure(config)
+        elif hasattr(instance, "config"):
+            instance.config.update(config)
 
 
 class ComponentFactory:
-    """
-    Factory for creating trading components with proper dependency injection.
-    """
+    """Factory for creating trading system components."""
 
     def __init__(self, container: DependencyContainer):
         self.container = container
         self.logger = system_logger.getChild("ComponentFactory")
 
-    def create_analyst(
-        self,
-        exchange_client: IExchangeClient,
-        state_manager: IStateManager,
-    ) -> IAnalyst:
-        """Create analyst instance"""
-        # Register dependencies
-        self.container.register_instance(IExchangeClient, exchange_client)
-        self.container.register_instance(IStateManager, state_manager)
+    def create_analyst(self, config: dict[str, Any] | None = None) -> IAnalyst:
+        """Create an analyst component."""
+        # Implementation would depend on specific analyst classes
+        raise NotImplementedError("Analyst creation not implemented")
 
-        return self.container.resolve(IAnalyst)
+    def create_strategist(self, config: dict[str, Any] | None = None) -> IStrategist:
+        """Create a strategist component."""
+        # Implementation would depend on specific strategist classes
+        raise NotImplementedError("Strategist creation not implemented")
 
-    def create_strategist(
-        self,
-        exchange_client: IExchangeClient,
-        state_manager: IStateManager,
-    ) -> IStrategist:
-        """Create strategist instance"""
-        # Register dependencies
-        self.container.register_instance(IExchangeClient, exchange_client)
-        self.container.register_instance(IStateManager, state_manager)
+    def create_tactician(self, config: dict[str, Any] | None = None) -> ITactician:
+        """Create a tactician component."""
+        # Implementation would depend on specific tactician classes
+        raise NotImplementedError("Tactician creation not implemented")
 
-        return self.container.resolve(IStrategist)
-
-    def create_tactician(
-        self,
-        exchange_client: IExchangeClient,
-        state_manager: IStateManager,
-        performance_reporter: IPerformanceReporter,
-    ) -> ITactician:
-        """Create tactician instance"""
-        # Register dependencies
-        self.container.register_instance(IExchangeClient, exchange_client)
-        self.container.register_instance(IStateManager, state_manager)
-        self.container.register_instance(IPerformanceReporter, performance_reporter)
-
-        return self.container.resolve(ITactician)
-
-    def create_supervisor(
-        self,
-        exchange_client: IExchangeClient,
-        state_manager: IStateManager,
-        event_bus: IEventBus,
-    ) -> ISupervisor:
-        """Create supervisor instance"""
-        # Register dependencies
-        self.container.register_instance(IExchangeClient, exchange_client)
-        self.container.register_instance(IStateManager, state_manager)
-        self.container.register_instance(IEventBus, event_bus)
-
-        return self.container.resolve(ISupervisor)
+    def create_supervisor(self, config: dict[str, Any] | None = None) -> ISupervisor:
+        """Create a supervisor component."""
+        # Implementation would depend on specific supervisor classes
+        raise NotImplementedError("Supervisor creation not implemented")
 
 
 class ModularTradingSystem:
-    """
-    Modular trading system that uses dependency injection and event-driven architecture.
-    """
+    """Modular trading system using dependency injection."""
 
-    def __init__(self):
-        self.container = DependencyContainer()
-        self.factory = ComponentFactory(self.container)
-        self.event_bus = EventBus({})
-        self.components: dict[str, Any] = {}
+    def __init__(self, container: DependencyContainer):
+        self.container = container
+        self.factory = ComponentFactory(container)
         self.logger = system_logger.getChild("ModularTradingSystem")
+        self.components: dict[str, Any] = {}
 
-    async def initialize(
-        self,
-        exchange_client: IExchangeClient,
-        state_manager: IStateManager,
-        performance_reporter: IPerformanceReporter,
-    ):
-        """Initialize the modular trading system"""
+    async def initialize(self) -> None:
+        """Initialize the trading system."""
         self.logger.info("Initializing modular trading system")
+        # Initialize components as needed
+        pass
 
-        # Register core services
-        self.container.register_instance(IExchangeClient, exchange_client)
-        self.container.register_instance(IStateManager, state_manager)
-        self.container.register_instance(IPerformanceReporter, performance_reporter)
-        self.container.register_instance(IEventBus, self.event_bus)
-
-        # Initialize event bus
-        await self.event_bus.initialize()
-
-        # Create components
-        self.components["analyst"] = self.factory.create_analyst(
-            exchange_client,
-            state_manager,
-        )
-        self.components["strategist"] = self.factory.create_strategist(
-            exchange_client,
-            state_manager,
-        )
-        self.components["tactician"] = self.factory.create_tactician(
-            exchange_client,
-            state_manager,
-            performance_reporter,
-        )
-        self.components["supervisor"] = self.factory.create_supervisor(
-            exchange_client,
-            state_manager,
-            self.event_bus,
-        )
-
-        # Set up event subscriptions
-        await self._setup_event_subscriptions()
-
-        self.logger.info("Modular trading system initialized")
-
-    async def _setup_event_subscriptions(self):
-        """Set up event subscriptions between components"""
-        # Analyst publishes analysis results
-        self.event_bus.subscribe(
-            EventType.MARKET_DATA_RECEIVED.value,
-            self.components["analyst"].analyze_market_data,
-        )
-
-        # Strategist subscribes to analysis results
-        self.event_bus.subscribe(
-            EventType.ANALYSIS_COMPLETED.value,
-            self.components["strategist"].formulate_strategy,
-        )
-
-        # Tactician subscribes to strategy results
-        self.event_bus.subscribe(
-            EventType.STRATEGY_FORMULATED.value,
-            self.components["tactician"].execute_trade_decision,
-        )
-
-        # Supervisor monitors all events
-        self.event_bus.subscribe(
-            EventType.TRADE_EXECUTED.value,
-            self.components["supervisor"].monitor_performance,
-        )
-
-    async def start(self):
-        """Start all components"""
-        self.logger.info("Starting modular trading system")
-
-        tasks = []
-        for name, component in self.components.items():
-            if hasattr(component, "start"):
-                task = asyncio.create_task(component.start(), name=f"{name}_task")
-                tasks.append(task)
-
-        await asyncio.gather(*tasks)
-
-    async def stop(self):
-        """Stop all components"""
-        self.logger.info("Stopping modular trading system")
-
-        # Stop event bus
-        await self.event_bus.stop()
-
-        # Stop components
-        for component in self.components.values():
-            if hasattr(component, "stop"):
-                await component.stop()
-
-        self.logger.info("Modular trading system stopped")
-
-    def get_component(self, name: str) -> Any:
-        """Get a component by name"""
-        return self.components.get(name)
-
-    def get_all_components(self) -> dict[str, Any]:
-        """Get all components"""
-        return self.components.copy()
+    async def shutdown(self) -> None:
+        """Shutdown the trading system."""
+        self.logger.info("Shutting down modular trading system")
+        # Cleanup components
+        pass

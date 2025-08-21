@@ -4,46 +4,39 @@ import asyncio
 import concurrent.futures
 import json
 import os
-import pickle
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
 import warnings
+from datetime import datetime
+from typing import Any
 
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
+from torch import nn, optim
 from torch.utils.data import DataLoader, TensorDataset
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.model_selection import TimeSeriesSplit
-import lightgbm as lgb
 
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import error, failed, success
 from src.utils.centralized_decorators import (
-    handle_errors,
-    deterministic_seed,
-    idempotent_step,
-    artifact_write_lock,
-    nan_inf_and_constant_guard,
     artifact_versioning,
-    time_budget_watchdog,
-    validate_step_prerequisites,
-    secure_data_processing,
-    prevent_data_leakage,
-    resource_monitor,
-    memory_efficient,
-    debug_training_step,
+    artifact_write_lock,
     circuit_breaker_protection,
-    validate_step_output,
-    quality_gate,
-    validate_data_quality,
-    validate_feature_engineering_pipeline,
-    with_tracing_span,
+    debug_training_step,
+    deterministic_seed,
     guard_dataframe_nulls,
+    handle_errors,
+    idempotent_step,
+    memory_efficient,
+    nan_inf_and_constant_guard,
+    prevent_data_leakage,
+    quality_gate,
+    resource_monitor,
+    secure_data_processing,
+    time_budget_watchdog,
+    validate_data_quality,
+    validate_step_output,
+    validate_step_prerequisites,
+    with_tracing_span,
 )
+from src.utils.logger import system_logger
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -54,7 +47,7 @@ logger = system_logger.getChild("Step9_5_HMM_LM_Generalist")
 class HMMLMGeneralistTrainingStep:
     """Step 9.5: Generalist HMM-LM Model Training for Regime Change Prediction."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
         self.models = {}
@@ -68,7 +61,7 @@ class HMMLMGeneralistTrainingStep:
         self.hmm_states = generalist_config.get("hmm_states", 5)
         self.sequence_length = generalist_config.get("sequence_length", 20)
         self.timeframes = generalist_config.get(
-            "timeframes", ["1m", "5m", "15m", "30m"]
+            "timeframes", ["1m", "5m", "15m", "30m"],
         )
         self.d_model = generalist_config.get("d_model", 256)
         self.nhead = generalist_config.get("nhead", 8)
@@ -81,7 +74,7 @@ class HMMLMGeneralistTrainingStep:
         # Regime change vocabulary
         self.regime_change_vocab = self._create_regime_change_vocabulary()
 
-    def _create_regime_change_vocabulary(self) -> Dict[str, int]:
+    def _create_regime_change_vocabulary(self) -> dict[str, int]:
         """Create vocabulary for regime change events."""
         vocab = {}
         vocab_id = 0
@@ -129,8 +122,7 @@ class HMMLMGeneralistTrainingStep:
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Execute HMM-LM generalist model training.
+        """Execute HMM-LM generalist model training.
 
         Args:
             training_input: Training input parameters
@@ -138,6 +130,7 @@ class HMMLMGeneralistTrainingStep:
 
         Returns:
             Dict containing training results
+
         """
         try:
             self.logger.info("🔄 Executing HMM-LM Generalist Training...")
@@ -149,20 +142,23 @@ class HMMLMGeneralistTrainingStep:
 
             # Load HMM data from all timeframes
             hmm_data = await self._load_multi_timeframe_hmm_data(
-                exchange, symbol, data_dir
+                exchange, symbol, data_dir,
             )
             if not hmm_data:
-                raise ValueError("Failed to load multi-timeframe HMM data")
+                msg = "Failed to load multi-timeframe HMM data"
+                raise ValueError(msg)
 
             # Create regime change sequences
             regime_sequences = await self._create_regime_change_sequences(hmm_data)
             if not regime_sequences:
-                raise ValueError("Failed to create regime change sequences")
+                msg = "Failed to create regime change sequences"
+                raise ValueError(msg)
 
             # Train HMM-LM model
             model_result = await self._train_hmm_lm_model(regime_sequences)
             if not model_result:
-                raise ValueError("Failed to train HMM-LM model")
+                msg = "Failed to train HMM-LM model"
+                raise ValueError(msg)
 
             # Save model and metadata
             await self._save_generalist_model(model_result, exchange, symbol, data_dir)
@@ -178,20 +174,20 @@ class HMMLMGeneralistTrainingStep:
             }
 
         except Exception as e:
-            self.logger.error(f"❌ HMM-LM Generalist Training failed: {e}")
+            self.logger.exception(f"❌ HMM-LM Generalist Training failed: {e}")
             return {"status": "FAILED", "error": str(e)}
 
     @with_tracing_span("step9_5._load_multi_timeframe_hmm_data", log_args=False)
     @guard_dataframe_nulls(mode="warn", arg_index=0)
     async def _load_multi_timeframe_hmm_data(
-        self, exchange: str, symbol: str, data_dir: str
-    ) -> Dict[str, pd.DataFrame]:
+        self, exchange: str, symbol: str, data_dir: str,
+    ) -> dict[str, pd.DataFrame]:
         """Load HMM data from all timeframes in parallel."""
         hmm_data = {}
 
         async def load_timeframe_data(
             timeframe: str,
-        ) -> Tuple[str, Optional[pd.DataFrame]]:
+        ) -> tuple[str, pd.DataFrame | None]:
             try:
                 # Load cluster assignments
                 cluster_path = f"{data_dir}/{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet"
@@ -202,7 +198,7 @@ class HMMLMGeneralistTrainingStep:
                 loop = asyncio.get_event_loop()
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     clusters_df = await loop.run_in_executor(
-                        executor, pd.read_parquet, cluster_path
+                        executor, pd.read_parquet, cluster_path,
                     )
 
                 clusters_df["timestamp"] = pd.to_datetime(clusters_df["timestamp"])
@@ -212,31 +208,30 @@ class HMMLMGeneralistTrainingStep:
                 intensity_path = f"{data_dir}/{exchange}_{symbol}_hmm_composite_intensity_{timeframe}.parquet"
                 if os.path.exists(intensity_path):
                     intensity_df = await loop.run_in_executor(
-                        executor, pd.read_parquet, intensity_path
+                        executor, pd.read_parquet, intensity_path,
                     )
                     intensity_df["timestamp"] = pd.to_datetime(
-                        intensity_df["timestamp"]
+                        intensity_df["timestamp"],
                     )
                     intensity_df = intensity_df.set_index("timestamp")
 
                     # Merge cluster assignments with intensity scores
                     hmm_df = clusters_df.merge(
-                        intensity_df, left_index=True, right_index=True, how="inner"
+                        intensity_df, left_index=True, right_index=True, how="inner",
                     )
                     hmm_df["timeframe"] = timeframe
                     self.logger.info(
-                        f"✅ Loaded HMM data for {timeframe}: {hmm_df.shape}"
+                        f"✅ Loaded HMM data for {timeframe}: {hmm_df.shape}",
                     )
                     return timeframe, hmm_df
-                else:
-                    clusters_df["timeframe"] = timeframe
-                    self.logger.info(
-                        f"✅ Loaded HMM clusters for {timeframe}: {clusters_df.shape}"
-                    )
-                    return timeframe, clusters_df
+                clusters_df["timeframe"] = timeframe
+                self.logger.info(
+                    f"✅ Loaded HMM clusters for {timeframe}: {clusters_df.shape}",
+                )
+                return timeframe, clusters_df
 
             except Exception as e:
-                self.logger.error(f"❌ Failed to load HMM data for {timeframe}: {e}")
+                self.logger.exception(f"❌ Failed to load HMM data for {timeframe}: {e}")
                 return timeframe, None
 
         # Load all timeframes in parallel
@@ -251,15 +246,15 @@ class HMMLMGeneralistTrainingStep:
         return hmm_data
 
     async def _create_regime_change_sequences(
-        self, hmm_data: Dict[str, pd.DataFrame]
-    ) -> List[Dict[str, Any]]:
+        self, hmm_data: dict[str, pd.DataFrame],
+    ) -> list[dict[str, Any]]:
         """Create regime change sequences for training."""
         sequences = []
 
         try:
             # Combine all timeframe data
             all_data = []
-            for timeframe, df in hmm_data.items():
+            for df in hmm_data.values():
                 if not df.empty:
                     all_data.append(df)
 
@@ -293,19 +288,19 @@ class HMMLMGeneralistTrainingStep:
                             "timing": event_data["timing"],
                             "timestamp": combined_df.index[end_idx],
                             "timeframe": combined_df.iloc[end_idx]["timeframe"],
-                        }
+                        },
                     )
 
             self.logger.info(f"✅ Created {len(sequences)} regime change sequences")
             return sequences
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to create regime change sequences: {e}")
+            self.logger.exception(f"❌ Failed to create regime change sequences: {e}")
             return []
 
     def _detect_regime_changes_and_tpsl_outcomes(
-        self, df: pd.DataFrame
-    ) -> List[Dict[str, Any]]:
+        self, df: pd.DataFrame,
+    ) -> list[dict[str, Any]]:
         """Detect regime changes and associated TPSL outcomes."""
         events = []
 
@@ -313,12 +308,12 @@ class HMMLMGeneralistTrainingStep:
             # Get TPSL parameters from config
             tpsl_config = self.config.get("vectorized_labelling_orchestrator", {})
             profit_take_multiplier = tpsl_config.get(
-                "profit_take_multiplier", 0.002
+                "profit_take_multiplier", 0.002,
             )  # 0.2%
             stop_loss_multiplier = tpsl_config.get(
-                "stop_loss_multiplier", 0.001
+                "stop_loss_multiplier", 0.001,
             )  # 0.1%
-            time_barrier_minutes = tpsl_config.get("time_barrier_minutes", 30)
+            tpsl_config.get("time_barrier_minutes", 30)
 
             # Get regime column
             regime_col = "composite_cluster_id"
@@ -415,29 +410,29 @@ class HMMLMGeneralistTrainingStep:
             return events
 
         except Exception as e:
-            self.logger.error(
-                f"❌ Failed to detect regime changes and price action: {e}"
+            self.logger.exception(
+                f"❌ Failed to detect regime changes and price action: {e}",
             )
             return []
 
     async def _train_hmm_lm_model(
-        self, sequences: List[Dict[str, Any]]
-    ) -> Optional[Dict[str, Any]]:
+        self, sequences: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
         """Train the HMM-LM model."""
         try:
             self.logger.info(
-                f"🔄 Training HMM-LM model with {len(sequences)} sequences"
+                f"🔄 Training HMM-LM model with {len(sequences)} sequences",
             )
 
             if len(sequences) < 100:
                 self.logger.warning(
-                    f"⚠️ Insufficient sequences for training: {len(sequences)}"
+                    f"⚠️ Insufficient sequences for training: {len(sequences)}",
                 )
                 return None
 
             # Prepare training data
             X_train, y_train, X_val, y_val = self._prepare_regime_training_data(
-                sequences
+                sequences,
             )
 
             # Create efficient regime predictor
@@ -452,10 +447,10 @@ class HMMLMGeneralistTrainingStep:
 
             # Train model
             trainer = EfficientRegimeTrainer(
-                model, learning_rate=self.learning_rate, batch_size=self.batch_size
+                model, learning_rate=self.learning_rate, batch_size=self.batch_size,
             )
             history = await trainer.train(
-                X_train, y_train, X_val, y_val, epochs=self.epochs
+                X_train, y_train, X_val, y_val, epochs=self.epochs,
             )
 
             # Save model
@@ -481,12 +476,12 @@ class HMMLMGeneralistTrainingStep:
             }
 
         except Exception as e:
-            self.logger.error(f"❌ HMM-LM training failed: {e}")
+            self.logger.exception(f"❌ HMM-LM training failed: {e}")
             return None
 
     def _prepare_regime_training_data(
-        self, sequences: List[Dict[str, Any]]
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        self, sequences: list[dict[str, Any]],
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Prepare training data for regime prediction."""
         try:
             # Convert sequences to tensor format
@@ -502,9 +497,7 @@ class HMMLMGeneralistTrainingStep:
                 X_data.append(features)
 
                 # Extract regime ID from target (e.g., "enter_regime_2" -> 2)
-                if "enter_regime_" in target:
-                    regime_id = int(target.split("_")[-1])
-                elif "exit_regime_" in target:
+                if "enter_regime_" in target or "exit_regime_" in target:
                     regime_id = int(target.split("_")[-1])
                 else:
                     regime_id = 0  # Default regime
@@ -520,7 +513,7 @@ class HMMLMGeneralistTrainingStep:
                         "profit_target_hit": profit_target_hit,
                         "stop_loss_hit": stop_loss_hit,
                         "time_to_target": time_to_target,
-                    }
+                    },
                 )
 
             X = np.array(X_data)
@@ -534,7 +527,7 @@ class HMMLMGeneralistTrainingStep:
             return X_train, y_train, X_val, y_val
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to prepare regime training data: {e}")
+            self.logger.exception(f"❌ Failed to prepare regime training data: {e}")
             return np.array([]), np.array([]), np.array([]), np.array([])
 
     def _sequence_to_features(self, sequence: pd.DataFrame) -> np.ndarray:
@@ -570,7 +563,7 @@ class HMMLMGeneralistTrainingStep:
             if len(features) < self.sequence_length:
                 # Pad with zeros
                 padding = np.zeros(
-                    (self.sequence_length - len(features), features.shape[1])
+                    (self.sequence_length - len(features), features.shape[1]),
                 )
                 features = np.vstack([padding, features])
             elif len(features) > self.sequence_length:
@@ -580,11 +573,11 @@ class HMMLMGeneralistTrainingStep:
             return features
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to convert sequence to features: {e}")
+            self.logger.exception(f"❌ Failed to convert sequence to features: {e}")
             return np.zeros((self.sequence_length, 10))
 
     async def _save_generalist_model(
-        self, model_result: Dict[str, Any], exchange: str, symbol: str, data_dir: str
+        self, model_result: dict[str, Any], exchange: str, symbol: str, data_dir: str,
     ) -> None:
         """Save the generalist model and metadata."""
         try:
@@ -614,7 +607,7 @@ class HMMLMGeneralistTrainingStep:
             self.logger.info(f"✅ Saved generalist model metadata to {metadata_path}")
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to save generalist model: {e}")
+            self.logger.exception(f"❌ Failed to save generalist model: {e}")
 
 
 # Efficient Regime Prediction Architecture
@@ -630,7 +623,7 @@ class EfficientRegimePredictor(nn.Module):
         d_model: int = 256,
         nhead: int = 8,
         num_layers: int = 6,
-    ):
+    ) -> None:
         super().__init__()
 
         self.input_dim = input_dim
@@ -658,18 +651,18 @@ class EfficientRegimePredictor(nn.Module):
         # Regime prediction heads
         self.regime_classifier = nn.Linear(d_model, num_regimes)  # Current regime
         self.transition_predictor = nn.Linear(
-            d_model, num_regimes * num_regimes
+            d_model, num_regimes * num_regimes,
         )  # Transition matrix
         self.regime_confidence = nn.Linear(d_model, num_regimes)  # Confidence scores
 
         # Price action prediction heads
         self.price_direction = nn.Linear(d_model, 3)  # Up/Down/Sideways
         self.profit_target_prob = nn.Linear(
-            d_model, 1
+            d_model, 1,
         )  # Probability of hitting profit target
         self.stop_loss_prob = nn.Linear(d_model, 1)  # Probability of hitting stop loss
         self.time_to_target = nn.Linear(
-            d_model, 1
+            d_model, 1,
         )  # Expected time to hit target (bars)
 
         # Dropout
@@ -708,7 +701,7 @@ class EfficientRegimePredictor(nn.Module):
         current_regime_probs = F.softmax(self.regime_classifier(final_features), dim=-1)
         transition_probs = F.softmax(
             self.transition_predictor(final_features).view(
-                -1, self.num_regimes, self.num_regimes
+                -1, self.num_regimes, self.num_regimes,
             ),
             dim=-1,
         )
@@ -717,10 +710,10 @@ class EfficientRegimePredictor(nn.Module):
         # Predict price action and TPSL probabilities
         price_direction_probs = F.softmax(self.price_direction(final_features), dim=-1)
         profit_target_prob = torch.sigmoid(
-            self.profit_target_prob(final_features)
+            self.profit_target_prob(final_features),
         )  # 0-1 probability
         stop_loss_prob = torch.sigmoid(
-            self.stop_loss_prob(final_features)
+            self.stop_loss_prob(final_features),
         )  # 0-1 probability
         time_to_target = (
             torch.sigmoid(self.time_to_target(final_features)) * 30
@@ -740,13 +733,13 @@ class EfficientRegimePredictor(nn.Module):
 class PositionalEncoding(nn.Module):
     """Positional encoding for Transformer."""
 
-    def __init__(self, d_model: int, max_len: int = 5000):
+    def __init__(self, d_model: int, max_len: int = 5000) -> None:
         super().__init__()
 
         pe = torch.zeros(max_len, d_model)
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
         div_term = torch.exp(
-            torch.arange(0, d_model, 2).float() * (-np.log(10000.0) / d_model)
+            torch.arange(0, d_model, 2).float() * (-np.log(10000.0) / d_model),
         )
 
         pe[:, 0::2] = torch.sin(position * div_term)
@@ -763,11 +756,11 @@ class EfficientRegimeTrainer:
     """Efficient trainer for regime prediction model."""
 
     def __init__(
-        self, model: nn.Module, learning_rate: float = 0.0001, batch_size: int = 32
-    ):
+        self, model: nn.Module, learning_rate: float = 0.0001, batch_size: int = 32,
+    ) -> None:
         self.model = model
         self.optimizer = optim.AdamW(
-            model.parameters(), lr=learning_rate, weight_decay=0.01
+            model.parameters(), lr=learning_rate, weight_decay=0.01,
         )
         self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=100)
         self.batch_size = batch_size
@@ -784,9 +777,8 @@ class EfficientRegimeTrainer:
         X_val: np.ndarray,
         y_val: np.ndarray,
         epochs: int = 100,
-    ) -> Dict[str, List[float]]:
+    ) -> dict[str, list[float]]:
         """Train the regime prediction model efficiently."""
-
         # Convert to tensors
         X_train = torch.FloatTensor(X_train).to(self.device)
         y_train = torch.LongTensor(y_train).to(self.device)
@@ -796,7 +788,7 @@ class EfficientRegimeTrainer:
         # Create data loaders
         train_dataset = TensorDataset(X_train, y_train)
         train_loader = DataLoader(
-            train_dataset, batch_size=self.batch_size, shuffle=True
+            train_dataset, batch_size=self.batch_size, shuffle=True,
         )
 
         history = {"train_loss": [], "val_loss": [], "train_acc": [], "val_acc": []}
@@ -857,22 +849,18 @@ class EfficientRegimeTrainer:
                 patience_counter += 1
 
             if patience_counter >= patience:
-                print(f"Early stopping at epoch {epoch}")
                 break
 
             # Learning rate scheduling
             self.scheduler.step()
 
             if epoch % 10 == 0:
-                print(
-                    f"Epoch {epoch}: Train Loss: {train_loss_avg:.4f}, Train Acc: {train_acc:.4f}, "
-                    f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}"
-                )
+                pass
 
         return history
 
     def _compute_loss(
-        self, outputs: Dict[str, torch.Tensor], targets: Dict[str, torch.Tensor]
+        self, outputs: dict[str, torch.Tensor], targets: dict[str, torch.Tensor],
     ) -> torch.Tensor:
         """Compute multi-task loss for regime and TPSL prediction."""
         # Current regime classification loss
@@ -886,22 +874,22 @@ class EfficientRegimeTrainer:
         # Confidence regularization (encourage high confidence for correct predictions)
         confidence = outputs["confidence"]
         confidence_loss = F.binary_cross_entropy(
-            confidence, torch.ones_like(confidence)
+            confidence, torch.ones_like(confidence),
         )
 
         # TPSL prediction losses
         profit_target_loss = F.binary_cross_entropy(
-            outputs["profit_target_prob"], targets["profit_target_hit"].float()
+            outputs["profit_target_prob"], targets["profit_target_hit"].float(),
         )
         stop_loss_loss = F.binary_cross_entropy(
-            outputs["stop_loss_prob"], targets["stop_loss_hit"].float()
+            outputs["stop_loss_prob"], targets["stop_loss_hit"].float(),
         )
         time_to_target_loss = F.mse_loss(
-            outputs["time_to_target"], targets["time_to_target"].float()
+            outputs["time_to_target"], targets["time_to_target"].float(),
         )
 
         # Combined loss with TPSL weighting
-        total_loss = (
+        return (
             regime_loss
             + 0.1 * transition_regularization
             + 0.05 * confidence_loss
@@ -909,10 +897,9 @@ class EfficientRegimeTrainer:
             + 0.2 * stop_loss_loss  # Medium weight for stop loss prediction
             + 0.1 * time_to_target_loss  # Lower weight for timing prediction
         )
-        return total_loss
 
     def _compute_accuracy(
-        self, outputs: Dict[str, torch.Tensor], targets: Dict[str, torch.Tensor]
+        self, outputs: dict[str, torch.Tensor], targets: dict[str, torch.Tensor],
     ) -> int:
         """Compute accuracy for regime and TPSL prediction."""
         # Regime accuracy
@@ -926,12 +913,11 @@ class EfficientRegimeTrainer:
         )
 
         # Combined accuracy (weighted)
-        total_correct = regime_correct + profit_correct
-        return total_correct
+        return regime_correct + profit_correct
 
     def _validate(
-        self, X_val: torch.Tensor, y_val: torch.Tensor
-    ) -> Tuple[float, float]:
+        self, X_val: torch.Tensor, y_val: torch.Tensor,
+    ) -> tuple[float, float]:
         """Validate the model."""
         self.model.eval()
         with torch.no_grad():
@@ -953,48 +939,48 @@ class EfficientRegimeTrainer:
     min_memory_gb=16.0,
     min_disk_gb=10.0,
     required_packages=["torch", "numpy", "pandas", "sklearn", "lightgbm"],
-    data_quality_checks={"check_data_completeness": True}
+    data_quality_checks={"check_data_completeness": True},
 )
 @secure_data_processing(
     backup_before=True,
     integrity_checks=True,
     memory_cleanup=True,
-    data_validation=True
+    data_validation=True,
 )
 @prevent_data_leakage(
     temporal_validation=True,
     feature_leakage_detection=True,
     cross_validation_isolation=True,
-    lookahead_bias_prevention=True
+    lookahead_bias_prevention=True,
 )
 @resource_monitor(
     memory_threshold_gb=32.0,
     cpu_threshold_percent=90.0,
     disk_threshold_gb=10.0,
-    auto_cleanup=True
+    auto_cleanup=True,
 )
 @memory_efficient(
     chunk_size=1000,
     streaming_processing=True,
     memory_pool=True,
-    cleanup_frequency=10
+    cleanup_frequency=10,
 )
 @debug_training_step(
     log_intermediate_results=True,
     save_debug_artifacts=True,
-    performance_profiling=True
+    performance_profiling=True,
 )
 @circuit_breaker_protection(
     failure_threshold=3,
-    recovery_timeout=300.0
+    recovery_timeout=300.0,
 )
 @validate_step_output(
     required_files=["hmm_lm_generalist_model.pkl"],
-    data_quality_checks={"check_output_completeness": True}
+    data_quality_checks={"check_output_completeness": True},
 )
 @quality_gate(
     model_performance_thresholds={"min_accuracy": 0.6},
-    data_quality_metrics={"completeness_threshold": 0.95}
+    data_quality_metrics={"completeness_threshold": 0.95},
 )
 @handle_errors(exceptions=(Exception,), default_return=False, context="step9_5_hmm_lm_generalist_training")
 async def run_step(
@@ -1004,99 +990,25 @@ async def run_step(
     force_rerun: bool = False,
     **kwargs,
 ) -> bool:
-    """
-    Run the HMM-LM generalist training step - IMPROVED VERSION.
-
-    IMPROVEMENTS:
-    - Enhanced configuration management with validation
-    - Better error handling and logging
-    - Performance monitoring and metrics
-    - Memory management and cleanup
-    - Parallel processing capabilities
-    - Advanced model training and validation
-    - HMM-LM integration optimization
+    """Run the HMM-LM generalist training step.
 
     Args:
         symbol: Trading symbol
         exchange: Exchange name
         data_dir: Data directory path
-        force_rerun: Force rerun flag
         **kwargs: Additional parameters
 
     Returns:
         bool: True if successful, False otherwise
+
     """
-    import time
-    start_time = time.time()
-    
     try:
-        # Enhanced configuration with validation
-        config = {
-            "symbol": symbol,
-            "exchange": exchange,
-            "data_dir": data_dir,
-            "force_rerun": force_rerun,
-            "enable_parallel_processing": kwargs.get("enable_parallel_processing", True),
-            "max_workers": kwargs.get("max_workers", 4),
-            "memory_limit_gb": kwargs.get("memory_limit_gb", 32.0),
-            "enable_early_stopping": kwargs.get("enable_early_stopping", True),
-            "enable_model_checkpointing": kwargs.get("enable_model_checkpointing", True),
-            "HMM_LM": {
-                "generalist": {
-                    "hmm_states": kwargs.get("hmm_states", 5),
-                    "sequence_length": kwargs.get("sequence_length", 20),
-                    "timeframes": kwargs.get("timeframes", ["1m", "5m", "15m", "30m"]),
-                    "d_model": kwargs.get("d_model", 256),
-                    "nhead": kwargs.get("nhead", 8),
-                    "num_layers": kwargs.get("num_layers", 6),
-                    "dropout_rate": kwargs.get("dropout_rate", 0.1),
-                    "learning_rate": kwargs.get("learning_rate", 0.0001),
-                    "batch_size": kwargs.get("batch_size", 32),
-                    "epochs": kwargs.get("epochs", 100),
-                }
-            },
-            "validation_split": kwargs.get("validation_split", 0.2),
-            "test_split": kwargs.get("test_split", 0.2),
-            "random_state": kwargs.get("random_state", 42),
-            "enable_regime_prediction": kwargs.get("enable_regime_prediction", True),
-            "enable_sequence_modeling": kwargs.get("enable_sequence_modeling", True),
-        }
-        
-        # Validate configuration
-        if not config["symbol"]:
-            raise ValueError("Symbol cannot be empty")
-        
-        if not config["exchange"]:
-            raise ValueError("Exchange cannot be empty")
-        
-        if not config["data_dir"]:
-            raise ValueError("Data directory cannot be empty")
-        
-        if config["memory_limit_gb"] <= 0:
-            raise ValueError("Memory limit must be positive")
-        
-        if config["max_workers"] <= 0:
-            raise ValueError("Max workers must be positive")
-        
-        logger.info("🚀 Starting HMM-LM Generalist Training step - IMPROVED VERSION")
-        logger.info(f"📋 Configuration: {len(config)} parameters")
-        logger.info(f"   - Symbol: {symbol}")
-        logger.info(f"   - Exchange: {exchange}")
-        logger.info(f"   - Parallel processing: {'Enabled' if config['enable_parallel_processing'] else 'Disabled'}")
-        logger.info(f"   - HMM states: {config['HMM_LM']['generalist']['hmm_states']}")
-        logger.info(f"   - Sequence length: {config['HMM_LM']['generalist']['sequence_length']}")
-        logger.info(f"   - Model architecture: {config['HMM_LM']['generalist']['d_model']}d, {config['HMM_LM']['generalist']['num_layers']} layers")
+        # Create step instance
+        config = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}
+        step = HMMLMGeneralistTrainingStep(config)
+        await step.initialize()
 
-        # Create step instance with enhanced error handling
-        try:
-            step = HMMLMGeneralistTrainingStep(config)
-            await step.initialize()
-            logger.info("✅ HMM-LM generalist training step initialized successfully")
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize HMM-LM generalist training step: {e}")
-            raise
-
-        # Execute step with enhanced monitoring
+        # Execute step
         training_input = {
             "symbol": symbol,
             "exchange": exchange,
@@ -1106,52 +1018,18 @@ async def run_step(
         }
 
         pipeline_state = {}
-        
-        try:
-            result = await step.execute(training_input, pipeline_state)
-            
-            if result.get("status") == "SUCCESS":
-                # Log completion metrics
-                total_time = time.time() - start_time
-                logger.info("✅ HMM-LM generalist training step completed successfully")
-                logger.info(f"   ⏱️ Total time: {total_time:.2f}s")
-                logger.info(f"   📊 Configuration: {len(config)} parameters")
-                logger.info(f"   🔧 Parallel processing: {'Enabled' if config['enable_parallel_processing'] else 'Disabled'}")
-                
-                # Log result details if available
-                if "metrics" in result:
-                    metrics = result["metrics"]
-                    logger.info(f"   📈 Training metrics:")
-                    for metric_name, metric_value in metrics.items():
-                        logger.info(f"      - {metric_name}: {metric_value}")
-                
-                # Memory cleanup
-                import gc
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                gc.collect()
-                
-                return True
-            else:
-                error_msg = result.get('error', 'Unknown error')
-                logger.error(f"❌ HMM-LM generalist training step failed: {error_msg}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"❌ Error during HMM-LM generalist training execution: {e}")
-            return False
+        result = await step.execute(training_input, pipeline_state)
+
+        return result.get("status") == "SUCCESS"
 
     except Exception as e:
-        total_time = time.time() - start_time
-        logger.error(f"❌ Error in HMM-LM generalist training step: {e}")
-        logger.error(f"   Execution time: {total_time:.2f}s")
+        logger.exception(f"HMM-LM generalist training failed: {e}")
         return False
 
 
 if __name__ == "__main__":
     # Test the step
-    async def test():
-        result = await run_step("ETHUSDT", "BINANCE", "data/training")
-        print(f"Test result: {result}")
+    async def test() -> None:
+        await run_step("ETHUSDT", "BINANCE", "data/training")
 
     asyncio.run(test())

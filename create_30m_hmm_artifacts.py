@@ -4,22 +4,20 @@ Script to create missing HMM artifacts for 30m timeframe.
 This will run the step1_7 HMM regime discovery process specifically for 30m.
 """
 
-import asyncio
-import sys
-import os
+        import traceback
 from pathlib import Path
+from src.training.steps.step3_hmm_regime_discovery import run_step
+from src.utils.logger import system_logger, import asyncio
+import os
+import sys
 
 # Add the project root to the path
-project_root = Path(__file__).parent
+project_root , Path(__file__).parent
 sys.path.insert(0, str(project_root))
-
-from src.training.steps.step3_hmm_regime_discovery import run_step
-from src.utils.logger import system_logger
-
 
 async def create_30m_hmm_artifacts():
     """Create missing HMM artifacts for 30m timeframe."""
-    logger = system_logger.getChild("Create30mArtifacts")
+    logger , system_logger.getChild("Create30mArtifacts")
 
     logger.info("🔧 Starting creation of missing 30m HMM artifacts...")
 
@@ -31,18 +29,24 @@ async def create_30m_hmm_artifacts():
     lookback_days = 180  # Use 6 months of data
 
     logger.info(
-        f"📋 Parameters: symbol={symbol}, exchange={exchange}, timeframe={timeframe}"
+        f"📋 Parameters: symbol={symbol}, exchange={exchange}, timeframe={timeframe}",
     )
 
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         # Run the HMM regime discovery for 30m timeframe
         success = await run_step(
-            symbol=symbol,
-            exchange=exchange,
-            data_dir=data_dir,
-            timeframe=timeframe,
-            lookback_days=lookback_days,
-        )
+            symbol, symbol = exchange=exchange,
+            data_dir, data_dir = timeframe=timeframe,
+            lookback_days, lookback_days = )
 
         if success:
             logger.info("✅ Successfully created 30m HMM artifacts!")
@@ -69,15 +73,13 @@ async def create_30m_hmm_artifacts():
             return False
 
     except Exception as e:
-        logger.error(f"❌ Error creating 30m HMM artifacts: {e}")
-        import traceback
+        logger.exception(f"❌ Error creating 30m HMM artifacts: {e}")
 
-        logger.error(f"Traceback: {traceback.format_exc()}")
+        logger.exception(f"Traceback: {traceback.format_exc()}")
         return False
 
     logger.info("🎉 30m HMM artifact creation process completed!")
     return True
-
 
 if __name__ == "__main__":
     # Run the async function

@@ -6,20 +6,19 @@ This script downloads the missing timeframe data (5m, 15m, 30m) for the
 multi-timeframe HMM ensemble system.
 """
 
-import argparse
-import sys
-import os
-import asyncio
 from pathlib import Path
-from typing import List, Dict, Any
+from src.training.steps.data_downloader import download_all_data_with_consolidation
+from src.utils.logger import system_logger
+from typing import Any
+import argparse
+import asyncio
+import sys
+
+from src.config import CONFIG
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-from src.utils.logger import system_logger
-from src.config import CONFIG
-from src.training.steps.data_downloader import download_all_data_with_consolidation
 
 logger = system_logger.getChild("MissingTimeframesDownloader")
 
@@ -27,14 +26,14 @@ logger = system_logger.getChild("MissingTimeframesDownloader")
 class MissingTimeframesDownloader:
     """Downloads missing timeframe data for multi-timeframe HMM ensemble."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         self.config = config
         self.required_timeframes = ["5m", "15m", "30m"]
         self.symbol = "ETHUSDT"
         self.exchange = "BINANCE"
         self.data_dir = Path("data")
 
-    async def check_existing_data(self) -> Dict[str, bool]:
+    async def check_existing_data(self) -> dict[str, bool]:
         """Check which timeframes already have data."""
         logger.info("🔍 Checking existing timeframe data...")
 
@@ -45,7 +44,7 @@ class MissingTimeframesDownloader:
 
             status = "✅" if existing_data[timeframe] else "❌"
             logger.info(
-                f"  {timeframe}: {status} {'Available' if existing_data[timeframe] else 'Missing'}"
+                f"  {timeframe}: {status} {'Available' if existing_data[timeframe] else 'Missing'}",
             )
 
         return existing_data
@@ -56,21 +55,21 @@ class MissingTimeframesDownloader:
 
         try:
             success = await download_all_data_with_consolidation(
-                symbol=self.symbol, exchange_name=self.exchange, interval=timeframe
+                symbol=self.symbol, exchange_name=self.exchange,
+                interval=timeframe
             )
 
             if success:
                 logger.info(f"✅ Successfully downloaded {timeframe} data")
                 return True
-            else:
-                logger.error(f"❌ Failed to download {timeframe} data")
-                return False
-
-        except Exception as e:
-            logger.error(f"💥 Error downloading {timeframe} data: {e}")
+            logger.error(f"❌ Failed to download {timeframe} data")
             return False
 
-    async def download_missing_timeframes(self) -> Dict[str, bool]:
+        except Exception as e:
+            logger.exception(f"💥 Error downloading {timeframe} data: {e}")
+            return False
+
+    async def download_missing_timeframes(self) -> dict[str, bool]:
         """Download all missing timeframe data."""
         logger.info("🚀 Starting download of missing timeframe data...")
 
@@ -97,16 +96,14 @@ class MissingTimeframesDownloader:
                 await asyncio.sleep(2)
 
         # Combine results
-        final_results = {**existing_data, **download_results}
+        return {**existing_data, **download_results}
 
-        return final_results
-
-    def verify_downloads(self, results: Dict[str, bool]) -> bool:
+    def verify_downloads(self, results: dict[str, bool]) -> bool:
         """Verify that all downloads were successful."""
         logger.info("🔍 Verifying downloads...")
 
         all_successful = True
-        for timeframe, success in results.items():
+        for timeframe , success in results.items():
             status = "✅" if success else "❌"
             logger.info(f"  {timeframe}: {status} {'Success' if success else 'Failed'}")
 
@@ -120,7 +117,7 @@ class MissingTimeframesDownloader:
 
         return all_successful
 
-    def print_summary(self, results: Dict[str, bool]) -> None:
+    def print_summary(self, results: dict[str, bool]) -> None:
         """Print a summary of the download results."""
         print("\n" + "=" * 80)
         print("📊 TIMEFRAME DATA DOWNLOAD SUMMARY")
@@ -154,7 +151,7 @@ class MissingTimeframesDownloader:
 async def main():
     """Main function to run the download process."""
     parser = argparse.ArgumentParser(
-        description="Download missing timeframe data for multi-timeframe HMM ensemble"
+        description="Download missing timeframe data for multi-timeframe HMM ensemble",
     )
     parser.add_argument("--symbol", type=str, default="ETHUSDT", help="Trading symbol")
     parser.add_argument("--exchange", type=str, default="BINANCE", help="Exchange name")
@@ -190,7 +187,7 @@ async def main():
         return all_successful
 
     except Exception as e:
-        logger.error(f"💥 Download process failed: {e}")
+        logger.exception(f"💥 Download process failed: {e}")
         return False
 
 

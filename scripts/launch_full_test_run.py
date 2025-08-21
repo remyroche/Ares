@@ -4,15 +4,15 @@ Launch full test run with GUI automatically.
 Usage: python scripts/launch_full_test_run.py <symbol> [exchange]
 """
 
+from pathlib import Path
 import argparse
 import sys
-from pathlib import Path
+
+from scripts.gui_launcher import GUILauncher
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-from scripts.gui_launcher import GUILauncher
 
 
 def main():
@@ -33,8 +33,7 @@ def main():
     bot_command = [
         "scripts/training_cli.py",
         "full-test-run",
-        args.symbol,
-        args.exchange,
+        args.symbol, args.exchange,
     ]
 
     print(

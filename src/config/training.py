@@ -2,16 +2,16 @@
 
 from typing import Any
 
-from src.config.environment import get_environment_settings
 from src.config.constants import DEFAULT_LOOKBACK_DAYS
+from src.config.environment import get_environment_settings
 
 
 def get_training_config() -> dict[str, Any]:
-    """
-    Get the complete training configuration.
+    """Get the complete training configuration.
 
     Returns:
         dict: Complete training configuration
+
     """
     get_environment_settings()
 
@@ -111,657 +111,133 @@ def get_training_config() -> dict[str, Any]:
                     "architecture": "TCN",
                     "channels": [64, 128, 256],
                     "kernel_size": 3,
-                    "dilation_base": 2,
-                    "sequence_length": 24,
+                    "sequence_length": 40,
                     "dropout_rate": 0.2,
                     "learning_rate": 0.001,
-                    "batch_size": 64,
-                    "epochs": 100,
+                    "batch_size": 32,
+                    "epochs": 50,
                 },
                 "15m": {
-                    "architecture": "Transformer",
-                    "d_model": 256,
-                    "nhead": 8,
-                    "num_layers": 6,
-                    "sequence_length": 16,
-                    "dropout_rate": 0.1,
-                    "learning_rate": 0.0001,
+                    "architecture": "LSTM",
+                    "hidden_size": 128,
+                    "num_layers": 2,
+                    "sequence_length": 30,
+                    "dropout_rate": 0.2,
+                    "learning_rate": 0.001,
                     "batch_size": 32,
-                    "epochs": 150,
+                    "epochs": 50,
                 },
                 "30m": {
-                    "architecture": "LightGBM",
-                    "n_estimators": 1000,
-                    "max_depth": 8,
-                    "learning_rate": 0.01,
-                    "num_leaves": 31,
-                    "subsample": 0.8,
-                    "colsample_bytree": 0.8,
-                    "reg_alpha": 0.01,
-                    "reg_lambda": 0.01,
+                    "architecture": "Transformer",
+                    "d_model": 128,
+                    "nhead": 4,
+                    "num_layers": 4,
+                    "sequence_length": 20,
+                    "dropout_rate": 0.1,
+                    "learning_rate": 0.0005,
+                    "batch_size": 32,
+                    "epochs": 50,
                 },
             },
-            "regime_change_detection": {
-                "enabled": True,
-                "min_regime_duration": 5,  # Minimum bars in a regime
-                "regime_change_threshold": 0.7,  # Confidence threshold for regime change
-                "lookback_window": 20,  # Bars to look back for regime stability
-                "prediction_horizon": 10,  # Bars ahead to predict regime changes
-            },
-            "training_pipeline": {
-                "step_order": ["5", "9", "9.5", "6", "10"],  # Training step order
-                "enable_regime_change_features": True,
-                "enable_multi_timeframe_alignment": True,
-                "enable_sequence_creation": True,
-                "enable_hmm_lm_training": True,
-            },
         },
-        # --- Labeling & Feature Pipeline Parameters ---
-        "vectorized_labelling_orchestrator": {
-            # Optimize Triple Barrier parameters before labeling (grid search)
-            "optimize_triple_barrier_params": False,
-            # Default Triple Barrier parameters
-            "profit_take_multiplier": 0.002,
-            "stop_loss_multiplier": 0.001,
-            "time_barrier_minutes": 30,
-            "max_lookahead": 100,
-            # Ensure binary labels and parquet saving are enabled by default
-            "enable_parquet_saving": True,
-            "enable_feature_selection": True,
-            "enable_data_normalization": True,
-            "enable_stationary_checks": True,
-            # Optional search spaces when optimization is enabled
-            "pt_candidates": [0.0015, 0.002, 0.003],
-            "sl_candidates": [0.001, 0.0015, 0.002],
-            "time_barrier_candidates": [15, 30, 60],
-            "max_lookahead_candidates": [50, 100, 150],
-            # S/R Level Configuration - Loosened criteria for more granular regime detection
-            "sr_distance_scale": 0.02,  # 2% scale (increased from 1%)
-            "sr_proximity_threshold": 0.05,  # 5% threshold (increased from 2%)
-            "sr_activation_range_multiplier": 0.03,  # 3% activation range (increased from 1%)
-            "sr_fallback_range": 8,  # 0-8 range for fallback counts (increased from 0-3)
-            "sr_volatility_factor": 0.1,  # Volatility contribution factor (reduced for better granularity)
+        # --- Feature Engineering Configuration ---
+        "FEATURE_ENGINEERING": {
+            "enable_technical_indicators": True,
+            "enable_price_features": True,
+            "enable_volume_features": True,
+            "enable_volatility_features": True,
+            "enable_momentum_features": True,
+            "enable_trend_features": True,
+            "enable_regime_features": True,
+            "enable_interaction_features": True,
+            "enable_context_features": True,
+            "enable_difference_features": True,
+            "enable_acceleration_features": True,
+            "enable_sr_features": True,
         },
-        # --- Method A: Mixture of Experts Pipeline Controls ---
-        "pipeline": {
-            "method_a": {
-                # If True, Step2 runs Step4 early to materialize L0/L1/L2/L3 before splitting
-                "step2_is_leveling": True,
-                # HMM composite clusters are paramount - no fallbacks allowed
-                "regime_basis": "hmm_composite_clusters_only",
-            }
-        },
-        # --- Method A: Expert Training Configuration ---
-        "method_a_mixture_of_experts": {
-            "enabled": True,
-            # HMM composite clusters are paramount - no fallbacks allowed
-            "regime_source": "hmm_composite_clusters_only",
-            # HMM composite cluster columns (automatically generated by step3)
-            "hmm_composite_columns": [
-                "composite_cluster_id",
-                "intensity_cluster_0",
-                "intensity_cluster_1",
-                "intensity_cluster_2",
-                "intensity_cluster_3",
-                "intensity_cluster_4",
-                "intensity_cluster_5",
-                "intensity_cluster_6",
-                "intensity_cluster_7",
-                "intensity_cluster_8",
-                "intensity_cluster_9",
-                "intensity_cluster_10",
-                "intensity_cluster_11",
-                "intensity_cluster_12",
-                "intensity_cluster_13",
-                "intensity_cluster_14",
-                "intensity_cluster_15",
-                "intensity_cluster_16",
-                "intensity_cluster_17",
-                "intensity_cluster_18",
-                "intensity_cluster_19",
-            ],
-            # Minimum rows required to train a given expert
-            "min_rows_per_expert": 5000,
-            # Whether to use strength-weighted combining in live dispatcher
-            "use_strength_weighting": True,
-            # Mapping from HMM cluster to intensity column name
-            "intensity_columns": {
-                "cluster_0": "intensity_cluster_0",
-                "cluster_1": "intensity_cluster_1",
-                "cluster_2": "intensity_cluster_2",
-                "cluster_3": "intensity_cluster_3",
-                "cluster_4": "intensity_cluster_4",
-                "cluster_5": "intensity_cluster_5",
-                "cluster_6": "intensity_cluster_6",
-                "cluster_7": "intensity_cluster_7",
-                "cluster_8": "intensity_cluster_8",
-                "cluster_9": "intensity_cluster_9",
-                "cluster_10": "intensity_cluster_10",
-                "cluster_11": "intensity_cluster_11",
-                "cluster_12": "intensity_cluster_12",
-                "cluster_13": "intensity_cluster_13",
-                "cluster_14": "intensity_cluster_14",
-                "cluster_15": "intensity_cluster_15",
-                "cluster_16": "intensity_cluster_16",
-                "cluster_17": "intensity_cluster_17",
-                "cluster_18": "intensity_cluster_18",
-                "cluster_19": "intensity_cluster_19",
-            },
-        },
-        # --- Feature Reduction and Model-Specific Pruning Configuration ---
-        "feature_reduction": {
-            "step2_target_features": 100,  # Target number of features after Step 2
-            "enable_model_specific_pruning": True,  # Enable model-specific pruning
-            "variance_threshold": 0.01,  # Variance threshold for feature filtering
-            "correlation_threshold": 0.95,  # Correlation threshold for feature filtering
-            "mutual_info_threshold": 0.01,  # Mutual information threshold
-            "pruning_strategies": {
-                "neural_networks": {
-                    "target_features": 80,
-                    "focus_on": ["non_linear", "interactions", "normalized"],
-                    "remove": ["highly_correlated", "low_variance"]
-                },
-                "linear_models": {
-                    "target_features": 60,
-                    "focus_on": ["linear", "uncorrelated", "interpretable"],
-                    "remove": ["interactions", "highly_correlated"]
-                },
-                "ensemble_models": {
-                    "target_features": 90,
-                    "focus_on": ["diverse", "different_info"],
-                    "remove": ["redundant", "low_importance"]
-                }
-            }
-        },
-        # --- Multi-Timeframe Training Configuration ---
-        "MULTI_TIMEFRAME_TRAINING": {
-            "enable_parallel_training": True,  # Train timeframes in parallel
-            "enable_ensemble": True,  # Create ensemble models across timeframes
-            "enable_cross_validation": True,  # Perform cross-timeframe validation
-            "ensemble_method": "meta_learner",  # Use meta-learner for optimal weights
-            "validation_split": 0.2,  # Validation data split
-            "max_parallel_workers": 3,  # Maximum parallel workers
-            # Meta-learner configuration for high leverage trading
-            "meta_learner": {
-                "algorithm": "gradient_boosting",  # Meta-learner algorithm
-                "optimization_objective": "sharpe_ratio",  # Optimize for Sharpe ratio
-                "high_leverage_mode": True,  # Optimize for high leverage trading
-                "short_timeframe_priority": True,  # Prioritize shorter timeframes
-                "weight_constraints": {
-                    "min_weight": 0.05,  # Minimum weight per timeframe
-                    "max_weight": 0.40,  # Maximum weight per timeframe
-                    "short_timeframe_bonus": 0.1,  # Bonus weight for short timeframes
-                },
-                "optimization_trials": 100,  # Meta-learner optimization trials
-                "cross_validation_folds": 5,  # Cross-validation folds for meta-learner
-            },
-            # High leverage trading preferences
-            "high_leverage_settings": {
-                "prioritize_short_timeframes": True,  # Shorter timeframes more important
-                "risk_management": "aggressive",  # Aggressive risk management
-                "position_sizing": "dynamic",  # Dynamic position sizing
-                "stop_loss_tightness": "tight",  # Tight stop losses
-            },
-        },
-        # --- Timeframe Definitions and Purposes ---
-        "TIMEFRAMES": {
-            # Short-term timeframes (Intraday Trading)
-            "1m": {
-                "purpose": "Ultra-short-term scalping and high-frequency trading",
-                "trading_style": "scalping",
-                "feature_set": "ultra_short_term",
-                "optimization_trials": 20,  # Fewer trials for speed
-                "description": "Captures micro-movements and immediate market reactions",
-            },
-            "5m": {
-                "purpose": "Short-term scalping and momentum trading",
-                "trading_style": "scalping",
-                "feature_set": "short_term",
-                "optimization_trials": 25,
-                "description": "Identifies short-term momentum and breakout patterns",
-            },
-            "15m": {
-                "purpose": "Intraday swing trading and momentum analysis",
-                "trading_style": "intraday_swing",
-                "feature_set": "intraday",
-                "optimization_trials": 30,
-                "description": "Balances noise reduction with responsiveness to intraday moves",
-            },
-            # Medium-term timeframes (Swing Trading)
-            "1h": {
-                "purpose": "Swing trading and medium-term trend identification",
-                "trading_style": "swing_trading",
-                "feature_set": "swing",
-                "optimization_trials": 40,
-                "description": "Primary timeframe for swing trading, captures daily cycles",
-            },
-            "4h": {
-                "purpose": "Medium-term trend analysis and position trading",
-                "trading_style": "position_trading",
-                "feature_set": "medium_term",
-                "optimization_trials": 50,
-                "description": "Excellent for trend identification and reducing noise",
-            },
-            "6h": {
-                "purpose": "Extended swing trading and trend confirmation",
-                "trading_style": "position_trading",
-                "feature_set": "medium_term",
-                "optimization_trials": 45,
-                "description": "Good for trend confirmation and reducing false signals",
-            },
-            # Long-term timeframes (Position Trading)
-            "1d": {
-                "purpose": "Long-term trend analysis and position trading",
-                "trading_style": "position_trading",
-                "feature_set": "long_term",
-                "optimization_trials": 50,
-                "description": "Primary timeframe for long-term trend identification",
-            },
-            "3d": {
-                "purpose": "Extended position trading and major trend analysis",
-                "trading_style": "position_trading",
-                "feature_set": "long_term",
-                "optimization_trials": 40,
-                "description": "Captures major market cycles and long-term trends",
-            },
-            "1w": {
-                "purpose": "Major trend analysis and long-term investment decisions",
-                "trading_style": "investment",
-                "feature_set": "investment",
-                "optimization_trials": 30,
-                "description": "For major market cycle analysis and long-term positioning",
-            },
-        },
-        # --- Predefined Timeframe Sets ---
-        "TIMEFRAME_SETS": {
-            "scalping": {
-                "timeframes": ["1m", "5m", "15m"],
-                "description": "Ultra-short-term trading with high frequency",
-                "use_case": "High-frequency trading and scalping strategies",
-            },
-            "intraday": {
-                "timeframes": ["1m", "5m", "15m", "1h"],
-                "description": "Intraday trading with ultra-short to short-term confirmation levels",
-                "use_case": "High-frequency day trading and intraday swing trading",
-            },
-            "swing": {
-                "timeframes": ["1h", "4h", "1d"],
-                "description": "Swing trading with trend confirmation",
-                "use_case": "Swing trading and medium-term position trading",
-            },
-            "position": {
-                "timeframes": ["4h", "1d", "3d"],
-                "description": "Position trading with long-term trend analysis",
-                "use_case": "Position trading and long-term trend following",
-            },
-            "investment": {
-                "timeframes": ["1d", "3d", "1w"],
-                "description": "Long-term investment and major trend analysis",
-                "use_case": "Long-term investment and major market cycle analysis",
-            },
-            "comprehensive": {
-                "timeframes": ["15m", "1h", "4h", "1d"],
-                "description": "Comprehensive analysis across multiple time horizons",
-                "use_case": "Multi-timeframe analysis for robust trading decisions",
-            },
-        },
-        # --- Default Timeframe Configuration ---
-        "DEFAULT_TIMEFRAME_SET": "intraday",  # Use intraday timeframes by default for high leverage
-        # --- Two-Tier Decision System Configuration ---
-        "TWO_TIER_DECISION": {
-            "tier1_timeframes": [
-                "1m",
-                "5m",
-                "15m",
-                "1h",
-            ],  # All timeframes for direction
-            "tier2_timeframes": ["1m", "5m"],  # Only shortest for timing
-            "direction_threshold": 0.7,  # Threshold for trade direction
-            "timing_threshold": 0.8,  # Threshold for precise timing
-            "high_leverage_mode": True,
-            "enable_two_tier": True,  # Enable two-tier decision system
-        },
-        # --- Enhanced Ensemble Configuration ---
-        "ENHANCED_ENSEMBLE": {
-            "enable_enhanced_ensembles": True,
-            "model_types": ["xgboost", "lstm", "random_forest"],
-            "multi_timeframe_integration": True,
-            "confidence_integration": True,
-            "liquidation_risk_integration": True,
-            "meta_learner_config": {
-                "model_type": "lightgbm",
-                "n_estimators": 100,
-                "learning_rate": 0.1,
-                "max_depth": 6,
-                "random_state": 42,
-            },
-        },
-        # --- Meta-Labeling System Defaults ---
-        "meta_labeling": {
-            "enable_analyst_labels": True,
-            "enable_tactician_labels": True,
-            "pattern_detection": {
-                "volatility_threshold": 0.02,
-                "momentum_threshold": 0.01,
-                "volume_threshold": 1.5,
-                "bb_edge_low": 0.2,
-                "bb_edge_high": 0.8,
-                "bb_mid_low": 0.3,
-                "bb_mid_high": 0.7,
-                "bb_width_compression": 0.05,
-                "bb_width_triangle": 0.03,
-                "trend_momentum_strong": 0.02,
-                "breakout_momentum": 0.01,
-                "failed_break_momentum": 0.005,
-                "rsi_overbought": 70,
-                "rsi_oversold": 30,
-                "sr_lookback": 50,
-                "sr_near_pct": 0.003,
-                "sr_break_pct": 0.0005,
-                "default_activation_threshold": 0.5,
-            },
-            "entry_prediction": {
-                "prediction_horizon": 5,
-                "max_adverse_excursion": 0.02,
-            },
-        },
-        # --- Regime Integration via Meta-Labels ---
-        "multi_timeframe_regime_integration": {
-            "enable_propagation": True,
-            "analysis_timeframe": "1h",
-            "smoothing_window": 5,
-            "candidate_labels": [
-                "STRONG_TREND_CONTINUATION",
-                "EXHAUSTION_REVERSAL",
-                "RANGE_MEAN_REVERSION",
-                "BREAKOUT_SUCCESS",
-                "BREAKOUT_FAILURE",
-                "MOMENTUM_IGNITION",
-                "VOLATILITY_COMPRESSION",
-                "VOLATILITY_EXPANSION",
-                "SR_TOUCH",
-                "SR_BOUNCE",
-                "SR_BREAK",
-                "IGNITION_BAR",
-            ],
-        },
-        # --- Regime-Specific TP/SL Optimizer (Meta-Label Driven) ---
-        "regime_specific_tpsl_optimizer": {
-            "n_trials": 100,
-            "min_trades": 20,
-            "optimization_metric": "sharpe_ratio",
-            "analysis_timeframe": "30m",
-            "candidate_labels": [
-                "STRONG_TREND_CONTINUATION",
-                "EXHAUSTION_REVERSAL",
-                "RANGE_MEAN_REVERSION",
-                "BREAKOUT_SUCCESS",
-                "BREAKOUT_FAILURE",
-                "MOMENTUM_IGNITION",
-                "VOLATILITY_COMPRESSION",
-                "VOLATILITY_EXPANSION",
-                "SR_TOUCH",
-                "SR_BOUNCE",
-                "SR_BREAK",
-                "IGNITION_BAR",
-            ],
-        },
-        # --- Event-centric Transition Modeling (new, additive) ---
-        "TRANSITION_MODELING": {
-            "enabled": True,
-            # HMM/Regime
-            "hmm_n_states": 5,
-            "use_existing_urc_models": True,
-            # Windows and de-duplication
-            "pre_window": 60,
-            "post_window": 20,
-            "label_cooldown_bars": 45,
-            "window_iou_threshold": 0.5,
-            "max_events_per_label": 10000,
-            # Event selection
-            "use_reliability_weighting": True,
-            "use_rising_edge_only": True,
-            # Secondary labels as encoder context
-            "preserve_secondary_labels": True,
-            # Caching
-            "cache": {
-                "enable_state_cache": True,
-                "enable_dataset_cache": True,
-                "cache_dir": "checkpoints/transition_cache",
-            },
-            # Multi-timeframe context features
-            "context_features": {
-                "enable_macro_context": True,
-                "macro_timeframe": "1h",
-                "include_price_over_ema50": True,
-                "include_atr_pct": True,
-                "include_macro_hmm_state": True,
-                "also_include_4h": False,
-            },
-            # Efficiency and pruning
-            "early_pruning": {
-                "prefilter_with_vectorized_labels": True,
-                "min_gap_between_candidates": 5,
-                "downsample_near_duplicate_sequences": True,
-                "duplicate_similarity_threshold": 0.98,
-            },
-            # Baseline modeling (computationally efficient)
-            "baseline_random_forest": {
-                "enabled": True,
-                "n_estimators": 300,
-                "max_depth": 12,
-                "min_samples_leaf": 5,
-                "random_state": 42,
-                "max_train_samples": 200000,
-            },
-            # SHAP explainability
-            "enable_shap": True,
-            # Targets
-            "path_class": {
-                "enable_beginning_of_trend": True,
-                "adx_sideways_threshold": 18,
-                "return_threshold": 0.001,
-                "onset_window_bars": 8,
-            },
-            # Barrier aux targets (approximate time-to-PT/SL)
-            "barriers": {
-                "profit_take_multiplier": 0.002,
-                "stop_loss_multiplier": 0.001,
-            },
-            # Storage
-            "artifacts_dir": "checkpoints/transition_datasets",
-            # Optional compact seq2seq (Transformer/TCN-like) training
-            "seq2seq": {
-                "enabled": True,
-                "model_type": "tcn",
-                "precision": "16-mixed",
-                "d_model": 128,
-                "nhead": 4,
-                "num_layers": 2,
-                "max_epochs": 10,
-                "lr": 0.001,
-                "teacher_forcing_ratio": 1.0,
-                "scheduled_sampling": {"start": 1.0, "end": 0.5, "epochs": 10},
-                "path_class_weights": {
-                    "continuation": 1.0,
-                    "reversal": 1.2,
-                    "end_of_trend": 0.8,
-                    "beginning_of_trend": 1.5,
-                },
-                "focal_gamma": 0.0,
-                "quantile_returns": [0.1, 0.5, 0.9],
-                "cv_folds": 3,
-                "artifact_dir_models": "checkpoints/transition_models",
-            },
-            # Inference gating thresholds per timeframe and macro-regime
-            "inference": {
-                "path_class_thresholds": {
-                    "1m": {"continuation": 0.75, "beginning_of_trend": 0.75},
-                    "5m": {"continuation": 0.70, "beginning_of_trend": 0.70},
-                },
-                "macro_regime_thresholds": {
-                    "BULL": {
-                        "1m": {"continuation": 0.70, "beginning_of_trend": 0.70},
-                        "5m": {"continuation": 0.68, "beginning_of_trend": 0.68},
-                    },
-                    "BEAR": {
-                        "1m": {"continuation": 0.80, "beginning_of_trend": 0.85},
-                        "5m": {"continuation": 0.78, "beginning_of_trend": 0.82},
-                    },
-                    "SIDEWAYS": {
-                        "1m": {"continuation": 0.78, "beginning_of_trend": 0.80},
-                        "5m": {"continuation": 0.75, "beginning_of_trend": 0.78},
-                    },
-                },
-            },
-            # Timeframe ensemble for combining predictions (weights must sum to <= 1)
-            "timeframe_ensemble": {
-                "enabled": False,
-                "weights": {"1m": 0.30, "5m": 0.30, "15m": 0.25, "30m": 0.15},
-            },
-            # Optional lightweight validation on higher timeframes
-            "htf_validation": {
-                "enabled": False,
-                "timeframes": ["15m", "1h"],
-                "run_seq2seq": False,
-            },
+        # --- Validation Configuration ---
+        "VALIDATION": {
+            "enable_walk_forward_validation": True,
+            "enable_monte_carlo_validation": True,
+            "enable_ab_testing": True,
+            "enable_confidence_calibration": True,
+            "enable_final_parameters_optimization": True,
         },
     }
 
 
-def get_model_training_config() -> dict[str, Any]:
-    """
-    Get model training configuration.
-
-    Returns:
-        dict: Model training configuration
-    """
-    training_config = get_training_config()
-    return training_config.get("MODEL_TRAINING", {})
-
-
-def get_enhanced_training_config() -> dict[str, Any]:
-    """
-    Get enhanced training configuration.
-
-    Returns:
-        dict: Enhanced training configuration
-    """
-    training_config = get_training_config()
-    return training_config.get("ENHANCED_TRAINING", {})
-
-
-def get_multi_timeframe_training_config() -> dict[str, Any]:
-    """
-    Get multi-timeframe training configuration.
-
-    Returns:
-        dict: Multi-timeframe training configuration
-    """
-    training_config = get_training_config()
-    return training_config.get("MULTI_TIMEFRAME_TRAINING", {})
-
-
-def get_timeframes_config() -> dict[str, Any]:
-    """
-    Get timeframes configuration.
-
-    Returns:
-        dict: Timeframes configuration
-    """
-    training_config = get_training_config()
-    return training_config.get("TIMEFRAMES", {})
-
-
-def get_timeframe_sets_config() -> dict[str, Any]:
-    """
-    Get timeframe sets configuration.
-
-    Returns:
-        dict: Timeframe sets configuration
-    """
-    training_config = get_training_config()
-    return training_config.get("TIMEFRAME_SETS", {})
-
-
-def get_two_tier_decision_config() -> dict[str, Any]:
-    """
-    Get two-tier decision configuration.
-
-    Returns:
-        dict: Two-tier decision configuration
-    """
-    training_config = get_training_config()
-    return training_config.get("TWO_TIER_DECISION", {})
-
-
-def get_enhanced_ensemble_config() -> dict[str, Any]:
-    """
-    Get enhanced ensemble configuration.
-
-    Returns:
-        dict: Enhanced ensemble configuration
-    """
-    training_config = get_training_config()
-    return training_config.get("ENHANCED_ENSEMBLE", {})
-
-
 def get_training_pipeline_config() -> dict[str, Any]:
-    """
-    Get training pipeline configuration.
+    """Get training pipeline configuration.
 
     Returns:
         dict: Training pipeline configuration
+
     """
     training_config = get_training_config()
     return training_config.get("training_pipeline", {})
 
 
-def get_data_config() -> dict[str, Any]:
+def get_model_training_config() -> dict[str, Any]:
+    """Get model training configuration.
+
+    Returns:
+        dict: Model training configuration
+
     """
-    Get data configuration.
+    training_config = get_training_config()
+    return training_config.get("MODEL_TRAINING", {})
+
+
+def get_data_config() -> dict[str, Any]:
+    """Get data configuration.
 
     Returns:
         dict: Data configuration
+
     """
     training_config = get_training_config()
     return training_config.get("DATA_CONFIG", {})
 
 
-def get_default_timeframe_set() -> str:
-    """
-    Get the default timeframe set.
+def get_enhanced_training_config() -> dict[str, Any]:
+    """Get enhanced training configuration.
 
     Returns:
-        str: Default timeframe set name
+        dict: Enhanced training configuration
+
     """
     training_config = get_training_config()
-    return training_config.get("DEFAULT_TIMEFRAME_SET", "intraday")
+    return training_config.get("ENHANCED_TRAINING", {})
 
 
-def get_timeframe_config(timeframe: str) -> dict[str, Any]:
-    """
-    Get configuration for a specific timeframe.
-
-    Args:
-        timeframe: The timeframe to get configuration for
+def get_hmm_lm_config() -> dict[str, Any]:
+    """Get HMM-LM model configuration.
 
     Returns:
-        dict: Timeframe configuration
+        dict: HMM-LM model configuration
+
     """
-    timeframes_config = get_timeframes_config()
-    return timeframes_config.get(timeframe, {})
+    training_config = get_training_config()
+    return training_config.get("HMM_LM", {})
 
 
-def get_timeframe_set_config(set_name: str) -> dict[str, Any]:
-    """
-    Get configuration for a specific timeframe set.
-
-    Args:
-        set_name: The timeframe set name
+def get_feature_engineering_config() -> dict[str, Any]:
+    """Get feature engineering configuration.
 
     Returns:
-        dict: Timeframe set configuration
+        dict: Feature engineering configuration
+
     """
-    timeframe_sets_config = get_timeframe_sets_config()
-    return timeframe_sets_config.get(set_name, {})
+    training_config = get_training_config()
+    return training_config.get("FEATURE_ENGINEERING", {})
+
+
+def get_validation_config() -> dict[str, Any]:
+    """Get validation configuration.
+
+    Returns:
+        dict: Validation configuration
+
+    """
+    training_config = get_training_config()
+    return training_config.get("VALIDATION", {})

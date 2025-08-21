@@ -2,7 +2,6 @@
 
 import logging
 import os
-import signal
 import time
 from pathlib import Path
 from typing import Any
@@ -14,47 +13,23 @@ try:
     import numpy as np
     import optuna
     import pandas as pd
-    import shap
-
-    try:
-        import tensorflow as tf
-        from optuna.integration import TFKerasPruningCallback
-        from tensorflow.keras import Model, layers, regularizers  # type: ignore[import-not-found]
-        from tensorflow.keras.callbacks import (
-            EarlyStopping,
-            ReduceLROnPlateau,
-            Callback,
-        )  # type: ignore[import-not-found]
-
-        TF_AVAILABLE = True
-    except Exception as _tf_e:
-        TF_AVAILABLE = False
-        tf = None  # type: ignore
-        TFKerasPruningCallback = object  # type: ignore
-        Model = layers = regularizers = EarlyStopping = ReduceLROnPlateau = Callback = (
-            object  # type: ignore
-        )
+    import tensorflow as tf
+    from optuna.integration import TFKerasPruningCallback
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
+    from tensorflow.keras import Model, layers
+    from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 
     DEPENDENCIES_AVAILABLE = True
 except ImportError as e:
     DEPENDENCIES_AVAILABLE = False
     MISSING_DEPENDENCY = str(e)
-    try:
-        from src.utils.warning_symbols import missing as _missing
-
-        print(_missing(f" Missing dependency: {MISSING_DEPENDENCY}"))
-    except Exception:
-        print(f"Missing dependency: {MISSING_DEPENDENCY}")
+    print(f" Missing dependency: {MISSING_DEPENDENCY}")
     print("📦 Please install required packages:")
     print("   pip install numpy pandas scikit-learn tensorflow optuna shap pyyaml")
 
 # Set up comprehensive logging
-from src.utils.logger import setup_logging, heartbeat, log_dataframe_overview
-from src.utils.warning_symbols import (
-    error,
-)
+from src.utils.logger import setup_logging
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -93,21 +68,6 @@ class AutoencoderConfig:
                 f"📋 Configuration loaded successfully from {self.config_path}"
             )
             self.logger.info(f"📊 Configuration sections: {list(config.keys())}")
-            try:
-                seq_cfg = config.get("sequence", {}) or {}
-                tr_cfg = config.get("training", {}) or {}
-                ae_cfg = config.get("autoencoder", {}) or {}
-                self.logger.info(
-                    f"⚙️ Key params: timesteps={seq_cfg.get('timesteps', 'n/a')}, overlap={seq_cfg.get('overlap','n/a')}"
-                )
-                self.logger.info(
-                    f"⚙️ Training params: n_trials={tr_cfg.get('n_trials','n/a')}, n_jobs={tr_cfg.get('n_jobs','n/a')}, epoch_logging_interval={tr_cfg.get('epoch_logging_interval','n/a')}"
-                )
-                self.logger.info(
-                    f"⚙️ AE params: epochs={ae_cfg.get('epochs','n/a')}, early_stopping_patience={ae_cfg.get('early_stopping_patience','n/a')}, reduce_lr_patience={ae_cfg.get('reduce_lr_patience','n/a')}"
-                )
-            except Exception:
-                pass
             return config
         except Exception:
             self.logger.exception(
@@ -137,15 +97,7 @@ class AutoencoderConfig:
                 "reduce_lr_patience": 5,
                 "min_lr": 1e-6,
             },
-            "training": {
-                "n_trials": 50,
-                "n_jobs": 1,
-                "pruning_enabled": True,
-                # Controls how often we log epoch progress (every N epochs)
-                "epoch_logging_interval": 1,
-                # Warn if a single epoch exceeds this duration (seconds)
-                "max_epoch_time_warn_seconds": 60,
-            },
+            "training": {"n_trials": 50, "n_jobs": 1, "pruning_enabled": True},
             "feature_filtering": {
                 "n_estimators": 100,
                 "max_depth": 10,
@@ -200,31 +152,14 @@ class PriceReturnConverter:
         )
         # New configuration for feature selection
         self.primary_price_feature = config.get(
-            "preprocessing.primary_price_feature",
-            "close_returns",  # Prefer engineered returns
+            "preprocessing.primary_price_feature", "close"
         )
         self.primary_volume_feature = config.get(
-            "preprocessing.primary_volume_feature",
-            "volume_returns",  # Prefer engineered returns
+            "preprocessing.primary_volume_feature", "volume"
         )
         self.enable_feature_selection = config.get(
             "preprocessing.enable_feature_selection", True
         )
-        # Columns that are not true engineered features and should be excluded
-        self.non_feature_columns = {
-            "timestamp",
-            "time",
-            "year",
-            "month",
-            "day",
-            "day_of_week",
-            "day_of_month",
-            "quarter",
-            "exchange",
-            "symbol",
-            "timeframe",
-            "split",
-        }
 
     def convert_price_features_to_returns(
         self, features_df: pd.DataFrame
@@ -233,6 +168,12 @@ class PriceReturnConverter:
         Convert price features to returns (price differences) to improve autoencoder training.
         Optimized to select only one representative price feature and one volume feature
         to avoid redundancy.
+
+        Args:
+            features_df: DataFrame containing features, potentially including price data
+
+        Returns:
+            DataFrame with optimized price features converted to returns
         """
         if not self.use_price_returns:
             self.logger.info(
@@ -244,64 +185,8 @@ class PriceReturnConverter:
             "🔄 Converting price features to returns for autoencoder training..."
         )
 
+        # Create a copy to avoid modifying the original
         converted_df = features_df.copy()
-
-        # Consider preserved context columns as primary signals if present
-        possible_price_cols = [
-            "close_returns",  # already returns-like - PREFERRED
-            "close",
-            "avg_price",
-            "min_price",
-            "max_price",
-        ]
-        possible_volume_cols = [
-            "volume_returns",  # already returns-like - PREFERRED
-            "volume_normalized",
-            "volume_log",
-            "volume_detrended",
-            "volume",
-            "trade_volume",
-        ]
-        candidate_price = next(
-            (c for c in possible_price_cols if c in converted_df.columns), None
-        )
-        candidate_volume = next(
-            (c for c in possible_volume_cols if c in converted_df.columns), None
-        )
-        # If candidates exist, ensure they are return-like. If not, convert
-        converted_count = 0
-        try:
-            if candidate_price:
-                s = converted_df[candidate_price]
-                if not candidate_price.endswith(("_returns", "_diff", "_log_returns")):
-                    converted_df[candidate_price] = s.pct_change().fillna(0)
-                    converted_count += 1
-            if candidate_volume:
-                s = converted_df[candidate_volume]
-                if not candidate_volume.endswith(("_returns", "_diff", "_log_returns")):
-                    with np.errstate(divide="ignore", invalid="ignore"):
-                        converted_df[candidate_volume] = (
-                            s.pct_change().replace([np.inf, -np.inf], np.nan).fillna(0)
-                        )
-                    converted_count += 1
-        except Exception as e:
-            self.logger.warning(f"Price/volume conversion warning: {e}")
-
-        # Proceed with standard selection pipeline (will no-op if not many raw cols remain)
-        # ... original logic continues ...
-
-        # Drop non-feature calendar/metadata columns up-front
-        drop_cols = [c for c in converted_df.columns if c in self.non_feature_columns]
-        if drop_cols:
-            self.logger.info(
-                f"🗑️ Dropping non-feature columns before conversion: {drop_cols}"
-            )
-            converted_df = converted_df.drop(columns=drop_cols)
-
-        # Initialize variables in broader scope to avoid NameError
-        selected_price_feature = None
-        selected_volume_feature = None
-        features_to_convert = []
 
         if self.enable_feature_selection:
             # OPTIMIZED APPROACH: Select only one price feature and one volume feature
@@ -314,7 +199,7 @@ class PriceReturnConverter:
             for col in converted_df.columns:
                 col_lower = col.lower()
 
-                # Skip regime and categorical and already-return-like engineered features
+                # Skip regime and categorical features
                 if any(
                     exclude_pattern in col_lower
                     for exclude_pattern in [
@@ -328,350 +213,145 @@ class PriceReturnConverter:
                 ):
                     continue
 
-                # Skip already engineered return-like features (but keep the primary ones we want)
-                if any(
-                    suffix in col_lower
-                    for suffix in ["_returns", "_diff", "_log_returns", "_ratio"]
-                ):
-                    # But keep the primary return features we specifically want
-                    if col_lower in ["close_returns", "volume_returns"]:
-                        pass  # Keep these
-                    else:
-                        continue
-
-                # Skip array-valued columns
+                # Skip features with very limited unique values (likely categorical)
                 try:
+                    # Check if the column contains array-valued cells
                     sample_value = converted_df[col].iloc[0]
                     if isinstance(sample_value, (np.ndarray, list)):
-                        self.logger.warning(
-                            f"Skipping array-valued column {col}: contains {type(sample_value)}"
-                        )
+                        self.logger.warning(f"Skipping array-valued column {col}: contains {type(sample_value)}")
                         continue
-                except Exception:
-                    pass
 
-                # Skip low-cardinality categorical-like columns
-                try:
                     unique_count = converted_df[col].nunique()
                     if unique_count <= 5:
                         continue
-                except (TypeError, ValueError):
+                except (TypeError, ValueError) as e:
+                    # Handle numpy arrays and other non-hashable types
+                    self.logger.warning(f"Error checking uniqueness for column {col}: {e}")
                     continue
 
-                # Categorize features - EXCLUDE ALL raw OHLCV data, focus on engineered features
+                # Categorize features
                 if any(
-                    raw_pattern == col_lower
-                    for raw_pattern in [
-                        # Basic OHLCV
+                    price_pattern in col_lower
+                    for price_pattern in [
                         "open",
                         "high",
                         "low",
                         "close",
-                        "volume",
-                        # Price variations
+                        "price",
                         "avg_price",
                         "min_price",
                         "max_price",
-                        "mid_price",
-                        "typical_price",
-                        "weighted_price",
-                        # Return variations
-                        "close_returns",
-                        "open_returns",
-                        "high_returns",
-                        "low_returns",
-                        "volume_returns",
-                        "price_returns",
-                        "returns",
-                        "log_returns",
-                        "pct_change",
-                        # Volume variations
-                        "trade_volume",
-                        "volume_raw",
-                        "volume_original",
-                        "volume_base",
-                        # OHLCV with different naming
-                        "Open",
-                        "High",
-                        "Low",
-                        "Close",
-                        "Volume",
-                        "OPEN",
-                        "HIGH",
-                        "LOW",
-                        "CLOSE",
-                        "VOLUME",
-                        # Common variations
-                        "price",
-                        "Price",
-                        "PRICE",
-                        "vol",
-                        "Vol",
-                        "VOL",
-                        # Raw data indicators
-                        "raw_",
-                        "Raw_",
-                        "RAW_",
-                        "base_",
-                        "Base_",
-                        "BASE_",
-                        # Direct OHLCV derivatives
-                        "ohlc_",
-                        "OHLC_",
-                        "ohlcv_",
-                        "OHLCV_",
                     ]
                 ):
-                    # Skip ALL raw OHLCV data - these are not features
-                    continue
-                else:
-                    # This is an actual engineered feature - keep it
-                    pass
-
-            # Count engineered features (excluding ALL raw OHLCV data)
-            engineered_features = []
-            raw_ohlcv_features = []
-
-            for col in converted_df.columns:
-                col_lower = col.lower()
-
-                # Check if it's raw OHLCV data
-                if any(
-                    raw_pattern == col_lower
-                    for raw_pattern in [
-                        # Basic OHLCV
-                        "open",
-                        "high",
-                        "low",
-                        "close",
-                        "volume",
-                        # Price variations
-                        "avg_price",
-                        "min_price",
-                        "max_price",
-                        "mid_price",
-                        "typical_price",
-                        "weighted_price",
-                        # Return variations
-                        "close_returns",
-                        "open_returns",
-                        "high_returns",
-                        "low_returns",
-                        "volume_returns",
-                        "price_returns",
-                        "returns",
-                        "log_returns",
-                        "pct_change",
-                        # Volume variations
-                        "trade_volume",
-                        "volume_raw",
-                        "volume_original",
-                        "volume_base",
-                        # OHLCV with different naming
-                        "open",
-                        "high",
-                        "low",
-                        "close",
-                        "volume",
-                        "open",
-                        "high",
-                        "low",
-                        "close",
-                        "volume",
-                        # Common variations
-                        "price",
-                        "price",
-                        "price",
-                        "vol",
-                        "vol",
-                        "vol",
-                        # Raw data indicators
-                        "raw_",
-                        "raw_",
-                        "raw_",
-                        "base_",
-                        "base_",
-                        "base_",
-                        # Direct OHLCV derivatives
-                        "ohlc_",
-                        "ohlc_",
-                        "ohlcv_",
-                        "ohlcv_",
-                    ]
+                    if col not in available_price_features:
+                        available_price_features.append(col)
+                elif any(
+                    volume_pattern in col_lower
+                    for volume_pattern in ["volume", "trade_volume", "vol"]
                 ):
-                    raw_ohlcv_features.append(col)
-                elif col not in self.non_feature_columns:
-                    # This is an engineered feature
-                    engineered_features.append(col)
+                    if col not in available_volume_features:
+                        available_volume_features.append(col)
 
-            self.logger.info(f"📊 Found {len(engineered_features)} engineered features")
             self.logger.info(
-                f"📊 Found {len(raw_ohlcv_features)} raw OHLCV features (will be removed)"
+                f"📊 Found {len(available_price_features)} price features: {available_price_features}"
+            )
+            self.logger.info(
+                f"📊 Found {len(available_volume_features)} volume features: {available_volume_features}"
             )
 
-            if engineered_features:
+            # Select primary features
+            selected_price_feature = None
+            selected_volume_feature = None
+
+            # Select price feature (prefer 'close' if available, otherwise first available)
+            if self.primary_price_feature in available_price_features:
+                selected_price_feature = self.primary_price_feature
+            elif available_price_features:
+                selected_price_feature = available_price_features[0]
                 self.logger.info(
-                    f"📊 Engineered features include: {engineered_features[:10]}"
-                    + (" ..." if len(engineered_features) > 10 else "")
+                    f"🎯 Selected '{selected_price_feature}' as primary price feature (preferred '{self.primary_price_feature}' not available)"
                 )
+            else:
+                self.logger.warning("⚠️ No price features found for conversion")
 
-            # Safety check: if we have very few engineered features, log all available columns for debugging
-            if len(engineered_features) < 5:
-                self.logger.warning(
-                    "⚠️ Very few engineered features found. All available columns:"
+            # Select volume feature (prefer 'volume' if available, otherwise first available)
+            if self.primary_volume_feature in available_volume_features:
+                selected_volume_feature = self.primary_volume_feature
+            elif available_volume_features:
+                selected_volume_feature = available_volume_features[0]
+                self.logger.info(
+                    f"🎯 Selected '{selected_volume_feature}' as primary volume feature (preferred '{self.primary_volume_feature}' not available)"
                 )
-                for i, col in enumerate(converted_df.columns):
-                    col_lower = col.lower()
-                    excluded_reason = None
-                    if any(
-                        exclude_pattern in col_lower
-                        for exclude_pattern in [
-                            "regime",
-                            "categorical",
-                            "class",
-                            "label",
-                            "category",
-                            "type",
-                        ]
-                    ):
-                        excluded_reason = "regime/categorical"
-                    elif any(
-                        raw_pattern == col_lower
-                        for raw_pattern in [
-                            "open",
-                            "high",
-                            "low",
-                            "close",
-                            "avg_price",
-                            "min_price",
-                            "max_price",
-                            "close_returns",
-                            "volume",
-                            "trade_volume",
-                            "volume_returns",
-                        ]
-                    ):
-                        excluded_reason = "raw price/volume data"
-                    elif converted_df[col].nunique() <= 5:
-                        excluded_reason = (
-                            f"low cardinality ({converted_df[col].nunique()})"
-                        )
-                    else:
-                        excluded_reason = "engineered feature"
+            else:
+                self.logger.warning("⚠️ No volume features found for conversion")
 
-                    self.logger.info(
-                        f"   {i+1:2d}. {col} (excluded: {excluded_reason})"
-                    )
-
-            # Remove ALL raw price and volume data, keep only engineered features
+            # Remove redundant price and volume features
             features_to_remove = []
             for col in converted_df.columns:
                 col_lower = col.lower()
 
-                # Remove non-feature columns
-                if col in self.non_feature_columns:
-                    features_to_remove.append(col)
+                # Skip regime and categorical features
+                if any(
+                    exclude_pattern in col_lower
+                    for exclude_pattern in [
+                        "regime",
+                        "categorical",
+                        "class",
+                        "label",
+                        "category",
+                        "type",
+                    ]
+                ):
                     continue
 
-                # Remove ALL raw price/volume data (these are not features)
+                # Skip features with very limited unique values
+                try:
+                    unique_count = converted_df[col].nunique()
+                    if unique_count <= 5:
+                        continue
+                except (TypeError, ValueError) as e:
+                    # Handle numpy arrays and other non-hashable types
+                    self.logger.warning(f"Error checking uniqueness for column {col}: {e}")
+                    continue
+
+                # Remove redundant price features (keep only selected one)
                 if any(
-                    raw_pattern == col_lower
-                    for raw_pattern in [
+                    price_pattern in col_lower
+                    for price_pattern in [
                         "open",
                         "high",
                         "low",
                         "close",
+                        "price",
                         "avg_price",
                         "min_price",
                         "max_price",
-                        "close_returns",
-                        "volume",
-                        "trade_volume",
-                        "volume_returns",
                     ]
                 ):
-                    features_to_remove.append(col)
-                    continue
+                    if col != selected_price_feature:
+                        features_to_remove.append(col)
 
+                # Remove redundant volume features (keep only selected one)
+                elif any(
+                    volume_pattern in col_lower
+                    for volume_pattern in ["volume", "trade_volume", "vol"]
+                ):
+                    if col != selected_volume_feature:
+                        features_to_remove.append(col)
+
+            # Remove redundant features
             if features_to_remove:
                 self.logger.info(
-                    f"🗑️ Removing {len(features_to_remove)} raw price/volume features: {features_to_remove}"
+                    f"🗑️ Removing {len(features_to_remove)} redundant features: {features_to_remove}"
                 )
                 converted_df = converted_df.drop(columns=features_to_remove)
 
-            # Log total engineered features after removing raw data
-            total_engineered_features = len(converted_df.columns)
-            self.logger.info(
-                f"📊 Total engineered features after removing raw data: {total_engineered_features}"
-            )
-
-            if total_engineered_features > 0:
-                self.logger.info(
-                    f"📊 Engineered features preserved: {list(converted_df.columns)[:10]}"
-                    + (" ..." if total_engineered_features > 10 else "")
-                )
-
-            # CRITICAL SAFETY CHECK: Ensure we have enough engineered features
-            if total_engineered_features < 5:
-                self.logger.error(
-                    f"🚨 CRITICAL: Only {total_engineered_features} engineered features remaining! This is too few for effective training."
-                )
-                self.logger.error(
-                    "🚨 Falling back to legacy approach to preserve all features."
-                )
-                # Fall back to legacy approach
-                return self._legacy_convert_price_features_to_returns(features_df)
-
-            # Select representative price and volume features for conversion
-            # Ensure variables are properly initialized
-            selected_price_feature = None
-            selected_volume_feature = None
-
-            # Prefer already return-like features
-            if "close_returns" in converted_df.columns:
-                selected_price_feature = "close_returns"
-            elif "close" in converted_df.columns:
-                selected_price_feature = "close"
-            elif "avg_price" in converted_df.columns:
-                selected_price_feature = "avg_price"
-
-            if "volume_returns" in converted_df.columns:
-                selected_volume_feature = "volume_returns"
-            elif "volume" in converted_df.columns:
-                selected_volume_feature = "volume"
-            elif "trade_volume" in converted_df.columns:
-                selected_volume_feature = "trade_volume"
-
             # Convert selected features to returns
-            # Only convert if the selected features are truly raw OHLCV, not engineered proxies or already returns
-            if selected_price_feature and selected_price_feature in {
-                "open",
-                "high",
-                "low",
-                "close",
-                "avg_price",
-                "min_price",
-                "max_price",
-            }:
+            features_to_convert = []
+            if selected_price_feature:
                 features_to_convert.append(selected_price_feature)
-            elif selected_price_feature == "close_returns":
-                self.logger.info(
-                    "✅ Using pre-calculated close_returns (no conversion needed)"
-                )
-            elif selected_price_feature is None:
-                self.logger.info("ℹ️ No suitable price feature found for conversion")
-
-            if selected_volume_feature and selected_volume_feature in {
-                "volume",
-                "trade_volume",
-            }:
+            if selected_volume_feature:
                 features_to_convert.append(selected_volume_feature)
-            elif selected_volume_feature == "volume_returns":
-                self.logger.info(
-                    "✅ Using pre-calculated volume_returns (no conversion needed)"
-                )
-            elif selected_volume_feature is None:
-                self.logger.info("ℹ️ No suitable volume feature found for conversion")
 
             self.logger.info(
                 f"📊 Converting {len(features_to_convert)} selected features to returns: {features_to_convert}"
@@ -801,28 +481,19 @@ class PriceReturnConverter:
 
                     # Handle different return calculation methods
                     if self.price_return_method == "pct_change":
-                        # Percentage change (most common). Guard log-derived columns to avoid extreme spikes.
-                        if col.endswith("_log"):
-                            # For log series x=log(price), use diff(x) which equals log returns
-                            returns = original_values.diff().fillna(0)
-                            new_col_name = f"{col}_diff"
-                        else:
-                            returns = original_values.pct_change().fillna(0)
-                            new_col_name = f"{col}_returns"
+                        # Percentage change (most common)
+                        returns = original_values.pct_change().fillna(0)
                     elif self.price_return_method == "diff":
                         # Simple difference
                         returns = original_values.diff().fillna(0)
-                        new_col_name = f"{col}_diff"
                     elif self.price_return_method == "log_returns":
                         # Log returns (for financial data)
                         returns = np.log(
                             original_values / original_values.shift(1)
                         ).fillna(0)
-                        new_col_name = f"{col}_log_returns"
                     else:
                         # Default to percentage change
                         returns = original_values.pct_change().fillna(0)
-                        new_col_name = f"{col}_returns"
 
                     # CRITICAL: Handle infinite values that can crash scikit-learn models
                     inf_count_before = np.isinf(returns).sum()
@@ -886,173 +557,6 @@ class PriceReturnConverter:
 
         return converted_df
 
-    def _legacy_convert_price_features_to_returns(
-        self, features_df: pd.DataFrame
-    ) -> pd.DataFrame:
-        """
-        Legacy method that preserves all features while converting only price-related ones to returns.
-        Used as fallback when optimized approach removes too many features.
-        """
-        self.logger.info(
-            "🔄 Using legacy approach - preserving all features while converting price-related ones"
-        )
-
-        converted_df = features_df.copy()
-
-        # Drop non-feature calendar/metadata columns up-front
-        drop_cols = [c for c in converted_df.columns if c in self.non_feature_columns]
-        if drop_cols:
-            self.logger.info(f"🗑️ Dropping non-feature columns: {drop_cols}")
-            converted_df = converted_df.drop(columns=drop_cols)
-
-        # Define price-related feature patterns to convert
-        price_patterns = [
-            # OHLCV patterns
-            "open",
-            "high",
-            "low",
-            "close",
-            "volume",
-            # Price-related technical indicators
-            "price",
-            "Price",
-            "PRICE",
-            "sma_",
-            "ema_",
-            "SMA_",
-            "EMA_",
-            "bb_",
-            "BB_",
-            "bollinger",
-            "atr",
-            "ATR",
-            "average_true_range",
-            "vwap",
-            "VWAP",
-            # Price ratios and levels
-            "price_",
-            "Price_",
-            "PRICE_",
-            "level_",
-            "Level_",
-            "LEVEL_",
-            "support_",
-            "resistance_",
-            "Support_",
-            "Resistance_",
-            # Moving averages (price-based)
-            "ma_",
-            "MA_",
-            "moving_average",
-            # Price momentum and change
-            "momentum",
-            "Momentum",
-            "MOMENTUM",
-            "change",
-            "Change",
-            "CHANGE",
-            # Volume-weighted price features
-            "volume_weighted",
-            # Price-based oscillators
-            "cci",
-            "CCI",
-            "commodity_channel",
-            "williams_r",
-            "Williams_R",
-            "WILLIAMS_R",
-            # Price-based patterns
-            "pattern_",
-            "Pattern_",
-            "PATTERN_",
-            "candlestick_",
-            "Candlestick_",
-            "CANDLESTICK_",
-        ]
-
-        # Find columns that match price patterns
-        features_to_convert = []
-        for col in converted_df.columns:
-            # Skip regime and categorical features
-            if any(
-                exclude_pattern in col.lower()
-                for exclude_pattern in [
-                    "regime",
-                    "categorical",
-                    "class",
-                    "label",
-                    "category",
-                    "type",
-                ]
-            ):
-                continue
-
-            # Skip features with very limited unique values
-            unique_count = converted_df[col].nunique()
-            if unique_count <= 5:
-                continue
-
-            # Check if column matches price patterns
-            if any(pattern in col.lower() for pattern in price_patterns):
-                # Skip columns that are already returns or differences
-                if any(
-                    skip_pattern in col.lower()
-                    for skip_pattern in ["return", "diff", "change", "pct", "ratio"]
-                ):
-                    continue
-                features_to_convert.append(col)
-
-        # Convert selected features to returns
-        converted_count = 0
-        for col in features_to_convert:
-            try:
-                if col in converted_df.columns:
-                    # CRITICAL: Double-check for known problematic features
-                    if col.lower() in [
-                        "volume_regime",
-                        "volatility_regime",
-                        "trend_regime",
-                    ]:
-                        self.logger.warning(
-                            f"⚠️ Skipping known regime feature '{col}' to prevent infinite values"
-                        )
-                        continue
-
-                    original_values = converted_df[col].copy()
-
-                    # Handle different return calculation methods
-                    if self.price_return_method == "pct_change":
-                        returns = original_values.pct_change().fillna(0)
-                    elif self.price_return_method == "diff":
-                        returns = original_values.diff().fillna(0)
-                    elif self.price_return_method == "log_returns":
-                        returns = np.log(
-                            original_values / original_values.shift(1)
-                        ).fillna(0)
-                    else:
-                        returns = original_values.pct_change().fillna(0)
-
-                    # Handle infinite values
-                    returns = returns.replace([np.inf, -np.inf], np.nan).fillna(0)
-
-                    # Clip extreme values
-                    max_abs_value = 1000
-                    returns = np.clip(returns, -max_abs_value, max_abs_value)
-
-                    # Replace the original column with returns
-                    converted_df[col] = returns
-                    converted_count += 1
-
-            except Exception as e:
-                self.logger.warning(
-                    f"⚠️ Failed to convert price feature '{col}' to returns: {e}"
-                )
-                continue
-
-        self.logger.info(
-            f"✅ Legacy conversion completed: {converted_count} features converted, {len(converted_df.columns)} total features preserved"
-        )
-        return converted_df
-
 
 class FeatureFilter:
     """Random Forest + SHAP feature filtering."""
@@ -1065,51 +569,6 @@ class FeatureFilter:
             )
         self.config = config
         self.logger = system_logger.getChild("FeatureFilter")
-        # Treat calendar/metadata columns as non-features
-        self.non_feature_columns = {
-            "timestamp",
-            "time",
-            "year",
-            "month",
-            "day",
-            "day_of_week",
-            "day_of_month",
-            "quarter",
-            "exchange",
-            "symbol",
-            "timeframe",
-            "split",
-        }
-        # Define all raw/non-feature columns to be excluded
-        self.raw_columns = {
-            "open",
-            "high",
-            "low",
-            "close",
-            "volume",
-            "trade_volume",
-            "trade_count",
-            "avg_price",
-            "min_price",
-            "max_price",
-            # Treat these as raw context inputs, not engineered features
-            "funding_rate",
-            "volume_ratio",
-            # Exclude close_returns to prevent data leakage (it's used as target)
-            "close_returns",
-        }
-
-    def _exclude_raw_and_meta(self, df: pd.DataFrame) -> pd.DataFrame:
-        cols_to_drop = [
-            c
-            for c in df.columns
-            if c in self.non_feature_columns or c in self.raw_columns
-        ]
-        if cols_to_drop:
-            self.logger.warning(f"🚨 Excluding non-feature/raw columns: {cols_to_drop}")
-            df = df.drop(columns=cols_to_drop)
-            self.logger.info(f"📊 Features shape after exclusion: {df.shape}")
-        return df
 
     def filter_features(
         self,
@@ -1123,32 +582,30 @@ class FeatureFilter:
             )
             self.logger.info(f"📊 Input data shape: {features_df.shape}")
             self.logger.info(f"🎯 Number of unique labels: {len(np.unique(labels))}")
-            # Human-readable class distribution
-            uniq, cnt = np.unique(labels, return_counts=True)
-            total = int(cnt.sum()) if len(cnt) else 0
-            parts = []
-            for u, c in zip(uniq, cnt):
-                pct = (c / total * 100.0) if total else 0.0
-                parts.append(f"{int(u)}: {int(c)} ({pct:.1f}%)")
-            self.logger.info(f"📈 Label distribution: {{ " + ", ".join(parts) + " }}")
+            self.logger.info(
+                f"📈 Label distribution: {dict(zip(*np.unique(labels, return_counts=True)))}"
+            )
 
-            # CRITICAL: Filter out all raw/non-feature columns first
-            features_df = self._exclude_raw_and_meta(features_df)
-            if features_df.empty:
-                self.logger.error(
-                    "🚨 CRITICAL: No engineered features remaining after exclusion"
-                )
-                return pd.DataFrame()
+            # CRITICAL: Filter out raw OHLCV data that should not be used as features
+            raw_ohlcv_columns = ['open', 'high', 'low', 'close', 'volume', 'timestamp', 'time']
+            raw_ohlcv_columns = [col for col in raw_ohlcv_columns if col in features_df.columns]
+
+            if raw_ohlcv_columns:
+                self.logger.warning(f"🚨 CRITICAL: Found raw OHLCV columns in features: {raw_ohlcv_columns}")
+                self.logger.warning("🚨 These should be excluded from feature filtering")
+                self.logger.warning("🚨 Raw price data should be processed into engineered features first")
+
+                # Remove raw OHLCV columns
+                features_df = features_df.drop(columns=raw_ohlcv_columns)
+                self.logger.info(f"✅ Removed {len(raw_ohlcv_columns)} raw OHLCV columns from features")
+                self.logger.info(f"📊 Features shape after removal: {features_df.shape}")
+
+                if features_df.empty:
+                    self.logger.error("🚨 CRITICAL: No engineered features remaining after removing raw OHLCV data")
+                    self.logger.error("🚨 This indicates a serious data pipeline issue")
+                    return pd.DataFrame()
 
             X = features_df.select_dtypes(include=[np.number]).fillna(0)
-            # Safety: ensure raw numeric columns are excluded
-            raw_in_numeric = [c for c in X.columns if c in self.raw_columns]
-            if raw_in_numeric:
-                self.logger.warning(
-                    f"🚨 Removing raw numeric columns from candidate features: {raw_in_numeric}"
-                )
-                X = X.drop(columns=raw_in_numeric)
-                features_df = features_df.drop(columns=raw_in_numeric)
             y = labels
 
             # Check if we have any numeric features
@@ -1182,7 +639,7 @@ class FeatureFilter:
                 n_estimators=n_estimators,
                 max_depth=max_depth,
                 random_state=random_state,
-                n_jobs=1,  # Fixed: Changed from -1 to 1 to avoid joblib parallel processing issues
+                n_jobs=-1,
             )
 
             import time
@@ -1248,7 +705,7 @@ class FeatureFilter:
                     else float("inf")
                 )
 
-                self.logger.info(f"📊 Label distribution analysis:")
+                self.logger.info("📊 Label distribution analysis:")
                 self.logger.info(f"   Unique labels: {unique_labels}")
                 self.logger.info(f"   Label counts: {label_counts}")
                 self.logger.info(f"   Min class count: {min_class_count}")
@@ -1303,7 +760,7 @@ class FeatureFilter:
                             zip(*np.unique(y_sample, return_counts=True))
                         )
 
-                        self.logger.info(f"✅ Stratified sampling successful!")
+                        self.logger.info("✅ Stratified sampling successful!")
                         self.logger.info(
                             f"📊 Original class distribution: {original_dist}"
                         )
@@ -1356,7 +813,7 @@ class FeatureFilter:
                     n_estimators=50,  # Fewer trees for speed
                     max_depth=8,  # Shallow trees for speed
                     random_state=42,
-                    n_jobs=1,  # Fixed: Changed from -1 to 1 to avoid joblib parallel processing issues
+                    n_jobs=-1,
                 )
                 pre_filter_rf.fit(X_sample, y_sample)
 
@@ -1395,7 +852,7 @@ class FeatureFilter:
                 min_samples_split=shap_min_samples_split,
                 min_samples_leaf=shap_min_samples_leaf,
                 random_state=42,
-                n_jobs=1,  # Fixed: Changed from -1 to 1 to avoid joblib parallel processing issues
+                n_jobs=-1,
             )
 
             self.logger.info(
@@ -1418,7 +875,6 @@ class FeatureFilter:
 
             # Add timeout protection for SHAP computation
             import signal
-            import threading
             import platform
 
             # EFFICIENCY OPTIMIZATION 6: Flexible timeout based on dataset size
@@ -1431,7 +887,7 @@ class FeatureFilter:
             # More flexible bounds: Min 30s, Max 15 minutes (increased from 5min)
             timeout_seconds = max(30, min(900, calculated_timeout))
 
-            self.logger.info(f"⏱️ Flexible timeout calculation:")
+            self.logger.info("⏱️ Flexible timeout calculation:")
             self.logger.info(f"   📊 Sample size: {len(X_sample)} rows")
             self.logger.info(
                 f"   📊 Base rate: {base_timeout_per_5000}s per 5000 samples"
@@ -1501,7 +957,7 @@ class FeatureFilter:
                 total_importance = cumulative_importance[-1]
 
                 self.logger.info(f"📊 Total importance: {total_importance:.6f}")
-                self.logger.info(f"🏆 Top 5 most important features:")
+                self.logger.info("🏆 Top 5 most important features:")
                 for i in range(min(5, len(sorted_indices))):
                     feature_name = X.columns[sorted_indices[i]]
                     importance = sorted_importance[i]
@@ -1572,7 +1028,7 @@ class FeatureFilter:
                     )
 
                 self.logger.info(
-                    f"🎉 Feature filtering completed successfully with fallback method!"
+                    "🎉 Feature filtering completed successfully with fallback method!"
                 )
                 self.logger.info(f"📊 Final feature count: {len(final_features)}")
                 self.logger.info(f"📊 Final features: {final_features}")
@@ -1633,7 +1089,7 @@ class FeatureFilter:
             total_importance = cumulative_importance[-1]
 
             self.logger.info(f"📊 Total importance: {total_importance:.6f}")
-            self.logger.info(f"🏆 Top features by importance:")
+            self.logger.info("🏆 Top 5 most important features:")
             for i in range(min(5, len(sorted_indices))):
                 feature_name = X.columns[sorted_indices[i]]
                 importance = sorted_importance[i]
@@ -1642,78 +1098,23 @@ class FeatureFilter:
                     f"   {i+1}. {feature_name}: {importance:.6f} (cumulative: {cumulative:.6f})"
                 )
 
-            # Suspicious dominance detection (relative, warn-only)
-            try:
-                total_imp = float(total_importance) if total_importance else 0.0
-                if total_imp > 0 and len(sorted_indices) > 0:
-                    top1 = float(sorted_importance[0])
-                    top2 = float(
-                        sorted_importance[0]
-                        + (sorted_importance[1] if len(sorted_importance) > 1 else 0.0)
-                    )
-                    top1_ratio = top1 / total_imp
-                    top2_ratio = top2 / total_imp
-                    thresh1 = float(
-                        self.config.get("feature_filtering.suspicious_top1_ratio", 0.60)
-                    )
-                    thresh2 = float(
-                        self.config.get("feature_filtering.suspicious_top2_ratio", 0.85)
-                    )
-                    if top1_ratio >= thresh1 or top2_ratio >= thresh2:
-                        suspicious_names = [X.columns[sorted_indices[0]]]
-                        if len(sorted_indices) > 1:
-                            suspicious_names.append(X.columns[sorted_indices[1]])
-                        patterns = [
-                            "price_impact",
-                            "volume_price_impact",
-                            "market_depth",
-                            "order_flow_imbalance",
-                            "liquidity_score",
-                            "bid_ask_spread",
-                        ]
-                        matched = [
-                            n
-                            for n in suspicious_names
-                            if any(p in n.lower() for p in patterns)
-                        ]
-                        if matched:
-                            self.logger.warning(
-                                f"⚠️ Suspicious dominance: top features {matched} account for top1={top1_ratio:.1%}, top2={top2_ratio:.1%} of total importance"
-                            )
-                        else:
-                            self.logger.warning(
-                                f"⚠️ Suspicious dominance: top features {suspicious_names} account for top1={top1_ratio:.1%}, top2={top2_ratio:.1%} of total importance"
-                            )
-                    # Also warn on very low effective number of features (importance concentration)
-                    denom = (
-                        float(np.sum(np.square(sorted_importance)))
-                        if np.isfinite(np.sum(np.square(sorted_importance)))
-                        else 0.0
-                    )
-                    if total_imp > 0 and denom > 0:
-                        eff = (total_imp**2) / denom
-                        if eff < float(
-                            self.config.get(
-                                "feature_filtering.suspicious_effective_features", 5.0
-                            )
-                        ):
-                            self.logger.warning(
-                                f"⚠️ Importance highly concentrated: effective_features≈{eff:.1f}"
-                            )
-            except Exception:
-                pass
-
             # Get feature selection parameters from config
-            threshold = self.config.get("feature_filtering.importance_threshold", 0.90)
-            min_features = self.config.get("feature_filtering.min_features_to_keep", 15)
-            max_features = self.config.get("feature_filtering.max_features_to_keep", 80)
+            threshold = self.config.get(
+                "feature_filtering.importance_threshold", 0.95
+            )  # Reduced from 0.99
+            min_features = self.config.get(
+                "feature_filtering.min_features_to_keep", 5
+            )  # Reduced from 15
+            max_features = self.config.get(
+                "feature_filtering.max_features_to_keep", 50
+            )  # New constraint
             min_importance_per_feature = self.config.get(
                 "feature_filtering.min_importance_per_feature", 0.001
             )
 
             importance_cutoff = threshold * total_importance
 
-            self.logger.info(f"🎯 Feature selection parameters:")
+            self.logger.info("🎯 Feature selection parameters:")
             self.logger.info(
                 f"   📊 Importance threshold: {threshold:.3f} ({threshold*100:.1f}%)"
             )
@@ -1745,14 +1146,14 @@ class FeatureFilter:
             cutoff_index = max(threshold_cutoff, min_importance_cutoff, min_features)
             selected_indices = sorted_indices[:cutoff_index]
 
-            self.logger.info(f"📊 Enhanced selection analysis:")
+            self.logger.info("📊 Enhanced selection analysis:")
             self.logger.info(f"   📊 Threshold cutoff: {threshold_cutoff} features")
             self.logger.info(
                 f"   📊 Min importance cutoff: {min_importance_cutoff} features"
             )
             self.logger.info(f"   📊 Min features requirement: {min_features} features")
             self.logger.info(f"   📊 Final cutoff: {cutoff_index} features")
-            self.logger.info(f"📊 Initial selection results:")
+            self.logger.info("📊 Initial selection results:")
             self.logger.info(f"   📊 Features selected: {cutoff_index}")
             # Ensure we don't exceed array bounds
             actual_cutoff = min(cutoff_index, len(cumulative_importance))
@@ -1769,7 +1170,7 @@ class FeatureFilter:
                     f"⚠️ Selected features ({len(selected_indices)}) below minimum ({min_features})"
                 )
                 self.logger.info(
-                    f"🔄 Expanding selection to meet minimum requirement..."
+                    "🔄 Expanding selection to meet minimum requirement..."
                 )
                 # Ensure we don't exceed the available features
                 actual_min_features = min(min_features, len(sorted_indices))
@@ -1788,7 +1189,7 @@ class FeatureFilter:
                     self, "_prefiltered_features"
                 ):
                     self.logger.warning(
-                        f"⚠️ Still below minimum after expansion. This may indicate insufficient important features in the dataset."
+                        "⚠️ Still below minimum after expansion. This may indicate insufficient important features in the dataset."
                     )
 
             # Apply maximum feature constraint
@@ -1797,7 +1198,7 @@ class FeatureFilter:
                     f"⚠️ Selected features ({len(selected_indices)}) above maximum ({max_features})"
                 )
                 self.logger.info(
-                    f"🔄 Truncating selection to meet maximum requirement..."
+                    "🔄 Truncating selection to meet maximum requirement..."
                 )
                 selected_indices = sorted_indices[:max_features]
                 actual_importance = (
@@ -1811,7 +1212,7 @@ class FeatureFilter:
 
             selected_features = X.columns.to_numpy()[selected_indices].tolist()
 
-            self.logger.info(f"✅ Final feature selection:")
+            self.logger.info("✅ Final feature selection:")
             self.logger.info(
                 f"   📊 Features selected: {len(selected_features)} out of {len(X.columns)}"
             )
@@ -1820,7 +1221,7 @@ class FeatureFilter:
             )
             self.logger.info(f"   📊 Selected features: {selected_features}")
 
-            self.logger.info(f"🎉 Feature filtering completed successfully!")
+            self.logger.info("🎉 Feature filtering completed successfully!")
             self.logger.info(f"📊 Final feature count: {len(selected_features)}")
             self.logger.info(f"📊 Final features: {selected_features}")
 
@@ -1942,7 +1343,7 @@ class ImprovedAutoencoderPreprocessor:
             )
 
         try:
-            self.logger.info(f"✅ Transform completed successfully")
+            self.logger.info("✅ Transform completed successfully")
             self.logger.info(f"📊 Input shape: {X.shape}")
             self.logger.info(f"📊 Output shape: {X_final.shape}")
             self.logger.info(f"📊 Final clipping threshold: ±{final_threshold}")
@@ -2009,7 +1410,7 @@ def create_sequences_with_index(
     targets_array = np.array(targets)
     target_indices_array = pd.Index(target_indices)
 
-    logger.info(f"✅ Sequence creation completed")
+    logger.info("✅ Sequence creation completed")
     logger.info(f"📊 Sequences shape: {sequences_array.shape}")
     logger.info(f"📊 Targets shape: {targets_array.shape}")
     logger.info(f"📊 Target indices: {len(target_indices_array)} samples")
@@ -2055,11 +1456,11 @@ class SequenceAwareAutoencoder:
             learning_rate = best_params.get("learning_rate", 0.001)
 
         # Log the model configuration
-        self.logger.info(f"🔧 Building autoencoder model architecture...")
+        self.logger.info("🔧 Building autoencoder model architecture...")
         self.logger.info(
             f"📊 Input shape: (timesteps={timesteps}, features={features})"
         )
-        self.logger.info(f"📊 Model hyperparameters:")
+        self.logger.info("📊 Model hyperparameters:")
         self.logger.info(f"   📊 Filters: {filters}")
         self.logger.info(f"   📊 Kernel size: {kernel_size}")
         self.logger.info(f"   📊 Dropout rate: {dropout_rate}")
@@ -2101,10 +1502,10 @@ class SequenceAwareAutoencoder:
             total_params = int(
                 np.sum([np.prod(v.shape) for v in self.autoencoder.trainable_weights])
             )
-            self.logger.info(f"✅ Model compiled successfully!")
+            self.logger.info("✅ Model compiled successfully!")
             self.logger.info(f"📊 Optimizer: Adam(learning_rate={learning_rate})")
-            self.logger.info(f"📊 Loss function: Huber")
-            self.logger.info(f"📊 Metrics: MAE")
+            self.logger.info("📊 Loss function: Huber")
+            self.logger.info("📊 Metrics: MAE")
             self.logger.info(f"📊 Total trainable parameters: {total_params:,}")
 
             # Model complexity assessment
@@ -2141,59 +1542,7 @@ class SequenceAwareAutoencoder:
         reduce_lr_patience = self.config.get("autoencoder.reduce_lr_patience", 5)
         min_lr = self.config.get("autoencoder.min_lr", 1e-6)
 
-        class _EpochTimingCallback(Callback):
-            def __init__(
-                self, logger: logging.Logger, interval: int, warn_after_s: float
-            ) -> None:
-                super().__init__()
-                self.logger = logger
-                self.interval = max(1, int(interval))
-                self.warn_after_s = float(warn_after_s)
-                self._epoch_start: float | None = None
-
-            def on_train_begin(self, logs=None):  # type: ignore[override]
-                self.logger.info("🏁 Keras training begin")
-
-            def on_train_end(self, logs=None):  # type: ignore[override]
-                self.logger.info("🏁 Keras training end")
-
-            def on_epoch_begin(self, epoch, logs=None):  # type: ignore[override]
-                self._epoch_start = time.time()
-
-            def on_epoch_end(self, epoch, logs=None):  # type: ignore[override]
-                try:
-                    elapsed = (
-                        (time.time() - self._epoch_start) if self._epoch_start else None
-                    )
-                    if (epoch + 1) % self.interval == 0:
-                        msg = {
-                            "epoch": int(epoch + 1),
-                            "loss": float(logs.get("loss", float("nan")))
-                            if logs
-                            else None,
-                            "val_loss": float(logs.get("val_loss", float("nan")))
-                            if logs
-                            else None,
-                            "mae": float(logs.get("mae", float("nan")))
-                            if logs
-                            else None,
-                            "val_mae": float(logs.get("val_mae", float("nan")))
-                            if logs
-                            else None,
-                            "elapsed_s": float(elapsed)
-                            if elapsed is not None
-                            else None,
-                        }
-                        self.logger.info(f"📈 Epoch progress: {msg}")
-                    if elapsed is not None and elapsed > self.warn_after_s:
-                        self.logger.warning(
-                            f"⏱️ Slow epoch detected: epoch={epoch+1} elapsed={elapsed:.2f}s (> {self.warn_after_s}s)"
-                        )
-                except Exception:
-                    # Never fail due to logging
-                    pass
-
-        callbacks: list[Any] = [
+        callbacks = [
             EarlyStopping(
                 monitor="val_loss",
                 patience=early_stopping_patience,
@@ -2203,13 +1552,6 @@ class SequenceAwareAutoencoder:
                 monitor="val_loss",
                 patience=reduce_lr_patience,
                 min_lr=min_lr,
-            ),
-            _EpochTimingCallback(
-                logger=self.logger,
-                interval=self.config.get("training.epoch_logging_interval", 1),
-                warn_after_s=self.config.get(
-                    "training.max_epoch_time_warn_seconds", 60
-                ),
             ),
         ]
 
@@ -2227,7 +1569,7 @@ class SequenceAwareAutoencoder:
 
         epochs = self.config.get("autoencoder.epochs", 100)
 
-        self.logger.info(f"🚀 Starting autoencoder training...")
+        self.logger.info("🚀 Starting autoencoder training...")
         self.logger.info(
             f"📊 Training data: {X_train.shape[0]} sequences, {X_train.shape[1]} timesteps, {X_train.shape[2]} features"
         )
@@ -2244,16 +1586,15 @@ class SequenceAwareAutoencoder:
         # Track training time
         start_time = time.time()
 
-        with heartbeat(self.logger, name="Autoencoder.fit", interval_seconds=30.0):
-            history = self.autoencoder.fit(
-                X_train,
-                y_train,
-                validation_data=(X_val, y_val),
-                epochs=epochs,
-                batch_size=batch_size,
-                callbacks=callbacks,
-                verbose=0,
-            )
+        history = self.autoencoder.fit(
+            X_train,
+            y_train,
+            validation_data=(X_val, y_val),
+            epochs=epochs,
+            batch_size=batch_size,
+            callbacks=callbacks,
+            verbose=0,
+        )
 
         training_time = time.time() - start_time
 
@@ -2262,7 +1603,7 @@ class SequenceAwareAutoencoder:
             val_losses = history.history.get("val_loss", [])
             train_losses = history.history.get("loss", [])
             val_mae = history.history.get("val_mae", [])
-            train_mae = history.history.get("mae", [])
+            history.history.get("mae", [])
 
             if val_losses:
                 best_epoch = int(np.argmin(val_losses))
@@ -2270,7 +1611,7 @@ class SequenceAwareAutoencoder:
                 final_train_loss = train_losses[-1] if train_losses else 0
                 final_val_loss = val_losses[-1]
 
-                self.logger.info(f"✅ Autoencoder training completed successfully!")
+                self.logger.info("✅ Autoencoder training completed successfully!")
                 self.logger.info(f"📊 Training time: {training_time:.2f} seconds")
                 self.logger.info(f"📊 Epochs trained: {len(val_losses)}")
                 self.logger.info(f"📊 Best epoch: {best_epoch + 1}")
@@ -2490,7 +1831,7 @@ class AutoencoderFeatureAnalyzer:
                 },
             }
 
-            self.logger.info(f"📊 Correlation analysis complete:")
+            self.logger.info("📊 Correlation analysis complete:")
             self.logger.info(
                 f"   📈 Mean correlation: {results['correlation_summary']['mean_correlation']:.4f}"
             )
@@ -2517,13 +1858,6 @@ class AutoencoderFeatureAnalyzer:
         try:
             # Prepare data
             X = encoded_features.select_dtypes(include=[np.number]).fillna(0)
-            # Safety: ensure raw numeric columns are excluded
-            raw_in_numeric = [c for c in X.columns if c in self.raw_columns]
-            if raw_in_numeric:
-                self.logger.warning(
-                    f"🚨 Removing raw numeric columns from candidate features: {raw_in_numeric}"
-                )
-                X = X.drop(columns=raw_in_numeric)
             y = labels
 
             if len(np.unique(y)) < 2:
@@ -2565,12 +1899,14 @@ class AutoencoderFeatureAnalyzer:
                 from sklearn.inspection import permutation_importance
                 from sklearn.model_selection import train_test_split
 
-                # Split data for permutation importance - FIXED: Use time-based split to prevent lookahead bias
-                split_idx = int(len(X) * 0.7)
-                X_train = X.iloc[:split_idx]
-                X_test = X.iloc[split_idx:]
-                y_train = y.iloc[:split_idx]
-                y_test = y.iloc[split_idx:]
+                # Split data for permutation importance
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X,
+                    y,
+                    test_size=0.3,
+                    random_state=42,
+                    stratify=y if len(np.unique(y)) <= 10 else None,
+                )
 
                 # Use a simple model for permutation importance
                 from sklearn.linear_model import LogisticRegression
@@ -2648,7 +1984,7 @@ class AutoencoderFeatureAnalyzer:
                 },
             }
 
-            self.logger.info(f"🤖 ML importance analysis complete:")
+            self.logger.info("🤖 ML importance analysis complete:")
             self.logger.info(
                 f"   🏆 Top 5 features: {results['importance_summary']['top_features'][:5]}"
             )
@@ -2734,7 +2070,7 @@ class AutoencoderFeatureAnalyzer:
                 },
             }
 
-            self.logger.info(f"📈 Stability analysis complete:")
+            self.logger.info("📈 Stability analysis complete:")
             self.logger.info(
                 f"   📊 Mean stability: {results['stability_summary']['mean_stability']:.4f}"
             )
@@ -2848,7 +2184,7 @@ class AutoencoderFeatureAnalyzer:
                     "inconsistent_features": [],
                 }
 
-            self.logger.info(f"🔄 Regime analysis complete:")
+            self.logger.info("🔄 Regime analysis complete:")
             self.logger.info(f"   📊 Regimes analyzed: {len(regime_importance)}")
             self.logger.info(
                 f"   📊 Consistent features: {len(results.get('consistent_features', []))}"
@@ -2899,7 +2235,7 @@ class AutoencoderFeatureAnalyzer:
                     "original_top_features": original_top,
                 }
 
-            self.logger.info(f"🔄 Feature comparison complete:")
+            self.logger.info("🔄 Feature comparison complete:")
             if "comparison_metrics" in comparison_results:
                 self.logger.info(
                     f"   📊 Top feature overlap: {comparison_results['comparison_metrics']['top_feature_overlap']}"
@@ -3079,104 +2415,23 @@ class AutoencoderFeatureGenerator:
         Raw price data like 'volume', 'close', 'open', 'high', 'low' should be excluded.
         """
         # CRITICAL: Filter out raw OHLCV data that should not be used as features
-        raw_ohlcv_columns = [
-            "open",
-            "high",
-            "low",
-            "close",
-            "volume",
-            "timestamp",
-            "time",
-            "trade_volume",
-            "trade_count",
-            "avg_price",
-            "min_price",
-            "max_price",
-        ]
-        raw_ohlcv_columns = [
-            col for col in raw_ohlcv_columns if col in features_df.columns
-        ]
+        raw_ohlcv_columns = ['open', 'high', 'low', 'close', 'volume', 'timestamp', 'time']
+        raw_ohlcv_columns = [col for col in raw_ohlcv_columns if col in features_df.columns]
 
-        # Drop calendar/metadata columns that are not predictive features
-        calendar_cols = [
-            c
-            for c in features_df.columns
-            if c
-            in {
-                "year",
-                "month",
-                "day",
-                "day_of_week",
-                "day_of_month",
-                "quarter",
-                "exchange",
-                "symbol",
-                "timeframe",
-                "split",
-            }
-        ]
-        drop_cols = list(dict.fromkeys([*raw_ohlcv_columns, *calendar_cols]))
+        if raw_ohlcv_columns:
+            self.logger.warning(f"🚨 CRITICAL: Found raw OHLCV columns in features: {raw_ohlcv_columns}")
+            self.logger.warning("🚨 These should be excluded from autoencoder feature generation")
+            self.logger.warning("🚨 Raw price data should be processed into engineered features first")
 
-        if drop_cols:
-            self.logger.warning(
-                f"🚨 Removing non-feature columns to prevent leakage/noise: {drop_cols}"
-            )
-            features_df = features_df.drop(columns=drop_cols)
-            self.logger.info(
-                f"✅ Removed {len(drop_cols)} non-feature columns from features"
-            )
+            # Remove raw OHLCV columns
+            features_df = features_df.drop(columns=raw_ohlcv_columns)
+            self.logger.info(f"✅ Removed {len(raw_ohlcv_columns)} raw OHLCV columns from features")
             self.logger.info(f"📊 Features shape after removal: {features_df.shape}")
 
             if features_df.empty:
-                self.logger.error(
-                    "🚨 CRITICAL: No engineered features remaining after removing non-feature columns"
-                )
+                self.logger.error("🚨 CRITICAL: No engineered features remaining after removing raw OHLCV data")
                 self.logger.error("🚨 This indicates a serious data pipeline issue")
                 return pd.DataFrame()
-
-        # NEW: Validate that we have proper engineered features, not just cluster features
-        cluster_features = [
-            col
-            for col in features_df.columns
-            if "cluster" in col.lower() or "id" in col.lower()
-        ]
-        engineered_features = [
-            col for col in features_df.columns if col not in cluster_features
-        ]
-
-        self.logger.info(f"📊 Feature analysis:")
-        self.logger.info(f"   Total features: {len(features_df.columns)}")
-        self.logger.info(f"   Cluster features: {len(cluster_features)}")
-        self.logger.info(f"   Engineered features: {len(engineered_features)}")
-
-        if len(engineered_features) == 0:
-            self.logger.error(
-                "🚨 CRITICAL: No engineered features found! Only cluster features present."
-            )
-            self.logger.error(
-                "🚨 This indicates the feature engineering pipeline is not working correctly."
-            )
-            self.logger.error(
-                "🚨 Expected features: technical indicators, momentum, volatility, etc."
-            )
-            self.logger.error(
-                "🚨 Found features: "
-                + ", ".join(cluster_features[:10])
-                + ("..." if len(cluster_features) > 10 else "")
-            )
-            self.logger.warning(
-                "🔄 Returning original features without autoencoder enhancement due to insufficient engineered features"
-            )
-            return features_df
-
-        if len(engineered_features) < 5:
-            self.logger.warning(
-                f"⚠️ Very few engineered features ({len(engineered_features)}) available for autoencoder training"
-            )
-            self.logger.warning(
-                "🔄 Returning original features without autoencoder enhancement"
-            )
-            return features_df
         """Generate autoencoder-based features for a specific market regime."""
         try:
             self.logger.info(
@@ -3244,7 +2499,7 @@ class AutoencoderFeatureGenerator:
             ]
 
             if actual_label_columns:
-                self.logger.error(f"🚨 CRITICAL DATA LEAKAGE DETECTED in autoencoder!")
+                self.logger.error("🚨 CRITICAL DATA LEAKAGE DETECTED in autoencoder!")
                 self.logger.error(
                     f"🚨 Found label columns in autoencoder input: {actual_label_columns}"
                 )
@@ -3266,52 +2521,30 @@ class AutoencoderFeatureGenerator:
                 return features_df
 
             # NEW STEP: Convert price features to returns for better autoencoder training
-            with heartbeat(
-                self.logger, name="AE price_return_conversion", interval_seconds=30.0
-            ):
-                self.logger.info(
-                    "🔄 NEW STEP: Converting price features to returns for autoencoder training..."
-                )
-                price_converter = PriceReturnConverter(self.config)
-                features_df = price_converter.convert_price_features_to_returns(
-                    features_df
-                )
-                log_dataframe_overview(
-                    self.logger,
-                    features_df,
-                    name="post_price_return_features",
-                    sample_rows=2,
-                )
-                self.logger.info(
-                    f"✅ Price return conversion completed. Features shape: {features_df.shape}"
-                )
+            self.logger.info(
+                "🔄 NEW STEP: Converting price features to returns for autoencoder training..."
+            )
+            price_converter = PriceReturnConverter(self.config)
+            features_df = price_converter.convert_price_features_to_returns(features_df)
+            self.logger.info(
+                f"✅ Price return conversion completed. Features shape: {features_df.shape}"
+            )
 
             # Step 1: Filter features using Random Forest + SHAP
             self.logger.info("🔄 Step 1/5: Feature filtering with Random Forest + SHAP")
             self.logger.info(f"📊 Starting with {features_df.shape[1]} input features")
 
             feature_filter = FeatureFilter(self.config)
-            with heartbeat(
-                self.logger, name="AE feature_filtering", interval_seconds=30.0
-            ):
-                filtered_features = feature_filter.filter_features(features_df, labels)
-                log_dataframe_overview(
-                    self.logger,
-                    filtered_features,
-                    name="filtered_features",
-                    sample_rows=2,
-                )
+            filtered_features = feature_filter.filter_features(features_df, labels)
 
             # Check if features_df has any columns to avoid division by zero
             if features_df.shape[1] == 0:
-                self.logger.warning(
-                    "⚠️ No features available for filtering - returning original features"
-                )
+                self.logger.warning("⚠️ No features available for filtering - returning original features")
                 return features_df
 
             feature_reduction = features_df.shape[1] - filtered_features.shape[1]
             reduction_percentage = (feature_reduction / features_df.shape[1]) * 100
-            self.logger.info(f"✅ Feature filtering completed successfully!")
+            self.logger.info("✅ Feature filtering completed successfully!")
             self.logger.info(
                 f"📊 Results: {filtered_features.shape[1]} features selected from {features_df.shape[1]} input features"
             )
@@ -3336,7 +2569,7 @@ class AutoencoderFeatureGenerator:
             self.logger.info(f"📊 Minimum features required: {min_features_for_ae}")
 
             if actual_numeric_features < min_features_for_ae:
-                self.logger.warning(f"⚠️ Insufficient features for autoencoder training")
+                self.logger.warning("⚠️ Insufficient features for autoencoder training")
                 self.logger.warning(
                     f"📊 Have: {actual_numeric_features} numeric features, Need: {min_features_for_ae}+ features"
                 )
@@ -3346,7 +2579,7 @@ class AutoencoderFeatureGenerator:
                 return features_df
 
             # Check feature variance/standard deviation
-            std_threshold = float(self.config.get("autoencoder.min_feature_std", 1e-9))
+            std_threshold = float(self.config.get("autoencoder.min_feature_std", 1e-6))
             per_feature_std = numeric_features.std(axis=0, skipna=True)
             low_std_cols = per_feature_std.index[
                 per_feature_std <= std_threshold
@@ -3356,7 +2589,7 @@ class AutoencoderFeatureGenerator:
                 preview = ", ".join(low_std_cols[:10]) + (
                     "..." if len(low_std_cols) > 10 else ""
                 )
-                self.logger.warning(f"⚠️ Low variance features detected")
+                self.logger.warning("⚠️ Low variance features detected")
                 self.logger.warning(
                     f"📊 {len(low_std_cols)} features have std <= {std_threshold:g}"
                 )
@@ -3377,33 +2610,25 @@ class AutoencoderFeatureGenerator:
             self.logger.info("🔧 Initializing data preprocessor...")
             preprocessor = ImprovedAutoencoderPreprocessor(self.config)
 
-            with heartbeat(
-                self.logger,
-                name="AE preprocessing_fit_transform",
-                interval_seconds=20.0,
-            ):
-                self.logger.info("🔧 Fitting preprocessor on filtered features...")
-                preprocessor.fit(filtered_features)
+            self.logger.info("🔧 Fitting preprocessor on filtered features...")
+            preprocessor.fit(filtered_features)
 
-                self.logger.info("🔧 Transforming features for autoencoder input...")
-                X_processed = preprocessor.transform(filtered_features)
-                self.logger.info(f"✅ Preprocessing completed successfully")
-                self.logger.info(f"📊 Processed data shape: {X_processed.shape}")
+            self.logger.info("🔧 Transforming features for autoencoder input...")
+            X_processed = preprocessor.transform(filtered_features)
+            self.logger.info("✅ Preprocessing completed successfully")
+            self.logger.info(f"📊 Processed data shape: {X_processed.shape}")
 
             # Sequence creation
             timesteps = self.config.get("sequence.timesteps", 10)
             self.logger.info(f"📊 Creating sequences with {timesteps} timesteps...")
 
-            with heartbeat(
-                self.logger, name="AE sequence_creation", interval_seconds=20.0
-            ):
-                X_sequences, y_targets, target_indices = create_sequences_with_index(
-                    X_processed,
-                    timesteps,
-                    filtered_features.index,
-                )
+            X_sequences, y_targets, target_indices = create_sequences_with_index(
+                X_processed,
+                timesteps,
+                filtered_features.index,
+            )
 
-            self.logger.info(f"✅ Sequence creation completed successfully")
+            self.logger.info("✅ Sequence creation completed successfully")
             self.logger.info(
                 f"📊 Sequence shapes: X_sequences={X_sequences.shape}, y_targets={y_targets.shape}"
             )
@@ -3418,7 +2643,7 @@ class AutoencoderFeatureGenerator:
             min_sequences = 5
             if len(X_sequences) < min_sequences:
                 self.logger.warning(
-                    f"⚠️ Insufficient sequences for autoencoder training"
+                    "⚠️ Insufficient sequences for autoencoder training"
                 )
                 self.logger.warning(
                     f"📊 Have: {len(X_sequences)} sequences, Need: {min_sequences}+ sequences"
@@ -3451,26 +2676,21 @@ class AutoencoderFeatureGenerator:
             n_trials = self.config.get("training.n_trials", 50)
             n_jobs = self.config.get("training.n_jobs", 1)
 
-            self.logger.info(f"🔍 Starting Optuna hyperparameter optimization")
+            self.logger.info("🔍 Starting Optuna hyperparameter optimization")
             self.logger.info(
                 f"📊 Optimization parameters: n_trials={n_trials}, n_jobs={n_jobs}"
             )
             self.logger.info(
-                f"📊 Search space: filters=[16,32,64], kernel_size=[3-7], dropout=[0.1-0.5], lr=[1e-4-1e-2], encoding_dim=[8-64]"
+                "📊 Search space: filters=[16,32,64], kernel_size=[3-7], dropout=[0.1-0.5], lr=[1e-4-1e-2], encoding_dim=[8-64]"
             )
 
-            with heartbeat(
-                self.logger, name="AE optuna_optimization", interval_seconds=60.0
-            ):
-                best_params = self._run_optuna_optimization(
-                    X_train, y_train, X_val, y_val
-                )
+            best_params = self._run_optuna_optimization(X_train, y_train, X_val, y_val)
             self.config.config["best_params"] = (
                 best_params  # Store best params for final training
             )
 
-            self.logger.info(f"✅ Hyperparameter optimization completed successfully")
-            self.logger.info(f"🏆 Best hyperparameters selected:")
+            self.logger.info("✅ Hyperparameter optimization completed successfully")
+            self.logger.info("🏆 Best hyperparameters selected:")
             for param, value in best_params.items():
                 self.logger.info(f"   📊 {param}: {value}")
 
@@ -3487,16 +2707,13 @@ class AutoencoderFeatureGenerator:
             final_autoencoder.build_model(X_sequences.shape[1:])
 
             self.logger.info("🔧 Training final autoencoder model...")
-            with heartbeat(
-                self.logger, name="AE final_training", interval_seconds=30.0
-            ):
-                training_history = final_autoencoder.fit(X_train, y_train, X_val, y_val)
+            training_history = final_autoencoder.fit(X_train, y_train, X_val, y_val)
 
             # Extract training metrics
             if hasattr(training_history, "history"):
                 final_train_loss = training_history.history.get("loss", [0])[-1]
                 final_val_loss = training_history.history.get("val_loss", [0])[-1]
-                self.logger.info(f"✅ Final model training completed")
+                self.logger.info("✅ Final model training completed")
                 self.logger.info(f"📊 Final training loss: {final_train_loss:.6f}")
                 self.logger.info(f"📊 Final validation loss: {final_val_loss:.6f}")
                 self.logger.info(
@@ -3505,26 +2722,15 @@ class AutoencoderFeatureGenerator:
 
             # Generate encoded features and reconstructions
             self.logger.info("🔧 Generating encoded features and reconstructions...")
-            with heartbeat(
-                self.logger, name="AE predict_encoded", interval_seconds=20.0
-            ):
-                self.logger.info(
-                    "📊 Using encoder to extract latent representations..."
-                )
-                encoded_features = final_autoencoder.encoder.predict(
-                    X_sequences, verbose=0
-                )
-            with heartbeat(
-                self.logger, name="AE predict_reconstructions", interval_seconds=20.0
-            ):
-                self.logger.info(
-                    "📊 Using full autoencoder to generate reconstructions..."
-                )
-                reconstructed = final_autoencoder.autoencoder.predict(
-                    X_sequences, verbose=0
-                )
+            self.logger.info("📊 Using encoder to extract latent representations...")
+            encoded_features = final_autoencoder.encoder.predict(X_sequences, verbose=0)
 
-            self.logger.info(f"✅ Feature generation completed successfully")
+            self.logger.info("📊 Using full autoencoder to generate reconstructions...")
+            reconstructed = final_autoencoder.autoencoder.predict(
+                X_sequences, verbose=0
+            )
+
+            self.logger.info("✅ Feature generation completed successfully")
             self.logger.info(f"📊 Encoded features shape: {encoded_features.shape}")
             self.logger.info(f"📊 Reconstructed features shape: {reconstructed.shape}")
 
@@ -3534,7 +2740,7 @@ class AutoencoderFeatureGenerator:
             mean_recon_error = np.mean(recon_error)
             std_recon_error = np.std(recon_error)
 
-            self.logger.info(f"📊 Reconstruction error statistics:")
+            self.logger.info("📊 Reconstruction error statistics:")
             self.logger.info(f"   📊 Mean reconstruction error: {mean_recon_error:.6f}")
             self.logger.info(f"   📊 Std reconstruction error: {std_recon_error:.6f}")
             self.logger.info(
@@ -3558,7 +2764,7 @@ class AutoencoderFeatureGenerator:
             )
             encoded_df["autoencoder_recon_error"] = recon_error
 
-            self.logger.info(f"✅ Encoded features DataFrame created successfully")
+            self.logger.info("✅ Encoded features DataFrame created successfully")
             self.logger.info(f"📊 Encoded DataFrame shape: {encoded_df.shape}")
             self.logger.info(
                 f"📊 Encoded features: {encoded_features.shape[1]} latent dimensions + 1 reconstruction error"
@@ -3566,18 +2772,12 @@ class AutoencoderFeatureGenerator:
 
             # Merge with original features
             self.logger.info("📊 Merging encoded features with original features...")
-            with heartbeat(
-                self.logger, name="AE merge_features", interval_seconds=10.0
-            ):
-                result_df = features_df.merge(
-                    encoded_df,
-                    left_index=True,
-                    right_index=True,
-                    how="left",
-                )
-                log_dataframe_overview(
-                    self.logger, result_df, name="result_df", sample_rows=2
-                )
+            result_df = features_df.merge(
+                encoded_df,
+                left_index=True,
+                right_index=True,
+                how="left",
+            )
 
             # Identify autoencoder columns and handle missing values
             autoencoder_cols = [
@@ -3585,7 +2785,7 @@ class AutoencoderFeatureGenerator:
             ]
             result_df[autoencoder_cols] = result_df[autoencoder_cols].fillna(0)
 
-            self.logger.info(f"✅ Feature merging completed successfully")
+            self.logger.info("✅ Feature merging completed successfully")
             self.logger.info(f"📊 Original features: {features_df.shape[1]} columns")
             self.logger.info(
                 f"📊 Autoencoder features added: {len(autoencoder_cols)} columns"
@@ -3636,7 +2836,7 @@ class AutoencoderFeatureGenerator:
                         # Log key findings
                         if "summary_statistics" in analysis_results:
                             summary = analysis_results["summary_statistics"]
-                            self.logger.info(f"📈 Analysis Summary:")
+                            self.logger.info("📈 Analysis Summary:")
                             self.logger.info(
                                 f"   🏆 Top features: {summary.get('top_features', [])[:5]}"
                             )
@@ -3730,18 +2930,15 @@ class AutoencoderFeatureGenerator:
         # Track optimization progress
         start_time = time.time()
 
-        with heartbeat(
-            self.logger, name="AE optuna_study.optimize", interval_seconds=60.0
-        ):
-            study.optimize(
-                objective,
-                n_trials=n_trials,
-                n_jobs=n_jobs,  # Default to 1 for GPU
-            )
+        study.optimize(
+            objective,
+            n_trials=n_trials,
+            n_jobs=n_jobs,  # Default to 1 for GPU
+        )
 
         optimization_time = time.time() - start_time
 
-        self.logger.info(f"✅ Optuna optimization completed successfully!")
+        self.logger.info("✅ Optuna optimization completed successfully!")
         self.logger.info(f"📊 Optimization time: {optimization_time:.2f} seconds")
         self.logger.info(f"📊 Trials completed: {len(study.trials)}")
         self.logger.info(

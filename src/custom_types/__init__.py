@@ -1,5 +1,3 @@
-# src/custom_types/__init__.py
-
 """
 Type definitions and type safety utilities for the Ares trading system.
 This module provides comprehensive type coverage to eliminate Any types
@@ -23,69 +21,65 @@ from src.utils.warning_symbols import (
 
 # Import specific types from each module
 from .base_types import (
-    Timestamp,
-    Symbol,
-    Price,
-    Volume,
-    Percentage,
-    Score,
     Interval,
+    Percentage,
+    Price,
+    Score,
+    Symbol,
+    Timestamp,
+    Volume,
 )
-
 from .config_types import (
     ConfigDict,
     DatabaseConfig,
     ExchangeConfig,
-    TradingConfig,
     MLConfig,
     MonitoringConfig,
+    TradingConfig,
 )
-
 from .data_types import (
+    AccountInfo,
     MarketDataDict,
     OHLCVData,
-    TickerData,
     OrderBookData,
-    TradeData,
-    AccountInfo,
     PositionInfo,
+    TickerData,
+    TradeData,
 )
-
 from .ml_types import (
+    FeatureDict,
     ModelInput,
+    ModelMetrics,
     ModelOutput,
     PredictionResult,
-    FeatureDict,
-    ModelMetrics,
     TrainingData,
     ValidationData,
 )
-
-from .trading_types import (
-    OrderType,
-    OrderSide,
-    OrderStatus,
-    PositionSide,
-    TradeAction,
-    RiskLevel,
-)
-
 from .protocol_types import (
     DataProvider,
-    ModelPredictor,
-    RiskManager,
-    OrderExecutor,
-    StateManager,
     EventHandler,
+    ModelPredictor,
+    OrderExecutor,
+    RiskManager,
+    StateManager,
+    TradingComponent,
 )
-
+from .trading_types import (
+    OrderSide,
+    OrderStatus,
+    OrderType,
+    PositionSide,
+    RiskLevel,
+    TradeAction,
+    PerformanceMetrics,
+)
 from .validation import (
+    RuntimeTypeError,
     TypeValidator,
-    validate_type,
     validate_config,
     validate_market_data,
     validate_model_input,
-    RuntimeTypeError,
+    validate_type,
 )
 
 __all__ = [
@@ -127,6 +121,7 @@ __all__ = [
     "PositionSide",
     "TradeAction",
     "RiskLevel",
+    "PerformanceMetrics",
     # Protocols
     "DataProvider",
     "ModelPredictor",
@@ -134,6 +129,7 @@ __all__ = [
     "OrderExecutor",
     "StateManager",
     "EventHandler",
+    "TradingComponent",
     # Validation
     "TypeValidator",
     "validate_type",

@@ -1,6 +1,4 @@
-"""
-Validator for Step 9: Tactician Specialist Training
-"""
+"""Validator for Step 9: Tactician Specialist Training."""
 
 import os
 import pickle
@@ -27,7 +25,7 @@ from src.utils.base_validator import BaseValidator
 class Step9TacticianSpecialistTrainingValidator(BaseValidator):
     """Validator for Step 9: Tactician Specialist Training."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step9_tactician_specialist_training", config)
 
     async def validate(
@@ -35,8 +33,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
     ) -> bool:
-        """
-        Validate the tactician specialist training step.
+        """Validate the tactician specialist training step.
 
         Args:
             training_input: Training input parameters
@@ -44,6 +41,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
         Returns:
             bool: True if validation passed, False otherwise
+
         """
         self.logger.info("🔍 Validating tactician specialist training step...")
 
@@ -124,8 +122,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate that tactician model files exist.
+        """Validate that tactician model files exist.
 
         Args:
             symbol: Trading symbol
@@ -134,6 +131,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
         Returns:
             bool: True if files exist
+
         """
         try:
             # Expected tactician model file patterns
@@ -169,8 +167,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate tactician model performance metrics.
+        """Validate tactician model performance metrics.
 
         Args:
             symbol: Trading symbol
@@ -179,6 +176,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
         Returns:
             bool: True if performance is acceptable
+
         """
         try:
             # Load tactician training history
@@ -264,8 +262,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate tactician training metrics and convergence.
+        """Validate tactician training metrics and convergence.
 
         Args:
             symbol: Trading symbol
@@ -274,6 +271,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
         Returns:
             bool: True if training metrics are acceptable
+
         """
         try:
             history_file = (
@@ -360,8 +358,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate tactician model quality characteristics.
+        """Validate tactician model quality characteristics.
 
         Args:
             symbol: Trading symbol
@@ -370,6 +367,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
         Returns:
             bool: True if model quality is acceptable
+
         """
         try:
             # Load tactician model metadata
@@ -486,8 +484,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             return False
 
     def _unwrap_estimator(self, artifact: Any) -> Any:
-        """
-        Unwrap a potentially wrapped model artifact to get the estimator.
+        """Unwrap a potentially wrapped model artifact to get the estimator.
 
         Supports dict wrappers ('model', 'estimator', 'clf', 'pipeline'),
         objects with 'best_estimator_', and tuple/list first element.
@@ -512,7 +509,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
                 inner = getattr(artifact, "best_estimator_", None)
                 if callable(getattr(inner, "predict", None)):
                     return inner
-            if isinstance(artifact, (list, tuple)) and artifact:
+            if isinstance(artifact, list | tuple) and artifact:
                 first = artifact[0]
                 if callable(getattr(first, "predict", None)):
                     return first
@@ -525,8 +522,7 @@ async def run_validator(
     training_input: dict[str, Any],
     pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
-    """
-    Run the step9_tactician_specialist_training validator.
+    """Run the step9_tactician_specialist_training validator.
 
     Args:
         training_input: Training input parameters
@@ -534,6 +530,7 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
+
     """
     validator = Step9TacticianSpecialistTrainingValidator(CONFIG)
     validation_passed = await validator.validate(training_input, pipeline_state)
@@ -551,7 +548,7 @@ if __name__ == "__main__":
     import asyncio
 
     # Example usage
-    async def test_validator():
+    async def test_validator() -> None:
         training_input = {
             "symbol": "ETHUSDT",
             "exchange": "BINANCE",
@@ -562,7 +559,6 @@ if __name__ == "__main__":
             "tactician_specialist_training": {"status": "SUCCESS", "duration": 400.5},
         }
 
-        result = await run_validator(training_input, pipeline_state)
-        print(f"Validation result: {result}")
+        await run_validator(training_input, pipeline_state)
 
     asyncio.run(test_validator())

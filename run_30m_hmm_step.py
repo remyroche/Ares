@@ -4,25 +4,21 @@ Script to run step1_7_hmm_regime_discovery specifically for 30m timeframe.
 This uses the existing step orchestrator infrastructure with enhanced artifact validation.
 """
 
-import asyncio
-import sys
-import os
+            from src.training.steps.step3_hmm_regime_discovery import (import traceback, import traceback
 from pathlib import Path
-
-# Add the project root to the path
-project_root = Path(__file__).parent
-sys.path.insert(0, str(project_root))
-
 from src.training.steps.step3_hmm_regime_discovery import run_step
-from src.utils.logger import system_logger
-
+from src.utils.logger import system_logger, import asyncio
+import sys)
+# Add the project root to the path)
+project_root , Path(__file__).parent
+sys.path.insert(0, str(project_root))
 
 async def run_30m_hmm_step():
     """Run step1_7_hmm_regime_discovery for 30m timeframe with artifact validation."""
     logger = system_logger.getChild("Run30mHMMStep")
 
     logger.info(
-        "🔧 Starting step1_7_hmm_regime_discovery for 30m timeframe with artifact validation..."
+        "🔧 Starting step1_7_hmm_regime_discovery for 30m timeframe with artifact validation...",
     )
 
     # Parameters
@@ -33,34 +29,40 @@ async def run_30m_hmm_step():
     lookback_days = 180
 
     logger.info(
-        f"📋 Parameters: symbol={symbol}, exchange={exchange}, timeframe={timeframe}, lookback_days={lookback_days}"
+        f"📋 Parameters: symbol={symbol}, exchange={exchange}, timeframe={timeframe}, lookback_days={lookback_days}",
     )
 
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         # Run the enhanced step1_7 with artifact validation
         success = await run_step(
-            symbol=symbol,
-            exchange=exchange,
-            data_dir=data_dir,
-            timeframe=timeframe,
-            lookback_days=lookback_days,
-        )
+            symbol, symbol = exchange=exchange,
+            data_dir, data_dir = timeframe=timeframe,
+            lookback_days, lookback_days = )
 
         if success:
             logger.info(
-                "✅ Successfully completed step1_7_hmm_regime_discovery for 30m timeframe"
+                "✅ Successfully completed step1_7_hmm_regime_discovery for 30m timeframe",
             )
             print(
-                "✅ Successfully completed step1_7_hmm_regime_discovery for 30m timeframe"
+                "✅ Successfully completed step1_7_hmm_regime_discovery for 30m timeframe",
             )
 
             # Verify artifacts were created
-            from src.training.steps.step3_hmm_regime_discovery import (
                 validate_required_artifacts,
             )
 
             artifact_status = validate_required_artifacts(
-                symbol, exchange, data_dir, timeframe
+                symbol = exchange,
+                data_dir = timeframe,
             )
             all_present = all(artifact_status.values())
 
@@ -77,26 +79,33 @@ async def run_30m_hmm_step():
 
         else:
             logger.error(
-                "❌ Failed to complete step1_7_hmm_regime_discovery for 30m timeframe"
+                "❌ Failed to complete step1_7_hmm_regime_discovery for 30m timeframe",
             )
             print(
-                "❌ Failed to complete step1_7_hmm_regime_discovery for 30m timeframe"
+                "❌ Failed to complete step1_7_hmm_regime_discovery for 30m timeframe",
             )
             return False
 
     except Exception as e:
-        logger.error(f"❌ Error running step1_7_hmm_regime_discovery: {e}")
+        logger.exception(f"❌ Error running step1_7_hmm_regime_discovery: {e}")
         print(f"❌ Error running step1_7_hmm_regime_discovery: {e}")
-        import traceback
 
         traceback.print_exc()
         return False
 
     return True
 
-
 if __name__ == "__main__":
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         success = asyncio.run(run_30m_hmm_step())
         if success:
             print("✅ 30m HMM step completed successfully")
@@ -109,7 +118,6 @@ if __name__ == "__main__":
         sys.exit(1)
     except Exception as e:
         print(f"❌ Unexpected error: {e}")
-        import traceback
 
         traceback.print_exc()
         sys.exit(1)

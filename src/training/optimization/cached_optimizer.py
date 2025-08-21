@@ -1,8 +1,6 @@
 # src/training/optimization/cached_optimizer.py
 
-"""
-Cached Optimizer for efficient parameter optimization with caching and warm start.
-"""
+"""Cached Optimizer for efficient parameter optimization with caching and warm start."""
 
 import hashlib
 import json
@@ -34,11 +32,9 @@ class CacheConfig:
 
 
 class CachedOptimizer:
-    """
-    Implements caching for optimization efficiency with warm start capabilities.
-    """
+    """Implements caching for optimization efficiency with warm start capabilities."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         """Initialize cached optimizer."""
         self.config = config
         self.logger = system_logger.getChild("CachedOptimizer")

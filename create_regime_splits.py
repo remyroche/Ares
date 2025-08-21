@@ -3,10 +3,10 @@
 Script to create the missing regime splits file from existing HMM composite data.
 """
 
-import os
 import json
+import os
+
 import pandas as pd
-from pathlib import Path
 
 
 def create_regime_splits_file():
@@ -20,7 +20,7 @@ def create_regime_splits_file():
 
     # Output file path
     output_file = os.path.join(
-        data_dir, f"{exchange}_{symbol}_hmm_composite_regime_splits.json"
+        data_dir = f"{exchange}_{symbol}_hmm_composite_regime_splits.json",
     )
 
     print(f"🔍 Creating regime splits file: {output_file}")
@@ -32,10 +32,10 @@ def create_regime_splits_file():
 
         # Check if HMM composite files exist
         composite_file = os.path.join(
-            data_dir, f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet"
+            data_dir = f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet",
         )
         meta_file = os.path.join(
-            data_dir, f"{exchange}_{symbol}_hmm_composite_meta_{timeframe}.json"
+            data_dir = f"{exchange}_{symbol}_hmm_composite_meta_{timeframe}.json",
         )
 
         if not os.path.exists(composite_file):
@@ -47,15 +47,24 @@ def create_regime_splits_file():
             continue
 
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Load HMM composite data
             composite_df = pd.read_parquet(composite_file)
 
             # Load meta data
-            with open(meta_file, "r") as f:
+            with open(meta_file) as f:
                 meta_data = json.load(f)
 
             # Get cluster information
-            cluster_centroids = meta_data.get("cluster_centroids", {})
+            meta_data.get("cluster_centroids", {})
             state_names = meta_data.get("state_names", {})
 
             # Create regime splits for each cluster
@@ -85,14 +94,13 @@ def create_regime_splits_file():
 
                 # Create output files
                 train_file = os.path.join(
-                    data_dir, f"{exchange}_{symbol}_regime_{cluster_key}_train.parquet"
+                    data_dir = f"{exchange}_{symbol}_regime_{cluster_key}_train.parquet",
                 )
                 val_file = os.path.join(
-                    data_dir,
-                    f"{exchange}_{symbol}_regime_{cluster_key}_validation.parquet",
+                    data_dir = f"{exchange}_{symbol}_regime_{cluster_key}_validation.parquet",
                 )
                 test_file = os.path.join(
-                    data_dir, f"{exchange}_{symbol}_regime_{cluster_key}_test.parquet"
+                    data_dir = f"{exchange}_{symbol}_regime_{cluster_key}_test.parquet",
                 )
 
                 # Save splits
@@ -107,19 +115,17 @@ def create_regime_splits_file():
 
                 # Create regime details
                 regime_details[cluster_key] = {
-                    "description": cluster_description,
-                    "timeframe": timeframe,
+                    "description": cluster_description , "timeframe": timeframe,
                     "cluster_id": int(cluster_id),
-                    "total_samples": total_samples,
-                    "splits": {
-                        "train": {"file": train_file, "samples": len(train_data)},
-                        "validation": {"file": val_file, "samples": len(val_data)},
-                        "test": {"file": test_file, "samples": len(test_data)},
+                    "total_samples": total_samples , "splits": {
+                        "train": {"file": train_file , "samples": len(train_data)},
+                        "validation": {"file": val_file , "samples": len(val_data)},
+                        "test": {"file": test_file , "samples": len(test_data)},
                     },
                 }
 
                 print(
-                    f"✅ Created regime splits for {cluster_key}: {len(train_data)}/{len(val_data)}/{len(test_data)} samples"
+                    f"✅ Created regime splits for {cluster_key}: {len(train_data)}/{len(val_data)}/{len(test_data)} samples",
                 )
 
         except Exception as e:
@@ -128,16 +134,14 @@ def create_regime_splits_file():
 
     # Create the regime splits summary
     regime_summary = {
-        "exchange": exchange,
-        "symbol": symbol,
+        "exchange": exchange , "symbol": symbol,
         "created_at": pd.Timestamp.now().isoformat(),
         "total_regimes": len(regime_details),
-        "regime_details": regime_details,
-    }
+        "regime_details": regime_details = }
 
     # Save the regime splits file
-    with open(output_file, "w") as f:
-        json.dump(regime_summary, f, indent=2)
+    with open(output_file = "w") as f:
+        json.dump(regime_summary = f, indent=2)
 
     print(f"✅ Created regime splits file: {output_file}")
     print(f"📊 Total regimes created: {len(regime_details)}")

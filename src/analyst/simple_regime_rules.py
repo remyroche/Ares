@@ -1,7 +1,4 @@
 from __future__ import annotations
-
-from typing import Tuple, List
-
 import numpy as np
 import pandas as pd
 
@@ -37,8 +34,7 @@ def compute_adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
 
 
 def compute_ema_adx_features(
-    df: pd.DataFrame,
-    ema_fast: int = 21,
+    df: pd.DataFrame, ema_fast: int = 21,
     ema_slow: int = 55,
     adx_period: int = 14,
 ) -> pd.DataFrame:
@@ -56,15 +52,14 @@ def compute_ema_adx_features(
 
 
 def classify_regime_series(
-    df: pd.DataFrame,
-    *,
+    df: pd.DataFrame, *,
     ema_fast: int = 21,
     ema_slow: int = 55,
     adx_period: int = 14,
     adx_trend_threshold: float = 25.0,
     adx_sideways_threshold: float = 20.0,
     ema_sep_min_ratio: float = 0.0,
-) -> Tuple[List[str], List[float]]:
+) -> tuple[list[str], list[float]]:
     """Classify regime for each row using EMA/ADX rules.
 
     Rules (parameterized):
@@ -78,10 +73,8 @@ def classify_regime_series(
       confidences: list[float] in [0,1]
     """
     feats = compute_ema_adx_features(
-        df,
-        ema_fast=ema_fast,
-        ema_slow=ema_slow,
-        adx_period=adx_period,
+        df, ema_fast=ema_fast,
+        ema_slow=ema_slow, adx_period=adx_period,
     )
 
     fast_col = f"ema_{ema_fast}"
@@ -90,7 +83,7 @@ def classify_regime_series(
     # Normalized EMA separation relative to a smoothed price level
     ema_sep = (feats[fast_col] - feats[slow_col]).abs()
     ema_sep_norm = (ema_sep / feats["close"].rolling(max(ema_slow, 2)).mean()).fillna(
-        0.0
+        0.0,
     )
 
     # Trend condition with tunable thresholds
@@ -116,13 +109,15 @@ def classify_regime_series(
     # Sideways confidence increases as ADX drops below the sideways threshold
     denom_sw = max(adx_sideways_threshold, 1e-6)
     conf_sideways = np.clip(
-        (adx_sideways_threshold - feats["adx"]) / denom_sw, 0.2, 1.0
+        (adx_sideways_threshold - feats["adx"]) / denom_sw, 0.2,
+        1.0,
     )
 
     # Trend confidence increases with ADX above sideways threshold and EMA separation
     denom_tr = max(adx_trend_threshold - adx_sideways_threshold, 1e-6)
     adx_component = np.clip(
-        (feats["adx"] - adx_sideways_threshold) / denom_tr, 0.0, 1.0
+        (feats["adx"] - adx_sideways_threshold) / denom_tr, 0.0,
+        1.0,
     )
     sep_component = np.clip(ema_sep_norm * 10.0, 0.0, 1.0)
     conf_trend = np.clip(0.5 * adx_component + 0.5 * sep_component, 0.2, 1.0)
@@ -140,7 +135,7 @@ def classify_last(
     adx_trend_threshold: float = 25.0,
     adx_sideways_threshold: float = 20.0,
     ema_sep_min_ratio: float = 0.0,
-) -> Tuple[str, float]:
+) -> tuple[str, float]:
     """Classify the last row regime and confidence using EMA/ADX rules.
 
     Returns ('BULL'|'BEAR'|'SIDEWAYS', confidence)

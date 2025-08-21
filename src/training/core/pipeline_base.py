@@ -1,5 +1,4 @@
-"""
-Abstract base classes for the modular training pipeline.
+"""Abstract base classes for the modular training pipeline.
 
 This module defines the core interfaces and base classes that all pipeline
 stages must implement.
@@ -9,10 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
+from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -27,8 +23,7 @@ from src.utils.warning_symbols import (
 
 @dataclass
 class StageContext:
-    """
-    Context passed between pipeline stages.
+    """Context passed between pipeline stages.
 
     This class contains all the data and configuration that flows through
     the pipeline, allowing stages to share information and results.
@@ -62,16 +57,14 @@ class StageContext:
 
 
 class PipelineStage:
-    """
-    Pipeline stage with comprehensive error handling and type safety.
-    """
+    """Pipeline stage with comprehensive error handling and type safety."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
-        Initialize pipeline stage with enhanced type safety.
+        """Initialize pipeline stage with enhanced type safety.
 
         Args:
             config: Configuration dictionary
+
         """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("PipelineStage")
@@ -79,7 +72,7 @@ class PipelineStage:
         # Pipeline stage state
         self.is_running: bool = False
         self.stage_results: dict[str, Any] = {}
-        self.stage_history: list[dict[str, Any]] = []
+        self.stage_history: list[dict[str, Any]] , []
 
         # Configuration
         self.stage_config: dict[str, Any] = self.config.get("pipeline_stage", {})
@@ -104,11 +97,11 @@ class PipelineStage:
         context="pipeline stage initialization",
     )
     async def initialize(self) -> bool:
-        """
-        Initialize pipeline stage with enhanced error handling.
+        """Initialize pipeline stage with enhanced error handling.
 
         Returns:
             bool: True if initialization successful, False otherwise
+
         """
         try:
             self.logger.info("Initializing Pipeline Stage...")
@@ -164,11 +157,11 @@ class PipelineStage:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """
-        Validate stage configuration.
+        """Validate stage configuration.
 
         Returns:
             bool: True if configuration is valid, False otherwise
+
         """
         try:
             # Validate stage interval
@@ -184,8 +177,7 @@ class PipelineStage:
             # Validate that at least one stage type is enabled
             if not any(
                 [
-                    self.enable_stage_execution,
-                    self.enable_stage_validation,
+                    self.enable_stage_execution == self.enable_stage_validation,
                     self.stage_config.get("enable_stage_monitoring", True),
                     self.stage_config.get("enable_stage_reporting", True),
                 ],
@@ -323,14 +315,14 @@ class PipelineStage:
         context="stage execution",
     )
     async def execute_stage(self, stage_input: dict[str, Any]) -> bool:
-        """
-        Execute stage operations.
+        """Execute stage operations.
 
         Args:
             stage_input: Stage input dictionary
 
         Returns:
             bool: True if successful, False otherwise
+
         """
         try:
             if not self._validate_stage_inputs(stage_input):
@@ -377,14 +369,14 @@ class PipelineStage:
         context="stage inputs validation",
     )
     def _validate_stage_inputs(self, stage_input: dict[str, Any]) -> bool:
-        """
-        Validate stage inputs.
+        """Validate stage inputs.
 
         Args:
             stage_input: Stage input dictionary
 
         Returns:
             bool: True if valid, False otherwise
+
         """
         try:
             # Check required stage input fields
@@ -418,14 +410,14 @@ class PipelineStage:
         self,
         stage_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Perform stage execution.
+        """Perform stage execution.
 
         Args:
             stage_input: Stage input dictionary
 
         Returns:
             dict[str, Any]: Stage execution results
+
         """
         try:
             results = {}
@@ -470,14 +462,14 @@ class PipelineStage:
         self,
         stage_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Perform stage validation.
+        """Perform stage validation.
 
         Args:
             stage_input: Stage input dictionary
 
         Returns:
             dict[str, Any]: Stage validation results
+
         """
         try:
             results = {}
@@ -522,14 +514,14 @@ class PipelineStage:
         self,
         stage_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Perform stage monitoring.
+        """Perform stage monitoring.
 
         Args:
             stage_input: Stage input dictionary
 
         Returns:
             dict[str, Any]: Stage monitoring results
+
         """
         try:
             results = {}
@@ -574,14 +566,14 @@ class PipelineStage:
         self,
         stage_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Perform stage reporting.
+        """Perform stage reporting.
 
         Args:
             stage_input: Stage input dictionary
 
         Returns:
             dict[str, Any]: Stage reporting results
+
         """
         try:
             results = {}
@@ -618,6 +610,7 @@ class PipelineStage:
             return {}
 
     # Stage execution methods
+
     def _perform_execution_planning(
         self,
         stage_input: dict[str, Any],
@@ -687,6 +680,7 @@ class PipelineStage:
             return {}
 
     # Stage validation methods
+
     def _perform_input_validation(self, stage_input: dict[str, Any]) -> dict[str, Any]:
         """Perform input validation."""
         try:
@@ -750,6 +744,7 @@ class PipelineStage:
             return {}
 
     # Stage monitoring methods
+
     def _perform_performance_monitoring(
         self,
         stage_input: dict[str, Any],
@@ -813,6 +808,7 @@ class PipelineStage:
             return {}
 
     # Stage reporting methods
+
     def _perform_report_generation(self, stage_input: dict[str, Any]) -> dict[str, Any]:
         """Perform report generation."""
         try:
@@ -901,14 +897,14 @@ class PipelineStage:
         context="stage results getting",
     )
     def get_stage_results(self, stage_type: str | None = None) -> dict[str, Any]:
-        """
-        Get stage results.
+        """Get stage results.
 
         Args:
             stage_type: Optional stage type filter
 
         Returns:
             dict[str, Any]: Stage results
+
         """
         try:
             if stage_type:
@@ -925,14 +921,14 @@ class PipelineStage:
         context="stage history getting",
     )
     def get_stage_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """
-        Get stage history.
+        """Get stage history.
 
         Args:
             limit: Optional limit on number of records
 
         Returns:
             list[dict[str, Any]]: Stage history
+
         """
         try:
             history = self.stage_history.copy()
@@ -947,11 +943,11 @@ class PipelineStage:
             return []
 
     def get_stage_status(self) -> dict[str, Any]:
-        """
-        Get stage status information.
+        """Get stage status information.
 
         Returns:
             dict[str, Any]: Stage status
+
         """
         return {
             "is_running": self.is_running,
@@ -1007,14 +1003,14 @@ pipeline_stage: PipelineStage | None = None
 async def setup_pipeline_stage(
     config: dict[str, Any] | None = None,
 ) -> PipelineStage | None:
-    """
-    Setup global pipeline stage.
+    """Setup global pipeline stage.
 
     Args:
         config: Optional configuration dictionary
 
     Returns:
         PipelineStage | None: Global pipeline stage instance
+
     """
     try:
         global pipeline_stage
@@ -1040,6 +1036,5 @@ async def setup_pipeline_stage(
             return pipeline_stage
         return None
 
-    except Exception as e:
-        print(f"Error setting up pipeline stage: {e}")
+    except Exception:
         return None

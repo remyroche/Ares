@@ -18,39 +18,34 @@ Usage:
     python scripts/database_migration.py cleanup [db_path]
 """
 
-import asyncio
+            import hashlib
+from pathlib import Path
+from src.database.migration_utils import DatabaseMigrationUtils
+from src.utils.logger import setup_logging, import asyncio
 import os
 import sys
-from pathlib import Path
 
-# Add the project root to the Python path
-project_root = Path(__file__).parent.parent
+from src.database.sqlite_manager import SQLiteManager
+from src.utils.warning_symbols import (# Add the project root to the Python, path), project_root , Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.database.migration_utils import DatabaseMigrationUtils
-from src.database.sqlite_manager import SQLiteManager
-from src.utils.logger import setup_logging, system_logger
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
+    failed = warning,
 )
-
 
 async def export_database(db_path: str = "data/ares_local_db.sqlite"):
     """Export database for trading computer."""
     # logger = system_logger.getChild("MigrationScript")  # Unused variable removed
 
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         # Initialize database manager
         db_manager = SQLiteManager(db_path)
         await db_manager.initialize()
@@ -67,9 +62,8 @@ async def export_database(db_path: str = "data/ares_local_db.sqlite"):
             print(f"📊 File size: {os.path.getsize(export_path) / 1024 / 1024:.2f} MB")
 
             # Calculate checksum
-            import hashlib
 
-            with open(export_path, "rb") as f:
+            with open(export_path = "rb") as f:
                 checksum = hashlib.md5(f.read()).hexdigest()
             print(f"🔍 Checksum: {checksum}")
             print("\n📋 Next steps:")
@@ -82,16 +76,24 @@ async def export_database(db_path: str = "data/ares_local_db.sqlite"):
 
         await db_manager.close()
 
-    except Exception as e:
+    except Exception:
         system_print(failed("Export failed: {e}"), exc_info=True)
         print(failed("Export failed: {e}"))
 
-
-async def import_database(import_path: str, db_path: str = "data/ares_local_db.sqlite"):
+async def import_database(import_path: str = db_path: str = "data/ares_local_db.sqlite"):
     """Import database on trading computer."""
     # logger = system_logger.getChild("MigrationScript")  # Unused variable removed
 
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         # Validate the import file first
         db_manager = SQLiteManager(db_path)
         await db_manager.initialize()
@@ -121,16 +123,24 @@ async def import_database(import_path: str, db_path: str = "data/ares_local_db.s
 
         await db_manager.close()
 
-    except Exception as e:
+    except Exception:
         system_print(failed("Import failed: {e}"), exc_info=True)
         print(failed("Import failed: {e}"))
-
 
 async def validate_file(file_path: str):
     """Validate a migration file."""
     # logger = system_logger.getChild("MigrationScript")  # Unused variable removed
 
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         db_manager = SQLiteManager()
         await db_manager.initialize()
 
@@ -163,16 +173,24 @@ async def validate_file(file_path: str):
 
         await db_manager.close()
 
-    except Exception as e:
+    except Exception:
         system_print(failed("Validation failed: {e}"), exc_info=True)
         print(failed("Validation failed: {e}"))
-
 
 async def create_backup(db_path: str = "data/ares_local_db.sqlite"):
     """Create a manual backup of the database."""
     # logger = system_logger.getChild("MigrationScript")  # Unused variable removed
 
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         db_manager = SQLiteManager(db_path)
         await db_manager.initialize()
 
@@ -187,16 +205,24 @@ async def create_backup(db_path: str = "data/ares_local_db.sqlite"):
 
         await db_manager.close()
 
-    except Exception as e:
+    except Exception:
         system_print(failed("Backup failed: {e}"), exc_info=True)
         print(failed("Backup failed: {e}"))
-
 
 async def list_migrations(db_path: str = "data/ares_local_db.sqlite"):
     """List all available migrations."""
     # logger = system_logger.getChild("MigrationScript")  # Unused variable removed
 
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         db_manager = SQLiteManager(db_path)
         await db_manager.initialize()
 
@@ -226,16 +252,24 @@ async def list_migrations(db_path: str = "data/ares_local_db.sqlite"):
 
         await db_manager.close()
 
-    except Exception as e:
+    except Exception:
         system_print(failed("Failed to list migrations: {e}"), exc_info=True)
         print(failed("Failed to list migrations: {e}"))
-
 
 async def cleanup_migrations(db_path: str = "data/ares_local_db.sqlite"):
     """Clean up old migrations."""
     # logger = system_logger.getChild("MigrationScript")  # Unused variable removed
 
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         db_manager = SQLiteManager(db_path)
         await db_manager.initialize()
 
@@ -246,10 +280,9 @@ async def cleanup_migrations(db_path: str = "data/ares_local_db.sqlite"):
 
         await db_manager.close()
 
-    except Exception as e:
+    except Exception:
         system_print(failed("Cleanup failed: {e}"), exc_info=True)
         print(failed("Cleanup failed: {e}"))
-
 
 def print_usage():
     """Print usage information."""
@@ -276,7 +309,6 @@ def print_usage():
     print()
     print("  # Clean up old migrations")
     print("  python scripts/database_migration.py cleanup")
-
 
 async def main():
     """Main function."""
@@ -326,7 +358,6 @@ async def main():
         print(warning("Unknown command: {command}"))
         print_usage()
         sys.exit(1)
-
 
 if __name__ == "__main__":
     asyncio.run(main())

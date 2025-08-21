@@ -1,8 +1,6 @@
 # src/training/factory.py
 
-"""
-Factory for creating optimized training components based on configuration.
-"""
+"""Factory for creating optimized training components based on configuration."""
 
 import os
 from typing import Any
@@ -17,11 +15,9 @@ from src.utils.logger import system_logger
 
 
 class OptimizedTrainingFactory:
-    """
-    Factory for creating optimized training components.
-    """
+    """Factory for creating optimized training components."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.optimization_config = get_optimization_config(
             config.get("computational_optimization", {}),
@@ -40,7 +36,7 @@ class OptimizedTrainingFactory:
 
     def create_memory_profiler(
         self,
-        enable_continuous_monitoring: bool = None,
+        enable_continuous_monitoring: bool | None = None,
     ) -> MemoryProfiler:
         """Create a memory profiler with appropriate settings."""
         monitoring_config = self.optimization_config.get("monitoring", {})
@@ -152,28 +148,28 @@ class OptimizedTrainingFactory:
 
 
 def create_optimized_training_system(config: dict[str, Any]) -> dict[str, Any]:
-    """
-    Convenience function to create a complete optimized training system.
+    """Convenience function to create a complete optimized training system.
 
     Args:
         config: Training configuration
 
     Returns:
         Dictionary containing all optimized training components
+
     """
     factory = OptimizedTrainingFactory(config)
     return factory.create_training_pipeline()
 
 
 def get_optimization_recommendations(config: dict[str, Any]) -> dict[str, Any]:
-    """
-    Get optimization recommendations based on system resources and configuration.
+    """Get optimization recommendations based on system resources and configuration.
 
     Args:
         config: Current configuration
 
     Returns:
         Dictionary containing optimization recommendations
+
     """
     recommendations = {
         "memory_optimizations": [],

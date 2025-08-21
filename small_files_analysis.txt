@@ -1,0 +1,93 @@
+================================================================================
+SMALL FILES ANALYSIS REPORT
+================================================================================
+Generated: 2025-08-20T17:58:30.213992
+Small file threshold: 1.0 MB
+
+SUMMARY
+----------------------------------------
+Total Files: 918
+Small Files: 916 (99.8%)
+Total Size: 0.05 GB
+Small Files Size: 0.04 GB
+
+DETAILED ANALYSIS BY DATASET
+----------------------------------------
+
+Dataset: binance_ETHUSDT_5m_backup_20250816_151711
+Path: data_cache/unified/binance/ETHUSDT/5m_backup_20250816_151711
+  Total Files: 1
+  Small Files: 0
+  Total Size: 0.00 GB
+  Small Files Size: 0.00 GB
+  Size Distribution:
+    Medium: 1 files
+
+Dataset: binance_ETHUSDT_5m
+Path: data_cache/unified/binance/ETHUSDT/5m
+  Total Files: 175
+  Small Files: 174
+  Total Size: 0.00 GB
+  Small Files Size: 0.00 GB
+  Size Distribution:
+    Tiny: 174 files
+    Medium: 1 files
+  Smallest Files (top 10):
+     1.   0.01 MB: exchange=BINANCE/symbol=ETHUSDT/timeframe=5m/year=2025/month=2/day=17/part-0.parquet [exchange=BINANCE, symbol=ETHUSDT, timeframe=5m, year=2025, month=2, day=17]
+     2.   0.01 MB: exchange=BINANCE/symbol=ETHUSDT/timeframe=5m/year=2025/month=8/day=9/part-0.parquet [exchange=BINANCE, symbol=ETHUSDT, timeframe=5m, year=2025, month=8, day=9]
+     3.   0.01 MB: exchange=BINANCE/symbol=ETHUSDT/timeframe=5m/year=2025/month=5/day=3/part-0.parquet [exchange=BINANCE, symbol=ETHUSDT, timeframe=5m, year=2025, month=5, day=3]
+     4.   0.01 MB: exchange=BINANCE/symbol=ETHUSDT/timeframe=5m/year=2025/month=5/day=4/part-0.parquet [exchange=BINANCE, symbol=ETHUSDT, timeframe=5m, year=2025, month=5, day=4]
+     5.   0.01 MB: exchange=BINANCE/symbol=ETHUSDT/timeframe=5m/year=2025/month=4/day=18/part-0.parquet [exchange=BINANCE, symbol=ETHUSDT, timeframe=5m, year=2025, month=4, day=18]
+     6.   0.01 MB: exchange=BINANCE/symbol=ETHUSDT/timeframe=5m/year=2025/month=3/day=27/part-0.parquet [exchange=BINANCE, symbol=ETHUSDT, timeframe=5m, year=2025, month=3, day=27]
+     7.   0.02 MB: exchange=BINANCE/symbol=ETHUSDT/timeframe=5m/year=2025/month=5/day=2/part-0.parquet [exchange=BINANCE, symbol=ETHUSDT, timeframe=5m, year=2025, month=5, day=2]
+     8.   0.02 MB: exchange=BINANCE/symbol=ETHUSDT/timeframe=5m/year=2025/month=4/day=16/part-0.parquet [exchange=BINANCE, symbol=ETHUSDT, timeframe=5m, year=2025, month=4, day=16]
+     9.   0.02 MB: exchange=BINANCE/symbol=ETHUSDT/timeframe=5m/year=2025/month=4/day=17/part-0.parquet [exchange=BINANCE, symbol=ETHUSDT, timeframe=5m, year=2025, month=4, day=17]
+    10.   0.02 MB: exchange=BINANCE/symbol=ETHUSDT/timeframe=5m/year=2025/month=5/day=5/part-0.parquet [exchange=BINANCE, symbol=ETHUSDT, timeframe=5m, year=2025, month=5, day=5]
+
+Dataset: binance_ETHUSDT_15m
+Path: data_cache/unified/binance/ETHUSDT/15m
+  Total Files: 1
+  Small Files: 1
+  Total Size: 0.00 GB
+  Small Files Size: 0.00 GB
+  Size Distribution:
+    Very Small: 1 files
+  Smallest Files (top 10):
+     1.   0.46 MB: exchange=BINANCE/symbol=ETHUSDT/timeframe=15m_backup_20250816_163724/year=1970/month=01/day=01/part-0.parquet [exchange=BINANCE, symbol=ETHUSDT, timeframe=15m_backup_20250816_163724, year=1970, month=01, day=01]
+
+Dataset: binance_ETHUSDT_1m
+Path: data_cache/unified/binance/ETHUSDT/1m
+  Total Files: 741
+  Small Files: 741
+  Total Size: 0.04 GB
+  Small Files Size: 0.04 GB
+  Size Distribution:
+    Tiny: 741 files
+  Smallest Files (top 10):
+     1.   0.01 MB: exchange=BINANCE/symbol=ETHUSDT/timeframe=1m/year=2023/month=07/day=31/part-0.parquet [exchange=BINANCE, symbol=ETHUSDT, timeframe=1m, year=2023, month=07, day=31]
+     2.   0.04 MB: exchange=BINANCE/symbol=ETHUSDT/timeframe=1m/year=2023/month=09/day=09/part-0.parquet [exchange=BINANCE, symbol=ETHUSDT, timeframe=1m, year=2023, month=09, day=09]
+     3.   0.04 MB: exchange=BINANCE/symbol=ETHUSDT/timeframe=1m/year=2023/month=08/day=12/part-0.parquet [exchange=BINANCE, symbol=ETHUSDT, timeframe=1m, year=2023, month=08, day=12]
+     4.   0.04 MB: exchange=BINANCE/symbol=ETHUSDT/timeframe=1m/year=2023/month=09/day=23/part-0.parquet [exchange=BINANCE, symbol=ETHUSDT, timeframe=1m, year=2023, month=09, day=23]
+     5.   0.04 MB: exchange=BINANCE/symbol=ETHUSDT/timeframe=1m/year=2023/month=08/day=13/part-0.parquet [exchange=BINANCE, symbol=ETHUSDT, timeframe=1m, year=2023, month=08, day=13]
+     6.   0.05 MB: exchange=BINANCE/symbol=ETHUSDT/timeframe=1m/year=2023/month=08/day=05/part-0.parquet [exchange=BINANCE, symbol=ETHUSDT, timeframe=1m, year=2023, month=08, day=05]
+     7.   0.05 MB: exchange=BINANCE/symbol=ETHUSDT/timeframe=1m/year=2023/month=08/day=06/part-0.parquet [exchange=BINANCE, symbol=ETHUSDT, timeframe=1m, year=2023, month=08, day=06]
+     8.   0.05 MB: exchange=BINANCE/symbol=ETHUSDT/timeframe=1m/year=2023/month=08/day=26/part-0.parquet [exchange=BINANCE, symbol=ETHUSDT, timeframe=1m, year=2023, month=08, day=26]
+     9.   0.05 MB: exchange=BINANCE/symbol=ETHUSDT/timeframe=1m/year=2023/month=09/day=24/part-0.parquet [exchange=BINANCE, symbol=ETHUSDT, timeframe=1m, year=2023, month=09, day=24]
+    10.   0.05 MB: exchange=BINANCE/symbol=ETHUSDT/timeframe=1m/year=2023/month=09/day=03/part-0.parquet [exchange=BINANCE, symbol=ETHUSDT, timeframe=1m, year=2023, month=09, day=03]
+
+================================================================================
+RECOMMENDATIONS
+================================================================================
+🚨 SMALL FILES DETECTED - OPTIMIZATION NEEDED
+
+Recommended Actions:
+1. Consolidate small files into larger partitions
+2. Consider coarser partitioning (e.g., monthly instead of daily)
+3. Remove unnecessary partition columns with low cardinality
+4. Use adaptive partitioning based on data volume
+
+Expected Benefits:
+- Reduced file system overhead
+- Improved query performance
+- Better compression ratios
+- Reduced metadata overhead

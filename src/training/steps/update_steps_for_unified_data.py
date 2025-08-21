@@ -1,14 +1,12 @@
 # src/training/steps/update_steps_for_unified_data.py
 
-"""
-Utility script to update all training steps to use the unified data loader.
+"""Utility script to update all training steps to use the unified data loader.
 
 This script provides guidance and templates for updating the training steps
 to use the new unified Parquet partitioned data format.
 """
 
-import os
-from typing import List, Dict, Any
+from typing import Any
 
 # List of all training steps that need to be updated
 TRAINING_STEPS = [
@@ -44,8 +42,7 @@ def get_unified_data_loading_code(
     lookback_days: int = 180,
     data_dir_var: str = "data_dir",
 ) -> str:
-    """
-    Get the code template for loading unified data.
+    """Get the code template for loading unified data.
 
     Args:
         symbol_var: Variable name for symbol
@@ -56,12 +53,13 @@ def get_unified_data_loading_code(
 
     Returns:
         Code template string
+
     """
     return f"""
         # Use unified data loader to get data
         self.logger.info("🔄 Loading data using unified data loader...")
         data_loader = get_unified_data_loader(self.config)
-        
+
         # Load unified data
         historical_data = await data_loader.load_unified_data(
             symbol={symbol_var},
@@ -69,18 +67,18 @@ def get_unified_data_loading_code(
             timeframe={timeframe_var},
             lookback_days={lookback_days}
         )
-        
+
         if historical_data is None or historical_data.empty:
             self.logger.error("❌ No data found - check symbol and exchange configuration")
             raise ValueError(f"No data found for {{symbol}} on {{exchange}}")
-        
+
         # Log data information
         data_info = data_loader.get_data_info(historical_data)
         self.logger.info(f"✅ Loaded unified data: {{data_info['rows']}} rows")
         self.logger.info(f"   Date range: {{data_info['date_range']['start']}} to {{data_info['date_range']['end']}}")
         self.logger.info(f"   Has aggtrades data: {{data_info['has_aggtrades_data']}}")
         self.logger.info(f"   Has futures data: {{data_info['has_futures_data']}}")
-        
+
         # Ensure we have the required OHLCV columns
         required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
         missing_columns = [col for col in required_columns if col not in historical_data.columns]
@@ -90,26 +88,13 @@ def get_unified_data_loading_code(
 """
 
 
-def get_step_specific_guidance(step_name: str) -> Dict[str, Any]:
+def get_step_specific_guidance(step_name: str) -> dict[str, Any]:
     """Get step-specific guidance for updating."""
     from src.config.constants import (
         BLANK_TRAINING_LOOKBACK_DAYS,
-        FULL_TRAINING_LOOKBACK_DAYS,
-        SHORT_BLANK_LOOKBACK_DAYS,
     )
 
     # High complexity areas that need special attention
-    high_complexity_areas = {
-        "step1_data_collection": "❌ HIGH COMPLEXITY - consolidate_files (D-23), run_step (C-18)",
-        "step4_main_model_training": "❌ HIGH COMPLEXITY - run_step (C-13)",
-        "step5_multi_stage_hpo": "⚠️  MEDIUM COMPLEXITY - run_step (B-9)",
-        "step7_monte_carlo_validation": "⚠️  MEDIUM COMPLEXITY - run_step (B-7)",
-        "step6_walk_forward_validation": "⚠️  MEDIUM COMPLEXITY - run_step (B-6)",
-        "step9_save_results": "⚠️  MEDIUM COMPLEXITY - run_step (B-6)",
-        "step3_coarse_optimization": "⚠️  MEDIUM COMPLEXITY - run_step (B-6)",
-        "step2_preliminary_optimization": "✅ LOW COMPLEXITY - run_step (A-5)",
-        "step8_ab_testing_setup": "✅ LOW COMPLEXITY - run_step (A-2)",
-    }
 
     guidance = {
         "step2_market_regime_classification": {
@@ -199,7 +184,7 @@ def generate_step_update_template(step_name: str) -> str:
     """Generate a template for updating a specific step."""
     guidance = get_step_specific_guidance(step_name)
 
-    template = f"""
+    return f"""
 # Template for updating {step_name}.py
 
 ## 1. Add import at the top of the file:
@@ -216,7 +201,7 @@ def generate_step_update_template(step_name: str) -> str:
 
 ## 4. Additional data processing (if needed):
 # - If the step needs regime labels, load them from step2 results
-# - If the step needs analyst predictions, load them from step7 results  
+# - If the step needs analyst predictions, load them from step7 results
 # - If the step needs tactician predictions, load them from step10 results
 
 ## 5. Example of loading additional data:
@@ -227,51 +212,18 @@ def generate_step_update_template(step_name: str) -> str:
 #     # Process regime data as needed
 """
 
-    return template
 
 
-def main():
+def main() -> None:
     """Main function to generate update guidance."""
-    print("=" * 80)
-    print("📋 UNIFIED DATA LOADER UPDATE GUIDE")
-    print("=" * 80)
-    print()
-    print(
-        "✅ This guide helps update all training steps to use the unified data loader."
-    )
-    print("🔄 The unified data loader provides access to the new Parquet partitioned")
-    print(
-        "📊 data format that includes klines, aggtrades, and futures data merged together."
-    )
-    print()
+    for _i, step in enumerate(TRAINING_STEPS, 1):
+        pass
 
-    print("📝 STEPS TO UPDATE:")
-    for i, step in enumerate(TRAINING_STEPS, 1):
-        print(f"  {i:2d}. {step}")
-    print()
 
-    print("🛠️  GENERAL UPDATE PROCESS:")
-    print("  1. ➕ Add the unified data loader import")
-    print("  2. 🔄 Replace existing data loading code with unified data loader calls")
-    print("  3. ⚙️  Update any step-specific data processing")
-    print("  4. 🧪 Test the updated step")
-    print()
 
-    print("⚠️  COMMON ISSUES TO WATCH FOR:")
-    print("  ❌ Missing data files or incorrect paths")
-    print("  ❌ Incompatible data formats")
-    print("  ❌ Memory issues with large datasets")
-    print("  ❌ Missing required columns")
-    print("  ❌ Timezone mismatches")
-    print()
-
-    print("📋 STEP-SPECIFIC TEMPLATES:")
-    print("=" * 80)
 
     for step in TRAINING_STEPS:
-        print(f"\n🔧 {step.upper()}:")
-        print("-" * 40)
-        guidance = get_step_specific_guidance(step)
+        get_step_specific_guidance(step)
 
         # Check for complexity warnings
         high_complexity_areas = {
@@ -287,17 +239,11 @@ def main():
         }
 
         if step in high_complexity_areas:
-            print(f"🚨 {high_complexity_areas[step]}")
+            pass
 
-        print(f"📅 Lookback days: {guidance['lookback_days']}")
-        print(f"⏱️  Timeframe: {guidance['timeframe']}")
-        print(f"💡 Notes: {guidance['notes']}")
 
         # Generate template
-        template = generate_step_update_template(step)
-        print("\n📄 Template:")
-        print(template)
-        print("=" * 80)
+        generate_step_update_template(step)
 
 
 if __name__ == "__main__":

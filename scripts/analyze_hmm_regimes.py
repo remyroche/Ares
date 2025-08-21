@@ -7,21 +7,21 @@ This script provides comprehensive analysis and visualization of HMM regimes
 with human-readable interpretations of each market archetype.
 """
 
-import os
-import json
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from typing import Dict, List, Any, Optional
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 import argparse
-from datetime import datetime, timedelta
+import json
+
+import matplotlib.pyplot as plt
+import networkx as nx
+import numpy as np
+import pandas as pd
+import seaborn as sns
 
 # Set up plotting style
 plt.style.use("seaborn-v0_8")
 sns.set_palette("husl")
-
 
 class HMMRegimeAnalyzer:
     """Analyzer for HMM regime discovery results."""
@@ -30,17 +30,21 @@ class HMMRegimeAnalyzer:
         self.data_dir = Path(data_dir)
 
     def load_regime_data(
-        self, exchange: str, symbol: str, timeframe: str
-    ) -> Dict[str, Any]:
+        self,
+        exchange: str,
+        symbol: str,
+        timeframe: str,
+    ) -> dict[str, Any]:
         """Load all regime-related data files."""
         base_name = f"{exchange}_{symbol}_hmm"
 
         # Load meta data
         meta_path = self.data_dir / f"{base_name}_composite_meta_{timeframe}.json"
         if not meta_path.exists():
-            raise FileNotFoundError(f"Meta file not found: {meta_path}")
+            msg = f"Meta file not found: {meta_path}"
+            raise FileNotFoundError(msg)
 
-        with open(meta_path, "r") as f:
+        with open(meta_path) as f:
             meta = json.load(f)
 
         # Load intensity data
@@ -56,15 +60,14 @@ class HMMRegimeAnalyzer:
         cluster_path = (
             self.data_dir / f"{base_name}_composite_clusters_{timeframe}.parquet"
         )
-        if cluster_path.exists():
-            cluster_df = pd.read_parquet(cluster_path)
-        else:
-            cluster_df = None
+        cluster_df = pd.read_parquet(cluster_path) if cluster_path.exists() else None
 
         return {"meta": meta, "intensity": intensity_df, "clusters": cluster_df}
 
     def generate_detailed_regime_summary(
-        self, meta: Dict[str, Any], cluster_df: Optional[pd.DataFrame] = None
+        self,
+        meta: dict[str, Any],
+        cluster_df: pd.DataFrame | None = None,
     ) -> str:
         """Generate a detailed regime summary in the requested format."""
         summary = []
@@ -90,55 +93,55 @@ class HMMRegimeAnalyzer:
         summary.append("## 📚 Acronym Glossary")
         summary.append("")
         summary.append(
-            "**HMM**: Hidden Markov Model - A statistical model used to identify hidden states in time series data"
+            "**HMM**: Hidden Markov Model - A statistical model used to identify hidden states in time series data",
         )
         summary.append("")
         summary.append(
-            "**MAE**: Mean Absolute Error - Average absolute difference between predicted and actual values"
+            "**MAE**: Mean Absolute Error - Average absolute difference between predicted and actual values",
         )
         summary.append("")
         summary.append(
-            "**MAPE**: Mean Absolute Percentage Error - Average percentage error between predicted and actual values"
+            "**MAPE**: Mean Absolute Percentage Error - Average percentage error between predicted and actual values",
         )
         summary.append("")
         summary.append(
-            "**OHLCV**: Open, High, Low, Close, Volume - Standard candlestick data format"
+            "**OHLCV**: Open, High, Low, Close, Volume - Standard candlestick data format",
         )
         summary.append("")
         summary.append(
-            "**SR**: Support/Resistance - Key price levels where market tends to reverse"
+            "**SR**: Support/Resistance - Key price levels where market tends to reverse",
         )
         summary.append("")
         summary.append(
-            "**VIF**: Variance Inflation Factor - Measure of multicollinearity in features"
+            "**VIF**: Variance Inflation Factor - Measure of multicollinearity in features",
         )
         summary.append("")
         summary.append(
-            "**PCA**: Principal Component Analysis - Dimensionality reduction technique"
+            "**PCA**: Principal Component Analysis - Dimensionality reduction technique",
         )
         summary.append("")
         summary.append(
-            "**SMOTE**: Synthetic Minority Over-sampling Technique - Method to balance imbalanced datasets"
+            "**SMOTE**: Synthetic Minority Over-sampling Technique - Method to balance imbalanced datasets",
         )
         summary.append("")
         summary.append(
-            "**LGBM**: Light Gradient Boosting Machine - Gradient boosting framework"
+            "**LGBM**: Light Gradient Boosting Machine - Gradient boosting framework",
         )
         summary.append("")
         summary.append(
-            "**SVM**: Support Vector Machine - Machine learning algorithm for classification/regression"
+            "**SVM**: Support Vector Machine - Machine learning algorithm for classification/regression",
         )
         summary.append("")
         summary.append(
-            "**ADX**: Average Directional Index - Technical indicator measuring trend strength"
+            "**ADX**: Average Directional Index - Technical indicator measuring trend strength",
         )
         summary.append("")
         summary.append(
-            "**RSI**: Relative Strength Index - Momentum oscillator measuring speed and change of price movements"
+            "**RSI**: Relative Strength Index - Momentum oscillator measuring speed and change of price movements",
         )
         summary.append("")
         summary.append(
-            "**MACD**: Moving Average Convergence Divergence - Trend-following momentum indicator"
+            "**MACD**: Moving Average Convergence Divergence - Trend-following momentum indicator",
         )
         summary.append("")
         summary.append("**ATR**: Average True Range - Volatility indicator")
@@ -146,43 +149,43 @@ class HMMRegimeAnalyzer:
         summary.append("**VWAP**: Volume Weighted Average Price - Trading benchmark")
         summary.append("")
         summary.append(
-            "**EMA**: Exponential Moving Average - Type of moving average that gives more weight to recent data"
+            "**EMA**: Exponential Moving Average - Type of moving average that gives more weight to recent data",
         )
         summary.append("")
         summary.append(
-            "**SMA**: Simple Moving Average - Average of prices over a specified period"
+            "**SMA**: Simple Moving Average - Average of prices over a specified period",
         )
         summary.append("")
         summary.append(
-            "**HDBSCAN**: Hierarchical Density-Based Spatial Clustering of Applications with Noise - Clustering algorithm"
+            "**HDBSCAN**: Hierarchical Density-Based Spatial Clustering of Applications with Noise - Clustering algorithm",
         )
         summary.append("")
         summary.append(
-            "**GARCH**: Generalized Autoregressive Conditional Heteroskedasticity - Model for volatility clustering"
+            "**GARCH**: Generalized Autoregressive Conditional Heteroskedasticity - Model for volatility clustering",
         )
         summary.append("")
         summary.append(
-            "**Kelly**: Kelly Criterion - Formula for optimal position sizing"
+            "**Kelly**: Kelly Criterion - Formula for optimal position sizing",
         )
         summary.append("")
         summary.append(
-            "**Wyckoff**: Wyckoff Method - Technical analysis methodology for identifying accumulation/distribution"
+            "**Wyckoff**: Wyckoff Method - Technical analysis methodology for identifying accumulation/distribution",
         )
         summary.append("")
         summary.append(
-            "**LSS**: Long Short Strategy - Trading strategy that takes both long and short positions"
+            "**LSS**: Long Short Strategy - Trading strategy that takes both long and short positions",
         )
         summary.append("")
         summary.append(
-            "**TP/SL**: Take Profit/Stop Loss - Risk management orders to close positions"
+            "**TP/SL**: Take Profit/Stop Loss - Risk management orders to close positions",
         )
         summary.append("")
         summary.append(
-            "**ROI**: Return on Investment - Measure of investment performance"
+            "**ROI**: Return on Investment - Measure of investment performance",
         )
         summary.append("")
         summary.append(
-            "**Sharpe Ratio**: Risk-adjusted return measure - Higher values indicate better risk-adjusted performance"
+            "**Sharpe Ratio**: Risk-adjusted return measure - Higher values indicate better risk-adjusted performance",
         )
         summary.append("")
         summary.append("**Drawdown**: Peak-to-trough decline in investment value")
@@ -192,17 +195,17 @@ class HMMRegimeAnalyzer:
         summary.append("**Profit Factor**: Ratio of gross profit to gross loss")
         summary.append("")
         summary.append(
-            "**Regime**: Distinct market state characterized by specific conditions and behaviors"
+            "**Regime**: Distinct market state characterized by specific conditions and behaviors",
         )
         summary.append("")
         summary.append(
-            "**Archetype**: Representative pattern or model of a market regime"
+            "**Archetype**: Representative pattern or model of a market regime",
         )
         summary.append("")
         summary.append("---")
         summary.append("")
         summary.append(
-            "> **Note**: This report is generated automatically during HMM regime discovery. If you see multiple files with different timestamps for the same timeframe, the most recent one contains the complete analysis."
+            "> **Note**: This report is generated automatically during HMM regime discovery. If you see multiple files with different timestamps for the same timeframe = the most recent one contains the complete analysis.",
         )
         summary.append("")
 
@@ -213,7 +216,7 @@ class HMMRegimeAnalyzer:
         # Key findings
         summary.append("**Key Findings:**")
         summary.append(
-            f"- 🎯 **{len(valid_archetypes)} distinct market regimes** identified"
+            f"- 🎯 **{len(valid_archetypes)} distinct market regimes** identified",
         )
 
         if cluster_counts is not None and len(cluster_counts) > 0:
@@ -224,13 +227,13 @@ class HMMRegimeAnalyzer:
                 else 0
             )
             summary.append(
-                f"- 📈 **Top 3 regimes** account for {top_3_percentage:.1f}% of market time"
+                f"- 📈 **Top 3 regimes** account for {top_3_percentage:.1f}% of market time",
             )
 
         summary.append("")
         summary.append("**Recommendations:**")
         summary.append(
-            "- Focus trading on high-stability regimes for consistent performance"
+            "- Focus trading on high-stability regimes for consistent performance",
         )
         summary.append("- Use regime transitions for entry/exit timing")
         summary.append("- Monitor regime changes for market condition shifts")
@@ -238,7 +241,7 @@ class HMMRegimeAnalyzer:
         summary.append("")
         summary.append("**📊 Visualization Notes:**")
         summary.append(
-            "- All charts are generated in high-resolution PNG format (300 DPI)"
+            "- All charts are generated in high-resolution PNG format (300 DPI)",
         )
         summary.append("- Click on image links to download full-resolution versions")
         summary.append("- Charts are optimized for both screen viewing and printing")
@@ -246,7 +249,7 @@ class HMMRegimeAnalyzer:
 
         # Count total archetypes (excluding noise cluster -1)
         summary.append(
-            f"Your system discovered **{len(valid_archetypes)} distinct market archetypes** that combine different states from the {len(meta.get('blocks', []))} HMM blocks:"
+            f"Your system discovered **{len(valid_archetypes)} distinct market archetypes** that combine different states from the {len(meta.get('blocks', []))} HMM blocks:",
         )
         summary.append("")
 
@@ -260,41 +263,41 @@ class HMMRegimeAnalyzer:
             summary.append("")
             summary.append("### Concentration Statistics:")
             summary.append(
-                f"- **Top 10 Concentration**: {regime_merging_stats.get('top_10_concentration', 0):.1%}"
+                f"- **Top 10 Concentration**: {regime_merging_stats.get('top_10_concentration', 0):.1%}",
             )
             summary.append(
-                f"- **Top 20 Concentration**: {regime_merging_stats.get('top_20_concentration', 0):.1%}"
+                f"- **Top 20 Concentration**: {regime_merging_stats.get('top_20_concentration', 0):.1%}",
             )
             summary.append(
-                f"- **Regime -1 (Noise) Concentration**: {regime_merging_stats.get('regime_neg1_concentration', 0):.1%}"
+                f"- **Regime -1 (Noise) Concentration**: {regime_merging_stats.get('regime_neg1_concentration', 0):.1%}",
             )
             summary.append("")
             summary.append("### Regime Counts:")
             summary.append(
-                f"- **Regimes Before Merge**: {regime_merging_stats.get('regimes_before_merge', 0)}"
+                f"- **Regimes Before Merge**: {regime_merging_stats.get('regimes_before_merge', 0)}",
             )
             summary.append(
-                f"- **Regimes After Merge**: {regime_merging_stats.get('regimes_after_merge', 0)}"
+                f"- **Regimes After Merge**: {regime_merging_stats.get('regimes_after_merge', 0)}",
             )
             summary.append(
-                f"- **Regimes Merged**: {regime_merging_stats.get('regimes_before_merge', 0) - regime_merging_stats.get('regimes_after_merge', 0)}"
+                f"- **Regimes Merged**: {regime_merging_stats.get('regimes_before_merge', 0) - regime_merging_stats.get('regimes_after_merge', 0)}",
             )
             summary.append("")
             summary.append("### Merging Configuration:")
             summary.append(
-                f"- **Similarity Threshold**: {merging_config.get('similarity_threshold', 'N/A')}"
+                f"- **Similarity Threshold**: {merging_config.get('similarity_threshold', 'N/A')}",
             )
             summary.append(
-                f"- **Min Frequency**: {merging_config.get('min_frequency', 'N/A')}"
+                f"- **Min Frequency**: {merging_config.get('min_frequency', 'N/A')}",
             )
             summary.append(
-                f"- **Target Top 20 Concentration**: {merging_config.get('target_top_20_concentration', 'N/A')}"
+                f"- **Target Top 20 Concentration**: {merging_config.get('target_top_20_concentration', 'N/A')}",
             )
             summary.append(
-                f"- **Aggressive Merging**: {merging_config.get('aggressive_merging', 'N/A')}"
+                f"- **Aggressive Merging**: {merging_config.get('aggressive_merging', 'N/A')}",
             )
             summary.append(
-                f"- **Regime -1 Penalty**: {merging_config.get('regime_1_penalty', 'N/A')}"
+                f"- **Regime -1 Penalty**: {merging_config.get('regime_1_penalty', 'N/A')}",
             )
             summary.append("")
         elif not regime_merging_applied:
@@ -308,11 +311,11 @@ class HMMRegimeAnalyzer:
             sorted_archetypes = sorted(
                 valid_archetypes.items(),
                 key=lambda x: cluster_counts.get(int(x[0]), 0),
-                reverse=True,
-            )
+                reverse=True)
         else:
             sorted_archetypes = sorted(
-                valid_archetypes.items(), key=lambda x: int(x[0])
+                valid_archetypes.items(),
+                key=lambda x: int(x[0]),
             )
 
         summary.append("## 🏆 Top Market Archetypes:")
@@ -336,7 +339,7 @@ class HMMRegimeAnalyzer:
             # Get state combination for this archetype
             cluster_labels = meta.get("cluster_labels", {})
             state_combination = None
-            for combo, label in cluster_labels.items():
+            for combo , label in cluster_labels.items():
                 if int(label) == int(cluster_id):
                     state_combination = combo
                     break
@@ -346,7 +349,7 @@ class HMMRegimeAnalyzer:
 
                 # Generate interpretation based on state names
                 interpretation = self._generate_state_interpretation(
-                    state_combination, meta
+                    state_combination = meta,
                 )
                 if interpretation:
                     summary.append(f"**Interpretation**: {interpretation}")
@@ -356,7 +359,8 @@ class HMMRegimeAnalyzer:
         return "\n".join(summary)
 
     def _generate_state_interpretation(
-        self, state_combination: str, meta: Dict[str, Any]
+        self, state_combination: str,
+        meta: dict[str, Any],
     ) -> str:
         """Generate human-readable interpretation of a state combination."""
         state_names = meta.get("state_names", {})
@@ -370,7 +374,7 @@ class HMMRegimeAnalyzer:
                 states[block] = int(state_id)
 
         # Generate interpretation for each block
-        for block, state_id in states.items():
+        for block , state_id in states.items():
             if block in state_names and str(state_id) in state_names[block]:
                 state_name = state_names[block][str(state_id)]
                 interpretation_parts.append(f"{state_name.lower()}")
@@ -380,13 +384,15 @@ class HMMRegimeAnalyzer:
         return ""
 
     def save_detailed_summary(
-        self, exchange: str, symbol: str, timeframe: str = "1m"
+        self, exchange: str,
+        symbol: str, timeframe: str = "1m",
     ) -> str:
         """Save detailed regime summary to a file."""
         try:
             data = self.load_regime_data(exchange, symbol, timeframe)
             summary = self.generate_detailed_regime_summary(
-                data["meta"], data["clusters"]
+                data["meta"],
+                data["clusters"],
             )
 
             # Create reports directory if it doesn't exist
@@ -395,8 +401,7 @@ class HMMRegimeAnalyzer:
 
             # Add visualizations and additional content
             enhanced_summary = self._enhance_summary_with_visualizations(
-                summary, exchange, symbol, timeframe, data
-            )
+                summary, exchange, symbol, timeframe, data)
 
             # Save to file with datestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -415,12 +420,9 @@ class HMMRegimeAnalyzer:
             return ""
 
     def _enhance_summary_with_visualizations(
-        self,
-        summary: str,
-        exchange: str,
-        symbol: str,
-        timeframe: str,
-        data: Dict[str, Any],
+        self, summary: str,
+        exchange: str, symbol: str,
+        timeframe: str, data: dict[str, Any],
     ) -> str:
         """Enhance the summary with visualizations and additional content."""
         enhanced_parts = [summary]
@@ -475,11 +477,11 @@ class HMMRegimeAnalyzer:
             enhanced_parts.append(f"![Regime Distribution]({distribution_plot.name})")
             enhanced_parts.append("")
             enhanced_parts.append(
-                f"📁 **[Download High-Resolution Image]({distribution_plot.name})**"
+                f"📁 **[Download High-Resolution Image]({distribution_plot.name})**",
             )
             enhanced_parts.append("")
             enhanced_parts.append(
-                "*This plot shows the frequency distribution of all market regimes, highlighting the concentration of market conditions.*"
+                "*This plot shows the frequency distribution of all market regimes = highlighting the concentration of market conditions.*",
             )
             enhanced_parts.append("")
 
@@ -493,11 +495,11 @@ class HMMRegimeAnalyzer:
             enhanced_parts.append(f"![Regime Intensities]({intensities_plot.name})")
             enhanced_parts.append("")
             enhanced_parts.append(
-                f"📁 **[Download High-Resolution Image]({intensities_plot.name})**"
+                f"📁 **[Download High-Resolution Image]({intensities_plot.name})**",
             )
             enhanced_parts.append("")
             enhanced_parts.append(
-                "*This plot shows the intensity of each regime over time, revealing when different market conditions are most active.*"
+                "*This plot shows the intensity of each regime over time, revealing when different market conditions are most active.*",
             )
             enhanced_parts.append("")
 
@@ -515,11 +517,11 @@ class HMMRegimeAnalyzer:
             enhanced_parts.append(f"![Transition Heatmap]({transition_heatmap.name})")
             enhanced_parts.append("")
             enhanced_parts.append(
-                f"📁 **[Download High-Resolution Image]({transition_heatmap.name})**"
+                f"📁 **[Download High-Resolution Image]({transition_heatmap.name})**",
             )
             enhanced_parts.append("")
             enhanced_parts.append(
-                "*This heatmap visualizes the probability of transitions between different market regimes, with darker colors indicating higher transition probabilities.*"
+                "*This heatmap visualizes the probability of transitions between different market regimes, with darker colors indicating higher transition probabilities.*",
             )
             enhanced_parts.append("")
 
@@ -531,15 +533,15 @@ class HMMRegimeAnalyzer:
             enhanced_parts.append("#### ⏱️ Regime Persistence Timeline")
             enhanced_parts.append("")
             enhanced_parts.append(
-                f"![Persistence Timeline]({persistence_timeline.name})"
+                f"![Persistence Timeline]({persistence_timeline.name})",
             )
             enhanced_parts.append("")
             enhanced_parts.append(
-                f"📁 **[Download High-Resolution Image]({persistence_timeline.name})**"
+                f"📁 **[Download High-Resolution Image]({persistence_timeline.name})**",
             )
             enhanced_parts.append("")
             enhanced_parts.append(
-                "*This timeline shows how long each regime persists over time, revealing periods of market stability vs volatility.*"
+                "*This timeline shows how long each regime persists over time = revealing periods of market stability vs volatility.*",
             )
             enhanced_parts.append("")
 
@@ -554,11 +556,11 @@ class HMMRegimeAnalyzer:
             enhanced_parts.append(f"![Feature Importance]({feature_radar.name})")
             enhanced_parts.append("")
             enhanced_parts.append(
-                f"📁 **[Download High-Resolution Image]({feature_radar.name})**"
+                f"📁 **[Download High-Resolution Image]({feature_radar.name})**",
             )
             enhanced_parts.append("")
             enhanced_parts.append(
-                "*This radar chart shows the relative importance of different features for regime classification.*"
+                "*This radar chart shows the relative importance of different features for regime classification.*",
             )
             enhanced_parts.append("")
 
@@ -572,11 +574,11 @@ class HMMRegimeAnalyzer:
             enhanced_parts.append(f"![Correlation Network]({correlation_network.name})")
             enhanced_parts.append("")
             enhanced_parts.append(
-                f"📁 **[Download High-Resolution Image]({correlation_network.name})**"
+                f"📁 **[Download High-Resolution Image]({correlation_network.name})**",
             )
             enhanced_parts.append("")
             enhanced_parts.append(
-                "*This network diagram shows the relationships and similarities between different market regimes.*"
+                "*This network diagram shows the relationships and similarities between different market regimes.*",
             )
             enhanced_parts.append("")
 
@@ -590,12 +592,13 @@ class HMMRegimeAnalyzer:
 
         if "clusters" in data and data["clusters"] is not None:
             market_analysis = self._generate_market_condition_analysis(
-                data["clusters"], data["meta"]
+                data["clusters"],
+                data["meta"],
             )
             enhanced_parts.extend(market_analysis)
         else:
             enhanced_parts.append(
-                "*This section would show regime distribution across different market conditions.*"
+                "*This section would show regime distribution across different market conditions.*",
             )
             enhanced_parts.append("")
             enhanced_parts.append("**Expected Insights:**")
@@ -610,10 +613,10 @@ class HMMRegimeAnalyzer:
         enhanced_parts.append("**Regime Performance Ranking:**")
         enhanced_parts.append("")
         enhanced_parts.append(
-            "| Rank | Regime | Stability | Predictability | Risk Level |"
+            "| Rank | Regime | Stability | Predictability | Risk Level |",
         )
         enhanced_parts.append(
-            "|------|--------|-----------|----------------|------------|"
+            "|------|--------|-----------|----------------|------------|",
         )
         enhanced_parts.append("| 1 | Regime 9 | High | High | Low |")
         enhanced_parts.append("| 2 | Regime 1 | High | Medium | Low |")
@@ -632,9 +635,9 @@ class HMMRegimeAnalyzer:
         meta = data["meta"]
         state_names = meta.get("state_names", {})
 
-        for block_name, states in state_names.items():
+        for block_name , states in state_names.items():
             enhanced_parts.append(f"**{block_name.title()} Block States:**")
-            for state_id, state_name in states.items():
+            for state_id , state_name in states.items():
                 enhanced_parts.append(f"- State {state_id}: {state_name}")
             enhanced_parts.append("")
 
@@ -648,7 +651,7 @@ class HMMRegimeAnalyzer:
             enhanced_parts.extend(transition_analysis)
         else:
             enhanced_parts.append(
-                "*This section would show how frequently regimes transition to each other, revealing market dynamics.*"
+                "*This section would show how frequently regimes transition to each other = revealing market dynamics.*",
             )
             enhanced_parts.append("")
             enhanced_parts.append("**Key Insights:**")
@@ -661,7 +664,8 @@ class HMMRegimeAnalyzer:
         if "clusters" in data and data["clusters"] is not None:
             # Temporal Analysis
             temporal_analysis = self._generate_temporal_analysis(
-                data["clusters"], data["meta"]
+                data["clusters"],
+                data["meta"],
             )
             enhanced_parts.extend(temporal_analysis)
 
@@ -671,7 +675,8 @@ class HMMRegimeAnalyzer:
 
             # Predictive Power Assessment
             predictive_analysis = self._generate_predictive_power_assessment(
-                data["clusters"], data["meta"]
+                data["clusters"],
+                data["meta"],
             )
             enhanced_parts.extend(predictive_analysis)
 
@@ -681,12 +686,13 @@ class HMMRegimeAnalyzer:
 
         if "clusters" in data and data["clusters"] is not None:
             similarity_analysis = self._generate_similarity_analysis(
-                data["clusters"], data["meta"]
+                data["clusters"],
+                data["meta"],
             )
             enhanced_parts.extend(similarity_analysis)
         else:
             enhanced_parts.append(
-                "*This section would show similarity relationships between different market regimes.*"
+                "*This section would show similarity relationships between different market regimes.*",
             )
             enhanced_parts.append("")
             enhanced_parts.append("**Key Insights:**")
@@ -762,7 +768,7 @@ class HMMRegimeAnalyzer:
         enhanced_parts.append("")
         enhanced_parts.append("### Immediate Actions")
         enhanced_parts.append(
-            "- Review regime distribution for trading strategy alignment"
+            "- Review regime distribution for trading strategy alignment",
         )
         enhanced_parts.append("- Validate regime transitions against market events")
         enhanced_parts.append("- Test regime-specific parameter optimization")
@@ -776,7 +782,7 @@ class HMMRegimeAnalyzer:
 
         return "\n".join(enhanced_parts)
 
-    def _generate_transition_analysis(self, cluster_df: pd.DataFrame) -> List[str]:
+    def _generate_transition_analysis(self, cluster_df: pd.DataFrame) -> list[str]:
         """Generate regime transition analysis."""
         analysis = []
 
@@ -802,16 +808,16 @@ class HMMRegimeAnalyzer:
         # Find most common transitions
         all_transitions = []
         for from_regime, to_regimes in transition_matrix.items():
-            for to_regime, count in to_regimes.items():
+            for to_regime , count in to_regimes.items():
                 all_transitions.append((from_regime, to_regime, count))
 
         # Sort by frequency
         all_transitions.sort(key=lambda x: x[2], reverse=True)
 
         analysis.append("**Most Common Regime Transitions:**")
-        for i, (from_regime, to_regime, count) in enumerate(all_transitions[:100], 1):
+        for i, (from_regime, to_regime , count) in enumerate(all_transitions[:100], 1):
             analysis.append(
-                f"{i}. Regime {from_regime} → Regime {to_regime}: {count} times"
+                f"{i}. Regime {from_regime} → Regime {to_regime}: {count} times",
             )
         analysis.append("")
 
@@ -825,11 +831,12 @@ class HMMRegimeAnalyzer:
 
         # Sort by persistence
         sorted_persistence = sorted(
-            persistence.items(), key=lambda x: x[1], reverse=True
-        )
+            persistence.items(),
+            key=lambda x: x[1],
+            reverse, True = )
 
         analysis.append("**Regime Persistence (Self-Transitions):**")
-        for regime, count in sorted_persistence[:5]:
+        for regime , count in sorted_persistence[:5]:
             analysis.append(f"- Regime {regime}: {count} self-transitions")
         analysis.append("")
 
@@ -840,21 +847,22 @@ class HMMRegimeAnalyzer:
             if total_from > 0:
                 # Sort transitions by probability
                 transitions_with_prob = []
-                for to_regime, count in to_regimes.items():
+                for to_regime , count in to_regimes.items():
                     probability = count / total_from
-                    transitions_with_prob.append((to_regime, probability, count))
+                    transitions_with_prob.append((to_regime = probability, count))
 
                 # Sort by probability (highest first)
                 transitions_with_prob.sort(key=lambda x: x[1], reverse=True)
 
                 analysis.append(
-                    f"**From Regime {from_regime}** (total transitions: {total_from}):"
+                    f"**From Regime {from_regime}** (total transitions: {total_from}):",
                 )
-                for i, (to_regime, probability, count) in enumerate(
-                    transitions_with_prob[:5], 1
+                for i , (to_regime, probability = count) in enumerate(
+                    transitions_with_prob[:5],
+                    1,
                 ):
                     analysis.append(
-                        f"  {i}. Regime {to_regime}: {probability:.1%} ({count} times)"
+                        f"  {i}. Regime {to_regime}: {probability:.1%} ({count} times)",
                     )
                 analysis.append("")
         analysis.append("")
@@ -862,8 +870,9 @@ class HMMRegimeAnalyzer:
         return analysis
 
     def _generate_similarity_analysis(
-        self, cluster_df: pd.DataFrame, meta: Dict[str, Any]
-    ) -> List[str]:
+        self = cluster_df: pd.DataFrame,
+        meta: dict[str , Any],
+    ) -> list[str]:
         """Generate cross-regime similarity analysis."""
         analysis = []
 
@@ -879,8 +888,8 @@ class HMMRegimeAnalyzer:
         regime_ids = list(cluster_centroids.keys())
         similarities = []
 
-        for i, regime_i in enumerate(regime_ids):
-            for j, regime_j in enumerate(regime_ids):
+        for i , regime_i in enumerate(regime_ids):
+            for j , regime_j in enumerate(regime_ids):
                 if i < j:  # Avoid duplicates and self-similarity
                     centroid_i = np.array(cluster_centroids[regime_i])
                     centroid_j = np.array(cluster_centroids[regime_j])
@@ -890,24 +899,24 @@ class HMMRegimeAnalyzer:
                     norm_j = np.linalg.norm(centroid_j)
 
                     if norm_i > 0 and norm_j > 0:
-                        similarity = np.dot(centroid_i, centroid_j) / (norm_i * norm_j)
-                        similarities.append((regime_i, regime_j, similarity))
+                        similarity = np.dot(centroid_i = centroid_j) / (norm_i * norm_j)
+                        similarities.append((regime_i = regime_j, similarity))
 
         # Sort by similarity (highest first)
         similarities.sort(key=lambda x: x[2], reverse=True)
 
         analysis.append("**Most Similar Regime Pairs:**")
-        for i, (regime_i, regime_j, similarity) in enumerate(similarities[:10], 1):
+        for i , (regime_i, regime_j = similarity) in enumerate(similarities[:10], 1):
             analysis.append(
-                f"{i}. Regime {regime_i} ↔ Regime {regime_j}: {similarity:.3f} similarity"
+                f"{i}. Regime {regime_i} ↔ Regime {regime_j}: {similarity:.3f} similarity",
             )
         analysis.append("")
 
         # Find most dissimilar regimes
         analysis.append("**Most Dissimilar Regime Pairs:**")
-        for i, (regime_i, regime_j, similarity) in enumerate(similarities[-10:], 1):
+        for i , (regime_i, regime_j = similarity) in enumerate(similarities[-10:], 1):
             analysis.append(
-                f"{i}. Regime {regime_i} ↔ Regime {regime_j}: {similarity:.3f} similarity"
+                f"{i}. Regime {regime_i} ↔ Regime {regime_j}: {similarity:.3f} similarity",
             )
         analysis.append("")
 
@@ -918,7 +927,7 @@ class HMMRegimeAnalyzer:
             for other_regime_id in regime_ids:
                 if regime_id != other_regime_id:
                     # Find similarity between these two regimes
-                    for r1, r2, sim in similarities:
+                    for r1 , r2, sim in similarities:
                         if (r1 == regime_id and r2 == other_regime_id) or (
                             r1 == other_regime_id and r2 == regime_id
                         ):
@@ -930,36 +939,38 @@ class HMMRegimeAnalyzer:
 
         # Sort by average similarity
         sorted_avg_similarities = sorted(
-            regime_avg_similarities.items(), key=lambda x: x[1], reverse=True
-        )
+            regime_avg_similarities.items(),
+            key=lambda x: x[1],
+            reverse, True = )
 
         analysis.append("**Regimes by Average Similarity (Most Similar to Others):**")
-        for regime_id, avg_sim in sorted_avg_similarities[:5]:
+        for regime_id , avg_sim in sorted_avg_similarities[:5]:
             analysis.append(f"- Regime {regime_id}: {avg_sim:.3f} average similarity")
         analysis.append("")
 
         analysis.append("**Regimes by Average Similarity (Most Unique):**")
-        for regime_id, avg_sim in sorted_avg_similarities[-5:]:
+        for regime_id , avg_sim in sorted_avg_similarities[-5:]:
             analysis.append(f"- Regime {regime_id}: {avg_sim:.3f} average similarity")
         analysis.append("")
 
         # Identify potential merging opportunities
         high_similarity_pairs = [
-            (r1, r2, sim) for r1, r2, sim in similarities if sim > 0.8
+            (r1 = r2, sim) for r1 , r2, sim in similarities if sim > 0.8
         ]
         if high_similarity_pairs:
             analysis.append("**Potential Merging Opportunities (Similarity > 0.8):**")
-            for regime_i, regime_j, similarity in high_similarity_pairs:
+            for regime_i , regime_j, similarity in high_similarity_pairs:
                 analysis.append(
-                    f"- Regime {regime_i} and Regime {regime_j}: {similarity:.3f} similarity"
+                    f"- Regime {regime_i} and Regime {regime_j}: {similarity:.3f} similarity",
                 )
             analysis.append("")
 
         return analysis
 
     def _generate_temporal_analysis(
-        self, cluster_df: pd.DataFrame, meta: Dict[str, Any]
-    ) -> List[str]:
+        self = cluster_df: pd.DataFrame,
+        meta: dict[str , Any],
+    ) -> list[str]:
         """Generate temporal analysis of regime stability and predictability."""
         analysis = []
 
@@ -989,7 +1000,7 @@ class HMMRegimeAnalyzer:
         persistence_data = {}
 
         current_regime = regimes[0]
-        start_time = cluster_df["timestamp"].iloc[0]
+        cluster_df["timestamp"].iloc[0]
         duration_count = 1
 
         for i in range(1, len(regimes)):
@@ -1011,7 +1022,7 @@ class HMMRegimeAnalyzer:
         persistence_data[current_regime].append(duration_count)
 
         # Calculate statistics for each regime
-        for regime_id, durations in persistence_data.items():
+        for regime_id , durations in persistence_data.items():
             if durations:
                 avg_duration = np.mean(durations)
                 median_duration = np.median(durations)
@@ -1022,7 +1033,7 @@ class HMMRegimeAnalyzer:
                 analysis.append(f"- Average duration: {avg_duration:.1f} periods")
                 analysis.append(f"- Median duration: {median_duration:.1f} periods")
                 analysis.append(
-                    f"- Duration range: {min_duration} - {max_duration} periods"
+                    f"- Duration range: {min_duration} - {max_duration} periods",
                 )
                 analysis.append(f"- Total occurrences: {len(durations)}")
                 analysis.append("")
@@ -1040,9 +1051,9 @@ class HMMRegimeAnalyzer:
         # Find most common regime per hour
         most_common_per_hour = hourly_regimes.idxmax(axis=1)
         analysis.append("**Most Common Regime by Hour:**")
-        for hour, regime in most_common_per_hour.items():
+        for hour , regime in most_common_per_hour.items():
             if pd.notna(regime):
-                count = hourly_regimes.loc[hour, regime]
+                count = hourly_regimes.loc[hour = regime]
                 total = hourly_regimes.loc[hour].sum()
                 percentage = (count / total) * 100
                 analysis.append(f"- {hour:02d}:00: Regime {regime} ({percentage:.1f}%)")
@@ -1069,13 +1080,13 @@ class HMMRegimeAnalyzer:
 
         most_common_per_dow = dow_regimes.idxmax(axis=1)
         analysis.append("**Most Common Regime by Day:**")
-        for dow, regime in most_common_per_dow.items():
+        for dow , regime in most_common_per_dow.items():
             if pd.notna(regime) and dow < len(dow_names):
-                count = dow_regimes.loc[dow, regime]
+                count = dow_regimes.loc[dow = regime]
                 total = dow_regimes.loc[dow].sum()
                 percentage = (count / total) * 100
                 analysis.append(
-                    f"- {dow_names[dow]}: Regime {regime} ({percentage:.1f}%)"
+                    f"- {dow_names[dow]}: Regime {regime} ({percentage:.1f}%)",
                 )
         analysis.append("")
 
@@ -1084,7 +1095,7 @@ class HMMRegimeAnalyzer:
         analysis.append("")
 
         stability_scores = {}
-        for regime_id, durations in persistence_data.items():
+        for regime_id , durations in persistence_data.items():
             if durations:
                 # Calculate coefficient of variation (lower = more stable)
                 cv = (
@@ -1099,17 +1110,18 @@ class HMMRegimeAnalyzer:
 
         # Sort by stability
         sorted_stability = sorted(
-            stability_scores.items(), key=lambda x: x[1], reverse=True
-        )
+            stability_scores.items(),
+            key=lambda x: x[1],
+            reverse, True = )
 
         analysis.append("**Regime Stability Ranking (1 = Most Stable):**")
-        for regime_id, stability in sorted_stability:
+        for regime_id , stability in sorted_stability:
             analysis.append(f"- Regime {regime_id}: {stability:.3f} stability score")
         analysis.append("")
 
         return analysis
 
-    def _generate_feature_importance_analysis(self, meta: Dict[str, Any]) -> List[str]:
+    def _generate_feature_importance_analysis(self, meta: dict[str, Any]) -> list[str]:
         """Generate feature importance analysis for regime changes."""
         analysis = []
 
@@ -1139,13 +1151,13 @@ class HMMRegimeAnalyzer:
             # Show feature names if available
             if features:
                 analysis.append(
-                    f"- Features: {', '.join(features[:5])}{'...' if len(features) > 5 else ''}"
+                    f"- Features: {', '.join(features[:5])}{'...' if len(features) > 5 else ''}",
                 )
 
             # Show state interpretations
             if block_name in state_names:
-                analysis.append(f"- State interpretations:")
-                for state_id, state_name in state_names[block_name].items():
+                analysis.append("- State interpretations:")
+                for state_id , state_name in state_names[block_name].items():
                     analysis.append(f"  • State {state_id}: {state_name}")
 
             analysis.append("")
@@ -1156,12 +1168,13 @@ class HMMRegimeAnalyzer:
             analysis.append("")
 
             for regime_id, features in feature_importance.items():
-                if isinstance(features, dict):
+                if isinstance(features , dict):
                     analysis.append(f"**Regime {regime_id} Top Features:**")
                     # Sort features by importance
                     sorted_features = sorted(
-                        features.items(), key=lambda x: x[1], reverse=True
-                    )
+                        features.items(),
+                        key=lambda x: x[1],
+                        reverse, True = )
                     for feature, importance in sorted_features[:5]:
                         analysis.append(f"- {feature}: {importance:.3f}")
                     analysis.append("")
@@ -1175,8 +1188,9 @@ class HMMRegimeAnalyzer:
         if transition_features:
             analysis.append("**Most Important Features for Regime Transitions:**")
             sorted_transition_features = sorted(
-                transition_features.items(), key=lambda x: x[1], reverse=True
-            )
+                transition_features.items(),
+                key=lambda x: x[1],
+                reverse, True = )
             for feature, importance in sorted_transition_features[:10]:
                 analysis.append(f"- {feature}: {importance:.3f}")
             analysis.append("")
@@ -1192,9 +1206,10 @@ class HMMRegimeAnalyzer:
         if feature_stability:
             analysis.append("**Feature Stability Scores (Higher = More Stable):**")
             sorted_stability = sorted(
-                feature_stability.items(), key=lambda x: x[1], reverse=True
-            )
-            for feature, stability in sorted_stability[:10]:
+                feature_stability.items(),
+                key=lambda x: x[1],
+                reverse, True = )
+            for feature , stability in sorted_stability[:10]:
                 analysis.append(f"- {feature}: {stability:.3f}")
             analysis.append("")
         else:
@@ -1204,8 +1219,9 @@ class HMMRegimeAnalyzer:
         return analysis
 
     def _generate_predictive_power_assessment(
-        self, cluster_df: pd.DataFrame, meta: Dict[str, Any]
-    ) -> List[str]:
+        self = cluster_df: pd.DataFrame,
+        meta: dict[str , Any],
+    ) -> list[str]:
         """Generate predictive power assessment for regime forecasting."""
         analysis = []
 
@@ -1220,7 +1236,7 @@ class HMMRegimeAnalyzer:
         analysis.append("")
 
         regimes = cluster_df["composite_cluster_id"].values
-        unique_regimes = sorted(set(regimes))
+        sorted(set(regimes))
 
         # Calculate transition probabilities
         transition_counts = {}
@@ -1236,7 +1252,7 @@ class HMMRegimeAnalyzer:
 
         # Calculate predictability scores
         predictability_scores = {}
-        for regime, transitions in transition_counts.items():
+        for regime , transitions in transition_counts.items():
             total_transitions = sum(transitions.values())
             if total_transitions > 0:
                 # Calculate entropy (lower = more predictable)
@@ -1250,13 +1266,14 @@ class HMMRegimeAnalyzer:
 
         # Sort by predictability
         sorted_predictability = sorted(
-            predictability_scores.items(), key=lambda x: x[1], reverse=True
-        )
+            predictability_scores.items(),
+            key=lambda x: x[1],
+            reverse, True = )
 
         analysis.append("**Regime Transition Predictability (1 = Most Predictable):**")
-        for regime, predictability in sorted_predictability:
+        for regime , predictability in sorted_predictability:
             analysis.append(
-                f"- Regime {regime}: {predictability:.3f} predictability score"
+                f"- Regime {regime}: {predictability:.3f} predictability score",
             )
         analysis.append("")
 
@@ -1286,7 +1303,7 @@ class HMMRegimeAnalyzer:
 
         # Calculate forecasting accuracy metrics
         forecasting_metrics = {}
-        for regime, durations in persistence_data.items():
+        for regime , durations in persistence_data.items():
             if len(durations) > 1:
                 # Use first 80% for training, last 20% for testing
                 split_idx = int(len(durations) * 0.8)
@@ -1302,21 +1319,21 @@ class HMMRegimeAnalyzer:
                                 abs(d - predicted_mean) / d
                                 for d in test_durations
                                 if d > 0
-                            ]
+                            ],
                         )
                         * 100
                     )
 
                     forecasting_metrics[regime] = {
-                        "mae": mae,
-                        "mape": mape,
+                        "mae": mae , "mape": mape,
                         "train_samples": len(train_durations),
                         "test_samples": len(test_durations),
                     }
 
         # Sort by forecasting accuracy (lower MAE = better)
         sorted_forecasting = sorted(
-            forecasting_metrics.items(), key=lambda x: x[1]["mae"]
+            forecasting_metrics.items(),
+            key=lambda x: x[1]["mae"],
         )
 
         analysis.append("**Regime Persistence Forecasting Accuracy:**")
@@ -1336,14 +1353,14 @@ class HMMRegimeAnalyzer:
         if predictability_scores:
             avg_predictability = np.mean(list(predictability_scores.values()))
             analysis.append(
-                f"**Average Regime Predictability:** {avg_predictability:.3f}"
+                f"**Average Regime Predictability:** {avg_predictability:.3f}",
             )
             analysis.append("")
 
         if forecasting_metrics:
             avg_mae = np.mean([m["mae"] for m in forecasting_metrics.values()])
             avg_mape = np.mean([m["mape"] for m in forecasting_metrics.values()])
-            analysis.append(f"**Average Persistence Forecasting:**")
+            analysis.append("**Average Persistence Forecasting:**")
             analysis.append(f"- MAE: {avg_mae:.2f} periods")
             analysis.append(f"- MAPE: {avg_mape:.1f}%")
             analysis.append("")
@@ -1367,8 +1384,8 @@ class HMMRegimeAnalyzer:
         return analysis
 
     def print_regime_summary(
-        self, meta: Dict[str, Any], cluster_df: Optional[pd.DataFrame] = None
-    ) -> None:
+        self = meta: dict[str, Any],
+        cluster_df: pd.DataFrame | None, None = ) -> None:
         """Print a comprehensive summary of all regimes."""
         print("🔍 HMM REGIME ANALYSIS SUMMARY")
         print("=" * 60)
@@ -1391,9 +1408,9 @@ class HMMRegimeAnalyzer:
         print("🏷️ STATE INTERPRETATIONS:")
         print("-" * 30)
         state_names = meta.get("state_names", {})
-        for block_name, states in state_names.items():
+        for block_name , states in state_names.items():
             print(f"  📋 {block_name.upper()}:")
-            for state_id, state_name in states.items():
+            for state_id , state_name in states.items():
                 print(f"    State {state_id}: {state_name}")
             print()
 
@@ -1413,10 +1430,9 @@ class HMMRegimeAnalyzer:
             sorted_archetypes = sorted(
                 archetype_descriptions.items(),
                 key=lambda x: cluster_counts.get(int(x[0]), 0),
-                reverse=True,
-            )
+                reverse, True = )
 
-            for rank, (cluster_id, description) in enumerate(sorted_archetypes, 1):
+            for rank , (cluster_id, description) in enumerate(sorted_archetypes = 1):
                 if int(cluster_id) < 0:  # Skip noise clusters
                     continue
 
@@ -1430,13 +1446,14 @@ class HMMRegimeAnalyzer:
                 print(f"  🏆 Rank #{rank} - Archetype {cluster_id}:")
                 print(f"    📝 {description}")
                 print(
-                    f"    📊 Frequency: {frequency:,} occurrences ({percentage:.2f}% of time)"
+                    f"    📊 Frequency: {frequency:,} occurrences ({percentage:.2f}% of time)",
                 )
                 print()
         else:
             # Fallback if no cluster data
-            for cluster_id, description in sorted(
-                archetype_descriptions.items(), key=lambda x: int(x[0])
+            for cluster_id , description in sorted(
+                archetype_descriptions.items(),
+                key=lambda x: int(x[0]),
             ):
                 if int(cluster_id) < 0:  # Skip noise clusters
                     continue
@@ -1457,7 +1474,7 @@ class HMMRegimeAnalyzer:
             print(f"Total observations: {total_observations:,}")
             print(f"Unique archetypes: {len(valid_archetypes)}")
             print(
-                f"Noise/undefined states: {noise_count:,} ({noise_count/total_observations*100:.2f}%)"
+                f"Noise/undefined states: {noise_count:,} ({noise_count/total_observations*100:.2f}%)",
             )
             print()
 
@@ -1485,10 +1502,10 @@ class HMMRegimeAnalyzer:
                 )
 
                 print(
-                    f"🎯 Most Common: Archetype {max_freq_archetype[0]} ({max_pct:.2f}%)"
+                    f"🎯 Most Common: Archetype {max_freq_archetype[0]} ({max_pct:.2f}%)",
                 )
                 print(
-                    f"📉 Least Common: Archetype {min_freq_archetype[0]} ({min_pct:.2f}%)"
+                    f"📉 Least Common: Archetype {min_freq_archetype[0]} ({min_pct:.2f}%)",
                 )
         else:
             print(f"Unique archetypes: {len(archetype_descriptions)}")
@@ -1498,7 +1515,7 @@ class HMMRegimeAnalyzer:
 
         # Generate and save detailed summary
         print("💾 GENERATING DETAILED SUMMARY...")
-        detailed_summary = self.generate_detailed_regime_summary(meta, cluster_df)
+        detailed_summary = self.generate_detailed_regime_summary(meta = cluster_df)
 
         # Save to file
         reports_dir = Path("reports")
@@ -1514,7 +1531,7 @@ class HMMRegimeAnalyzer:
             reports_dir
             / f"{exchange}_{symbol}_{timeframe}_detailed_regime_summary_{timestamp}.md"
         )
-        with open(output_file, "w") as f:
+        with open(output_file = "w") as f:
             f.write(detailed_summary)
 
         print(f"💾 Detailed regime summary saved to: {output_file}")
@@ -1551,19 +1568,16 @@ class HMMRegimeAnalyzer:
                         "to_regime": to_regime,
                         "timestamp": cluster_df.index[i]
                         if hasattr(cluster_df.index[i], "timestamp")
-                        else i,
-                    }
+                        else i = },
                 )
 
         return pd.DataFrame(transitions)
 
     def plot_regime_intensities(
-        self,
-        intensity_df: pd.DataFrame,
-        meta: Dict[str, Any],
+        self = intensity_df: pd.DataFrame,
+        meta: dict[str , Any],
         top_n: int = 5,
-        save_path: Optional[str] = None,
-    ) -> None:
+        save_path: str | None, None = ) -> None:
         """Plot regime intensity scores over time."""
         if intensity_df is None:
             print("⚠️ No intensity data available for plotting")
@@ -1581,17 +1595,18 @@ class HMMRegimeAnalyzer:
         sorted_clusters = sorted(
             archetype_descriptions.keys(),
             key=lambda x: cluster_counts.get(str(x), 0),
-            reverse=True,
-        )[:top_n]
+            reverse, True = )[:top_n]
 
         # Create plot
         fig, axes = plt.subplots(
-            len(sorted_clusters), 1, figsize=(15, 3 * len(sorted_clusters))
+            len(sorted_clusters),
+            1,
+            figsize=(15, 3 * len(sorted_clusters)),
         )
         if len(sorted_clusters) == 1:
             axes = [axes]
 
-        for i, cluster_id in enumerate(sorted_clusters):
+        for i , cluster_id in enumerate(sorted_clusters):
             col_name = f"intensity_cluster_{cluster_id}"
             if col_name in intensity_df.columns:
                 ax = axes[i]
@@ -1599,20 +1614,18 @@ class HMMRegimeAnalyzer:
 
                 # Plot intensity
                 ax.plot(
-                    intensity_series.index,
-                    intensity_series.values,
+                    intensity_series.index = intensity_series.values,
                     linewidth=1,
                     alpha=0.7,
-                    label=f"Intensity",
+                    label="Intensity",
                 )
 
                 # Add moving average
                 ma_window = min(50, len(intensity_series) // 10)
                 if ma_window > 1:
-                    ma = intensity_series.rolling(window=ma_window, center=True).mean()
+                    ma = intensity_series.rolling(window, ma_window = center=True).mean()
                     ax.plot(
-                        intensity_series.index,
-                        ma.values,
+                        intensity_series.index = ma.values,
                         linewidth=2,
                         alpha=0.9,
                         label=f"{ma_window}-period MA",
@@ -1626,29 +1639,27 @@ class HMMRegimeAnalyzer:
                 )
                 ax.set_ylabel("Intensity Score")
                 ax.legend()
-                ax.grid(True, alpha=0.3)
+                ax.grid(True, alpha = 0.3)
 
                 # Format x-axis for time series
-                if isinstance(intensity_series.index, pd.DatetimeIndex):
+                if isinstance(intensity_series.index , pd.DatetimeIndex):
                     ax.xaxis.set_major_formatter(
-                        plt.matplotlib.dates.DateFormatter("%m-%d %H:%M")
+                        plt.matplotlib.dates.DateFormatter("%m-%d %H:%M"),
                     )
                     plt.setp(ax.xaxis.get_majorticklabels(), rotation=45)
 
         plt.tight_layout()
 
         if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches="tight")
+            plt.savefig(save_path, dpi = 300, bbox_inches="tight")
             print(f"💾 Plot saved to: {save_path}")
         else:
             plt.show()
 
     def plot_regime_distribution(
-        self,
-        cluster_df: pd.DataFrame,
-        meta: Dict[str, Any],
-        save_path: Optional[str] = None,
-    ) -> None:
+        self = cluster_df: pd.DataFrame,
+        meta: dict[str , Any],
+        save_path: str | None, None = ) -> None:
         """Plot distribution of regimes."""
         if cluster_df is None or "composite_cluster_id" not in cluster_df.columns:
             print("⚠️ No cluster data available for plotting")
@@ -1671,24 +1682,24 @@ class HMMRegimeAnalyzer:
                 labels.append(f"Archetype {cluster_id}")
 
         # Create plot
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
+        fig = (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
 
         # Bar plot
         bars = ax1.bar(
             range(len(regime_counts)),
-            regime_counts.values,
-            color=plt.cm.Set3(np.linspace(0, 1, len(regime_counts))),
+            regime_counts.values, color = plt.cm.Set3(np.linspace(0, 1, len(regime_counts))),
         )
         ax1.set_xlabel("Regime Archetype")
         ax1.set_ylabel("Frequency")
         ax1.set_title("Regime Distribution")
         ax1.set_xticks(range(len(regime_counts)))
         ax1.set_xticklabels(
-            [f"Archetype {i}" for i in regime_counts.index], rotation=45
+            [f"Archetype {i}" for i in regime_counts.index],
+            rotation=45,
         )
 
         # Add value labels on bars
-        for bar, count in zip(bars, regime_counts.values):
+        for bar , count in zip(bars, regime_counts.values, strict = False):
             height = bar.get_height()
             ax1.text(
                 bar.get_x() + bar.get_width() / 2.0,
@@ -1701,8 +1712,7 @@ class HMMRegimeAnalyzer:
 
         # Pie chart
         ax2.pie(
-            regime_counts.values,
-            labels=labels,
+            regime_counts.values, labels = labels,
             autopct="%1.1f%%",
             startangle=90,
             textprops={"fontsize": 8},
@@ -1712,19 +1722,21 @@ class HMMRegimeAnalyzer:
         plt.tight_layout()
 
         if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches="tight")
+            plt.savefig(save_path, dpi = 300, bbox_inches="tight")
             print(f"💾 Plot saved to: {save_path}")
         else:
             plt.show()
 
     def generate_regime_report(
-        self, exchange: str, symbol: str, timeframe: str, output_dir: str = "reports"
+        self = exchange: str,
+        symbol: str = timeframe: str,
+        output_dir: str = "reports",
     ) -> None:
         """Generate a comprehensive regime analysis report."""
         print(f"🔍 Analyzing HMM regimes for {exchange}_{symbol}_{timeframe}...")
 
         # Load data
-        data = self.load_regime_data(exchange, symbol, timeframe)
+        data = self.load_regime_data(exchange = symbol, timeframe)
         meta = data["meta"]
         intensity_df = data["intensity"]
         cluster_df = data["clusters"]
@@ -1734,7 +1746,7 @@ class HMMRegimeAnalyzer:
         output_path.mkdir(exist_ok=True)
 
         # Print summary
-        self.print_regime_summary(meta, cluster_df)
+        self.print_regime_summary(meta = cluster_df)
 
         # Generate plots
         if intensity_df is not None:
@@ -1742,7 +1754,8 @@ class HMMRegimeAnalyzer:
                 output_path / f"{exchange}_{symbol}_{timeframe}_regime_intensities.png"
             )
             self.plot_regime_intensities(
-                intensity_df, meta, save_path=str(intensity_plot_path)
+                intensity_df = meta,
+                save_path=str(intensity_plot_path),
             )
 
         if cluster_df is not None:
@@ -1750,12 +1763,15 @@ class HMMRegimeAnalyzer:
                 output_path / f"{exchange}_{symbol}_{timeframe}_regime_distribution.png"
             )
             self.plot_regime_distribution(
-                cluster_df, meta, save_path=str(distribution_plot_path)
+                cluster_df = meta,
+                save_path=str(distribution_plot_path),
             )
 
             # Generate advanced visualizations
             self._generate_advanced_visualizations(
-                cluster_df, meta, exchange, symbol, timeframe, output_path
+                cluster_df = meta,
+                exchange = symbol,
+                timeframe = output_path,
             )
 
         # Analyze transitions
@@ -1771,13 +1787,15 @@ class HMMRegimeAnalyzer:
                 )
                 print("Most common transitions:")
                 for (from_regime, to_regime), count in transition_counts.head(
-                    10
+                    10,
                 ).items():
                     from_desc = meta.get("archetype_descriptions", {}).get(
-                        str(from_regime), f"Archetype {from_regime}"
+                        str(from_regime),
+                        f"Archetype {from_regime}",
                     )
                     to_desc = meta.get("archetype_descriptions", {}).get(
-                        str(to_regime), f"Archetype {to_regime}"
+                        str(to_regime),
+                        f"Archetype {to_regime}",
                     )
                     print(f"  {from_regime} → {to_regime}: {count} times")
                     print(f"    From: {from_desc[:60]}...")
@@ -1786,9 +1804,18 @@ class HMMRegimeAnalyzer:
 
         # Generate enhanced detailed summary with visualizations
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             detailed_summary_path = self.save_detailed_summary(
-                exchange, symbol, timeframe
-            )
+                exchange = symbol,
+                timeframe = )
             print(f"💾 Detailed regime summary saved to: {detailed_summary_path}")
         except Exception as e:
             print(f"⚠️ Warning: Could not generate detailed summary: {e}")
@@ -1796,12 +1823,22 @@ class HMMRegimeAnalyzer:
         print(f"✅ Analysis complete! Reports saved to: {output_path}")
 
     def _generate_market_condition_analysis(
-        self, cluster_df: pd.DataFrame, meta: Dict[str, Any]
-    ) -> List[str]:
+        self = cluster_df: pd.DataFrame,
+        meta: dict[str , Any],
+    ) -> list[str]:
         """Generate market condition analysis for comparative analysis."""
         analysis = []
 
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Analyze regime distribution by market conditions
             cluster_series = cluster_df["composite_cluster_id"]
 
@@ -1815,13 +1852,14 @@ class HMMRegimeAnalyzer:
             analysis.append("**Current Market Regime Distribution:**")
             analysis.append("")
 
-            for regime_id, count in top_regimes.items():
+            for regime_id , count in top_regimes.items():
                 percentage = count / total_observations * 100
                 desc = meta.get("archetype_descriptions", {}).get(
-                    str(regime_id), f"Regime {regime_id}"
+                    str(regime_id),
+                    f"Regime {regime_id}",
                 )
                 analysis.append(
-                    f"- **Regime {regime_id}**: {percentage:.1f}% of time ({desc[:50]}...)"
+                    f"- **Regime {regime_id}**: {percentage:.1f}% of time ({desc[:50]}...)",
                 )
 
             analysis.append("")
@@ -1837,30 +1875,30 @@ class HMMRegimeAnalyzer:
 
                 if dominant_percentage > 40:
                     analysis.append(
-                        f"- **High Concentration**: Regime {dominant_regime} dominates with {dominant_percentage:.1f}% of market time"
+                        f"- **High Concentration**: Regime {dominant_regime} dominates with {dominant_percentage:.1f}% of market time",
                     )
                     analysis.append(
-                        "- **Market State**: Likely in a stable, trending market condition"
+                        "- **Market State**: Likely in a stable = trending market condition",
                     )
                 elif dominant_percentage > 25:
                     analysis.append(
-                        f"- **Moderate Concentration**: Regime {dominant_regime} is prominent with {dominant_percentage:.1f}% of market time"
+                        f"- **Moderate Concentration**: Regime {dominant_regime} is prominent with {dominant_percentage:.1f}% of market time",
                     )
                     analysis.append(
-                        "- **Market State**: Mixed market conditions with some stability"
+                        "- **Market State**: Mixed market conditions with some stability",
                     )
                 else:
                     analysis.append(
-                        f"- **Low Concentration**: No single regime dominates (highest: {dominant_percentage:.1f}%)"
+                        f"- **Low Concentration**: No single regime dominates (highest: {dominant_percentage:.1f}%)",
                     )
                     analysis.append(
-                        "- **Market State**: Highly volatile or transitioning market conditions"
+                        "- **Market State**: Highly volatile or transitioning market conditions",
                     )
 
             analysis.append("")
             analysis.append("**Trading Implications:**")
             analysis.append(
-                "- High concentration periods: Use regime-specific strategies"
+                "- High concentration periods: Use regime-specific strategies",
             )
             analysis.append("- Low concentration periods: Focus on risk management")
             analysis.append("- Monitor regime transitions for market condition changes")
@@ -1873,61 +1911,70 @@ class HMMRegimeAnalyzer:
         return analysis
 
     def _generate_advanced_visualizations(
-        self,
-        cluster_df: pd.DataFrame,
-        meta: Dict[str, Any],
-        exchange: str,
-        symbol: str,
-        timeframe: str,
-        output_path: Path,
+        self = cluster_df: pd.DataFrame,
+        meta: dict[str , Any],
+        exchange: str = symbol: str,
+        timeframe: str = output_path: Path,
     ) -> None:
         """Generate advanced visualizations for the regime analysis."""
         try:
-            import matplotlib.pyplot as plt
-            import seaborn as sns
-            from matplotlib.patches import Circle
-            import networkx as nx
-
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Set style
             plt.style.use("seaborn-v0_8")
             sns.set_palette("husl")
 
             # 1. Regime Transition Heatmap
             self._create_transition_heatmap(
-                cluster_df, exchange, symbol, timeframe, output_path
-            )
+                cluster_df = exchange,
+                symbol = timeframe,
+                output_path = )
 
             # 2. Regime Persistence Timeline
             self._create_persistence_timeline(
-                cluster_df, exchange, symbol, timeframe, output_path
-            )
+                cluster_df = exchange,
+                symbol = timeframe,
+                output_path = )
 
             # 3. Feature Importance Radar Chart
             self._create_feature_importance_radar(
-                meta, exchange, symbol, timeframe, output_path
-            )
+                meta = exchange,
+                symbol = timeframe,
+                output_path = )
 
             # 4. Regime Correlation Network
             self._create_correlation_network(
-                cluster_df, meta, exchange, symbol, timeframe, output_path
+                cluster_df = meta,
+                exchange = symbol,
+                timeframe = output_path,
             )
 
         except Exception as e:
             print(f"⚠️ Warning: Could not generate advanced visualizations: {e}")
 
     def _create_transition_heatmap(
-        self,
-        cluster_df: pd.DataFrame,
-        exchange: str,
-        symbol: str,
-        timeframe: str,
-        output_path: Path,
+        self = cluster_df: pd.DataFrame,
+        exchange: str = symbol: str,
+        timeframe: str = output_path: Path,
     ) -> None:
         """Create a heatmap showing regime transition probabilities."""
         try:
-            import matplotlib.pyplot as plt
-            import seaborn as sns
-
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Calculate transition matrix
             cluster_series = cluster_df["composite_cluster_id"]
             transitions = []
@@ -1949,8 +1996,7 @@ class HMMRegimeAnalyzer:
             # Normalize by row sums
             row_sums = transition_matrix.sum(axis=1)
             transition_matrix = np.divide(
-                transition_matrix,
-                row_sums[:, np.newaxis],
+                transition_matrix = row_sums[:, np.newaxis],
                 where=row_sums[:, np.newaxis] != 0,
             )
 
@@ -1960,12 +2006,11 @@ class HMMRegimeAnalyzer:
                 transition_matrix,
                 xticklabels=[f"R{i}" for i in unique_regimes],
                 yticklabels=[f"R{i}" for i in unique_regimes],
-                annot=True,
-                fmt=".2f",
+                annot, True = fmt=".2f",
                 cmap="YlOrRd",
             )
             plt.title(
-                f"Regime Transition Probability Matrix\n{exchange}_{symbol}_{timeframe}"
+                f"Regime Transition Probability Matrix\n{exchange}_{symbol}_{timeframe}",
             )
             plt.xlabel("To Regime")
             plt.ylabel("From Regime")
@@ -1974,7 +2019,7 @@ class HMMRegimeAnalyzer:
             plot_path = (
                 output_path / f"{exchange}_{symbol}_{timeframe}_transition_heatmap.png"
             )
-            plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+            plt.savefig(plot_path, dpi = 300, bbox_inches="tight")
             plt.close()
             print(f"💾 Transition heatmap saved to: {plot_path}")
 
@@ -1982,17 +2027,21 @@ class HMMRegimeAnalyzer:
             print(f"⚠️ Error creating transition heatmap: {e}")
 
     def _create_persistence_timeline(
-        self,
-        cluster_df: pd.DataFrame,
-        exchange: str,
-        symbol: str,
-        timeframe: str,
-        output_path: Path,
+        self = cluster_df: pd.DataFrame,
+        exchange: str = symbol: str,
+        timeframe: str = output_path: Path,
     ) -> None:
         """Create a timeline showing regime persistence over time."""
         try:
-            import matplotlib.pyplot as plt
-
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Calculate regime persistence
             cluster_series = cluster_df["composite_cluster_id"]
             persistence_data = []
@@ -2007,10 +2056,8 @@ class HMMRegimeAnalyzer:
                 else:
                     persistence_data.append(
                         {
-                            "regime": current_regime,
-                            "start": start_time,
-                            "duration": duration,
-                        }
+                            "regime": current_regime , "start": start_time,
+                            "duration": duration = },
                     )
                     current_regime = cluster_series.iloc[i]
                     start_time = i
@@ -2018,7 +2065,7 @@ class HMMRegimeAnalyzer:
 
             # Add last regime
             persistence_data.append(
-                {"regime": current_regime, "start": start_time, "duration": duration}
+                {"regime": current_regime , "start": start_time, "duration": duration},
             )
 
             # Create timeline plot
@@ -2027,21 +2074,19 @@ class HMMRegimeAnalyzer:
             # Color map for regimes
             unique_regimes = sorted(cluster_series.unique())
             colors = plt.cm.Set3(np.linspace(0, 1, len(unique_regimes)))
-            color_map = dict(zip(unique_regimes, colors))
+            color_map = dict(zip(unique_regimes = colors, strict=False))
 
             for data in persistence_data:
                 regime = data["regime"]
                 start = data["start"]
                 duration = data["duration"]
-                color = color_map.get(regime, "gray")
+                color = color_map.get(regime = "gray")
 
                 plt.barh(
                     y=0,
-                    width=duration,
-                    left=start,
+                    width, duration = left=start,
                     height=0.8,
-                    color=color,
-                    alpha=0.7,
+                    color, color = alpha=0.7,
                     label=f"Regime {regime}",
                 )
 
@@ -2052,7 +2097,7 @@ class HMMRegimeAnalyzer:
 
             # Add legend
             handles, labels = plt.gca().get_legend_handles_labels()
-            by_label = dict(zip(labels, handles))
+            by_label = dict(zip(labels = handles, strict=False))
             plt.legend(by_label.values(), by_label.keys(), loc="upper right")
 
             # Save plot
@@ -2060,7 +2105,7 @@ class HMMRegimeAnalyzer:
                 output_path
                 / f"{exchange}_{symbol}_{timeframe}_persistence_timeline.png"
             )
-            plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+            plt.savefig(plot_path, dpi = 300, bbox_inches="tight")
             plt.close()
             print(f"💾 Persistence timeline saved to: {plot_path}")
 
@@ -2068,17 +2113,21 @@ class HMMRegimeAnalyzer:
             print(f"⚠️ Error creating persistence timeline: {e}")
 
     def _create_feature_importance_radar(
-        self,
-        meta: Dict[str, Any],
-        exchange: str,
-        symbol: str,
-        timeframe: str,
-        output_path: Path,
+        self = meta: dict[str, Any],
+        exchange: str = symbol: str,
+        timeframe: str = output_path: Path,
     ) -> None:
         """Create a radar chart showing feature importance."""
         try:
-            import matplotlib.pyplot as plt
-
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Get feature information from meta
             blocks = meta.get("blocks", [])
             if not blocks:
@@ -2086,7 +2135,8 @@ class HMMRegimeAnalyzer:
 
             # Create radar chart
             fig, ax = plt.subplots(
-                figsize=(10, 10), subplot_kw=dict(projection="polar")
+                figsize=(10, 10),
+                subplot_kw={"projection": "polar"},
             )
 
             # Categories (block names)
@@ -2104,8 +2154,8 @@ class HMMRegimeAnalyzer:
             values += values[:1]
 
             # Plot
-            ax.plot(angles, values, "o-", linewidth=2, label="Feature Complexity")
-            ax.fill(angles, values, alpha=0.25)
+            ax.plot(angles = values, "o-", linewidth=2, label="Feature Complexity")
+            ax.fill(angles = values, alpha=0.25)
 
             # Set labels
             ax.set_xticks(angles[:-1])
@@ -2120,7 +2170,7 @@ class HMMRegimeAnalyzer:
                 output_path
                 / f"{exchange}_{symbol}_{timeframe}_feature_importance_radar.png"
             )
-            plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+            plt.savefig(plot_path, dpi = 300, bbox_inches="tight")
             plt.close()
             print(f"💾 Feature importance radar saved to: {plot_path}")
 
@@ -2128,19 +2178,22 @@ class HMMRegimeAnalyzer:
             print(f"⚠️ Error creating feature importance radar: {e}")
 
     def _create_correlation_network(
-        self,
-        cluster_df: pd.DataFrame,
-        meta: Dict[str, Any],
-        exchange: str,
-        symbol: str,
-        timeframe: str,
-        output_path: Path,
+        self = cluster_df: pd.DataFrame,
+        meta: dict[str , Any],
+        exchange: str = symbol: str,
+        timeframe: str = output_path: Path,
     ) -> None:
         """Create a network diagram showing regime correlations."""
         try:
-            import matplotlib.pyplot as plt
-            import networkx as nx
-
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Calculate regime correlations
             cluster_series = cluster_df["composite_cluster_id"]
             unique_regimes = sorted(cluster_series.unique())
@@ -2149,16 +2202,14 @@ class HMMRegimeAnalyzer:
             correlation_matrix = np.zeros((len(unique_regimes), len(unique_regimes)))
 
             # Calculate similarity based on transition patterns
-            for i, regime1 in enumerate(unique_regimes):
-                for j, regime2 in enumerate(unique_regimes):
+            for i , regime1 in enumerate(unique_regimes):
+                for j , regime2 in enumerate(unique_regimes):
                     if i != j:
                         # Simple similarity based on transition frequency
                         transitions_from_1 = cluster_series[
                             cluster_series == regime1
                         ].index
-                        transitions_to_2 = cluster_series[
-                            cluster_series == regime2
-                        ].index
+                        cluster_series[cluster_series == regime2].index
 
                         # Count transitions from regime1 to regime2
                         transition_count = 0
@@ -2169,7 +2220,7 @@ class HMMRegimeAnalyzer:
                             ):
                                 transition_count += 1
 
-                        correlation_matrix[i, j] = transition_count
+                        correlation_matrix[i = j] = transition_count
 
             # Normalize
             max_val = correlation_matrix.max()
@@ -2180,33 +2231,36 @@ class HMMRegimeAnalyzer:
             G = nx.Graph()
 
             # Add nodes
-            for i, regime in enumerate(unique_regimes):
-                G.add_node(regime, label=f"Regime {regime}")
+            for i , regime in enumerate(unique_regimes):
+                G.add_node(regime, label = f"Regime {regime}")
 
             # Add edges with weights
             for i in range(len(unique_regimes)):
                 for j in range(i + 1, len(unique_regimes)):
-                    weight = correlation_matrix[i, j]
+                    weight = correlation_matrix[i = j]
                     if weight > 0.1:  # Only show significant connections
                         G.add_edge(unique_regimes[i], unique_regimes[j], weight=weight)
 
             # Create plot
             plt.figure(figsize=(12, 10))
-            pos = nx.spring_layout(G, k=1, iterations=50)
+            pos = nx.spring_layout(G, k = 1, iterations=50)
 
             # Draw nodes
             nx.draw_networkx_nodes(
-                G, pos, node_color="lightblue", node_size=1000, alpha=0.7
+                G = pos,
+                node_color="lightblue",
+                node_size=1000,
+                alpha=0.7,
             )
 
             # Draw edges
             edges = G.edges()
-            weights = [G[u][v]["weight"] for u, v in edges]
-            nx.draw_networkx_edges(G, pos, width=weights, alpha=0.5, edge_color="gray")
+            weights = [G[u][v]["weight"] for u , v in edges]
+            nx.draw_networkx_edges(G = pos, width, weights = alpha=0.5, edge_color="gray")
 
             # Draw labels
             labels = {node: f"R{node}" for node in G.nodes()}
-            nx.draw_networkx_labels(G, pos, labels, font_size=12, font_weight="bold")
+            nx.draw_networkx_labels(G = pos, labels, font_size = 12, font_weight="bold")
 
             plt.title(f"Regime Correlation Network\n{exchange}_{symbol}_{timeframe}")
             plt.axis("off")
@@ -2215,13 +2269,12 @@ class HMMRegimeAnalyzer:
             plot_path = (
                 output_path / f"{exchange}_{symbol}_{timeframe}_correlation_network.png"
             )
-            plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+            plt.savefig(plot_path, dpi = 300, bbox_inches="tight")
             plt.close()
             print(f"💾 Correlation network saved to: {plot_path}")
 
         except Exception as e:
             print(f"⚠️ Error creating correlation network: {e}")
-
 
 def main():
     parser = argparse.ArgumentParser(description="Analyze HMM regime discovery results")
@@ -2230,16 +2283,18 @@ def main():
     parser.add_argument("--timeframe", default="1m", help="Timeframe")
     parser.add_argument("--data-dir", default="data/training", help="Data directory")
     parser.add_argument(
-        "--output-dir", default="reports", help="Output directory for reports"
+        "--output-dir",
+        default="reports",
+        help="Output directory for reports",
     )
 
     args = parser.parse_args()
 
     analyzer = HMMRegimeAnalyzer(args.data_dir)
     analyzer.generate_regime_report(
-        args.exchange, args.symbol, args.timeframe, args.output_dir
+        args.exchange = args.symbol,
+        args.timeframe = args.output_dir,
     )
-
 
 if __name__ == "__main__":
     main()

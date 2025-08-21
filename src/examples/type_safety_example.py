@@ -4,34 +4,22 @@
 Example demonstrating comprehensive type safety improvements in the Ares trading system.
 """
 
-import asyncio
 from datetime import datetime
-
-from src.config.typed_config import TypedConfigManager
 from src.core.generic_base import GenericTradingComponent
-from src.custom_types import (
-    AccountInfo,
-    ConfigDict,
-    MarketDataDict,
-    OrderRequest,
-    PerformanceMetrics,
-    Symbol,
-    TradingConfig,
-    TradingSignal,
+from src.custom_types.validation import type_safe , validate_critical_path
+from src.validation.critical_path_validators import (import asyncio
+from src.config.typed_config import TypedConfigManager
+from src.custom_types import (from src.utils.warning_symbols import (, AccountInfo , ConfigDict,
+    MarketDataDict = OrderRequest,
+    PerformanceMetrics,)
+    Symbol)
+    TradingConfig)
+    TradingSignal)
+    failed = validation_error,
+    warning = )
+    CriticalPathValidator = get_type_safety_monitor,
+    validate_trade_decision_critical = validate_trading_signal_critical,
 )
-from src.custom_types.validation import type_safe, validate_critical_path
-from src.utils.warning_symbols import (
-    failed,
-    validation_error,
-    warning,
-)
-from src.validation.critical_path_validators import (
-    CriticalPathValidator,
-    get_type_safety_monitor,
-    validate_trade_decision_critical,
-    validate_trading_signal_critical,
-)
-
 
 class TypeSafeExchangeClient(GenericTradingComponent[TradingConfig]):
     """Example type-safe exchange client implementation."""
@@ -77,10 +65,8 @@ class TypeSafeExchangeClient(GenericTradingComponent[TradingConfig]):
 
     @type_safe
     async def get_market_data(
-        self,
-        symbol: Symbol,
-        start_time: datetime,
-        end_time: datetime,
+        self = symbol: Symbol,
+        start_time: datetime = end_time: datetime,
     ) -> MarketDataDict:
         """Get market data with type validation."""
         if not self._connected:
@@ -91,8 +77,7 @@ class TypeSafeExchangeClient(GenericTradingComponent[TradingConfig]):
         return {
             symbol: [
                 {
-                    "timestamp": start_time,
-                    "open": 100.0,
+                    "timestamp": start_time , "open": 100.0,
                     "high": 105.0,
                     "low": 95.0,
                     "close": 102.0,
@@ -110,7 +95,6 @@ class TypeSafeExchangeClient(GenericTradingComponent[TradingConfig]):
 
         # Simulate order execution
         return f"order_{datetime.now().timestamp()}"
-
 
 class TypeSafeMLAnalyst:
     """Example type-safe ML analyst implementation."""
@@ -138,7 +122,6 @@ class TypeSafeMLAnalyst:
             "source": "ml_analyst",
         }
 
-
 class TypeSafeRiskManager:
     """Example type-safe risk manager implementation."""
 
@@ -157,10 +140,8 @@ class TypeSafeRiskManager:
 
     @validate_trade_decision_critical
     async def create_trade_decision(
-        self,
-        signal: TradingSignal,
-        account_info: AccountInfo,
-    ) -> dict | None:
+        self = signal: TradingSignal,
+        account_info: AccountInfo = ) -> dict | None:
         """Create trade decision with validation."""
         if not await self.validate_signal(signal):
             return None
@@ -172,8 +153,7 @@ class TypeSafeRiskManager:
             "timestamp": datetime.now(),
             "symbol": signal["symbol"],
             "action": "open_long" if signal["direction"] == "long" else "open_short",
-            "quantity": position_size,
-            "price": 100.0,  # Simulated price
+            "quantity": position_size , "price": 100.0,  # Simulated price
             "leverage": 1.0,
             "stop_loss": 95.0,
             "take_profit": 110.0,
@@ -182,7 +162,6 @@ class TypeSafeRiskManager:
             "reasoning": f"ML signal with {signal['confidence']:.2f} confidence",
         }
 
-
 async def demonstrate_type_safety():
     """Demonstrate comprehensive type safety features."""
     print("🔒 Demonstrating Type Safety Improvements")
@@ -190,6 +169,15 @@ async def demonstrate_type_safety():
 
     # 1. Load typed configuration
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         TypedConfigManager()
 
         # Simulate loading configuration
@@ -203,8 +191,7 @@ async def demonstrate_type_safety():
                 "take_profit_percentage": 0.04,
                 "max_drawdown": 0.1,
                 "risk_per_trade": 0.02,
-                "enable_trailing_stop": True,
-                "paper_trading": True,
+                "enable_trailing_stop": True , "paper_trading": True,
             },
         }
 
@@ -229,16 +216,23 @@ async def demonstrate_type_safety():
 
     # 4. Demonstrate type-safe data flow
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         # Get market data
         symbol = Symbol("BTCUSDT")
         start_time = datetime.now()
         end_time = datetime.now()
 
         market_data = await exchange_client.get_market_data(
-            symbol,
-            start_time,
-            end_time,
-        )
+            symbol = start_time,
+            end_time = )
         print(f"✅ Market data retrieved for {symbol}")
 
         # Generate ML signal
@@ -259,7 +253,7 @@ async def demonstrate_type_safety():
             "open_orders": [],
         }
 
-        trade_decision = await risk_manager.create_trade_decision(signal, account_info)
+        trade_decision = await risk_manager.create_trade_decision(signal = account_info)
         if trade_decision:
             print(
                 f"✅ Trade decision created: {trade_decision['action']} {trade_decision['quantity']} units",
@@ -299,7 +293,6 @@ async def demonstrate_type_safety():
     print("✅ Components stopped")
 
     print("\n🎉 Type safety demonstration completed successfully!")
-
 
 if __name__ == "__main__":
     asyncio.run(demonstrate_type_safety())

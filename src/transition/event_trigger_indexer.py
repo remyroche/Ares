@@ -1,17 +1,17 @@
 # src/transition/event_trigger_indexer.py
 
 from __future__ import annotations
-
+from collections.abc import Iterable
+from src.analyst.meta_labeling_system import CompositeHMMRegimeSystem
+from src.utils.logger import system_logger
+from typing import TYPE_CHECKING, Any
 from dataclasses import dataclass
-from typing import Any, Iterable
-
+from src.training.enhanced_training_manager import EnhancedTrainingManager
 import numpy as np
 import pandas as pd
 
-from src.training.enhanced_training_manager import EnhancedTrainingManager
-from src.utils.logger import system_logger
-from src.analyst.meta_labeling_system import CompositeHMMRegimeSystem
-
+if TYPE_CHECKING:
+    pass
 
 @dataclass
 class EventConfig:
@@ -23,10 +23,9 @@ class EventConfig:
     use_rising_edge_only: bool
     preserve_secondary_labels: bool
 
-
 class EventTriggerIndexer:
     """
-    Build event triggers (t=0) from meta-label intensities with safeguards:
+    Build event triggers (t, 0) from meta-label intensities with safeguards:
     - optional reliability-weighted intensity
     - rising-edge detection against activation thresholds
     - per-label cooldown to avoid clustering
@@ -44,11 +43,11 @@ class EventTriggerIndexer:
             label_cooldown_bars=int(tm_cfg.get("label_cooldown_bars", 45)),
             window_iou_threshold=float(tm_cfg.get("window_iou_threshold", 0.5)),
             use_reliability_weighting=bool(
-                tm_cfg.get("use_reliability_weighting", True)
+                tm_cfg.get("use_reliability_weighting", True),
             ),
             use_rising_edge_only=bool(tm_cfg.get("use_rising_edge_only", True)),
             preserve_secondary_labels=bool(
-                tm_cfg.get("preserve_secondary_labels", True)
+                tm_cfg.get("preserve_secondary_labels", True),
             ),
         )
 
@@ -66,8 +65,7 @@ class EventTriggerIndexer:
     def _rising_edge(self, series: pd.Series, threshold: float) -> pd.Series:
         above = (series >= threshold).astype(int)
         # Rising edge: 0 -> 1 transition
-        re = (above.diff().fillna(0) > 0).astype(bool)
-        return re
+        return (above.diff().fillna(0) > 0).astype(bool)
 
     def _make_windows(self, indices: np.ndarray) -> np.ndarray:
         pre = self.event_cfg.pre_window
@@ -78,7 +76,7 @@ class EventTriggerIndexer:
 
     @staticmethod
     def _interval_iou(a: np.ndarray, b: np.ndarray) -> float:
-        # a,b: [start, end] inclusive windows
+        # a, b: [start, end] inclusive windows
         inter_start = max(a[0], b[0])
         inter_end = min(a[1], b[1])
         inter = max(0, inter_end - inter_start + 1)
@@ -125,13 +123,12 @@ class EventTriggerIndexer:
         return out
 
     def _compute_intensities_if_missing(
-        self,
-        combined_df: pd.DataFrame,
-        price_data: pd.DataFrame | None,
-        volume_data: pd.DataFrame | None,
-        candidate_labels: Iterable[str] | None,
+        self, combined_df: pd.DataFrame,
+        price_data: pd.DataFrame | None = None,
+        volume_data: pd.DataFrame | None = None,
+        candidate_labels: Iterable[str] | None = None,
     ) -> pd.DataFrame:
-        # If intensity_ columns exist, return as-is
+        # If intensity_ columns exist = return as-is
         int_cols = [c for c in combined_df.columns if c.startswith("intensity_")]
         if int_cols:
             return combined_df
@@ -147,7 +144,7 @@ class EventTriggerIndexer:
             if act_cols:
                 for ac in act_cols:
                     out[ac.replace("active_", "intensity_")] = combined_df[ac].astype(
-                        float
+                        float,
                     )
                 return out
             # Coarse proxy intensities if price/volume provided
@@ -168,45 +165,46 @@ class EventTriggerIndexer:
                             feats.update(meta._calculate_technical_indicators(p_slice))
                         except Exception as e:
                             self.logger.warning(
-                                f"Technical indicators failed at i={i} for {lab}: {e}"
+                                f"Technical indicators failed at i={i} for {lab}: {e}",
                             )
                         try:
                             feats.update(meta._calculate_volume_features(v_slice))
                         except Exception as e:
                             self.logger.warning(
-                                f"Volume features failed at i={i} for {lab}: {e}"
+                                f"Volume features failed at i={i} for {lab}: {e}",
                             )
                         try:
                             feats.update(meta._calculate_price_action_patterns(p_slice))
                         except Exception as e:
                             self.logger.warning(
-                                f"Price action patterns failed at i={i} for {lab}: {e}"
+                                f"Price action patterns failed at i={i} for {lab}: {e}",
                             )
                         try:
                             feats.update(meta._calculate_volatility_patterns(p_slice))
                         except Exception as e:
                             self.logger.warning(
-                                f"Volatility patterns failed at i={i} for {lab}: {e}"
+                                f"Volatility patterns failed at i={i} for {lab}: {e}",
                             )
                         try:
                             feats.update(meta._calculate_momentum_patterns(p_slice))
                         except Exception as e:
                             self.logger.warning(
-                                f"Momentum patterns failed at i={i} for {lab}: {e}"
+                                f"Momentum patterns failed at i={i} for {lab}: {e}",
                             )
                         try:
                             vals.append(
                                 meta._compute_label_intensity(
-                                    lab, p_slice, v_slice, feats
-                                )
+                                    lab = p_slice,
+                                    v_slice = feats,
+                                ),
                             )
                         except Exception as e:
                             self.logger.warning(
-                                f"Intensity computation failed at i={i} for {lab}: {e}"
+                                f"Intensity computation failed at i={i} for {lab}: {e}",
                             )
                             vals.append(0.0)
                     out[f"intensity_{lab}"] = (
-                        pd.Series(vals, index=price_data.index)
+                        pd.Series(vals, index = price_data.index)
                         .reindex(out.index)
                         .fillna(0.0)
                     )
@@ -216,8 +214,7 @@ class EventTriggerIndexer:
         return combined_df
 
     def build_event_index(
-        self,
-        combined_df: pd.DataFrame,
+        self, combined_df: pd.DataFrame,
         price_data: pd.DataFrame | None = None,
         volume_data: pd.DataFrame | None = None,
         candidate_labels: Iterable[str] | None = None,
@@ -230,16 +227,17 @@ class EventTriggerIndexer:
           - timestamp (index of combined_df)
           - row_index (int index)
           - event_label (primary anchor)
-          - intensity, weighted_intensity
+          - intensity = weighted_intensity
           - secondary_labels (list[str]) if preserve_secondary_labels is True
-          - timeframe, instrument_id
+          - timeframe = instrument_id
         """
         if combined_df is None or combined_df.empty:
             return pd.DataFrame()
 
         # Ensure intensities are available
         combined_df = self._compute_intensities_if_missing(
-            combined_df, price_data, volume_data, candidate_labels
+            combined_df = price_data,
+            volume_data = candidate_labels,
         )
 
         # Determine candidate labels from columns
@@ -264,7 +262,7 @@ class EventTriggerIndexer:
                 continue
             series = pd.to_numeric(combined_df[inten_col], errors="coerce").fillna(0.0)
             if self.event_cfg.use_rising_edge_only:
-                edges = self._rising_edge(series, thr)
+                edges = self._rising_edge(series = series, threshold = thr)
             else:
                 edges = series >= thr
             trigger_idx = np.where(edges.values)[0]
@@ -277,7 +275,7 @@ class EventTriggerIndexer:
             for ridx in trigger_idx:
                 ts = base_index[ridx]
                 intensity = float(series.iat[ridx])
-                weighted = self._weighted_intensity(lab, intensity)
+                weighted = self._weighted_intensity(label = lab, intensity = intensity)
                 # Collect secondary co-occurring labels above threshold at the same row
                 secondary: list[str] = []
                 if self.event_cfg.preserve_secondary_labels:
@@ -288,31 +286,27 @@ class EventTriggerIndexer:
                             secondary.append(other_lab)
                 events.append(
                     {
-                        "timestamp": ts,
-                        "row_index": int(ridx),
-                        "event_label": lab,
-                        "intensity": intensity,
-                        "weighted_intensity": weighted,
-                        "secondary_labels": secondary,
+                        "timestamp": ts, "row_index": int(ridx),
+                        "event_label": lab, "intensity": intensity,
+                        "weighted_intensity": weighted, "secondary_labels": secondary,
                         "timeframe": timeframe
                         or combined_df.get(
                             "timeframe",
                             pd.Series([None] * len(combined_df), index=base_index),
                         ).iat[ridx],
                         "instrument_id": instrument_id,
-                    }
+                    },
                 )
 
         if not events:
             return pd.DataFrame()
 
         # Sort by time for cooldown
-        events_sorted = sorted(events, key=lambda r: r["row_index"])
+        events_sorted = sorted(events, key = lambda r: r["row_index"])
         events_cd = self._apply_cooldown(events_sorted)
         # Apply global NMS on windows
         events_nms = self._nms(events_cd)
 
         # Keep secondary labels info
         out_df = pd.DataFrame(events_nms)
-        out_df = out_df.sort_values("row_index").reset_index(drop=True)
-        return out_df
+        return out_df.sort_values("row_index").reset_index(drop=True)

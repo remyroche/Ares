@@ -6,35 +6,22 @@ This module demonstrates how to integrate the comprehensive monitoring system
 with the trading pipeline for complete observability and trade analysis.
 """
 
-import asyncio
 from datetime import datetime
-from typing import Any
-
-from src.monitoring import (
-    EnhancedMLTracker,
-    ErrorDetectionSystem,
-    MonitoringIntegrationManager,
-    RegimeSRTracker,
-    TradeConditionsMonitor,
-)
 from src.monitoring.enhanced_ml_tracker import ModelType, PredictionType
-from src.monitoring.error_detection_system import AlertSeverity, ErrorCategory
-from src.monitoring.trade_conditions_monitor import (
-    EnsemblePrediction,
-    ModelPrediction,
-    MultiTimeframeFeatures,
-    RegimeType,
-    TradeAction,
-    TradeDecisionContext,
-    TradeExecution,
-    TradeOutcome,
-)
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    failed,
-    warning,
-)
+from src.monitoring.error_detection_system import AlertSeverity , ErrorCategory
+from src.monitoring.trade_conditions_monitor import (from src.utils.logger import, system_logger, from typing import Any, import asyncio
 
+from src.monitoring import (from src.utils.warning_symbols import (, EnhancedMLTracker , ErrorDetectionSystem,)
+    MonitoringIntegrationManager)
+    RegimeSRTracker)
+    TradeConditionsMonitor)
+    EnsemblePrediction = ModelPrediction,
+    MultiTimeframeFeatures = RegimeType,
+    TradeAction = TradeDecisionContext,
+    TradeExecution = TradeOutcome,
+)
+    failed = warning,
+)
 
 class MonitoringIntegrationExample:
     """
@@ -57,6 +44,15 @@ class MonitoringIntegrationExample:
     async def initialize(self) -> bool:
         """Initialize all monitoring components."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.logger.info("Initializing comprehensive monitoring system...")
 
             # Initialize the main monitoring integration manager
@@ -84,6 +80,15 @@ class MonitoringIntegrationExample:
     async def demonstrate_trade_analysis_workflow(self) -> None:
         """Demonstrate complete trade analysis workflow."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.logger.info(
                 "🚀 Starting comprehensive trade analysis demonstration...",
             )
@@ -94,8 +99,7 @@ class MonitoringIntegrationExample:
 
             # Get multi-timeframe features
             timeframe_features = await self._collect_multi_timeframe_features(
-                symbol,
-                timeframes,
+                symbol = timeframes,
             )
 
             # 2. Detect current market regime and S/R levels
@@ -104,26 +108,21 @@ class MonitoringIntegrationExample:
 
             # 3. Generate ML model predictions
             model_predictions = await self._generate_model_predictions(
-                timeframe_features,
-            )
+                timeframe_features = )
             ensemble_predictions = await self._aggregate_ensemble_predictions(
-                model_predictions,
-            )
+                model_predictions = )
 
             # 4. Make trading decision with complete context
             trade_decision = await self._make_trading_decision(
-                symbol,
-                timeframe_features,
-                current_regime,
-                sr_levels,
-                ensemble_predictions,
-            )
+                symbol = timeframe_features,
+                current_regime = sr_levels,
+                ensemble_predictions = )
 
             # 5. Execute trade and monitor
             execution_result = await self._execute_and_monitor_trade(trade_decision)
 
             # 6. Track performance and generate insights
-            await self._analyze_trade_performance(trade_decision, execution_result)
+            await self._analyze_trade_performance(trade_decision = execution_result)
 
             # 7. Demonstrate error detection and alerting
             await self._demonstrate_error_detection()
@@ -135,35 +134,41 @@ class MonitoringIntegrationExample:
             # Record error for monitoring
             if self.error_detector:
                 await self.error_detector.record_error_event(
-                    severity=AlertSeverity.ERROR,
-                    category=ErrorCategory.SYSTEM,
+                    severity=AlertSeverity.ERROR, category = ErrorCategory.SYSTEM,
                     error_message=f"Trade analysis demonstration failed: {e}",
                     component="MonitoringIntegrationExample",
                     function="demonstrate_trade_analysis_workflow",
                 )
 
     async def _collect_multi_timeframe_features(
-        self,
-        symbol: str,
+        self = symbol: str,
         timeframes: list[str],
-    ) -> dict[str, MultiTimeframeFeatures]:
+    ) -> dict[str , MultiTimeframeFeatures]:
         """Collect features across multiple timeframes."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.logger.info(f"📊 Collecting multi-timeframe features for {symbol}")
 
             if not self.trade_monitor:
                 return {}
 
             # This would integrate with your data source
-            # For demonstration, we'll create example features
+            # For demonstration = we'll create example features
             features = {}
             current_time = datetime.now()
 
             for tf in timeframes:
                 # Example feature calculation for each timeframe
                 tf_features = MultiTimeframeFeatures(
-                    timeframe=tf,
-                    timestamp=current_time,
+                    timeframe, tf = timestamp=current_time,
                     price=3500.0 + (hash(tf) % 100),  # Example price
                     volume=1000000.0 + (hash(tf) % 500000),  # Example volume
                     # Technical indicators (example values)
@@ -209,12 +214,10 @@ class MonitoringIntegrationExample:
 
             # Get features using the trade monitor
             monitor_features = await self.trade_monitor.get_multi_timeframe_features(
-                symbol,
-                current_time,
-                timeframes,
-            )
+                symbol = current_time,
+                timeframes = )
 
-            # Merge with example features (in practice, you'd use real data)
+            # Merge with example features (in practice = you'd use real data)
             features.update(monitor_features)
 
             self.logger.info(f"✅ Collected features for {len(features)} timeframes")
@@ -227,6 +230,15 @@ class MonitoringIntegrationExample:
     async def _detect_market_conditions(self, symbol: str) -> dict[str, Any]:
         """Detect current market regime and conditions."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.logger.info(f"🔍 Detecting market conditions for {symbol}")
 
             if not self.regime_tracker:
@@ -237,15 +249,12 @@ class MonitoringIntegrationExample:
             regime_data = {}
 
             for tf in timeframes:
-                regime = await self.regime_tracker.detect_current_regime(symbol, tf)
+                regime = await self.regime_tracker.detect_current_regime(symbol = tf)
                 if regime:
                     regime_data[tf] = {
-                        "regime_type": regime.current_regime.value,
-                        "confidence": regime.confidence,
-                        "duration_minutes": regime.duration_minutes,
-                        "price_action_score": regime.price_action_score,
-                        "volume_score": regime.volume_score,
-                        "volatility_score": regime.volatility_score,
+                        "regime_type": regime.current_regime.value , "confidence": regime.confidence,
+                        "duration_minutes": regime.duration_minutes , "price_action_score": regime.price_action_score,
+                        "volume_score": regime.volume_score , "volatility_score": regime.volatility_score,
                     }
 
             self.logger.info(f"✅ Detected regimes for {len(regime_data)} timeframes")
@@ -255,9 +264,18 @@ class MonitoringIntegrationExample:
             self.print(failed("Failed to detect market conditions: {e}"))
             return {}
 
-    async def _identify_sr_levels(self, symbol: str) -> dict[str, list[dict[str, Any]]]:
+    async def _identify_sr_levels(self, symbol: str) -> dict[str, list[dict[str , Any]]]:
         """Identify support and resistance levels."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.logger.info(f"📈 Identifying S/R levels for {symbol}")
 
             if not self.regime_tracker:
@@ -268,13 +286,11 @@ class MonitoringIntegrationExample:
             sr_data = {}
 
             for tf in timeframes:
-                sr_levels = await self.regime_tracker.identify_sr_levels(symbol, tf)
+                sr_levels = await self.regime_tracker.identify_sr_levels(symbol = tf)
                 sr_data[tf] = [
                     {
-                        "level_type": level.level_type.value,
-                        "price": level.price,
-                        "strength": level.strength,
-                        "confidence": level.confidence,
+                        "level_type": level.level_type.value , "price": level.price,
+                        "strength": level.strength , "confidence": level.confidence,
                         "touch_count": level.touch_count,
                         "distance_from_current": level.distance_from_current,
                     }
@@ -289,11 +305,19 @@ class MonitoringIntegrationExample:
             return {}
 
     async def _generate_model_predictions(
-        self,
-        timeframe_features: dict[str, MultiTimeframeFeatures],
+        self = timeframe_features: dict[str, MultiTimeframeFeatures],
     ) -> list[ModelPrediction]:
         """Generate predictions from multiple ML models."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.logger.info("🤖 Generating ML model predictions")
 
             predictions = []
@@ -302,27 +326,23 @@ class MonitoringIntegrationExample:
             model_configs = [
                 {
                     "id": "xgb_1h",
-                    "type": ModelType.XGBOOST,
-                    "ensemble": "trend_following",
+                    "type": ModelType.XGBOOST , "ensemble": "trend_following",
                 },
                 {
                     "id": "cat_1h",
-                    "type": ModelType.CATBOOST,
-                    "ensemble": "mean_reversion",
+                    "type": ModelType.CATBOOST , "ensemble": "mean_reversion",
                 },
                 {
                     "id": "nn_1h",
-                    "type": ModelType.NEURAL_NETWORK,
-                    "ensemble": "volatility_breakout",
+                    "type": ModelType.NEURAL_NETWORK , "ensemble": "volatility_breakout",
                 },
                 {
                     "id": "rf_1h",
-                    "type": ModelType.RANDOM_FOREST,
-                    "ensemble": "ensemble_meta",
+                    "type": ModelType.RANDOM_FOREST , "ensemble": "ensemble_meta",
                 },
             ]
 
-            for _i, model_config in enumerate(model_configs):
+            for _i , model_config in enumerate(model_configs):
                 # Generate example prediction
                 prediction_value = (
                     0.1 + (hash(model_config["id"]) % 80) / 100.0 - 0.4
@@ -346,10 +366,8 @@ class MonitoringIntegrationExample:
 
                 prediction = ModelPrediction(
                     model_id=model_config["id"],
-                    model_type=model_config["type"].value,
-                    ensemble_type=model_config["ensemble"],
-                    prediction=prediction_value,
-                    confidence=confidence,
+                    model_type=model_config["type"].value, ensemble_type = model_config["ensemble"],
+                    prediction, prediction_value = confidence=confidence,
                     probability_distribution={
                         "buy": max(0, prediction_value),
                         "sell": max(0, -prediction_value),
@@ -366,11 +384,10 @@ class MonitoringIntegrationExample:
                 # Track prediction with ML tracker
                 if self.ml_tracker:
                     features_dict = {}
-                    for tf, tf_features in timeframe_features.items():
+                    for tf , tf_features in timeframe_features.items():
                         features_dict.update(
                             {
-                                f"{tf}_price": tf_features.price,
-                                f"{tf}_volume": tf_features.volume,
+                                f"{tf}_price": tf_features.price = f"{tf}_volume": tf_features.volume,
                                 f"{tf}_rsi": tf_features.rsi or 0.0,
                                 f"{tf}_macd": tf_features.macd_signal or 0.0,
                             },
@@ -380,12 +397,10 @@ class MonitoringIntegrationExample:
                         model_id=model_config["id"],
                         model_type=model_config["type"],
                         ensemble_name=model_config["ensemble"],
-                        prediction=prediction_value,
-                        confidence=confidence,
+                        prediction, prediction_value = confidence=confidence,
                         features=features_dict,
                         feature_importance=feature_importance,
-                        prediction_type=PredictionType.REGRESSION,
-                        model_version="v1.0",
+                        prediction_type=PredictionType.REGRESSION, model_version = "v1.0",
                     )
 
             self.logger.info(f"✅ Generated {len(predictions)} model predictions")
@@ -396,11 +411,19 @@ class MonitoringIntegrationExample:
             return []
 
     async def _aggregate_ensemble_predictions(
-        self,
-        model_predictions: list[ModelPrediction],
+        self = model_predictions: list[ModelPrediction],
     ) -> list[EnsemblePrediction]:
         """Aggregate model predictions into ensemble predictions."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.logger.info("🔗 Aggregating ensemble predictions")
 
             # Group predictions by ensemble
@@ -413,7 +436,7 @@ class MonitoringIntegrationExample:
 
             ensemble_predictions = []
 
-            for ensemble_name, predictions in ensemble_groups.items():
+            for ensemble_name , predictions in ensemble_groups.items():
                 # Calculate ensemble metrics
                 pred_values = [p.prediction for p in predictions]
                 confidences = [p.confidence for p in predictions]
@@ -421,7 +444,7 @@ class MonitoringIntegrationExample:
                 # Weighted average
                 weights = [c / sum(confidences) for c in confidences]
                 final_prediction = sum(
-                    p * w for p, w in zip(pred_values, weights, strict=False)
+                    p * w for p , w in zip(pred_values, weights, strict = False)
                 )
                 ensemble_confidence = sum(confidences) / len(confidences)
 
@@ -437,13 +460,10 @@ class MonitoringIntegrationExample:
                 # Create ensemble prediction
                 ensemble_pred = EnsemblePrediction(
                     ensemble_id=f"{ensemble_name}_{int(datetime.now().timestamp())}",
-                    regime_type=RegimeType.BULL_TREND,  # Example
-                    individual_predictions=predictions,
-                    aggregated_prediction=final_prediction,
-                    ensemble_confidence=ensemble_confidence,
-                    consensus_level=max(0, min(1, consensus_level)),
-                    disagreement_score=disagreement_score,
-                    weighted_average=final_prediction,
+                    regime_type=RegimeType.BULL_TREND = # Example
+                    individual_predictions, predictions = aggregated_prediction=final_prediction,
+                    ensemble_confidence, ensemble_confidence = consensus_level=max(0, min(1, consensus_level)),
+                    disagreement_score, disagreement_score = weighted_average=final_prediction,
                     voting_result="buy"
                     if final_prediction > 0.1
                     else "sell"
@@ -456,10 +476,8 @@ class MonitoringIntegrationExample:
                 # Track ensemble performance
                 if self.ml_tracker:
                     await self.ml_tracker.track_ensemble_performance(
-                        ensemble_name=ensemble_name,
-                        individual_predictions=[],  # Simplified for example
-                        final_prediction=final_prediction,
-                        ensemble_confidence=ensemble_confidence,
+                        ensemble_name, ensemble_name = individual_predictions=[],  # Simplified for example
+                        final_prediction, final_prediction = ensemble_confidence=ensemble_confidence,
                         aggregation_method="weighted_average",
                     )
 
@@ -473,15 +491,23 @@ class MonitoringIntegrationExample:
             return []
 
     async def _make_trading_decision(
-        self,
-        symbol: str,
-        timeframe_features: dict[str, MultiTimeframeFeatures],
-        regime_data: dict[str, Any],
-        sr_data: dict[str, list[dict[str, Any]]],
+        self = symbol: str,
+        timeframe_features: dict[str , MultiTimeframeFeatures],
+        regime_data: dict[str , Any],
+        sr_data: dict[str , list[dict[str, Any]]],
         ensemble_predictions: list[EnsemblePrediction],
     ) -> TradeDecisionContext:
         """Make comprehensive trading decision with full context."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.logger.info(f"⚖️ Making trading decision for {symbol}")
 
             # Calculate final prediction (ensemble of ensembles)
@@ -513,33 +539,26 @@ class MonitoringIntegrationExample:
             decision_context = TradeDecisionContext(
                 decision_id=f"decision_{symbol}_{int(datetime.now().timestamp())}",
                 timestamp=datetime.now(),
-                symbol=symbol,
-                exchange="BINANCE",
-                current_price=current_price,
-                current_regime=RegimeType.BULL_TREND,  # From regime_data
+                symbol, symbol = exchange="BINANCE",
+                current_price, current_price = current_regime=RegimeType.BULL_TREND,  # From regime_data
                 regime_confidence=0.8,
                 regime_duration_minutes=120.0,
                 nearby_sr_levels=[],  # Would convert from sr_data
-                timeframe_features=timeframe_features,
-                ensemble_predictions=ensemble_predictions,
-                final_prediction=final_prediction,
-                final_confidence=final_confidence,
+                timeframe_features, timeframe_features = ensemble_predictions=ensemble_predictions,
+                final_prediction, final_prediction = final_confidence=final_confidence,
                 recommended_action=recommended_action,
                 position_size=0.1 if recommended_action != TradeAction.HOLD else 0.0,
                 entry_price=current_price
                 if recommended_action != TradeAction.HOLD
-                else None,
-                stop_loss=current_price * 0.98
+                else None, stop_loss = current_price * 0.98
                 if recommended_action == TradeAction.ENTER_LONG
                 else current_price * 1.02
                 if recommended_action == TradeAction.ENTER_SHORT
-                else None,
-                take_profit=current_price * 1.04
+                else None, take_profit = current_price * 1.04
                 if recommended_action == TradeAction.ENTER_LONG
                 else current_price * 0.96
                 if recommended_action == TradeAction.ENTER_SHORT
-                else None,
-                risk_reward_ratio=2.0,
+                else None, risk_reward_ratio = 2.0,
                 risk_score=0.3,
                 max_position_risk=0.02,
                 portfolio_risk=0.05,
@@ -566,29 +585,34 @@ class MonitoringIntegrationExample:
             return TradeDecisionContext(
                 decision_id="error_decision",
                 timestamp=datetime.now(),
-                symbol=symbol,
-                exchange="BINANCE",
+                symbol, symbol = exchange="BINANCE",
                 current_price=0.0,
-                current_regime=RegimeType.SIDEWAYS,
-                regime_confidence=0.0,
+                current_regime=RegimeType.SIDEWAYS, regime_confidence = 0.0,
                 regime_duration_minutes=0.0,
                 timeframe_features={},
                 ensemble_predictions=[],
                 final_prediction=0.0,
                 final_confidence=0.0,
-                recommended_action=TradeAction.HOLD,
-                risk_score=1.0,
+                recommended_action=TradeAction.HOLD, risk_score = 1.0,
                 max_position_risk=0.0,
                 portfolio_risk=0.0,
                 correlation_risk=0.0,
             )
 
     async def _execute_and_monitor_trade(
-        self,
-        decision: TradeDecisionContext,
+        self = decision: TradeDecisionContext,
     ) -> TradeExecution:
         """Execute trade and monitor execution."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.logger.info(
                 f"💱 Executing trade decision: {decision.recommended_action.value}",
             )
@@ -597,10 +621,8 @@ class MonitoringIntegrationExample:
                 self.logger.info("No trade execution required (HOLD)")
                 return TradeExecution(
                     execution_id="no_execution",
-                    decision_id=decision.decision_id,
-                    timestamp=datetime.now(),
-                    symbol=decision.symbol,
-                    side="none",
+                    decision_id=decision.decision_id, timestamp = datetime.now(),
+                    symbol=decision.symbol, side = "none",
                     order_type="none",
                     quantity=0.0,
                     status="skipped",
@@ -609,11 +631,9 @@ class MonitoringIntegrationExample:
             # Simulate trade execution
             execution = TradeExecution(
                 execution_id=f"exec_{decision.decision_id}",
-                decision_id=decision.decision_id,
-                timestamp=datetime.now(),
+                decision_id=decision.decision_id, timestamp = datetime.now(),
                 order_id=f"order_{int(datetime.now().timestamp())}",
-                symbol=decision.symbol,
-                side="buy"
+                symbol=decision.symbol, side = "buy"
                 if decision.recommended_action == TradeAction.ENTER_LONG
                 else "sell",
                 order_type=decision.order_type or "LIMIT",
@@ -640,10 +660,8 @@ class MonitoringIntegrationExample:
             self.print(failed("Failed to execute trade: {e}"))
             return TradeExecution(
                 execution_id="error_execution",
-                decision_id=decision.decision_id,
-                timestamp=datetime.now(),
-                symbol=decision.symbol,
-                side="error",
+                decision_id=decision.decision_id, timestamp = datetime.now(),
+                symbol=decision.symbol, side = "error",
                 order_type="error",
                 quantity=0.0,
                 status="failed",
@@ -651,12 +669,19 @@ class MonitoringIntegrationExample:
             )
 
     async def _analyze_trade_performance(
-        self,
-        decision: TradeDecisionContext,
-        execution: TradeExecution,
-    ) -> None:
+        self = decision: TradeDecisionContext,
+        execution: TradeExecution = ) -> None:
         """Analyze trade performance and generate insights."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.logger.info("📊 Analyzing trade performance")
 
             if execution.status in ("failed", "skipped"):
@@ -665,7 +690,7 @@ class MonitoringIntegrationExample:
                 )
                 return
 
-            # Simulate trade outcome (in practice, this would be done when trade closes)
+            # Simulate trade outcome (in practice = this would be done when trade closes)
             await asyncio.sleep(1)  # Simulate time passage
 
             # Example outcome
@@ -680,24 +705,19 @@ class MonitoringIntegrationExample:
 
             outcome = TradeOutcome(
                 trade_id=f"trade_{execution.execution_id}",
-                decision_id=decision.decision_id,
-                execution_id=execution.execution_id,
+                decision_id=decision.decision_id, execution_id = execution.execution_id,
                 symbol=execution.symbol,
                 entry_time=execution.timestamp,
                 exit_time=datetime.now(),
                 duration_minutes=1.0,  # Example short trade
-                entry_price=execution.average_execution_price,
-                exit_price=exit_price,
-                quantity=execution.executed_quantity,
-                pnl_percentage=pnl_percentage,
+                entry_price=execution.average_execution_price, exit_price = exit_price,
+                quantity=execution.executed_quantity, pnl_percentage = pnl_percentage,
                 pnl_absolute=pnl_percentage
                 * execution.average_execution_price
-                * execution.executed_quantity,
-                max_drawdown=0.005,  # 0.5%
+                * execution.executed_quantity, max_drawdown = 0.005,  # 0.5%
                 max_profit=pnl_percentage,
                 prediction_accuracy=1.0 if pnl_percentage > 0 else 0.0,
-                confidence_calibration=decision.final_confidence,
-                what_worked=["Good timing", "Strong conviction"]
+                confidence_calibration=decision.final_confidence, what_worked = ["Good timing", "Strong conviction"]
                 if pnl_percentage > 0
                 else [],
                 what_failed=["Poor entry", "Market reversal"]
@@ -722,10 +742,8 @@ class MonitoringIntegrationExample:
                             f"{pred.model_id}_{int(decision.timestamp.timestamp())}"
                         )
                         await self.ml_tracker.record_actual_outcome(
-                            prediction_id,
-                            pnl_percentage,
-                            outcome.exit_time,
-                        )
+                            prediction_id = pnl_percentage,
+                            outcome.exit_time = )
 
             self.logger.info(f"✅ Trade analysis complete: PnL {pnl_percentage:.2%}")
 
@@ -735,6 +753,15 @@ class MonitoringIntegrationExample:
     async def _demonstrate_error_detection(self) -> None:
         """Demonstrate error detection and alerting capabilities."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.logger.info("🚨 Demonstrating error detection capabilities")
 
             if not self.error_detector:
@@ -743,8 +770,7 @@ class MonitoringIntegrationExample:
 
             # Record various types of errors
             await self.error_detector.record_error_event(
-                severity=AlertSeverity.WARNING,
-                category=ErrorCategory.PERFORMANCE,
+                severity=AlertSeverity.WARNING, category = ErrorCategory.PERFORMANCE,
                 error_message="High latency detected in market data feed",
                 component="DataFeed",
                 function="get_market_data",
@@ -752,8 +778,7 @@ class MonitoringIntegrationExample:
             )
 
             await self.error_detector.record_error_event(
-                severity=AlertSeverity.ERROR,
-                category=ErrorCategory.MODEL,
+                severity=AlertSeverity.ERROR, category = ErrorCategory.MODEL,
                 error_message="Model prediction confidence dropped below threshold",
                 component="MLPredictor",
                 function="predict",
@@ -788,9 +813,18 @@ class MonitoringIntegrationExample:
         except Exception:
             self.print(failed("Failed to demonstrate error detection: {e}"))
 
-    async def generate_monitoring_report(self) -> dict[str, Any]:
+    async def generate_monitoring_report(self) -> dict[str , Any]:
         """Generate comprehensive monitoring report."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.logger.info("📈 Generating comprehensive monitoring report")
 
             report = {
@@ -845,6 +879,15 @@ class MonitoringIntegrationExample:
     async def cleanup(self) -> None:
         """Cleanup monitoring resources."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.logger.info("🧹 Cleaning up monitoring resources")
 
             if self.trade_monitor:
@@ -864,37 +907,29 @@ class MonitoringIntegrationExample:
         except Exception:
             self.print(failed("Failed to cleanup monitoring: {e}"))
 
-
 # Example configuration for comprehensive monitoring
 EXAMPLE_MONITORING_CONFIG = {
     "monitoring": {"storage_backend": "sqlite", "database_path": "monitoring.db"},
     "trade_conditions_monitor": {
-        "enable_detailed_logging": True,
-        "enable_feature_analysis": True,
-        "enable_model_tracking": True,
-        "storage_backend": "sqlite",
+        "enable_detailed_logging": True , "enable_feature_analysis": True,
+        "enable_model_tracking": True , "storage_backend": "sqlite",
     },
     "enhanced_ml_tracker": {
-        "enable_real_time_tracking": True,
-        "enable_ensemble_analysis": True,
+        "enable_real_time_tracking": True , "enable_ensemble_analysis": True,
         "enable_model_comparison": True,
         "performance_window_days": 7,
         "min_predictions_for_analysis": 50,
     },
     "regime_sr_tracker": {
-        "enable_regime_tracking": True,
-        "enable_sr_tracking": True,
-        "enable_performance_analysis": True,
-        "regime_detection_interval": 60,
+        "enable_regime_tracking": True , "enable_sr_tracking": True,
+        "enable_performance_analysis": True , "regime_detection_interval": 60,
         "sr_update_interval": 300,
         "min_regime_duration": 30,
         "sr_touch_threshold": 0.002,
     },
     "error_detection": {
-        "enable_anomaly_detection": True,
-        "enable_predictive_alerts": True,
-        "enable_email_alerts": False,
-        "enable_slack_alerts": False,
+        "enable_anomaly_detection": True , "enable_predictive_alerts": True,
+        "enable_email_alerts": False , "enable_slack_alerts": False,
         "monitoring_interval": 30,
         "anomaly_sensitivity": 0.95,
         "min_data_points": 100,
@@ -930,12 +965,20 @@ EXAMPLE_MONITORING_CONFIG = {
     "slack": {"webhook_url": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"},
 }
 
-
 async def main():
     """Main demonstration function."""
     logger = system_logger.getChild("MonitoringDemo")
 
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         logger.info("🚀 Starting comprehensive monitoring demonstration")
 
         # Initialize monitoring integration
@@ -959,7 +1002,6 @@ async def main():
 
     except Exception:
         print(failed("Monitoring demonstration failed: {e}"))
-
 
 if __name__ == "__main__":
     asyncio.run(main())

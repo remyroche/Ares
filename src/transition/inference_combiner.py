@@ -1,22 +1,20 @@
 # src/transition/inference_combiner.py
 
 from __future__ import annotations
-
-from dataclasses import dataclass
-from typing import Any, Dict
+from src.utils.logger import system_logger
+from typing import Any
 import json
 import os
-
-from src.utils.logger import system_logger
+from dataclasses import dataclass
 
 
 @dataclass
 class EnsembleConfig:
-    weights: Dict[str, float]
-    macro_thresholds: Dict[
-        str, Dict[str, Dict[str, float]]
+    weights: dict[str, float]
+    macro_thresholds: dict[
+        str, dict[str, dict[str, float]],
     ]  # regime -> timeframe -> {class: thr}
-    timeframe_thresholds: Dict[str, Dict[str, float]]  # timeframe -> {class: thr}
+    timeframe_thresholds: dict[str, dict[str, float]]  # timeframe -> {class: thr}
     reliability_path: str | None
 
 
@@ -33,24 +31,25 @@ class TransitionInferenceCombiner:
         inf = tm.get("inference", {}) or {}
         seq = tm.get("seq2seq", {}) or {}
         artifact_dir = str(
-            seq.get("artifact_dir_models", "checkpoints/transition_models")
+            seq.get("artifact_dir_models", "checkpoints/transition_models"),
         )
         self.cfg = EnsembleConfig(
             weights=ens.get(
-                "weights", {"1m": 0.3, "5m": 0.3, "15m": 0.25, "30m": 0.15}
+                "weights",
+                {"1m": 0.3, "5m": 0.3, "15m": 0.25, "30m": 0.15},
             ),
             macro_thresholds=inf.get("macro_regime_thresholds", {}),
             timeframe_thresholds=inf.get("path_class_thresholds", {}),
             reliability_path=os.path.join(artifact_dir, "reliability.json"),
         )
-        self.reliability: Dict[str, Dict[str, float]] = self._load_reliability(
-            self.cfg.reliability_path
+        self.reliability: dict[str, dict[str, float]] = self._load_reliability(
+            self.cfg.reliability_path,
         )
 
-    def _load_reliability(self, path: str | None) -> Dict[str, Dict[str, float]]:
+    def _load_reliability(self, path: str | None) -> dict[str, dict[str, float]]:
         try:
             if path and os.path.exists(path):
-                with open(path, "r") as f:
+                with open(path) as f:
                     data = json.load(f)
                 # Expecting {timeframe: {path_class: scale}}
                 if isinstance(data, dict):
@@ -66,19 +65,18 @@ class TransitionInferenceCombiner:
     def _apply_reliability(self, timeframe: str, cls: str, p: float) -> float:
         # Simple multiplicative scaling; can be replaced by calibrated curves later
         s = float(self.reliability.get(timeframe, {}).get(cls, 1.0))
-        out = max(0.0, min(1.0, p * s))
-        return out
+        return max(0.0, min(1.0, p * s))
 
     def combine_probs(
         self,
-        path_probs_by_timeframe: Dict[str, Dict[str, float]],
-    ) -> Dict[str, float]:
+        path_probs_by_timeframe: dict[str, dict[str, float]],
+    ) -> dict[str, float]:
         """
         Weighted average of path_class probabilities across configured timeframes, after reliability scaling.
         path_probs_by_timeframe: {timeframe: {"continuation": p, "reversal": p, "beginning_of_trend": p, "end_of_trend": p}}
         """
         classes = ["continuation", "reversal", "beginning_of_trend", "end_of_trend"]
-        combined: Dict[str, float] = {c: 0.0 for c in classes}
+        combined: dict[str, float] = {c: 0.0 for c in classes}
         weight_sum = 0.0
         for tf, probs in path_probs_by_timeframe.items():
             w = float(self.cfg.weights.get(tf, 0.0))
@@ -96,10 +94,10 @@ class TransitionInferenceCombiner:
 
     def gate_decision(
         self,
-        combined_probs: Dict[str, float],
-        timeframe: str,
+        combined_probs: dict[str, float],
+        timeframe: str = None,
         macro_regime: str | None = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Decide if trade is allowed given thresholds. Neutral to long/short: we only check if favorable classes exceed thresholds.
         Returns a dict with gating flag and which class triggered it.
@@ -125,9 +123,9 @@ class TransitionInferenceCombiner:
 
     def exit_bias(
         self,
-        path_probs_1m: Dict[str, float],
-        position_side: str = "long",
-    ) -> Dict[str, Any]:
+        path_probs_1m: dict[str, float],
+        _position_side: str = "long",
+    ) -> dict[str, Any]:
         """
         Conservative exit logic:
           - Compute exit_bias = P(reversal) - max(P(continuation), P(beginning_of_trend)) using 1m probabilities (reliability-adjusted)
@@ -136,7 +134,9 @@ class TransitionInferenceCombiner:
         """
         # Reliability-adjusted 1m
         r_cont = self._apply_reliability(
-            "1m", "continuation", float(path_probs_1m.get("continuation", 0.0))
+            "1m",
+            "continuation",
+            float(path_probs_1m.get("continuation", 0.0)),
         )
         r_bot = self._apply_reliability(
             "1m",
@@ -144,7 +144,9 @@ class TransitionInferenceCombiner:
             float(path_probs_1m.get("beginning_of_trend", 0.0)),
         )
         r_rev = self._apply_reliability(
-            "1m", "reversal", float(path_probs_1m.get("reversal", 0.0))
+            "1m",
+            "reversal",
+            float(path_probs_1m.get("reversal", 0.0)),
         )
         favorable = max(r_cont, r_bot)
         adverse = r_rev

@@ -1,6 +1,7 @@
 # src/training/steps/step8_tactician_labeling.py
 
 import asyncio
+import contextlib
 import os
 import pickle
 from pathlib import Path
@@ -9,14 +10,10 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors
-from src.utils.warning_symbols import (
-    error,
-    failed,
-)
-from src.training.steps.unified_data_loader import get_unified_data_loader
 from src.training.data_sharing_manager import get_data_sharing_manager
+from src.training.steps.unified_data_loader import get_unified_data_loader
+from src.utils.error_handler import handle_errors
+from src.utils.logger import system_logger
 
 # Preference order for selecting analyst ensembles
 ENSEMBLE_PREFERENCE_ORDER = ("stacking_cv", "dynamic_weighting", "voting")
@@ -25,14 +22,13 @@ ENSEMBLE_PREFERENCE_ORDER = ("stacking_cv", "dynamic_weighting", "voting")
 
 
 class TacticianTripleBarrierLabeler:
-    """
-    Applies a triple barrier to generate labels specifically for a short-term, high-leverage Tactician model.
+    """Applies a triple barrier to generate labels specifically for a short-term, high-leverage Tactician model.
 
     This labeler uses FIXED PERCENTAGE barriers and a short time horizon to reward
     models that can accurately predict immediate, favorable price action under strict risk parameters.
     """
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config.get("tactician_triple_barrier", {})
         self.logger = system_logger.getChild("TacticianTripleBarrierLabeler")
 
@@ -41,8 +37,7 @@ class TacticianTripleBarrierLabeler:
         data: pd.DataFrame,
         strategic_signals: pd.Series,
     ) -> pd.DataFrame:
-        """
-        Vectorized application of the triple barrier method.
+        """Vectorized application of the triple barrier method.
 
         Args:
             data: The 1-minute market data (must contain OHLC columns).
@@ -51,6 +46,7 @@ class TacticianTripleBarrierLabeler:
 
         Returns:
             A DataFrame with the new 'tactician_label' column.
+
         """
         self.logger.info(
             "🔧 Applying specialized Tactician triple barrier labels using fixed percentages...",
@@ -86,7 +82,7 @@ class TacticianTripleBarrierLabeler:
         stop_barriers = entry_prices * (1 - sl_pct * entry_points.values)
 
         labels = pd.Series(
-            -1, index=data.index
+            -1, index=data.index,
         )  # Default to sell signal for binary classification
 
         # Vectorized barrier check
@@ -127,7 +123,7 @@ class TacticianTripleBarrierLabeler:
 class TacticianLabelingStep:
     """Step 8: Tactician Model Labeling using Analyst's model."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
 
@@ -160,7 +156,7 @@ class TacticianLabelingStep:
 
             # Use data sharing manager to get comprehensive data for tactician labeling
             self.logger.info(
-                "🔄 Loading unified data for tactician labeling via data sharing manager..."
+                "🔄 Loading unified data for tactician labeling via data sharing manager...",
             )
             data_sharing_manager = get_data_sharing_manager(self.config)
             timeframe = training_input.get("timeframe", "1m")
@@ -169,13 +165,11 @@ class TacticianLabelingStep:
             # Use data sharing manager to avoid redundant loading
             from src.config.constants import (
                 BLANK_TRAINING_LOOKBACK_DAYS,
-                FULL_TRAINING_LOOKBACK_DAYS,
-                SHORT_BLANK_LOOKBACK_DAYS,
             )
 
             # Use lookback_days from config (should be passed from enhanced training manager)
             config_lookback = self.config.get(
-                "lookback_days", BLANK_TRAINING_LOOKBACK_DAYS
+                "lookback_days", BLANK_TRAINING_LOOKBACK_DAYS,
             )
             data_1m = await data_sharing_manager.get_unified_data(
                 symbol=symbol,
@@ -187,7 +181,7 @@ class TacticianLabelingStep:
 
             if data_1m is None or data_1m.empty:
                 self.logger.error(
-                    f"🚨 No unified data found for {symbol} on {exchange}"
+                    f"🚨 No unified data found for {symbol} on {exchange}",
                 )
                 return {
                     "status": "FAILED",
@@ -206,10 +200,10 @@ class TacticianLabelingStep:
                 }
             self.logger.info(f"✅ Loaded unified data: {data_info['rows']} rows")
             self.logger.info(
-                f"   Date range: {data_info['date_range']['start']} to {data_info['date_range']['end']}"
+                f"   Date range: {data_info['date_range']['start']} to {data_info['date_range']['end']}",
             )
             self.logger.info(
-                f"   Has aggtrades data: {data_info['has_aggtrades_data']}"
+                f"   Has aggtrades data: {data_info['has_aggtrades_data']}",
             )
             self.logger.info(f"   Has futures data: {data_info['has_futures_data']}")
 
@@ -224,12 +218,10 @@ class TacticianLabelingStep:
                     "status": "FAILED",
                     "error": f"Missing required columns: {missing_columns}",
                 }
-            try:
+            with contextlib.suppress(Exception):
                 self.logger.info(
                     f"Loaded 1m data: shape={getattr(data_1m, 'shape', None)}, columns={list(getattr(data_1m, 'columns', [])[:10])}",
                 )
-            except Exception:
-                pass
 
             # Load analyst ensemble models
             analyst_ensembles = self._load_analyst_ensembles(data_dir)
@@ -243,12 +235,10 @@ class TacticianLabelingStep:
             # Apply the specialized Tactician Triple Barrier
             labeler = TacticianTripleBarrierLabeler(self.config)
             labeled_data = labeler.apply_labels(data_with_features, strategic_signals)
-            try:
+            with contextlib.suppress(Exception):
                 self.logger.info(
                     f"Strategic signals summary: total={len(strategic_signals)}, nonzero={(strategic_signals != 0).sum()}",
                 )
-            except Exception:
-                pass
 
             # Save results
             labeled_file, signals_file = self._save_results(
@@ -270,7 +260,7 @@ class TacticianLabelingStep:
                 "signals_file": signals_file,
             }
         except Exception as e:
-            self.logger.error(f"❌ Error in Tactician Labeling: {e}")
+            self.logger.exception(f"❌ Error in Tactician Labeling: {e}")
             return {"status": "FAILED", "error": str(e)}
 
     def _load_analyst_ensembles(self, data_dir: str) -> dict[str, Any]:
@@ -358,8 +348,7 @@ class TacticianLabelingStep:
         return data_with_features, all_signals
 
     def _get_market_regime(self, data: pd.DataFrame) -> pd.Series:
-        """
-        Placeholder for your market regime detection logic.
+        """Placeholder for your market regime detection logic.
         This should be consistent with the logic from step4_regime_specific_training.
         """
         # Example: Simple regime based on volatility percentile
@@ -406,7 +395,7 @@ class TacticianLabelingStep:
                     row_group_size=128_000,
                 )
             except Exception:
-                from src.utils.logger import log_io_operation, log_dataframe_overview
+                from src.utils.logger import log_dataframe_overview, log_io_operation
 
                 with log_io_operation(
                     self.logger,
@@ -415,14 +404,12 @@ class TacticianLabelingStep:
                     compression="snappy",
                 ):
                     labeled_data.to_parquet(
-                        labeled_file_parquet, compression="snappy", index=False
+                        labeled_file_parquet, compression="snappy", index=False,
                     )
-                try:
+                with contextlib.suppress(Exception):
                     log_dataframe_overview(
-                        self.logger, labeled_data, name="labeled_data"
+                        self.logger, labeled_data, name="labeled_data",
                     )
-                except Exception:
-                    pass
         except Exception:
             # Fallback to Pickle for compatibility
             labeled_file_pickle = (
@@ -451,7 +438,7 @@ class TacticianLabelingStep:
                     row_group_size=128_000,
                 )
             except Exception:
-                from src.utils.logger import log_io_operation, log_dataframe_overview
+                from src.utils.logger import log_dataframe_overview, log_io_operation
 
                 with log_io_operation(
                     self.logger,
@@ -460,12 +447,10 @@ class TacticianLabelingStep:
                     compression="snappy",
                 ):
                     _signals_df.to_parquet(
-                        signals_file_parquet, compression="snappy", index=False
+                        signals_file_parquet, compression="snappy", index=False,
                     )
-                try:
+                with contextlib.suppress(Exception):
                     log_dataframe_overview(self.logger, _signals_df, name="signals_df")
-                except Exception:
-                    pass
         except Exception:
             signals_file_pickle = (
                 f"{data_dir}/{exchange}_{symbol}_strategic_signals.pkl"
@@ -478,21 +463,21 @@ class TacticianLabelingStep:
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
-    validate_step_prerequisites,
-    secure_data_processing,
-    prevent_data_leakage,
-    resource_monitor,
-    memory_efficient,
-    debug_training_step,
+    artifact_versioning,
+    artifact_write_lock,
     circuit_breaker_protection,
-    validate_step_output,
-    quality_gate,
+    debug_training_step,
     deterministic_seed,
     idempotent_step,
-    artifact_write_lock,
+    memory_efficient,
     nan_inf_and_constant_guard,
-    artifact_versioning,
+    prevent_data_leakage,
+    quality_gate,
+    resource_monitor,
+    secure_data_processing,
     time_budget_watchdog,
+    validate_step_output,
+    validate_step_prerequisites,
 )
 
 
@@ -515,7 +500,7 @@ from src.utils.training_pipeline_decorators import (
     context="Tactician Labeling",
 )
 @secure_data_processing(
-    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True
+    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
 @prevent_data_leakage(
     temporal_validation=True,
@@ -530,7 +515,7 @@ from src.utils.training_pipeline_decorators import (
     auto_cleanup=True,
 )
 @memory_efficient(
-    chunk_size=20000, streaming_processing=True, memory_pool=True, cleanup_frequency=40
+    chunk_size=20000, streaming_processing=True, memory_pool=True, cleanup_frequency=40,
 )
 @debug_training_step(
     log_intermediate_results=True,
@@ -564,86 +549,25 @@ async def run_step(
     force_rerun: bool = False,
     **kwargs,
 ) -> bool:
-    """
-    Run the tactician labeling step - IMPROVED VERSION.
-
-    IMPROVEMENTS:
-    - Enhanced configuration management with validation
-    - Better error handling and logging
-    - Performance monitoring and metrics
-    - Memory management and cleanup
-    - Parallel processing capabilities
-    - Advanced labeling validation
+    """Run the tactician labeling step.
 
     Args:
         symbol: Trading symbol
         exchange: Exchange name
         data_dir: Data directory path
-        force_rerun: Force rerun flag
         **kwargs: Additional parameters
 
     Returns:
         bool: True if successful, False otherwise
+
     """
-    import time
-    start_time = time.time()
-    
     try:
-        from src.utils.logger import system_logger
-        
-        # Enhanced configuration with validation
-        config = {
-            "symbol": symbol,
-            "exchange": exchange,
-            "data_dir": data_dir,
-            "force_rerun": force_rerun,
-            "enable_parallel_processing": kwargs.get("enable_parallel_processing", True),
-            "max_workers": kwargs.get("max_workers", 4),
-            "memory_limit_gb": kwargs.get("memory_limit_gb", 8.0),
-            "tactician_triple_barrier": {
-                "profit_take_pct": kwargs.get("profit_take_pct", 0.005),
-                "stop_loss_pct": kwargs.get("stop_loss_pct", 0.0025),
-                "time_barrier_periods": kwargs.get("time_barrier_periods", 30),
-            },
-            "validation_split": kwargs.get("validation_split", 0.2),
-            "test_split": kwargs.get("test_split", 0.2),
-            "random_state": kwargs.get("random_state", 42),
-        }
-        
-        # Validate configuration
-        if not config["symbol"]:
-            raise ValueError("Symbol cannot be empty")
-        
-        if not config["exchange"]:
-            raise ValueError("Exchange cannot be empty")
-        
-        if not config["data_dir"]:
-            raise ValueError("Data directory cannot be empty")
-        
-        if config["memory_limit_gb"] <= 0:
-            raise ValueError("Memory limit must be positive")
-        
-        if config["max_workers"] <= 0:
-            raise ValueError("Max workers must be positive")
-        
-        system_logger.info("🚀 Starting Tactician Labeling step - IMPROVED VERSION")
-        system_logger.info(f"📋 Configuration: {len(config)} parameters")
-        system_logger.info(f"   - Symbol: {symbol}")
-        system_logger.info(f"   - Exchange: {exchange}")
-        system_logger.info(f"   - Parallel processing: {'Enabled' if config['enable_parallel_processing'] else 'Disabled'}")
-        system_logger.info(f"   - Profit take: {config['tactician_triple_barrier']['profit_take_pct']*100}%")
-        system_logger.info(f"   - Stop loss: {config['tactician_triple_barrier']['stop_loss_pct']*100}%")
+        # Create step instance
+        config = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}
+        step = TacticianLabelingStep(config)
+        await step.initialize()
 
-        # Create step instance with enhanced error handling
-        try:
-            step = TacticianLabelingStep(config)
-            await step.initialize()
-            system_logger.info("✅ Tactician labeling step initialized successfully")
-        except Exception as e:
-            system_logger.error(f"❌ Failed to initialize tactician labeling step: {e}")
-            raise
-
-        # Execute step with enhanced monitoring
+        # Execute step
         training_input = {
             "symbol": symbol,
             "exchange": exchange,
@@ -653,50 +577,17 @@ async def run_step(
         }
 
         pipeline_state = {}
-        
-        try:
-            result = await step.execute(training_input, pipeline_state)
-            
-            if result.get("status") == "SUCCESS":
-                # Log completion metrics
-                total_time = time.time() - start_time
-                system_logger.info("✅ Tactician labeling step completed successfully")
-                system_logger.info(f"   ⏱️ Total time: {total_time:.2f}s")
-                system_logger.info(f"   📊 Configuration: {len(config)} parameters")
-                system_logger.info(f"   🔧 Parallel processing: {'Enabled' if config['enable_parallel_processing'] else 'Disabled'}")
-                
-                # Log result details if available
-                if "metrics" in result:
-                    metrics = result["metrics"]
-                    system_logger.info(f"   📈 Labeling metrics:")
-                    for metric_name, metric_value in metrics.items():
-                        system_logger.info(f"      - {metric_name}: {metric_value}")
-                
-                # Memory cleanup
-                import gc
-                gc.collect()
-                
-                return True
-            else:
-                error_msg = result.get('error', 'Unknown error')
-                system_logger.error(f"❌ Tactician labeling step failed: {error_msg}")
-                return False
-                
-        except Exception as e:
-            system_logger.error(f"❌ Error during tactician labeling execution: {e}")
-            return False
+        result = await step.execute(training_input, pipeline_state)
 
-    except Exception as e:
-        total_time = time.time() - start_time
-        system_logger.error(f"❌ Error in tactician labeling step: {e}")
-        system_logger.error(f"   Execution time: {total_time:.2f}s")
+        return result.get("status") == "SUCCESS"
+
+    except Exception:
         return False
 
 
 if __name__ == "__main__":
     # Test the step
-    async def test():
-        result = await run_step("ETHUSDT", "BINANCE", "data/training")
-        print(f"Test result: {result}")
+    async def test() -> None:
+        await run_step("ETHUSDT", "BINANCE", "data/training")
 
     asyncio.run(test())

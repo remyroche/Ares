@@ -4,10 +4,10 @@
 Type-safe configuration management with runtime validation.
 """
 
-import json
-import logging
 from pathlib import Path
 from typing import Any
+import json
+import logging
 
 from src.custom_types import (
     ConfigDict,
@@ -18,15 +18,12 @@ from src.custom_types import (
     SystemConfig,
     TradingConfig,
     TrainingConfig,
-)
-from src.custom_types.validation import (
     RuntimeTypeError,
     TypeValidator,
     validate_config,
 )
 
 logger = logging.getLogger(__name__)
-
 
 class TypedConfigManager:
     """
@@ -101,7 +98,7 @@ class TypedConfigManager:
                 config["exchanges"] = {}
                 for exchange_name, exchange_config in raw_config["exchanges"].items():
                     config["exchanges"][exchange_name] = self._validate_exchange_config(
-                        exchange_config,
+                        exchange_config
                     )
 
             # Validate trading configuration
@@ -132,8 +129,7 @@ class TypedConfigManager:
 
         except (KeyError, TypeError, ValueError) as e:
             raise RuntimeTypeError(
-                ConfigDict,
-                raw_config,
+                ConfigDict, raw_config,
                 f"Configuration validation: {e}",
             )
 
@@ -156,8 +152,7 @@ class TypedConfigManager:
     def _validate_monitoring_config(self, config: dict[str, Any]) -> MonitoringConfig:
         """Validate monitoring configuration."""
         return self._validator.validate_type(
-            config,
-            MonitoringConfig,
+            config, MonitoringConfig,
             "monitoring_config",
         )
 
@@ -249,10 +244,8 @@ class TypedConfigManager:
 
         logger.info(f"Configuration saved to {save_path}")
 
-
 # Global typed config manager
 _global_config_manager: TypedConfigManager | None = None
-
 
 def get_typed_config_manager() -> TypedConfigManager:
     """Get the global typed configuration manager."""
@@ -261,12 +254,10 @@ def get_typed_config_manager() -> TypedConfigManager:
         _global_config_manager = TypedConfigManager()
     return _global_config_manager
 
-
 def load_typed_config(config_path: str) -> ConfigDict:
     """Load typed configuration from file."""
     manager = get_typed_config_manager()
     return manager.load_config(config_path)
-
 
 def get_typed_config() -> ConfigDict:
     """Get current typed configuration."""

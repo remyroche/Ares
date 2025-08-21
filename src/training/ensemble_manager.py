@@ -8,33 +8,29 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
+from src.utils.trading_decorators import (
+    comprehensive_model_decorator,
+    get_trade_tracker,
+)
 from src.utils.warning_symbols import (
     error,
     failed,
     invalid,
     warning,
 )
-from src.utils.trading_decorators import (
-    comprehensive_model_decorator,
-    track_model_performance,
-    monitor_performance,
-    retry_with_backoff,
-    get_trade_tracker
-)
 
 
 class EnsembleManager:
-    """
-    Ensemble manager responsible for creating and managing model ensembles.
+    """Ensemble manager responsible for creating and managing model ensembles.
     This module handles ensemble creation, optimization, and management.
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
-        Initialize ensemble manager.
+        """Initialize ensemble manager.
 
         Args:
             config: Configuration dictionary
+
         """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("EnsembleManager")
@@ -57,7 +53,7 @@ class EnsembleManager:
             "enable_ensemble_optimization",
             True,
         )
-        
+
         # Trade tracking
         self.trade_tracker = get_trade_tracker()
 
@@ -71,11 +67,11 @@ class EnsembleManager:
         context="ensemble manager initialization",
     )
     async def initialize(self) -> bool:
-        """
-        Initialize ensemble manager.
+        """Initialize ensemble manager.
 
         Returns:
             bool: True if initialization successful, False otherwise
+
         """
         try:
             self.logger.info("Initializing Ensemble Manager...")
@@ -103,11 +99,11 @@ class EnsembleManager:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """
-        Validate ensemble manager configuration.
+        """Validate ensemble manager configuration.
 
         Returns:
             bool: True if configuration is valid, False otherwise
+
         """
         try:
             # Validate ensemble manager specific settings
@@ -161,15 +157,14 @@ class EnsembleManager:
         capture_feature_importance=True,
         capture_confidence=True,
         retry_attempts=3,
-        alert_threshold_ms=20000.0  # 20 seconds for ensemble creation
+        alert_threshold_ms=20000.0,  # 20 seconds for ensemble creation
     )
     async def create_ensembles(
         self,
         optimization_results: dict[str, Any],
         training_input: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """
-        Create ensembles from optimized models.
+        """Create ensembles from optimized models.
 
         Args:
             optimization_results: Results from model optimization
@@ -177,6 +172,7 @@ class EnsembleManager:
 
         Returns:
             dict: Ensemble creation results
+
         """
         try:
             self.logger.info("🎯 Starting ensemble creation...")
@@ -247,8 +243,7 @@ class EnsembleManager:
         optimization_results: dict[str, Any],
         training_input: dict[str, Any],
     ) -> bool:
-        """
-        Validate ensemble input parameters.
+        """Validate ensemble input parameters.
 
         Args:
             optimization_results: Results from model optimization
@@ -256,6 +251,7 @@ class EnsembleManager:
 
         Returns:
             bool: True if inputs are valid, False otherwise
+
         """
         try:
             # Validate optimization results
@@ -291,8 +287,7 @@ class EnsembleManager:
         optimization_results: dict[str, Any],
         training_input: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """
-        Create analyst model ensembles.
+        """Create analyst model ensembles.
 
         Args:
             optimization_results: Results from model optimization
@@ -300,6 +295,7 @@ class EnsembleManager:
 
         Returns:
             dict: Analyst ensemble creation results
+
         """
         try:
             self.logger.info("🧠 Creating analyst ensembles...")
@@ -357,8 +353,7 @@ class EnsembleManager:
         optimization_results: dict[str, Any],
         training_input: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """
-        Create tactician model ensembles.
+        """Create tactician model ensembles.
 
         Args:
             optimization_results: Results from model optimization
@@ -366,6 +361,7 @@ class EnsembleManager:
 
         Returns:
             dict: Tactician ensemble creation results
+
         """
         try:
             self.logger.info("🎯 Creating tactician ensembles...")
@@ -411,8 +407,7 @@ class EnsembleManager:
         analyst_models: dict[str, Any],
         training_input: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """
-        Create multi-timeframe ensemble for analyst models.
+        """Create multi-timeframe ensemble for analyst models.
 
         Args:
             analyst_models: Optimized analyst models
@@ -420,6 +415,7 @@ class EnsembleManager:
 
         Returns:
             dict: Multi-timeframe ensemble result
+
         """
         try:
             self.logger.info("🧠 Creating multi-timeframe analyst ensemble...")
@@ -460,8 +456,7 @@ class EnsembleManager:
         timeframe: str,
         training_input: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """
-        Create ensemble for a specific timeframe.
+        """Create ensemble for a specific timeframe.
 
         Args:
             timeframe_models: Models for the specific timeframe
@@ -470,6 +465,7 @@ class EnsembleManager:
 
         Returns:
             dict: Timeframe ensemble result
+
         """
         try:
             self.logger.info(f"🧠 Creating {timeframe} timeframe ensemble...")
@@ -509,8 +505,7 @@ class EnsembleManager:
         tactician_models: dict[str, Any],
         training_input: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """
-        Create single ensemble for tactician models.
+        """Create single ensemble for tactician models.
 
         Args:
             tactician_models: Optimized tactician models
@@ -518,6 +513,7 @@ class EnsembleManager:
 
         Returns:
             dict: Tactician ensemble result
+
         """
         try:
             self.logger.info("🎯 Creating tactician single ensemble...")
@@ -557,8 +553,7 @@ class EnsembleManager:
         ensembles: dict[str, Any],
         ensemble_type: str,
     ) -> dict[str, Any] | None:
-        """
-        Optimize ensembles.
+        """Optimize ensembles.
 
         Args:
             ensembles: Ensembles to optimize
@@ -566,6 +561,7 @@ class EnsembleManager:
 
         Returns:
             dict: Optimized ensembles
+
         """
         try:
             self.logger.info(f"🔧 Optimizing {ensemble_type} ensembles...")
@@ -603,8 +599,7 @@ class EnsembleManager:
         ensemble_name: str,
         ensemble_type: str,
     ) -> dict[str, Any] | None:
-        """
-        Optimize a single ensemble.
+        """Optimize a single ensemble.
 
         Args:
             ensemble: Ensemble to optimize
@@ -613,6 +608,7 @@ class EnsembleManager:
 
         Returns:
             dict: Optimized ensemble
+
         """
         try:
             self.logger.info(f"🔧 Optimizing {ensemble_type} ensemble: {ensemble_name}")
@@ -641,11 +637,11 @@ class EnsembleManager:
         context="ensemble results storage",
     )
     async def _store_ensemble_results(self, ensemble_results: dict[str, Any]) -> None:
-        """
-        Store ensemble results.
+        """Store ensemble results.
 
         Args:
             ensemble_results: Ensemble results to store
+
         """
         try:
             self.logger.info("📁 Storing ensemble results...")
@@ -662,11 +658,11 @@ class EnsembleManager:
             self.print(failed(error_msg))
 
     def get_ensemble_status(self) -> dict[str, Any]:
-        """
-        Get current ensemble status.
+        """Get current ensemble status.
 
         Returns:
             dict: Ensemble status information
+
         """
         return {
             "is_creating_ensembles": self.is_creating_ensembles,
@@ -677,11 +673,11 @@ class EnsembleManager:
         }
 
     def get_ensemble_results(self) -> dict[str, Any]:
-        """
-        Get the latest ensemble results.
+        """Get the latest ensemble results.
 
         Returns:
             dict: Ensemble results
+
         """
         return self.ensemble_results.copy()
 
@@ -710,14 +706,14 @@ class EnsembleManager:
 async def setup_ensemble_manager(
     config: dict[str, Any] | None = None,
 ) -> EnsembleManager | None:
-    """
-    Setup and return a configured EnsembleManager instance.
+    """Setup and return a configured EnsembleManager instance.
 
     Args:
         config: Configuration dictionary
 
     Returns:
         EnsembleManager: Configured ensemble manager instance
+
     """
     try:
         manager = EnsembleManager(config or {})

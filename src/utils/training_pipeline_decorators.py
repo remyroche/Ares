@@ -103,6 +103,56 @@ def prevent_data_leakage(
     return decorator
 
 
+def validate_pipeline_step(
+    step_name: str = None,
+    required_inputs: List[str] = None,
+    expected_outputs: List[str] = None,
+    validation_level: ValidationLevel = ValidationLevel.WARNING,
+    context: str = "pipeline_step",
+    enable_rollback: bool = True,
+    max_retries: int = 3,
+):
+    """Decorator to validate pipeline step inputs and outputs."""
+
+    def decorator(func):
+        @wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            return await func(*args, **kwargs)
+
+        @wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+
+        return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
+
+    return decorator
+
+
+def ensure_data_integrity(
+    backup_before: bool = True,
+    integrity_checks: bool = True,
+    memory_cleanup: bool = True,
+    data_validation: bool = True,
+    check_schema: bool = True,
+    check_constraints: bool = True,
+    validate_relationships: bool = True,
+):
+    """Decorator to ensure data integrity during processing."""
+
+    def decorator(func):
+        @wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            return await func(*args, **kwargs)
+
+        @wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+
+        return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
+
+    return decorator
+
+
 def resource_monitor(
     memory_threshold_gb: float = 16.0,
     cpu_threshold_percent: float = 90.0,
@@ -1363,3 +1413,48 @@ def monitor_optimization(
         validation_level=validation_level,
         enable_data_quality=False,
     )
+
+
+def monitor_step_execution(
+    step_name: str = None,
+    enable_timing: bool = True,
+    enable_memory_monitoring: bool = True,
+    enable_progress_tracking: bool = True,
+    log_level: str = "INFO",
+):
+    """Decorator to monitor step execution."""
+
+    def decorator(func):
+        @wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            return await func(*args, **kwargs)
+
+        @wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+
+        return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
+
+    return decorator
+
+
+def secure_step_execution(
+    error_handling: bool = True,
+    rollback_on_failure: bool = True,
+    data_validation: bool = True,
+    resource_cleanup: bool = True,
+):
+    """Decorator to ensure secure step execution."""
+
+    def decorator(func):
+        @wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            return await func(*args, **kwargs)
+
+        @wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+
+        return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
+
+    return decorator

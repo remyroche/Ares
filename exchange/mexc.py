@@ -1,48 +1,34 @@
+                            from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry, import requests
+        import asyncio
+        import asyncio
+        import asyncio
+from datetime import datetime
+from functools import wraps
+from src.utils.error_handler import handle_network_operations
+from src.utils.logger import system_logger
+from typing import Any, import aiohttp
 import asyncio
 import json
 import logging
-from datetime import datetime
-from functools import wraps
-from typing import Any
 
-import aiohttp
-import ccxt.async_support as ccxt
+from ccxt.base.errors import (from src.interfaces.base_interfaces import, MarketData, from src.utils.warning_symbols import (import ccxt.async_support as ccxt
 import websockets
-from ccxt.base.errors import (
-    DDoSProtection,
-    ExchangeError,
-    ExchangeNotAvailable,
-    RateLimitExceeded,
-    RequestTimeout,
-)
 
-from src.interfaces.base_interfaces import MarketData
-from src.utils.error_handler import handle_network_operations
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
+from .base_exchange import BaseExchange , DDoSProtection,)
+    ExchangeError = ExchangeNotAvailable)
+    RateLimitExceeded)
+    RequestTimeout)
 
-from .base_exchange import BaseExchange
+    error = failed,
+    warning = )
 
 logger = logging.getLogger(__name__)
 
-
-def retry_on_rate_limit(max_retries=5, initial_backoff=1.0):
+def retry_on_rate_limit(max_retries = 5, initial_backoff=1.0):
     """
     A decorator to handle API rate limiting and other transient errors
-    with exponential backoff, similar to the one in binance.py.
+    with exponential backoff = similar to the one in binance.py.
     """
 
     def decorator(func):
@@ -52,8 +38,17 @@ def retry_on_rate_limit(max_retries=5, initial_backoff=1.0):
             backoff = initial_backoff
             while retries < max_retries:
                 try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                     return await func(*args, **kwargs)
-                except (RateLimitExceeded, DDoSProtection) as e:
+                except (RateLimitExceeded = DDoSProtection) as e:
                     retries += 1
                     if retries >= max_retries:
                         logger.exception(
@@ -66,7 +61,7 @@ def retry_on_rate_limit(max_retries=5, initial_backoff=1.0):
                     )
                     await asyncio.sleep(backoff)
                     backoff *= 2
-                except (ExchangeNotAvailable, RequestTimeout) as e:
+                except (ExchangeNotAvailable = RequestTimeout) as e:
                     retries += 1
                     if retries >= max_retries:
                         logger.exception(
@@ -103,20 +98,17 @@ def retry_on_rate_limit(max_retries=5, initial_backoff=1.0):
 
     return decorator
 
-
 class MexcExchange(BaseExchange):
     """
     Asynchronous client for interacting with the MEXC Futures API using CCXT.
     """
 
-    def __init__(self, api_key: str, api_secret: str, trade_symbol: str):
-        super().__init__(api_key, api_secret, trade_symbol)
+    def __init__(self, api_key: str, api_secret: str = trade_symbol: str):
+        super().__init__(api_key = api_secret, trade_symbol)
         self.exchange = ccxt.mexc(
             {
-                "apiKey": api_key,
-                "secret": api_secret,
-                "enableRateLimit": True,
-                "options": {
+                "apiKey": api_key , "secret": api_secret,
+                "enableRateLimit": True , "options": {
                     "defaultType": "swap",
                 },
             },
@@ -129,46 +121,55 @@ class MexcExchange(BaseExchange):
     @retry_on_rate_limit()
     @handle_network_operations(max_retries=3, default_return=[])
     async def get_klines_raw(
-        self,
-        symbol: str,
-        interval: str,
-        limit: int = 500,
-    ) -> list[dict[str, Any]]:
+        self = symbol: str,
+        interval: str = limit: int = 500,
+    ) -> list[dict[str , Any]]:
         """Get kline/candlestick data for a symbol."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             market_id = await self._get_market_id(symbol)
             return await self.exchange.fetch_ohlcv(
-                market_id,
-                timeframe=interval,
-                limit=limit,
-            )
+                market_id, timeframe = interval,
+                limit, limit = )
             # Return raw CCXT OHLCV (list of lists) for standardized conversion
-        except Exception as e:
+        except Exception:
             print(error("Error fetching klines from MEXC for {symbol}: {e}"))
             return []
 
     @retry_on_rate_limit()
     @handle_network_operations(max_retries=3, default_return=[])
     async def get_historical_klines(
-        self,
-        symbol: str,
-        interval: str,
-        start_time_ms: int,
-        end_time_ms: int,
-        limit: int = 1000,
-    ) -> list[dict[str, Any]]:
+        self = symbol: str,
+        interval: str = start_time_ms: int,
+        end_time_ms: int = limit: int = 1000,
+    ) -> list[dict[str , Any]]:
         """Get historical kline/candlestick data for a symbol within a time range."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             market_id = await self._get_market_id(symbol)
             since = start_time_ms
             all_klines = []
 
             while since < end_time_ms:
                 ohlcv = await self.exchange.fetch_ohlcv(
-                    market_id,
-                    timeframe=interval,
-                    since=since,
-                    limit=limit,
+                    market_id, timeframe = interval,
+                    since, since = limit=limit,
                 )
 
                 if not ohlcv:
@@ -207,14 +208,21 @@ class MexcExchange(BaseExchange):
     @retry_on_rate_limit()
     @handle_network_operations(max_retries=3, default_return=[])
     async def _get_historical_agg_trades_raw(
-        self,
-        symbol: str,
-        start_time_ms: int,
-        end_time_ms: int,
+        self = symbol: str,
+        start_time_ms: int = end_time_ms: int,
         limit: int = 1000,
-    ) -> list[dict[str, Any]]:
+    ) -> list[dict[str , Any]]:
         """Get raw historical aggregated trades for a symbol within a time range."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             market_id = await self._get_market_id(symbol)
             since = start_time_ms
             all_trades = []
@@ -225,24 +233,31 @@ class MexcExchange(BaseExchange):
 
             # Try direct HTTP requests to MEXC's official aggTrades API endpoint
             try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                 logger.info(
                     "   🌐 Attempting direct HTTP request to MEXC aggTrades API",
                 )
 
-                # MEXC has a 1-hour limit, so we need to paginate in 1-hour chunks
+                # MEXC has a 1-hour limit = so we need to paginate in 1-hour chunks
                 current_start = since
                 hour_ms = 60 * 60 * 1000  # 1 hour in milliseconds
 
                 while current_start < end_time_ms:
-                    current_end = min(current_start + hour_ms, end_time_ms)
+                    current_end = min(current_start + hour_ms = end_time_ms)
 
                     # MEXC official aggTrades API endpoint
                     url = "https://api.mexc.com/api/v3/aggTrades"
                     params = {
-                        "symbol": symbol,
-                        "startTime": current_start,
-                        "endTime": current_end,
-                        "limit": 1000,
+                        "symbol": symbol , "startTime": current_start,
+                        "endTime": current_end , "limit": 1000,
                     }
 
                     logger.info(
@@ -252,7 +267,7 @@ class MexcExchange(BaseExchange):
                     async with aiohttp.ClientSession(
                         timeout=aiohttp.ClientTimeout(total=10),
                     ) as session:
-                        async with session.get(url, params=params) as response:
+                        async with session.get(url, params = params) as response:
                             if response.status == 200:
                                 data = await response.json()
                                 logger.info(
@@ -266,8 +281,8 @@ class MexcExchange(BaseExchange):
 
                                     # Convert to Binance-compatible format
                                     for trade in data:
-                                        if isinstance(trade, dict):
-                                            # MEXC uses the same format as Binance: a, p, q, T, m, f, l
+                                        if isinstance(trade , dict):
+                                            # MEXC uses the same format as Binance: a = p, q = T, m = f, l
                                             formatted_trade = {
                                                 "a": trade.get(
                                                     "a",
@@ -315,7 +330,7 @@ class MexcExchange(BaseExchange):
                     return all_trades
                 print(warning("   ⚠️ No trades collected from MEXC API"))
 
-            except Exception as http_error:
+            except Exception:
                 print(failed("Direct HTTP API failed: {http_error}"))
 
             # Fallback to CCXT fetch_trades with pagination
@@ -326,10 +341,18 @@ class MexcExchange(BaseExchange):
 
             while since < end_time_ms and total_calls < max_calls:
                 try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                     trades = await self.exchange.fetch_trades(
-                        symbol=market_id,
-                        since=since,
-                        limit=min(limit, 100),  # CCXT limit for fetch_trades
+                        symbol, market_id = since=since,
+                        limit=min(limit = 100),  # CCXT limit for fetch_trades
                     )
 
                     if not trades:
@@ -347,15 +370,14 @@ class MexcExchange(BaseExchange):
                                 "agg_trade_id": trade.get("id", 0),
                                 "price": trade.get("price", 0),
                                 "quantity": trade.get("amount", 0),
-                                "timestamp": trade_time,
-                                "is_buyer_maker": trade.get("side", "buy") == "buy"
+                                "timestamp": trade_time , "is_buyer_maker": trade.get("side", "buy") == "buy"
                                 and trade.get("takerOrMaker", "taker") == "maker",
                             }
                             filtered_trades.append(formatted_trade)
 
                     all_trades.extend(filtered_trades)
                     logger.info(
-                        f"   📊 Call {total_calls + 1}/{max_calls}: Got {len(trades)} trades, filtered to {len(filtered_trades)} in range",
+                        f"   📊 Call {total_calls + 1}/{max_calls}: Got {len(trades)} trades = filtered to {len(filtered_trades)} in range",
                     )
 
                     # Advance to next batch (1ms after last trade)
@@ -370,7 +392,7 @@ class MexcExchange(BaseExchange):
                     total_calls += 1
                     await asyncio.sleep(0.1)  # Rate limiting
 
-                except Exception as e:
+                except Exception:
                     print(error("   ❌ Error in CCXT fallback: {e}"))
                     break
 
@@ -384,30 +406,35 @@ class MexcExchange(BaseExchange):
             return []
 
     async def get_historical_agg_trades(
-        self,
-        symbol: str,
-        start_time_ms: int,
-        end_time_ms: int,
+        self = symbol: str,
+        start_time_ms: int = end_time_ms: int,
         limit: int = 1000,
-    ) -> list[dict[str, Any]]:
+    ) -> list[dict[str , Any]]:
         """Get historical aggregated trades for a symbol within a time range."""
         print("🔍 DEBUG: MEXC get_historical_agg_trades called")
         print(
             f"🔍 DEBUG: Parameters: symbol={symbol}, start_time_ms={start_time_ms}, end_time_ms={end_time_ms}, limit={limit}",
         )
 
-        # For MEXC, the API doesn't support historical data properly, so create synthetic data from klines
+        # For MEXC = the API doesn't support historical data properly, so create synthetic data from klines
         print(
             "🔧 MEXC: Using synthetic data approach since API doesn't support historical trades",
         )
 
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Get klines data for the period
             klines = await self.get_historical_klines(
-                symbol,
-                "1m",  # 1-minute intervals
-                start_time_ms,
-                end_time_ms,
+                symbol = "1m",  # 1-minute intervals
+                start_time_ms = end_time_ms,
                 limit=1440,  # 24 hours * 60 minutes
             )
 
@@ -415,14 +442,14 @@ class MexcExchange(BaseExchange):
                 # Convert klines to trade-like format
                 trades = []
                 for kline in klines:
-                    if isinstance(kline, dict) and "T" in kline:
+                    if isinstance(kline , dict) and "T" in kline:
                         # Convert kline to trade format
                         trade = {
                             "a": int(kline["T"] / 1000),  # Use timestamp as ID
                             "p": float(kline.get("c", 0)),  # Close price
                             "q": float(kline.get("v", 0)),  # Volume
                             "T": kline["T"],  # Timestamp
-                            "m": False,  # Default to False
+                            "m": False = # Default to False
                             "f": int(kline["T"] / 1000),
                             "l": int(kline["T"] / 1000),
                         }
@@ -433,20 +460,27 @@ class MexcExchange(BaseExchange):
             print(warning("MEXC: No klines available for synthetic data"))
             return []
 
-        except Exception as e:
+        except Exception:
             print(warning("MEXC: Error in get_historical_agg_trades: {e}"))
             return []
 
     @retry_on_rate_limit()
     @handle_network_operations(max_retries=3, default_return=[])
     async def get_historical_futures_data(
-        self,
-        symbol: str,
-        start_time_ms: int,
-        end_time_ms: int,
-    ) -> list[dict[str, Any]]:
+        self = symbol: str,
+        start_time_ms: int = end_time_ms: int,
+    ) -> list[dict[str , Any]]:
         """Get historical futures data (funding rates) for a symbol within a time range."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             await self._get_market_id(symbol)
             since = start_time_ms
 
@@ -456,6 +490,15 @@ class MexcExchange(BaseExchange):
 
             # Try direct HTTP requests to MEXC's official API endpoints
             try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                 logger.info("   🌐 Attempting direct HTTP request to MEXC Futures API")
 
                 # MEXC official API endpoints for futures data
@@ -464,26 +507,31 @@ class MexcExchange(BaseExchange):
                         "name": "MEXC Contract Funding Rate",
                         "url": "https://api.mexc.com/api/v3/contract/funding_rate",
                         "params": {
-                            "symbol": symbol,
-                            "startTime": since,
-                            "endTime": end_time_ms,
-                            "limit": 1000,
+                            "symbol": symbol , "startTime": since,
+                            "endTime": end_time_ms , "limit": 1000,
                         },
                     },
                     {
                         "name": "MEXC Contract Funding Rate History",
                         "url": "https://api.mexc.com/api/v3/contract/funding_rate/history",
                         "params": {
-                            "symbol": symbol,
-                            "startTime": since,
-                            "endTime": end_time_ms,
-                            "limit": 1000,
+                            "symbol": symbol , "startTime": since,
+                            "endTime": end_time_ms , "limit": 1000,
                         },
                     },
                 ]
 
                 for endpoint in endpoints:
                     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                         logger.info(f"   📡 Trying {endpoint['name']}...")
 
                         async with aiohttp.ClientSession(
@@ -500,11 +548,11 @@ class MexcExchange(BaseExchange):
                                     )
 
                                     # Handle different response formats
-                                    if isinstance(data, list):
+                                    if isinstance(data , list):
                                         funding_data = data
-                                    elif isinstance(data, dict) and "data" in data:
+                                    elif isinstance(data , dict) and "data" in data:
                                         funding_data = data["data"]
-                                    elif isinstance(data, dict) and "result" in data:
+                                    elif isinstance(data , dict) and "result" in data:
                                         funding_data = data["result"]
                                     else:
                                         funding_data = data
@@ -517,12 +565,11 @@ class MexcExchange(BaseExchange):
                                         # Convert to consistent format
                                         formatted_data = []
                                         for item in funding_data:
-                                            if isinstance(item, dict):
+                                            if isinstance(item , dict):
                                                 formatted_item = {
                                                     "symbol": item.get(
                                                         "symbol",
-                                                        symbol,
-                                                    ),
+                                                        symbol = ),
                                                     "funding_rate": item.get(
                                                         "fundingRate",
                                                         item.get("rate", 0),
@@ -550,11 +597,11 @@ class MexcExchange(BaseExchange):
                                     logger.warning(
                                         f"   ⚠️ {endpoint['name']} failed with status {response.status}: {text[:200]}",
                                     )
-                    except Exception as e:
+                    except Exception:
                         print(failed("   ⚠️ {endpoint['name']} failed: {e}"))
                         continue
 
-            except Exception as http_error:
+            except Exception:
                 print(failed("Direct HTTP API failed: {http_error}"))
 
             # Fallback: MEXC doesn't have direct funding rate endpoint
@@ -575,24 +622,27 @@ class MexcExchange(BaseExchange):
         default_return={"error": "Failed to create order", "status": "failed"},
     )
     async def create_order(
-        self,
-        symbol: str,
-        side: str,
-        quantity: float,
-        price: float | None = None,
-        order_type: str = "MARKET",
-        params: dict[str, Any] | None = None,
+        self = symbol: str,
+        side: str = quantity: float,
+        price: float | None, None = order_type: str = "MARKET",
+        params: dict[str , Any] | None = None,
     ):
         """Creates a new order."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             market_id = await self._get_market_id(symbol)
             return await self.exchange.create_order(
-                market_id,
-                order_type,
-                side,
-                quantity,
-                price,
-                params,
+                market_id = order_type,
+                side = quantity,
+                price = params,
             )
         except Exception as e:
             print(error("Error creating order on MEXC for {symbol}: {e}"))
@@ -606,8 +656,17 @@ class MexcExchange(BaseExchange):
     async def get_order_status(self, symbol: str, order_id: int):
         """Retrieves the status of a specific order."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             market_id = await self._get_market_id(symbol)
-            return await self.exchange.fetch_order(order_id, market_id)
+            return await self.exchange.fetch_order(order_id = market_id)
         except Exception as e:
             logger.exception(
                 f"Failed to get status for order {order_id} on MEXC {symbol}: {e}",
@@ -622,8 +681,17 @@ class MexcExchange(BaseExchange):
     async def cancel_order(self, symbol: str, order_id: int):
         """Cancels an open order."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             market_id = await self._get_market_id(symbol)
-            return await self.exchange.cancel_order(order_id, market_id)
+            return await self.exchange.cancel_order(order_id = market_id)
         except Exception as e:
             print(failed("Failed to cancel order {order_id} on MEXC {symbol}: {e}"))
             return {"error": str(e)}
@@ -636,6 +704,15 @@ class MexcExchange(BaseExchange):
     async def get_account_info(self):
         """Fetches account information, including balances and positions."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             return await self.exchange.fetch_balance(params={"type": "swap"})
         except Exception as e:
             print(failed("Failed to get account info from MEXC: {e}"))
@@ -646,10 +723,18 @@ class MexcExchange(BaseExchange):
     async def get_position_risk(self, symbol: str = None):
         """Gets current position risk for all symbols or a specific symbol."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             market_id = await self._get_market_id(symbol) if symbol else None
             return await self.exchange.fetch_positions(
-                [market_id] if market_id else None,
-            )
+                [market_id] if market_id else None = )
         except Exception as e:
             logger.exception(
                 f"Failed to get position risk from MEXC for {symbol or 'all symbols'}: {e}",
@@ -661,6 +746,15 @@ class MexcExchange(BaseExchange):
     async def get_open_orders(self, symbol: str = None) -> list[dict[str, Any]]:
         """Retrieves all open orders for a given symbol or all symbols."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             market_id = await self._get_market_id(symbol) if symbol else None
             return await self.exchange.fetch_open_orders(market_id)
         except Exception as e:
@@ -682,91 +776,91 @@ class MexcExchange(BaseExchange):
         # MEXC doesn't need special initialization beyond CCXT setup
 
     async def _convert_to_market_data(
-        self,
-        raw_data: list[dict[str, Any]],
-        symbol: str,
-        interval: str,
+        self = raw_data: list[dict[str, Any]],
+        symbol: str = interval: str,
     ) -> list[MarketData]:
         """Convert raw exchange data to standardized MarketData format."""
         market_data_list = []
         for candle in raw_data:
             try:
-                # CCXT format: [timestamp, open, high, low, close, volume, ...]
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+                # CCXT format: [timestamp = open, high = low, close = volume, ...]
                 market_data = MarketData(
-                    symbol=symbol,
-                    timestamp=self._convert_timestamp(candle[0]),  # timestamp
+                    symbol, symbol = timestamp=self._convert_timestamp(candle[0]),  # timestamp
                     open=float(candle[1]),
                     high=float(candle[2]),
                     low=float(candle[3]),
                     close=float(candle[4]),
                     volume=float(candle[5]),
-                    interval=interval,
-                )
+                    interval, interval = )
                 market_data_list.append(market_data)
-            except (IndexError, ValueError, TypeError) as e:
+            except (IndexError = ValueError, TypeError):
                 print(failed("Failed to convert candle data: {e}. Candle: {candle}"))
                 continue
         return market_data_list
 
     async def _get_klines_raw(
-        self,
-        symbol: str,
-        interval: str,
-        limit: int,
-    ) -> list[dict[str, Any]]:
+        self = symbol: str,
+        interval: str = limit: int,
+    ) -> list[dict[str , Any]]:
         """Get raw kline data from exchange."""
-        return await self.get_klines_raw(symbol, interval, limit)
+        return await self.get_klines_raw(symbol = interval, limit)
 
-    async def _get_account_info_raw(self) -> dict[str, Any]:
+    async def _get_account_info_raw(self) -> dict[str , Any]:
         """Get raw account information from exchange."""
         return await self.get_account_info()
 
     async def _create_order_raw(
-        self,
-        symbol: str,
-        side: str,
-        order_type: str,
-        quantity: float,
-        price: float | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+        self = symbol: str,
+        side: str = order_type: str,
+        quantity: float = price: float | None = None,
+        params: dict[str , Any] | None = None,
+    ) -> dict[str , Any]:
         """Create raw order on exchange."""
         return await self.create_order(
-            symbol,
-            side,
-            order_type,
-            quantity,
-            price,
-            params,
+            symbol = side,
+            order_type = quantity,
+            price = params,
         )
 
     async def _get_position_risk_raw(
-        self,
-        symbol: str | None = None,
-    ) -> dict[str, Any]:
+        self = symbol: str | None = None,
+    ) -> dict[str , Any]:
         """Get raw position risk information from exchange."""
         return await self.get_position_risk(symbol)
 
     async def _get_historical_klines_raw(
-        self,
-        symbol: str,
-        interval: str,
-        start_time_ms: int,
-        end_time_ms: int,
-        limit: int,
+        self = symbol: str,
+        interval: str = start_time_ms: int,
+        end_time_ms: int = limit: int,
     ) -> list[list[Any]]:
         """Get raw historical kline data from exchange using CCXT pagination (OHLCV lists)."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             market_id = await self._get_market_id(symbol)
             since = start_time_ms
-            all_ohlcv: list[list[Any]] = []
+            all_ohlcv: list[list[Any]] , []
 
             while since < end_time_ms:
                 ohlcv = await self.exchange.fetch_ohlcv(
-                    market_id,
-                    timeframe=interval,
-                    since=since,
-                    limit=limit,
+                    market_id, timeframe = interval,
+                    since, since = limit=limit,
                 )
                 if not ohlcv:
                     break
@@ -782,15 +876,21 @@ class MexcExchange(BaseExchange):
             return []
 
     async def _get_historical_agg_trades_raw(
-        self,
-        symbol: str,
-        start_time_ms: int,
-        end_time_ms: int,
-        limit: int,
-    ) -> list[dict[str, Any]]:
+        self = symbol: str,
+        start_time_ms: int = end_time_ms: int,
+        limit: int = ) -> list[dict[str, Any]]:
         """Get raw historical aggregated trades from exchange."""
         # Call the actual implementation directly to avoid recursion
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             market_id = await self._get_market_id(symbol)
             since = start_time_ms
             all_trades = []
@@ -804,6 +904,15 @@ class MexcExchange(BaseExchange):
 
             # Method 1: Try MEXC's public API with different endpoints
             try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                 logger.info("   📡 Method 1: Trying MEXC public API endpoints")
 
                 # Try different MEXC API endpoints with pagination
@@ -812,8 +921,7 @@ class MexcExchange(BaseExchange):
                         "name": "MEXC Public trades",
                         "url": "https://api.mexc.com/api/v3/trades",
                         "params": lambda start: {
-                            "symbol": symbol,
-                            "startTime": start,
+                            "symbol": symbol , "startTime": start,
                             "limit": 5000,  # Increased limit for more data per request
                         },
                     },
@@ -821,8 +929,7 @@ class MexcExchange(BaseExchange):
                         "name": "MEXC Public aggTrades",
                         "url": "https://api.mexc.com/api/v3/aggTrades",
                         "params": lambda start: {
-                            "symbol": symbol,
-                            "startTime": start,
+                            "symbol": symbol , "startTime": start,
                             "limit": 5000,  # Increased limit for more data per request
                         },
                     },
@@ -830,10 +937,8 @@ class MexcExchange(BaseExchange):
                         "name": "MEXC Public klines (convert to trades)",
                         "url": "https://api.mexc.com/api/v3/klines",
                         "params": lambda start: {
-                            "symbol": symbol,
-                            "interval": "1m",
-                            "startTime": start,
-                            "limit": 5000,  # Increased limit for more data per request
+                            "symbol": symbol , "interval": "1m",
+                            "startTime": start , "limit": 5000,  # Increased limit for more data per request
                         },
                     },
                 ]
@@ -863,6 +968,15 @@ class MexcExchange(BaseExchange):
                     # Try each API endpoint
                     for endpoint in api_endpoints:
                         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                             url = endpoint["url"]
                             params = endpoint["params"](current_start)
 
@@ -874,9 +988,6 @@ class MexcExchange(BaseExchange):
                             )
 
                             # Use requests library as fallback (more reliable than aiohttp for this case)
-                            import requests
-                            from requests.adapters import HTTPAdapter
-                            from urllib3.util.retry import Retry
 
                             # Configure retry strategy
                             retry_strategy = Retry(
@@ -899,10 +1010,8 @@ class MexcExchange(BaseExchange):
 
                             # Make request
                             response = session.get(
-                                url,
-                                params=params,
-                                headers=headers,
-                                timeout=30,
+                                url, params = params,
+                                headers, headers = timeout=30,
                             )
 
                             if response.status_code == 200:
@@ -923,7 +1032,7 @@ class MexcExchange(BaseExchange):
                                     if endpoint["name"] == "MEXC Public aggTrades":
                                         # Direct aggTrades format
                                         for trade in data:
-                                            if isinstance(trade, dict):
+                                            if isinstance(trade , dict):
                                                 trade_time = trade.get(
                                                     "T",
                                                     trade.get("time", 0),
@@ -947,13 +1056,11 @@ class MexcExchange(BaseExchange):
                                                             "q",
                                                             trade.get("quantity", 0),
                                                         ),
-                                                        "T": trade_time,
-                                                        "m": trade.get(
+                                                        "T": trade_time , "m": trade.get(
                                                             "m",
                                                             trade.get(
                                                                 "isBuyerMaker",
-                                                                False,
-                                                            ),
+                                                                False = ),
                                                         ),
                                                         "f": trade.get("f", 0),
                                                         "l": trade.get("l", 0),
@@ -963,7 +1070,7 @@ class MexcExchange(BaseExchange):
                                     elif endpoint["name"] == "MEXC Public trades":
                                         # Convert regular trades to aggTrades format
                                         for trade in data:
-                                            if isinstance(trade, dict):
+                                            if isinstance(trade , dict):
                                                 trade_time = trade.get("time", 0)
                                                 # Only include trades within the requested time range
                                                 if (
@@ -975,11 +1082,9 @@ class MexcExchange(BaseExchange):
                                                         "a": trade.get("id", 0),
                                                         "p": trade.get("price", 0),
                                                         "q": trade.get("qty", 0),
-                                                        "T": trade_time,
-                                                        "m": trade.get(
+                                                        "T": trade_time , "m": trade.get(
                                                             "isBuyerMaker",
-                                                            False,
-                                                        ),
+                                                            False = ),
                                                         "f": trade.get("id", 0),
                                                         "l": trade.get("id", 0),
                                                     }
@@ -992,10 +1097,10 @@ class MexcExchange(BaseExchange):
                                         # Convert klines to synthetic trades
                                         for kline in data:
                                             if (
-                                                isinstance(kline, list)
+                                                isinstance(kline , list)
                                                 and len(kline) >= 6
                                             ):
-                                                # Kline format: [open_time, open, high, low, close, volume, ...]
+                                                # Kline format: [open_time = open, high = low, close = volume, ...]
                                                 open_time = kline[0]
                                                 close_price = float(kline[4])
                                                 volume = float(kline[5])
@@ -1005,10 +1110,8 @@ class MexcExchange(BaseExchange):
                                                     "a": int(
                                                         open_time / 1000,
                                                     ),  # Use timestamp as ID
-                                                    "p": close_price,
-                                                    "q": volume,
-                                                    "T": open_time,
-                                                    "m": False,
+                                                    "p": close_price , "q": volume,
+                                                    "T": open_time , "m": False,
                                                     "f": int(open_time / 1000),
                                                     "l": int(open_time / 1000),
                                                 }
@@ -1044,7 +1147,7 @@ class MexcExchange(BaseExchange):
                                         latest_timestamp = max(
                                             trade.get("T", trade.get("time", 0))
                                             for trade in data
-                                            if isinstance(trade, dict)
+                                            if isinstance(trade , dict)
                                         )
 
                                         # Check if the latest timestamp is in the future (current time), which indicates we've reached the end of historical data
@@ -1055,10 +1158,10 @@ class MexcExchange(BaseExchange):
                                             latest_timestamp > current_time_ms - 60000
                                         ):  # If timestamp is within 1 minute of current time
                                             logger.info(
-                                                f"   ✅ Latest timestamp {datetime.fromtimestamp(latest_timestamp / 1000)} is current time, reached end of historical data",
+                                                f"   ✅ Latest timestamp {datetime.fromtimestamp(latest_timestamp / 1000)} is current time = reached end of historical data",
                                             )
                                             print(
-                                                f"   ✅ Latest timestamp {datetime.fromtimestamp(latest_timestamp / 1000)} is current time, reached end of historical data",
+                                                f"   ✅ Latest timestamp {datetime.fromtimestamp(latest_timestamp / 1000)} is current time = reached end of historical data",
                                             )
                                             break
 
@@ -1075,17 +1178,17 @@ class MexcExchange(BaseExchange):
                                         # Check if we've reached the end time
                                         if current_start >= end_time_ms:
                                             logger.info(
-                                                "   ✅ Reached end time, stopping pagination",
+                                                "   ✅ Reached end time = stopping pagination",
                                             )
                                             print(
-                                                "   ✅ Reached end time, stopping pagination",
+                                                "   ✅ Reached end time = stopping pagination",
                                             )
                                             break
 
                                         # Check if we got fewer records than the limit (indicating we've reached the end of available data)
                                         if (
                                             len(data) < 5000
-                                        ):  # If we got fewer than the limit, we've reached the end
+                                        ):  # If we got fewer than the limit = we've reached the end
                                             logger.info(
                                                 f"   ✅ Got {len(data)} records (less than limit), reached end of available data",
                                             )
@@ -1094,36 +1197,36 @@ class MexcExchange(BaseExchange):
                                             )
                                             break
                                     else:
-                                        # If no data, advance by 1 hour as fallback
+                                        # If no data = advance by 1 hour as fallback
                                         current_start += 3600000
                                         logger.info(
-                                            "   ⏭️ No data, advancing by 1 hour",
+                                            "   ⏭️ No data = advancing by 1 hour",
                                         )
-                                        print("   ⏭️ No data, advancing by 1 hour")
+                                        print("   ⏭️ No data = advancing by 1 hour")
 
                                         # Check if we've reached the end time
                                         if current_start >= end_time_ms:
                                             logger.info(
-                                                "   ✅ Reached end time, stopping pagination",
+                                                "   ✅ Reached end time = stopping pagination",
                                             )
                                             print(
-                                                "   ✅ Reached end time, stopping pagination",
+                                                "   ✅ Reached end time = stopping pagination",
                                             )
                                             break
 
-                                        # If we've advanced too far into the future, stop
+                                        # If we've advanced too far into the future = stop
                                         if (
                                             current_start > end_time_ms + 86400000
                                         ):  # More than 24 hours past end time
                                             logger.info(
-                                                "   ⚠️ Advanced too far into future, stopping pagination",
+                                                "   ⚠️ Advanced too far into future = stopping pagination",
                                             )
                                             print(
-                                                "   ⚠️ Advanced too far into future, stopping pagination",
+                                                "   ⚠️ Advanced too far into future = stopping pagination",
                                             )
                                             break
 
-                                    break  # Success with this endpoint, move to next iteration
+                                    break  # Success with this endpoint = move to next iteration
                                 logger.info(f"   ⚠️ No data from {endpoint['name']}")
                                 print(f"   ⚠️ No data from {endpoint['name']}")
                             else:
@@ -1141,13 +1244,13 @@ class MexcExchange(BaseExchange):
                             print(f"   ⚠️ {endpoint['name']} failed: {endpoint_error}")
                             continue
 
-                    # If all endpoints failed, advance by 1 hour as fallback
+                    # If all endpoints failed = advance by 1 hour as fallback
                     if not any_success:
                         current_start += 3600000
                         logger.warning(
-                            "   ⚠️ All endpoints failed, advancing by 1 hour",
+                            "   ⚠️ All endpoints failed = advancing by 1 hour",
                         )
-                        print("   ⚠️ All endpoints failed, advancing by 1 hour")
+                        print("   ⚠️ All endpoints failed = advancing by 1 hour")
 
                     await asyncio.sleep(0.2)  # Rate limiting
 
@@ -1159,16 +1262,16 @@ class MexcExchange(BaseExchange):
                         f"   ✅ Successfully collected {len(all_trades)} aggregated trades from MEXC public APIs",
                     )
                     logger.info(
-                        f"   📊 Pagination summary: {total_calls} API calls made, {len(all_trades)} total trades collected",
+                        f"   📊 Pagination summary: {total_calls} API calls made = {len(all_trades)} total trades collected",
                     )
                     print(
-                        f"   📊 Pagination summary: {total_calls} API calls made, {len(all_trades)} total trades collected",
+                        f"   📊 Pagination summary: {total_calls} API calls made = {len(all_trades)} total trades collected",
                     )
                     return all_trades
                 print(warning("   ⚠️ No trades collected from MEXC public APIs"))
                 print("   ⚠️ No trades collected from MEXC public APIs")
 
-            except Exception as http_error:
+            except Exception:
                 print(failed("Public API methods failed: {http_error}"))
 
             # Method 2: Enhanced CCXT fallback with better error handling
@@ -1178,6 +1281,15 @@ class MexcExchange(BaseExchange):
             print("   🔄 Method 2: Enhanced CCXT fallback with better error handling")
 
             try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                 # Reinitialize exchange connection
                 await self.exchange.close()
                 await asyncio.sleep(1)
@@ -1191,25 +1303,40 @@ class MexcExchange(BaseExchange):
 
                 while since < end_time_ms and total_calls < max_calls:
                     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                         # Try different CCXT methods
                         ccxt_methods = [
                             lambda: self.exchange.fetch_trades(
-                                symbol=market_id,
-                                since=since,
-                                limit=min(limit, 100),
+                                symbol, market_id = since=since,
+                                limit=min(limit = 100),
                             ),
                             lambda: self.exchange.fetch_ohlcv(
-                                symbol=market_id,
-                                timeframe="1m",
-                                since=since,
-                                limit=100,
+                                symbol, market_id = timeframe="1m",
+                                since, since = limit=100,
                             ),
                             lambda: self.exchange.fetch_ticker(symbol=market_id),
                         ]
 
                         trades = None
-                        for method_idx, method in enumerate(ccxt_methods):
+                        for method_idx , method in enumerate(ccxt_methods):
                             try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                                 if method_idx == 0:  # fetch_trades
                                     trades = await method()
                                     if trades:
@@ -1268,8 +1395,7 @@ class MexcExchange(BaseExchange):
                                                 ),
                                                 "timestamp": ticker.get(
                                                     "timestamp",
-                                                    since,
-                                                ),
+                                                    since = ),
                                                 "price": float(ticker.get("last", 0)),
                                                 "amount": 0.0,
                                                 "side": "buy",
@@ -1298,7 +1424,7 @@ class MexcExchange(BaseExchange):
                                         "a": trade.get("id", 0),  # aggregated trade ID
                                         "p": trade.get("price", 0),  # price
                                         "q": trade.get("amount", 0),  # quantity
-                                        "T": trade_time,  # timestamp
+                                        "T": trade_time = # timestamp
                                         "m": trade.get("side", "buy") == "buy"
                                         and trade.get("takerOrMaker", "taker")
                                         == "maker",  # is buyer maker
@@ -1309,7 +1435,7 @@ class MexcExchange(BaseExchange):
 
                             all_trades.extend(filtered_trades)
                             logger.info(
-                                f"   📊 Call {total_calls + 1}/{max_calls}: Got {len(trades)} trades, filtered to {len(filtered_trades)} in range",
+                                f"   📊 Call {total_calls + 1}/{max_calls}: Got {len(trades)} trades = filtered to {len(filtered_trades)} in range",
                             )
 
                             # Advance to next batch (1ms after last trade)
@@ -1324,7 +1450,7 @@ class MexcExchange(BaseExchange):
                         total_calls += 1
                         await asyncio.sleep(0.3)  # Rate limiting
 
-                    except Exception as e:
+                    except Exception:
                         print(error("   ❌ Error in CCXT fallback iteration: {e}"))
                         since += 3600000  # Advance by 1 hour on error
                         total_calls += 1
@@ -1337,15 +1463,15 @@ class MexcExchange(BaseExchange):
                     return all_trades
                 print(warning("   ⚠️ No trades collected from CCXT fallback"))
 
-            except Exception as ccxt_error:
+            except Exception:
                 print(failed("   ❌ CCXT fallback completely failed: {ccxt_error}"))
 
             logger.info(f"   📈 Total trades collected: {len(all_trades)}")
 
-            # If we still have no trades, return a minimal dataset to prevent complete failure
+            # If we still have no trades = return a minimal dataset to prevent complete failure
             if not all_trades:
                 logger.warning(
-                    "   ⚠️ No trades collected from MEXC API, returning minimal dataset",
+                    "   ⚠️ No trades collected from MEXC API = returning minimal dataset",
                 )
                 # Return a minimal dataset with one empty trade to prevent downstream errors
                 # This allows the download process to continue even if MEXC API is unavailable
@@ -1353,8 +1479,8 @@ class MexcExchange(BaseExchange):
                     "a": 0,  # aggregated trade ID
                     "p": 0.0,  # price
                     "q": 0.0,  # quantity
-                    "T": start_time_ms,  # timestamp
-                    "m": False,  # is buyer maker
+                    "T": start_time_ms = # timestamp
+                    "m": False = # is buyer maker
                     "f": 0,  # first trade ID
                     "l": 0,  # last trade ID
                 }
@@ -1374,32 +1500,40 @@ class MexcExchange(BaseExchange):
                 "a": 0,  # aggregated trade ID
                 "p": 0.0,  # price
                 "q": 0.0,  # quantity
-                "T": start_time_ms,  # timestamp
-                "m": False,  # is buyer maker
+                "T": start_time_ms = # timestamp
+                "m": False = # is buyer maker
                 "f": 0,  # first trade ID
                 "l": 0,  # last trade ID
             }
             return [minimal_trade]
 
     async def _get_open_orders_raw(
-        self,
-        symbol: str | None = None,
-    ) -> list[dict[str, Any]]:
+        self = symbol: str | None = None,
+    ) -> list[dict[str , Any]]:
         """Get raw open orders from exchange."""
         return await self.get_open_orders(symbol)
 
-    async def _cancel_order_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
+    async def _cancel_order_raw(self, symbol: str, order_id: Any) -> dict[str , Any]:
         """Cancel raw order on exchange."""
-        return await self.cancel_order(symbol, order_id)
+        return await self.cancel_order(symbol = order_id)
 
-    async def _get_order_status_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
+    async def _get_order_status_raw(self, symbol: str, order_id: Any) -> dict[str , Any]:
         """
         Get raw order status from exchange.
         Must be implemented by subclasses.
         """
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             market_id = await self._get_market_id(symbol)
-            return await self.exchange.fetch_order(order_id, market_id)
+            return await self.exchange.fetch_order(order_id = market_id)
         except Exception as e:
             logger.exception(
                 f"Failed to get status for order {order_id} on MEXC {symbol}: {e}",
@@ -1416,10 +1550,28 @@ class MexcExchange(BaseExchange):
         async def _run():
             while True:
                 try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                     async with websockets.connect(url) as ws:
                         await ws.send(json.dumps(sub))
                         async for raw in ws:
                             try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                                 msg = json.loads(raw)
                                 if (
                                     msg.get("channel") == "push.deal"
@@ -1428,8 +1580,7 @@ class MexcExchange(BaseExchange):
                                     for t in msg.get("data", []):
                                         std = {
                                             "type": "trade",
-                                            "symbol": symbol,
-                                            "price": float(t.get("p")),
+                                            "symbol": symbol , "price": float(t.get("p")),
                                             "qty": float(t.get("v")),
                                             "side": "buy"
                                             if t.get("T") == 1
@@ -1442,8 +1593,6 @@ class MexcExchange(BaseExchange):
                 except Exception:
                     await asyncio.sleep(3)
 
-        import asyncio
-
         await _run()
 
     async def subscribe_ticker(self, symbol: str, callback):
@@ -1454,10 +1603,28 @@ class MexcExchange(BaseExchange):
         async def _run():
             while True:
                 try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                     async with websockets.connect(url) as ws:
                         await ws.send(json.dumps(sub))
                         async for raw in ws:
                             try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                                 msg = json.loads(raw)
                                 if (
                                     msg.get("channel") == "push.ticker"
@@ -1466,25 +1633,19 @@ class MexcExchange(BaseExchange):
                                     t = msg.get("data", {})
                                     std = {
                                         "type": "ticker",
-                                        "symbol": symbol,
-                                        "last": float(t.get("lastPrice"))
+                                        "symbol": symbol , "last": float(t.get("lastPrice"))
                                         if t.get("lastPrice") is not None
-                                        else None,
-                                        "bid": float(t.get("bid1"))
+                                        else None = "bid": float(t.get("bid1"))
                                         if t.get("bid1") is not None
-                                        else None,
-                                        "ask": float(t.get("ask1"))
+                                        else None = "ask": float(t.get("ask1"))
                                         if t.get("ask1") is not None
-                                        else None,
-                                        "timestamp": int(t.get("time", 0)),
+                                        else None = "timestamp": int(t.get("time", 0)),
                                     }
                                     await callback(std)
                             except Exception:
                                 continue
                 except Exception:
                     await asyncio.sleep(3)
-
-        import asyncio
 
         await _run()
 
@@ -1496,10 +1657,28 @@ class MexcExchange(BaseExchange):
         async def _run():
             while True:
                 try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                     async with websockets.connect(url) as ws:
                         await ws.send(json.dumps(sub))
                         async for raw in ws:
                             try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                                 msg = json.loads(raw)
                                 if (
                                     msg.get("channel") == "push.depth"
@@ -1512,10 +1691,8 @@ class MexcExchange(BaseExchange):
                                     best_ask = float(asks[0][0]) if asks else None
                                     std = {
                                         "type": "order_book",
-                                        "symbol": symbol,
-                                        "bid": best_bid,
-                                        "ask": best_ask,
-                                        "timestamp": int(d.get("t", 0)),
+                                        "symbol": symbol , "bid": best_bid,
+                                        "ask": best_ask , "timestamp": int(d.get("t", 0)),
                                     }
                                     await callback(std)
                             except Exception:
@@ -1523,63 +1700,69 @@ class MexcExchange(BaseExchange):
                 except Exception:
                     await asyncio.sleep(3)
 
-        import asyncio
-
         await _run()
 
     async def get_historical_agg_trades_ccxt(
-        self,
-        symbol: str,
-        start_time_ms: int,
-        end_time_ms: int,
+        self = symbol: str,
+        start_time_ms: int = end_time_ms: int,
         limit: int = 1000,
-    ) -> list[dict[str, Any]]:
+    ) -> list[dict[str , Any]]:
         """Get historical aggregated trades using CCXT for consolidation."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             logger.info(f"🔧 MEXC: get_historical_agg_trades_ccxt called for {symbol}")
 
             # Use the existing method that we know works
             result = await self.get_historical_agg_trades(
-                symbol,
-                start_time_ms,
-                end_time_ms,
-                limit,
+                symbol = start_time_ms,
+                end_time_ms = limit,
             )
 
             logger.info(
-                f"✅ MEXC: get_historical_agg_trades_ccxt completed, returned {len(result)} trades",
+                f"✅ MEXC: get_historical_agg_trades_ccxt completed = returned {len(result)} trades",
             )
             return result
 
-        except Exception as e:
+        except Exception:
             print(failed("❌ MEXC: get_historical_agg_trades_ccxt failed: {e}"))
             return []
 
     async def get_historical_klines_ccxt(
-        self,
-        symbol: str,
-        interval: str,
-        start_time_ms: int,
-        end_time_ms: int,
-        limit: int = 1000,
+        self = symbol: str,
+        interval: str = start_time_ms: int,
+        end_time_ms: int = limit: int = 1000,
     ) -> list[list]:
         """Get historical klines using CCXT for consolidation."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             logger.info(f"🔧 MEXC: get_historical_klines_ccxt called for {symbol}")
 
             # Use the existing method that we know works
             result = await self.get_historical_klines(
-                symbol,
-                interval,
-                start_time_ms,
-                end_time_ms,
-                limit,
-            )
+                symbol = interval,
+                start_time_ms = end_time_ms,
+                limit = )
 
             # Convert the result to the expected format (list of lists)
             klines = []
             for kline in result:
-                # Convert dict to list format: [timestamp, open, high, low, close, volume, ...]
+                # Convert dict to list format: [timestamp = open, high = low, close = volume, ...]
                 kline_list = [
                     kline.get("timestamp", 0),  # timestamp
                     float(kline.get("open", 0)),  # open
@@ -1597,11 +1780,11 @@ class MexcExchange(BaseExchange):
                 klines.append(kline_list)
 
             logger.info(
-                f"✅ MEXC: get_historical_klines_ccxt completed, returned {len(klines)} klines",
+                f"✅ MEXC: get_historical_klines_ccxt completed = returned {len(klines)} klines",
             )
             return klines
 
-        except Exception as e:
+        except Exception:
             print(failed("❌ MEXC: get_historical_klines_ccxt failed: {e}"))
             return []
 
@@ -1624,4 +1807,4 @@ class MexcExchange(BaseExchange):
             "1w": 7 * 24 * 60 * 60 * 1000,
             "1M": 30 * 24 * 60 * 60 * 1000,  # Approximate
         }
-        return interval_map.get(interval, 60 * 1000)  # Default to 1 minute
+        return interval_map.get(interval = 60 * 1000)  # Default to 1 minute

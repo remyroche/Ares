@@ -1,6 +1,4 @@
-"""
-Validator for Step 6: HMM-Based Enhancement
-"""
+"""Validator for Step 6: HMM-Based Enhancement."""
 
 import asyncio
 import os
@@ -30,7 +28,7 @@ from src.utils.base_validator import BaseValidator
 class Step6HMMBasedEnhancementValidator(BaseValidator):
     """Validator for Step 6: HMM-Based Enhancement."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step6_hmm_based_enhancement", config)
 
     async def validate(
@@ -38,8 +36,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
     ) -> bool:
-        """
-        Validate the HMM-based enhancement step.
+        """Validate the HMM-based enhancement step.
 
         Args:
             training_input: Training input parameters
@@ -47,6 +44,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
 
         Returns:
             bool: True if validation passed, False otherwise
+
         """
         self.logger.info("=" * 80)
         self.logger.info("🔍 STEP 6 VALIDATION: HMM-Based Enhancement")
@@ -57,7 +55,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         exchange = training_input.get("exchange", "BINANCE")
         data_dir = training_input.get("data_dir", "data/training")
 
-        self.logger.info(f"📋 Validation parameters:")
+        self.logger.info("📋 Validation parameters:")
         self.logger.info(f"   Symbol: {symbol}")
         self.logger.info(f"   Exchange: {exchange}")
         self.logger.info(f"   Data Directory: {data_dir}")
@@ -90,7 +88,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                 self.print(error("❌ HMM-based enhancement step had errors"))
                 validation_phases["error_absence"] = False
         except Exception as e:
-            self.logger.error(f"❌ Error absence validation failed with exception: {e}")
+            self.logger.exception(f"❌ Error absence validation failed with exception: {e}")
             validation_phases["error_absence"] = False
 
         # Phase 2: Validate enhanced model files existence
@@ -109,8 +107,8 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                 self.print(failed("❌ Enhanced HMM model files validation failed"))
                 validation_phases["model_files"] = False
         except Exception as e:
-            self.logger.error(
-                f"❌ Enhanced model files validation failed with exception: {e}"
+            self.logger.exception(
+                f"❌ Enhanced model files validation failed with exception: {e}",
             )
             validation_phases["model_files"] = False
 
@@ -130,8 +128,8 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                 self.print(failed("❌ HMM performance improvement validation failed"))
                 validation_phases["performance_improvement"] = False
         except Exception as e:
-            self.logger.error(
-                f"❌ Performance improvement validation failed with exception: {e}"
+            self.logger.exception(
+                f"❌ Performance improvement validation failed with exception: {e}",
             )
             validation_phases["performance_improvement"] = False
 
@@ -139,7 +137,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         self.logger.info("🔍 Phase 4: Validating enhancement quality...")
         try:
             quality_passed = self._validate_enhancement_quality(
-                symbol, exchange, data_dir
+                symbol, exchange, data_dir,
             )
             if quality_passed:
                 self.logger.info("✅ Enhancement quality validation passed")
@@ -149,8 +147,8 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                 self.print(failed("❌ HMM enhancement quality validation failed"))
                 validation_phases["enhancement_quality"] = False
         except Exception as e:
-            self.logger.error(
-                f"❌ Enhancement quality validation failed with exception: {e}"
+            self.logger.exception(
+                f"❌ Enhancement quality validation failed with exception: {e}",
             )
             validation_phases["enhancement_quality"] = False
 
@@ -169,8 +167,8 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                 self.logger.error("❌ Outcome favorability validation failed")
                 validation_phases["outcome_favorability"] = False
         except Exception as e:
-            self.logger.error(
-                f"❌ Outcome favorability validation failed with exception: {e}"
+            self.logger.exception(
+                f"❌ Outcome favorability validation failed with exception: {e}",
             )
             validation_phases["outcome_favorability"] = False
 
@@ -184,23 +182,23 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         self.logger.info("=" * 80)
         self.logger.info(f"Validation time: {validation_duration:.2f}s")
         self.logger.info(f"Successful phases: {successful_phases}/{total_phases}")
-        self.logger.info(f"Phase status:")
+        self.logger.info("Phase status:")
         for phase, status in validation_phases.items():
             status_emoji = "✅" if status else "❌"
             self.logger.info(
-                f"   {status_emoji} {phase}: {'PASSED' if status else 'FAILED'}"
+                f"   {status_emoji} {phase}: {'PASSED' if status else 'FAILED'}",
             )
 
         if successful_phases >= 4:  # At least 4 out of 5 phases successful
-            self.logger.info(f"✅ Step 6 validation passed")
+            self.logger.info("✅ Step 6 validation passed")
             self.logger.info(
-                f"   Success rate: {successful_phases/total_phases*100:.1f}%"
+                f"   Success rate: {successful_phases/total_phases*100:.1f}%",
             )
             validation_result = True
         else:
-            self.logger.error(f"❌ Step 6 validation failed")
+            self.logger.error("❌ Step 6 validation failed")
             self.logger.error(
-                f"   Success rate: {successful_phases/total_phases*100:.1f}%"
+                f"   Success rate: {successful_phases/total_phases*100:.1f}%",
             )
             validation_result = False
 
@@ -213,8 +211,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate that enhanced HMM model files exist.
+        """Validate that enhanced HMM model files exist.
 
         Args:
             symbol: Trading symbol
@@ -223,6 +220,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
 
         Returns:
             bool: True if files exist
+
         """
         try:
             enhanced_models_dir = f"{data_dir}/enhanced_hmm_models"
@@ -230,7 +228,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                 f"{data_dir}/{exchange}_{symbol}_hmm_enhancement_summary.json"
             )
 
-            missing_paths: list[str] = []
+            missing_paths: list[str] , []
             if not os.path.isdir(enhanced_models_dir):
                 missing_paths.append(enhanced_models_dir)
             if not os.path.isfile(summary_file):
@@ -269,7 +267,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                 return False
 
             self.logger.info(
-                "✅ Step 6 HMM artifacts present (directory and summary JSON)"
+                "✅ Step 6 HMM artifacts present (directory and summary JSON)",
             )
             return True
 
@@ -285,8 +283,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate that HMM performance has improved after enhancement.
+        """Validate that HMM performance has improved after enhancement.
 
         Args:
             symbol: Trading symbol
@@ -295,6 +292,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
 
         Returns:
             bool: True if performance improved
+
         """
         try:
             # Load original metrics from step5 HMM history
@@ -315,7 +313,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
             )
             if not os.path.exists(summary_file):
                 self.print(
-                    missing(f"❌ HMM enhancement summary not found: {summary_file}")
+                    missing(f"❌ HMM enhancement summary not found: {summary_file}"),
                 )
                 return False
 
@@ -323,11 +321,11 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                 enhanced_summary = json.load(f)
 
             # Aggregate enhanced accuracies
-            enhanced_accuracies: list[float] = []
+            enhanced_accuracies: list[float] , []
             for timeframe_models in enhanced_summary.values():
                 for model_info in timeframe_models.values():
                     acc = model_info.get("accuracy")
-                    if isinstance(acc, (int, float)):
+                    if isinstance(acc, int | float):
                         enhanced_accuracies.append(float(acc))
 
             improvements = []
@@ -374,8 +372,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate the quality of the HMM enhancement process.
+        """Validate the quality of the HMM enhancement process.
 
         Args:
             symbol: Trading symbol
@@ -384,6 +381,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
 
         Returns:
             bool: True if enhancement quality is acceptable
+
         """
         try:
             # Load enhancement summary to find a concrete model artifact
@@ -394,7 +392,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
             )
             if not os.path.exists(summary_file):
                 self.print(
-                    missing(f"❌ HMM enhancement summary not found: {summary_file}")
+                    missing(f"❌ HMM enhancement summary not found: {summary_file}"),
                 )
                 return False
 
@@ -414,7 +412,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
 
             if not model_path:
                 self.print(
-                    failed("❌ No valid HMM model paths found in enhancement summary")
+                    failed("❌ No valid HMM model paths found in enhancement summary"),
                 )
                 return False
 
@@ -501,7 +499,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                 if callable(getattr(inner, "predict", None)):
                     return inner
 
-            if isinstance(artifact, (list, tuple)) and artifact:
+            if isinstance(artifact, list | tuple) and artifact:
                 first = artifact[0]
                 if callable(getattr(first, "predict", None)):
                     return first
@@ -515,8 +513,7 @@ async def run_validator(
     training_input: dict[str, Any],
     pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
-    """
-    Run the step6_hmm_based_enhancement validator.
+    """Run the step6_hmm_based_enhancement validator.
 
     Args:
         training_input: Training input parameters
@@ -524,6 +521,7 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
+
     """
     validator = Step6HMMBasedEnhancementValidator(CONFIG)
     validation_passed = await validator.validate(training_input, pipeline_state)
@@ -541,7 +539,7 @@ if __name__ == "__main__":
     import asyncio
 
     # Example usage
-    async def test_validator():
+    async def test_validator() -> None:
         training_input = {
             "symbol": "ETHUSDT",
             "exchange": "BINANCE",
@@ -552,7 +550,6 @@ if __name__ == "__main__":
             "hmm_based_enhancement": {"status": "SUCCESS", "duration": 450.5},
         }
 
-        result = await run_validator(training_input, pipeline_state)
-        print(f"Validation result: {result}")
+        await run_validator(training_input, pipeline_state)
 
     asyncio.run(test_validator())

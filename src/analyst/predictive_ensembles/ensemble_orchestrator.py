@@ -12,8 +12,6 @@ from sklearn.decomposition import PCA
 from src.config import CONFIG
 from src.utils.logger import system_logger
 
-from .regime_ensembles.bear_trend_ensemble import BearTrendEnsemble
-from .regime_ensembles.bull_trend_ensemble import BullTrendEnsemble
 from .regime_ensembles.sideways_range_ensemble import SidewaysRangeEnsemble
 from .regime_ensembles.volatile_regime_ensemble import VolatileRegimeEnsemble
 
@@ -31,8 +29,6 @@ class RegimePredictiveEnsembles:
 
         # Initialize all possible ensemble instances - updated for new regime classification
         self.regime_ensembles = {
-            "BULL_TREND": BullTrendEnsemble(config, "BullTrendEnsemble"),
-            "BEAR_TREND": BearTrendEnsemble(config, "BearTrendEnsemble"),
             "SIDEWAYS_RANGE": SidewaysRangeEnsemble(config, "SidewaysRangeEnsemble"),
             "VOLATILE_REGIME": VolatileRegimeEnsemble(config, "VolatileRegimeEnsemble"),
         }
@@ -249,7 +245,6 @@ class RegimePredictiveEnsembles:
         regime_info = self.get_current_regime_info(current_features)
         primary_regime = regime_info["regime_name"]
         current_expert = regime_info["expert"]
-        cluster_id = regime_info["cluster_id"]
         confidence = regime_info["confidence"]
 
         # Collect predictions and confidences from all individual ensembles

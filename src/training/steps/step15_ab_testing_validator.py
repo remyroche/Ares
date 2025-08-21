@@ -1,6 +1,4 @@
-"""
-Validator for Step 15: A/B Testing
-"""
+"""Validator for Step 15: A/B Testing."""
 
 import os
 import sys
@@ -24,7 +22,7 @@ from src.utils.base_validator import BaseValidator
 class Step15ABTestingValidator(BaseValidator):
     """Validator for Step 15: A/B Testing."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step15_ab_testing", config)
 
     async def validate(
@@ -32,8 +30,7 @@ class Step15ABTestingValidator(BaseValidator):
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
     ) -> bool:
-        """
-        Validate the A/B testing step.
+        """Validate the A/B testing step.
 
         Args:
             training_input: Training input parameters
@@ -41,6 +38,7 @@ class Step15ABTestingValidator(BaseValidator):
 
         Returns:
             bool: True if validation passed, False otherwise
+
         """
         self.logger.info("🔍 Validating A/B testing step...")
 
@@ -119,8 +117,7 @@ class Step15ABTestingValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate that A/B testing files exist.
+        """Validate that A/B testing files exist.
 
         Args:
             symbol: Trading symbol
@@ -129,6 +126,7 @@ class Step15ABTestingValidator(BaseValidator):
 
         Returns:
             bool: True if files exist
+
         """
         try:
             # Expected A/B testing file patterns
@@ -164,8 +162,7 @@ class Step15ABTestingValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate statistical significance of A/B testing results.
+        """Validate statistical significance of A/B testing results.
 
         Args:
             symbol: Trading symbol
@@ -174,6 +171,7 @@ class Step15ABTestingValidator(BaseValidator):
 
         Returns:
             bool: True if statistical significance is acceptable
+
         """
         try:
             # Load A/B testing results
@@ -256,8 +254,7 @@ class Step15ABTestingValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate A/B testing performance comparison.
+        """Validate A/B testing performance comparison.
 
         Args:
             symbol: Trading symbol
@@ -266,6 +263,7 @@ class Step15ABTestingValidator(BaseValidator):
 
         Returns:
             bool: True if performance comparison is acceptable
+
         """
         try:
             # Load A/B testing performance results
@@ -358,8 +356,7 @@ class Step15ABTestingValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate A/B testing sample sizes and balance.
+        """Validate A/B testing sample sizes and balance.
 
         Args:
             symbol: Trading symbol
@@ -368,6 +365,7 @@ class Step15ABTestingValidator(BaseValidator):
 
         Returns:
             bool: True if sample sizes are acceptable
+
         """
         try:
             # Load A/B testing metadata
@@ -441,8 +439,7 @@ async def run_validator(
     training_input: dict[str, Any],
     pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
-    """
-    Run the step15_ab_testing validator.
+    """Run the step15_ab_testing validator.
 
     Args:
         training_input: Training input parameters
@@ -450,6 +447,7 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
+
     """
     validator = Step15ABTestingValidator(CONFIG)
     validation_passed = await validator.validate(training_input, pipeline_state)
@@ -467,7 +465,7 @@ if __name__ == "__main__":
     import asyncio
 
     # Example usage
-    async def test_validator():
+    async def test_validator() -> None:
         training_input = {
             "symbol": "ETHUSDT",
             "exchange": "BINANCE",
@@ -476,7 +474,6 @@ if __name__ == "__main__":
 
         pipeline_state = {"ab_testing": {"status": "SUCCESS", "duration": 800.5}}
 
-        result = await run_validator(training_input, pipeline_state)
-        print(f"Validation result: {result}")
+        await run_validator(training_input, pipeline_state)
 
     asyncio.run(test_validator())

@@ -4,23 +4,22 @@ Debug script to analyze low variance features in the autoencoder feature generat
 This script helps identify which features have low variance and whether this is normal.
 """
 
-import pandas as pd
+from typing import Any, import logging
+
 import numpy as np
-import logging
-from pathlib import Path
-import json
-from typing import List, Dict, Any
+import pandas as pd
 
 # Set up logging
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    level , logging.INFO,
+    format, "%(asctime)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
 
 def analyze_feature_variance(
-    features_df: pd.DataFrame, std_threshold: float = 1e-6
-) -> Dict[str, Any]:
+    features_df: pd.DataFrame = std_threshold: float = 1e-6,
+) -> dict[str , Any]:
     """
     Analyze feature variance and identify low variance features.
 
@@ -33,8 +32,7 @@ def analyze_feature_variance(
     """
     results = {
         "total_features": len(features_df.columns),
-        "std_threshold": std_threshold,
-        "low_variance_features": [],
+        "std_threshold": std_threshold , "low_variance_features": [],
         "feature_std_values": {},
         "analysis_summary": {},
     }
@@ -62,7 +60,7 @@ def analyze_feature_variance(
     return results
 
 
-def check_feature_types(features_df: pd.DataFrame) -> Dict[str, Any]:
+def check_feature_types(features_df: pd.DataFrame) -> dict[str , Any]:
     """
     Analyze feature types and patterns to understand the data better.
     """
@@ -103,13 +101,13 @@ def check_feature_types(features_df: pd.DataFrame) -> Dict[str, Any]:
 
 
 def generate_debug_report(
-    features_df: pd.DataFrame, std_threshold: float = 1e-6
+    features_df: pd.DataFrame = std_threshold: float = 1e-6,
 ) -> str:
     """
     Generate a comprehensive debug report for low variance features.
     """
     logger.info("🔍 Analyzing feature variance...")
-    variance_analysis = analyze_feature_variance(features_df, std_threshold)
+    variance_analysis = analyze_feature_variance(features_df = std_threshold)
 
     logger.info("🔍 Analyzing feature types and patterns...")
     type_analysis = check_feature_types(features_df)
@@ -122,10 +120,10 @@ def generate_debug_report(
 
     # Summary
     summary = variance_analysis["analysis_summary"]
-    report.append(f"\n📊 SUMMARY:")
+    report.append("\n📊 SUMMARY:")
     report.append(f"   Total features: {summary['total_features']}")
     report.append(
-        f"   Low variance features: {summary['low_variance_count']} ({summary['low_variance_percentage']:.1f}%)"
+        f"   Low variance features: {summary['low_variance_count']} ({summary['low_variance_percentage']:.1f}%)",
     )
     report.append(f"   Standard deviation threshold: {std_threshold}")
     report.append(f"   Min std: {summary['min_std']:.2e}")
@@ -136,27 +134,27 @@ def generate_debug_report(
     # Low variance features list
     if variance_analysis["low_variance_features"]:
         report.append(f"\n⚠️ LOW VARIANCE FEATURES (std <= {std_threshold}):")
-        for i, feature in enumerate(variance_analysis["low_variance_features"], 1):
+        for i , feature in enumerate(variance_analysis["low_variance_features"], 1):
             std_val = variance_analysis["feature_std_values"][feature]
             unique_count = type_analysis["unique_counts"][feature]
             report.append(f"   {i:2d}. {feature}")
             report.append(f"       std: {std_val:.2e}, unique values: {unique_count}")
 
     # Feature patterns
-    report.append(f"\n🔍 FEATURE PATTERNS:")
-    for pattern, features in type_analysis["feature_patterns"].items():
+    report.append("\n🔍 FEATURE PATTERNS:")
+    for pattern , features in type_analysis["feature_patterns"].items():
         report.append(f"   {pattern}: {len(features)} features")
         if len(features) <= 10:
             report.append(f"       {', '.join(features)}")
 
     # Constant features
     if type_analysis["constant_features"]:
-        report.append(f"\n🚨 CONSTANT FEATURES (no variance):")
+        report.append("\n🚨 CONSTANT FEATURES (no variance):")
         for feature in type_analysis["constant_features"]:
             report.append(f"   - {feature}")
 
     # Assessment
-    report.append(f"\n📋 ASSESSMENT:")
+    report.append("\n📋 ASSESSMENT:")
     low_var_pct = summary["low_variance_percentage"]
 
     if low_var_pct == 100:
@@ -172,13 +170,13 @@ def generate_debug_report(
     elif low_var_pct > 20:
         report.append("   ⚠️ CAUTION: More than 20% of features have low variance")
         report.append(
-            "   This might be normal for some feature types (e.g., cluster IDs)"
+            "   This might be normal for some feature types (e.g., cluster IDs)",
         )
     else:
         report.append("   ✅ Normal: Low percentage of low variance features")
 
     # Recommendations
-    report.append(f"\n💡 RECOMMENDATIONS:")
+    report.append("\n💡 RECOMMENDATIONS:")
     if low_var_pct > 50:
         report.append("   1. Check feature engineering pipeline")
         report.append("   2. Verify data preprocessing steps")
@@ -187,10 +185,10 @@ def generate_debug_report(
     else:
         report.append("   1. This appears to be normal behavior")
         report.append(
-            "   2. Low variance features are likely cluster IDs or categorical features"
+            "   2. Low variance features are likely cluster IDs or categorical features",
         )
         report.append(
-            "   3. Consider if these features should be excluded from autoencoder training"
+            "   3. Consider if these features should be excluded from autoencoder training",
         )
 
     report.append("\n" + "=" * 80)
@@ -247,7 +245,7 @@ def main():
     for feature in dummy_features:
         if "cluster" in feature:
             # Simulate cluster features with very low variance
-            dummy_df[feature] = np.random.choice([0, 1], size=n_rows, p=[0.99, 0.01])
+            dummy_df[feature] = np.random.choice([0, 1], size, n_rows = p=[0.99, 0.01])
         else:
             # Simulate ID features with some variance
             dummy_df[feature] = np.random.randint(0, 5, size=n_rows)

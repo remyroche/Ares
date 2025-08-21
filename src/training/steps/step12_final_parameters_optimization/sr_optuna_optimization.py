@@ -247,9 +247,41 @@ class SROptunaOptimizer:
                     load_if_exists=True
                 )
             
-            # Define objective function
+            # Define objective function (sync wrapper for async evaluate)
             def objective(trial: optuna.Trial):
-                return await self._evaluate_sr_parameters(trial, price_data, target_returns)
+                import asyncio
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = None
+
+                async def run_eval():
+                    return await self._evaluate_sr_parameters(trial, price_data, target_returns)
+
+                if loop and loop.is_running():
+                    # Run in a new thread with its own loop to avoid nested loop issues
+                    from concurrent.futures import ThreadPoolExecutor
+
+                    def _runner():
+                        new_loop = asyncio.new_event_loop()
+                        try:
+                            asyncio.set_event_loop(new_loop)
+                            return new_loop.run_until_complete(run_eval())
+                        finally:
+                            new_loop.close()
+
+                    with ThreadPoolExecutor(max_workers=1) as ex:
+                        return ex.submit(_runner).result()
+                else:
+                    loop = loop or asyncio.new_event_loop()
+                    try:
+                        asyncio.set_event_loop(loop)
+                        return loop.run_until_complete(run_eval())
+                    finally:
+                        if loop.is_running():
+                            pass
+                        else:
+                            loop.close()
             
             # Run optimization
             study.optimize(

@@ -66,7 +66,9 @@ class TrainingOrchestrator:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.print(invalid("Invalid configuration for training orchestrator"))
+                self.logger.error(
+                    invalid("Invalid configuration for training orchestrator"),
+                )
                 return False
 
             self.logger.info("✅ Training Orchestrator initialized successfully")
@@ -115,7 +117,7 @@ class TrainingOrchestrator:
         except Exception as e:
             error_msg = f"Failed to initialize component managers: {e}"
             self.logger.exception(error_msg)
-            self.print(failed(error_msg))
+            self.logger.error(failed(error_msg))
             raise
 
     @handle_errors(
@@ -149,7 +151,9 @@ class TrainingOrchestrator:
             orchestrator_config = self.config.get("training_orchestrator", {})
 
             if orchestrator_config.get("max_training_duration", 0) <= 0:
-                self.print(invalid("Invalid max_training_duration configuration"))
+                self.logger.error(
+                    invalid("Invalid max_training_duration configuration"),
+                )
                 return False
 
             return True
@@ -157,7 +161,7 @@ class TrainingOrchestrator:
         except Exception as e:
             error_msg = f"Configuration validation failed: {e}"
             self.logger.exception(error_msg)
-            self.print(failed(error_msg))
+            self.logger.error(failed(error_msg))
             return False
 
     @handle_specific_errors(
@@ -198,7 +202,7 @@ class TrainingOrchestrator:
                 self.logger.info("✅ Training pipeline completed successfully")
                 await self._store_training_results(training_input)
             else:
-                self.print(failed("❌ Training pipeline failed"))
+                self.logger.error(failed("❌ Training pipeline failed"))
 
             self.is_training = False
             return success
@@ -206,7 +210,7 @@ class TrainingOrchestrator:
         except Exception as e:
             error_msg = f"Training execution failed: {e}"
             self.logger.exception(error_msg)
-            self.print(failed(error_msg))
+            self.logger.error(failed(error_msg))
             self.is_training = False
             return False
 
@@ -230,20 +234,22 @@ class TrainingOrchestrator:
 
             for field in required_fields:
                 if field not in training_input:
-                    self.print(
-                        missing("Missing required training input field: {field}"),
+                    self.logger.error(
+                        missing(
+                            f"Missing required training input field: {field}",
+                        ),
                     )
                     return False
 
             # Validate specific field values
             if training_input.get("lookback_days", 0) <= 0:
-                self.print(invalid("Invalid lookback_days value"))
+                self.logger.error(invalid("Invalid lookback_days value"))
                 return False
 
             return True
 
-        except Exception:
-            self.print(failed("Training input validation failed: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Training input validation failed: {e}")
             return False
 
     @handle_errors(
@@ -271,7 +277,7 @@ class TrainingOrchestrator:
             self.logger.info("🔧 Step 1: Model Training")
             model_results = await self.model_trainer.train_models(training_input)
             if not model_results:
-                self.print(failed("❌ Model training failed"))
+                self.logger.error(failed("❌ Model training failed"))
                 return False
 
             # Step 2: Optimization
@@ -281,7 +287,7 @@ class TrainingOrchestrator:
                 training_input,
             )
             if not optimization_results:
-                self.print(failed("❌ Model optimization failed"))
+                self.logger.error(failed("❌ Model optimization failed"))
                 return False
 
             # Step 3: Ensemble Creation
@@ -291,7 +297,7 @@ class TrainingOrchestrator:
                 training_input,
             )
             if not ensemble_results:
-                self.print(failed("❌ Ensemble creation failed"))
+                self.logger.error(failed("❌ Ensemble creation failed"))
                 return False
 
             # Step 4: Calibration
@@ -301,7 +307,7 @@ class TrainingOrchestrator:
                 training_input,
             )
             if not calibration_results:
-                self.print(failed("❌ Model calibration failed"))
+                self.logger.error(failed("❌ Model calibration failed"))
                 return False
 
             # Store final results
@@ -317,8 +323,8 @@ class TrainingOrchestrator:
             self.logger.info("✅ Training pipeline completed successfully")
             return True
 
-        except Exception:
-            self.print(failed("❌ Training pipeline execution failed: {e}"))
+        except Exception as e:
+            self.logger.exception(f"❌ Training pipeline execution failed: {e}")
             return False
 
     @handle_errors(
@@ -340,8 +346,8 @@ class TrainingOrchestrator:
             # This would typically store to database or file system
             self.logger.info(f"📁 Storing training results with key: {results_key}")
 
-        except Exception:
-            self.print(failed("❌ Failed to store training results: {e}"))
+        except Exception as e:
+            self.logger.exception(f"❌ Failed to store training results: {e}")
 
     def get_training_status(self) -> dict[str, Any]:
         """
@@ -391,8 +397,8 @@ class TrainingOrchestrator:
             self.is_training = False
             self.logger.info("✅ Training Orchestrator stopped successfully")
 
-        except Exception:
-            self.print(failed("❌ Failed to stop Training Orchestrator: {e}"))
+        except Exception as e:
+            self.logger.exception(f"❌ Failed to stop Training Orchestrator: {e}")
 
 
 @handle_errors(

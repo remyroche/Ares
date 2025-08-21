@@ -245,7 +245,7 @@ class WaveletIntegrationDemo:
                     self.logger.info(f"   Examples: {features[:3]}")
 
         except Exception as e:
-            self.print(error("Error demonstrating feature integration: {e}"))
+            self.logger.error(error(f"Error demonstrating feature integration: {e}"))
 
     async def demonstrate_wavelet_workflow(
         self,
@@ -278,7 +278,7 @@ class WaveletIntegrationDemo:
             if precompute_success:
                 self.logger.info("✅ Wavelet features pre-computed successfully")
             else:
-                self.print(problem("⚠️ Wavelet pre-computation had issues"))
+                self.logger.warning(problem("⚠️ Wavelet pre-computation had issues"))
 
             # Step 2: Run backtesting with cached features
             self.logger.info("📊 Step 2: Running backtesting with cached features...")
@@ -294,14 +294,14 @@ class WaveletIntegrationDemo:
                     f"📊 Backtest performance: {backtest_results.get('performance', 'N/A')}",
                 )
             else:
-                self.print(problem("⚠️ Backtesting had issues"))
+                self.logger.warning(problem("⚠️ Backtesting had issues"))
 
             # Step 3: Show cache statistics
             cache_stats = self.wavelet_cache.get_cache_stats()
             self.logger.info(f"📊 Cache statistics: {cache_stats}")
 
         except Exception as e:
-            self.print(error("Error demonstrating wavelet workflow: {e}"))
+            self.logger.error(error(f"Error demonstrating wavelet workflow: {e}"))
 
     async def demonstrate_live_trading_integration(
         self,
@@ -358,7 +358,7 @@ class WaveletIntegrationDemo:
                         self.logger.info("📉 Low wavelet energy - market may be stable")
 
         except Exception as e:
-            self.print(error("Error demonstrating live trading integration: {e}"))
+            self.logger.error(error(f"Error demonstrating live trading integration: {e}"))
 
     async def demonstrate_extensive_wavelet_techniques(
         self,
@@ -444,7 +444,7 @@ class WaveletIntegrationDemo:
             price_data, volume_data = await self.create_sample_data()
 
             if price_data.empty:
-                self.print(failed("❌ Failed to create sample data"))
+                self.logger.error(failed("❌ Failed to create sample data"))
                 return
 
             self.logger.info(f"📊 Created sample data: {len(price_data)} data points")
@@ -471,7 +471,7 @@ class WaveletIntegrationDemo:
             self.logger.info("   ✅ Live trading integration demonstrated")
 
         except Exception as e:
-            self.print(error("Error running complete demo: {e}"))
+            self.logger.error(error(f"Error running complete demo: {e}"))
 
 
 async def main():

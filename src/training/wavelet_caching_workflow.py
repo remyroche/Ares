@@ -168,7 +168,9 @@ async def step2_run_backtests(config: dict):
             pd.read_parquet(
                 "data/price_data/sample_data.parquet", columns=ohlcv_columns()
             )
-        except Exception:
+        except Exception as e:
+            # Fallback without specifying columns if list is invalid
+            print(f"WARNING: Falling back to reading parquet without columns due to: {e}")
             pd.read_parquet("data/price_data/sample_data.parquet")
 
         # Create multiple backtest configurations
@@ -251,7 +253,8 @@ async def step3_performance_comparison(config: dict):
                 "data/price_data/sample_data.parquet",
                 columns=["timestamp", "open", "high", "low", "close", "volume"],
             )
-        except Exception:
+        except Exception as e:
+            print(f"WARNING: Falling back to reading parquet without explicit columns due to: {e}")
             price_data = pd.read_parquet("data/price_data/sample_data.parquet")
 
         # Test 1: With caching (should be fast)

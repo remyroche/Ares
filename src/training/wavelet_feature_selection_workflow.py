@@ -154,14 +154,14 @@ class WaveletFeatureSelectionWorkflow:
             self.feature_engineer = VectorizedAdvancedFeatureEngineering(self.config)
             success = await self.feature_engineer.initialize()
             if not success:
-                self.print(failed("Failed to initialize feature engineer"))
+                self.logger.error(failed("Failed to initialize feature engineer"))
                 return False
 
             # Initialize feature precomputer
             self.feature_precomputer = WaveletFeaturePrecomputer(self.config)
             success = await self.feature_precomputer.initialize()
             if not success:
-                self.print(failed("Failed to initialize feature precomputer"))
+                self.logger.error(failed("Failed to initialize feature precomputer"))
                 return False
 
             self.logger.info(
@@ -172,7 +172,7 @@ class WaveletFeatureSelectionWorkflow:
         except Exception as e:
             error_msg = f"Error initializing wavelet feature selection workflow: {e}"
             self.logger.exception(error_msg)
-            self.print(initialization_error(error_msg))
+            self.logger.error(initialization_error(error_msg))
             return False
 
     @handle_errors(
@@ -227,7 +227,7 @@ class WaveletFeatureSelectionWorkflow:
         except Exception as e:
             error_msg = f"Error in full wavelet analysis: {e}"
             self.logger.exception(error_msg)
-            self.print(error(error_msg))
+            self.logger.error(error(error_msg))
             return None
 
     @handle_errors(
@@ -353,7 +353,7 @@ class WaveletFeatureSelectionWorkflow:
         except Exception as e:
             error_msg = f"Error training discovery model: {e}"
             self.logger.exception(error_msg)
-            self.print(error(error_msg))
+            self.logger.error(error(error_msg))
             return None
 
     @handle_errors(
@@ -449,7 +449,7 @@ class WaveletFeatureSelectionWorkflow:
         except Exception as e:
             error_msg = f"Error in feature selection: {e}"
             self.logger.exception(error_msg)
-            self.print(error(error_msg))
+            self.logger.error(error(error_msg))
             return None
 
     def _classify_feature_type(self, feature_name: str) -> str:
@@ -497,7 +497,7 @@ class WaveletFeatureSelectionWorkflow:
             self.logger.info("🏆 Step 4: Identifying winner features...")
 
             if not self.feature_importance_results:
-                self.print(error("No feature importance results available"))
+                self.logger.error(error("No feature importance results available"))
                 return None
 
             # Filter features based on importance and computation cost
@@ -542,7 +542,7 @@ class WaveletFeatureSelectionWorkflow:
         except Exception as e:
             error_msg = f"Error identifying winner features: {e}"
             self.logger.exception(error_msg)
-            self.print(error(error_msg))
+            self.logger.error(error(error_msg))
             return None
 
     @handle_errors(
@@ -604,7 +604,7 @@ class WaveletFeatureSelectionWorkflow:
         except Exception as e:
             error_msg = f"Error creating lean dataset: {e}"
             self.logger.exception(error_msg)
-            self.print(error(error_msg))
+            self.logger.error(error(error_msg))
             return None
 
     @handle_errors(
@@ -716,7 +716,7 @@ class WaveletFeatureSelectionWorkflow:
         except Exception as e:
             error_msg = f"Error training production model: {e}"
             self.logger.exception(error_msg)
-            self.print(error(error_msg))
+            self.logger.error(error(error_msg))
             return None
 
     @handle_errors(
@@ -795,7 +795,7 @@ class WaveletFeatureSelectionWorkflow:
         except Exception as e:
             error_msg = f"Error creating live configurations: {e}"
             self.logger.exception(error_msg)
-            self.print(error(error_msg))
+            self.logger.error(error(error_msg))
             return None
 
     def _create_optimized_wavelet_config(
@@ -1024,7 +1024,7 @@ class WaveletFeatureSelectionWorkflow:
         except Exception as e:
             error_msg = f"Error in complete wavelet feature selection workflow: {e}"
             self.logger.exception(error_msg)
-            self.print(error(error_msg))
+            self.logger.error(error(error_msg))
             return None
 
     def _generate_summary_report(

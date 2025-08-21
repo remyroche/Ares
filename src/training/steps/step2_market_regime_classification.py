@@ -16,7 +16,7 @@ from src.utils.logger import system_logger
 
 
 def convert_trade_data_to_ohlcv(
-    trade_data: pd.DataFrame = timeframe: str = "1h",
+    trade_data: pd.DataFrame, timeframe: str = "1h",
 ) -> pd.DataFrame:
     """Convert trade data to OHLCV format.
 
@@ -96,10 +96,10 @@ class MarketRegimeClassificationStep:
         self.logger.info("🔄 Executing Market Regime Classification...")
 
         # Extract parameters
-        symbol, training_input.get("symbol", "ETHUSDT")
-        exchange, training_input.get("exchange", "BINANCE")
-        data_dir, training_input.get("data_dir", "data/training")
-        timeframe, training_input.get("timeframe", "1m")
+        symbol = training_input.get("symbol", "ETHUSDT")
+        exchange = training_input.get("exchange", "BINANCE")
+        data_dir = training_input.get("data_dir", "data/training")
+        timeframe = training_input.get("timeframe", "1m")
 
         # Use unified data loader to get data
         self.logger.info("🔄 Loading data using unified data loader...")
@@ -111,17 +111,17 @@ class MarketRegimeClassificationStep:
         )
 
         # Use lookback_days from training_input (passed from enhanced training manager) or config
-        lookback_days, training_input.get(
+        lookback_days = training_input.get(
             "lookback_days",
-        self.config.get("lookback_days", BLANK_TRAINING_LOOKBACK_DAYS),
+            self.config.get("lookback_days", BLANK_TRAINING_LOOKBACK_DAYS),
         )
 
         # Load unified data with optimizations for ML training
-        historical_data, await data_loader.load_unified_data(
-            symbol=symbol
-            exchange=exchange
-            timeframe=timeframe
-            lookback_days=lookback_days
+        historical_data = await data_loader.load_unified_data(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+            lookback_days=lookback_days,
             use_streaming=True,  # Enable streaming for large datasets
         )
 
@@ -149,14 +149,14 @@ class MarketRegimeClassificationStep:
 
         # Convert to 1h timeframe if needed for regime classification
         if timeframe != "1h":
-        self.logger.info(
+            self.logger.info(
                 "🔄 Resampling data to 1h timeframe for regime classification...",
             )
-            historical_data, self._resample_to_timeframe(historical_data, "1h")
-        self.logger.info(f"✅ Resampled to 1h: {len(historical_data)} records")
+            historical_data = self._resample_to_timeframe(historical_data, "1h")
+            self.logger.info(f"✅ Resampled to 1h: {len(historical_data)} records")
 
         # Perform regime classification
-        regime_results, await self._classify_market_regimes(
+        regime_results = await self._classify_market_regimes(
             historical_data,
             symbol,
             exchange,
@@ -182,27 +182,27 @@ class MarketRegimeClassificationStep:
         ):
         # Use timestamps from original data/index
         if "timestamp" in historical_data.columns:
-                timestamps = pd.to_datetime(historical_data["timestamp"]).tolist()
-            elif isinstance(historical_data.index, pd.DatetimeIndex):
-                timestamps = historical_data.index.to_list()
-            else:
-        # Fallback: generate hourly timestamps ending at current time
-        try:
-                    periods = len(regime_results["regime_sequence"])
-                    timestamps, pd.date_range(
-                        end=pd.Timestamp.utcnow(), periods=periods, freq="1H"
-                    ).to_list()
-        except Exception:
-                    timestamps = list(range(len(regime_results["regime_sequence"])))
+            timestamps = pd.to_datetime(historical_data["timestamp"]).tolist()
+        elif isinstance(historical_data.index, pd.DatetimeIndex):
+            timestamps = historical_data.index.to_list()
+        else:
+            # Fallback: generate hourly timestamps ending at current time
+            try:
+                periods = len(regime_results["regime_sequence"])
+                timestamps = pd.date_range(
+                    end=pd.Timestamp.utcnow(), periods=periods, freq="1H"
+                ).to_list()
+            except Exception:
+                timestamps = list(range(len(regime_results["regime_sequence"])))
 
         # Ensure all sequences have the same length
-            min_length, min(
+            min_length = min(
                 len(timestamps),
                 len(regime_results["regime_sequence"]),
                 len(regime_results["confidence_scores"]),
             )
 
-            parquet_df, pd.DataFrame(
+            parquet_df = pd.DataFrame(
                 {
                     "timestamp": timestamps[:min_length],
                     "regime": regime_results["regime_sequence"][:min_length],
@@ -548,7 +548,7 @@ from src.utils.training_pipeline_decorators import (
     min_memory_gb=4.0,
     min_disk_gb=2.0,
     required_packages=["pandas", "numpy", "sklearn"],
-    data_quality_checks={,
+    data_quality_checks={
         "min_rows": 1000,
         "required_columns": ["timestamp", "open", "high", "low", "close", "volume"],
     },
@@ -623,7 +623,7 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
         }
 
         pipeline_state = {}
-        result, await step.execute(training_input, pipeline_state)
+        result = await step.execute(training_input, pipeline_state)
 
         return result.get("status") == "SUCCESS"
 

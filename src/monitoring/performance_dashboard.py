@@ -14,6 +14,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.utils.error_handler import handle_errors
+from src.utils.centralized_decorators import (
+    performance_monitor,
+    PerformanceLevel,
+)
 from src.utils.logger import system_logger
 
 
@@ -64,6 +68,7 @@ class PerformanceDashboard:
         self.export_dir = Path("dashboard_exports")
         self.export_dir.mkdir(exist_ok=True)
 
+    @performance_monitor(level=PerformanceLevel.DETAILED)
     @handle_errors(exceptions=(Exception,), default_return=False, context="performance_dashboard.initialize")
     async def initialize(self) -> bool:
         """Initialize performance dashboard."""

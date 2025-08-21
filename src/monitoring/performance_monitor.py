@@ -13,6 +13,10 @@ from datetime import datetime
 from typing import Any, Deque, Dict, List, Optional
 
 from src.utils.error_handler import handle_errors
+from src.utils.centralized_decorators import (
+    performance_monitor,
+    PerformanceLevel,
+)
 from src.utils.logger import system_logger
 
 
@@ -62,6 +66,7 @@ class PerformanceMonitor:
             maxlen=int(self.monitoring_config.get("metrics_history_size", 1000))
         )
 
+    @performance_monitor(level=PerformanceLevel.DETAILED)
     @handle_errors(exceptions=(Exception,), default_return=False, context="performance_monitor.initialize")
     async def initialize(self) -> bool:
         self.logger.info("📈 Initializing Performance Monitor ...")

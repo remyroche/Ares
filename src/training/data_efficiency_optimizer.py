@@ -249,8 +249,8 @@ class DataEfficiencyOptimizer:
                             self.logger.info("Cache validation successful")
                             return data
                         self.print(failed("Cache validation failed, reloading data"))
-                    except Exception:
-                        self.print(failed("Cache loading failed: {e}"))
+                    except Exception as e:
+                        self.print(failed(f"Cache loading failed: {e}"))
 
         # Load data from source with memory management
         self.logger.info(f"Loading {lookback_days} days of data from source...")

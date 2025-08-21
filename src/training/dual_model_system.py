@@ -123,7 +123,7 @@ class DualModelSystem:
 
         # Signal tracking
         self.current_enter_signal: dict[str, Any] | None = None
-        self.signal_history: list[dict[str, Any]] , []
+        self.signal_history: list[dict[str, Any]] = []
 
         # Ensemble configuration
         self.enable_ensemble_analysis: bool = self.dual_model_config.get(
@@ -173,8 +173,8 @@ class DualModelSystem:
             )
             return True
 
-        except Exception:
-            self.logger.exception("❌ Dual Model System initialization failed")
+        except Exception as e:
+            self.logger.exception(f"❌ Dual Model System initialization failed: {e}")
             return False
 
     @handle_errors(

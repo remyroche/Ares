@@ -94,8 +94,8 @@ class OptimizedTrainingIntegration:
             self.logger.info("✅ Optimized regime training completed")
             return results
 
-        except Exception:
-            self.print(failed("❌ Optimized regime training failed: {e}"))
+        except Exception as e:
+            self.print(failed(f"❌ Optimized regime training failed: {e}"))
             raise
         finally:
             # Cleanup

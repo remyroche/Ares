@@ -1,1 +1,1 @@
-from src.training.enhanced_matrix_operations import *  # re-export, for, step, naming
+from src.training.enhanced_matrix_operations import *  # re-export for step naming

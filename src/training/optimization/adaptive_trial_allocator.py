@@ -92,8 +92,8 @@ class AdaptiveTrialAllocator:
             )
             return importance_scores
 
-        except Exception:
-            self.print(error("Error calculating parameter importance: {e}"))
+        except Exception as e:
+            self.print(error(f"Error calculating parameter importance: {e}"))
             return {}
 
     def _get_base_importance(self, param_path: str) -> float:
@@ -126,8 +126,8 @@ class AdaptiveTrialAllocator:
                 return 0.5
             return 0.3
 
-        except Exception:
-            self.print(warning("Error getting base importance for {param_path}: {e}"))
+        except Exception as e:
+            self.print(warning(f"Error getting base importance for {param_path}: {e}"))
             return 0.3
 
     def _get_performance_importance(self, param_path: str) -> float:

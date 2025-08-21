@@ -13,6 +13,7 @@ import json
 import uuid
 
 from src.utils.logger import system_logger
+from src.utils.advanced_decorators import performance_monitor, PerformanceLevel
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import (
     error,
@@ -462,6 +463,7 @@ class EnhancedEventBus:
         default_return=False,
         context="enhanced event bus initialization",
     )
+    @performance_monitor(level=PerformanceLevel.DETAILED)
     async def initialize(self) -> bool:
         """Initialize the enhanced event bus"""
         try:
@@ -484,6 +486,7 @@ class EnhancedEventBus:
             self.logger.error(failed(f"❌ Enhanced Event Bus initialization failed: {e}"))
             return False
 
+    @performance_monitor(level=PerformanceLevel.BASIC)
     async def _load_configuration(self) -> None:
         """Load event bus configuration"""
         try:
@@ -530,6 +533,7 @@ class EnhancedEventBus:
             self.logger.error(error(f"Error validating configuration: {e}"))
             return False
 
+    @performance_monitor(level=PerformanceLevel.BASIC)
     async def _initialize_event_processing(self) -> None:
         """Initialize event processing components"""
         try:
@@ -555,6 +559,7 @@ class EnhancedEventBus:
                 ),
             )
 
+    @performance_monitor(level=PerformanceLevel.BASIC)
     async def _load_event_history(self) -> None:
         """Load recent event history from storage"""
         try:
@@ -570,6 +575,7 @@ class EnhancedEventBus:
         except Exception as e:
             self.logger.error(error(f"Error loading event history: {e}"))
 
+    @performance_monitor(level=PerformanceLevel.DETAILED)
     async def run(self) -> bool:
         """Run the enhanced event bus"""
         try:
@@ -587,6 +593,7 @@ class EnhancedEventBus:
             self.is_running = False
             return False
 
+    @performance_monitor(level=PerformanceLevel.DETAILED)
     async def _process_events(self) -> None:
         """Process events from the queue"""
         try:
@@ -622,6 +629,7 @@ class EnhancedEventBus:
         except Exception as e:
             self.logger.error(error(f"Error in enhanced event processing: {e}"))
 
+    @performance_monitor(level=PerformanceLevel.DETAILED)
     async def _dispatch_event(self, event: Event) -> bool:
         """Dispatch event to subscribers"""
         try:
@@ -675,6 +683,7 @@ class EnhancedEventBus:
             event.metadata.status = EventStatus.FAILED
             return False
 
+    @performance_monitor(level=PerformanceLevel.BASIC)
     async def _create_snapshot(self) -> None:
         """Create a system snapshot"""
         try:
@@ -700,6 +709,7 @@ class EnhancedEventBus:
         except Exception as e:
             self.logger.error(error(f"Error creating snapshot: {e}"))
 
+    @performance_monitor(level=PerformanceLevel.BASIC)
     async def stop(self) -> None:
         """Stop the enhanced event bus"""
         try:
@@ -746,6 +756,7 @@ class EnhancedEventBus:
         except Exception as e:
             self.logger.error(error(f"Error unsubscribing from event: {e}"))
 
+    @performance_monitor(level=PerformanceLevel.DETAILED)
     async def publish(
         self,
         event_type: EventType | str,
@@ -792,6 +803,7 @@ class EnhancedEventBus:
             self.logger.error(error(f"Error publishing event: {e}"))
             return ""
 
+    @performance_monitor(level=PerformanceLevel.BASIC)
     async def replay_events(
         self,
         aggregate_id: str | None = None,
@@ -823,6 +835,7 @@ class EnhancedEventBus:
             self.logger.error(error(f"Error replaying events: {e}"))
             return []
 
+    @performance_monitor(level=PerformanceLevel.BASIC)
     async def rebuild_from_events(
         self,
         aggregate_id: str,

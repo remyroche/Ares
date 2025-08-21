@@ -39,7 +39,7 @@ class CheckpointManager:
         # Checkpoint manager state
         self.is_managing: bool = False
         self.checkpoint_results: dict[str, Any] = {}
-        self.checkpoint_history: list[dict[str, Any]] , []
+        self.checkpoint_history: list[dict[str, Any]] = []
 
         # Configuration
         self.checkpoint_config: dict[str, Any] = self.config.get(
@@ -79,28 +79,23 @@ class CheckpointManager:
             bool: True if initialization successful, False otherwise
 
         """
-        try:
-            self.logger.info("Initializing Checkpoint Manager...")
+        self.logger.info("Initializing Checkpoint Manager...")
 
-            # Load checkpoint configuration
-            await self._load_checkpoint_configuration()
+        # Load checkpoint configuration
+        await self._load_checkpoint_configuration()
 
-            # Validate configuration
-            if not self._validate_configuration():
-                self.print(invalid("Invalid configuration for checkpoint manager"))
-                return False
-
-            # Initialize checkpoint modules
-            await self._initialize_checkpoint_modules()
-
-            self.logger.info(
-                "✅ Checkpoint Manager initialization completed successfully",
-            )
-            return True
-
-        except Exception:
-            self.print(failed("❌ Checkpoint Manager initialization failed: {e}"))
+        # Validate configuration
+        if not self._validate_configuration():
+            self.logger.error(invalid("Invalid configuration for checkpoint manager"))
             return False
+
+        # Initialize checkpoint modules
+        await self._initialize_checkpoint_modules()
+
+        self.logger.info(
+            "✅ Checkpoint Manager initialization completed successfully",
+        )
+        return True
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -109,31 +104,27 @@ class CheckpointManager:
     )
     async def _load_checkpoint_configuration(self) -> None:
         """Load checkpoint configuration."""
-        try:
-            # Set default checkpoint parameters
-            self.checkpoint_config.setdefault("checkpoint_interval", 3600)
-            self.checkpoint_config.setdefault("max_checkpoint_history", 100)
-            self.checkpoint_config.setdefault("enable_checkpoint_saving", True)
-            self.checkpoint_config.setdefault("enable_checkpoint_loading", True)
-            self.checkpoint_config.setdefault("enable_checkpoint_validation", True)
-            self.checkpoint_config.setdefault("enable_checkpoint_cleanup", True)
+        # Set default checkpoint parameters
+        self.checkpoint_config.setdefault("checkpoint_interval", 3600)
+        self.checkpoint_config.setdefault("max_checkpoint_history", 100)
+        self.checkpoint_config.setdefault("enable_checkpoint_saving", True)
+        self.checkpoint_config.setdefault("enable_checkpoint_loading", True)
+        self.checkpoint_config.setdefault("enable_checkpoint_validation", True)
+        self.checkpoint_config.setdefault("enable_checkpoint_cleanup", True)
 
-            # Update configuration
-            self.checkpoint_interval = self.checkpoint_config["checkpoint_interval"]
-            self.max_checkpoint_history = self.checkpoint_config[
-                "max_checkpoint_history"
-            ]
-            self.enable_checkpoint_saving = self.checkpoint_config[
-                "enable_checkpoint_saving"
-            ]
-            self.enable_checkpoint_loading = self.checkpoint_config[
-                "enable_checkpoint_loading"
-            ]
+        # Update configuration
+        self.checkpoint_interval = self.checkpoint_config["checkpoint_interval"]
+        self.max_checkpoint_history = self.checkpoint_config[
+            "max_checkpoint_history"
+        ]
+        self.enable_checkpoint_saving = self.checkpoint_config[
+            "enable_checkpoint_saving"
+        ]
+        self.enable_checkpoint_loading = self.checkpoint_config[
+            "enable_checkpoint_loading"
+        ]
 
-            self.logger.info("Checkpoint configuration loaded successfully")
-
-        except Exception:
-            self.print(error("Error loading checkpoint configuration: {e}"))
+        self.logger.info("Checkpoint configuration loaded successfully")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -147,35 +138,30 @@ class CheckpointManager:
             bool: True if configuration is valid, False otherwise
 
         """
-        try:
-            # Validate checkpoint interval
-            if self.checkpoint_interval <= 0:
-                self.print(invalid("Invalid checkpoint interval"))
-                return False
-
-            # Validate max checkpoint history
-            if self.max_checkpoint_history <= 0:
-                self.print(invalid("Invalid max checkpoint history"))
-                return False
-
-            # Validate that at least one checkpoint type is enabled
-            if not any(
-                [
-                    self.enable_checkpoint_saving,
-                    self.enable_checkpoint_loading,
-                    self.checkpoint_config.get("enable_checkpoint_validation", True),
-                    self.checkpoint_config.get("enable_checkpoint_cleanup", True),
-                ],
-            ):
-                self.print(error("At least one checkpoint type must be enabled"))
-                return False
-
-            self.logger.info("Configuration validation successful")
-            return True
-
-        except Exception:
-            self.print(error("Error validating configuration: {e}"))
+        # Validate checkpoint interval
+        if self.checkpoint_interval <= 0:
+            self.logger.error(invalid("Invalid checkpoint interval"))
             return False
+
+        # Validate max checkpoint history
+        if self.max_checkpoint_history <= 0:
+            self.logger.error(invalid("Invalid max checkpoint history"))
+            return False
+
+        # Validate that at least one checkpoint type is enabled
+        if not any(
+            [
+                self.enable_checkpoint_saving,
+                self.enable_checkpoint_loading,
+                self.checkpoint_config.get("enable_checkpoint_validation", True),
+                self.checkpoint_config.get("enable_checkpoint_cleanup", True),
+            ],
+        ):
+            self.logger.error(error("At least one checkpoint type must be enabled"))
+            return False
+
+        self.logger.info("Configuration validation successful")
+        return True
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -184,29 +170,23 @@ class CheckpointManager:
     )
     async def _initialize_checkpoint_modules(self) -> None:
         """Initialize checkpoint modules."""
-        try:
-            # Initialize checkpoint saving module
-            if self.enable_checkpoint_saving:
-                await self._initialize_checkpoint_saving()
+        # Initialize checkpoint saving module
+        if self.enable_checkpoint_saving:
+            await self._initialize_checkpoint_saving()
 
-            # Initialize checkpoint loading module
-            if self.enable_checkpoint_loading:
-                await self._initialize_checkpoint_loading()
+        # Initialize checkpoint loading module
+        if self.enable_checkpoint_loading:
+            await self._initialize_checkpoint_loading()
 
-            # Initialize checkpoint validation module
-            if self.checkpoint_config.get("enable_checkpoint_validation", True):
-                await self._initialize_checkpoint_validation()
+        # Initialize checkpoint validation module
+        if self.checkpoint_config.get("enable_checkpoint_validation", True):
+            await self._initialize_checkpoint_validation()
 
-            # Initialize checkpoint cleanup module
-            if self.checkpoint_config.get("enable_checkpoint_cleanup", True):
-                await self._initialize_checkpoint_cleanup()
+        # Initialize checkpoint cleanup module
+        if self.checkpoint_config.get("enable_checkpoint_cleanup", True):
+            await self._initialize_checkpoint_cleanup()
 
-            self.logger.info("Checkpoint modules initialized successfully")
-
-        except Exception:
-            self.print(
-                initialization_error("Error initializing checkpoint modules: {e}"),
-            )
+        self.logger.info("Checkpoint modules initialized successfully")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -215,21 +195,15 @@ class CheckpointManager:
     )
     async def _initialize_checkpoint_saving(self) -> None:
         """Initialize checkpoint saving module."""
-        try:
-            # Initialize checkpoint saving components
-            self.checkpoint_saving_components = {
-                "checkpoint_creation": True,
-                "checkpoint_serialization": True,
-                "checkpoint_storage": True,
-                "checkpoint_metadata": True,
-            }
+        # Initialize checkpoint saving components
+        self.checkpoint_saving_components = {
+            "checkpoint_creation": True,
+            "checkpoint_serialization": True,
+            "checkpoint_storage": True,
+            "checkpoint_metadata": True,
+        }
 
-            self.logger.info("Checkpoint saving module initialized")
-
-        except Exception:
-            self.print(
-                initialization_error("Error initializing checkpoint saving: {e}"),
-            )
+        self.logger.info("Checkpoint saving module initialized")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -238,21 +212,15 @@ class CheckpointManager:
     )
     async def _initialize_checkpoint_loading(self) -> None:
         """Initialize checkpoint loading module."""
-        try:
-            # Initialize checkpoint loading components
-            self.checkpoint_loading_components = {
-                "checkpoint_discovery": True,
-                "checkpoint_deserialization": True,
-                "checkpoint_restoration": True,
-                "checkpoint_validation": True,
-            }
+        # Initialize checkpoint loading components
+        self.checkpoint_loading_components = {
+            "checkpoint_discovery": True,
+            "checkpoint_deserialization": True,
+            "checkpoint_restoration": True,
+            "checkpoint_validation": True,
+        }
 
-            self.logger.info("Checkpoint loading module initialized")
-
-        except Exception:
-            self.print(
-                initialization_error("Error initializing checkpoint loading: {e}"),
-            )
+        self.logger.info("Checkpoint loading module initialized")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -261,21 +229,15 @@ class CheckpointManager:
     )
     async def _initialize_checkpoint_validation(self) -> None:
         """Initialize checkpoint validation module."""
-        try:
-            # Initialize checkpoint validation components
-            self.checkpoint_validation_components = {
-                "integrity_validation": True,
-                "format_validation": True,
-                "metadata_validation": True,
-                "compatibility_validation": True,
-            }
+        # Initialize checkpoint validation components
+        self.checkpoint_validation_components = {
+            "integrity_validation": True,
+            "format_validation": True,
+            "metadata_validation": True,
+            "compatibility_validation": True,
+        }
 
-            self.logger.info("Checkpoint validation module initialized")
-
-        except Exception:
-            self.print(
-                validation_error("Error initializing checkpoint validation: {e}"),
-            )
+        self.logger.info("Checkpoint validation module initialized")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -284,21 +246,15 @@ class CheckpointManager:
     )
     async def _initialize_checkpoint_cleanup(self) -> None:
         """Initialize checkpoint cleanup module."""
-        try:
-            # Initialize checkpoint cleanup components
-            self.checkpoint_cleanup_components = {
-                "cleanup_scheduling": True,
-                "cleanup_execution": True,
-                "cleanup_verification": True,
-                "cleanup_reporting": True,
-            }
+        # Initialize checkpoint cleanup components
+        self.checkpoint_cleanup_components = {
+            "cleanup_scheduling": True,
+            "cleanup_execution": True,
+            "cleanup_verification": True,
+            "cleanup_reporting": True,
+        }
 
-            self.logger.info("Checkpoint cleanup module initialized")
-
-        except Exception:
-            self.print(
-                initialization_error("Error initializing checkpoint cleanup: {e}"),
-            )
+        self.logger.info("Checkpoint cleanup module initialized")
 
     @handle_specific_errors(
         error_handlers={
@@ -319,16 +275,18 @@ class CheckpointManager:
             bool: True if successful, False otherwise
 
         """
-        try:
-            if not self._validate_checkpoint_inputs(checkpoint_input):
-                return False
+        if not self._validate_checkpoint_inputs(checkpoint_input):
+            return False
 
-            self.is_managing = True
+        self.is_managing = True
+        try:
             self.logger.info("🔄 Starting checkpoint execution...")
 
             # Perform checkpoint saving
             if self.enable_checkpoint_saving:
-                saving_results = await self._perform_checkpoint_saving(checkpoint_input)
+                saving_results = await self._perform_checkpoint_saving(
+                    checkpoint_input,
+                )
                 self.checkpoint_results["checkpoint_saving"] = saving_results
 
             # Perform checkpoint loading
@@ -343,7 +301,9 @@ class CheckpointManager:
                 validation_results = await self._perform_checkpoint_validation(
                     checkpoint_input,
                 )
-                self.checkpoint_results["checkpoint_validation"] = validation_results
+                self.checkpoint_results["checkpoint_validation"] = (
+                    validation_results
+                )
 
             # Perform checkpoint cleanup
             if self.checkpoint_config.get("enable_checkpoint_cleanup", True):
@@ -355,14 +315,10 @@ class CheckpointManager:
             # Store checkpoint results
             await self._store_checkpoint_results()
 
-            self.is_managing = False
             self.logger.info("✅ Checkpoint execution completed successfully")
             return True
-
-        except Exception:
-            self.print(error("Error executing checkpoint: {e}"))
+        finally:
             self.is_managing = False
-            return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -379,30 +335,25 @@ class CheckpointManager:
             bool: True if valid, False otherwise
 
         """
-        try:
-            # Check required checkpoint input fields
-            required_fields = ["checkpoint_type", "checkpoint_name", "timestamp"]
-            for field in required_fields:
-                if field not in checkpoint_input:
-                    self.logger.error(
-                        f"Missing required checkpoint input field: {field}",
-                    )
-                    return False
-
-            # Validate data types
-            if not isinstance(checkpoint_input["checkpoint_type"], str):
-                self.print(invalid("Invalid checkpoint type"))
+        # Check required checkpoint input fields
+        required_fields = ["checkpoint_type", "checkpoint_name", "timestamp"]
+        for field in required_fields:
+            if field not in checkpoint_input:
+                self.logger.error(
+                    f"Missing required checkpoint input field: {field}",
+                )
                 return False
 
-            if not isinstance(checkpoint_input["checkpoint_name"], str):
-                self.print(invalid("Invalid checkpoint name"))
-                return False
-
-            return True
-
-        except Exception:
-            self.print(error("Error validating checkpoint inputs: {e}"))
+        # Validate data types
+        if not isinstance(checkpoint_input["checkpoint_type"], str):
+            self.logger.error(invalid("Invalid checkpoint type"))
             return False
+
+        if not isinstance(checkpoint_input["checkpoint_name"], str):
+            self.logger.error(invalid("Invalid checkpoint name"))
+            return False
+
+        return True
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -422,39 +373,34 @@ class CheckpointManager:
             Dict[str, Any]: Checkpoint saving results
 
         """
-        try:
-            results = {}
+        results: dict[str, Any] = {}
 
-            # Perform checkpoint creation
-            if self.checkpoint_saving_components.get("checkpoint_creation", False):
-                results["checkpoint_creation"] = self._perform_checkpoint_creation(
-                    checkpoint_input,
-                )
+        # Perform checkpoint creation
+        if self.checkpoint_saving_components.get("checkpoint_creation", False):
+            results["checkpoint_creation"] = self._perform_checkpoint_creation(
+                checkpoint_input,
+            )
 
-            # Perform checkpoint serialization
-            if self.checkpoint_saving_components.get("checkpoint_serialization", False):
-                results["checkpoint_serialization"] = (
-                    self._perform_checkpoint_serialization(checkpoint_input)
-                )
+        # Perform checkpoint serialization
+        if self.checkpoint_saving_components.get("checkpoint_serialization", False):
+            results["checkpoint_serialization"] = (
+                self._perform_checkpoint_serialization(checkpoint_input)
+            )
 
-            # Perform checkpoint storage
-            if self.checkpoint_saving_components.get("checkpoint_storage", False):
-                results["checkpoint_storage"] = self._perform_checkpoint_storage(
-                    checkpoint_input,
-                )
+        # Perform checkpoint storage
+        if self.checkpoint_saving_components.get("checkpoint_storage", False):
+            results["checkpoint_storage"] = self._perform_checkpoint_storage(
+                checkpoint_input,
+            )
 
-            # Perform checkpoint metadata
-            if self.checkpoint_saving_components.get("checkpoint_metadata", False):
-                results["checkpoint_metadata"] = self._perform_checkpoint_metadata(
-                    checkpoint_input,
-                )
+        # Perform checkpoint metadata
+        if self.checkpoint_saving_components.get("checkpoint_metadata", False):
+            results["checkpoint_metadata"] = self._perform_checkpoint_metadata(
+                checkpoint_input,
+            )
 
-            self.logger.info("Checkpoint saving completed")
-            return results
-
-        except Exception:
-            self.print(error("Error performing checkpoint saving: {e}"))
-            return {}
+        self.logger.info("Checkpoint saving completed")
+        return results
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -474,42 +420,37 @@ class CheckpointManager:
             Dict[str, Any]: Checkpoint loading results
 
         """
-        try:
-            results = {}
+        results: dict[str, Any] = {}
 
-            # Perform checkpoint discovery
-            if self.checkpoint_loading_components.get("checkpoint_discovery", False):
-                results["checkpoint_discovery"] = self._perform_checkpoint_discovery(
-                    checkpoint_input,
-                )
+        # Perform checkpoint discovery
+        if self.checkpoint_loading_components.get("checkpoint_discovery", False):
+            results["checkpoint_discovery"] = self._perform_checkpoint_discovery(
+                checkpoint_input,
+            )
 
-            # Perform checkpoint deserialization
-            if self.checkpoint_loading_components.get(
-                "checkpoint_deserialization",
-                False,
-            ):
-                results["checkpoint_deserialization"] = (
-                    self._perform_checkpoint_deserialization(checkpoint_input)
-                )
+        # Perform checkpoint deserialization
+        if self.checkpoint_loading_components.get(
+            "checkpoint_deserialization",
+            False,
+        ):
+            results["checkpoint_deserialization"] = (
+                self._perform_checkpoint_deserialization(checkpoint_input)
+            )
 
-            # Perform checkpoint restoration
-            if self.checkpoint_loading_components.get("checkpoint_restoration", False):
-                results["checkpoint_restoration"] = (
-                    self._perform_checkpoint_restoration(checkpoint_input)
-                )
+        # Perform checkpoint restoration
+        if self.checkpoint_loading_components.get("checkpoint_restoration", False):
+            results["checkpoint_restoration"] = (
+                self._perform_checkpoint_restoration(checkpoint_input)
+            )
 
-            # Perform checkpoint validation
-            if self.checkpoint_loading_components.get("checkpoint_validation", False):
-                results["checkpoint_validation"] = (
-                    self._perform_checkpoint_validation_core(checkpoint_input)
-                )
+        # Perform checkpoint validation
+        if self.checkpoint_loading_components.get("checkpoint_validation", False):
+            results["checkpoint_validation"] = (
+                self._perform_checkpoint_validation_core(checkpoint_input)
+            )
 
-            self.logger.info("Checkpoint loading completed")
-            return results
-
-        except Exception:
-            self.print(error("Error performing checkpoint loading: {e}"))
-            return {}
+        self.logger.info("Checkpoint loading completed")
+        return results
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -529,42 +470,37 @@ class CheckpointManager:
             Dict[str, Any]: Checkpoint validation results
 
         """
-        try:
-            results = {}
+        results: dict[str, Any] = {}
 
-            # Perform integrity validation
-            if self.checkpoint_validation_components.get("integrity_validation", False):
-                results["integrity_validation"] = self._perform_integrity_validation(
-                    checkpoint_input,
-                )
+        # Perform integrity validation
+        if self.checkpoint_validation_components.get("integrity_validation", False):
+            results["integrity_validation"] = self._perform_integrity_validation(
+                checkpoint_input,
+            )
 
-            # Perform format validation
-            if self.checkpoint_validation_components.get("format_validation", False):
-                results["format_validation"] = self._perform_format_validation(
-                    checkpoint_input,
-                )
+        # Perform format validation
+        if self.checkpoint_validation_components.get("format_validation", False):
+            results["format_validation"] = self._perform_format_validation(
+                checkpoint_input,
+            )
 
-            # Perform metadata validation
-            if self.checkpoint_validation_components.get("metadata_validation", False):
-                results["metadata_validation"] = self._perform_metadata_validation(
-                    checkpoint_input,
-                )
+        # Perform metadata validation
+        if self.checkpoint_validation_components.get("metadata_validation", False):
+            results["metadata_validation"] = self._perform_metadata_validation(
+                checkpoint_input,
+            )
 
-            # Perform compatibility validation
-            if self.checkpoint_validation_components.get(
-                "compatibility_validation",
-                False,
-            ):
-                results["compatibility_validation"] = (
-                    self._perform_compatibility_validation(checkpoint_input)
-                )
+        # Perform compatibility validation
+        if self.checkpoint_validation_components.get(
+            "compatibility_validation",
+            False,
+        ):
+            results["compatibility_validation"] = (
+                self._perform_compatibility_validation(checkpoint_input)
+            )
 
-            self.logger.info("Checkpoint validation completed")
-            return results
-
-        except Exception:
-            self.print(validation_error("Error performing checkpoint validation: {e}"))
-            return {}
+        self.logger.info("Checkpoint validation completed")
+        return results
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -584,39 +520,34 @@ class CheckpointManager:
             Dict[str, Any]: Checkpoint cleanup results
 
         """
-        try:
-            results = {}
+        results: dict[str, Any] = {}
 
-            # Perform cleanup scheduling
-            if self.checkpoint_cleanup_components.get("cleanup_scheduling", False):
-                results["cleanup_scheduling"] = self._perform_cleanup_scheduling(
-                    checkpoint_input,
-                )
+        # Perform cleanup scheduling
+        if self.checkpoint_cleanup_components.get("cleanup_scheduling", False):
+            results["cleanup_scheduling"] = self._perform_cleanup_scheduling(
+                checkpoint_input,
+            )
 
-            # Perform cleanup execution
-            if self.checkpoint_cleanup_components.get("cleanup_execution", False):
-                results["cleanup_execution"] = self._perform_cleanup_execution(
-                    checkpoint_input,
-                )
+        # Perform cleanup execution
+        if self.checkpoint_cleanup_components.get("cleanup_execution", False):
+            results["cleanup_execution"] = self._perform_cleanup_execution(
+                checkpoint_input,
+            )
 
-            # Perform cleanup verification
-            if self.checkpoint_cleanup_components.get("cleanup_verification", False):
-                results["cleanup_verification"] = self._perform_cleanup_verification(
-                    checkpoint_input,
-                )
+        # Perform cleanup verification
+        if self.checkpoint_cleanup_components.get("cleanup_verification", False):
+            results["cleanup_verification"] = self._perform_cleanup_verification(
+                checkpoint_input,
+            )
 
-            # Perform cleanup reporting
-            if self.checkpoint_cleanup_components.get("cleanup_reporting", False):
-                results["cleanup_reporting"] = self._perform_cleanup_reporting(
-                    checkpoint_input,
-                )
+        # Perform cleanup reporting
+        if self.checkpoint_cleanup_components.get("cleanup_reporting", False):
+            results["cleanup_reporting"] = self._perform_cleanup_reporting(
+                checkpoint_input,
+            )
 
-            self.logger.info("Checkpoint cleanup completed")
-            return results
-
-        except Exception:
-            self.print(error("Error performing checkpoint cleanup: {e}"))
-            return {}
+        self.logger.info("Checkpoint cleanup completed")
+        return results
 
     # Checkpoint saving methods
     def _perform_checkpoint_creation(
@@ -624,68 +555,52 @@ class CheckpointManager:
         checkpoint_input: dict[str, Any],
     ) -> dict[str, Any]:
         """Perform checkpoint creation."""
-        try:
-            # Simulate checkpoint creation
-            return {
-                "checkpoint_creation_completed": True,
-                "checkpoints_created": 3,
-                "creation_method": "incremental",
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception:
-            self.print(error("Error performing checkpoint creation: {e}"))
-            return {}
+        # Simulate checkpoint creation
+        return {
+            "checkpoint_creation_completed": True,
+            "checkpoints_created": 3,
+            "creation_method": "incremental",
+            "training_time": datetime.now().isoformat(),
+        }
 
     def _perform_checkpoint_serialization(
         self,
         checkpoint_input: dict[str, Any],
     ) -> dict[str, Any]:
         """Perform checkpoint serialization."""
-        try:
-            # Simulate checkpoint serialization
-            return {
-                "checkpoint_serialization_completed": True,
-                "serialization_format": "pickle",
-                "serialization_size": "15.2MB",
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception:
-            self.print(error("Error performing checkpoint serialization: {e}"))
-            return {}
+        # Simulate checkpoint serialization
+        return {
+            "checkpoint_serialization_completed": True,
+            "serialization_format": "pickle",
+            "serialization_size": "15.2MB",
+            "training_time": datetime.now().isoformat(),
+        }
 
     def _perform_checkpoint_storage(
         self,
         checkpoint_input: dict[str, Any],
     ) -> dict[str, Any]:
         """Perform checkpoint storage."""
-        try:
-            # Simulate checkpoint storage
-            return {
-                "checkpoint_storage_completed": True,
-                "storage_location": "/checkpoints/",
-                "storage_method": "compressed",
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception:
-            self.print(error("Error performing checkpoint storage: {e}"))
-            return {}
+        # Simulate checkpoint storage
+        return {
+            "checkpoint_storage_completed": True,
+            "storage_location": "/checkpoints/",
+            "storage_method": "compressed",
+            "training_time": datetime.now().isoformat(),
+        }
 
     def _perform_checkpoint_metadata(
         self,
         checkpoint_input: dict[str, Any],
     ) -> dict[str, Any]:
         """Perform checkpoint metadata."""
-        try:
-            # Simulate checkpoint metadata
-            return {
-                "checkpoint_metadata_completed": True,
-                "metadata_entries": 10,
-                "metadata_format": "json",
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception:
-            self.print(error("Error performing checkpoint metadata: {e}"))
-            return {}
+        # Simulate checkpoint metadata
+        return {
+            "checkpoint_metadata_completed": True,
+            "metadata_entries": 10,
+            "metadata_format": "json",
+            "training_time": datetime.now().isoformat(),
+        }
 
     # Checkpoint loading methods
     def _perform_checkpoint_discovery(
@@ -693,70 +608,52 @@ class CheckpointManager:
         checkpoint_input: dict[str, Any],
     ) -> dict[str, Any]:
         """Perform checkpoint discovery."""
-        try:
-            # Simulate checkpoint discovery
-            return {
-                "checkpoint_discovery_completed": True,
-                "checkpoints_found": 5,
-                "discovery_method": "pattern_matching",
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception:
-            self.print(error("Error performing checkpoint discovery: {e}"))
-            return {}
+        # Simulate checkpoint discovery
+        return {
+            "checkpoint_discovery_completed": True,
+            "checkpoints_found": 5,
+            "discovery_method": "pattern_matching",
+            "training_time": datetime.now().isoformat(),
+        }
 
     def _perform_checkpoint_deserialization(
         self,
         checkpoint_input: dict[str, Any],
     ) -> dict[str, Any]:
         """Perform checkpoint deserialization."""
-        try:
-            # Simulate checkpoint deserialization
-            return {
-                "checkpoint_deserialization_completed": True,
-                "deserialization_format": "pickle",
-                "deserialization_time": 0.5,
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception:
-            self.print(error("Error performing checkpoint deserialization: {e}"))
-            return {}
+        # Simulate checkpoint deserialization
+        return {
+            "checkpoint_deserialization_completed": True,
+            "deserialization_format": "pickle",
+            "deserialization_time": 0.5,
+            "training_time": datetime.now().isoformat(),
+        }
 
     def _perform_checkpoint_restoration(
         self,
         checkpoint_input: dict[str, Any],
     ) -> dict[str, Any]:
         """Perform checkpoint restoration."""
-        try:
-            # Simulate checkpoint restoration
-            return {
-                "checkpoint_restoration_completed": True,
-                "restoration_success": True,
-                "restoration_time": 1.2,
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception:
-            self.print(error("Error performing checkpoint restoration: {e}"))
-            return {}
+        # Simulate checkpoint restoration
+        return {
+            "checkpoint_restoration_completed": True,
+            "restoration_success": True,
+            "restoration_time": 1.2,
+            "training_time": datetime.now().isoformat(),
+        }
 
     def _perform_checkpoint_validation_core(
         self,
         checkpoint_input: dict[str, Any],
     ) -> dict[str, Any]:
         """Perform checkpoint validation core."""
-        try:
-            # Simulate checkpoint validation core
-            return {
-                "checkpoint_validation_completed": True,
-                "validation_score": 0.95,
-                "validation_method": "checksum",
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception:
-            self.print(
-                validation_error("Error performing checkpoint validation core: {e}"),
-            )
-            return {}
+        # Simulate checkpoint validation core
+        return {
+            "checkpoint_validation_completed": True,
+            "validation_score": 0.95,
+            "validation_method": "checksum",
+            "training_time": datetime.now().isoformat(),
+        }
 
     # Checkpoint validation methods
     def _perform_integrity_validation(
@@ -764,70 +661,52 @@ class CheckpointManager:
         checkpoint_input: dict[str, Any],
     ) -> dict[str, Any]:
         """Perform integrity validation."""
-        try:
-            # Simulate integrity validation
-            return {
-                "integrity_validation_completed": True,
-                "integrity_score": 0.98,
-                "validation_method": "checksum_check",
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception:
-            self.print(validation_error("Error performing integrity validation: {e}"))
-            return {}
+        # Simulate integrity validation
+        return {
+            "integrity_validation_completed": True,
+            "integrity_score": 0.98,
+            "validation_method": "checksum_check",
+            "training_time": datetime.now().isoformat(),
+        }
 
     def _perform_format_validation(
         self,
         checkpoint_input: dict[str, Any],
     ) -> dict[str, Any]:
         """Perform format validation."""
-        try:
-            # Simulate format validation
-            return {
-                "format_validation_completed": True,
-                "format_score": 0.96,
-                "validation_method": "format_check",
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception:
-            self.print(validation_error("Error performing format validation: {e}"))
-            return {}
+        # Simulate format validation
+        return {
+            "format_validation_completed": True,
+            "format_score": 0.96,
+            "validation_method": "format_check",
+            "training_time": datetime.now().isoformat(),
+        }
 
     def _perform_metadata_validation(
         self,
         checkpoint_input: dict[str, Any],
     ) -> dict[str, Any]:
         """Perform metadata validation."""
-        try:
-            # Simulate metadata validation
-            return {
-                "metadata_validation_completed": True,
-                "metadata_score": 0.94,
-                "validation_method": "metadata_check",
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception:
-            self.print(validation_error("Error performing metadata validation: {e}"))
-            return {}
+        # Simulate metadata validation
+        return {
+            "metadata_validation_completed": True,
+            "metadata_score": 0.94,
+            "validation_method": "metadata_check",
+            "training_time": datetime.now().isoformat(),
+        }
 
     def _perform_compatibility_validation(
         self,
         checkpoint_input: dict[str, Any],
     ) -> dict[str, Any]:
         """Perform compatibility validation."""
-        try:
-            # Simulate compatibility validation
-            return {
-                "compatibility_validation_completed": True,
-                "compatibility_score": 0.92,
-                "validation_method": "version_check",
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception:
-            self.print(
-                validation_error("Error performing compatibility validation: {e}"),
-            )
-            return {}
+        # Simulate compatibility validation
+        return {
+            "compatibility_validation_completed": True,
+            "compatibility_score": 0.92,
+            "validation_method": "version_check",
+            "training_time": datetime.now().isoformat(),
+        }
 
     # Checkpoint cleanup methods
     def _perform_cleanup_scheduling(
@@ -835,68 +714,52 @@ class CheckpointManager:
         checkpoint_input: dict[str, Any],
     ) -> dict[str, Any]:
         """Perform cleanup scheduling."""
-        try:
-            # Simulate cleanup scheduling
-            return {
-                "cleanup_scheduling_completed": True,
-                "scheduled_cleanups": 3,
-                "scheduling_method": "age_based",
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception:
-            self.print(error("Error performing cleanup scheduling: {e}"))
-            return {}
+        # Simulate cleanup scheduling
+        return {
+            "cleanup_scheduling_completed": True,
+            "scheduled_cleanups": 3,
+            "scheduling_method": "age_based",
+            "training_time": datetime.now().isoformat(),
+        }
 
     def _perform_cleanup_execution(
         self,
         checkpoint_input: dict[str, Any],
     ) -> dict[str, Any]:
         """Perform cleanup execution."""
-        try:
-            # Simulate cleanup execution
-            return {
-                "cleanup_execution_completed": True,
-                "cleanups_executed": 3,
-                "execution_method": "batch",
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception:
-            self.print(execution_error("Error performing cleanup execution: {e}"))
-            return {}
+        # Simulate cleanup execution
+        return {
+            "cleanup_execution_completed": True,
+            "cleanups_executed": 3,
+            "execution_method": "batch",
+            "training_time": datetime.now().isoformat(),
+        }
 
     def _perform_cleanup_verification(
         self,
         checkpoint_input: dict[str, Any],
     ) -> dict[str, Any]:
         """Perform cleanup verification."""
-        try:
-            # Simulate cleanup verification
-            return {
-                "cleanup_verification_completed": True,
-                "verification_score": 0.95,
-                "verification_method": "file_check",
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception:
-            self.print(error("Error performing cleanup verification: {e}"))
-            return {}
+        # Simulate cleanup verification
+        return {
+            "cleanup_verification_completed": True,
+            "verification_score": 0.95,
+            "verification_method": "file_check",
+            "training_time": datetime.now().isoformat(),
+        }
 
     def _perform_cleanup_reporting(
         self,
         checkpoint_input: dict[str, Any],
     ) -> dict[str, Any]:
         """Perform cleanup reporting."""
-        try:
-            # Simulate cleanup reporting
-            return {
-                "cleanup_reporting_completed": True,
-                "report_format": "json",
-                "report_location": "/reports/cleanup_report.json",
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception:
-            self.print(error("Error performing cleanup reporting: {e}"))
-            return {}
+        # Simulate cleanup reporting
+        return {
+            "cleanup_reporting_completed": True,
+            "report_format": "json",
+            "report_location": "/reports/cleanup_report.json",
+            "training_time": datetime.now().isoformat(),
+        }
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -905,21 +768,17 @@ class CheckpointManager:
     )
     async def _store_checkpoint_results(self) -> None:
         """Store checkpoint results."""
-        try:
-            # Add timestamp
-            self.checkpoint_results["timestamp"] = datetime.now().isoformat()
+        # Add timestamp
+        self.checkpoint_results["timestamp"] = datetime.now().isoformat()
 
-            # Add to history
-            self.checkpoint_history.append(self.checkpoint_results.copy())
+        # Add to history
+        self.checkpoint_history.append(self.checkpoint_results.copy())
 
-            # Limit history size
-            if len(self.checkpoint_history) > self.max_checkpoint_history:
-                self.checkpoint_history.pop(0)
+        # Limit history size
+        if len(self.checkpoint_history) > self.max_checkpoint_history:
+            self.checkpoint_history.pop(0)
 
-            self.logger.info("Checkpoint results stored successfully")
-
-        except Exception:
-            self.print(error("Error storing checkpoint results: {e}"))
+        self.logger.info("Checkpoint results stored successfully")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -939,14 +798,9 @@ class CheckpointManager:
             Dict[str, Any]: Checkpoint results
 
         """
-        try:
-            if checkpoint_type:
-                return self.checkpoint_results.get(checkpoint_type, {})
-            return self.checkpoint_results.copy()
-
-        except Exception:
-            self.print(error("Error getting checkpoint results: {e}"))
-            return {}
+        if checkpoint_type:
+            return self.checkpoint_results.get(checkpoint_type, {})
+        return self.checkpoint_results.copy()
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -966,17 +820,10 @@ class CheckpointManager:
             List[Dict[str, Any]]: Checkpoint history
 
         """
-        try:
-            history = self.checkpoint_history.copy()
-
-            if limit:
-                history = history[-limit:]
-
-            return history
-
-        except Exception:
-            self.print(error("Error getting checkpoint history: {e}"))
-            return []
+        history = self.checkpoint_history.copy()
+        if limit:
+            history = history[-limit:]
+        return history
 
     def get_checkpoint_status(self) -> dict[str, Any]:
         """Get checkpoint status information.
@@ -1011,20 +858,16 @@ class CheckpointManager:
         """Stop the checkpoint manager."""
         self.logger.info("🛑 Stopping Checkpoint Manager...")
 
-        try:
-            # Stop managing
-            self.is_managing = False
+        # Stop managing
+        self.is_managing = False
 
-            # Clear results
-            self.checkpoint_results.clear()
+        # Clear results
+        self.checkpoint_results.clear()
 
-            # Clear history
-            self.checkpoint_history.clear()
+        # Clear history
+        self.checkpoint_history.clear()
 
-            self.logger.info("✅ Checkpoint Manager stopped successfully")
-
-        except Exception:
-            self.print(error("Error stopping checkpoint manager: {e}"))
+        self.logger.info("✅ Checkpoint Manager stopped successfully")
 
 
 # Global checkpoint manager instance

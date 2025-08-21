@@ -13,6 +13,9 @@ from src.utils.centralized_decorators import (
     PerformanceLevel,
     handle_errors,
     handle_specific_errors,
+    resource_monitor,
+    memory_efficient,
+    pipeline_checkpoint,
 )
 from src.utils.logger import system_logger
 
@@ -84,6 +87,9 @@ class BasePipeline:
         self.is_running: bool = False
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
+    @resource_monitor()
+    @memory_efficient()
+    @pipeline_checkpoint(checkpoint_name="base_pipeline.initialize")
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid base pipeline configuration"),
@@ -100,6 +106,9 @@ class BasePipeline:
         return True
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
+    @resource_monitor()
+    @memory_efficient()
+    @pipeline_checkpoint(checkpoint_name="base_pipeline.shutdown")
     @handle_errors(exceptions=(Exception,), default_return=False, context="base_pipeline.shutdown")
     async def shutdown(self) -> bool:
         self.logger.info("Shutting down BasePipeline ...")

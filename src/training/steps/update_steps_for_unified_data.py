@@ -61,15 +61,15 @@ def get_unified_data_loading_code(
         data_loader = get_unified_data_loader(self.config)
 
         # Load unified data
-        historical_data = await data_loader.load_unified_data(
-            symbol={symbol_var},
-            exchange={exchange_var},
-            timeframe={timeframe_var},
+        historical_data, await data_loader.load_unified_data(
+            symbol={symbol_var}
+            exchange={exchange_var}
+            timeframe={timeframe_var}
             lookback_days={lookback_days}
         )
 
         if historical_data is None or historical_data.empty:
-            self.logger.error("❌ No data found - check symbol and exchange configuration")
+        self.logger.error("❌ No data found - check symbol and exchange configuration")
             raise ValueError(f"No data found for {{symbol}} on {{exchange}}")
 
         # Log data information
@@ -83,7 +83,7 @@ def get_unified_data_loading_code(
         required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
         missing_columns = [col for col in required_columns if col not in historical_data.columns]
         if missing_columns:
-            self.logger.error(f"❌ Missing required columns: {{missing_columns}}")
+        self.logger.error(f"❌ Missing required columns: {{missing_columns}}")
             raise ValueError(f"Missing required columns: {{missing_columns}}")
 """
 
@@ -188,12 +188,14 @@ def generate_step_update_template(step_name: str) -> str:
 # Template for updating {step_name}.py
 
 ## 1. Add import at the top of the file:
+    pass
 {get_unified_data_loader_import()}
 
 ## 2. Replace existing data loading code with:
+    pass
 {get_unified_data_loading_code(
     lookback_days=guidance['lookback_days'],
-    timeframe_var=f'"{guidance["timeframe"]}"'
+    timeframe_var=f'"{guidance["timeframe"]}"',
 )}
 
 ## 3. Step-specific considerations:
@@ -205,10 +207,10 @@ def generate_step_update_template(step_name: str) -> str:
 # - If the step needs tactician predictions, load them from step10 results
 
 ## 5. Example of loading additional data:
-# regime_file_path = f"{guidance['data_dir']}/{guidance['exchange']}_{guidance['symbol']}_regime_classification.json"
+# regime_file_path, f"{guidance['data_dir']}/{guidance['exchange']}_{guidance['symbol']}_regime_classification.json"
 # if os.path.exists(regime_file_path):
 #     with open(regime_file_path, 'r') as f:
-#         regime_data = json.load(f)
+#         regime_data, json.load(f)
 #     # Process regime data as needed
 """
 

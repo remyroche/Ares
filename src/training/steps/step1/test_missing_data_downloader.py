@@ -15,7 +15,7 @@ from pathlib import Path
 import pandas as pd
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent.parent
+project_root, Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
@@ -36,13 +36,13 @@ async def test_missing_data_identification():
     
     # Get current timestamp
     current_time = downloader.get_current_timestamp()
-    end_date = current_time - timedelta(days=2)
+    end_date, current_time - timedelta(days=2)
     
     print(f"📅 Current time: {current_time}")
     print(f"📅 Analysis end date: {end_date}")
     
     # Identify missing data
-    missing_data = downloader.identify_missing_data(symbol, exchange, end_date)
+    missing_data, downloader.identify_missing_data(symbol, exchange, end_date)
     
     print(f"\n📊 MISSING DATA SUMMARY FOR {exchange}_{symbol}:")
     print(f"• Missing Aggtrades Days: {len(missing_data['missing_aggtrades_days'])}")

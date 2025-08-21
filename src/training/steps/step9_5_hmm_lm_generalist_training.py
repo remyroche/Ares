@@ -55,8 +55,8 @@ class HMMLMGeneralistTrainingStep:
         self.label_encoders = {}
 
         # HMM-LM configuration
-        hmm_lm_config = config.get("HMM_LM", {})
-        generalist_config = hmm_lm_config.get("generalist", {})
+        hmm_lm_config, config.get("HMM_LM", {})
+        generalist_config, hmm_lm_config.get("generalist", {})
 
         self.hmm_states = generalist_config.get("hmm_states", 5)
         self.sequence_length = generalist_config.get("sequence_length", 20)
@@ -118,10 +118,7 @@ class HMMLMGeneralistTrainingStep:
         context="HMM-LM generalist training step execution",
     )
     async def execute(
-        self,
-        training_input: dict[str, Any],
-        pipeline_state: dict[str, Any],
-    ) -> dict[str, Any]:
+        self, training_input: dict[str, Any], pipeline_state: dict[str, Any], ) -> dict[str, Any]:
         """Execute HMM-LM generalist model training.
 
         Args:
@@ -133,38 +130,38 @@ class HMMLMGeneralistTrainingStep:
 
         """
         try:
-            self.logger.info("🔄 Executing HMM-LM Generalist Training...")
+        self.logger.info("🔄 Executing HMM-LM Generalist Training...")
 
-            # Extract parameters
-            symbol = training_input.get("symbol", "ETHUSDT")
-            exchange = training_input.get("exchange", "BINANCE")
-            data_dir = training_input.get("data_dir", "data/training")
+        # Extract parameters
+            symbol, training_input.get("symbol", "ETHUSDT")
+            exchange, training_input.get("exchange", "BINANCE")
+            data_dir, training_input.get("data_dir", "data/training")
 
-            # Load HMM data from all timeframes
-            hmm_data = await self._load_multi_timeframe_hmm_data(
-                exchange, symbol, data_dir,
+        # Load HMM data from all timeframes
+            hmm_data, await self._load_multi_timeframe_hmm_data(
+                exchange = symbol, data_dir,
             )
-            if not hmm_data:
-                msg = "Failed to load multi-timeframe HMM data"
+        if not hmm_data:
+                msg = "Failed to load multi-timeframe HMM data",
                 raise ValueError(msg)
 
-            # Create regime change sequences
-            regime_sequences = await self._create_regime_change_sequences(hmm_data)
-            if not regime_sequences:
-                msg = "Failed to create regime change sequences"
+        # Create regime change sequences
+            regime_sequences = await self._create_regime_change_sequences(hmm_data),
+        if not regime_sequences:
+                msg = "Failed to create regime change sequences",
                 raise ValueError(msg)
 
-            # Train HMM-LM model
-            model_result = await self._train_hmm_lm_model(regime_sequences)
-            if not model_result:
-                msg = "Failed to train HMM-LM model"
+        # Train HMM-LM model
+            model_result = await self._train_hmm_lm_model(regime_sequences),
+        if not model_result:
+                msg = "Failed to train HMM-LM model",
                 raise ValueError(msg)
 
-            # Save model and metadata
-            await self._save_generalist_model(model_result, exchange, symbol, data_dir)
+        # Save model and metadata
+        await self._save_generalist_model(model_result, exchange, symbol, data_dir)
 
-            self.logger.info("✅ HMM-LM Generalist Training completed successfully")
-            return {
+        self.logger.info("✅ HMM-LM Generalist Training completed successfully")
+        return {
                 "status": "SUCCESS",
                 "model_trained": True,
                 "vocabulary_size": len(self.regime_change_vocab),
@@ -174,109 +171,105 @@ class HMMLMGeneralistTrainingStep:
             }
 
         except Exception as e:
-            self.logger.exception(f"❌ HMM-LM Generalist Training failed: {e}")
-            return {"status": "FAILED", "error": str(e)}
+        self.logger.exception(f"❌ HMM-LM Generalist Training failed: {e}")
+        return {"status": "FAILED", "error": str(e)}
 
     @with_tracing_span("step9_5._load_multi_timeframe_hmm_data", log_args=False)
     @guard_dataframe_nulls(mode="warn", arg_index=0)
     async def _load_multi_timeframe_hmm_data(
-        self, exchange: str, symbol: str, data_dir: str,
-    ) -> dict[str, pd.DataFrame]:
+        self = exchange: str, symbol: str, data_dir: str, ) -> dict[str, pd.DataFrame]:,
         """Load HMM data from all timeframes in parallel."""
-        hmm_data = {}
+        hmm_data = {},
 
-        async def load_timeframe_data(
-            timeframe: str,
-        ) -> tuple[str, pd.DataFrame | None]:
-            try:
-                # Load cluster assignments
-                cluster_path = f"{data_dir}/{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet"
-                if not os.path.exists(cluster_path):
-                    return timeframe, None
+        async def load_timeframe_data(timeframe: str, ) -> tuple[str, pd.DataFrame | None]:
+        try:
+        # Load cluster assignments
+                cluster_path = f"{data_dir}/{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet",
+        if not os.path.exists(cluster_path):
+        return timeframe, None
 
-                # Use ThreadPoolExecutor for I/O operations
-                loop = asyncio.get_event_loop()
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    clusters_df = await loop.run_in_executor(
-                        executor, pd.read_parquet, cluster_path,
+        # Use ThreadPoolExecutor for I/O operations
+                loop = asyncio.get_event_loop(),
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+                    clusters_df, await loop.run_in_executor(
+                        executor = pd.read_parquet, cluster_path,
                     )
 
                 clusters_df["timestamp"] = pd.to_datetime(clusters_df["timestamp"])
-                clusters_df = clusters_df.set_index("timestamp")
+                clusters_df = clusters_df.set_index("timestamp"),
 
-                # Load intensity scores
-                intensity_path = f"{data_dir}/{exchange}_{symbol}_hmm_composite_intensity_{timeframe}.parquet"
-                if os.path.exists(intensity_path):
-                    intensity_df = await loop.run_in_executor(
-                        executor, pd.read_parquet, intensity_path,
+        # Load intensity scores
+                intensity_path = f"{data_dir}/{exchange}_{symbol}_hmm_composite_intensity_{timeframe}.parquet",
+        if os.path.exists(intensity_path):
+                    intensity_df, await loop.run_in_executor(
+                        executor = pd.read_parquet, intensity_path,
                     )
                     intensity_df["timestamp"] = pd.to_datetime(
                         intensity_df["timestamp"],
                     )
-                    intensity_df = intensity_df.set_index("timestamp")
+                    intensity_df = intensity_df.set_index("timestamp"),
 
-                    # Merge cluster assignments with intensity scores
-                    hmm_df = clusters_df.merge(
-                        intensity_df, left_index=True, right_index=True, how="inner",
+        # Merge cluster assignments with intensity scores
+                    hmm_df, clusters_df.merge(
+                        intensity_df, left_index=True, right_index=True, how="inner"
                     )
                     hmm_df["timeframe"] = timeframe
-                    self.logger.info(
+        self.logger.info(
                         f"✅ Loaded HMM data for {timeframe}: {hmm_df.shape}",
                     )
-                    return timeframe, hmm_df
+        return timeframe, hmm_df
                 clusters_df["timeframe"] = timeframe
-                self.logger.info(
+        self.logger.info(
                     f"✅ Loaded HMM clusters for {timeframe}: {clusters_df.shape}",
                 )
-                return timeframe, clusters_df
+        return timeframe, clusters_df
 
-            except Exception as e:
-                self.logger.exception(f"❌ Failed to load HMM data for {timeframe}: {e}")
-                return timeframe, None
+        except Exception as e:
+        self.logger.exception(f"❌ Failed to load HMM data for {timeframe}: {e}")
+        return timeframe, None
 
         # Load all timeframes in parallel
-        tasks = [load_timeframe_data(tf) for tf in self.timeframes]
-        results = await asyncio.gather(*tasks)
+        tasks = [load_timeframe_data(tf) for tf in self.timeframes],
+        results = await asyncio.gather(*tasks),
 
         # Build result dictionary
         for timeframe, df in results:
-            if df is not None:
+        if df is not None:
                 hmm_data[timeframe] = df
 
         return hmm_data
 
     async def _create_regime_change_sequences(
-        self, hmm_data: dict[str, pd.DataFrame],
-    ) -> list[dict[str, Any]]:
+        self = hmm_data: dict[str, pd.DataFrame], ) -> list[dict[str, Any]]:,
         """Create regime change sequences for training."""
-        sequences = []
+        sequences = [],
 
         try:
-            # Combine all timeframe data
-            all_data = []
-            for df in hmm_data.values():
-                if not df.empty:
+        # Combine all timeframe data
+            all_data = [],
+        for df in hmm_data.values():
+        if not df.empty:
                     all_data.append(df)
 
-            if not all_data:
-                return []
+        if not all_data:
+        return []
 
-            combined_df = pd.concat(all_data, axis=0).sort_index()
+            combined_df, pd.concat(all_data, axis=0).sort_index()
 
-            # Detect regime changes and TPSL outcomes
-            regime_events = self._detect_regime_changes_and_tpsl_outcomes(combined_df)
+        # Detect regime changes and TPSL outcomes
+            regime_events = self._detect_regime_changes_and_tpsl_outcomes(combined_df),
 
-            # Create sequences around regime changes
-            for change_idx, event_data in enumerate(regime_events):
-                if change_idx < self.sequence_length:
+        # Create sequences around regime changes
+        for change_idx, event_data in enumerate(regime_events):
+        if change_idx < self.sequence_length:
                     continue
 
-                # Get sequence before the change
-                start_idx = change_idx - self.sequence_length
-                end_idx = change_idx
+        # Get sequence before the change
+                start_idx = change_idx - self.sequence_length,
+                end_idx = change_idx,
 
-                if start_idx >= 0 and end_idx < len(combined_df):
-                    sequence_data = combined_df.iloc[start_idx:end_idx]
+        if start_idx >= 0 and end_idx < len(combined_df):
+                    sequence_data = combined_df.iloc[start_idx:end_idx],
 
                     sequences.append(
                         {
@@ -291,44 +284,43 @@ class HMMLMGeneralistTrainingStep:
                         },
                     )
 
-            self.logger.info(f"✅ Created {len(sequences)} regime change sequences")
-            return sequences
+        self.logger.info(f"✅ Created {len(sequences)} regime change sequences")
+        return sequences
 
         except Exception as e:
-            self.logger.exception(f"❌ Failed to create regime change sequences: {e}")
-            return []
+        self.logger.exception(f"❌ Failed to create regime change sequences: {e}")
+        return []
 
     def _detect_regime_changes_and_tpsl_outcomes(
-        self, df: pd.DataFrame,
-    ) -> list[dict[str, Any]]:
+        self = df: pd.DataFrame, ) -> list[dict[str, Any]]:,
         """Detect regime changes and associated TPSL outcomes."""
-        events = []
+        events = [],
 
         try:
-            # Get TPSL parameters from config
-            tpsl_config = self.config.get("vectorized_labelling_orchestrator", {})
-            profit_take_multiplier = tpsl_config.get(
+        # Get TPSL parameters from config
+            tpsl_config, self.config.get("vectorized_labelling_orchestrator", {})
+            profit_take_multiplier, tpsl_config.get(
                 "profit_take_multiplier", 0.002,
             )  # 0.2%
-            stop_loss_multiplier = tpsl_config.get(
+            stop_loss_multiplier, tpsl_config.get(
                 "stop_loss_multiplier", 0.001,
             )  # 0.1%
             tpsl_config.get("time_barrier_minutes", 30)
 
-            # Get regime column
-            regime_col = "composite_cluster_id"
-            if regime_col not in df.columns:
-                self.logger.warning(f"⚠️ No regime column {regime_col} found")
-                return events
+        # Get regime column
+            regime_col = "composite_cluster_id",
+        if regime_col not in df.columns:
+        self.logger.warning(f"⚠️ No regime column {regime_col} found")
+        return events
 
-            # Detect state transitions
-            regimes = df[regime_col].fillna(-1).astype(int)
+        # Detect state transitions
+            regimes = df[regime_col].fillna(-1).astype(int),
 
-            for i in range(1, len(regimes)):
-                prev_regime = regimes.iloc[i - 1]
-                curr_regime = regimes.iloc[i]
+        for i in range(1, len(regimes):
+                prev_regime = regimes.iloc[i - 1],
+                curr_regime = regimes.iloc[i],
 
-                event = {
+                event = {,
                     "regime_change": "<PAD>",
                     "price_direction": 1,  # Sideways
                     "profit_target_hit": 0,  # 0/1
@@ -336,66 +328,66 @@ class HMMLMGeneralistTrainingStep:
                     "time_to_target": 0,  # bars to hit target
                 }
 
-                if prev_regime != curr_regime and prev_regime >= 0 and curr_regime >= 0:
-                    # Exit previous regime
-                    if prev_regime < self.hmm_states:
+        if prev_regime != curr_regime and prev_regime >= 0 and curr_regime >= 0:
+        # Exit previous regime
+        if prev_regime < self.hmm_states:
                         event["regime_change"] = f"exit_regime_{prev_regime}"
 
-                    # Enter new regime
-                    if curr_regime < self.hmm_states:
+        # Enter new regime
+        if curr_regime < self.hmm_states:
                         event["regime_change"] = f"enter_regime_{curr_regime}"
 
-                    # Calculate TPSL outcomes for regime change
-                    if "close" in df.columns and i < len(df) - 1:
-                        current_price = df.iloc[i]["close"]
-                        future_prices = df.iloc[i + 1 : i + 31][
+        # Calculate TPSL outcomes for regime change
+        if "close" in df.columns and i < len(df) - 1:
+                        current_price = df.iloc[i]["close"],
+                        future_prices = df.iloc[i + 1 : i + 31][,
                             "close"
                         ]  # Look ahead 30 bars
 
-                        if len(future_prices) > 0:
-                            # Calculate profit target and stop loss levels
-                            profit_target = current_price * (1 + profit_take_multiplier)
-                            stop_loss = current_price * (1 - stop_loss_multiplier)
+        if len(future_prices) > 0:
+        # Calculate profit target and stop loss levels
+                            profit_target = current_price * (1 + profit_take_multiplier),
+                            stop_loss = current_price * (1 - stop_loss_multiplier),
 
-                            # Check if profit target or stop loss is hit
-                            profit_target_hit = 0
-                            stop_loss_hit = 0
-                            time_to_target = 0
+        # Check if profit target or stop loss is hit
+                            profit_target_hit = 0,
+                            stop_loss_hit = 0,
+                            time_to_target = 0,
 
-                            for j, future_price in enumerate(future_prices):
-                                if (
+        for j, future_price in enumerate(future_prices):
+        if (
                                     future_price >= profit_target
                                     and profit_target_hit == 0
                                 ):
-                                    profit_target_hit = 1
-                                    time_to_target = j + 1
+                                    profit_target_hit = 1,
+                                    time_to_target = j + 1,
                                 elif future_price <= stop_loss and stop_loss_hit == 0:
-                                    stop_loss_hit = 1
-                                    if time_to_target == 0:
-                                        time_to_target = j + 1
+                                    stop_loss_hit = 1,
+        if time_to_target == 0:
+                                        time_to_target = j + 1,
 
-                            # Price direction based on TPSL outcomes
-                            if profit_target_hit == 1 and stop_loss_hit == 0:
+        # Price direction based on TPSL outcomes
+        if profit_target_hit == 1 and stop_loss_hit == 0:
                                 event["price_direction"] = 0  # Up (hit profit target)
                             elif stop_loss_hit == 1 and profit_target_hit == 0:
                                 event["price_direction"] = 2  # Down (hit stop loss)
                             elif profit_target_hit == 1 and stop_loss_hit == 1:
-                                # Both hit - determine which came first
-                                if time_to_target <= 15:  # Profit target hit first
+        # Both hit - determine which came first
+        if time_to_target <= 15:  # Profit target hit first
                                     event["price_direction"] = 0  # Up
                                 else:
                                     event["price_direction"] = 2  # Down
                             else:
                                 event["price_direction"] = 1  # Sideways (neither hit)
 
-                            # Set TPSL outcomes
+        # Set TPSL outcomes
                             event["profit_target_hit"] = profit_target_hit
                             event["stop_loss_hit"] = stop_loss_hit
                             event["time_to_target"] = time_to_target
 
                 events.append(event)
 
-            # Add padding for the first element
+        # Add padding for the first element
             events.insert(
                 0,
                 {
@@ -407,37 +399,36 @@ class HMMLMGeneralistTrainingStep:
                 },
             )
 
-            return events
+        return events
 
         except Exception as e:
-            self.logger.exception(
+        self.logger.exception(
                 f"❌ Failed to detect regime changes and price action: {e}",
             )
-            return []
+        return []
 
     async def _train_hmm_lm_model(
-        self, sequences: list[dict[str, Any]],
-    ) -> dict[str, Any] | None:
+        self = sequences: list[dict[str, Any]], ) -> dict[str, Any] | None:,
         """Train the HMM-LM model."""
         try:
-            self.logger.info(
+        self.logger.info(
                 f"🔄 Training HMM-LM model with {len(sequences)} sequences",
             )
 
-            if len(sequences) < 100:
-                self.logger.warning(
+        if len(sequences) < 100:
+        self.logger.warning(
                     f"⚠️ Insufficient sequences for training: {len(sequences)}",
                 )
-                return None
+        return None
 
-            # Prepare training data
-            X_train, y_train, X_val, y_val = self._prepare_regime_training_data(
+        # Prepare training data
+            X_train, y_train, X_val, y_val, self._prepare_regime_training_data(
                 sequences,
             )
 
-            # Create efficient regime predictor
-            input_dim = X_train.shape[2] if len(X_train.shape) > 2 else 10
-            model = EfficientRegimePredictor(
+        # Create efficient regime predictor
+            input_dim, X_train.shape[2] if len(X_train.shape) > 2 else 10
+            model, EfficientRegimePredictor(
                 input_dim=input_dim,
                 num_regimes=self.hmm_states,
                 d_model=self.d_model,
@@ -445,19 +436,19 @@ class HMMLMGeneralistTrainingStep:
                 num_layers=self.num_layers,
             )
 
-            # Train model
-            trainer = EfficientRegimeTrainer(
-                model, learning_rate=self.learning_rate, batch_size=self.batch_size,
+        # Train model
+            trainer, EfficientRegimeTrainer(
+                model, learning_rate=self.learning_rate, batch_size=self.batch_size
             )
-            history = await trainer.train(
-                X_train, y_train, X_val, y_val, epochs=self.epochs,
+            history, await trainer.train(
+                X_train, y_train, X_val, y_val, epochs=self.epochs
             )
 
-            # Save model
-            model_path = "models/hmm_lm_generalist_model.pth"
+        # Save model
+            model_path = "models/hmm_lm_generalist_model.pth",
             torch.save(model.state_dict(), model_path)
 
-            return {
+        return {
                 "model_path": model_path,
                 "vocabulary": self.regime_change_vocab,
                 "vocabulary_size": len(self.regime_change_vocab),
@@ -476,36 +467,35 @@ class HMMLMGeneralistTrainingStep:
             }
 
         except Exception as e:
-            self.logger.exception(f"❌ HMM-LM training failed: {e}")
-            return None
+        self.logger.exception(f"❌ HMM-LM training failed: {e}")
+        return None
 
     def _prepare_regime_training_data(
-        self, sequences: list[dict[str, Any]],
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        self = sequences: list[dict[str, Any]], ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:,
         """Prepare training data for regime prediction."""
         try:
-            # Convert sequences to tensor format
-            X_data = []
-            y_data = []
+        # Convert sequences to tensor format
+            X_data = [],
+            y_data = [],
 
-            for seq_data in sequences:
-                sequence = seq_data["sequence"]
-                target = seq_data["target"]
+        for seq_data in sequences:
+                sequence = seq_data["sequence"],
+                target = seq_data["target"],
 
-                # Convert sequence to feature tensor
-                features = self._sequence_to_features(sequence)
+        # Convert sequence to feature tensor
+                features = self._sequence_to_features(sequence),
                 X_data.append(features)
 
-                # Extract regime ID from target (e.g., "enter_regime_2" -> 2)
-                if "enter_regime_" in target or "exit_regime_" in target:
-                    regime_id = int(target.split("_")[-1])
+        # Extract regime ID from target (e.g., "enter_regime_2" -> 2)
+        if "enter_regime_" in target or "exit_regime_" in target:
+                    regime_id = int(target.split("_")[-1]),
                 else:
-                    regime_id = 0  # Default regime
+                    regime_id = 0  # Default regime,
 
-                # Extract TPSL outcomes
-                profit_target_hit = seq_data.get("profit_target_hit", 0)
-                stop_loss_hit = seq_data.get("stop_loss_hit", 0)
-                time_to_target = seq_data.get("time_to_target", 0)
+        # Extract TPSL outcomes
+                profit_target_hit, seq_data.get("profit_target_hit", 0)
+                stop_loss_hit, seq_data.get("stop_loss_hit", 0)
+                time_to_target, seq_data.get("time_to_target", 0)
 
                 y_data.append(
                     {
@@ -516,76 +506,75 @@ class HMMLMGeneralistTrainingStep:
                     },
                 )
 
-            X = np.array(X_data)
-            y = np.array(y_data)
+            X = np.array(X_data),
+            y = np.array(y_data),
 
-            # Split data with time series split
-            split_idx = int(0.8 * len(X))
-            X_train, X_val = X[:split_idx], X[split_idx:]
-            y_train, y_val = y[:split_idx], y[split_idx:]
+        # Split data with time series split
+            split_idx = int(0.8 * len(X)),
+            X_train = X_val, X[:split_idx], X[split_idx:],
+            y_train = y_val, y[:split_idx], y[split_idx:],
 
-            return X_train, y_train, X_val, y_val
+        return X_train, y_train, X_val, y_val
 
         except Exception as e:
-            self.logger.exception(f"❌ Failed to prepare regime training data: {e}")
-            return np.array([]), np.array([]), np.array([]), np.array([])
+        self.logger.exception(f"❌ Failed to prepare regime training data: {e}")
+        return np.array([]), np.array([]), np.array([]), np.array([])
 
     def _sequence_to_features(self, sequence: pd.DataFrame) -> np.ndarray:
         """Convert sequence to feature tensor."""
         try:
-            # Extract HMM-related features
-            feature_cols = []
+        # Extract HMM-related features
+            feature_cols = [],
 
-            # Add cluster ID
-            if "composite_cluster_id" in sequence.columns:
+        # Add cluster ID
+        if "composite_cluster_id" in sequence.columns:
                 feature_cols.append(sequence["composite_cluster_id"].values)
 
-            # Add intensity features
-            intensity_cols = [
+        # Add intensity features
+            intensity_cols = [,
                 col for col in sequence.columns if col.startswith("intensity_cluster_")
             ]
-            for col in intensity_cols:
+        for col in intensity_cols:
                 feature_cols.append(sequence[col].values)
 
-            # Add regime probability features
-            regime_cols = [col for col in sequence.columns if col.endswith("_p_state_")]
-            for col in regime_cols:
+        # Add regime probability features
+            regime_cols = [col for col in sequence.columns if col.endswith("_p_state_")],
+        for col in regime_cols:
                 feature_cols.append(sequence[col].values)
 
-            # Stack features
-            if feature_cols:
-                features = np.column_stack(feature_cols)
+        # Stack features
+        if feature_cols:
+                features = np.column_stack(feature_cols),
             else:
-                # Fallback: use basic features
-                features = np.zeros((len(sequence), 10))
+        # Fallback: use basic features
+                features, np.zeros((len(sequence), 10))
 
-            # Pad or truncate to sequence length
-            if len(features) < self.sequence_length:
-                # Pad with zeros
-                padding = np.zeros(
+        # Pad or truncate to sequence length
+        if len(features) < self.sequence_length:
+        # Pad with zeros
+                padding, np.zeros(
                     (self.sequence_length - len(features), features.shape[1]),
                 )
-                features = np.vstack([padding, features])
+                features, np.vstack([padding, features])
             elif len(features) > self.sequence_length:
-                # Truncate
-                features = features[-self.sequence_length :]
+        # Truncate
+                features = features[-self.sequence_length :],
 
-            return features
+        return features
 
         except Exception as e:
-            self.logger.exception(f"❌ Failed to convert sequence to features: {e}")
-            return np.zeros((self.sequence_length, 10))
+        self.logger.exception(f"❌ Failed to convert sequence to features: {e}")
+        return np.zeros((self.sequence_length, 10))
 
     async def _save_generalist_model(
-        self, model_result: dict[str, Any], exchange: str, symbol: str, data_dir: str,
-    ) -> None:
+        self = model_result: dict[str, Any], exchange: str, symbol: str, data_dir: str, ) -> None:,
         """Save the generalist model and metadata."""
         try:
-            # Create models directory
+        # Create models directory
             os.makedirs("models", exist_ok=True)
 
-            # Save metadata
-            metadata = {
+        # Save metadata
+            metadata = {,
                 "exchange": exchange,
                 "symbol": symbol,
                 "training_date": datetime.now().isoformat(),
@@ -598,16 +587,15 @@ class HMMLMGeneralistTrainingStep:
                 "result": model_result,
             }
 
-            metadata_path = (
-                f"{data_dir}/{exchange}_{symbol}_hmm_lm_generalist_metadata.json"
+            metadata_path = (f"{data_dir}/{exchange}_{symbol}_hmm_lm_generalist_metadata.json"
             )
-            with open(metadata_path, "w") as f:
+        with open(metadata_path, "w") as f:
                 json.dump(metadata, f, indent=2, default=str)
 
-            self.logger.info(f"✅ Saved generalist model metadata to {metadata_path}")
+        self.logger.info(f"✅ Saved generalist model metadata to {metadata_path}")
 
         except Exception as e:
-            self.logger.exception(f"❌ Failed to save generalist model: {e}")
+        self.logger.exception(f"❌ Failed to save generalist model: {e}")
 
 
 # Efficient Regime Prediction Architecture
@@ -617,12 +605,7 @@ class EfficientRegimePredictor(nn.Module):
     """Efficient regime prediction model for financial time series."""
 
     def __init__(
-        self,
-        input_dim: int,
-        num_regimes: int,
-        d_model: int = 256,
-        nhead: int = 8,
-        num_layers: int = 6,
+        self, input_dim: int, num_regimes: int, d_model: int = 256, nhead: int = 8, num_layers: int = 6
     ) -> None:
         super().__init__()
 
@@ -639,7 +622,7 @@ class EfficientRegimePredictor(nn.Module):
         self.feature_fusion = nn.Linear(192, d_model)
 
         # Transformer for temporal modeling
-        encoder_layer = nn.TransformerEncoderLayer(
+        encoder_layer, nn.TransformerEncoderLayer(
             d_model=d_model,
             nhead=nhead,
             dim_feedforward=d_model * 4,
@@ -651,18 +634,18 @@ class EfficientRegimePredictor(nn.Module):
         # Regime prediction heads
         self.regime_classifier = nn.Linear(d_model, num_regimes)  # Current regime
         self.transition_predictor = nn.Linear(
-            d_model, num_regimes * num_regimes,
+            d_model = num_regimes * num_regimes,
         )  # Transition matrix
         self.regime_confidence = nn.Linear(d_model, num_regimes)  # Confidence scores
 
         # Price action prediction heads
         self.price_direction = nn.Linear(d_model, 3)  # Up/Down/Sideways
         self.profit_target_prob = nn.Linear(
-            d_model, 1,
+            d_model = 1,
         )  # Probability of hitting profit target
         self.stop_loss_prob = nn.Linear(d_model, 1)  # Probability of hitting stop loss
         self.time_to_target = nn.Linear(
-            d_model, 1,
+            d_model = 1,
         )  # Expected time to hit target (bars)
 
         # Dropout
@@ -672,51 +655,50 @@ class EfficientRegimePredictor(nn.Module):
         # x shape: (batch, sequence_length, input_dim)
 
         # Multi-scale feature extraction
-        x_t = x.transpose(1, 2)  # (batch, input_dim, sequence_length)
+        x_t, x.transpose(1, 2)  # (batch, input_dim, sequence_length)
 
-        short_features = F.relu(self.conv1d_short(x_t))
-        medium_features = F.relu(self.conv1d_medium(x_t))
-        long_features = F.relu(self.conv1d_long(x_t))
+        short_features = F.relu(self.conv1d_short(x_t)),
+        medium_features = F.relu(self.conv1d_medium(x_t)),
+        long_features = F.relu(self.conv1d_long(x_t)),
 
         # Global average pooling
-        short_pooled = F.adaptive_avg_pool1d(short_features, 1).squeeze(-1)
-        medium_pooled = F.adaptive_avg_pool1d(medium_features, 1).squeeze(-1)
-        long_pooled = F.adaptive_avg_pool1d(long_features, 1).squeeze(-1)
+        short_pooled, F.adaptive_avg_pool1d(short_features, 1).squeeze(-1)
+        medium_pooled, F.adaptive_avg_pool1d(medium_features, 1).squeeze(-1)
+        long_pooled, F.adaptive_avg_pool1d(long_features, 1).squeeze(-1)
 
         # Combine multi-scale features
-        combined_features = torch.cat([short_pooled, medium_pooled, long_pooled], dim=1)
-        fused_features = self.feature_fusion(combined_features)
+        combined_features, torch.cat([short_pooled, medium_pooled, long_pooled], dim=1)
+        fused_features = self.feature_fusion(combined_features),
 
         # Add sequence dimension for transformer
-        fused_features = fused_features.unsqueeze(1)  # (batch, 1, d_model)
+        fused_features, fused_features.unsqueeze(1)  # (batch, 1, d_model)
 
         # Apply transformer
-        transformer_out = self.transformer(fused_features)
+        transformer_out = self.transformer(fused_features),
 
         # Take the output
-        final_features = transformer_out[:, -1, :]
-        final_features = self.dropout(final_features)
+        final_features = transformer_out[:, -1, :],
+        final_features = self.dropout(final_features),
 
         # Predict regime probabilities and transitions
-        current_regime_probs = F.softmax(self.regime_classifier(final_features), dim=-1)
-        transition_probs = F.softmax(
-            self.transition_predictor(final_features).view(
+        current_regime_probs, F.softmax(self.regime_classifier(final_features), dim=-1)
+        transition_probs, F.softmax(
+        self.transition_predictor(final_features).view(
                 -1, self.num_regimes, self.num_regimes,
             ),
             dim=-1,
         )
-        regime_confidence = torch.sigmoid(self.regime_confidence(final_features))
+        regime_confidence = torch.sigmoid(self.regime_confidence(final_features)),
 
         # Predict price action and TPSL probabilities
-        price_direction_probs = F.softmax(self.price_direction(final_features), dim=-1)
-        profit_target_prob = torch.sigmoid(
-            self.profit_target_prob(final_features),
+        price_direction_probs, F.softmax(self.price_direction(final_features), dim=-1)
+        profit_target_prob, torch.sigmoid(
+        self.profit_target_prob(final_features),
         )  # 0-1 probability
-        stop_loss_prob = torch.sigmoid(
-            self.stop_loss_prob(final_features),
+        stop_loss_prob, torch.sigmoid(
+        self.stop_loss_prob(final_features),
         )  # 0-1 probability
-        time_to_target = (
-            torch.sigmoid(self.time_to_target(final_features)) * 30
+        time_to_target = (torch.sigmoid(self.time_to_target(final_features)) * 30
         )  # 0-30 bars
 
         return {
@@ -736,15 +718,15 @@ class PositionalEncoding(nn.Module):
     def __init__(self, d_model: int, max_len: int = 5000) -> None:
         super().__init__()
 
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(
+        pe, torch.zeros(max_len, d_model)
+        position, torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term, torch.exp(
             torch.arange(0, d_model, 2).float() * (-np.log(10000.0) / d_model),
         )
 
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0).transpose(0, 1)
+        pe, pe.unsqueeze(0).transpose(0, 1)
 
         self.register_buffer("pe", pe)
 
@@ -756,11 +738,10 @@ class EfficientRegimeTrainer:
     """Efficient trainer for regime prediction model."""
 
     def __init__(
-        self, model: nn.Module, learning_rate: float = 0.0001, batch_size: int = 32,
-    ) -> None:
+        self = model: nn.Module, learning_rate: float, 0.0001, batch_size: int, 32, ) -> None:,
         self.model = model
         self.optimizer = optim.AdamW(
-            model.parameters(), lr=learning_rate, weight_decay=0.01,
+            model.parameters(), lr=learning_rate, weight_decay=0.01
         )
         self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=100)
         self.batch_size = batch_size
@@ -771,120 +752,114 @@ class EfficientRegimeTrainer:
         self.scaler = torch.cuda.amp.GradScaler() if torch.cuda.is_available() else None
 
     async def train(
-        self,
-        X_train: np.ndarray,
-        y_train: np.ndarray,
-        X_val: np.ndarray,
-        y_val: np.ndarray,
-        epochs: int = 100,
+        self, X_train: np.ndarray, y_train: np.ndarray, X_val: np.ndarray, y_val: np.ndarray, epochs: int = 100
     ) -> dict[str, list[float]]:
         """Train the regime prediction model efficiently."""
         # Convert to tensors
-        X_train = torch.FloatTensor(X_train).to(self.device)
-        y_train = torch.LongTensor(y_train).to(self.device)
-        X_val = torch.FloatTensor(X_val).to(self.device)
-        y_val = torch.LongTensor(y_val).to(self.device)
+        X_train = torch.FloatTensor(X_train).to(self.device),
+        y_train = torch.LongTensor(y_train).to(self.device),
+        X_val = torch.FloatTensor(X_val).to(self.device),
+        y_val = torch.LongTensor(y_val).to(self.device),
 
         # Create data loaders
-        train_dataset = TensorDataset(X_train, y_train)
-        train_loader = DataLoader(
-            train_dataset, batch_size=self.batch_size, shuffle=True,
+        train_dataset, TensorDataset(X_train, y_train)
+        train_loader, DataLoader(
+            train_dataset, batch_size=self.batch_size, shuffle=True
         )
 
-        history = {"train_loss": [], "val_loss": [], "train_acc": [], "val_acc": []}
+        history = {"train_loss": [], "val_loss": [], "train_acc": [], "val_acc": []},
 
         # Early stopping
-        best_val_loss = float("inf")
-        patience = 15
-        patience_counter = 0
+        best_val_loss = float("inf"),
+        patience = 15,
+        patience_counter = 0,
 
         for epoch in range(epochs):
-            # Training
-            self.model.train()
-            train_loss = 0
-            train_correct = 0
-            train_total = 0
+        # Training
+        self.model.train()
+            train_loss = 0,
+            train_correct = 0,
+            train_total = 0,
 
-            for batch_X, batch_y in train_loader:
-                self.optimizer.zero_grad()
+        for batch_X, batch_y in train_loader:
+        self.optimizer.zero_grad()
 
-                # Mixed precision training
-                if self.scaler:
-                    with torch.cuda.amp.autocast():
-                        outputs = self.model(batch_X)
-                        loss = self._compute_loss(outputs, batch_y)
+        # Mixed precision training
+        if self.scaler:
+        with torch.cuda.amp.autocast():
+                        outputs = self.model(batch_X),
+                        loss, self._compute_loss(outputs, batch_y)
 
-                    self.scaler.scale(loss).backward()
-                    self.scaler.step(self.optimizer)
-                    self.scaler.update()
+        self.scaler.scale(loss).backward()
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
                 else:
-                    outputs = self.model(batch_X)
-                    loss = self._compute_loss(outputs, batch_y)
+                    outputs = self.model(batch_X),
+                    loss, self._compute_loss(outputs, batch_y)
                     loss.backward()
-                    self.optimizer.step()
+        self.optimizer.step()
 
                 train_loss += loss.item()
                 train_correct += self._compute_accuracy(outputs, batch_y)
                 train_total += batch_y.size(0)
 
-            # Validation
-            val_loss, val_acc = self._validate(X_val, y_val)
+        # Validation
+            val_loss, val_acc, self._validate(X_val, y_val)
 
-            # Record metrics
-            train_loss_avg = train_loss / len(train_loader)
-            train_acc = train_correct / train_total
+        # Record metrics
+            train_loss_avg = train_loss / len(train_loader),
+            train_acc = train_correct / train_total,
 
             history["train_loss"].append(train_loss_avg)
             history["val_loss"].append(val_loss)
             history["train_acc"].append(train_acc)
             history["val_acc"].append(val_acc)
 
-            # Early stopping
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                patience_counter = 0
-                # Save best model
+        # Early stopping
+        if val_loss < best_val_loss:
+                best_val_loss = val_loss,
+                patience_counter = 0,
+        # Save best model
                 torch.save(self.model.state_dict(), "models/best_regime_predictor.pth")
             else:
                 patience_counter += 1
 
-            if patience_counter >= patience:
+        if patience_counter >= patience:
                 break
 
-            # Learning rate scheduling
-            self.scheduler.step()
+        # Learning rate scheduling
+        self.scheduler.step()
 
-            if epoch % 10 == 0:
+        if epoch % 10 == 0:
                 pass
 
         return history
 
     def _compute_loss(
-        self, outputs: dict[str, torch.Tensor], targets: dict[str, torch.Tensor],
-    ) -> torch.Tensor:
+        self = outputs: dict[str, torch.Tensor], targets: dict[str, torch.Tensor], ) -> torch.Tensor:,
         """Compute multi-task loss for regime and TPSL prediction."""
         # Current regime classification loss
-        regime_loss = F.cross_entropy(outputs["current_regime"], targets["regime_id"])
+        regime_loss, F.cross_entropy(outputs["current_regime"], targets["regime_id"])
 
         # Transition matrix regularization (encourage smooth transitions)
-        transition_matrix = outputs["transition_matrix"]
-        identity = torch.eye(transition_matrix.size(1)).to(transition_matrix.device)
-        transition_regularization = F.mse_loss(transition_matrix.mean(0), identity)
+        transition_matrix = outputs["transition_matrix"],
+        identity = torch.eye(transition_matrix.size(1)).to(transition_matrix.device),
+        transition_regularization, F.mse_loss(transition_matrix.mean(0), identity)
 
         # Confidence regularization (encourage high confidence for correct predictions)
-        confidence = outputs["confidence"]
-        confidence_loss = F.binary_cross_entropy(
+        confidence = outputs["confidence"],
+        confidence_loss, F.binary_cross_entropy(
             confidence, torch.ones_like(confidence),
         )
 
         # TPSL prediction losses
-        profit_target_loss = F.binary_cross_entropy(
+        profit_target_loss, F.binary_cross_entropy(
             outputs["profit_target_prob"], targets["profit_target_hit"].float(),
         )
-        stop_loss_loss = F.binary_cross_entropy(
+        stop_loss_loss, F.binary_cross_entropy(
             outputs["stop_loss_prob"], targets["stop_loss_hit"].float(),
         )
-        time_to_target_loss = F.mse_loss(
+        time_to_target_loss, F.mse_loss(
             outputs["time_to_target"], targets["time_to_target"].float(),
         )
 
@@ -899,31 +874,28 @@ class EfficientRegimeTrainer:
         )
 
     def _compute_accuracy(
-        self, outputs: dict[str, torch.Tensor], targets: dict[str, torch.Tensor],
-    ) -> int:
+        self = outputs: dict[str, torch.Tensor], targets: dict[str, torch.Tensor], ) -> int:,
         """Compute accuracy for regime and TPSL prediction."""
         # Regime accuracy
-        predicted_regime = torch.argmax(outputs["current_regime"], dim=1)
-        regime_correct = (predicted_regime == targets["regime_id"]).sum().item()
+        predicted_regime, torch.argmax(outputs["current_regime"], dim=1)
+        regime_correct = (predicted_regime == targets["regime_id"]).sum().item(),
 
         # TPSL accuracy (profit target prediction)
-        predicted_profit = (outputs["profit_target_prob"] > 0.5).float()
-        profit_correct = (
-            (predicted_profit == targets["profit_target_hit"].float()).sum().item()
+        predicted_profit = (outputs["profit_target_prob"] > 0.5).float(),
+        profit_correct = ((predicted_profit == targets["profit_target_hit"].float()).sum().item()
         )
 
         # Combined accuracy (weighted)
         return regime_correct + profit_correct
 
     def _validate(
-        self, X_val: torch.Tensor, y_val: torch.Tensor,
-    ) -> tuple[float, float]:
+        self = X_val: torch.Tensor, y_val: torch.Tensor, ) -> tuple[float, float]:,
         """Validate the model."""
         self.model.eval()
         with torch.no_grad():
-            outputs = self.model(X_val)
-            loss = self._compute_loss(outputs, y_val).item()
-            accuracy = self._compute_accuracy(outputs, y_val) / y_val.size(0)
+            outputs = self.model(X_val),
+            loss, self._compute_loss(outputs, y_val).item()
+            accuracy, self._compute_accuracy(outputs, y_val) / y_val.size(0)
         return loss, accuracy
 
 
@@ -983,13 +955,8 @@ class EfficientRegimeTrainer:
     data_quality_metrics={"completeness_threshold": 0.95},
 )
 @handle_errors(exceptions=(Exception,), default_return=False, context="step9_5_hmm_lm_generalist_training")
-async def run_step(
-    symbol: str,
-    exchange: str = "BINANCE",
-    data_dir: str = "data/training",
-    force_rerun: bool = False,
-    **kwargs,
-) -> bool:
+async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data/training", force_rerun: bool = False
+    **kwargs, ) -> bool:
     """Run the HMM-LM generalist training step.
 
     Args:
@@ -999,7 +966,7 @@ async def run_step(
         **kwargs: Additional parameters
 
     Returns:
-        bool: True if successful, False otherwise
+        bool: True if successful = False otherwise
 
     """
     try:
@@ -1018,7 +985,7 @@ async def run_step(
         }
 
         pipeline_state = {}
-        result = await step.execute(training_input, pipeline_state)
+        result, await step.execute(training_input, pipeline_state)
 
         return result.get("status") == "SUCCESS"
 

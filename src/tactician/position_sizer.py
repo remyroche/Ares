@@ -14,6 +14,7 @@ from src.config_optuna import get_parameter_value
 from src.utils.confidence import normalize_dual_confidence
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import error, initialization_error, missing
+from src.utils.data_quality_decorators import validate_data_quality
 
 
 class PositionSizer:
@@ -122,6 +123,14 @@ class PositionSizer:
             self.print(error(f"Error validating configuration: {e}"))
             return False
 
+    @validate_data_quality(
+        required_columns=None,  # This method validates dict input, not DataFrame
+        min_rows=1,
+        max_null_ratio=0.0,
+        check_duplicates=False,
+        check_timestamps=False,
+        context="position sizing calculation input validation"
+    )
     @handle_specific_errors(
         error_handlers={
             ValueError: (None, "Invalid input data for position sizing"),

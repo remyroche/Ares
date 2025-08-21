@@ -14,6 +14,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.utils.error_handler import handle_errors
+from src.utils.centralized_decorators import (
+    performance_monitor,
+    PerformanceLevel,
+)
 from src.utils.logger import system_logger
 
 
@@ -44,6 +48,7 @@ class CSVExporter:
         # Export history
         self.export_history: List[Dict[str, Any]] = []
 
+    @performance_monitor(level=PerformanceLevel.DETAILED)
     @handle_errors(exceptions=(Exception,), default_return=False, context="csv_exporter.initialize")
     async def initialize(self) -> bool:
         """Initialize CSV exporter."""
@@ -65,6 +70,7 @@ class CSVExporter:
         self.logger.info("✅ CSV Exporter initialized successfully")
         return True
 
+    @performance_monitor(level=PerformanceLevel.DETAILED)
     @handle_errors(exceptions=(Exception,), default_return=None, context="csv_exporter.export_performance")
     async def export_performance_metrics(
         self,

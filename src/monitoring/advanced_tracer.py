@@ -18,6 +18,10 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.centralized_decorators import (
+    performance_monitor,
+    PerformanceLevel,
+)
 from src.utils.logger import system_logger
 
 
@@ -116,6 +120,7 @@ class AdvancedTracer:
         # Storage
         self._traces: Dict[str, TraceRequest] = {}
 
+    @performance_monitor(level=PerformanceLevel.DETAILED)
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid tracer configuration"),

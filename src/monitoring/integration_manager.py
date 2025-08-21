@@ -12,6 +12,10 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.centralized_decorators import (
+    performance_monitor,
+    PerformanceLevel,
+)
 from src.utils.logger import system_logger
 
 
@@ -36,6 +40,7 @@ class MonitoringIntegrationManager:
         self.is_integrated: bool = False
         self.integration_task: Optional[asyncio.Task] = None
 
+    @performance_monitor(level=PerformanceLevel.DETAILED)
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid integration configuration"),

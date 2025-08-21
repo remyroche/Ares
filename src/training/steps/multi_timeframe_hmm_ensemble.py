@@ -158,15 +158,15 @@ class MultiTimeframeHMMEnsemble:
                 success = self._train_timeframe_models(
                     timeframe_data[tf], tf_config,
                 )
-                tf_training_time, time.time() - tf_start_time
+                tf_training_time = time.time() - tf_start_time
 
-        if success:
+                if success:
                     timeframe_results[tf] = {
                         "training_time": tf_training_time,
                         "models_trained": len(self.timeframe_models.get(tf, {})),
                         "success": True,
                     }
-        self.logger.info(
+                    self.logger.info(
                         f"✅ {tf} training completed in {tf_training_time:.2f}s",
                     )
                 else:
@@ -174,88 +174,89 @@ class MultiTimeframeHMMEnsemble:
                         "training_time": tf_training_time,
                         "success": False,
                     }
-        self.logger.error(f"❌ {tf} training failed")
+                    self.logger.error(f"❌ {tf} training failed")
 
         # 2. Train meta-learner if using meta-learning approach
-        if self.config.ensemble_method in ["meta_learner", "stacking"]:
-        self.logger.info("🧠 Training meta-learner...")
+            if self.config.ensemble_method in ["meta_learner", "stacking"]:
+                self.logger.info("🧠 Training meta-learner...")
                 meta_start_time = time.time()
 
                 success = self._train_meta_learner(timeframe_data)
-                meta_training_time, time.time() - meta_start_time
+                meta_training_time = time.time() - meta_start_time
 
-        if success:
-        self.logger.info(
+                if success:
+                    self.logger.info(
                         f"✅ Meta-learner training completed in {meta_training_time:.2f}s",
                     )
                 else:
-        self.logger.error("❌ Meta-learner training failed")
-        return False
+                    self.logger.error("❌ Meta-learner training failed")
+                    return False
 
         # 3. Save ensemble
-        self._save_ensemble()
+            self._save_ensemble()
 
-        self.trained = True
-            total_time, time.time() - start_time
+            self.trained = True
+            total_time = time.time() - start_time
 
-        self.logger.info("✅ Multi-timeframe HMM ensemble training completed!")
-        self.logger.info(f"⏱️ Total training time: {total_time:.2f}s")
-        self.logger.info("📊 Training summary:")
-        for tf, results in timeframe_results.items():
-        if results["success"]:
-        self.logger.info(
-                        f"   - {tf}: {results['training_time']:.2f}s, {results['models_trained']} models",
+            self.logger.info("✅ Multi-timeframe HMM ensemble training completed!")
+            self.logger.info(f"⏱️ Total training time: {total_time:.2f}s")
+            self.logger.info("📊 Training summary:")
+            for tf, results in timeframe_results.items():
+                if results.get("success"):
+                    self.logger.info(
+                        f"   - {tf}: {results['training_time']:.2f}s, {results.get('models_trained', 0)} models",
                     )
                 else:
-        self.logger.info(f"   - {tf}: FAILED")
+                    self.logger.info(f"   - {tf}: FAILED")
 
-        return True
+            return True
 
         except Exception as e:
-        self.logger.exception(f"💥 Error in multi-timeframe ensemble training: {e}")
-        return False
+            self.logger.exception(f"💥 Error in multi-timeframe ensemble training: {e}")
+            return False
 
     @handle_errors(
-        exceptions=(Exception,)
-        default_return=False
-        context="timeframe model training"
+        exceptions=(Exception,),
+        default_return=False,
+        context="timeframe model training",
     )
     def _train_timeframe_models(
-        self = timeframe: str, data: pd.DataFrame, tf_config: TimeframeConfig, ) -> bool:
+        self, timeframe: str, data: pd.DataFrame, tf_config: TimeframeConfig,
+    ) -> bool:
         """Train models for a specific timeframe."""
         try:
-        # Load regime forecasting artifacts emitted by Step 6
-            rf_dir, os.path.join(
+            # Load regime forecasting artifacts emitted by Step 6
+            rf_dir = os.path.join(
                 CONFIG.get("DATA_DIR", "data"), "training", "regime_forecasting",
             )
-            rf_path, os.path.join(
-                rf_dir = f"{self.exchange}_{self.symbol}_{timeframe}_regime_forecasting.json",
+            rf_path = os.path.join(
+                rf_dir, f"{self.exchange}_{self.symbol}_{timeframe}_regime_forecasting.json",
             )
 
-        if not os.path.exists(rf_path):
-        self.logger.warning(
+            if not os.path.exists(rf_path):
+                self.logger.warning(
                     f"⚠️ No regime forecasting artifact found for {timeframe}: {rf_path}",
                 )
-        return False
+                return False
 
         # Load JSON with next-regime probabilities and exit-within-H
         try:
-        with open(rf_path) as f:
-                    rf = json.load(f)
-        self.timeframe_models[timeframe] = {
-                    "regime_forecasting": rf,
-                    "timeframe": timeframe,
-                    "config": tf_config,
-                    "trained_at": time.time(),
-                }
-        self.logger.info(
-                    f"📦 Loaded regime forecasting artifact for {timeframe} ({rf_path})",
-                )
+            with open(rf_path) as f:
+                rf = json.load(f)
+            self.timeframe_models[timeframe] = {
+                "regime_forecasting": rf,
+                "timeframe": timeframe,
+                "config": tf_config,
+                "trained_at": time.time(),
+            }
+            self.logger.info(
+                f"📦 Loaded regime forecasting artifact for {timeframe} ({rf_path})",
+            )
         except Exception as e:
-        self.logger.warning(
-                    f"⚠️ Failed to load regime forecasting artifact for {timeframe}: {e}",
-                )
-        return False
+            self.logger.warning(
+                f"⚠️ Failed to load regime forecasting artifact for {timeframe}: {e}",
+            )
+            return False
 
         # Store timeframe models
         self.timeframe_models[timeframe] = {

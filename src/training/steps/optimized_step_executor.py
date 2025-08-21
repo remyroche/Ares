@@ -93,29 +93,29 @@ class OptimizedStepExecutor:
             )
             pipeline_results["step_1_data_collection"] = data_results
             pipeline_state[self._validator_step_map["data_collection"]] = data_results
-        if not await self._validate_and_gate("data_collection", training_input, pipeline_state):
+            if not await self._validate_and_gate("data_collection", training_input, pipeline_state):
                 pipeline_results["validation_failed_at"] = "step_1_data_collection"
-        return pipeline_results
+                return pipeline_results
 
         # Step 2: Market Regime Classification (with caching)
-        self._take_memory_snapshot("after_data_collection")
-            regime_results, await self._execute_step_with_optimization(
+            self._take_memory_snapshot("after_data_collection")
+            regime_results = await self._execute_step_with_optimization(
                 "regime_classification",
-        self._optimized_regime_classification,
+                self._optimized_regime_classification,
                 data_results.get("market_data", {}),
                 symbol,
                 exchange,
             )
             pipeline_results["step_2_regime_classification"] = regime_results
             pipeline_state[self._validator_step_map["regime_classification"]] = regime_results
-        if not await self._validate_and_gate("regime_classification", training_input, pipeline_state):
+            if not await self._validate_and_gate("regime_classification", training_input, pipeline_state):
                 pipeline_results["validation_failed_at"] = "step_2_regime_classification"
-        return pipeline_results
+                return pipeline_results
 
         # Step 3: Parallel Data Splitting
-            splitting_results, await self._execute_step_with_optimization(
+            splitting_results = await self._execute_step_with_optimization(
                 "data_splitting",
-        self._optimized_data_splitting,
+                self._optimized_data_splitting,
                 data_results.get("market_data", {}),
                 regime_results,
             )

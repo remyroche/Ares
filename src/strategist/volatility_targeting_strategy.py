@@ -6,6 +6,10 @@ import numpy as np
 import pandas as pd
 
 from src.utils.error_handler import handle_data_processing_errors, handle_errors
+from src.utils.enhanced_data_quality_decorators import (
+    validate_memory_optimized_data_quality,
+)
+from src.utils.trading_decorators import performance_monitor
 from src.utils.logger import system_logger
 
 class VolatilityMethod(Enum):
@@ -45,6 +49,7 @@ class VolatilityTargetingStrategy:
             f"Initialized volatility targeting strategy with target: {self.config.target_volatility:.1%}",
         )
 
+    @performance_monitor
     @handle_errors(
         exceptions=(ValueError, TypeError),
         default_return=1.0,
@@ -89,8 +94,8 @@ class VolatilityTargetingStrategy:
         self.logger.debug(f"Calculated position multiplier: {multiplier:.3f}")
         return multiplier
 
-    @handle_data_processing_errors(default_return=0.15, context="calculate_volatility")
-
+    @validate_memory_optimized_data_quality
+    @handle_data_processing_errors(context="calculate_volatility")
     def calculate_volatility(self, price_data: pd.DataFrame) -> float:
         """Calculate volatility based on the configured method."""
         if price_data.empty or "close" not in price_data.columns:
@@ -364,6 +369,7 @@ class VolatilityTargetingStrategy:
         )
         return adjusted_weights
 
+    @performance_monitor
     def get_strategy_stats(self, price_data: pd.DataFrame) -> dict[str, float]:
         """Get strategy statistics and diagnostics."""
         current_vol = self.calculate_volatility(price_data)

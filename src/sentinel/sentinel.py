@@ -5,6 +5,7 @@ from typing import Any
 
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.trading_decorators import performance_monitor
 from src.utils.warning_symbols import (
     error,
     failed,
@@ -162,6 +163,7 @@ class Sentinel:
         default_return=None,
         context="monitoring loop",
     )
+    @performance_monitor
     async def _monitoring_loop(self) -> None:
         """Main monitoring loop."""
         while self.is_monitoring:
@@ -173,6 +175,7 @@ class Sentinel:
         default_return=None,
         context="monitoring checks",
     )
+    @performance_monitor
     async def _perform_monitoring_checks(self) -> None:
         """Perform all monitoring checks configured."""
         if "performance" in self.monitoring_rules:
@@ -189,6 +192,7 @@ class Sentinel:
         default_return=None,
         context="performance monitoring",
     )
+    @performance_monitor
     async def _check_performance_metrics(self) -> None:
         """Check performance metrics (simulated)."""
         cpu_usage = 0.6
@@ -219,6 +223,7 @@ class Sentinel:
         default_return=None,
         context="error monitoring",
     )
+    @performance_monitor
     async def _check_error_metrics(self) -> None:
         """Check error metrics (simulated)."""
         error_rate = 0.05
@@ -249,6 +254,7 @@ class Sentinel:
         default_return=None,
         context="system monitoring",
     )
+    @performance_monitor
     async def _check_system_metrics(self) -> None:
         """Check system metrics (simulated)."""
         uptime = 0.995

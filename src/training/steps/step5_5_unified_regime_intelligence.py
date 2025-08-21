@@ -40,6 +40,7 @@ from torch.nn.utils import prune
 from torch.utils.data import DataLoader, TensorDataset
 
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
+from src.utils.centralized_decorators import validate_data_quality
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, timeout
@@ -76,26 +77,26 @@ class MultiTimeframeHMMEncoder(nn.Module):
         self.hmm_embeddings = nn.ModuleDict(
             {
                 tf: nn.Embedding(
-        self.hmm_states_per_tf = self.d_model // len(self.timeframes)
+                    self.hmm_states_per_tf, self.d_model // len(self.timeframes)
                 )
-        for tf in self.timeframes
+                for tf in self.timeframes
             },
         )
 
         # Multi-head attention for cross-timeframe analysis
         self.cross_timeframe_attention = nn.MultiheadAttention(
-            embed_dim=self.d_model
-            num_heads=self.nhead
-            dropout=self.dropout
+            embed_dim=self.d_model,
+            num_heads=self.nhead,
+            dropout=self.dropout,
             batch_first=True
         )
 
         # Transformer layers for temporal modeling
-        encoder_layer, nn.TransformerEncoderLayer(
-            d_model=self.d_model
-            nhead=self.nhead
-            dim_feedforward=self.d_model * 4
-            dropout=self.dropout
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=self.d_model,
+            nhead=self.nhead,
+            dim_feedforward=self.d_model * 4,
+            dropout=self.dropout,
             batch_first=True
         )
         self.transformer = nn.TransformerEncoder(
@@ -112,14 +113,14 @@ class MultiTimeframeHMMEncoder(nn.Module):
         )
         self.transition_predictor = nn.Linear(self.d_model, 2)  # transition probability
         self.tpsl_predictor = nn.Linear(
-        self.d_model = 2
+            self.d_model, 2
         )  # TPSL-based direction (long/short only)
         self.confidence_predictor = nn.Linear(self.d_model, 1)  # confidence score
         # Persisted feature projection (initialized lazily to match input feature dimension)
         self.feature_projection: nn.Linear | None = None
 
     def forward(
-        self = hmm_states: dict[str, torch.Tensor], features: torch.Tensor, ) -> dict[str, torch.Tensor]:
+        self, hmm_states: dict[str, torch.Tensor], features: torch.Tensor, ) -> dict[str, torch.Tensor]:
         """Forward pass through the unified regime intelligence model.
 
         Args:
@@ -135,40 +136,41 @@ class MultiTimeframeHMMEncoder(nn.Module):
         # Encode HMM states for each timeframe
         tf_embeddings = []
         for tf in self.timeframes:
-        if tf in hmm_states:
+            if tf in hmm_states:
                 tf_embed = self.hmm_embeddings[tf](hmm_states[tf])
                 tf_embeddings.append(tf_embed)
 
         # Concatenate timeframe embeddings
         if tf_embeddings:
-            hmm_encoded, torch.cat(tf_embeddings, dim=-1)
-        else: hmm_encoded = torch.zeros(
+            hmm_encoded = torch.cat(tf_embeddings, dim=-1)
+        else:
+            hmm_encoded = torch.zeros(
                 batch_size, seq_len, self.d_model, device=features.device
             )
 
         # Combine with market features (lazy-init projection to avoid recreating each forward)
         if (
-        self.feature_projection is None
+            self.feature_projection is None
             or getattr(self.feature_projection, "in_features", None) != features.size(-1)
         ):
-        self.feature_projection = nn.Linear(features.size(-1), self.d_model).to(features.device)
+            self.feature_projection = nn.Linear(features.size(-1), self.d_model).to(features.device)
         feature_encoded = self.feature_projection(features)
 
         # Combine HMM and feature encodings
         combined = hmm_encoded + feature_encoded
 
         # Apply cross-timeframe attention
-        attended, _, self.cross_timeframe_attention(combined, combined, combined)
+        attended, _ = self.cross_timeframe_attention(combined, combined, combined)
 
         # Apply transformer layers
         transformed = self.transformer(attended)
 
         # Global average pooling for classification
-        pooled, torch.mean(transformed, dim=1)
+        pooled = torch.mean(transformed, dim=1)
 
         # Generate outputs
         regime_logits = self.regime_classifier(pooled)
-        intensity_logits, self.intensity_predictor(pooled)  # Raw intensity scores
+        intensity_logits = self.intensity_predictor(pooled)  # Raw intensity scores
         transition_logits = self.transition_predictor(pooled)
         tpsl_logits = self.tpsl_predictor(pooled)
         confidence_logits = self.confidence_predictor(pooled)
@@ -232,54 +234,55 @@ class UnifiedRegimeIntelligenceStep:
         # Initialize enhanced LM optimizer
         self.enhanced_lm_optimizer = None
         if ENHANCED_OPTIMIZER_AVAILABLE:
-        try:
-        self.enhanced_lm_optimizer = EnhancedLMOptimizer(config)
-        # Note: initialize() will be called later in an async context
-        self.logger.info("✅ Enhanced LM optimizer created for step6_5")
-        except Exception as e:
-        self.logger.warning(f"⚠️ Failed to create enhanced LM optimizer: {e}")
+            try:
+                self.enhanced_lm_optimizer = EnhancedLMOptimizer(config)
+                # Note: initialize() will be called later in an async context
+                self.logger.info("✅ Enhanced LM optimizer created for step6_5")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to create enhanced LM optimizer: {e}")
 
         # Device selection
         self.device_str = self._safe_get_device()
         if self.device_str == "cuda":
-        self.device = torch.device("cuda")
+            self.device = torch.device("cuda")
         elif self.device_str == "mps":
-        self.device = torch.device("mps")
+            self.device = torch.device("mps")
         else:
-        self.device = torch.device("cpu")
+            self.device = torch.device("cpu")
         self.logger.info(f"Using device: {self.device_str.upper()} for PyTorch operations.")
 
     def _safe_get_device(self) -> str:
         """Safely determine best device: prefer CUDA, then MPS with timeout, else CPU."""
         try:
-        if torch.cuda.is_available():
-        return "cuda"
-        # MPS check can occasionally hang; guard with timeout
+            if torch.cuda.is_available():
+                return "cuda"
+            # MPS check can occasionally hang; guard with timeout
             import queue
             import threading
 
             result_queue = queue.Queue()
 
             def check_mps() -> None:
-        try:
+                try:
                     is_available = torch.backends.mps.is_available()
                     result_queue.put(("mps" if is_available else "cpu", None))
-        except Exception as ex:
+                except Exception as ex:
                     result_queue.put(("cpu", ex))
 
-            thread, threading.Thread(target=check_mps, daemon=True)
+            thread = threading.Thread(target=check_mps, daemon=True)
             thread.start()
-        try: device = err, result_queue.get(timeout=10)
-        if err:
-        self.logger.error(failed(f"MPS check failed: {err}, using CPU"))
-        return "cpu"
-        return device
-        except queue.Empty:
-        self.logger.exception(timeout("MPS availability check timed out, using CPU"))
-        return "cpu"
+            try:
+                device, err = result_queue.get(timeout=10)
+                if err:
+                    self.logger.error(failed(f"MPS check failed: {err}, using CPU"))
+                    return "cpu"
+                return device
+            except queue.Empty:
+                self.logger.exception(timeout("MPS availability check timed out, using CPU"))
+                return "cpu"
         except Exception as ex:
-        self.logger.exception(error(f"Error checking device availability: {ex}, using CPU"))
-        return "cpu"
+            self.logger.exception(error(f"Error checking device availability: {ex}, using CPU"))
+            return "cpu"
 
     @handle_errors(
         exceptions=(Exception,),
@@ -289,33 +292,33 @@ class UnifiedRegimeIntelligenceStep:
     async def initialize(self) -> bool:
         """Initialize the unified regime intelligence step."""
         try:
-        self.logger.info("🚀 Initializing Unified Regime Intelligence Step...")
+            self.logger.info("🚀 Initializing Unified Regime Intelligence Step...")
 
-        # Initialize model
-        self.model = MultiTimeframeHMMEncoder(self.config)
+            # Initialize model
+            self.model = MultiTimeframeHMMEncoder(self.config)
 
-        # Initialize label encoders
-        self.label_encoders["regime"] = LabelEncoder()
-        self.label_encoders["transition"] = LabelEncoder()
-        self.label_encoders["tpsl"] = LabelEncoder()
+            # Initialize label encoders
+            self.label_encoders["regime"] = LabelEncoder()
+            self.label_encoders["transition"] = LabelEncoder()
+            self.label_encoders["tpsl"] = LabelEncoder()
 
-        # Initialize SRBreakoutPredictor
-            sr_init_success = await self.sr_predictor.initialize(),
-        if not sr_init_success:
-        self.logger.warning(
+            # Initialize SRBreakoutPredictor
+            sr_init_success = await self.sr_predictor.initialize()
+            if not sr_init_success:
+                self.logger.warning(
                     "⚠️ Failed to initialize SRBreakoutPredictor, continuing without S/R analysis",
                 )
 
-        self.logger.info(
+            self.logger.info(
                 "✅ Unified Regime Intelligence Step initialized successfully",
             )
-        return True
+            return True
 
         except Exception as e:
-        self.logger.exception(
+            self.logger.exception(
                 f"🚨 Failed to initialize Unified Regime Intelligence Step: {e}",
             )
-        return False
+            return False
 
     @handle_errors(
         exceptions=(Exception,),
@@ -325,26 +328,26 @@ class UnifiedRegimeIntelligenceStep:
     async def train(self, data: dict[str, pd.DataFrame]) -> bool:
         """Train the unified regime intelligence model."""
         try:
-        self.logger.info("🚀 Starting Unified Regime Intelligence training...")
+            self.logger.info("🚀 Starting Unified Regime Intelligence training...")
 
-        # Enhanced optimization for step6_5
-        if self.enhanced_lm_optimizer is None:
-                msg = "Enhanced LM optimizer is required but not initialized",
+            # Enhanced optimization for step6_5
+            if self.enhanced_lm_optimizer is None:
+                msg = "Enhanced LM optimizer is required but not initialized"
                 raise RuntimeError(msg)
 
-        # Initialize the optimizer if not already done
-        if not hasattr(self.enhanced_lm_optimizer, "initialization_status"):
-        await self.enhanced_lm_optimizer.initialize()
+            # Initialize the optimizer if not already done
+            if not hasattr(self.enhanced_lm_optimizer, "initialization_status"):
+                await self.enhanced_lm_optimizer.initialize()
 
-        self.logger.info("🔧 Enhanced LM optimization enabled: starting comprehensive optimization...")
+            self.logger.info("🔧 Enhanced LM optimization enabled: starting comprehensive optimization...")
 
-        # Prepare data for optimization
-            optimization_data = await self._prepare_optimization_data(data),
-        if not optimization_data:
-                msg = "Failed to prepare optimization data",
+            # Prepare data for optimization
+            optimization_data = await self._prepare_optimization_data(data)
+            if not optimization_data:
+                msg = "Failed to prepare optimization data"
                 raise RuntimeError(msg)
 
-            optimization_results, optimized_features, await self.enhanced_lm_optimizer.optimize_lm_model(
+            optimization_results, optimized_features = await self.enhanced_lm_optimizer.optimize_lm_model(
                 step_name="step6_5",
                 features_df=optimization_data["features"],
                 target=optimization_data["target"],
@@ -352,114 +355,114 @@ class UnifiedRegimeIntelligenceStep:
                 architecture="Transformer",
             )
 
-        self.logger.info("✅ Enhanced optimization completed for step6_5")
-        # Store optimization results
-        if not hasattr(self, "enhancement_results"):
-        self.enhancement_results = {}
-        self.enhancement_results["enhanced_optimization"] = optimization_results
+            self.logger.info("✅ Enhanced optimization completed for step6_5")
+            # Store optimization results
+            if not hasattr(self, "enhancement_results"):
+                self.enhancement_results = {}
+            self.enhancement_results["enhanced_optimization"] = optimization_results
 
-        # Check if HPO is enabled
-        if self.hpo_enabled:
-        self.logger.info("🔧 HPO enabled: starting short optimization...")
-                hpo_results = await self._run_hyperparameter_optimization(),
-        if hpo_results and "best_params" in hpo_results:
-        self.config.update(hpo_results["best_params"])
-        # Update core params if present
-        self.learning_rate = self.config.get("learning_rate", self.learning_rate)
-        self.batch_size = self.config.get("batch_size", self.batch_size)
-        self.sequence_length = self.config.get("sequence_length", self.sequence_length)
-        # Recreate model with new architecture settings if any
-        self.model = MultiTimeframeHMMEncoder(self.config)
-        # Attach HPO results to artifacts
-        if not hasattr(self, "enhancement_results"):
-        self.enhancement_results = {}
-        self.enhancement_results["hpo_results"] = hpo_results or {}
+            # Check if HPO is enabled
+            if self.hpo_enabled:
+                self.logger.info("🔧 HPO enabled: starting short optimization...")
+                hpo_results = await self._run_hyperparameter_optimization()
+                if hpo_results and "best_params" in hpo_results:
+                    self.config.update(hpo_results["best_params"])
+                    # Update core params if present
+                    self.learning_rate = self.config.get("learning_rate", self.learning_rate)
+                    self.batch_size = self.config.get("batch_size", self.batch_size)
+                    self.sequence_length = self.config.get("sequence_length", self.sequence_length)
+                    # Recreate model with new architecture settings if any
+                    self.model = MultiTimeframeHMMEncoder(self.config)
+                    # Attach HPO results to artifacts
+                    if not hasattr(self, "enhancement_results"):
+                        self.enhancement_results = {}
+                    self.enhancement_results["hpo_results"] = hpo_results or {}
 
-        # Prepare training data
-            train_data = await self._prepare_training_data(data),
-        if not train_data:
-        self.logger.error("🚨 Failed to prepare training data")
-        return False
+            # Prepare training data
+            train_data = await self._prepare_training_data(data)
+            if not train_data:
+                self.logger.error("🚨 Failed to prepare training data")
+                return False
 
-        # Train the model
-            training_result = await self._train_model(train_data),
-        if not training_result:
-        self.logger.error("🚨 Model training failed")
-        return False
+            # Train the model
+            training_result = await self._train_model(train_data)
+            if not training_result:
+                self.logger.error("🚨 Model training failed")
+                return False
 
-        # Optional: light architecture optimization/pruning
-        if self.architecture_optimization_enabled and self.model is not None:
-                arch_results = {,
+            # Optional: light architecture optimization/pruning
+            if self.architecture_optimization_enabled and self.model is not None:
+                arch_results = {
                     "pruning_results": self._apply_structured_pruning(self.model),
                     "optimization_results": self._optimize_architecture(self.model),
                     "model_size_before": sum(p.numel() for p in self.model.parameters()),
                     "model_size_after": sum(p.numel() for p in self.model.parameters() if p.requires_grad),
                 }
-        if not hasattr(self, "enhancement_results"):
-        self.enhancement_results = {}
-        self.enhancement_results["architecture_optimization_results"] = arch_results
+                if not hasattr(self, "enhancement_results"):
+                    self.enhancement_results = {}
+                self.enhancement_results["architecture_optimization_results"] = arch_results
 
-        # Save artifacts
-        await self._save_artifacts()
+            # Save artifacts
+            await self._save_artifacts()
 
-        self.logger.info(
+            self.logger.info(
                 "✅ Unified Regime Intelligence training completed successfully",
             )
-        return True
+            return True
 
         except Exception as e:
-        self.logger.exception(f"🚨 Training failed: {e}")
-        return False
+            self.logger.exception(f"🚨 Training failed: {e}")
+            return False
 
     async def _prepare_optimization_data(
-        self = data: dict[str, pd.DataFrame], ) -> dict[str, Any] | None:,
+        self, data: dict[str, pd.DataFrame], ) -> dict[str, Any] | None:
         """Prepare data for enhanced optimization."""
         try:
-        # Load HMM composite data for each timeframe
-            hmm_data = {},
-        for tf in self.timeframes:
-                hmm_file = f"data/BINANCE_ETHUSDT_hmm_composite_clusters_{tf}.parquet",
-        if os.path.exists(hmm_file):
+            # Load HMM composite data for each timeframe
+            hmm_data = {}
+            for tf in self.timeframes:
+                hmm_file = f"data/BINANCE_ETHUSDT_hmm_composite_clusters_{tf}.parquet"
+                if os.path.exists(hmm_file):
                     hmm_data[tf] = pd.read_parquet(hmm_file)
-        self.logger.info(
+                    self.logger.info(
                         f"📦 Loaded HMM data for optimization: {tf}: {len(hmm_data[tf])} rows",
                     )
 
-        if not hmm_data:
-        self.logger.error("🚨 No HMM data found for optimization")
-        return None
+            if not hmm_data:
+                self.logger.error("🚨 No HMM data found for optimization")
+                return None
 
-        # Use the first timeframe for optimization
-            tf = self.timeframes[0],
-            tf_data = hmm_data[tf],
+            # Use the first timeframe for optimization
+            tf = self.timeframes[0]
+            tf_data = hmm_data[tf]
 
-        # Prepare features and target
-            feature_columns = [col for col in tf_data.columns if col not in ["composite_cluster_id", "timestamp"]],
-            features = tf_data[feature_columns].fillna(0),
-            target = tf_data["composite_cluster_id"].fillna(-1),
+            # Prepare features and target
+            feature_columns = [col for col in tf_data.columns if col not in ["composite_cluster_id", "timestamp"]]
+            features = tf_data[feature_columns].fillna(0)
+            target = tf_data["composite_cluster_id"].fillna(-1)
 
-        # Remove noise cluster (-1) from target
-            valid_mask, target != -1
-            features = features[valid_mask],
-            target = target[valid_mask],
+            # Remove noise cluster (-1) from target
+            valid_mask = target != -1
+            features = features[valid_mask]
+            target = target[valid_mask]
 
-        if len(features) == 0:
-        self.logger.error("🚨 No valid data for optimization")
-        return None
+            if len(features) == 0:
+                self.logger.error("🚨 No valid data for optimization")
+                return None
 
-        self.logger.info(f"📊 Prepared optimization data: {len(features)} samples, {len(features.columns)} features")
+            self.logger.info(f"📊 Prepared optimization data: {len(features)} samples, {len(features.columns)} features")
 
-        return {
+            return {
                 "features": features,
                 "target": target,
             }
 
         except Exception as e:
-        self.logger.exception(f"🚨 Failed to prepare optimization data: {e}")
-        return None
+            self.logger.exception(f"🚨 Failed to prepare optimization data: {e}")
+            return None
 
     async def _prepare_training_data(
-        self = data: dict[str, pd.DataFrame], ) -> dict[str, Any] | None:,
+        self, data: dict[str, pd.DataFrame], ) -> dict[str, Any] | None:
         """Prepare training data from multi-timeframe HMM states, intensity scores, and features."""
         try:
         # Load HMM composite data for each timeframe
@@ -1167,13 +1170,31 @@ class UnifiedRegimeIntelligenceStep:
         self.logger.warning(f"⚠️ Error detecting intensity transition: {e}")
         return 0  # no transition as fallback
 
+    @validate_data_quality(
+        required_columns=["close", "high", "low"],
+        min_rows=30,
+        max_null_ratio=0.1,
+        check_duplicates=False,
+        check_timestamps=True,
+        context="TPSL direction calculation"
+    )
+    @handle_errors(
+        error_mapping={
+            ValueError: "Invalid data format for TPSL calculation",
+            KeyError: "Missing required price columns",
+            IndexError: "Invalid index access in TPSL calculation",
+            Exception: "Unexpected error in TPSL direction calculation"
+        },
+        default_return=0,
+        log_level="warning"
+    )
     async def _calculate_tpsl_direction(
         self, hmm_data: pd.DataFrame, current_idx: int, window_start: int, window_end: int, ) -> int:
         """Calculate TPSL-based direction (long/short only)."""
         try:
-        # Get current price and future prices for TPSL calculation
+            # Get current price and future prices for TPSL calculation
             current_price = (hmm_data.iloc[current_idx]["close"]
-        if "close" in hmm_data.columns
+                if "close" in hmm_data.columns
                 else 100.0
             )
 

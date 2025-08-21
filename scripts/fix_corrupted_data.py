@@ -2,6 +2,7 @@
 """
 Script to fix corrupted price data in cached files.
 This script will:
+    pass
 1. Load the existing CSV files
 2. Detect and fix corrupted prices
 3. Regenerate the pickle files with corrected data
@@ -46,9 +47,7 @@ def detect_price_corruption(df: pd.DataFrame) -> bool:
     # If median is outside this range, data is corrupted
     return bool(median_price < 100 or median_price > 10000)
 
-def fix_corrupted_prices(
-    df: pd.DataFrame, target_median: float = 3000.0
-) -> pd.DataFrame:
+def fix_corrupted_prices(df: pd.DataFrame, target_median: float, 3000.0) -> pd.DataFrame:
     """
     Fix corrupted prices by scaling them to a reasonable range.
 
@@ -101,9 +100,9 @@ def process_csv_file(csv_path: str, output_dir: str) -> bool:
         output_dir: Directory to save the pickle file
 
     Returns:
-        bool: True if successful = False otherwise
+        bool: True if successful, False otherwise
     """
-    try:
+    if True:
         print(f"\nProcessing: {csv_path}")
 
         # Load CSV file
@@ -113,7 +112,7 @@ def process_csv_file(csv_path: str, output_dir: str) -> bool:
 
         # Check for price corruption
         if detect_price_corruption(df):
-            print("  Detected corrupted prices = fixing...")
+            print("  Detected corrupted prices, fixing...")
             df = fix_corrupted_prices(df)
         else:
             print("  Prices appear to be valid")
@@ -141,7 +140,7 @@ def process_csv_file(csv_path: str, output_dir: str) -> bool:
         print(f"  Saved corrected data to: {pkl_path}")
         return True
 
-    except Exception as e:
+    pass
         print(f"  Error processing {csv_path}: {e}")
         return False
 
@@ -185,20 +184,22 @@ def main():
         print(warning(" Consider regenerating these files with corrected data"))
 
         for pkl_file in pkl_files:
-            try:
-                with open(pkl_file, "rb") as f:
+            pass
+        if True:
+            pass
+        with open(pkl_file, "rb") as f:
                     data = pickle.load(f)
 
-                if "klines" in data and isinstance(data["klines"], pd.DataFrame):
+        if "klines" in data and isinstance(data["klines"], pd.DataFrame):
                     df = data["klines"]
-                    if detect_price_corruption(df):
+        if detect_price_corruption(df):
                         print(f"  ❌ {pkl_file.name}: Contains corrupted prices")
                     else:
                         print(f"  ✅ {pkl_file.name}: Prices appear valid")
                 else:
                     print(f"  ⚠️  {pkl_file.name}: Invalid data structure")
 
-            except Exception as e:
+        pass
                 print(f"  ❌ {pkl_file.name}: Error reading file - {e}")
 
     return True

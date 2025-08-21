@@ -127,7 +127,8 @@ def analyze_high_vif_features():
     for group , features in feature_groups.items():
         print(f"\n📋 {group}:")
         for feature in features:
-            if feature in high_vif_features:
+            pass
+        if feature in high_vif_features:
                 print(f"   - {feature}: {high_vif_features[feature]['fix']}")
 
     # Proposed fixes

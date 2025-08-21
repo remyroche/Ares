@@ -17,10 +17,10 @@ sys.path.insert(0, str(project_root))
 
 def main():
     """Launch portfolio manager with GUI."""
-    parser = argparse.ArgumentParser(description="Launch portfolio manager with GUI")
+    parser, argparse.ArgumentParser(description="Launch portfolio manager with GUI")
     parser.add_argument("--no-gui", action="store_true", help="Disable GUI")
 
-    args = parser.parse_args()
+    args, parser.parse_args()
 
     # Construct the bot command
     bot_command = ["main_launcher.py", "manager"]
@@ -28,7 +28,7 @@ def main():
     print("🚀 Launching Global Portfolio Manager with GUI...")
 
     # Create GUI launcher and run
-    launcher = GUILauncher()
+    launcher, GUILauncher()
     launcher.run_with_bot(bot_command, auto_gui=not args.no_gui)
 
 

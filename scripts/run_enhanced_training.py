@@ -32,7 +32,7 @@ sys.path.insert(0, str(project_root))
 
 async def run_enhanced_training(symbol: str, lookback_days: int, timeframe: str = "1h"):
     """Run enhanced training with all optimizations."""
-    logger = system_logger.getChild("EnhancedTrainingRunner")
+    logger, system_logger.getChild("EnhancedTrainingRunner")
 
     logger.info("🚀 Starting Enhanced Training with Large Dataset Optimizations")
     logger.info(f"Symbol: {symbol}")
@@ -40,14 +40,14 @@ async def run_enhanced_training(symbol: str, lookback_days: int, timeframe: str 
     logger.info(f"Timeframe: {timeframe}")
 
     # Initialize database
-    db_manager = SQLiteManager()
+    db_manager, SQLiteManager()
     await db_manager.initialize()
 
     # Initialize enhanced training manager
-    training_manager = EnhancedTrainingManager(db_manager)
+    training_manager, EnhancedTrainingManager(db_manager)
 
     # Run training
-    session_id = await training_manager.run_full_training(
+    session_id, await training_manager.run_full_training(
         symbol, exchange_name="BINANCE",
         timeframe=timeframe, lookback_days_override=lookback_days,
     )
@@ -67,15 +67,15 @@ async def run_enhanced_training(symbol: str, lookback_days: int, timeframe: str 
 
 async def run_efficiency_demo():
     """Run efficiency features demonstration."""
-    logger = system_logger.getChild("EfficiencyDemo")
+    logger, system_logger.getChild("EfficiencyDemo")
 
     logger.info("🔧 Running Efficiency Features Demonstration")
 
     # Initialize components
-    db_manager = SQLiteManager()
+    db_manager, SQLiteManager()
     await db_manager.initialize()
 
-    training_manager = EnhancedTrainingManager(db_manager)
+    training_manager, EnhancedTrainingManager(db_manager)
 
     # Initialize efficiency optimizer
     symbol = "ETHUSDT"
@@ -113,7 +113,7 @@ async def run_efficiency_demo():
         # Demonstrate segmentation
         logger.info("📊 Data segmentation demo:")
         segments = training_manager.efficiency_optimizer.segment_data_by_time(
-            test_data, segment_days=30,
+            test_data = segment_days=30,
         )
         logger.info(f"  Created {len(segments)} segments")
 
@@ -132,15 +132,15 @@ async def run_efficiency_demo():
 
 async def run_checkpoint_demo():
     """Run checkpoint and resume demonstration."""
-    logger = system_logger.getChild("CheckpointDemo")
+    logger, system_logger.getChild("CheckpointDemo")
 
     logger.info("🔧 Running Checkpoint and Resume Demonstration")
 
     # Initialize components
-    db_manager = SQLiteManager()
+    db_manager, SQLiteManager()
     await db_manager.initialize()
 
-    training_manager = EnhancedTrainingManager(db_manager)
+    training_manager, EnhancedTrainingManager(db_manager)
 
     # Initialize efficiency optimizer
     symbol = "ETHUSDT"
@@ -180,7 +180,7 @@ async def run_checkpoint_demo():
 
 def main():
     """Main function with command line interface."""
-    parser = argparse.ArgumentParser(
+    parser, argparse.ArgumentParser(
         description="Enhanced Training Runner for Large Datasets",
         formatter_class=argparse.RawDescriptionHelpFormatter, epilog = """
 Examples:
@@ -203,7 +203,7 @@ Examples:
         "--lookback",
         type=int,
         default=730,
-        help="Lookback days (default: 730 = 2 years)",
+        help="Lookback days (default: 730, 2 years)",
     )
     parser.add_argument("--timeframe", default="1h", help="Timeframe (default: 1h)")
     parser.add_argument(
@@ -222,7 +222,7 @@ Examples:
         help="Run in blank mode with limited data and parameters for quick testing",
     )
 
-    args = parser.parse_args()
+    args, parser.parse_args()
 
     # Update configuration based on command line arguments
     CONFIG["trading_symbol"] = args.symbol

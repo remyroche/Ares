@@ -135,21 +135,21 @@ class AdvancedMonitoringLauncher:
             )
 
             if not self.integration_manager:
-                self.print(failed("Failed to setup monitoring integration manager"))
+                print(failed("Failed to setup monitoring integration manager"))
                 return False
 
             self.logger.info("✅ Advanced monitoring system setup completed")
             return True
 
         except Exception as e:
-            self.print(error("Error setting up monitoring: {e}"))
+            print(error(f"Error setting up monitoring: {e}"))
             return False
 
     async def start_monitoring(self) -> bool:
         """Start the monitoring system."""
         try:
             if not self.integration_manager:
-                self.print(initialization_error("Integration manager not initialized"))
+                print(initialization_error("Integration manager not initialized"))
                 return False
 
             self.logger.info("Starting advanced monitoring system...")
@@ -161,11 +161,11 @@ class AdvancedMonitoringLauncher:
                 self.is_running = True
                 self.logger.info("✅ Advanced monitoring system started")
                 return True
-            self.print(failed("Failed to start monitoring integration"))
+            print(failed("Failed to start monitoring integration"))
             return False
 
         except Exception as e:
-            self.print(error("Error starting monitoring: {e}"))
+            print(error(f"Error starting monitoring: {e}"))
             return False
 
     async def run_demo(self) -> None:
@@ -193,11 +193,11 @@ class AdvancedMonitoringLauncher:
                     demo_counter += 1
 
                 except Exception as e:
-                    self.print(error("Error in demo loop: {e}"))
+                    print(error(f"Error in demo loop: {e}"))
                     await asyncio.sleep(5)
 
         except Exception as e:
-            self.print(error("Error running demo: {e}"))
+            print(error(f"Error running demo: {e}"))
 
     def _print_status(self, dashboard_data: dict[str, Any], counter: int) -> None:
         """Print monitoring status."""
@@ -272,7 +272,7 @@ class AdvancedMonitoringLauncher:
             print(f"{'='*60}\n")
 
         except Exception as e:
-            self.print(error("Error printing status: {e}"))
+            print(error(f"Error printing status: {e}"))
 
     async def _simulate_activity(self) -> None:
         """Simulate some monitoring activity."""
@@ -323,7 +323,7 @@ class AdvancedMonitoringLauncher:
                 )
 
         except Exception as e:
-            self.print(error("Error simulating activity: {e}"))
+            print(error(f"Error simulating activity: {e}"))
 
     async def stop_monitoring(self) -> None:
         """Stop the monitoring system."""
@@ -338,7 +338,7 @@ class AdvancedMonitoringLauncher:
             self.logger.info("🛑 Advanced monitoring system stopped")
 
         except Exception as e:
-            self.print(error("Error stopping monitoring: {e}"))
+            print(error(f"Error stopping monitoring: {e}"))
 
     async def run(self) -> None:
         """Run the advanced monitoring launcher."""
@@ -347,19 +347,19 @@ class AdvancedMonitoringLauncher:
 
             # Setup monitoring
             if not await self.setup_monitoring():
-                self.print(failed("Failed to setup monitoring system"))
+                print(failed("Failed to setup monitoring system"))
                 return
 
             # Start monitoring
             if not await self.start_monitoring():
-                self.print(failed("Failed to start monitoring system"))
+                print(failed("Failed to start monitoring system"))
                 return
 
             # Run demo
             await self.run_demo()
 
         except Exception as e:
-            self.print(error("Error running launcher: {e}"))
+            print(error(f"Error running launcher: {e}"))
         finally:
             await self.stop_monitoring()
 

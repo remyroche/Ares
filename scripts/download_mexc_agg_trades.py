@@ -101,7 +101,7 @@ async def download_mexc_agg_trades(
         missing_columns = [col for col in expected_columns if col not in df.columns]
 
         if missing_columns:
-            print(missing("⚠️ Missing columns in MEXC data: {missing_columns}"))
+            print(missing(f"⚠️ Missing columns in MEXC data: {missing_columns}"))
             # Add missing columns with default values
             for col in missing_columns:
                 df[col] = 0
@@ -167,7 +167,7 @@ async def download_mexc_agg_trades(
         return True
 
     except Exception as e:
-        print(error("❌ Error downloading MEXC aggregated trades: {e}"))
+        print(error(f"❌ Error downloading MEXC aggregated trades: {e}"))
         return False
 
 

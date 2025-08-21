@@ -55,7 +55,7 @@ def check_notifications():
             print(f"   ✅ Notification marked as read: {read_file}")
 
         except Exception as e:
-            print(warning("Error reading notification file: {e}"))
+            print(warning(f"Error reading notification file: {e}"))
     else:
         print("✅ No new notifications")
 
@@ -73,13 +73,13 @@ def check_notifications():
                 print(f"   Recent Issues: {len(status['issues'])}")
 
         except Exception as e:
-            print(warning("Error reading status file: {e}"))
+            print(warning(f"Error reading status file: {e}"))
 
 
 def check_logs_for_errors():
     """Check recent log files for errors"""
     project_root = Path(__file__).parent.parent
-    log_dir = project_root / "logs"
+    log_dir = project_root / "log"
 
     if not log_dir.exists():
         print(missing("Logs directory not found"))
@@ -113,7 +113,7 @@ def check_logs_for_errors():
                         print(f"   {line}")
 
         except Exception as e:
-            print(warning("Error reading {log_file}: {e}"))
+            print(warning(f"Error reading {log_file}: {e}"))
 
 
 if __name__ == "__main__":

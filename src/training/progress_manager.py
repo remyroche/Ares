@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
@@ -33,6 +34,11 @@ class ProgressManager:
         self.logger.info(f"Initialized ProgressManager for {symbol} on {exchange}")
         self.logger.info(f"Progress directory: {self.progress_dir}")
 
+    @handle_errors(
+        exceptions=(ValueError, RuntimeError, OSError),
+        default_return=False,
+        context="step progress saving",
+    )
     def save_step_progress(
         self,
         step_name: str,
@@ -82,6 +88,11 @@ class ProgressManager:
             self.print(failed(error_msg))
             return False
 
+    @handle_errors(
+        exceptions=(ValueError, RuntimeError, OSError, pickle.UnpicklingError),
+        default_return=None,
+        context="step progress loading",
+    )
     def load_step_progress(self, step_name: str) -> dict[str, Any] | None:
         """Load progress for a specific step.
 

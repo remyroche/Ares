@@ -123,7 +123,7 @@ class WaveletFeatureSelectionWorkflow:
         self.feature_precomputer: WaveletFeaturePrecomputer | None = None
 
         # Results storage
-        self.feature_importance_results: list[FeatureImportanceResult] , []
+        self.feature_importance_results: list[FeatureImportanceResult] = []
         self.discovery_model_performance: dict[str, Any] = {}
         self.production_model_performance: dict[str, Any] = {}
         self.optimized_configs: dict[str, Any] = {}

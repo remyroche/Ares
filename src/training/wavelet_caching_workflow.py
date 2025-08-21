@@ -17,8 +17,15 @@ from src.training.steps.backtesting_with_cached_features import (
 )
 from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomputer
 from src.utils.data_optimizer import ohlcv_columns
+from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.logger import system_logger
 
 
+@handle_errors(
+    exceptions=(ValueError, RuntimeError, FileNotFoundError),
+    default_return={},
+    context="configuration loading",
+)
 async def load_config(config_path: str) -> dict:
     """Load configuration from YAML file."""
     try:
@@ -28,6 +35,11 @@ async def load_config(config_path: str) -> dict:
         return {}
 
 
+@handle_errors(
+    exceptions=(ValueError, RuntimeError),
+    default_return=pd.DataFrame(),
+    context="sample data creation",
+)
 async def create_sample_data():
     """Create sample price data for demonstration."""
     try:
@@ -67,6 +79,11 @@ async def create_sample_data():
         return pd.DataFrame()
 
 
+@handle_errors(
+    exceptions=(ValueError, RuntimeError, FileNotFoundError),
+    default_return=False,
+    context="feature precomputation",
+)
 async def step1_precompute_features(config: dict) -> bool | None:
     """Step 1: Pre-compute wavelet features for the entire dataset."""
     try:
@@ -96,7 +113,7 @@ async def step1_precompute_features(config: dict) -> bool | None:
             end_date="2024-12-31",
         )
 
-        time.time() - start_time
+        processing_time = time.time() - start_time
 
         if success:
 

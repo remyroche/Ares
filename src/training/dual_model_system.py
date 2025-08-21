@@ -123,7 +123,7 @@ class DualModelSystem:
 
         # Signal tracking
         self.current_enter_signal: dict[str, Any] | None = None
-        self.signal_history: list[dict[str, Any]] , []
+        self.signal_history: list[dict[str, Any]] = []
 
         # Ensemble configuration
         self.enable_ensemble_analysis: bool = self.dual_model_config.get(

@@ -247,9 +247,9 @@ class SROptunaOptimizer:
                     load_if_exists=True
                 )
             
-            # Define objective function
+            # Define objective function (must be synchronous for Optuna)
             def objective(trial: optuna.Trial):
-                return await self._evaluate_sr_parameters(trial, price_data, target_returns)
+                return self._evaluate_sr_parameters(trial, price_data, target_returns)
             
             # Run optimization
             study.optimize(
@@ -285,12 +285,12 @@ class SROptunaOptimizer:
             self.logger.error(f"❌ Error in S/R optimization: {e}")
             return None
     
-    async def _evaluate_sr_parameters(
+    def _evaluate_sr_parameters(
         self,
         trial: optuna.Trial,
         price_data: pd.DataFrame,
         target_returns: pd.Series
-    ) -> float:
+    ) -> float | list[float]:
         """
         Evaluate S/R parameters for a given trial.
         

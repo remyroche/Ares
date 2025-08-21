@@ -141,6 +141,11 @@ class Supervisor:
         self.analysis_queue = asyncio.Queue(maxsize=100)
         self.signal_queue = asyncio.Queue(maxsize=50)
 
+    @handle_errors(
+        exceptions=(Exception, asyncio.CancelledError),
+        default_return=None,
+        context="supervisor start",
+    )
     async def start(self):
         """
         Starts all bot components and the main processing loop.
@@ -206,6 +211,11 @@ class Supervisor:
                 "All components have been shut down and state has been saved.",
             )
 
+    @handle_errors(
+        exceptions=(ValueError, AttributeError, KeyError),
+        default_return=None,
+        context="exchange state synchronization",
+    )
     async def _synchronize_exchange_state(self):
         """
         Fetches the current account equity and open positions from the exchange

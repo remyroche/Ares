@@ -239,8 +239,7 @@ class MultiTimeframeHMMEnsemble:
                 )
                 return False
 
-        # Load JSON with next-regime probabilities and exit-within-H
-        try:
+            # Load JSON with next-regime probabilities and exit-within-H
             with open(rf_path) as f:
                 rf = json.load(f)
             self.timeframe_models[timeframe] = {
@@ -252,23 +251,18 @@ class MultiTimeframeHMMEnsemble:
             self.logger.info(
                 f"📦 Loaded regime forecasting artifact for {timeframe} ({rf_path})",
             )
-        except Exception as e:
-            self.logger.warning(
-                f"⚠️ Failed to load regime forecasting artifact for {timeframe}: {e}",
+
+            # Store timeframe models metadata
+            self.timeframe_models.setdefault(timeframe, {})
+            self.timeframe_models[timeframe].update(
+                {
+                    "timeframe": timeframe,
+                    "config": tf_config,
+                    "trained_at": time.time(),
+                }
             )
-            return False
 
-        # Store timeframe models metadata
-        self.timeframe_models.setdefault(timeframe, {})
-        self.timeframe_models[timeframe].update(
-            {
-                "timeframe": timeframe,
-                "config": tf_config,
-                "trained_at": time.time(),
-            }
-        )
-
-        return True
+            return True
 
         except Exception as e:
             self.logger.exception(f"💥 Error training {timeframe} models: {e}")

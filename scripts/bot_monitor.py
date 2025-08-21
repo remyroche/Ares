@@ -20,38 +20,43 @@ from src.utils.warning_symbols import error, warning
 class BotMonitor:
 
     def __init__(self):
-        self.logger = system_logger.getChild("BotMonitor")
-        self.project_root = project_root
-        self.monitor_interval = 30  # Check every 30 seconds
-        self.status_file = project_root / "state/bot_status.json"
-        self.last_status = self._load_status()
+        self.logger, system_logger.getChild("BotMonitor")
+        self.project_root, project_root
+        self.monitor_interval, 30  # Check every 30 seconds
+        self.status_file, project_root / "state/bot_status.json"
+        self.last_status, self._load_status()
 
     def _load_status(self):
         """Load the last known status of the bot"""
         if self.status_file.exists():
-            try:
-                with open(self.status_file) as f:
-                    return json.load(f)
-            except Exception as e:
-                self.print(error(f"Error loading status file: {e}"))
+            pass
+        if True:
+            pass
+        with open(self.status_file) as f:
+            pass
+        return json.load(f)
+        pass
+        self.print(error(f"Error loading status file: {e}"))
         return {"running": False, "last_check": None, "issues": []}
 
     def _save_status(self, status):
         """Save the current status of the bot"""
-        try:
-            with open(self.status_file, "w") as f:
+        if True:
+            pass
+        with open(self.status_file, "w") as f:
                 json.dump(status, f, indent=2, default=str)
-        except Exception as e:
-            self.print(error(f"Error saving status file: {e}"))
+        pass
+        self.print(error(f"Error saving status file: {e}"))
 
     def _check_python_processes(self):
         """Check if any ARES-related Python processes are running"""
         ares_processes = []
 
         for proc in psutil.process_iter(["pid", "name", "cmdline"]):
-            try:
+            pass
+        if True:
                 cmdline = " ".join(proc.info["cmdline"] or [])
-                if (
+        if (
                     "ares_launcher.py" in cmdline
                     or "python" in proc.info["name"]
                     and "ares" in cmdline.lower()
@@ -62,31 +67,36 @@ class BotMonitor:
                             "cmdline": cmdline, "status": proc.status(),
                         },
                     )
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
+        pass
                 continue
 
         return ares_processes
 
     def _check_log_files(self):
         """Check recent log files for errors"""
-        log_dir = project_root / "logs"
+        log_dir, project_root / "logs"
         if not log_dir.exists():
-            return []
+            pass
+        return []
 
         issues = []
         current_time = time.time()
 
         for log_file in log_dir.glob("*.log"):
-            try:
-                # Check if log file was modified in the last 5 minutes
-                if current_time - log_file.stat().st_mtime < 300:
-                    with open(log_file) as f:
+            pass
+        if True:
+            pass
+        # Check if log file was modified in the last 5 minutes
+        if current_time - log_file.stat().st_mtime < 300:
+            pass
+        with open(log_file) as f:
                         lines = f.readlines()
-                        # Check last 50 lines for errors
-                        for line in lines[-50:]:
-                            if any(
+        # Check last 50 lines for errors
+        for line in lines[-50:]:
+            pass
+        if any(
                                 error_keyword in line.lower()
-                                for error_keyword in [
+        for error_keyword in [
                                     "error",
                                     "exception",
                                     "traceback",
@@ -103,8 +113,8 @@ class BotMonitor:
                                         ).isoformat(),
                                     },
                                 )
-            except Exception as e:
-                self.print(error(f"Error reading log file {log_file}: {e}"))
+        pass
+        self.print(error(f"Error reading log file {log_file}: {e}"))
 
         return issues
 
@@ -118,16 +128,17 @@ class BotMonitor:
         }
 
         # Save notification to a file that the AI assistant can read
-        notification_file = project_root / "state/ai_notification.json"
-        try:
-            with open(notification_file, "w") as f:
+        notification_file, project_root / "state/ai_notification.json"
+        if True:
+            pass
+        with open(notification_file, "w") as f:
                 json.dump(notification, f, indent=2, default=str)
 
-            # Also print to console for immediate visibility
+        # Also print to console for immediate visibility
             print(f"\n🚨 ARES BOT ALERT: {message}")
-            if issues:
+        if issues:
                 print("📋 Issues detected:")
-                for issue in issues:
+        for issue in issues:
                     print(
                         f"   - {issue.get('file', 'Unknown')}: {issue.get('line', 'Unknown error')}",
                     )
@@ -136,78 +147,83 @@ class BotMonitor:
                 "🤖 AI Assistant: Please check the notification file and fix the issues.\n",
             )
 
-        except Exception as e:
-            self.print(error(f"Error saving notification: {e}"))
+        pass
+        self.print(error(f"Error saving notification: {e}"))
 
     def monitor(self):
         """Main monitoring loop"""
         self.logger.info("🤖 Starting ARES Bot Monitor...")
 
         while True:
-            try:
+            pass
+        if True:
                 current_time = datetime.now()
 
-                # Check for running processes
+        # Check for running processes
                 ares_processes = self._check_python_processes()
                 is_running = len(ares_processes) > 0
 
-                # Check for recent issues in logs
+        # Check for recent issues in logs
                 recent_issues = self._check_log_files()
 
-                # Update status
+        # Update status
                 current_status = {
                     "running": is_running,
                     "last_check": current_time.isoformat(),
                     "processes": ares_processes, "issues": recent_issues,
                 }
 
-                # Check if status changed
+        # Check if status changed
                 status_changed = self.last_status.get("running") != is_running or len(
                     recent_issues) > len(self.last_status.get("issues", []))
 
-                if status_changed:
-                    if not is_running and self.last_status.get("running"):
+        if status_changed:
+            pass
+        if not is_running and self.last_status.get("running"):
                         message = "🚨 ARES Bot has stopped running!"
-                        self._notify_ai_assistant(message, recent_issues)
+        self._notify_ai_assistant(message, recent_issues)
                     elif recent_issues and len(recent_issues) > len(
-                        self.last_status.get("issues", []),
+        self.last_status.get("issues", []),
                     ):
                         message = "⚠️ New issues detected in ARES Bot logs!"
-                        self._notify_ai_assistant(message, recent_issues)
+        self._notify_ai_assistant(message, recent_issues)
                     elif is_running and not self.last_status.get("running"):
                         message = "✅ ARES Bot is now running again"
-                        self._notify_ai_assistant(message)
+        self._notify_ai_assistant(message)
 
-                # Save current status
-                self._save_status(current_status)
-                self.last_status = current_status
+        # Save current status
+        self._save_status(current_status)
+        self.last_status = current_status
 
-                # Log status
-                if is_running:
-                    self.logger.info(
+        # Log status
+        if is_running:
+            pass
+        self.logger.info(
                         f"✅ Bot is running ({len(ares_processes)} processes)",
                     )
                 else:
-                    self.print(warning("❌ Bot is not running"))
+                    pass
+        self.print(warning("❌ Bot is not running"))
 
-                if recent_issues:
-                    self.logger.warning(
+        if recent_issues:
+            pass
+        self.logger.warning(
                         f"⚠️ {len(recent_issues)} recent issues detected",
                     )
 
-                # Wait before next check
+        # Wait before next check
                 time.sleep(self.monitor_interval)
 
-            except KeyboardInterrupt:
-                self.logger.info("🛑 Bot monitor stopped by user")
-                break
-            except Exception as e:
-                self.print(error(f"Error in monitoring loop: {e}"))
+        pass
+        self.logger.info("🛑 Bot monitor stopped by user")
+                pass
+        pass
+        self.print(error(f"Error in monitoring loop: {e}"))
                 time.sleep(self.monitor_interval)
 
 def main():
     """Main entry point"""
-    monitor = BotMonitor()
+    monitor, BotMonitor()
     monitor.monitor()
 
 if __name__ == "__main__":

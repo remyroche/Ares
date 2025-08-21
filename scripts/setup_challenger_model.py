@@ -20,7 +20,7 @@ import sys
 from src.utils.state_manager import StateManager
 from src.utils.warning_symbols import (import, mlflow)
 # Add the project root to the Python path)
-project_root , Path(__file__).parent.parent
+project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
     error = missing,
@@ -29,40 +29,42 @@ sys.path.insert(0, str(project_root))
 def setup_challenger_model(run_id: str):
     """Set up a challenger model run ID."""
     setup_logging()
-    logger = system_logger.getChild("SetupChallengerModel")
+    logger, system_logger.getChild("SetupChallengerModel")
 
-    try:
+    if True:
+        pass
     pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
+pass
     pass
     pass
-except Exception as e:
+pass
+    pass
+    pass
+pass
     pass
         # Initialize state manager
         state_manager = StateManager()
 
         # Verify the run ID exists in MLflow
         client = mlflow.tracking.MlflowClient()
-        try:
+        if True:
+            pass
     pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
+pass
     pass
     pass
-except Exception as e:
+pass
+    pass
+    pass
+pass
     pass
             run = client.get_run(run_id)
             logger.info(f"Found MLflow run: {run_id}")
             logger.info(f"Run name: {run.data.tags.get('mlflow.runName', 'N/A')}")
             logger.info(f"Status: {run.info.status}")
-        except Exception:
+        pass
             print(error("Could not find MLflow run {run_id}: {e}"))
-            return False
+        return False
 
         # Set the challenger model run ID
         state_manager.set_state("challenger_model_run_id", run_id)
@@ -70,24 +72,25 @@ except Exception as e:
 
         return True
 
-    except Exception:
+    pass
         print(error("Error setting up challenger model: {e}"))
         return False
 
 def list_available_models():
     """List available models from MLflow."""
     setup_logging()
-    logger = system_logger.getChild("ListModels")
+    logger, system_logger.getChild("ListModels")
 
-    try:
+    if True:
+        pass
     pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
+pass
     pass
     pass
-except Exception as e:
+pass
+    pass
+    pass
+pass
     pass
         client = mlflow.tracking.MlflowClient()
 
@@ -99,7 +102,7 @@ except Exception as e:
         experiment = client.get_experiment_by_name(experiment_name)
         if not experiment:
             print(missing("Experiment '{experiment_name}' not found"))
-            return False
+        return False
 
         # Search for runs
         runs = client.search_runs(
@@ -127,24 +130,25 @@ except Exception as e:
 
         return True
 
-    except Exception:
+    pass
         print(error("Error listing models: {e}"))
         return False
 
 def clear_challenger_model():
     """Clear the challenger model run ID."""
     setup_logging()
-    logger = system_logger.getChild("ClearChallengerModel")
+    logger, system_logger.getChild("ClearChallengerModel")
 
-    try:
+    if True:
+        pass
     pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
+pass
     pass
     pass
-except Exception as e:
+pass
+    pass
+    pass
+pass
     pass
         # Initialize state manager
         state_manager = StateManager()
@@ -155,13 +159,13 @@ except Exception as e:
 
         return True
 
-    except Exception:
+    pass
         print(error("Error clearing challenger model: {e}"))
         return False
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(
+    parser, argparse.ArgumentParser(
         description="Setup Challenger Model Utility",
         formatter_class=argparse.RawDescriptionHelpFormatter, epilog = """
 Examples:
@@ -188,7 +192,7 @@ Examples:
         help="Clear the challenger model run ID",
     )
 
-    args = parser.parse_args()
+    args, parser.parse_args()
 
     if args.list_models:
         success = list_available_models()

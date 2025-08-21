@@ -20,9 +20,9 @@ sys.path.append(str(Path(__file__).parent.parent / "src"))
 
 def test_sr_level_fix():
     """Test that S/R level counts are now dynamic."""
-    logger = system_logger.getChild("TestSRLeverFix")
+    logger, system_logger.getChild("TestSRLeverFix")
 
-    try:
+    if True:
         # Create sample price data with wider range to test S/R levels
         np.random.seed(42)
         n_samples = 1000
@@ -40,7 +40,7 @@ def test_sr_level_fix():
         )
 
         # Ensure we have a good price range
-        close_min, close_max = price_data["close"].min(), price_data["close"].max()
+        close_min = close_max, price_data["close"].min(), price_data["close"].max()
         print(f"Price range: {close_min:.2f} - {close_max:.2f}")
 
         # Create sample S/R levels that should activate with our price data
@@ -60,34 +60,36 @@ def test_sr_level_fix():
         # Test the dynamic calculation function
         def _calculate_dynamic_level_counts(price_series, levels, level_type):
             """Calculate dynamic level counts based on price position."""
-            if not levels:
-                # Fallback: create dynamic counts based on price percentiles
-                if level_type == "support":
+        if not levels:
+            pass
+        # Fallback: create dynamic counts based on price percentiles
+        if level_type == "support":
                     percentile_rank = price_series.rank(pct=True)
-                    return (1 - percentile_rank) * 3
-                # resistance
+        return (1 - percentile_rank) * 3
+        # resistance
                 percentile_rank = price_series.rank(pct=True)
-                return percentile_rank * 3
+        return percentile_rank * 3
 
-            # Calculate how many levels are "active" for each price point
+        # Calculate how many levels are "active" for each price point
             active_counts = pd.Series(
                 np.zeros(len(price_series)),
                 index=price_series.index
             )
 
-            for level in levels:
-                if isinstance(level, dict):
+        for level in levels:
+            pass
+        if isinstance(level, dict):
                     level_price = level.get("price", 0)
                     level_strength = level.get("strength", 1.0)
                 else:
                     level_price = float(level)
                     level_strength = 1.0
 
-                # Define activation range based on level strength and price
+        # Define activation range based on level strength and price
                 activation_range = level_price * 0.01 * level_strength
 
-                # Check if price is within activation range
-                if level_type == "support":
+        # Check if price is within activation range
+        if level_type == "support":
                     is_active = (price_series >= (level_price - activation_range)) & (
                         price_series <= (level_price + activation_range * 2)
                     )
@@ -98,23 +100,23 @@ def test_sr_level_fix():
 
                 active_counts += is_active.astype(int)
 
-            return active_counts
+        return active_counts
 
         # Test with S/R levels
         close = price_data["close"]
         support_counts = _calculate_dynamic_level_counts(
-            close, sr_levels["support_levels"],
+            close = sr_levels["support_levels"],
             "support",
         )
         resistance_counts = _calculate_dynamic_level_counts(
-            close, sr_levels["resistance_levels"],
+            close = sr_levels["resistance_levels"],
             "resistance",
         )
 
         # Test without S/R levels (fallback)
         support_counts_fallback = _calculate_dynamic_level_counts(close, [], "support")
         resistance_counts_fallback = _calculate_dynamic_level_counts(
-            close, [],
+            close = [],
             "resistance",
         )
 
@@ -201,7 +203,7 @@ def test_sr_level_fix():
 
         return support_fixed and resistance_fixed
 
-    except Exception as e:
+    pass
         logger.exception(f"Error testing S/R level fix: {e}")
         return False
 

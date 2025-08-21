@@ -20,13 +20,13 @@ sys.path.append(str(Path(__file__).parent.parent / "src"))
 
 def test_vif_fixes():
     """Test that the VIF fixes are working correctly."""
-    logger = system_logger.getChild("TestVIFFixes")
+    logger, system_logger.getChild("TestVIFFixes")
 
     print("=" * 80)
     print("VIF FIXES VERIFICATION TEST")
     print("=" * 80)
 
-    try:
+    if True:
         # Create sample data
         np.random.seed(42)
         n_samples = 1000
@@ -180,19 +180,21 @@ def test_vif_fixes():
 
         def calculate_avg_correlation(features_dict):
             correlations = []
-            feature_list = list(features_dict.values())
-            for i in range(len(feature_list)):
-                for j in range(i + 1, len(feature_list)):
-                    try:
+            feature_list, list(features_dict.values())
+        for i in range(len(feature_list)):
+            pass
+        for j in range(i + 1, len(feature_list)):
+            pass
+        if True:
                         corr = np.corrcoef(
                             feature_list[i].dropna(),
                             feature_list[j].dropna(),
                         )[0, 1]
-                        if not np.isnan(corr):
+        if not np.isnan(corr):
                             correlations.append(abs(corr))
-                    except:
+        pass
                         continue
-            return np.mean(correlations) if correlations else 0
+        return np.mean(correlations) if correlations else 0
 
         avg_corr_orig = calculate_avg_correlation(features_orig)
         avg_corr_fixed = calculate_avg_correlation(features_fixed)
@@ -212,14 +214,15 @@ def test_vif_fixes():
 
         def calculate_feature_variance(features_dict):
             variances = []
-            for feature in features_dict.values():
-                try:
+        for feature in features_dict.values():
+            pass
+        if True:
                     var = feature.var()
-                    if not np.isnan(var):
+        if not np.isnan(var):
                         variances.append(var)
-                except:
+        pass
                     continue
-            return np.mean(variances) if variances else 0
+        return np.mean(variances) if variances else 0
 
         var_orig = calculate_feature_variance(features_orig)
         var_fixed = calculate_feature_variance(features_fixed)
@@ -265,7 +268,7 @@ def test_vif_fixes():
 
         return total_improvement > 1.0 and avg_corr_fixed < 0.5
 
-    except Exception as e:
+    pass
         logger.exception(f"Error testing VIF fixes: {e}")
         return False
 

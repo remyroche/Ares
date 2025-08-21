@@ -12,7 +12,7 @@ from src.utils.warning_symbols import failed, missing, warning
 
 def rename_data_files():
     """Rename existing data files to include exchange name prefix."""
-    data_cache_dir = Path("data_cache")
+    data_cache_dir, Path("data_cache")
 
     if not data_cache_dir.exists():
         print(missing("data_cache directory not found!"))
@@ -43,11 +43,11 @@ def rename_data_files():
         for old_file_path in old_files:
             old_path = Path(old_file_path)
 
-            # Extract the date/interval part from the filename
-            if "klines" in old_pattern:
-                # klines_ETHUSDT_1m_2025-07.csv -> klines_BINANCE_ETHUSDT_1m_2025-07.csv
+        # Extract the date/interval part from the filename
+        if "klines" in old_pattern:
+        # klines_ETHUSDT_1m_2025-07.csv -> klines_BINANCE_ETHUSDT_1m_2025-07.csv
                 parts = old_path.name.split("_")
-                if len(parts) >= 4:
+        if len(parts) >= 4:
                     new_name = (
                         f"klines_{exchange_name}_{parts[1]}_{parts[2]}_{parts[3]}"
                     )
@@ -55,17 +55,17 @@ def rename_data_files():
                     print(warning(f" Skipping {old_path.name} - unexpected format"))
                     continue
             elif "aggtrades" in old_pattern:
-                # aggtrades_ETHUSDT_2025-07-29.csv -> aggtrades_BINANCE_ETHUSDT_2025-07-29.csv
+        # aggtrades_ETHUSDT_2025-07-29.csv -> aggtrades_BINANCE_ETHUSDT_2025-07-29.csv
                 parts = old_path.name.split("_")
-                if len(parts) >= 3:
+        if len(parts) >= 3:
                     new_name = f"aggtrades_{exchange_name}_{parts[1]}_{parts[2]}"
                 else:
                     print(warning(f" Skipping {old_path.name} - unexpected format"))
                     continue
             elif "futures" in old_pattern:
-                # futures_ETHUSDT_2025-07.csv -> futures_BINANCE_ETHUSDT_2025-07.csv
+        # futures_ETHUSDT_2025-07.csv -> futures_BINANCE_ETHUSDT_2025-07.csv
                 parts = old_path.name.split("_")
-                if len(parts) >= 3:
+        if len(parts) >= 3:
                     new_name = f"futures_{exchange_name}_{parts[1]}_{parts[2]}"
                 else:
                     print(warning(f" Skipping {old_path.name} - unexpected format"))
@@ -76,17 +76,17 @@ def rename_data_files():
 
             new_path = old_path.parent / new_name
 
-            # Check if new file already exists
-            if new_path.exists():
+        # Check if new file already exists
+        if new_path.exists():
                 print(warning(f" Skipping {old_path.name} - {new_name} already exists"))
                 continue
 
-            try:
-                # Rename the file
+        if True:
+        # Rename the file
                 shutil.move(str(old_path), str(new_path))
                 print(f"✅ Renamed: {old_path.name} -> {new_name}")
                 total_renamed += 1
-            except Exception as e:
+        pass
                 print(warning(f"Error renaming {old_path.name}: {e}"))
 
     print(f"\n🎉 Renamed {total_renamed} files successfully!")

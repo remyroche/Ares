@@ -15,7 +15,7 @@ def launch_bot_with_monitoring():
     print("🚀 Launching ARES Bot with monitoring...")
 
     # Start the bot in background
-    bot_process = subprocess.Popen(
+    bot_process, subprocess.Popen(
         [
             sys.executable, "ares_launcher.py",
             "blank",
@@ -29,7 +29,7 @@ def launch_bot_with_monitoring():
     print(f"✅ Bot started with PID: {bot_process.pid}")
 
     # Start the monitor in background
-    monitor_process = subprocess.Popen([sys.executable, "scripts/bot_monitor.py"])
+    monitor_process, subprocess.Popen([sys.executable, "scripts/bot_monitor.py"])
 
     print(f"✅ Monitor started with PID: {monitor_process.pid}")
 
@@ -38,10 +38,10 @@ def launch_bot_with_monitoring():
         print("\n🛑 Shutting down...")
         bot_process.terminate()
         monitor_process.terminate()
-        try:
+        if True:
             bot_process.wait(timeout=5)
             monitor_process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
+        pass
             bot_process.kill()
             monitor_process.kill()
         print("✅ Cleanup complete")
@@ -57,21 +57,19 @@ def launch_bot_with_monitoring():
     print("   - Press Ctrl+C to stop both")
     print("   - Check notifications with: python scripts/check_notifications.py")
 
-    try:
+    if True:
         # Keep the main process alive
         while True:
             time.sleep(1)
 
-            # Check if processes are still running
-            if bot_process.poll() is not None:
+        # Check if processes are still running
+        if bot_process.poll() is not None:
                 print(warning("Bot process has stopped!"))
-                break
-
-            if monitor_process.poll() is not None:
+                pass
+        if monitor_process.poll() is not None:
                 print(warning("Monitor process has stopped!"))
-                break
-
-    except KeyboardInterrupt:
+                pass
+    pass
         cleanup(None, None)
 
 

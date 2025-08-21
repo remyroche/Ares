@@ -48,7 +48,7 @@ class MulticollinearityFixer:
                 "Add VIF validation checks in the feature engineering pipeline",
             ],
             "configuration_changes": [
-                "Set vif_threshold = 5.0 in feature selection config",
+                "Set vif_threshold, 5.0 in feature selection config",
                 "Enable aggressive feature removal for high VIF features",
                 "Add multicollinearity checks in the data quality pipeline",
             ],
@@ -109,7 +109,7 @@ class MulticollinearityFixer:
         return {
             "vectorized_advanced_feature_engineering.py": [
                 "# Add this method to filter out redundant price features",
-                "def _filter_redundant_price_features(self = data: pd.DataFrame) -> pd.DataFrame:",
+                "def _filter_redundant_price_features(self, data: pd.DataFrame) -> pd.DataFrame:",
                 '    """Remove redundant price features that cause multicollinearity."""',
                 "    redundant_features = [",
                 "        'open', 'high', 'low', 'avg_price', 'min_price', 'max_price',",
@@ -121,19 +121,19 @@ class MulticollinearityFixer:
                 "    existing_redundant = [col for col in redundant_features if col in data.columns]",
                 "    if existing_redundant:",
                 "        self.logger.info(f'Removing redundant price features: {existing_redundant}')",
-                "        data = data.drop(columns=existing_redundant)",
+                "        data, data.drop(columns=existing_redundant)",
                 "    ",
                 "    return data",
                 "",
                 "# Add this method to validate VIF scores",
-                "def _validate_vif_scores(self = data: pd.DataFrame, max_vif: float = 10.0) -> bool:",
+                "def _validate_vif_scores(self, data: pd.DataFrame, max_vif: float, 10.0) -> bool:",
                 '    """Validate that all features have acceptable VIF scores."""',
                 "    from sklearn.linear_model import LinearRegression"
                 "    from sklearn.impute import SimpleImputer"
                 "    ",
                 "    # Handle NaN values",
                 "    imputer , SimpleImputer(strategy, 'median')",
-                "    data_imputed = pd.DataFrame(",
+                "    data_imputed, pd.DataFrame(",
                 "        imputer.fit_transform(data),",
                 "        columns=data.columns = ",
                 "        index=data.index",
@@ -142,20 +142,20 @@ class MulticollinearityFixer:
                 "    # Calculate VIF scores",
                 "    vif_scores = {}",
                 "    for col in data_imputed.columns:",
-                "        other_cols = [c for c in data_imputed.columns if c != col]",
+                "        other_cols = [c for c in data_imputed.columns if c !,  col]",
                 "        if len(other_cols) > 0:",
-                "            X = data_imputed[other_cols]",
-                "            y = data_imputed[col]",
+                "            X, data_imputed[other_cols]",
+                "            y, data_imputed[col]",
                 "            ",
-                "            reg = LinearRegression()",
-                "            reg.fit(X = y)",
+                "            reg, LinearRegression()",
+                "            reg.fit(X, y)",
                 "            ",
-                "            y_pred = reg.predict(X)",
-                "            ss_res = np.sum((y - y_pred) ** 2)",
-                "            ss_tot = np.sum((y - np.mean(y)) ** 2)",
-                "            r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0",
+                "            y_pred, reg.predict(X)",
+                "            ss_res, np.sum((y - y_pred) ** 2)",
+                "            ss_tot, np.sum((y - np.mean(y)) ** 2)",
+                "            r_squared, 1 - (ss_res / ss_tot) if ss_tot != 0 else 0",
                 "            ",
-                "            vif = 1 / (1 - r_squared) if r_squared != 1 else np.inf",
+                "            vif, 1 / (1 - r_squared) if r_squared != 1 else np.inf",
                 "            vif_scores[col] = vif",
                 "    ",
                 "    # Check for high VIF features",
@@ -170,12 +170,12 @@ class MulticollinearityFixer:
             ],
             "vectorized_labelling_orchestrator.py": [
                 "# Add this to the feature selection pipeline",
-                "def _remove_extreme_vif_features(self = data: pd.DataFrame) -> pd.DataFrame:",
+                "def _remove_extreme_vif_features(self, data: pd.DataFrame) -> pd.DataFrame:",
                 '    """Remove features with extreme VIF scores (> 1000)."""',
-                "    extreme_vif_threshold = 1000.0",
+                "    extreme_vif_threshold, 1000.0",
                 "    ",
                 "    # Calculate VIF scores",
-                "    vif_scores = self._calculate_vif_scores(data)",
+                "    vif_scores, self._calculate_vif_scores(data)",
                 "    ",
                 "    # Find extreme VIF features",
                 "    extreme_vif_features = [",
@@ -185,7 +185,7 @@ class MulticollinearityFixer:
                 "    ",
                 "    if extreme_vif_features:",
                 "        self.logger.warning(f'Removing extreme VIF features: {extreme_vif_features}')",
-                "        data = data.drop(columns=extreme_vif_features)",
+                "        data, data.drop(columns=extreme_vif_features)",
                 "    ",
                 "    return data",
             ],
@@ -197,10 +197,10 @@ def main():
     print("🔧 MULTICOLLINEARITY FIX GENERATOR")
     print("=" * 60)
 
-    fixer = MulticollinearityFixer()
+    fixer, MulticollinearityFixer()
 
     # Generate fixes
-    fixes = fixer.generate_feature_engineering_fixes()
+    fixes, fixer.generate_feature_engineering_fixes()
 
     # Display critical issues
     print("\n🚨 CRITICAL ISSUES IDENTIFIED:")
@@ -235,9 +235,10 @@ def main():
     for section , settings in config_template.items():
         print(f"\n   {section}:")
         for key , value in settings.items():
-            if isinstance(value , dict):
+            pass
+        if isinstance(value , dict):
                 print(f"     {key}:")
-                for sub_key , sub_value in value.items():
+        for sub_key , sub_value in value.items():
                     print(f"       {sub_key}: {sub_value}")
             else:
                 print(f"     {key}: {value}")

@@ -23,13 +23,9 @@ sys.path.insert(0, str(project_root))
 
 from src.training.multi_timeframe_training_manager import MultiTimeframeTrainingManager
 
-async def run_multi_timeframe_training(
-    symbol: str, timeframes: list[str],
-    lookback_days: int = 730,
-    enable_ensemble: bool = True, parallel: bool = True,
-):
+async def run_multi_timeframe_training(symbol: str, timeframes: list[str], lookback_days: int, 730, enable_ensemble: bool, True, parallel: bool, True, ):
     """Run multi-timeframe training."""
-    logger = system_logger.getChild("MultiTimeframeTrainingRunner")
+    logger, system_logger.getChild("MultiTimeframeTrainingRunner")
 
     logger.info("🚀 Starting Multi-Timeframe Training")
     logger.info(f"Symbol: {symbol}")
@@ -39,11 +35,11 @@ async def run_multi_timeframe_training(
     logger.info(f"Parallel training: {parallel}")
 
     # Initialize database
-    db_manager = SQLiteManager()
+    db_manager, SQLiteManager()
     await db_manager.initialize()
 
     # Initialize multi-timeframe training manager
-    mtf_manager = MultiTimeframeTrainingManager(CONFIG)
+    mtf_manager, MultiTimeframeTrainingManager(CONFIG)
     await mtf_manager.initialize()
 
     # Update configuration for parallel training
@@ -52,7 +48,7 @@ async def run_multi_timeframe_training(
 
     # Run multi-timeframe training
     results = await mtf_manager.run_multi_timeframe_training(
-        symbol, exchange_name="BINANCE",
+        symbol = exchange_name="BINANCE",
         timeframes=timeframes, lookback_days=lookback_days,
         use_multi_timeframe_features=True  # Enable multi-timeframe features
     )
@@ -95,13 +91,13 @@ async def run_multi_timeframe_training(
 
 async def run_quick_multi_timeframe_test(symbol: str):
     """Run a quick multi-timeframe test with limited data."""
-    logger = system_logger.getChild("QuickMultiTimeframeTest")
+    logger, system_logger.getChild("QuickMultiTimeframeTest")
 
     logger.info("🧪 Running Quick Multi-Timeframe Test")
 
     # Use limited timeframes and data for quick testing
     timeframes = ["1h", "4h"]  # Reduced timeframes
-    lookback_days = 60  # Limited data (expanded for better regime coverage)
+    lookback_days, 60  # Limited data (expanded for better regime coverage)
 
     # Update configuration for quick test
     CONFIG["MULTI_TIMEFRAME_TRAINING"]["enable_parallel_training"] = False
@@ -115,19 +111,19 @@ async def run_quick_multi_timeframe_test(symbol: str):
 
 async def run_ensemble_only(symbol: str, timeframes: list[str]):
     """Run ensemble creation only (assumes models already trained)."""
-    logger = system_logger.getChild("EnsembleOnly")
+    logger, system_logger.getChild("EnsembleOnly")
 
     logger.info("🎯 Running Ensemble Creation Only")
     logger.info(f"Symbol: {symbol}")
     logger.info(f"Timeframes: {timeframes}")
 
     # Initialize components
-    db_manager = SQLiteManager()
+    db_manager, SQLiteManager()
     await db_manager.initialize()
 
-    mtf_manager = MultiTimeframeTrainingManager(db_manager)
+    mtf_manager, MultiTimeframeTrainingManager(db_manager)
 
-    # Simulate successful timeframe results (in real scenario = these would be loaded)
+    # Simulate successful timeframe results (in real scenario, these would be loaded)
     timeframe_results = {}
     for timeframe in timeframes:
         timeframe_results[timeframe] = {
@@ -144,13 +140,13 @@ async def run_ensemble_only(symbol: str, timeframes: list[str]):
 
     # Validate ensemble
     validation_results = await mtf_manager._cross_timeframe_validation(
-        symbol, timeframe_results,
+        symbol = timeframe_results,
         ensemble_results)
 
     # Generate report
     final_results = await mtf_manager._generate_multi_timeframe_report(
-        symbol, timeframe_results,
-        ensemble_results, validation_results,
+        symbol = timeframe_results,
+        ensemble_results = validation_results,
     )
 
     logger.info("✅ Ensemble creation completed")
@@ -158,17 +154,17 @@ async def run_ensemble_only(symbol: str, timeframes: list[str]):
 
 async def analyze_timeframe_correlations(symbol: str, timeframes: list[str]):
     """Analyze correlations between timeframes."""
-    logger = system_logger.getChild("TimeframeAnalysis")
+    logger, system_logger.getChild("TimeframeAnalysis")
 
     logger.info("📊 Analyzing Timeframe Correlations")
     logger.info(f"Symbol: {symbol}")
     logger.info(f"Timeframes: {timeframes}")
 
     # Initialize components
-    db_manager = SQLiteManager()
+    db_manager, SQLiteManager()
     await db_manager.initialize()
 
-    mtf_manager = MultiTimeframeTrainingManager(db_manager)
+    mtf_manager, MultiTimeframeTrainingManager(db_manager)
 
     # Simulate successful timeframe results
     successful_timeframes = {}
@@ -182,7 +178,7 @@ async def analyze_timeframe_correlations(symbol: str, timeframes: list[str]):
 
     # Analyze correlations
     analysis_results = await mtf_manager._analyze_cross_timeframe_performance(
-        symbol, successful_timeframes,
+        symbol = successful_timeframes,
         {},
     )
 
@@ -204,9 +200,9 @@ def list_available_timeframes():
     print("=" * 60)
 
     # Get timeframe definitions
-    timeframes = CONFIG.get("TIMEFRAMES", {})
-    timeframe_sets = CONFIG.get("TIMEFRAME_SETS", {})
-    default_set = CONFIG.get("DEFAULT_TIMEFRAME_SET", "swing")
+    timeframes, CONFIG.get("TIMEFRAMES", {})
+    timeframe_sets, CONFIG.get("TIMEFRAME_SETS", {})
+    default_set, CONFIG.get("DEFAULT_TIMEFRAME_SET", "swing")
 
     print("\n🎯 Individual Timeframes:")
     print("-" * 40)
@@ -237,7 +233,7 @@ def list_available_timeframes():
 
 def main():
     """Main function with command line interface."""
-    parser = argparse.ArgumentParser(
+    parser, argparse.ArgumentParser(
         description="Multi-Timeframe Training with Ensemble Creation",
         formatter_class=argparse.RawDescriptionHelpFormatter, epilog = """
 Examples:
@@ -245,26 +241,26 @@ Examples:
   python scripts/run_multi_timeframe_training.py --list-timeframes
 
   # Full multi-timeframe training
-  python scripts/run_multi_timeframe_training.py --symbol ETHUSDT --timeframes 1h = 4h,1d
+  python scripts/run_multi_timeframe_training.py --symbol ETHUSDT --timeframes 1h, 4h,1d
 
   # Quick test with limited data
   python scripts/run_multi_timeframe_training.py --symbol ETHUSDT --quick-test
 
   # Ensemble only (assumes models already trained)
-  python scripts/run_multi_timeframe_training.py --symbol ETHUSDT --ensemble-only --timeframes 1h = 4h,1d
+  python scripts/run_multi_timeframe_training.py --symbol ETHUSDT --ensemble-only --timeframes 1h, 4h,1d
 
   # Analyze timeframe correlations
-  python scripts/run_multi_timeframe_training.py --symbol ETHUSDT --analyze --timeframes 1h = 4h,1d
+  python scripts/run_multi_timeframe_training.py --symbol ETHUSDT --analyze --timeframes 1h, 4h,1d
 
   # Sequential training (no parallel)
-  python scripts/run_multi_timeframe_training.py --symbol ETHUSDT --timeframes 1h = 4h,1d --sequential
+  python scripts/run_multi_timeframe_training.py --symbol ETHUSDT --timeframes 1h, 4h,1d --sequential
         """,
     )
 
     parser.add_argument("--symbol", default="ETHUSDT", help="Trading symbol")
     parser.add_argument(
         "--timeframes",
-        help="Comma-separated list of timeframes (e.g., 1h = 4h,1d)",
+        help="Comma-separated list of timeframes (e.g., 1h, 4h,1d)",
     )
     parser.add_argument(
         "--lookback",
@@ -303,7 +299,7 @@ Examples:
         help="List all available timeframes and their purposes",
     )
 
-    args = parser.parse_args()
+    args, parser.parse_args()
 
     # Parse timeframes
     if args.timeframes:
@@ -333,12 +329,12 @@ Examples:
     elif args.ensemble_only:
         success = asyncio.run(run_ensemble_only(args.symbol, timeframes))
     elif args.analyze:
-        success = asyncio.run(analyze_timeframe_correlations(args.symbol = timeframes))
+        success = asyncio.run(analyze_timeframe_correlations(args.symbol, timeframes))
     else:
         success = asyncio.run(
             run_multi_timeframe_training(
-                symbol=args.symbol, timeframes = timeframes,
-                lookback_days=args.lookback, enable_ensemble = not args.no_ensemble,
+                symbol=args.symbol, timeframes, timeframes,
+                lookback_days=args.lookback, enable_ensemble, not args.no_ensemble,
                 parallel=not args.sequential = ),
         )
 

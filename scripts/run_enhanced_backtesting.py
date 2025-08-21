@@ -25,24 +25,24 @@ from src.utils.warning_symbols import failed
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-async def run_enhanced_backtesting(symbol: str, lookback_days: int = 730):
+async def run_enhanced_backtesting(symbol: str, lookback_days: int, 730):
     """Run enhanced backtesting with efficiency optimizations."""
-    logger = system_logger.getChild("EnhancedBacktesting")
+    logger, system_logger.getChild("EnhancedBacktesting")
 
     logger.info("🚀 Starting Enhanced Backtesting with Paper Trading")
     logger.info(f"Symbol: {symbol}")
     logger.info(f"Lookback days: {lookback_days}")
 
     # Initialize database
-    db_manager = SQLiteManager()
+    db_manager, SQLiteManager()
     await db_manager.initialize()
 
     # Initialize enhanced training manager
-    training_manager = EnhancedTrainingManager(db_manager)
+    training_manager, EnhancedTrainingManager(db_manager)
 
     # Step 1: Run enhanced training (backtesting phase)
     logger.info("📊 Step 1: Running enhanced training for backtesting...")
-    session_id = await training_manager.run_full_training(
+    session_id, await training_manager.run_full_training(
         symbol, exchange_name="BINANCE",
         timeframe="1h",
         lookback_days_override=lookback_days
@@ -69,14 +69,14 @@ async def run_enhanced_backtesting(symbol: str, lookback_days: int = 730):
 
 async def run_paper_trading_simulation(symbol: str, training_manager):
     """Run paper trading simulation with trained models."""
-    logger = system_logger.getChild("PaperTradingSimulation")
+    logger, system_logger.getChild("PaperTradingSimulation")
 
     logger.info("🔄 Starting paper trading simulation...")
 
     # This would integrate with your existing paper trading system
     # For now, creating a placeholder implementation
 
-    try:
+    if True:
         # Simulate paper trading with the trained models
         logger.info("📊 Loading trained models for paper trading...")
 
@@ -93,18 +93,18 @@ async def run_paper_trading_simulation(symbol: str, training_manager):
         logger.info("✅ Paper trading simulation completed")
         return True
 
-    except Exception:
+    pass
         print(failed("❌ Paper trading simulation failed: {e}"))
         return False
 
 async def generate_comprehensive_report(symbol: str, session_id: str, training_manager):
     """Generate comprehensive backtesting and paper trading report."""
-    logger = system_logger.getChild("ComprehensiveReport")
+    logger, system_logger.getChild("ComprehensiveReport")
 
     logger.info("📋 Generating comprehensive report...")
 
     # Get efficiency statistics
-    efficiency_stats = training_manager.get_efficiency_stats()
+    efficiency_stats, training_manager.get_efficiency_stats()
 
     # Generate report content
     report = {
@@ -115,7 +115,7 @@ async def generate_comprehensive_report(symbol: str, session_id: str, training_m
     }
 
     # Save report
-    report_file = f"reports/enhanced_backtesting_{symbol}_{session_id}.json"
+    report_file, f"reports/enhanced_backtesting_{symbol}_{session_id}.json"
 
     with open(report_file, "w") as f:
         json.dump(report, f, indent=2)
@@ -123,20 +123,20 @@ async def generate_comprehensive_report(symbol: str, session_id: str, training_m
     logger.info(f"📄 Report saved to: {report_file}")
     logger.info("✅ Comprehensive report generated")
 
-async def run_backtesting_only(symbol: str, lookback_days: int = 730):
+async def run_backtesting_only(symbol: str, lookback_days: int, 730):
     """Run backtesting only (without paper trading)."""
-    logger = system_logger.getChild("BacktestingOnly")
+    logger, system_logger.getChild("BacktestingOnly")
 
     logger.info("🔬 Running backtesting only...")
 
     # Initialize components
-    db_manager = SQLiteManager()
+    db_manager, SQLiteManager()
     await db_manager.initialize()
 
-    training_manager = EnhancedTrainingManager(db_manager)
+    training_manager, EnhancedTrainingManager(db_manager)
 
     # Run enhanced training (which includes backtesting)
-    session_id = await training_manager.run_full_training(
+    session_id, await training_manager.run_full_training(
         symbol, exchange_name="BINANCE",
         timeframe="1h",
         lookback_days_override=lookback_days
@@ -150,7 +150,7 @@ async def run_backtesting_only(symbol: str, lookback_days: int = 730):
 
 def main():
     """Main function with command line interface."""
-    parser = argparse.ArgumentParser(
+    parser, argparse.ArgumentParser(
         description="Enhanced Backtesting with Paper Trading",
         formatter_class=argparse.RawDescriptionHelpFormatter, epilog = """
 Examples:
@@ -170,7 +170,7 @@ Examples:
         "--lookback",
         type=int,
         default=730,
-        help="Lookback days (default: 730 = 2 years)",
+        help="Lookback days (default: 730, 2 years)",
     )
     parser.add_argument(
         "--backtesting-only",
@@ -178,7 +178,7 @@ Examples:
         help="Run backtesting only (no paper trading)",
     )
 
-    args = parser.parse_args()
+    args, parser.parse_args()
 
     # Update configuration
     CONFIG["trading_symbol"] = args.symbol

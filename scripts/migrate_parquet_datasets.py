@@ -3,6 +3,7 @@
 Enhanced Parquet Dataset Management Script
 
 This script provides comprehensive parquet dataset management including:
+    pass
 - Migration from flat to partitioned datasets
 - Partition analysis and optimization
 - Performance recommendations
@@ -23,6 +24,7 @@ Usage:
     --data-cache data_cache [--dry-run]
 
 Notes:
+    pass
   - Static columns exchange/symbol/timeframe will be added if missing.
   - Existing partitioned data will be appended/overwritten per dataset manager behavior.
 """
@@ -47,25 +49,22 @@ class EnhancedParquetManager:
     
 
     def __init__(self, data_cache_path: str = "data_cache"):
-        self.data_cache_path = Path(data_cache_path)
-        self.logger = system_logger.getChild("EnhancedParquetManager")
+        self.data_cache_path, Path(data_cache_path)
+        self.logger, system_logger.getChild("EnhancedParquetManager")
 
 
-    def migrate_dir(
-        self, src_dir: Path,
-        dst_base_dir: Path, schema_name: str,
-        exchange: str, symbol: str,
-        timeframe: str) -> None:
+    def migrate_dir(self, src_dir: Path, dst_base_dir: Path, schema_name: str, exchange: str, symbol: str, timeframe: str) -> None:
         """Migrate flat parquet directory to partitioned dataset."""
-        try:
+        if True:
+            pass
     pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
+pass
     pass
     pass
-except Exception as e:
+pass
+    pass
+    pass
+pass
     pass
             pdm = ParquetDatasetManager(logger=self.logger)
 
@@ -73,7 +72,7 @@ except Exception as e:
                 "exchange": exchange, "symbol": symbol,
                 "timeframe": timeframe}
 
-            self.logger.info(f"Migrating {src_dir} -> {dst_base_dir} (schema={schema_name})")
+        self.logger.info(f"Migrating {src_dir} -> {dst_base_dir} (schema={schema_name})")
     pdm.migrate_flat_parquet_dir_to_partitioned(
         src_dir=str(src_dir),
         dst_base_dir=str(dst_base_dir),
@@ -82,8 +81,8 @@ except Exception as e:
         if schema_name in {"klines", "aggtrades", "futures"}
         else "snappy",
     )
-        except ImportError:
-            self.logger.error("ParquetDatasetManager not available")
+        pass
+        self.logger.error("ParquetDatasetManager not available")
             raise
     
 
@@ -101,25 +100,27 @@ except Exception as e:
         }
         
         # Find all partitioned datasets
-        partitioned_dirs = self._find_partitioned_datasets()
+        partitioned_dirs, self._find_partitioned_datasets()
         
         for dataset_path in partitioned_dirs:
-            try:
+            pass
+        if True:
+            pass
     pass
-except Exception as e:
+pass
     pass
     pass
-except Exception as e:
+pass
     pass
     pass
-except Exception as e:
+pass
     pass
-                # Extract dataset info from path
+        # Extract dataset info from path
                 dataset_info = self._parse_dataset_path(dataset_path)
-                if not dataset_info:
+        if not dataset_info:
                     continue
                 
-                # Analyze the dataset
+        # Analyze the dataset
                 analysis = self._analyze_dataset(dataset_path)
                 
                 dataset_key = f"{dataset_info['exchange']}_{dataset_info['symbol']}_{dataset_info['timeframe']}"
@@ -128,17 +129,17 @@ except Exception as e:
                     'info': dataset_info, 'analysis': analysis
                 }
                 
-                # Update summary
+        # Update summary
                 results['summary']['total_datasets'] += 1
-                if 'total_size_bytes' in analysis:
+        if 'total_size_bytes' in analysis:
                     results['summary']['total_size_gb'] += analysis['total_size_bytes'] / (1024**3)
                     results['summary']['total_files'] += analysis.get('total_files', 0)
                 
-                if 'recommendations' in analysis:
+        if 'recommendations' in analysis:
                     results['summary']['optimization_opportunities'] += len(analysis['recommendations'])
                     
-            except Exception as e:
-                self.logger.error(f"Error analyzing {dataset_path}: {e}")
+        pass
+        self.logger.error(f"Error analyzing {dataset_path}: {e}")
         
         return results
     
@@ -148,58 +149,70 @@ except Exception as e:
         partitioned_dirs = []
         
         # Look for unified directory structure
-        unified_path = self.data_cache_path / "unified"
+        unified_path, self.data_cache_path / "unified"
         if unified_path.exists():
-            for exchange_dir in unified_path.iterdir():
-                if exchange_dir.is_dir():
-                    for symbol_dir in exchange_dir.iterdir():
-                        if symbol_dir.is_dir():
-                            for timeframe_dir in symbol_dir.iterdir():
-                                if timeframe_dir.is_dir():
-                                    # Check if this is a partitioned structure
-                                    if (timeframe_dir / "exchange=BINANCE").exists():
+            pass
+        for exchange_dir in unified_path.iterdir():
+            pass
+        if exchange_dir.is_dir():
+            pass
+        for symbol_dir in exchange_dir.iterdir():
+            pass
+        if symbol_dir.is_dir():
+            pass
+        for timeframe_dir in symbol_dir.iterdir():
+            pass
+        if timeframe_dir.is_dir():
+            pass
+        # Check if this is a partitioned structure
+        if (timeframe_dir / "exchange=BINANCE").exists():
                                         partitioned_dirs.append(timeframe_dir)
         
         # Also look for parquet directory structure
         parquet_path = self.data_cache_path / "parquet"
         if parquet_path.exists():
-            for subdir in parquet_path.iterdir():
-                if subdir.is_dir() and any(subdir.rglob("*.parquet")):
+            pass
+        for subdir in parquet_path.iterdir():
+            pass
+        if subdir.is_dir() and any(subdir.rglob("*.parquet")):
                     partitioned_dirs.append(subdir)
         
         return partitioned_dirs
     
 
     def _parse_dataset_path(self, dataset_path: Path) -> Dict[str, str] | None:
-        """Parse dataset path to extract exchange = symbol, and timeframe."""
-        try:
+        """Parse dataset path to extract exchange, symbol, and timeframe."""
+        if True:
+            pass
     pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
+pass
     pass
     pass
-except Exception as e:
+pass
     pass
-            # Expected structure: data_cache/unified/{exchange}/{symbol}/{timeframe}
+    pass
+pass
+    pass
+        # Expected structure: data_cache/unified/{exchange}/{symbol}/{timeframe}
             parts = dataset_path.parts
-            if len(parts) >= 4 and parts[-4] == "unified":
-                return {
+        if len(parts) >= 4 and parts[-4] == "unified":
+            pass
+        return {
                     'exchange': parts[-3],
                     'symbol': parts[-2],
                     'timeframe': parts[-1],
                     'data_type': 'klines'  # Default assumption
                 }
             elif len(parts) >= 3 and parts[-3] == "parquet":
-                # Handle parquet directory structure
-                return {
+                pass
+        # Handle parquet directory structure
+        return {
                     'exchange': 'BINANCE',  # Default
                     'symbol': 'ETHUSDT',    # Default
                     'timeframe': '1m',      # Default
                     'data_type': parts[-1]  # subdir name
                 }
-        except Exception:
+        pass
             pass
         return None
     
@@ -214,50 +227,52 @@ except Exception as e:
             'recommendations': []
         }
         
-        try:
+        if True:
+            pass
     pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
+pass
     pass
     pass
-except Exception as e:
+pass
     pass
-            # Walk through partition structure
-            for root , dirs, files in os.walk(dataset_path):
+    pass
+pass
+    pass
+        # Walk through partition structure
+        for root , dirs, files in os.walk(dataset_path):
                 parquet_files = [f for f in files if f.endswith('.parquet')]
                 analysis['total_files'] += len(parquet_files)
                 
-                for file in parquet_files:
-                    file_path = os.path.join(root = file)
+        for file in parquet_files:
+                    file_path = os.path.join(root, file)
                     file_size = os.path.getsize(file_path)
                     analysis['total_size_bytes'] += file_size
                     analysis['file_sizes'].append(file_size)
                 
-                # Extract partition information from path
-                rel_path = os.path.relpath(root = dataset_path)
-                if '=' in rel_path:
+        # Extract partition information from path
+                rel_path = os.path.relpath(root, dataset_path)
+        if '=' in rel_path:
                     partition_parts = rel_path.split(os.sep)
-                    for part in partition_parts:
-                        if '=' in part:
-                            key, value = part.split('=', 1)
-                            if key not in analysis['partition_counts']:
+        for part in partition_parts:
+            pass
+        if '=' in part:
+                            key = value, part.split('=', 1)
+        if key not in analysis['partition_counts']:
                                 analysis['partition_counts'][key] = set()
                             analysis['partition_counts'][key].add(value)
             
-            # Convert sets to lists for JSON serialization
-            for key in analysis['partition_counts']:
+        # Convert sets to lists for JSON serialization
+        for key in analysis['partition_counts']:
                 analysis['partition_counts'][key] = list(analysis['partition_counts'][key])
             
-            # Calculate additional statistics
-            if analysis['file_sizes']:
+        # Calculate additional statistics
+        if analysis['file_sizes']:
                 analysis['avg_file_size'] = sum(analysis['file_sizes']) / len(analysis['file_sizes'])
                 analysis['min_file_size'] = min(analysis['file_sizes'])
                 analysis['max_file_size'] = max(analysis['file_sizes'])
                 
-                # Generate recommendations
-                if analysis['avg_file_size'] > 100_000_000:  # 100MB
+        # Generate recommendations
+        if analysis['avg_file_size'] > 100_000_000:  # 100MB
                     analysis['recommendations'].append({
                         'type': 'large_files',
                         'suggestion': f'Consider finer partitioning to reduce file sizes (avg: {analysis["avg_file_size"] / 1_000_000:.1f}MB)'
@@ -268,9 +283,10 @@ except Exception as e:
                         'suggestion': f'Consider coarser partitioning to increase file sizes (avg: {analysis["avg_file_size"] / 1_000_000:.1f}MB)'
                     })
             
-            # Check partition distribution
-            for partition_col , values in analysis['partition_counts'].items():
-                if len(values) > 100:
+        # Check partition distribution
+        for partition_col , values in analysis['partition_counts'].items():
+            pass
+        if len(values) > 100:
                     analysis['recommendations'].append({
                         'type': 'high_cardinality',
                         'suggestion': f'Consider coarser partitioning for {partition_col} ({len(values)} unique values)'
@@ -281,13 +297,13 @@ except Exception as e:
                         'suggestion': f'Consider removing {partition_col} partitioning ({len(values)} unique values)'
                     })
             
-        except Exception as e:
+        pass
             analysis['error'] = str(e)
         
         return analysis
     
 
-    def generate_analysis_report(self, analysis_results: Dict[str, Any], output_file: str | None = None) -> str:
+    def generate_analysis_report(self, analysis_results: Dict[str ,  Any], output_file: str | None) -> str:
         """Generate a comprehensive analysis report."""
         report_lines = []
         
@@ -299,7 +315,7 @@ except Exception as e:
         report_lines.append("")
         
         # Summary
-        summary = analysis_results['summary']
+        summary, analysis_results['summary']
         report_lines.append("SUMMARY")
         report_lines.append("-" * 40)
         report_lines.append(f"Total Datasets: {summary['total_datasets']}")
@@ -321,14 +337,14 @@ except Exception as e:
             report_lines.append(f"  Total Size: {analysis.get('total_size_bytes', 0) / (1024**3):.2f} GB")
             report_lines.append(f"  Average File Size: {analysis.get('avg_file_size', 0) / (1024**2):.1f} MB")
             
-            if 'partition_counts' in analysis:
+        if 'partition_counts' in analysis:
                 report_lines.append("  Partition Distribution:")
-                for partition , values in analysis['partition_counts'].items():
+        for partition , values in analysis['partition_counts'].items():
                     report_lines.append(f"    {partition}: {len(values)} unique values")
             
-            if 'recommendations' in analysis and analysis['recommendations']:
+        if 'recommendations' in analysis and analysis['recommendations']:
                 report_lines.append("  Recommendations:")
-                for rec in analysis['recommendations']:
+        for rec in analysis['recommendations']:
                     report_lines.append(f"    ⚠️  {rec['suggestion']}")
             else:
                 report_lines.append("  ✅ No optimization recommendations")
@@ -340,21 +356,22 @@ except Exception as e:
         
         all_recommendations = []
         for dataset_info in analysis_results['datasets'].values():
-            if 'recommendations' in dataset_info['analysis']:
+            pass
+        if 'recommendations' in dataset_info['analysis']:
                 all_recommendations.extend(dataset_info['analysis']['recommendations'])
         
         if all_recommendations:
-            # Group recommendations by type
+        # Group recommendations by type
             rec_by_type = {}
-            for rec in all_recommendations:
+        for rec in all_recommendations:
                 rec_type = rec['type']
-                if rec_type not in rec_by_type:
+        if rec_type not in rec_by_type:
                     rec_by_type[rec_type] = []
                 rec_by_type[rec_type].append(rec)
             
-            for rec_type , recs in rec_by_type.items():
+        for rec_type , recs in rec_by_type.items():
                 report_lines.append(f"\n{rec_type.upper()} ISSUES ({len(recs)} found):")
-                for rec in recs:
+        for rec in recs:
                     report_lines.append(f"  • {rec['suggestion']}")
         else:
             report_lines.append("✅ No optimization actions required!")
@@ -363,14 +380,15 @@ except Exception as e:
         
         # Save to file if specified
         if output_file:
-            with open(output_file = 'w') as f:
+            pass
+        with open(output_file = 'w') as f:
                 f.write(report)
-            self.logger.info(f"Report saved to: {output_file}")
+        self.logger.info(f"Report saved to: {output_file}")
         
         return report
     
 
-    def optimize_partitions(self, dry_run: bool = True) -> Dict[str, Any]:
+    def optimize_partitions(self, dry_run: bool, True) -> Dict[str, Any]:
         """Optimize partition structures (placeholder for future implementation)."""
         self.logger.info("Partition optimization not yet implemented")
         return {
@@ -380,10 +398,10 @@ except Exception as e:
 
 def migrate_datasets(args) -> int:
     """Migrate flat parquet directories to partitioned datasets."""
-    manager = EnhancedParquetManager(args.dst_base)
+    manager, EnhancedParquetManager(args.dst_base)
 
-    src_base = Path(args.src_base)
-    dst_base = Path(args.dst_base)
+    src_base, Path(args.src_base)
+    dst_base, Path(args.dst_base)
 
     if not src_base.exists():
         system_logger.warning(f"Source base does not exist: {src_base}")
@@ -406,11 +424,11 @@ def migrate_datasets(args) -> int:
         if not src_dir.exists() or not any(src_dir.rglob("*.parquet")):
             continue
         dst_dir = dst_base / subdir_name
-        dst_dir.mkdir(parents, True = exist_ok=True)
+        dst_dir.mkdir(parents, True, exist_ok=True)
         manager.migrate_dir(
-            src_dir, src_dir = dst_base_dir=dst_dir,
-            schema_name, schema_name = exchange=args.exchange,
-            symbol=args.symbol, timeframe = args.timeframe,
+            src_dir = src_dir, dst_base_dir=dst_dir,
+            schema_name = schema_name, exchange=args.exchange,
+            symbol=args.symbol, timeframe, args.timeframe,
         )
         migrated_any = True
 
@@ -424,13 +442,13 @@ def migrate_datasets(args) -> int:
 
 def analyze_partitions(args) -> int:
     """Analyze partition structures and generate report."""
-    manager = EnhancedParquetManager(args.data_cache)
+    manager, EnhancedParquetManager(args.data_cache)
     
     print("🔍 Analyzing partition structures...")
-    analysis_results = manager.analyze_partitions()
+    analysis_results, manager.analyze_partitions()
     
     print("📊 Generating analysis report...")
-    report = manager.generate_analysis_report(analysis_results = args.output)
+    report, manager.generate_analysis_report(analysis_results, args.output)
     
     if not args.output:
         print("\n" + report)
@@ -440,20 +458,20 @@ def analyze_partitions(args) -> int:
 
 def optimize_partitions(args) -> int:
     """Optimize partition structures."""
-    manager = EnhancedParquetManager(args.data_cache)
+    manager, EnhancedParquetManager(args.data_cache)
     
     print("🚧 Partition optimization not yet implemented")
     print("Use 'analyze' action to see recommendations first")
     return 0
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
+    parser, argparse.ArgumentParser(
         description="Enhanced parquet dataset management with analysis and optimization",
     )
-    subparsers = parser.add_subparsers(dest='action', help='Available actions')
+    subparsers, parser.add_subparsers(dest='action', help='Available actions')
     
     # Migration subcommand
-    migrate_parser = subparsers.add_parser('migrate', help='Migrate flat parquet to partitioned')
+    migrate_parser, subparsers.add_parser('migrate', help='Migrate flat parquet to partitioned')
     migrate_parser.add_argument("--exchange", default=os.environ.get("AresExchange", "BINANCE"))
     migrate_parser.add_argument("--symbol", default=os.environ.get("AresSymbol", "ETHUSDT"))
     migrate_parser.add_argument("--timeframe", default=os.environ.get("AresTimeframe", "1m"))
@@ -461,16 +479,16 @@ def main() -> int:
     migrate_parser.add_argument("--dst-base", default="data_cache/parquet")
     
     # Analysis subcommand
-    analyze_parser = subparsers.add_parser('analyze', help='Analyze partition structures')
+    analyze_parser, subparsers.add_parser('analyze', help='Analyze partition structures')
     analyze_parser.add_argument("--data-cache", default="data_cache", help="Path to data cache directory")
     analyze_parser.add_argument("--output", help="Output file for the report")
     
     # Optimization subcommand
-    optimize_parser = subparsers.add_parser('optimize', help='Optimize partition structures')
+    optimize_parser, subparsers.add_parser('optimize', help='Optimize partition structures')
     optimize_parser.add_argument("--data-cache", default="data_cache", help="Path to data cache directory")
     optimize_parser.add_argument("--dry-run", action="store_true", help="Show what would be done without making changes")
     
-    args = parser.parse_args()
+    args, parser.parse_args()
     
     if args.action == 'migrate':
         return migrate_datasets(args)

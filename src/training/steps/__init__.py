@@ -111,7 +111,8 @@ ABTestingStep = None
 SavingStep = None
 
 # Import utility functions
-try: from .unified_data_loader import UnifiedDataLoader = get_unified_data_loader
+try:
+    from .unified_data_loader import UnifiedDataLoader, get_unified_data_loader
 except ImportError:
     get_unified_data_loader = None
     UnifiedDataLoader = None

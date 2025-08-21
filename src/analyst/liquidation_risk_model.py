@@ -3,6 +3,11 @@ from src.utils.logger import system_logger
 from typing import Any
 from src.utils.error_handler import handle_errors, handle_specific_errors
 import pandas as pd
+from src.utils.centralized_decorators_simple import (
+    comprehensive_data_validation,
+    validate_data_quality,
+    with_tracing_span,
+)
 
 class LiquidationRiskModel:
     """
@@ -195,6 +200,8 @@ class LiquidationRiskModel:
             self.logger.error("Error calculating liquidation risk: {e}")
             return None
 
+    @validate_data_quality(validation_level="WARNING")
+    @with_tracing_span("adverse_risk_extraction")
     def _extract_adverse_risk(
         self, ml_predictions: dict[str, Any], target_direction: str = "long"
     ) -> float:

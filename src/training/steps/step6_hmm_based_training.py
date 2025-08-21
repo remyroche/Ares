@@ -288,7 +288,7 @@ class HMMBasedTrainingStep:
             self.logger.error(f"❌ Failed to get available features: {e}")
             return []
     
-    def _apply_enhanced_optimization(
+    async def _apply_enhanced_optimization(
         self, 
         features_df: pd.DataFrame, 
         target: pd.Series,

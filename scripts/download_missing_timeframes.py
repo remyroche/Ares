@@ -37,7 +37,7 @@ class MissingTimeframesDownloader:
         """Check which timeframes already have data."""
         logger.info("🔍 Checking existing timeframe data...")
 
-        existing_data = {}
+        existing_data: dict[str, bool] = {}
         for timeframe in self.required_timeframes:
             csv_file = self.data_dir / f"ETHUSDT_{timeframe}.csv"
             existing_data[timeframe] = csv_file.exists()
@@ -55,8 +55,9 @@ class MissingTimeframesDownloader:
 
         try:
             success = await download_all_data_with_consolidation(
-                symbol=self.symbol, exchange_name=self.exchange,
-                interval=timeframe
+                symbol=self.symbol,
+                exchange_name=self.exchange,
+                interval=timeframe,
             )
 
             if success:
@@ -64,7 +65,6 @@ class MissingTimeframesDownloader:
                 return True
             logger.error(f"❌ Failed to download {timeframe} data")
             return False
-
         except Exception as e:
             logger.exception(f"💥 Error downloading {timeframe} data: {e}")
             return False
@@ -86,7 +86,7 @@ class MissingTimeframesDownloader:
         logger.info(f"📋 Missing timeframes: {', '.join(missing_timeframes)}")
 
         # Download missing timeframes
-        download_results = {}
+        download_results: dict[str, bool] = {}
         for timeframe in missing_timeframes:
             success = await self.download_timeframe(timeframe)
             download_results[timeframe] = success
@@ -103,10 +103,9 @@ class MissingTimeframesDownloader:
         logger.info("🔍 Verifying downloads...")
 
         all_successful = True
-        for timeframe , success in results.items():
+        for timeframe, success in results.items():
             status = "✅" if success else "❌"
             logger.info(f"  {timeframe}: {status} {'Success' if success else 'Failed'}")
-
             if not success:
                 all_successful = False
 
@@ -119,78 +118,28 @@ class MissingTimeframesDownloader:
 
     def print_summary(self, results: dict[str, bool]) -> None:
         """Print a summary of the download results."""
-        print("\n" + "=" * 80)
-        print("📊 TIMEFRAME DATA DOWNLOAD SUMMARY")
-        print("=" * 80)
-
-        print(f"\n🎯 Target Timeframes: {', '.join(self.required_timeframes)}")
-        print(f"📈 Symbol: {self.symbol}")
-        print(f"🏢 Exchange: {self.exchange}")
-
-        successful = [tf for tf, success in results.items() if success]
-        failed = [tf for tf, success in results.items() if not success]
-
-        print(f"\n✅ Successful Downloads: {len(successful)}")
-        if successful:
-            print(f"   {', '.join(successful)}")
-
-        if failed:
-            print(f"\n❌ Failed Downloads: {len(failed)}")
-            print(f"   {', '.join(failed)}")
-
-        print(f"\n📁 Data Directory: {self.data_dir.absolute()}")
-
-        if not failed:
-            print("\n🎉 ALL TIMEFRAMES READY FOR MULTI-TIMEFRAME HMM ENSEMBLE!")
-        else:
-            print("\n⚠️  SOME TIMEFRAMES NEED ATTENTION")
-
-        print("=" * 80)
+        print("\n=== Download Summary ===")
+        for timeframe, success in sorted(results.items()):
+            status = "SUCCESS" if success else "FAILED"
+            print(f"{timeframe}: {status}")
 
 
-async def main():
-    """Main function to run the download process."""
-    parser = argparse.ArgumentParser(
-        description="Download missing timeframe data for multi-timeframe HMM ensemble",
-    )
-    parser.add_argument("--symbol", type=str, default="ETHUSDT", help="Trading symbol")
-    parser.add_argument("--exchange", type=str, default="BINANCE", help="Exchange name")
-    parser.add_argument(
-        "--timeframes",
-        type=str,
-        nargs="+",
-        default=["5m", "15m", "30m"],
-        help="Timeframes to download",
-    )
-
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Download missing timeframes")
+    parser.add_argument("--symbol", default="ETHUSDT")
+    parser.add_argument("--exchange", default="BINANCE")
     args = parser.parse_args()
 
-    try:
-        # Load configuration
-        config = CONFIG if hasattr(CONFIG, "get") else {}
+    cfg = dict(CONFIG)
+    cfg["symbol"] = args.symbol
+    cfg["exchange"] = args.exchange
 
-        # Create downloader
-        downloader = MissingTimeframesDownloader(config)
-        downloader.symbol = args.symbol
-        downloader.exchange = args.exchange
-        downloader.required_timeframes = args.timeframes
+    downloader = MissingTimeframesDownloader(cfg)
 
-        # Download missing timeframes
-        results = await downloader.download_missing_timeframes()
-
-        # Verify downloads
-        all_successful = downloader.verify_downloads(results)
-
-        # Print summary
-        downloader.print_summary(results)
-
-        return all_successful
-
-    except Exception as e:
-        logger.exception(f"💥 Download process failed: {e}")
-        return False
+    results = asyncio.run(downloader.download_missing_timeframes())
+    downloader.print_summary(results)
+    downloader.verify_downloads(results)
 
 
 if __name__ == "__main__":
-    success = asyncio.run(main())
-    sys.exit(0 if success else 1)
+    main()

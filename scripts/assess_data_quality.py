@@ -28,6 +28,8 @@ current_dir = Path(__file__).parent
 src_dir = current_dir.parent / "src"
 sys.path.insert(0, str(src_dir))
 
+from src.utils.advanced_decorators import performance_monitor, PerformanceLevel
+
 class EnhancedDataQualityAnalyzer:
     """
     Enhanced data quality analyzer that addresses critical issues:
@@ -39,9 +41,8 @@ class EnhancedDataQualityAnalyzer:
     def __init__(self):
         self.logger = system_logger.getChild("EnhancedDataQualityAnalyzer")
 
-    def analyze_multicollinearity(
-        self, data: pd.DataFrame, vif_threshold: float = 5.0
-    ) -> dict[str, Any]:
+    @performance_monitor(level=PerformanceLevel.DETAILED)
+    def analyze_multicollinearity(self, data: pd.DataFrame, vif_threshold: float = 5.0) -> dict[str, Any]:
         """
         Analyze multicollinearity using VIF and correlation analysis.
 
@@ -52,139 +53,102 @@ class EnhancedDataQualityAnalyzer:
         Returns:
             Dictionary with multicollinearity analysis results
         """
-        try:
-            self.logger.info("🔍 Analyzing multicollinearity...")
+        self.logger.info("🔍 Analyzing multicollinearity...")
 
-            # Remove non-numeric columns
-            numeric_data = data.select_dtypes(include=[np.number])
+        # Remove non-numeric columns
+        numeric_data = data.select_dtypes(include=[np.number])
 
-            # Remove potential label columns
-            potential_label_columns = [
-                "label",
-                "target",
-                "y",
-                "class",
-                "Label",
-                "Target",
-                "Y",
-                "Class",
-            ]
-            actual_label_columns = [
-                col for col in numeric_data.columns if col in potential_label_columns
-            ]
-            if actual_label_columns:
-                self.logger.warning(
-                    f"⚠️ Removing label columns from multicollinearity analysis: {actual_label_columns}",
-                )
-                numeric_data = numeric_data.drop(columns=actual_label_columns)
-
-            # Handle NaN values
-            imputer = SimpleImputer(strategy="median")
-            data_imputed = pd.DataFrame(
-                imputer.fit_transform(numeric_data),
-                columns=numeric_data.columns, index=numeric_data.index,
+        # Remove potential label columns
+        potential_label_columns = [
+            "label",
+            "target",
+            "y",
+            "class",
+            "Label",
+            "Target",
+            "Y",
+            "Class",
+        ]
+        actual_label_columns = [
+            col for col in numeric_data.columns if col in potential_label_columns
+        ]
+        if actual_label_columns:
+            self.logger.warning(
+                f"⚠️ Removing label columns from multicollinearity analysis: {actual_label_columns}",
             )
+            numeric_data = numeric_data.drop(columns=actual_label_columns)
 
-            # Calculate VIF scores
-            vif_scores = {}
-            high_vif_features = []
+        # Handle NaN values
+        imputer = SimpleImputer(strategy="median")
+        data_imputed = pd.DataFrame(
+            imputer.fit_transform(numeric_data),
+            columns=numeric_data.columns,
+            index=numeric_data.index,
+        )
 
-            for i , col in enumerate(data_imputed.columns):
-                other_cols = [c for c in data_imputed.columns if c != col]
-                if len(other_cols) > 0:
-                    X = data_imputed[other_cols]
-                    y = data_imputed[col]
+        # Calculate VIF scores
+        vif_scores: dict[str, float] = {}
+        high_vif_features: list[str] = []
 
-                    reg = LinearRegression()
-                    reg.fit(X = y)
+        for i, col in enumerate(data_imputed.columns):
+            other_cols = [c for c in data_imputed.columns if c != col]
+            if len(other_cols) > 0:
+                X = data_imputed[other_cols]
+                y = data_imputed[col]
 
-                    y_pred = reg.predict(X)
-                    ss_res = np.sum((y - y_pred) ** 2)
-                    ss_tot = np.sum((y - np.mean(y)) ** 2)
-                    r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+                reg = LinearRegression()
+                reg.fit(X, y)
 
-                    vif = 1 / (1 - r_squared) if r_squared != 1 else np.inf
-                    vif_scores[col] = vif
+                y_pred = reg.predict(X)
+                ss_res = np.sum((y - y_pred) ** 2)
+                ss_tot = np.sum((y - np.mean(y)) ** 2)
+                r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
 
-                    if vif > vif_threshold:
-                        high_vif_features.append(col)
+                vif = 1 / (1 - r_squared) if r_squared != 1 else np.inf
+                vif_scores[col] = float(vif)
 
-            # Calculate correlation matrix
-            correlation_matrix = data_imputed.corr()
-            high_correlation_pairs = []
+                if vif > vif_threshold:
+                    high_vif_features.append(col)
 
-            for i in range(len(correlation_matrix.columns)):
-                for j in range(i + 1, len(correlation_matrix.columns)):
-                    corr_val = abs(correlation_matrix.iloc[i, j])
-                    if corr_val > 0.95:  # High correlation threshold
-                        high_correlation_pairs.append(
-                            {
-                                "feature1": correlation_matrix.columns[i],
-                                "feature2": correlation_matrix.columns[j],
-                                "correlation": corr_val,
-                            }
-                        )
+        # Calculate correlation matrix
+        correlation_matrix = data_imputed.corr()
+        high_correlation_pairs: list[tuple[str, str, float]] = []
 
-            # Identify redundant price features
-            price_features = [
-                "open",
-                "high",
-                "low",
-                "close",
-                "avg_price",
-                "min_price",
-                "max_price",
-            ]
-            redundant_price_features = [
-                col
-                for col in data_imputed.columns
-                if any(price_feat in col.lower() for price_feat in price_features)
-            ]
+        for i in range(len(correlation_matrix.columns)):
+            for j in range(i + 1, len(correlation_matrix.columns)):
+                corr_val = abs(correlation_matrix.iloc[i, j])
+                if corr_val > 0.95:  # High correlation threshold
+                    a = correlation_matrix.columns[i]
+                    b = correlation_matrix.columns[j]
+                    high_correlation_pairs.append((a, b, float(corr_val)))
 
-            # Sort high VIF features by VIF value
-            high_vif_features_sorted = sorted(
-                high_vif_features,
-                key=lambda x: vif_scores[x],
-                reverse=True,
-            )
+        return {
+            "vif_scores": vif_scores,
+            "high_vif_features": high_vif_features,
+            "high_correlation_pairs": high_correlation_pairs,
+        }
 
-            return {
-                "vif_scores": vif_scores,
-                "high_vif_features": high_vif_features_sorted,
-                "high_vif_count": len(high_vif_features),
-                "max_vif": max(vif_scores.values()) if vif_scores else 0,
-                "mean_vif": np.mean(list(vif_scores.values())) if vif_scores else 0,
-                "high_correlation_pairs": high_correlation_pairs, "redundant_price_features": redundant_price_features,
-                "total_features": len(data_imputed.columns),
-                "severity": self._assess_multicollinearity_severity(
-                    vif_scores,
-                    vif_threshold,
-                ),
-            }
-
-        except Exception as e:
-            self.logger.exception(f"❌ Error analyzing multicollinearity: {e}")
-            return {"error": str(e)}
-
-    def _assess_multicollinearity_severity(
-        self,
-        vif_scores: dict[str, float],
-        threshold: float = 10.0) -> str:
+    def _assess_multicollinearity_severity(self, vif_scores: dict[str ,  float], threshold: float, 10.0) -> str:
         """Assess the severity of multicollinearity issues."""
         if not vif_scores:
-            return "UNKNOWN"
+            pass
+        return "UNKNOWN"
 
         max_vif = max(vif_scores.values())
         high_vif_count = sum(1 for vif in vif_scores.values() if vif > threshold)
 
         if max_vif > 1000:
-            return "CRITICAL"
+            pass
+        return "CRITICAL"
         if max_vif > 100:
-            return "HIGH"
+            pass
+        return "HIGH"
         if max_vif > 10:
-            return "MODERATE"
+            pass
+        return "MODERATE"
         if high_vif_count > 0:
-            return "LOW"
+            pass
+        return "LOW"
         return "NONE"
 
     def analyze_label_distribution(self, data: pd.DataFrame) -> dict[str, Any]:
@@ -197,10 +161,11 @@ class EnhancedDataQualityAnalyzer:
         Returns:
             Dictionary with label analysis results
         """
-        try:
-            self.logger.info("🔍 Analyzing label distribution...")
+        if True:
+            pass
+        self.logger.info("🔍 Analyzing label distribution...")
 
-            # Find label column
+        # Find label column
             label_columns = [
                 "label",
                 "target",
@@ -212,66 +177,67 @@ class EnhancedDataQualityAnalyzer:
                 "Class",
             ]
             label_col = None
-            for col in label_columns:
-                if col in data.columns:
+        for col in label_columns:
+            pass
+        if col in data.columns:
                     label_col = col
-                    break
-
-            if label_col is None:
-                return {"error": "No label column found"}
+                    pass
+        if label_col is None:
+            pass
+        return {"error": "No label column found"}
 
             labels = data[label_col]
 
-            # Analyze label distribution
-            unique_labels, counts = np.unique(labels, return_counts=True)
+        # Analyze label distribution
+            unique_labels = counts, np.unique(labels, return_counts=True)
             label_distribution = dict(zip(unique_labels, counts, strict=False))
 
-            # Calculate imbalance metrics
+        # Calculate imbalance metrics
             total_samples = len(labels)
             class_ratios = {
                 label: count / total_samples
-                for label , count in label_distribution.items()
+        for label , count in label_distribution.items()
             }
 
-            # Identify issues
+        # Identify issues
             issues = []
             recommendations = []
 
-            # Check for extreme imbalance
+        # Check for extreme imbalance
             min_class_count = min(counts)
             max_class_count = max(counts)
             imbalance_ratio = (
                 max_class_count / min_class_count
-                if min_class_count > 0
+        if min_class_count > 0
                 else float("inf")
             )
 
-            if min_class_count < 10:
+        if min_class_count < 10:
                 issues.append(f"CRITICAL: Class with only {min_class_count} samples")
                 recommendations.append(
                     "Consider binary classification (remove HOLD class)",
                 )
 
-            if imbalance_ratio > 100:
+        if imbalance_ratio > 100:
                 issues.append(f"SEVERE: Class imbalance ratio of {imbalance_ratio:.1f}")
                 recommendations.append("Use class weights or resampling techniques")
 
-            # Check for single-class dominance
+        # Check for single-class dominance
             dominant_class_ratio = max(class_ratios.values())
-            if dominant_class_ratio > 0.9:
+        if dominant_class_ratio > 0.9:
                 issues.append(
                     f"DOMINANT: One class represents {dominant_class_ratio:.1%} of data",
                 )
                 recommendations.append("Consider different labeling strategy")
 
-            # Check for HOLD class issues
+        # Check for HOLD class issues
             hold_labels = [0, "HOLD", "hold"]
             hold_count = sum(label_distribution.get(label, 0) for label in hold_labels)
-            if hold_count < 100:
+        if hold_count < 100:
                 issues.append(f"HOLD_CLASS: Only {hold_count} HOLD samples")
                 recommendations.append("Switch to binary classification (BUY vs SELL)")
 
-            return {
+        return {
                 "label_distribution": label_distribution,
                 "class_ratios": class_ratios,
                 "total_samples": total_samples,
@@ -284,25 +250,27 @@ class EnhancedDataQualityAnalyzer:
                 "recommendations": recommendations , "severity": self._assess_label_imbalance_severity(issues),
             }
 
-        except Exception as e:
-            self.logger.exception(f"❌ Error analyzing label distribution: {e}")
-            return {"error": str(e)}
+        pass
+        self.logger.exception(f"❌ Error analyzing label distribution: {e}")
+        return {"error": str(e)}
 
     def _assess_label_imbalance_severity(self, issues: list[str]) -> str:
         """Assess the severity of label imbalance issues."""
         if any("CRITICAL" in issue for issue in issues):
-            return "CRITICAL"
+            pass
+        return "CRITICAL"
         if any("SEVERE" in issue for issue in issues):
-            return "HIGH"
+            pass
+        return "HIGH"
         if any("DOMINANT" in issue for issue in issues):
-            return "MODERATE"
+            pass
+        return "MODERATE"
         if any("HOLD_CLASS" in issue for issue in issues):
-            return "LOW"
+            pass
+        return "LOW"
         return "NONE"
 
-    def generate_feature_recommendations(
-        self, multicollinearity_analysis: dict[str, Any]
-    ) -> list[str]:
+    def generate_feature_recommendations(self, multicollinearity_analysis: dict[str ,  Any]) -> list[str]:
         """
         Generate specific feature engineering recommendations.
 
@@ -319,7 +287,7 @@ class EnhancedDataQualityAnalyzer:
         if max_vif > 1000:
             recommendations.append("🚨 CRITICAL: Extreme multicollinearity detected")
             recommendations.append(
-                "   → Remove redundant price features (open = high, low = avg_price, min_price = max_price)",
+                "   → Remove redundant price features (open, high, low, avg_price, min_price, max_price)",
             )
             recommendations.append(
                 "   → Keep only 'close' and 'volume' as base features",
@@ -338,9 +306,9 @@ class EnhancedDataQualityAnalyzer:
                 "📊 HIGH: Multiple redundant price features detected",
             )
             recommendations.append("   → Consolidate to minimal price feature set")
-            recommendations.append("   → Use only: close = volume")
+            recommendations.append("   → Use only: close, volume")
             recommendations.append(
-                "   → Remove: open = high, low = avg_price, min_price = max_price",
+                "   → Remove: open, high, low, avg_price, min_price, max_price",
             )
 
         # Check for high correlation pairs
@@ -355,9 +323,7 @@ class EnhancedDataQualityAnalyzer:
 
         return recommendations
 
-    def generate_label_recommendations(
-        self, label_analysis: dict[str, Any]
-    ) -> list[str]:
+    def generate_label_recommendations(self, label_analysis: dict[str ,  Any]) -> list[str]:
         """
         Generate specific labeling strategy recommendations.
 
@@ -392,7 +358,8 @@ class EnhancedDataQualityAnalyzer:
 
         # Specific recommendations based on issues
         for issue in issues:
-            if "HOLD_CLASS" in issue:
+            pass
+        if "HOLD_CLASS" in issue:
                 recommendations.append(
                     "🎯 SPECIFIC: HOLD class has insufficient samples",
                 )
@@ -403,7 +370,7 @@ class EnhancedDataQualityAnalyzer:
                     "   → This will filter out HOLD samples automatically",
                 )
 
-            if "imbalance ratio" in issue.lower():
+        if "imbalance ratio" in issue.lower():
                 recommendations.append("⚖️ SPECIFIC: Extreme class imbalance")
                 recommendations.append(
                     "   → Adjust barrier multipliers for more balanced labels",
@@ -415,16 +382,16 @@ class EnhancedDataQualityAnalyzer:
 def load_sample_data() -> tuple[pd.DataFrame , pd.DataFrame]:
     """
     Load sample data for demonstration purposes.
-    In practice = you would load your actual data here.
+    In practice, you would load your actual data here.
     """
     # Create sample data with some NaN values to demonstrate the functionality
-    dates = pd.date_range("2024-01-01", periods=1000, freq="1min")
+    dates, pd.date_range("2024-01-01", periods=1000, freq="1min")
 
     # Create price data with some NaN values
     np.random.seed(42)
-    base_price = 100 + np.cumsum(np.random.randn(1000) * 0.1)
+    base_price, 100 + np.cumsum(np.random.randn(1000) * 0.1)
 
-    price_data = pd.DataFrame(
+    price_data, pd.DataFrame(
         {
             "timestamp": dates , "open": base_price + np.random.randn(1000) * 0.5,
             "high": base_price + np.random.randn(1000) * 0.8,
@@ -440,7 +407,7 @@ def load_sample_data() -> tuple[pd.DataFrame , pd.DataFrame]:
     price_data.loc[300:305, "high"] = np.nan  # 6 NaN values
 
     # Create volume data
-    volume_data = pd.DataFrame(
+    volume_data, pd.DataFrame(
         {
             "timestamp": dates , "volume": price_data["volume"].copy(),
             "trade_count": np.random.randint(10, 100, 1000),
@@ -456,34 +423,32 @@ def load_sample_data() -> tuple[pd.DataFrame , pd.DataFrame]:
 
     return price_data, volume_data
 
-def load_data_from_file(
-    data_path: str, symbol: str,
-    exchange: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+def load_data_from_file(data_path: str, symbol: str, exchange: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Load data from file. This is a placeholder - implement based on your data format.
     """
-    try:
+    if True:
         # This is a placeholder implementation
-        # You would implement this based on your actual data format (CSV = Parquet, etc.)
+        # You would implement this based on your actual data format (CSV, Parquet, etc.)
 
         # Example for CSV files:
-        # price_file = Path(data_path) / f"{symbol}_{exchange}_price.csv"
-        # volume_file = Path(data_path) / f"{symbol}_{exchange}_volume.csv"
+        # price_file, Path(data_path) / f"{symbol}_{exchange}_price.csv"
+        # volume_file, Path(data_path) / f"{symbol}_{exchange}_volume.csv"
 
         # if price_file.exists() and volume_file.exists():
-        #     price_data = pd.read_csv(price_file, index_col = 'timestamp', parse_dates=True)
-        #     volume_data = pd.read_csv(volume_file, index_col = 'timestamp', parse_dates=True)
-        #     return price_data = volume_data
+        #     price_data, pd.read_csv(price_file, index_col = 'timestamp', parse_dates=True)
+        #     volume_data, pd.read_csv(volume_file, index_col = 'timestamp', parse_dates=True)
+        #     return price_data, volume_data
 
         print(f"Loading data for {symbol} from {exchange}...")
         print(
             "Note: This is a placeholder. Implement actual data loading based on your format.",
         )
 
-        # For now = return sample data
+        # For now, return sample data
         return load_sample_data()
 
-    except Exception as e:
+    pass
         print(f"Error loading data: {e}")
         return None, None
 
@@ -503,11 +468,11 @@ async def assess_data_quality_demo():
         },
     }
 
-    orchestrator = VectorizedLabellingOrchestrator(config)
+    orchestrator, VectorizedLabellingOrchestrator(config)
 
     # Initialize the orchestrator
     print("🚀 Initializing VectorizedLabellingOrchestrator...")
-    success = await orchestrator.initialize()
+    success, await orchestrator.initialize()
 
     if not success:
         print("❌ Failed to initialize orchestrator")
@@ -517,7 +482,7 @@ async def assess_data_quality_demo():
 
     # Load sample data
     print("\n📊 Loading sample data...")
-    price_data, volume_data = load_sample_data()
+    price_data = volume_data, load_sample_data()
 
     if price_data is None or volume_data is None:
         print("❌ Failed to load data")
@@ -529,7 +494,7 @@ async def assess_data_quality_demo():
     # Perform data quality assessment
     print("\n🔍 Performing data quality assessment...")
     quality_report = await orchestrator.assess_input_data_quality(
-        price_data, volume_data,
+        price_data = volume_data,
     )
 
     if "error" in quality_report:
@@ -610,7 +575,7 @@ async def assess_data_quality_demo():
 
         if multicollinearity_analysis.get("high_vif_features"):
             print("   Top 5 high VIF features:")
-            for i , feature in enumerate(
+        for i , feature in enumerate(
                 multicollinearity_analysis["high_vif_features"][:5],
             ):
                 vif_score = multicollinearity_analysis["vif_scores"][feature]
@@ -631,12 +596,12 @@ async def assess_data_quality_demo():
 
         print("   Label distribution:")
         for label , count in label_analysis.get("label_distribution", {}).items():
-            ratio = label_analysis.get("class_ratios", {}).get(label = 0)
+            ratio = label_analysis.get("class_ratios", {}).get(label, 0)
             print(f"     {label}: {count} samples ({ratio:.1%})")
 
         if label_analysis.get("issues"):
             print("   Issues detected:")
-            for issue in label_analysis["issues"]:
+        for issue in label_analysis["issues"]:
                 print(f"     ⚠️ {issue}")
     else:
         print(f"   ❌ Error: {label_analysis['error']}")
@@ -664,9 +629,9 @@ async def assess_data_quality_demo():
     )
     print("   2. 🔧 FIX MULTICOLLINEARITY (Second Priority):")
     print(
-        "      → Remove redundant price features: open = high, low = avg_price, min_price = max_price",
+        "      → Remove redundant price features: open, high, low, avg_price, min_price, max_price",
     )
-    print("      → Keep only: close = volume as base features")
+    print("      → Keep only: close, volume as base features")
     print("      → Engineer all other features from this minimal base set")
     print("   3. 🔍 MONITOR RESULTS:")
     print("      → Re-run this analysis after implementing fixes")
@@ -685,7 +650,7 @@ async def assess_data_quality_demo():
 
 async def main():
     """Main function to run the enhanced data quality assessment."""
-    parser = argparse.ArgumentParser(
+    parser, argparse.ArgumentParser(
         description="Assess data quality for trading datasets",
     )
     parser.add_argument("--data_path", type=str, help="Path to data directory")
@@ -697,7 +662,7 @@ async def main():
         help="Run with sample data for demonstration",
     )
 
-    args = parser.parse_args()
+    args, parser.parse_args()
 
     if args.demo:
         print("🎯 Running enhanced data quality assessment with sample data...")
@@ -707,11 +672,11 @@ async def main():
             f"🎯 Running enhanced data quality assessment for {args.symbol} from {args.exchange}...",
         )
         # Load actual data and run assessment
-        price_data, volume_data = load_data_from_file(
-            args.data_path, args.symbol,
+        price_data = volume_data, load_data_from_file(
+            args.data_path = args.symbol,
             args.exchange)
         if price_data is not None and volume_data is not None:
-            # Initialize orchestrator and run assessment
+        # Initialize orchestrator and run assessment
             config = {
                 "vectorized_labelling_orchestrator": {
                     "enable_stationary_checks": True , "enable_data_normalization": True,
@@ -720,13 +685,13 @@ async def main():
             }
 
             orchestrator = VectorizedLabellingOrchestrator(config)
-            await orchestrator.initialize()
+        await orchestrator.initialize()
 
             quality_report = await orchestrator.assess_input_data_quality(
-                price_data, volume_data,
+                price_data = volume_data,
             )
 
-            # Print results
+        # Print results
             summary = quality_report.get("summary", {})
             print("\n📊 Data Quality Summary:")
             print(f"   Total NaN values: {summary.get('total_nan_values', 'N/A')}")

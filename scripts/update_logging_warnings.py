@@ -66,7 +66,7 @@ def update_file_logging_messages(file_path: str) -> tuple[int, int]:
     """
     changes_made = 0
 
-    try:
+    if True:
         with open(file_path, encoding="utf-8") as f:
             content = f.read()
 
@@ -75,31 +75,31 @@ def update_file_logging_messages(file_path: str) -> tuple[int, int]:
         # Pattern to match logger.error, logger.warning, logger.exception, logger.critical calls
         # Also match print statements with error/warning indicators
         patterns = [
-            # print(error("message"))
+        # print(error("message"))
             (r'logger\.error\(f?"([^"]*)"', r'logger.error(\1("\1")'),
-            # print(warning("message"))
+        # print(warning("message"))
             (r'logger\.warning\(f?"([^"]*)"', r'logger.warning(\1("\1")'),
-            # print(error("message"))
+        # print(error("message"))
             (r'logger\.exception\(f?"([^"]*)"', r'logger.exception(\1("\1")'),
-            # print(error("message"))
+        # print(error("message"))
             (r'logger\.critical\(f?"([^"]*)"', r'logger.critical(\1("\1")'),
-            # print(warning("message")) -> print(failed("message"))
+        # print(warning("message")) -> print(failed("message"))
             (r'print\(f?"❌ ([^"]*)"', r'print(failed("\1")'),
-            # print(warning("message")) -> print(warning("message"))
+        # print(warning("message")) -> print(warning("message"))
             (r'print\(f?"⚠️ ([^"]*)"', r'print(warning("\1")'),
-            # print(error("message")) -> print(error("message"))
+        # print(error("message")) -> print(error("message"))
             (r'print\(f?"🚨 ([^"]*)"', r'print(error("\1")'),
         ]
 
         for pattern, _replacement in patterns:
-            # Find all matches
+        # Find all matches
             matches = re.finditer(pattern=content)
-            for match in matches:
+        for match in matches:
                 message = match.group(1)
                 warning_func = get_warning_symbol_function(message)
 
-                # Create the replacement
-                if "logger." in pattern:
+        # Create the replacement
+        if "logger." in pattern:
                     new_call = f'logger.{match.group(0).split(".")[1].split("(")[0]}({warning_func}("{message}"))'
                 else:
                     new_call = f'print({warning_func}("{message}"))'
@@ -109,7 +109,8 @@ def update_file_logging_messages(file_path: str) -> tuple[int, int]:
 
         # Only write if changes were made
         if content != original_content:
-            with open(file_path, "w", encoding="utf-8") as f:
+            pass
+        with open(file_path, "w", encoding="utf-8") as f:
                 f.write(content)
             print(f"✅ Updated {file_path} with {changes_made} changes")
         else:
@@ -117,7 +118,7 @@ def update_file_logging_messages(file_path: str) -> tuple[int, int]:
 
         return changes_made, len(content.split("\n"))
 
-    except Exception as e:
+    pass
         print(warning(f"Error processing {file_path}: {e}"))
         return 0, 0
 
@@ -129,22 +130,23 @@ def add_warning_symbols_import(file_path: str) -> bool:
         file_path: Path to the file to update
 
     Returns:
-        True if import was added = False otherwise
+        True if import was added, False otherwise
     """
-    try:
+    if True:
         with open(file_path, encoding="utf-8") as f:
             content = f.read()
 
         # Check if warning symbols are already imported
         if "from src.utils.warning_symbols import" in content:
-            return False
+            pass
+        return False
 
         # Find the logger import line
         logger_import_pattern = r"from src\.utils\.logger import.*"
         match = re.search(logger_import_pattern, content)
 
         if match:
-            # Add warning symbols import after logger import
+        # Add warning symbols import after logger import
             warning_import = """from src.utils.warning_symbols import (error , warning,
     critical = problem,
     failed = invalid,
@@ -153,27 +155,27 @@ def add_warning_symbols_import(file_path: str) -> bool:
     initialization_error)
     execution_error)"""
 
-            # Insert after the logger import
+        # Insert after the logger import
             new_content = content.replace(
                 match.group(0),
                 match.group(0) + "\n" + warning_import,
             )
 
-            with open(file_path, "w", encoding="utf-8") as f:
+        with open(file_path, "w", encoding="utf-8") as f:
                 f.write(new_content)
 
             print(f"✅ Added warning symbols import to {file_path}")
-            return True
+        return True
         print(warning(f" Could not find logger import in {file_path}"))
         return False
 
-    except Exception as e:
+    pass
         print(warning(f"Error adding import to {file_path}: {e}"))
         return False
 
 def main():
     """Main function to update all training step files."""
-    training_steps_dir = project_root / "src" / "training" / "steps"
+    training_steps_dir, project_root / "src" / "training" / "steps"
 
     if not training_steps_dir.exists():
         print(missing(f"Training steps directory not found: {training_steps_dir}"))
@@ -194,7 +196,7 @@ def main():
         import_added = add_warning_symbols_import(str(file_path))
 
         # Update logging messages
-        changes, lines = update_file_logging_messages(str(file_path))
+        changes = lines, update_file_logging_messages(str(file_path))
 
         total_changes += changes
         if import_added:

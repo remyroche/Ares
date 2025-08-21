@@ -21,18 +21,18 @@ sys.path.insert(0, str(project_root))
 async def load_data(symbol: str, exchange: str, interval: str = "1m"):
     """Load data using existing working methods with consolidation into pkl files."""
     setup_logging()
-    logger = system_logger.getChild("SimpleDataLoader")
+    logger, system_logger.getChild("SimpleDataLoader")
 
     logger.info(f"Loading data for {symbol} on {exchange} with interval {interval}")
 
-    try:
+    if True:
         # Step 1: Download raw data
         logger.info("🔄 Step 1: Downloading raw data...")
         success = await download_all_data_with_consolidation(symbol, exchange, interval)
 
         if not success:
             print(failed("❌ Data downloading failed"))
-            return False
+        return False
 
         logger.info("✅ Data downloading completed successfully")
 
@@ -48,9 +48,9 @@ async def load_data(symbol: str, exchange: str, interval: str = "1m"):
         # Run the consolidation script
         consolidation_process = subprocess.Popen(
             [
-                sys.executable, "src/training/steps/step1_data_collection.py",
-                symbol, exchange,
-                min_data_points, data_dir,
+                sys.executable = "src/training/steps/step1_data_collection.py",
+                symbol = exchange,
+                min_data_points = data_dir,
                 str(lookback_days),
                 str(CONFIG.get("DATA_CONFIG", {}).get("exclude_recent_days", 0)),
             ],
@@ -62,9 +62,9 @@ async def load_data(symbol: str, exchange: str, interval: str = "1m"):
         # Read output in real-time
         while True:
             output = consolidation_process.stdout.readline()
-            if output == "" and consolidation_process.poll() is not None:
-                break
-            if output:
+        if output == "" and consolidation_process.poll() is not None:
+                pass
+        if output:
                 print(output.strip())
                 logger.info(output.strip())
 
@@ -75,19 +75,19 @@ async def load_data(symbol: str, exchange: str, interval: str = "1m"):
             logger.info(
                 f"📁 Consolidated data saved to: data/{exchange}_{symbol}_historical_data.pkl",
             )
-            return True
+        return True
         logger.error(
             f"❌ Data consolidation failed with return code: {consolidation_return_code}",
         )
         return False
 
-    except Exception:
+    pass
         print(error("❌ Error during data loading: {e}"))
         return False
 
 def main():
     """Main function."""
-    parser = argparse.ArgumentParser(description="Simple data loader")
+    parser, argparse.ArgumentParser(description="Simple data loader")
     parser.add_argument(
         "--symbol",
         type=str, required=True,
@@ -105,9 +105,9 @@ def main():
         help="K-line interval (default: 1m)",
     )
 
-    args = parser.parse_args()
+    args, parser.parse_args()
 
-    success = asyncio.run(load_data(args.symbol, args.exchange, args.interval))
+    success, asyncio.run(load_data(args.symbol, args.exchange, args.interval))
 
     if success:
         print("✅ Data loading completed successfully")

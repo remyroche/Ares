@@ -41,9 +41,9 @@ async def main():
     Main function to orchestrate the blank training run.
     It temporarily modifies CONFIG parameters for quick execution.
     """
-    start_time = time.time()
+    start_time, time.time()
     setup_logging()
-    logger = system_logger.getChild("BlankTrainingRun")
+    logger, system_logger.getChild("BlankTrainingRun")
 
     logger.info("=" * 80)
     logger.info("🚀 BLANK TRAINING RUN INITIALIZATION")
@@ -53,7 +53,7 @@ async def main():
     logger.info(f"Working directory: {Path.cwd()}")
     logger.info(f"Script path: {Path(__file__).absolute()}")
 
-    parser = argparse.ArgumentParser(
+    parser, argparse.ArgumentParser(
         description="Run a 'blank' training pipeline for testing.",
     )
     parser.add_argument(
@@ -68,7 +68,7 @@ async def main():
         default=CONFIG.get("EXCHANGE", "BINANCE"),
         help="The exchange for the blank run (e.g., BINANCE).",
     )
-    args = parser.parse_args()
+    args, parser.parse_args()
 
     logger.info("📋 Command line arguments:")
     logger.info(f"   Symbol: {args.symbol}")
@@ -95,8 +95,8 @@ async def main():
     # Set blank training mode flag for NaN handling
     CONFIG["BLANK_TRAINING_MODE"] = True
 
-    db_manager = None
-    try:
+    db_manager, None
+    if True:
         logger.info("🔧 Initializing SQLiteManager...")
         print("🔧 Initializing SQLiteManager...")
         # Initialize SQLiteManager
@@ -138,14 +138,14 @@ async def main():
                 "Please run data downloading first or ensure data files exist.",
             )
             print("Expected files:")
-            for _file in required_files:
+        for _file in required_files:
                 print(f"  - {_file}")
             sys.exit(1)
 
         logger.info("✅ All required data files found, proceeding with training")
         print("✅ All required data files found, proceeding with training")
 
-        # Run the training pipeline stages manually = skipping data collection
+        # Run the training pipeline stages manually, skipping data collection
         logger.info(
             "🚀 Running training pipeline stages manually (skipping data collection)",
         )
@@ -157,49 +157,49 @@ async def main():
             f"   Parameters: symbol={args.symbol}, exchange={args.exchange}, lookback_days_override=60",
         )
 
-        try:
+        if True:
             print("🔄 Starting training pipeline stages...")
 
-            # Stage 1: Setup training environment
+        # Stage 1: Setup training environment
             logger.info("🔧 Stage 1: Setting up training environment...")
             print("🔧 Stage 1: Setting up training environment...")
             setup_success = await training_manager._setup_training_environment(
                 args.symbol,
                 "1m",
             )
-            if not setup_success:
+        if not setup_success:
                 msg = "Stage 1 (Setup) failed"
                 raise Exception(msg)
             logger.info("✅ Stage 1 completed successfully")
             print("✅ Stage 1 completed successfully")
 
-            # Use existing data file instead of collecting new data
+        # Use existing data file instead of collecting new data
             csv_data_file = f"data_cache/klines_{args.exchange}_{args.symbol}_1m_consolidated_fixed.csv"
             logger.info(f"📁 Using existing CSV data file: {csv_data_file}")
             print(f"📁 Using existing CSV data file: {csv_data_file}")
 
-            # Use the existing CSV formatting script to ensure proper data format
+        # Use the existing CSV formatting script to ensure proper data format
             logger.info(
                 "🔄 Using CSV formatting script to ensure proper data format...",
             )
             print("🔄 Using CSV formatting script to ensure proper data format...")
 
-            # Import and run the CSV formatting script
+        # Import and run the CSV formatting script
             auto_reformat_aggtrades_files_for_exchange = AggTradesDataFormatter(
-                args.exchange, args.symbol
+                args.exchange = args.symbol
             )
 
-            # Run the CSV formatting to ensure data files for this exchange/symbol are in correct format
+        # Run the CSV formatting to ensure data files for this exchange/symbol are in correct format
             logger.info("📋 Running CSV format validation and conversion...")
             print("📋 Running CSV format validation and conversion...")
             auto_reformat_aggtrades_files_for_exchange.reformat_aggtrades_files()
 
-            # Create the required pickle file from existing CSV data
+        # Create the required pickle file from existing CSV data
             logger.info("🔄 Creating pickle file from existing CSV data...")
             print("🔄 Creating pickle file from existing CSV data...")
 
-            # Read the CSV data (now properly formatted)
-            if not os.path.exists(csv_data_file):
+        # Read the CSV data (now properly formatted)
+        if not os.path.exists(csv_data_file):
                 msg = f"CSV data file not found: {csv_data_file}"
                 raise Exception(msg)
 
@@ -211,16 +211,16 @@ async def main():
                 f"📊 Loaded CSV data: {len(klines_df)} rows = {len(klines_df.columns)} columns",
             )
 
-            # Add quality validation checks
+        # Add quality validation checks
             logger.info("🔍 Running data quality validation...")
             print("🔍 Running data quality validation...")
 
             validation_config = TrainingValidationConfig()
-            validate_data_format, validate_data_quality = validation_config.validate_data(
+            validate_data_format = validate_data_quality, validation_config.validate_data(
                 klines_df
             )
 
-            # Load additional data for validation
+        # Load additional data for validation
             agg_trades_file = (
                 f"data_cache/aggtrades_{args.exchange}_{args.symbol}_consolidated.csv"
             )
@@ -230,27 +230,27 @@ async def main():
 
             validation_data = {"klines": klines_df}
 
-            # Load aggregated trades if available
-            if os.path.exists(agg_trades_file):
+        # Load aggregated trades if available
+        if os.path.exists(agg_trades_file):
                 agg_trades_df = pd.read_csv(agg_trades_file)
                 validation_data["agg_trades"] = agg_trades_df
                 logger.info(f"📊 Loaded agg trades: {len(agg_trades_df)} rows")
             else:
                 logger.warning(
-                    "⚠️  Aggregated trades file not found = skipping validation",
+                    "⚠️  Aggregated trades file not found, skipping validation",
                 )
 
-            # Load futures data if available
-            if os.path.exists(futures_file):
+        # Load futures data if available
+        if os.path.exists(futures_file):
                 futures_df = pd.read_csv(futures_file)
                 validation_data["futures"] = futures_df
                 logger.info(f"📊 Loaded futures: {len(futures_df)} rows")
             else:
-                print("⚠️  Futures file not found = skipping validation")
+                print("⚠️  Futures file not found, skipping validation")
 
-            # Validate data format
-            format_valid, format_errors = validate_data_format(validation_data)
-            if not format_valid:
+        # Validate data format
+            format_valid = format_errors, validate_data_format(validation_data)
+        if not format_valid:
                 print(f"❌ Data format validation failed: {format_errors}")
                 print(f"Data format validation failed: {format_errors}")
                 msg = "Data format validation failed"
@@ -258,9 +258,9 @@ async def main():
             logger.info("✅ Data format validation passed")
             print("✅ Data format validation passed")
 
-            # Validate data quality
-            quality_valid, quality_errors = validate_data_quality(validation_data)
-            if not quality_valid:
+        # Validate data quality
+            quality_valid = quality_errors, validate_data_quality(validation_data)
+        if not quality_valid:
                 print(f"❌ Data quality validation failed: {quality_errors}")
                 print(f"Data quality validation failed: {quality_errors}")
                 msg = "Data quality validation failed"
@@ -268,48 +268,48 @@ async def main():
             logger.info("✅ Data quality validation passed")
             print("✅ Data quality validation passed")
 
-            # Create the pickle file in the expected format
+        # Create the pickle file in the expected format
             pickle_data = {"klines": klines_df}
             pickle_file = (
                 f"data/training/{args.exchange}_{args.symbol}_collected_data.pkl"
             )
             os.makedirs("data/training", exist_ok=True)
 
-            with open(pickle_file, "wb") as f:
+        with open(pickle_file, "wb") as f:
                 pickle.dump(pickle_data, f)
 
             logger.info(f"✅ Created pickle file: {pickle_file}")
             print(f"✅ Created pickle file: {pickle_file}")
 
-            # Use the pickle file for training
+        # Use the pickle file for training
             data_file = pickle_file
 
-            # Stage 3: Model Optimization and Training
+        # Stage 3: Model Optimization and Training
             logger.info("🔧 Stage 3: Optimizing and training models...")
             print("🔧 Stage 3: Optimizing and training models...")
             training_success = await training_manager._optimize_and_train_models(
                 args.symbol,
                 data_file,
             )
-            if not training_success:
+        if not training_success:
                 msg = "Stage 3 (Training) failed"
                 raise Exception(msg)
             logger.info("✅ Stage 3 completed successfully")
             print("✅ Stage 3 completed successfully")
 
-            # Stage 4: Model Validation and Testing
+        # Stage 4: Model Validation and Testing
             logger.info("🔧 Stage 4: Validating and testing models...")
             print("🔧 Stage 4: Validating and testing models...")
             validation_success = await training_manager._validate_and_test_models(
                 data_file,
             )
-            if not validation_success:
+        if not validation_success:
                 msg = "Stage 4 (Validation) failed"
                 raise Exception(msg)
             logger.info("✅ Stage 4 completed successfully")
             print("✅ Stage 4 completed successfully")
 
-            # Stage 5: Final Setup and Artifact Management
+        # Stage 5: Final Setup and Artifact Management
             session_id = f"{args.symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             run_id = "blank_run_" + session_id
             logger.info("🔧 Stage 5: Finalizing training...")
@@ -318,7 +318,7 @@ async def main():
                 session_id,
                 run_id,
             )
-            if not finalize_success:
+        if not finalize_success:
                 msg = "Stage 5 (Finalization) failed"
                 raise Exception(msg)
             logger.info("✅ Stage 5 completed successfully")
@@ -328,7 +328,7 @@ async def main():
             logger.info("✅ All training stages completed successfully")
             print("✅ All training stages completed successfully")
 
-        except Exception as e:
+        pass
             print(f"❌ Training pipeline failed with exception: {e}")
             print(f"Training pipeline failed with exception: {e}")
             print(f"Exception type: {type(e).__name__}")
@@ -361,7 +361,7 @@ async def main():
             print("   Status: FAILED")
             sys.exit(1)
 
-    except Exception:
+    pass
         print("💥 CRITICAL ERROR during blank training run")
         print(f"Error type: {type(e).__name__}")
         print(f"Error message: {str(e)}")
@@ -376,11 +376,11 @@ async def main():
         print(f"   Working directory: {Path.cwd()}")
 
         sys.exit(1)
-    finally:
+    pass
         # Ensure database connection is closed
         if db_manager and db_manager.conn:
             logger.info("🔧 Closing database connection...")
-            await db_manager.close()
+        await db_manager.close()
             logger.info("✅ Database connection closed")
 
         total_duration = time.time() - start_time
@@ -394,11 +394,11 @@ async def main():
         logger.info("🏁 'Blank' training pipeline finished.")
 
 if __name__ == "__main__":
-    try:
+    if True:
         asyncio.run(main())
-    except KeyboardInterrupt:
+    pass
         print("\n⚠️  Training interrupted by user (Ctrl+C)")
         sys.exit(1)
-    except Exception as e:
+    pass
         print(f"\n💥 Unexpected error in main execution: {e}")
         sys.exit(1)

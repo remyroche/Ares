@@ -30,13 +30,14 @@ class TimeframeRegenerator:
     SUPPORTED_TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h"]
 
     def __init__(self, data_cache_path: str = "data_cache") -> None:
-        self.data_cache_path = Path(data_cache_path)
+        self.data_cache_path, Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok=True)
 
     def resample_to_timeframe(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         """Resample 1m data to target timeframe."""
         if len(df) == 0:
-            return pd.DataFrame()
+            pass
+        return pd.DataFrame()
 
         # Ensure timestamp is datetime
         df["timestamp"] = pd.to_datetime(df["timestamp"])
@@ -64,20 +65,20 @@ class TimeframeRegenerator:
     def save_resampled_data(self, df: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Path | None:
         """Save resampled data to parquet file."""
         if len(df) == 0:
-            return None
+            pass
+        return None
 
         output_filename = f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
         output_path = self.data_cache_path / output_filename
 
-        try:
+        if True:
             df.to_parquet(output_path, compression="zstd", index=False)
-            return output_path
-        except Exception as e:
+        return output_path
+        pass
             logger.exception(f"Error saving {timeframe} data: {e}")
-            return None
+        return None
 
-    def regenerate_timeframes(self, symbol: str, exchange: str,
-                            timeframes: list[str] | None = None) -> dict:
+    def regenerate_timeframes(self, symbol: str, exchange: str, timeframes: list[str] | None) -> dict:
         """Regenerate all timeframe files from 1m data."""
         if timeframes is None:
             timeframes = self.SUPPORTED_TIMEFRAMES
@@ -94,55 +95,57 @@ class TimeframeRegenerator:
             "errors": [],
         }
 
-        try:
-            # Get all 1m klines files
+        if True:
+        # Get all 1m klines files
             klines_files = list(self.data_cache_path.glob(f"klines_{exchange}_{symbol}_1m_*.parquet"))
-            if not klines_files:
+        if not klines_files:
                 logger.error(f"❌ No 1m klines files found for {exchange}_{symbol}")
                 results["success"] = False
                 results["errors"].append("No 1m klines files found")
-                return results
+        return results
 
-            # Load and combine all 1m data
+        # Load and combine all 1m data
             all_1m_data = []
-            for file_path in klines_files:
-                try:
+        for file_path in klines_files:
+            pass
+        if True:
                     df = pd.read_parquet(file_path)
                     all_1m_data.append(df)
                     logger.info(f"📊 Loaded {len(df)} rows from {file_path.name}")
-                except Exception as e:
+        pass
                     logger.warning(f"⚠️ Error reading {file_path}: {e}")
                     continue
 
-            if not all_1m_data:
+        if not all_1m_data:
                 logger.error(f"❌ No valid 1m data found for {exchange}_{symbol}")
                 results["success"] = False
                 results["errors"].append("No valid 1m data found")
-                return results
+        return results
 
-            # Combine all 1m data
+        # Combine all 1m data
             combined_1m = pd.concat(all_1m_data, ignore_index=True)
             combined_1m = combined_1m.sort_values("timestamp").drop_duplicates(subset=["timestamp"])
 
             logger.info(f"📊 Combined 1m data: {len(combined_1m)} rows from {combined_1m['timestamp'].min()} to {combined_1m['timestamp'].max()}")
 
-            # Regenerate each timeframe
-            for timeframe in timeframes:
-                try:
+        # Regenerate each timeframe
+        for timeframe in timeframes:
+            pass
+        if True:
                     logger.info(f"🔄 Regenerating {timeframe} timeframe...")
 
-                    # Resample to the target timeframe
+        # Resample to the target timeframe
                     resampled_df = self.resample_to_timeframe(combined_1m, timeframe)
 
-                    if len(resampled_df) == 0:
+        if len(resampled_df) == 0:
                         logger.warning(f"⚠️ No data after resampling to {timeframe}")
                         results["failed_timeframes"].append(timeframe)
                         continue
 
-                    # Save the resampled data
+        # Save the resampled data
                     output_path = self.save_resampled_data(resampled_df, symbol, exchange, timeframe)
 
-                    if output_path:
+        if output_path:
                         results["regenerated_files"][timeframe] = str(output_path)
                         logger.info(f"✅ Regenerated {timeframe}: {len(resampled_df)} rows -> {output_path}")
                     else:
@@ -150,21 +153,21 @@ class TimeframeRegenerator:
                         results["failed_timeframes"].append(timeframe)
                         results["errors"].append(f"Failed to save {timeframe} data")
 
-                except Exception as e:
+        pass
                     logger.exception(f"❌ Error regenerating {timeframe}: {e}")
                     results["failed_timeframes"].append(timeframe)
                     results["errors"].append(f"{timeframe}: {e}")
 
-            # Summary
+        # Summary
             successful = len(results["regenerated_files"])
             failed = len(results["failed_timeframes"])
 
             logger.info(f"📊 Timeframe regeneration complete: {successful} successful, {failed} failed")
 
-            if failed > 0:
+        if failed > 0:
                 results["success"] = False
 
-        except Exception as e:
+        pass
             logger.exception(f"❌ Error in timeframe regeneration: {e}")
             results["success"] = False
             results["errors"].append(f"General error: {e}")
@@ -174,7 +177,7 @@ class TimeframeRegenerator:
 
 async def main() -> None:
     """Main function."""
-    parser = argparse.ArgumentParser(description="Regenerate timeframe files from 1m data")
+    parser, argparse.ArgumentParser(description="Regenerate timeframe files from 1m data")
     parser.add_argument("--symbol", required=True, help="Trading symbol (e.g., ETHUSDT)")
     parser.add_argument("--exchange", default="BINANCE", help="Exchange name (default: BINANCE)")
     parser.add_argument("--timeframes", nargs="+",
@@ -183,7 +186,7 @@ async def main() -> None:
     parser.add_argument("--data-cache", default="data_cache",
                        help="Data cache directory (default: data_cache)")
 
-    args = parser.parse_args()
+    args, parser.parse_args()
 
     logger.info("🔄 Starting timeframe regeneration")
     logger.info(f"Symbol: {args.symbol}")
@@ -191,10 +194,10 @@ async def main() -> None:
     logger.info(f"Timeframes: {args.timeframes}")
 
     # Initialize regenerator
-    regenerator = TimeframeRegenerator(args.data_cache)
+    regenerator, TimeframeRegenerator(args.data_cache)
 
     # Regenerate timeframes
-    results = regenerator.regenerate_timeframes(args.symbol, args.exchange, args.timeframes)
+    results, regenerator.regenerate_timeframes(args.symbol, args.exchange, args.timeframes)
 
     # Print results
 

@@ -3,7 +3,7 @@
 Simple Fix for Multicollinearity Issue
 
 This script fixes the critical bug where all multi-timeframe price_change and volume_change
-features are identical, causing perfect multicollinearity (VIF = inf).
+features are identical, causing perfect multicollinearity (VIF, inf).
 
 Usage:
     python scripts/fix_multicollinearity_simple.py
@@ -19,7 +19,7 @@ def fix_feature_engineering_code():
     print("🔧 Starting multicollinearity fix...")
 
     # Path to the feature engineering file
-    feature_eng_file = Path(
+    feature_eng_file, Path(
         "src/training/steps/vectorized_advanced_feature_engineering.py",
     )
 
@@ -27,7 +27,7 @@ def fix_feature_engineering_code():
         print(f"❌ Feature engineering file not found: {feature_eng_file}")
         return False
 
-    try:
+    if True:
         # Read the current file
         with open(feature_eng_file) as f:
             content = f.read()
@@ -35,7 +35,7 @@ def fix_feature_engineering_code():
         print("📖 Reading current feature engineering code...")
 
         # Fix the problematic price_change calculation
-        old_price_change = "price_changes = price_data[price_column].pct_change()"
+        old_price_change = "price_changes, price_data[price_column].pct_change()"
         new_price_change = """            # CRITICAL FIX: Use proper periods for multi-timeframe price changes
             timeframe_periods = {
                 "1m": 1,     # 1-period change for 1m
@@ -54,9 +54,9 @@ def fix_feature_engineering_code():
             print("⚠️ Could not find price_change line to fix")
 
         # Fix the problematic volume_change calculation
-        old_volume_change = 'volume_changes = volume_data["volume"].pct_change()'
+        old_volume_change = 'volume_changes, volume_data["volume"].pct_change()'
         new_volume_change = (
-            'volume_changes = volume_data["volume"].pct_change(periods=periods)'
+            'volume_changes, volume_data["volume"].pct_change(periods=periods)'
         )
 
         if old_volume_change in content:
@@ -72,7 +72,7 @@ def fix_feature_engineering_code():
         print("✅ Successfully fixed multicollinearity issue")
         return True
 
-    except Exception as e:
+    pass
         print(f"❌ Error fixing multicollinearity issue: {e}")
         return False
 

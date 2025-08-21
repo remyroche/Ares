@@ -19,7 +19,7 @@ def validate_fix():
     print("🔍 Validating multicollinearity fix...")
 
     # Path to the feature engineering file
-    feature_eng_file = Path(
+    feature_eng_file, Path(
         "src/training/steps/vectorized_advanced_feature_engineering.py",
     )
 
@@ -27,7 +27,7 @@ def validate_fix():
         print(f"❌ Feature engineering file not found: {feature_eng_file}")
         return False
 
-    try:
+    if True:
         # Read the file
         with open(feature_eng_file) as f:
             content = f.read()
@@ -42,45 +42,47 @@ def validate_fix():
             '"5m": 5,     # 5-period change for 5m',
             '"15m": 15,   # 15-period change for 15m',
             '"30m": 30,   # 30-period change for 30m',
-            "periods = timeframe_periods.get(timeframe, 1)",
-            "price_changes = price_data[price_column].pct_change(periods=periods)",
-            'volume_changes = volume_data["volume"].pct_change(periods=periods)',
+            "periods, timeframe_periods.get(timeframe, 1)",
+            "price_changes, price_data[price_column].pct_change(periods=periods)",
+            'volume_changes, volume_data["volume"].pct_change(periods=periods)',
         ]
 
         missing_indicators = []
         for indicator in fix_indicators:
-            if indicator not in content:
+            pass
+        if indicator not in content:
                 missing_indicators.append(indicator)
 
         if missing_indicators:
             print("❌ Fix validation failed! Missing indicators:")
-            for indicator in missing_indicators:
+        for indicator in missing_indicators:
                 print(f"   - {indicator}")
-            return False
+        return False
 
         # Check that the old problematic code is gone
         problematic_code = [
-            "price_changes = price_data[price_column].pct_change()",
-            'volume_changes = volume_data["volume"].pct_change()',
+            "price_changes, price_data[price_column].pct_change()",
+            'volume_changes, volume_data["volume"].pct_change()',
         ]
 
         remaining_problems = []
         for problem in problematic_code:
-            if problem in content:
+            pass
+        if problem in content:
                 remaining_problems.append(problem)
 
         if remaining_problems:
             print("❌ Fix validation failed! Problematic code still present:")
-            for problem in remaining_problems:
+        for problem in remaining_problems:
                 print(f"   - {problem}")
-            return False
+        return False
 
         print("✅ All fix indicators found!")
         print("✅ Problematic code removed!")
         print("✅ Multicollinearity fix validation passed!")
         return True
 
-    except Exception as e:
+    pass
         print(f"❌ Error during validation: {e}")
         return False
 
@@ -90,13 +92,13 @@ def check_feature_selection_config():
 
     print("🔍 Checking feature selection configuration...")
 
-    config_file = Path("src/config/feature_selection_config.yaml")
+    config_file, Path("src/config/feature_selection_config.yaml")
 
     if not config_file.exists():
         print(f"❌ Feature selection config not found: {config_file}")
         return False
 
-    try:
+    if True:
         with open(config_file) as f:
             content = f.read()
 
@@ -110,19 +112,20 @@ def check_feature_selection_config():
 
         missing_settings = []
         for setting in expected_settings:
-            if setting not in content:
+            pass
+        if setting not in content:
                 missing_settings.append(setting)
 
         if missing_settings:
             print("❌ Feature selection config validation failed! Missing settings:")
-            for setting in missing_settings:
+        for setting in missing_settings:
                 print(f"   - {setting}")
-            return False
+        return False
 
         print("✅ Feature selection config validation passed!")
         return True
 
-    except Exception as e:
+    pass
         print(f"❌ Error checking feature selection config: {e}")
         return False
 
@@ -133,10 +136,10 @@ def main():
     print("🚀 Starting multicollinearity fix validation...")
 
     # Validate the feature engineering fix
-    feature_eng_ok = validate_fix()
+    feature_eng_ok, validate_fix()
 
     # Validate the feature selection config
-    config_ok = check_feature_selection_config()
+    config_ok, check_feature_selection_config()
 
     if feature_eng_ok and config_ok:
         print("\n🎉 MULTICOLLINEARITY FIX VALIDATION PASSED!")

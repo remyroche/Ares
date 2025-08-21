@@ -17,7 +17,7 @@ sys.path.insert(0, str(project_root))
 
 def main():
     """Launch full test run with GUI."""
-    parser = argparse.ArgumentParser(description="Launch full test run with GUI")
+    parser, argparse.ArgumentParser(description="Launch full test run with GUI")
     parser.add_argument("symbol", help="Trading symbol (e.g., BTCUSDT)")
     parser.add_argument(
         "exchange",
@@ -27,7 +27,7 @@ def main():
     )
     parser.add_argument("--no-gui", action="store_true", help="Disable GUI")
 
-    args = parser.parse_args()
+    args, parser.parse_args()
 
     # Construct the bot command
     bot_command = [
@@ -41,7 +41,7 @@ def main():
     )
 
     # Create GUI launcher and run
-    launcher = GUILauncher()
+    launcher, GUILauncher()
     launcher.run_with_bot(bot_command, auto_gui=not args.no_gui)
 
 

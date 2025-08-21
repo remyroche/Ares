@@ -43,115 +43,114 @@ async def download_mexc_agg_trades(
     Returns:
         bool: True if successful, False otherwise
     """
-    try:
-        logger.info(f"🚀 Starting MEXC aggregated trades download for {symbol}")
+    logger.info(f"🚀 Starting MEXC aggregated trades download for {symbol}")
 
-        # Create output directory
-        os.makedirs(output_dir, exist_ok=True)
+    # Create output directory
+    os.makedirs(output_dir, exist_ok=True)
 
-        # Initialize MEXC exchange
-        exchange = ExchangeFactory.get_exchange("mexc")
+    # Initialize MEXC exchange
+    exchange = ExchangeFactory.get_exchange("mexc")
 
-        # Calculate time range
-        end_time = datetime.now()
-        start_time = end_time - timedelta(days=lookback_days)
+    # Calculate time range
+    end_time = datetime.now()
+    start_time = end_time - timedelta(days=lookback_days)
 
-        start_time_ms = int(start_time.timestamp() * 1000)
-        end_time_ms = int(end_time.timestamp() * 1000)
+    start_time_ms = int(start_time.timestamp() * 1000)
+    end_time_ms = int(end_time.timestamp() * 1000)
 
-        logger.info(f"📅 Time range: {start_time} to {end_time}")
-        logger.info(f"🔢 Timestamps: {start_time_ms} to {end_time_ms}")
+    logger.info(f"📅 Time range: {start_time} to {end_time}")
+    logger.info(f"🔢 Timestamps: {start_time_ms} to {end_time_ms}")
 
-        # Download aggregated trades
-        logger.info("📥 Downloading aggregated trades from MEXC...")
+    # Download aggregated trades
+    logger.info("📥 Downloading aggregated trades from MEXC...")
 
-        trades = await exchange.get_historical_agg_trades(
-            symbol, start_time_ms=start_time_ms,
-            end_time_ms=end_time_ms, limit=1000,
-        )
+    trades = await exchange.get_historical_agg_trades(
+        symbol = start_time_ms=start_time_ms,
+        end_time_ms=end_time_ms, limit=1000,
+    )
 
-        if not trades:
-            print(warning("⚠️ No aggregated trades received from MEXC"))
-            return False
-
-        logger.info(f"✅ Downloaded {len(trades)} aggregated trades from MEXC")
-
-        # Convert to DataFrame with Binance-compatible format
-        df = pd.DataFrame(trades)
-
-        # Ensure we have the correct columns (Binance format: a, p, q, T, m, f, l)
-        expected_columns = ["a", "p", "q", "T", "m", "f", "l"]
-        missing_columns = [col for col in expected_columns if col not in df.columns]
-
-        if missing_columns:
-            print(missing(f"⚠️ Missing columns in MEXC data: {missing_columns}"))
-            # Add missing columns with default values
-            for col in missing_columns:
-                df[col] = 0
-
-        # Reorder columns to match Binance format
-        df = df[expected_columns]
-
-        # Convert timestamp to datetime
-        df["timestamp"] = pd.to_datetime(df["T"], unit="ms")
-        df.set_index("timestamp", inplace=True)
-
-        # Convert numeric columns
-        numeric_cols = ["p", "q", "a", "f", "l"]
-        df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors="coerce")
-
-        # Convert boolean column
-        df["m"] = df["m"].astype(bool)
-
-        logger.info(f"📊 DataFrame created with {len(df)} rows")
-        logger.info(f"📋 Columns: {list(df.columns)}")
-        logger.info(f"📈 Data range: {df.index.min()} to {df.index.max()}")
-
-        # Save to CSV file
-        filename = f"{output_dir}/agg_trades_{symbol}_mexc.csv"
-        df.to_csv(filename)
-
-        file_size = os.path.getsize(filename)
-        logger.info(f"💾 Saved to '{filename}'")
-        logger.info(f"📁 File size: {file_size:,} bytes")
-        logger.info(f"📊 Total records: {len(df)}")
-
-        # Display sample data
-        logger.info("📋 Sample data:")
-        logger.info(df.head().to_string())
-
-        # Verify format compatibility
-        logger.info("🔍 Verifying Binance format compatibility...")
-
-        # Check if all required columns are present
-        if all(col in df.columns for col in expected_columns):
-            logger.info("✅ All required columns present")
-        else:
-            print(missing("❌ Missing required columns"))
-            return False
-
-        # Check data types
-        if df["p"].dtype in ["float64", "float32"]:
-            logger.info("✅ Price column is numeric")
-        else:
-            print(warning("⚠️ Price column is not numeric"))
-
-        if df["q"].dtype in ["float64", "float32"]:
-            logger.info("✅ Quantity column is numeric")
-        else:
-            print(warning("⚠️ Quantity column is not numeric"))
-
-        if df["m"].dtype == "bool":
-            logger.info("✅ Maker flag column is boolean")
-        else:
-            print(warning("⚠️ Maker flag column is not boolean"))
-
-        logger.info("🎉 MEXC aggregated trades download completed successfully!")
-        return True
-
-    except Exception as e:
-        print(error(f"❌ Error downloading MEXC aggregated trades: {e}"))
+    if not trades:
+        print(warning("⚠️ No aggregated trades received from MEXC"))
         return False
+
+    logger.info(f"✅ Downloaded {len(trades)} aggregated trades from MEXC")
+
+    # Convert to DataFrame with Binance-compatible format
+    df = pd.DataFrame(trades)
+
+    # Ensure we have the correct columns (Binance format: a, p, q, T, m, f, l)
+    expected_columns = ["a", "p", "q", "T", "m", "f", "l"]
+    missing_columns = [col for col in expected_columns if col not in df.columns]
+
+    if missing_columns:
+        print(missing(f"⚠️ Missing columns in MEXC data: {missing_columns}"))
+    # Add missing columns with default values
+    for col in missing_columns:
+            df[col] = 0
+
+    # Reorder columns to match Binance format
+    df = df[expected_columns]
+
+    # Convert timestamp to datetime
+    df["timestamp"] = pd.to_datetime(df["T"], unit="ms")
+    df.set_index("timestamp", inplace=True)
+
+    # Convert numeric columns
+    numeric_cols = ["p", "q", "a", "f", "l"]
+    df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors="coerce")
+
+    # Convert boolean column
+    df["m"] = df["m"].astype(bool)
+
+    logger.info(f"📊 DataFrame created with {len(df)} rows")
+    logger.info(f"📋 Columns: {list(df.columns)}")
+    logger.info(f"📈 Data range: {df.index.min()} to {df.index.max()}")
+
+    # Save to CSV file
+    filename = f"{output_dir}/agg_trades_{symbol}_mexc.csv"
+    df.to_csv(filename)
+
+    file_size = os.path.getsize(filename)
+    logger.info(f"💾 Saved to '{filename}'")
+    logger.info(f"📁 File size: {file_size:,} bytes")
+    logger.info(f"📊 Total records: {len(df)}")
+
+    # Display sample data
+    logger.info("📋 Sample data:")
+    logger.info(df.head().to_string())
+
+    # Verify format compatibility
+    logger.info("🔍 Verifying Binance format compatibility...")
+
+    # Check if all required columns are present
+    if all(col in df.columns for col in expected_columns):
+        logger.info("✅ All required columns present")
+    else:
+        print(missing("❌ Missing required columns"))
+        return False
+
+    # Check data types
+    if df["p"].dtype in ["float64", "float32"]:
+        logger.info("✅ Price column is numeric")
+    else:
+        print(warning("⚠️ Price column is not numeric"))
+
+    if df["q"].dtype in ["float64", "float32"]:
+        logger.info("✅ Quantity column is numeric")
+    else:
+        print(warning("⚠️ Quantity column is not numeric"))
+
+    if df["m"].dtype == "bool":
+        logger.info("✅ Maker flag column is boolean")
+    else:
+        print(warning("⚠️ Maker flag column is not boolean"))
+
+    logger.info("🎉 MEXC aggregated trades download completed successfully!")
+    return True
+
+    pass
+    print(error(f"❌ Error downloading MEXC aggregated trades: {e}"))
+    return False
 
 async def main():
     """Main function to run the download script."""

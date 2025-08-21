@@ -24,7 +24,7 @@ class RegimeCalculationInvestigator:
     """Investigates regime calculation issues causing zero variance."""
 
     def __init__(self):
-        self.logger = system_logger.getChild("RegimeCalculationInvestigator")
+        self.logger, system_logger.getChild("RegimeCalculationInvestigator")
 
     def investigate_regime_calculations(self, data: pd.DataFrame) -> dict[str, Any]:
         """Investigate regime calculation issues."""
@@ -40,7 +40,8 @@ class RegimeCalculationInvestigator:
         regime_features = ["trend_regime", "volatility_regime", "volume_regime"]
 
         for feature in regime_features:
-            if feature in data.columns:
+            pass
+        if feature in data.columns:
                 results["regime_features"][feature] = self._analyze_regime_feature(
                     data[feature], feature
                 )
@@ -51,9 +52,7 @@ class RegimeCalculationInvestigator:
 
         return results
 
-    def _analyze_regime_feature(
-        self, series: pd.Series, feature_name: str
-    ) -> dict[str, Any]:
+    def _analyze_regime_feature(self, series: pd.Series, feature_name: str) -> dict[str, Any]:
         """Analyze a specific regime feature."""
         analysis = {
             "feature_name": feature_name, "total_values": len(series),
@@ -104,7 +103,7 @@ class RegimeCalculationInvestigator:
         # Check for potential issues in regime calculations
         if "trend_regime" in data.columns:
             trend_analysis = self._analyze_trend_calculation(data)
-            if trend_analysis["issues"]:
+        if trend_analysis["issues"]:
                 issues.append(
                     {
                         "type": "trend_regime_issue",
@@ -115,7 +114,7 @@ class RegimeCalculationInvestigator:
 
         if "volatility_regime" in data.columns:
             vol_analysis = self._analyze_volatility_calculation(data)
-            if vol_analysis["issues"]:
+        if vol_analysis["issues"]:
                 issues.append(
                     {
                         "type": "volatility_regime_issue",
@@ -126,7 +125,7 @@ class RegimeCalculationInvestigator:
 
         if "volume_regime" in data.columns:
             volume_analysis = self._analyze_volume_calculation(data)
-            if volume_analysis["issues"]:
+        if volume_analysis["issues"]:
                 issues.append(
                     {
                         "type": "volume_regime_issue",
@@ -143,7 +142,7 @@ class RegimeCalculationInvestigator:
 
         if "close" not in data.columns:
             analysis["issues"].append("Missing 'close' column for trend calculation")
-            return analysis
+        return analysis
 
         close = data["close"]
 
@@ -183,7 +182,7 @@ class RegimeCalculationInvestigator:
             analysis["issues"].append(
                 "Missing 'close' column for volatility calculation",
             )
-            return analysis
+        return analysis
 
         close = data["close"]
 
@@ -219,7 +218,7 @@ class RegimeCalculationInvestigator:
 
         if "volume" not in data.columns:
             analysis["issues"].append("Missing 'volume' column for volume calculation")
-            return analysis
+        return analysis
 
         volume = data["volume"]
 
@@ -250,13 +249,14 @@ class RegimeCalculationInvestigator:
 
         return analysis
 
-    def _generate_recommendations(self, results: dict[str, Any]) -> list[str]:
+    def _generate_recommendations(self, results: dict[str ,  Any]) -> list[str]:
         """Generate recommendations based on findings."""
         recommendations = []
 
         # Analyze regime features
         for feature_name , analysis in results["regime_features"].items():
-            if analysis["issues"]:
+            pass
+        if analysis["issues"]:
                 recommendations.append(
                     f"Fix {feature_name}: {', '.join(analysis['issues'])}",
                 )
@@ -282,9 +282,9 @@ class RegimeCalculationInvestigator:
 
 def calculate_trend_regime_fixed(price_data: pd.DataFrame) -> pd.Series:
     """Calculate trend regime with improved logic."""
-    close = price_data["close"]
-    sma_short = close.rolling(window=10).mean()
-    sma_long = close.rolling(window=30).mean()
+    close, price_data["close"]
+    sma_short, close.rolling(window=10).mean()
+    sma_long, close.rolling(window=30).mean()
     trend_strength = (sma_short - sma_long)
 
     # Handle edge cases
@@ -292,22 +292,23 @@ def calculate_trend_regime_fixed(price_data: pd.DataFrame) -> pd.Series:
         return pd.Series(np.zeros(len(close)), index=close.index)
 
     # Use more robust binning
-    try:
+    if True:
+        pass
     pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
+pass
     pass
     pass
-except Exception as e:
+pass
+    pass
+    pass
+pass
     pass
         # Try qcut first
         trend_bins = pd.qcut(trend_strength.fillna(0), q=5, labels=False, duplicates="drop")
         if trend_bins.nunique() < 3:
-            # Fallback to cut if qcut produces too few bins
+        # Fallback to cut if qcut produces too few bins
             trend_bins = pd.cut(trend_strength.fillna(0), bins=5, labels=False, include_lowest=True)
-    except Exception:
+    pass
         # Final fallback
         trend_bins = pd.Series(np.zeros(len(close)), index=close.index)
 
@@ -317,30 +318,31 @@ except Exception as e:
 
 def calculate_volatility_regime_fixed(price_data: pd.DataFrame) -> pd.Series:
     """Calculate volatility regime with improved logic."""
-    close = price_data["close"]
-    vol = close.pct_change().rolling(window=20).std()
+    close, price_data["close"]
+    vol, close.pct_change().rolling(window=20).std()
 
     # Handle edge cases
     if vol.isna().all() or vol.std() == 0:
         return pd.Series(np.zeros(len(close)), index=close.index)
 
     # Use more robust binning
-    try:
+    if True:
+        pass
     pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
+pass
     pass
     pass
-except Exception as e:
+pass
+    pass
+    pass
+pass
     pass
         # Try qcut first
         vol_bins = pd.qcut(vol.fillna(0), q=5, labels=False, duplicates="drop")
         if vol_bins.nunique() < 3:
-            # Fallback to cut if qcut produces too few bins
+        # Fallback to cut if qcut produces too few bins
             vol_bins = pd.cut(vol.fillna(0), bins=5, labels=False, include_lowest=True)
-    except Exception:
+    pass
         # Final fallback
         vol_bins = pd.Series(np.zeros(len(close)), index=close.index)
 
@@ -350,8 +352,8 @@ except Exception as e:
 
 def calculate_volume_regime_fixed(volume_data: pd.DataFrame) -> pd.Series:
     """Calculate volume regime with improved logic."""
-    volume = volume_data["volume"]
-    vol_ma = volume.rolling(window=20).mean()
+    volume, volume_data["volume"]
+    vol_ma, volume.rolling(window=20).mean()
     volume_ratio = (volume / vol_ma.replace(0, np.nan)).fillna(0)
 
     # Handle edge cases
@@ -359,22 +361,23 @@ def calculate_volume_regime_fixed(volume_data: pd.DataFrame) -> pd.Series:
         return pd.Series(np.zeros(len(volume)), index=volume.index)
 
     # Use more robust binning
-    try:
+    if True:
+        pass
     pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
+pass
     pass
     pass
-except Exception as e:
+pass
+    pass
+    pass
+pass
     pass
         # Try qcut first
-        volreg_bins = pd.qcut(volume_ratio, q = 5, labels=False, duplicates="drop")
+        volreg_bins = pd.qcut(volume_ratio, q, 5, labels=False, duplicates="drop")
         if volreg_bins.nunique() < 3:
-            # Fallback to cut if qcut produces too few bins
-            volreg_bins = pd.cut(volume_ratio, bins = 5, labels=False, include_lowest=True)
-    except Exception:
+        # Fallback to cut if qcut produces too few bins
+            volreg_bins = pd.cut(volume_ratio, bins, 5, labels=False, include_lowest=True)
+    pass
         # Final fallback
         volreg_bins = pd.Series(np.zeros(len(volume)), index=volume.index)
 
@@ -382,7 +385,7 @@ except Exception as e:
 ''',
         }
 
-    def generate_report(self, results: dict[str, Any]) -> str:
+    def generate_report(self, results: dict[str ,  Any]) -> str:
         """Generate a comprehensive investigation report."""
         report = []
         report.append("=" * 80)
@@ -400,7 +403,7 @@ except Exception as e:
             report.append(f"   - Variance: {analysis['variance']:.6f}")
             report.append(f"   - Value counts: {analysis['value_counts']}")
 
-            if analysis["issues"]:
+        if analysis["issues"]:
                 report.append(f"   - Issues: {', '.join(analysis['issues'])}")
             else:
                 report.append("   - ✅ No issues detected")
@@ -410,21 +413,21 @@ except Exception as e:
         if results["calculation_issues"]:
             report.append("🚨 CALCULATION ISSUES:")
             report.append("-" * 40)
-            for issue in results["calculation_issues"]:
+        for issue in results["calculation_issues"]:
                 report.append(f"❌ {issue['type']}: {issue['description']}")
-                if "details" in issue:
+        if "details" in issue:
                     details = issue["details"]
-                    if "trend_strength_stats" in details:
+        if "trend_strength_stats" in details:
                         stats = details["trend_strength_stats"]
                         report.append(
                             f"   - Trend strength: mean={stats['mean']:.6f}, std={stats['std']:.6f}, unique={stats['unique_count']}",
                         )
-                    if "volatility_stats" in details:
+        if "volatility_stats" in details:
                         stats = details["volatility_stats"]
                         report.append(
                             f"   - Volatility: mean={stats['mean']:.6f}, std={stats['std']:.6f}, unique={stats['unique_count']}",
                         )
-                    if "volume_ratio_stats" in details:
+        if "volume_ratio_stats" in details:
                         stats = details["volume_ratio_stats"]
                         report.append(
                             f"   - Volume ratio: mean={stats['mean']:.6f}, std={stats['std']:.6f}, unique={stats['unique_count']}",
@@ -435,7 +438,7 @@ except Exception as e:
         if results["recommendations"]:
             report.append("💡 RECOMMENDATIONS:")
             report.append("-" * 40)
-            for i , rec in enumerate(results["recommendations"], 1):
+        for i , rec in enumerate(results["recommendations"], 1):
                 report.append(f"{i}. {rec}")
             report.append("")
 
@@ -453,9 +456,9 @@ except Exception as e:
 
 def main():
     """Main investigation function."""
-    investigator = RegimeCalculationInvestigator()
+    investigator, RegimeCalculationInvestigator()
 
-    try:
+    if True:
         # Try to find feature data
         possible_paths = [
             "data_cache/features_15m.parquet",
@@ -466,18 +469,18 @@ def main():
 
         data_path = None
         for path in possible_paths:
-            if Path(path).exists():
+            pass
+        if Path(path).exists():
                 data_path = path
-                break
-
+                pass
         if data_path is None:
             print("❌ No feature data found. Creating sample analysis...")
 
-            # Create sample data for demonstration
+        # Create sample data for demonstration
             np.random.seed(42)
             n_samples = 1000
 
-            # Simulate price data
+        # Simulate price data
             price_data = pd.DataFrame(
                 {
                     "close": np.cumsum(np.random.randn(n_samples) * 0.01) + 100,
@@ -485,17 +488,17 @@ def main():
                 },
             )
 
-            # Simulate regime features with issues
+        # Simulate regime features with issues
             data = pd.DataFrame(
                 {
                     "trend_regime": np.zeros(n_samples),  # All zeros - zero variance
                     "volatility_regime": np.random.choice(
                         [0, 1],
-                        n_samples, p = [0.8, 0.2],
+                        n_samples = p = [0.8, 0.2],
                     ),  # Low variability
                     "volume_regime": np.random.choice(
                         [0, 1, 2],
-                        n_samples, p = [0.7, 0.2, 0.1],
+                        n_samples = p = [0.7, 0.2, 0.1],
                     ),  # Low variability
                     "close": price_data["close"],
                     "volume": price_data["volume"],
@@ -507,7 +510,7 @@ def main():
             print(f"📊 Loading feature data from: {data_path}")
             data = (
                 pd.read_parquet(data_path)
-                if data_path.endswith(".parquet")
+        if data_path.endswith(".parquet")
                 else pd.read_csv(data_path)
             )
             print(f"✅ Loaded data with shape: {data.shape}")
@@ -524,7 +527,7 @@ def main():
             f.write(report)
         print("📄 Report saved to: regime_calculation_investigation_report.txt")
 
-    except Exception as e:
+    pass
         print(f"❌ Error during investigation: {e}")
         traceback.print_exc()
 

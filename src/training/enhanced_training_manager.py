@@ -1426,35 +1426,35 @@ class EnhancedTrainingManager:
     async def _initialize_computational_optimization(self) -> bool:
         """Initialize computational optimization components."""
         try:
-        self.logger.info("🚀 Initializing computational optimization components...")
+            self.logger.info("🚀 Initializing computational optimization components...")
 
         # Get computational optimization configuration
-            optimization_config, get_computational_optimization_config()
+            optimization_config = get_computational_optimization_config()
 
         # Create computational optimization manager
-        self.computational_optimization_manager = (
-        await create_computational_optimization_manager(
+            self.computational_optimization_manager = (
+                await create_computational_optimization_manager(
                     config=optimization_config,
                     market_data=pd.DataFrame(),  # Will be loaded during training
                     model_config={},  # Will be configured during training
                 )
             )
 
-        if self.computational_optimization_manager:
-        self.logger.info(
+            if self.computational_optimization_manager:
+                self.logger.info(
                     "✅ Computational optimization components initialized successfully",
                 )
-        return True
-        self.logger.warning(
+                return True
+            self.logger.warning(
                 "⚠️ Failed to initialize computational optimization components",
             )
-        return False
+            return False
 
         except Exception as e:
-        self.logger.exception(
+            self.logger.exception(
                 f"❌ Computational optimization initialization failed: {e}",
             )
-        return False
+            return False
 
     @handle_errors(
         exceptions=(Exception,),
@@ -1499,9 +1499,9 @@ class EnhancedTrainingManager:
 
         """
         try:
-            symbol, training_input.get("symbol", "")
-            exchange, training_input.get("exchange", "")
-            timeframe, training_input.get("timeframe", "1m")
+            symbol = training_input.get("symbol", "")
+            exchange = training_input.get("exchange", "")
+            timeframe = training_input.get("timeframe", "1m")
 
         # Validate identifiers for safe file path usage
             symbol, _sanitize_identifier(symbol)

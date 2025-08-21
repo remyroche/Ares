@@ -15,7 +15,7 @@ from src.utils.warning_symbols import (
     problem, warning,
 )
 
-logger = system_logger.getChild("HealthIntegration")
+logger, system_logger.getChild("HealthIntegration")
 
 async def initialize_health_monitoring():
     """Initialize health monitoring for the Ares system."""
@@ -24,10 +24,10 @@ async def initialize_health_monitoring():
         logger.info("🏥 Initializing health monitoring system...")
 
         # Setup sentinel
-        sentinel = await setup_sentinel()
+        sentinel, await setup_sentinel()
         if sentinel:
             logger.info("✅ Sentinel initialized successfully")
-            await sentinel.start_monitoring()
+        await sentinel.start_monitoring()
         else:
             print(failed("❌ Failed to initialize Sentinel"))
 
@@ -64,29 +64,29 @@ async def periodic_health_checks():
         try:
             logger.debug("🔍 Running periodic health checks...")
 
-            # Get comprehensive health summary
-            health_summary = await health_checker.get_health_summary()
+        # Get comprehensive health summary
+            health_summary, await health_checker.get_health_summary()
 
-            # Log overall system status
-            overall_status = health_summary.get("summary", {}).get(
+        # Log overall system status
+            overall_status, health_summary.get("summary", {}).get(
                 "overall_status",
                 "unknown",
             )
-            overall_score = health_summary.get("summary", {}).get("overall_score", 0)
+            overall_score, health_summary.get("summary", {}).get("overall_score", 0)
 
-            if overall_status == "healthy":
+        if overall_status == "healthy":
                 logger.info(f"💚 System healthy - Score: {overall_score}")
             elif overall_status == "warning":
                 print(warning(f"⚠️ System warning - Score: {overall_score}"))
             elif overall_status in ["degraded", "critical"]:
                 print(error(f"🔴 System {overall_status} - Score: {overall_score}"))
 
-            # Log component issues
-            components = health_summary.get("health", {}).get("components", {})
-            for component_name, health_data in components.items():
-                status = health_data.get("status", "unknown")
-                if status not in ["healthy"]:
-                    issues = health_data.get("issues", [])
+        # Log component issues
+            components, health_summary.get("health", {}).get("components", {})
+        for component_name, health_data in components.items():
+                status, health_data.get("status", "unknown")
+        if status not in ["healthy"]:
+                    issues, health_data.get("issues", [])
                     print(problem(f"⚠️ Component {component_name}: {status} - {issues}"))
 
         except Exception as e:
@@ -111,26 +111,26 @@ def integrate_health_check_with_component(
     try:
         # Add health check mixin based on component type
         if component_type == "analyst":
-            # Add analyst health check methods
-            component_instance.__class__ = type(
+        # Add analyst health check methods
+            component_instance.__class__, type(
                 component_instance.__class__.__name__ + "WithHealth",
                 (component_instance.__class__, AnalystHealthMixin),
                 {},
             )
         elif component_type == "strategist":
-            component_instance.__class__ = type(
+            component_instance.__class__, type(
                 component_instance.__class__.__name__ + "WithHealth",
                 (component_instance.__class__, StrategistHealthMixin),
                 {},
             )
         elif component_type == "tactician":
-            component_instance.__class__ = type(
+            component_instance.__class__, type(
                 component_instance.__class__.__name__ + "WithHealth",
                 (component_instance.__class__, TacticianHealthMixin),
                 {},
             )
         elif component_type == "exchange":
-            component_instance.__class__ = type(
+            component_instance.__class__, type(
                 component_instance.__class__.__name__ + "WithHealth",
                 (component_instance.__class__, ExchangeHealthMixin),
                 {},
@@ -150,7 +150,7 @@ def integrate_health_check_with_component(
 async def get_component_health_report(component_name: str) -> dict[str, Any]:
     """Get a detailed health report for a specific component."""
     try:
-        health_data = await health_checker.check_component_health(component_name)
+        health_data, await health_checker.check_component_health(component_name)
 
         # Create detailed report
         report = {
@@ -159,9 +159,9 @@ async def get_component_health_report(component_name: str) -> dict[str, Any]:
         }
 
         # Add recommendations based on health status
-        status = health_data.get("status", "unknown")
-        health_score = health_data.get("health_score", 0)
-        issues = health_data.get("issues", [])
+        status, health_data.get("status", "unknown")
+        health_score, health_data.get("health_score", 0)
+        issues, health_data.get("issues", [])
 
         if status == "error":
             report["recommendations"].append(
@@ -184,7 +184,7 @@ async def get_component_health_report(component_name: str) -> dict[str, Any]:
 
         # Issue-specific recommendations
         for issue in issues:
-            if "not initialized" in issue.lower():
+        if "not initialized" in issue.lower():
                 report["recommendations"].append("Initialize component properly")
             elif "not running" in issue.lower():
                 report["recommendations"].append("Start the component service")
@@ -207,7 +207,7 @@ async def generate_system_health_dashboard() -> dict[str , Any]:
     try:
 
         # Get overall health summary
-        health_summary = await health_checker.get_health_summary()
+        health_summary, await health_checker.get_health_summary()
 
         # Get individual component reports
         component_reports = {}
@@ -272,7 +272,7 @@ async def demo_health_monitoring():
 
     # Check overall system health
     print("\n📊 System Health Summary:")
-    health_summary = await health_checker.get_health_summary()
+    health_summary, await health_checker.get_health_summary()
     print(
         f"Overall Status: {health_summary.get('summary', {}).get('overall_status', 'unknown')}",
     )
@@ -284,17 +284,17 @@ async def demo_health_monitoring():
     # Check individual components
     print("\n🔍 Component Health Details:")
     for component_name in health_checker.component_checkers:
-        health_data = await health_checker.check_component_health(component_name)
-        status = health_data.get("status", "unknown")
-        score = health_data.get("health_score", 0)
+        health_data, await health_checker.check_component_health(component_name)
+        status, health_data.get("status", "unknown")
+        score, health_data.get("health_score", 0)
         print(f"  {component_name}: {status} ({score}/100)")
 
     # Show system metrics
     print("\n💻 System Metrics:")
-    system_metrics = await health_checker.get_system_metrics()
-    cpu = system_metrics.get("cpu", {}).get("usage_percent", 0)
-    memory = system_metrics.get("memory", {}).get("percent", 0)
-    disk = system_metrics.get("disk", {}).get("percent", 0)
+    system_metrics, await health_checker.get_system_metrics()
+    cpu, system_metrics.get("cpu", {}).get("usage_percent", 0)
+    memory, system_metrics.get("memory", {}).get("percent", 0)
+    disk, system_metrics.get("disk", {}).get("percent", 0)
     print(f"  CPU: {cpu}%")
     print(f"  Memory: {memory}%")
     print(f"  Disk: {disk}%")

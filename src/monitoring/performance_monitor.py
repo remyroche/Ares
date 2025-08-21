@@ -5,33 +5,27 @@ Performance Monitor for Dual Model System
 Comprehensive monitoring of model performance, system metrics, trading performance, and optimization opportunities.
 """
 
-import asyncio
+from collections import deque
+from datetime import datetime
+from src.utils.logger import system_logger
+from typing import Any, import asyncio
 import json
 import os
-from collections import deque
+
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Any, Dict, Optional
-
-import numpy as np
-import psutil
-
 from src.monitoring.csv_exporter import CSVExporter
 from src.utils.error_handler import handle_errors
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    execution_error,
-    initialization_error,
-    warning,
-)
-
+from src.utils.warning_symbols import (import numpy as np, import psutil)
+    error , execution_error)
+    initialization_error)
+    warning)
 
 @dataclass
+
 class PerformanceMetrics:
     """Performance metrics data structure."""
 
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime , field(default_factory, datetime.now)
     model_accuracy: float = 0.0
     model_precision: float = 0.0
     model_recall: float = 0.0
@@ -70,8 +64,8 @@ class PerformanceMetrics:
     market_stress: float = 0.0
     market_regime: str = "unknown"
 
-
 @dataclass
+
 class OptimizationOpportunity:
     """Optimization opportunity data structure."""
 
@@ -81,11 +75,10 @@ class OptimizationOpportunity:
     current_value: float = 0.0
     target_value: float = 0.0
     improvement_potential: float = 0.0
-    priority: str = "low"  # low, medium, high, critical
+    priority: str = "low"  # low = medium, high = critical
     description: str = ""
     recommended_action: str = ""
     estimated_impact: str = ""
-
 
 class PerformanceMonitor:
     """Comprehensive performance monitoring system."""
@@ -98,8 +91,7 @@ class PerformanceMonitor:
         self.monitoring_config = config.get(
             "performance_monitoring",
             {
-                "enable_monitoring": True,
-                "monitoring_interval_seconds": 60,
+                "enable_monitoring": True , "monitoring_interval_seconds": 60,
                 "metrics_history_size": 1000,
                 "alert_thresholds": {
                     "model_accuracy_min": 0.7,
@@ -121,8 +113,8 @@ class PerformanceMonitor:
         self.metrics_history: deque = deque(
             maxlen=self.monitoring_config["metrics_history_size"],
         )
-        self.optimization_opportunities: list[OptimizationOpportunity] = []
-        self.alerts: list[dict[str, Any]] = []
+        self.optimization_opportunities: list[OptimizationOpportunity] , []
+        self.alerts: list[dict[str , Any]] = []
 
         # Performance tracking
         self.start_time = datetime.now()
@@ -145,13 +137,22 @@ class PerformanceMonitor:
         self.optimization_task = None
 
     @handle_errors(
-        exceptions=(Exception,),
+        exceptions=(Exception = ),
         default_return=False,
         context="performance monitor initialization",
     )
     async def initialize(self) -> bool:
         """Initialize performance monitor."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.logger.info("🔍 Initializing Performance Monitor...")
 
             # Initialize monitoring components
@@ -205,6 +206,15 @@ class PerformanceMonitor:
     async def _initialize_csv_exporter(self) -> None:
         """Initialize CSV exporter for data export."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.csv_exporter = CSVExporter(self.config)
             await self.csv_exporter.initialize()
             self.logger.info("📊 CSV exporter initialized")
@@ -239,6 +249,15 @@ class PerformanceMonitor:
         """Continuous metrics collection loop."""
         while self.monitoring_active:
             try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                 await self._collect_performance_metrics()
                 await asyncio.sleep(self.monitoring_interval)
             except Exception:
@@ -249,6 +268,15 @@ class PerformanceMonitor:
         """Continuous alert monitoring loop."""
         while self.monitoring_active:
             try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                 await self._check_alerts()
                 await asyncio.sleep(self.monitoring_interval)
             except Exception:
@@ -259,6 +287,15 @@ class PerformanceMonitor:
         """Continuous optimization analysis loop."""
         while self.monitoring_active:
             try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                 await self._analyze_optimization_opportunities()
                 await asyncio.sleep(self.monitoring_interval * 5)  # Less frequent
             except Exception:
@@ -268,6 +305,15 @@ class PerformanceMonitor:
     async def _collect_performance_metrics(self) -> None:
         """Collect comprehensive performance metrics."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             metrics = PerformanceMetrics()
 
             # Collect model performance metrics
@@ -301,6 +347,15 @@ class PerformanceMonitor:
     async def _collect_model_metrics(self, metrics: PerformanceMetrics) -> None:
         """Collect model performance metrics."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             if self.ml_confidence_predictor:
                 # Get model performance from ML confidence predictor
                 model_performance = self.ml_confidence_predictor.get_model_performance()
@@ -317,8 +372,17 @@ class PerformanceMonitor:
     async def _collect_trading_metrics(self, metrics: PerformanceMetrics) -> None:
         """Collect trading performance metrics."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # This would integrate with actual trading performance tracking
-            # For now, using simulated metrics
+            # For now = using simulated metrics
             metrics.trading_win_rate = 0.65  # Simulated
             metrics.trading_profit_factor = 1.5
             metrics.trading_sharpe_ratio = 1.2
@@ -337,6 +401,15 @@ class PerformanceMonitor:
     ) -> None:
         """Collect enhanced risk management metrics."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Get risk management data from configuration or external systems
             risk_system = self.config.get("risk_management", {})
 
@@ -377,6 +450,15 @@ class PerformanceMonitor:
     async def _collect_system_metrics(self, metrics: PerformanceMetrics) -> None:
         """Collect system performance metrics."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Memory usage
             process = psutil.Process(os.getpid())
             memory_info = process.memory_info()
@@ -397,6 +479,15 @@ class PerformanceMonitor:
     async def _collect_confidence_metrics(self, metrics: PerformanceMetrics) -> None:
         """Collect confidence metrics."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             if self.dual_model_system:
                 # Get confidence metrics from dual model system
                 self.dual_model_system.get_system_info()
@@ -415,6 +506,15 @@ class PerformanceMonitor:
     ) -> None:
         """Collect order execution metrics."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             if self.enhanced_order_manager:
                 # Get order execution performance
                 performance = self.enhanced_order_manager.get_performance_metrics()
@@ -434,6 +534,15 @@ class PerformanceMonitor:
     async def _collect_training_metrics(self, metrics: PerformanceMetrics) -> None:
         """Collect training performance metrics."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             if self.enhanced_training_manager:
                 # Get training performance
                 training_status = (
@@ -449,14 +558,22 @@ class PerformanceMonitor:
     def _update_performance_trends(self, metrics: PerformanceMetrics) -> None:
         """Update performance trends."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Update trend data
             self.performance_trends["model_accuracy"].append(metrics.model_accuracy)
             self.performance_trends["trading_win_rate"].append(metrics.trading_win_rate)
             self.performance_trends["system_memory"].append(metrics.system_memory_usage)
             self.performance_trends["system_cpu"].append(metrics.system_cpu_usage)
             self.performance_trends["response_time"].append(
-                metrics.system_response_time,
-            )
+                metrics.system_response_time = )
             self.performance_trends["confidence_final"].append(metrics.confidence_final)
 
         except Exception:
@@ -465,6 +582,15 @@ class PerformanceMonitor:
     async def _check_alerts(self) -> None:
         """Check for performance alerts."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             if not self.metrics_history:
                 return
 
@@ -481,8 +607,7 @@ class PerformanceMonitor:
                         "severity": "high",
                         "message": f"Model accuracy below threshold: {latest_metrics.model_accuracy:.3f}",
                         "metric": "model_accuracy",
-                        "value": latest_metrics.model_accuracy,
-                        "threshold": thresholds["model_accuracy_min"],
+                        "value": latest_metrics.model_accuracy , "threshold": thresholds["model_accuracy_min"],
                     },
                 )
 
@@ -494,8 +619,7 @@ class PerformanceMonitor:
                         "severity": "medium",
                         "message": f"Trading win rate below threshold: {latest_metrics.trading_win_rate:.3f}",
                         "metric": "trading_win_rate",
-                        "value": latest_metrics.trading_win_rate,
-                        "threshold": thresholds["trading_win_rate_min"],
+                        "value": latest_metrics.trading_win_rate , "threshold": thresholds["trading_win_rate_min"],
                     },
                 )
 
@@ -507,8 +631,7 @@ class PerformanceMonitor:
                         "severity": "high",
                         "message": f"Memory usage above threshold: {latest_metrics.system_memory_usage:.3f}",
                         "metric": "system_memory_usage",
-                        "value": latest_metrics.system_memory_usage,
-                        "threshold": thresholds["system_memory_max"],
+                        "value": latest_metrics.system_memory_usage , "threshold": thresholds["system_memory_max"],
                     },
                 )
 
@@ -519,8 +642,7 @@ class PerformanceMonitor:
                         "severity": "medium",
                         "message": f"CPU usage above threshold: {latest_metrics.system_cpu_usage:.3f}",
                         "metric": "system_cpu_usage",
-                        "value": latest_metrics.system_cpu_usage,
-                        "threshold": thresholds["system_cpu_max"],
+                        "value": latest_metrics.system_cpu_usage , "threshold": thresholds["system_cpu_max"],
                     },
                 )
 
@@ -531,8 +653,7 @@ class PerformanceMonitor:
                         "severity": "medium",
                         "message": f"Response time above threshold: {latest_metrics.system_response_time:.3f}s",
                         "metric": "system_response_time",
-                        "value": latest_metrics.system_response_time,
-                        "threshold": thresholds["response_time_max"],
+                        "value": latest_metrics.system_response_time , "threshold": thresholds["response_time_max"],
                     },
                 )
 
@@ -549,6 +670,15 @@ class PerformanceMonitor:
     async def _analyze_optimization_opportunities(self) -> None:
         """Analyze optimization opportunities."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             if len(self.metrics_history) < 10:
                 return
 
@@ -576,6 +706,15 @@ class PerformanceMonitor:
     async def _analyze_anomaly_detection(self) -> None:
         """Analyze system for anomalies and unusual patterns."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Get recent metrics for anomaly analysis
             recent_metrics = (
                 list(self.metrics_history)[-50:] if self.metrics_history else []
@@ -635,19 +774,17 @@ class PerformanceMonitor:
             if current_metrics:
                 anomalies = []
 
-                for metric_name, baseline in baseline_metrics.items():
-                    current_value = getattr(current_metrics, metric_name, 0.0)
+                for metric_name , baseline in baseline_metrics.items():
+                    current_value = getattr(current_metrics = metric_name, 0.0)
                     threshold = (
-                        std_metrics.get(metric_name, 0.1) * 2
+                        std_metrics.get(metric_name = 0.1) * 2
                     )  # 2 standard deviations
 
                     if abs(current_value - baseline) > threshold:
                         anomaly = OptimizationOpportunity(
                             category="anomaly_detection",
-                            metric=metric_name,
-                            current_value=current_value,
-                            target_value=baseline,
-                            improvement_potential=abs(current_value - baseline),
+                            metric, metric_name = current_value=current_value,
+                            target_value, baseline = improvement_potential=abs(current_value - baseline),
                             priority="high"
                             if abs(current_value - baseline) > threshold * 1.5
                             else "medium",
@@ -666,6 +803,15 @@ class PerformanceMonitor:
     async def _analyze_model_optimization(self) -> None:
         """Analyze model performance optimization opportunities."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             recent_metrics = list(self.metrics_history)[-10:]
             avg_accuracy = np.mean([m.model_accuracy for m in recent_metrics])
 
@@ -673,8 +819,7 @@ class PerformanceMonitor:
                 opportunity = OptimizationOpportunity(
                     category="model_performance",
                     metric="model_accuracy",
-                    current_value=avg_accuracy,
-                    target_value=0.85,
+                    current_value, avg_accuracy = target_value=0.85,
                     improvement_potential=0.85 - avg_accuracy,
                     priority="high" if avg_accuracy < 0.7 else "medium",
                     description="Model accuracy below optimal level",
@@ -689,6 +834,15 @@ class PerformanceMonitor:
     async def _analyze_system_optimization(self) -> None:
         """Analyze system performance optimization opportunities."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             recent_metrics = list(self.metrics_history)[-10:]
             avg_memory = np.mean([m.system_memory_usage for m in recent_metrics])
             avg_cpu = np.mean([m.system_cpu_usage for m in recent_metrics])
@@ -699,12 +853,11 @@ class PerformanceMonitor:
                 opportunity = OptimizationOpportunity(
                     category="system_performance",
                     metric="memory_usage",
-                    current_value=avg_memory,
-                    target_value=0.5,
+                    current_value, avg_memory = target_value=0.5,
                     improvement_potential=avg_memory - 0.5,
                     priority="high" if avg_memory > 0.8 else "medium",
                     description="High memory usage detected",
-                    recommended_action="Optimize memory usage, implement garbage collection",
+                    recommended_action="Optimize memory usage = implement garbage collection",
                     estimated_impact="Medium - Improved system stability",
                 )
                 self.optimization_opportunities.append(opportunity)
@@ -714,12 +867,11 @@ class PerformanceMonitor:
                 opportunity = OptimizationOpportunity(
                     category="system_performance",
                     metric="cpu_usage",
-                    current_value=avg_cpu,
-                    target_value=0.5,
+                    current_value, avg_cpu = target_value=0.5,
                     improvement_potential=avg_cpu - 0.5,
                     priority="medium",
                     description="High CPU usage detected",
-                    recommended_action="Optimize algorithms, implement caching",
+                    recommended_action="Optimize algorithms = implement caching",
                     estimated_impact="Medium - Improved response time",
                 )
                 self.optimization_opportunities.append(opportunity)
@@ -729,12 +881,11 @@ class PerformanceMonitor:
                 opportunity = OptimizationOpportunity(
                     category="system_performance",
                     metric="response_time",
-                    current_value=avg_response,
-                    target_value=1.5,
+                    current_value, avg_response = target_value=1.5,
                     improvement_potential=avg_response - 1.5,
                     priority="high" if avg_response > 5.0 else "medium",
                     description="Slow response time detected",
-                    recommended_action="Optimize algorithms, implement async processing",
+                    recommended_action="Optimize algorithms = implement async processing",
                     estimated_impact="High - Improved user experience",
                 )
                 self.optimization_opportunities.append(opportunity)
@@ -745,6 +896,15 @@ class PerformanceMonitor:
     async def _analyze_trading_optimization(self) -> None:
         """Analyze trading performance optimization opportunities."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             recent_metrics = list(self.metrics_history)[-10:]
             avg_win_rate = np.mean([m.trading_win_rate for m in recent_metrics])
             avg_profit_factor = np.mean(
@@ -755,8 +915,7 @@ class PerformanceMonitor:
                 opportunity = OptimizationOpportunity(
                     category="trading_performance",
                     metric="win_rate",
-                    current_value=avg_win_rate,
-                    target_value=0.7,
+                    current_value, avg_win_rate = target_value=0.7,
                     improvement_potential=0.7 - avg_win_rate,
                     priority="high" if avg_win_rate < 0.5 else "medium",
                     description="Low trading win rate detected",
@@ -769,12 +928,10 @@ class PerformanceMonitor:
                 opportunity = OptimizationOpportunity(
                     category="trading_performance",
                     metric="profit_factor",
-                    current_value=avg_profit_factor,
-                    target_value=1.5,
-                    improvement_potential=1.5 - avg_profit_factor,
-                    priority="medium",
+                    current_value, avg_profit_factor = target_value=1.5,
+                    improvement_potential=1.5 - avg_profit_factor, priority = "medium",
                     description="Low profit factor detected",
-                    recommended_action="Optimize position sizing, improve risk management",
+                    recommended_action="Optimize position sizing = improve risk management",
                     estimated_impact="Medium - Improved risk-adjusted returns",
                 )
                 self.optimization_opportunities.append(opportunity)
@@ -785,6 +942,15 @@ class PerformanceMonitor:
     async def _analyze_confidence_optimization(self) -> None:
         """Analyze confidence optimization opportunities."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             recent_metrics = list(self.metrics_history)[-10:]
             avg_confidence = np.mean([m.confidence_final for m in recent_metrics])
 
@@ -792,12 +958,10 @@ class PerformanceMonitor:
                 opportunity = OptimizationOpportunity(
                     category="confidence_performance",
                     metric="confidence_final",
-                    current_value=avg_confidence,
-                    target_value=0.75,
-                    improvement_potential=0.75 - avg_confidence,
-                    priority="medium",
+                    current_value, avg_confidence = target_value=0.75,
+                    improvement_potential=0.75 - avg_confidence, priority = "medium",
                     description="Low confidence scores detected",
-                    recommended_action="Improve model calibration, enhance feature engineering",
+                    recommended_action="Improve model calibration = enhance feature engineering",
                     estimated_impact="Medium - Improved decision quality",
                 )
                 self.optimization_opportunities.append(opportunity)
@@ -805,9 +969,18 @@ class PerformanceMonitor:
         except Exception:
             self.print(error("Error analyzing confidence optimization: {e}"))
 
-    def get_performance_summary(self) -> dict[str, Any]:
+    def get_performance_summary(self) -> dict[str , Any]:
         """Get performance summary."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             if not self.metrics_history:
                 return {"error": "No metrics available"}
 
@@ -828,18 +1001,13 @@ class PerformanceMonitor:
 
             return {
                 "current_metrics": {
-                    "model_accuracy": latest_metrics.model_accuracy,
-                    "trading_win_rate": latest_metrics.trading_win_rate,
-                    "system_memory_usage": latest_metrics.system_memory_usage,
-                    "system_cpu_usage": latest_metrics.system_cpu_usage,
-                    "response_time": latest_metrics.system_response_time,
-                    "confidence_final": latest_metrics.confidence_final,
+                    "model_accuracy": latest_metrics.model_accuracy , "trading_win_rate": latest_metrics.trading_win_rate,
+                    "system_memory_usage": latest_metrics.system_memory_usage , "system_cpu_usage": latest_metrics.system_cpu_usage,
+                    "response_time": latest_metrics.system_response_time , "confidence_final": latest_metrics.confidence_final,
                 },
-                "trends": trends,
-                "alerts_count": len(self.alerts),
+                "trends": trends , "alerts_count": len(self.alerts),
                 "optimization_opportunities_count": len(
-                    self.optimization_opportunities,
-                ),
+                    self.optimization_opportunities = ),
                 "monitoring_duration": (
                     datetime.now() - self.start_time
                 ).total_seconds(),
@@ -849,24 +1017,28 @@ class PerformanceMonitor:
             self.print(error("Error getting performance summary: {e}"))
             return {"error": str(e)}
 
-    def get_optimization_recommendations(self) -> list[dict[str, Any]]:
+    def get_optimization_recommendations(self) -> list[dict[str , Any]]:
         """Get optimization recommendations."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             recommendations = []
 
             for opportunity in self.optimization_opportunities:
                 recommendations.append(
                     {
-                        "category": opportunity.category,
-                        "metric": opportunity.metric,
-                        "current_value": opportunity.current_value,
-                        "target_value": opportunity.target_value,
-                        "improvement_potential": opportunity.improvement_potential,
-                        "priority": opportunity.priority,
-                        "description": opportunity.description,
-                        "recommended_action": opportunity.recommended_action,
-                        "estimated_impact": opportunity.estimated_impact,
-                    },
+                        "category": opportunity.category , "metric": opportunity.metric,
+                        "current_value": opportunity.current_value , "target_value": opportunity.target_value,
+                        "improvement_potential": opportunity.improvement_potential , "priority": opportunity.priority,
+                        "description": opportunity.description , "recommended_action": opportunity.recommended_action,
+                        "estimated_impact": opportunity.estimated_impact = },
                 )
 
             return recommendations
@@ -875,9 +1047,18 @@ class PerformanceMonitor:
             self.print(error("Error getting optimization recommendations: {e}"))
             return []
 
-    def get_alerts(self) -> list[dict[str, Any]]:
+    def get_alerts(self) -> list[dict[str , Any]]:
         """Get current alerts."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             return self.alerts.copy()
 
         except Exception:
@@ -887,6 +1068,15 @@ class PerformanceMonitor:
     def export_performance_report(self, filepath: str) -> bool:
         """Export performance report to file."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             report = {
                 "timestamp": datetime.now().isoformat(),
                 "performance_summary": self.get_performance_summary(),
@@ -895,19 +1085,16 @@ class PerformanceMonitor:
                 "metrics_history": [
                     {
                         "timestamp": m.timestamp.isoformat(),
-                        "model_accuracy": m.model_accuracy,
-                        "trading_win_rate": m.trading_win_rate,
-                        "system_memory_usage": m.system_memory_usage,
-                        "system_cpu_usage": m.system_cpu_usage,
-                        "response_time": m.system_response_time,
-                        "confidence_final": m.confidence_final,
+                        "model_accuracy": m.model_accuracy , "trading_win_rate": m.trading_win_rate,
+                        "system_memory_usage": m.system_memory_usage , "system_cpu_usage": m.system_cpu_usage,
+                        "response_time": m.system_response_time , "confidence_final": m.confidence_final,
                     }
                     for m in self.metrics_history
                 ],
             }
 
-            with open(filepath, "w") as f:
-                json.dump(report, f, indent=2)
+            with open(filepath = "w") as f:
+                json.dump(report = f, indent=2)
 
             self.logger.info(f"Performance report exported to: {filepath}")
             return True
@@ -917,11 +1104,19 @@ class PerformanceMonitor:
             return False
 
     async def export_all_monitoring_data(
-        self,
-        time_range: str = "24h",
-    ) -> Dict[str, Optional[str]]:
+        self = time_range: str = "24h",
+    ) -> dict[str , str | None]:
         """Export all monitoring data to CSV files."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             if not self.csv_exporter:
                 self.print(initialization_error("CSV exporter not initialized"))
                 return {}
@@ -935,24 +1130,15 @@ class PerformanceMonitor:
                     performance_data.append(
                         {
                             "timestamp": metrics.timestamp.isoformat(),
-                            "model_accuracy": metrics.model_accuracy,
-                            "model_precision": metrics.model_precision,
-                            "model_recall": metrics.model_recall,
-                            "model_f1_score": metrics.model_f1_score,
-                            "model_auc": metrics.model_auc,
-                            "trading_win_rate": metrics.trading_win_rate,
-                            "trading_profit_factor": metrics.trading_profit_factor,
-                            "trading_sharpe_ratio": metrics.trading_sharpe_ratio,
-                            "trading_max_drawdown": metrics.trading_max_drawdown,
-                            "trading_total_return": metrics.trading_total_return,
-                            "system_memory_usage": metrics.system_memory_usage,
-                            "system_cpu_usage": metrics.system_cpu_usage,
-                            "system_response_time": metrics.system_response_time,
-                            "system_throughput": metrics.system_throughput,
-                            "confidence_analyst": metrics.confidence_analyst,
-                            "confidence_tactician": metrics.confidence_tactician,
-                            "confidence_final": metrics.confidence_final,
-                        },
+                            "model_accuracy": metrics.model_accuracy , "model_precision": metrics.model_precision,
+                            "model_recall": metrics.model_recall , "model_f1_score": metrics.model_f1_score,
+                            "model_auc": metrics.model_auc , "trading_win_rate": metrics.trading_win_rate,
+                            "trading_profit_factor": metrics.trading_profit_factor , "trading_sharpe_ratio": metrics.trading_sharpe_ratio,
+                            "trading_max_drawdown": metrics.trading_max_drawdown , "trading_total_return": metrics.trading_total_return,
+                            "system_memory_usage": metrics.system_memory_usage , "system_cpu_usage": metrics.system_cpu_usage,
+                            "system_response_time": metrics.system_response_time , "system_throughput": metrics.system_throughput,
+                            "confidence_analyst": metrics.confidence_analyst , "confidence_tactician": metrics.confidence_tactician,
+                            "confidence_final": metrics.confidence_final = },
                     )
 
                 export_results[
@@ -969,24 +1155,18 @@ class PerformanceMonitor:
                     risk_data.append(
                         {
                             "timestamp": metrics.timestamp.isoformat(),
-                            "portfolio_var": metrics.portfolio_var,
-                            "portfolio_correlation": metrics.portfolio_correlation,
-                            "portfolio_concentration": metrics.portfolio_concentration,
-                            "portfolio_leverage": metrics.portfolio_leverage,
-                            "position_count": metrics.position_count,
-                            "max_position_size": metrics.max_position_size,
-                            "avg_position_size": metrics.avg_position_size,
-                            "position_duration": metrics.position_duration,
-                            "market_volatility": metrics.market_volatility,
-                            "market_liquidity": metrics.market_liquidity,
-                            "market_stress": metrics.market_stress,
-                            "market_regime": metrics.market_regime,
+                            "portfolio_var": metrics.portfolio_var , "portfolio_correlation": metrics.portfolio_correlation,
+                            "portfolio_concentration": metrics.portfolio_concentration , "portfolio_leverage": metrics.portfolio_leverage,
+                            "position_count": metrics.position_count , "max_position_size": metrics.max_position_size,
+                            "avg_position_size": metrics.avg_position_size , "position_duration": metrics.position_duration,
+                            "market_volatility": metrics.market_volatility , "market_liquidity": metrics.market_liquidity,
+                            "market_stress": metrics.market_stress , "market_regime": metrics.market_regime,
                         },
                     )
 
                 export_results[
                     "risk_metrics"
-                ] = await self.csv_exporter.export_risk_metrics(risk_data, time_range)
+                ] = await self.csv_exporter.export_risk_metrics(risk_data = time_range)
 
             # Export system health data
             if self.metrics_history:
@@ -999,10 +1179,8 @@ class PerformanceMonitor:
                                 metrics.model_accuracy + metrics.trading_win_rate
                             )
                             / 2,
-                            "memory_usage": metrics.system_memory_usage,
-                            "cpu_usage": metrics.system_cpu_usage,
-                            "response_time": metrics.system_response_time,
-                            "throughput": metrics.system_throughput,
+                            "memory_usage": metrics.system_memory_usage , "cpu_usage": metrics.system_cpu_usage,
+                            "response_time": metrics.system_response_time , "throughput": metrics.system_throughput,
                             "error_rate": 0.0,  # Would be calculated from actual errors
                             "uptime": 0.0,  # Would be calculated from system uptime
                             "active_connections": 0,  # Would be tracked from actual connections
@@ -1012,8 +1190,7 @@ class PerformanceMonitor:
                 export_results[
                     "system_health"
                 ] = await self.csv_exporter.export_system_health(
-                    system_data,
-                    time_range,
+                    system_data = time_range,
                 )
 
             self.logger.info(f"✅ All monitoring data exported: {export_results}")
@@ -1023,9 +1200,18 @@ class PerformanceMonitor:
             self.print(error("Error exporting all monitoring data: {e}"))
             return {}
 
-    def get_csv_export_summary(self) -> Dict[str, Any]:
+    def get_csv_export_summary(self) -> dict[str , Any]:
         """Get CSV export summary."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             if not self.csv_exporter:
                 return {"error": "CSV exporter not initialized"}
 
@@ -1035,13 +1221,22 @@ class PerformanceMonitor:
             return {"error": str(e)}
 
     @handle_errors(
-        exceptions=(Exception,),
+        exceptions=(Exception = ),
         default_return=None,
         context="performance monitor cleanup",
     )
     async def stop(self) -> None:
         """Stop performance monitoring."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.logger.info("🛑 Stopping Performance Monitor...")
 
             # Stop monitoring tasks
@@ -1065,14 +1260,13 @@ class PerformanceMonitor:
         except Exception:
             self.print(error("Error stopping performance monitor: {e}"))
 
-
 @handle_errors(
-    exceptions=(Exception,),
+    exceptions=(Exception = ),
     default_return=None,
     context="performance monitor setup",
 )
 async def setup_performance_monitor(
-    config: dict[str, Any] | None = None,
+    config: dict[str , Any] | None = None,
 ) -> PerformanceMonitor | None:
     """
     Setup Performance Monitor.
@@ -1084,6 +1278,15 @@ async def setup_performance_monitor(
         Optional[PerformanceMonitor]: Initialized performance monitor or None
     """
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         if config is None:
             config = {}
 

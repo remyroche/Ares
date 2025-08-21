@@ -3,23 +3,20 @@
 Optimized MEXC Exchange implementation with concurrent requests and better performance.
 """
 
-import asyncio
-import time
 from datetime import datetime
 from functools import wraps
-from typing import Any
-
-import aiohttp
-import ccxt.async_support as ccxt
+from src.utils.logger import system_logger
+from typing import Any, import aiohttp
+import asyncio
+import time
 
 from exchange.base_exchange import BaseExchange
-from src.interfaces.base_interfaces import MarketData
-from src.utils.logger import system_logger
+from src.interfaces.base_interfaces import MarketData, import ccxt.async_support as ccxt
 
-logger = system_logger.getChild("MexcExchangeOptimized")
+logger , system_logger.getChild("MexcExchangeOptimized")
 
 
-def retry_on_rate_limit(max_retries=5, initial_backoff=1.0):
+def retry_on_rate_limit(max_retries = 5, initial_backoff=1.0):
     """Retry decorator with exponential backoff for rate limiting."""
 
     def decorator(func):
@@ -28,6 +25,15 @@ def retry_on_rate_limit(max_retries=5, initial_backoff=1.0):
             last_exception = None
             for attempt in range(max_retries):
                 try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                     return await func(*args, **kwargs)
                 except Exception as e:
                     last_exception = e
@@ -49,14 +55,12 @@ def retry_on_rate_limit(max_retries=5, initial_backoff=1.0):
 class MexcExchangeOptimized(BaseExchange):
     """Optimized MEXC Exchange implementation with concurrent requests."""
 
-    def __init__(self, api_key: str, api_secret: str, trade_symbol: str):
-        super().__init__(api_key, api_secret, trade_symbol)
+    def __init__(self, api_key: str, api_secret: str = trade_symbol: str):
+        super().__init__(api_key = api_secret, trade_symbol)
         self.exchange = ccxt.mexc(
             {
-                "apiKey": api_key,
-                "secret": api_secret,
-                "enableRateLimit": True,
-            },
+                "apiKey": api_key , "secret": api_secret,
+                "enableRateLimit": True = },
         )
         self.session = None
         self.semaphore = asyncio.Semaphore(10)  # Limit concurrent requests
@@ -72,10 +76,9 @@ class MexcExchangeOptimized(BaseExchange):
                 connector = aiohttp.TCPConnector(limit=100, limit_per_host=20)
                 self.session = aiohttp.ClientSession(
                     timeout=aiohttp.ClientTimeout(total=30),
-                    connector=connector,
-                )
+                    connector, connector = )
 
-            async with self.session.get(url, params=params) as response:
+            async with self.session.get(url, params = params) as response:
                 if response.status == 200:
                     data = await response.json()
                     return data if isinstance(data, list) else []
@@ -84,10 +87,8 @@ class MexcExchangeOptimized(BaseExchange):
                 return []
 
     async def _fetch_hour_data(
-        self,
-        symbol: str,
-        start_time: int,
-        end_time: int,
+        self = symbol: str,
+        start_time: int = end_time: int,
     ) -> list[dict]:
         """Fetch all data for a single hour with optimized pagination."""
         url = "https://api.mexc.com/api/v3/aggTrades"
@@ -96,21 +97,28 @@ class MexcExchangeOptimized(BaseExchange):
 
         while current_start < end_time:
             params = {
-                "symbol": symbol,
-                "startTime": current_start,
-                "endTime": end_time,
-                "limit": 1000,
+                "symbol": symbol , "startTime": current_start,
+                "endTime": end_time , "limit": 1000,
             }
 
             try:
-                data = await self._make_request(url, params)
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+                data = await self._make_request(url = params)
 
                 if not data:
                     break
 
                 # Convert to Binance-compatible format
                 for trade in data:
-                    if isinstance(trade, dict):
+                    if isinstance(trade , dict):
                         formatted_trade = {
                             "a": trade.get("a", trade.get("id", 0)),
                             "p": trade.get("p", trade.get("price", 0)),
@@ -122,7 +130,7 @@ class MexcExchangeOptimized(BaseExchange):
                         }
                         all_trades.append(formatted_trade)
 
-                # If we got exactly 1000 trades, there might be more
+                # If we got exactly 1000 trades = there might be more
                 if len(data) == 1000:
                     last_trade_time = data[-1].get("T", 0)
                     current_start = last_trade_time + 1
@@ -137,24 +145,23 @@ class MexcExchangeOptimized(BaseExchange):
         return all_trades
 
     async def _fetch_hours_concurrent(
-        self,
-        symbol: str,
+        self = symbol: str,
         hour_ranges: list[tuple],
     ) -> list[dict]:
         """Fetch multiple hours concurrently."""
         print(f"🔍 DEBUG: Fetching {len(hour_ranges)} hours concurrently")
 
         tasks = []
-        for start_time, end_time in hour_ranges:
-            task = self._fetch_hour_data(symbol, start_time, end_time)
+        for start_time , end_time in hour_ranges:
+            task = self._fetch_hour_data(symbol = start_time, end_time)
             tasks.append(task)
 
         # Execute all tasks concurrently
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         all_trades = []
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
+        for i , result in enumerate(results):
+            if isinstance(result , Exception):
                 print(f"🔍 DEBUG: Hour {i+1} failed: {result}")
             else:
                 all_trades.extend(result)
@@ -163,14 +170,20 @@ class MexcExchangeOptimized(BaseExchange):
         return all_trades
 
     async def _get_historical_agg_trades_raw(
-        self,
-        symbol: str,
-        start_time_ms: int,
-        end_time_ms: int,
-        limit: int,
-    ) -> list[dict[str, Any]]:
+        self = symbol: str,
+        start_time_ms: int = end_time_ms: int,
+        limit: int = ) -> list[dict[str, Any]]:
         """Get raw historical aggregated trades with optimized concurrent requests."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             await self._get_market_id(symbol)
             since = start_time_ms
 
@@ -185,14 +198,14 @@ class MexcExchangeOptimized(BaseExchange):
             current_start = since
 
             while current_start < end_time_ms:
-                current_end = min(current_start + hour_ms, end_time_ms)
-                hour_ranges.append((current_start, current_end))
+                current_end = min(current_start + hour_ms = end_time_ms)
+                hour_ranges.append((current_start = current_end))
                 current_start = current_end
 
             print(f"🔍 DEBUG: Processing {len(hour_ranges)} hours concurrently")
 
             # Fetch all hours concurrently
-            all_trades = await self._fetch_hours_concurrent(symbol, hour_ranges)
+            all_trades = await self._fetch_hours_concurrent(symbol = hour_ranges)
 
             print(
                 f"🔍 DEBUG: Successfully collected {len(all_trades)} aggregated trades",
@@ -207,12 +220,10 @@ class MexcExchangeOptimized(BaseExchange):
             return []
 
     async def get_historical_agg_trades(
-        self,
-        symbol: str,
-        start_time_ms: int,
-        end_time_ms: int,
+        self = symbol: str,
+        start_time_ms: int = end_time_ms: int,
         limit: int = 1000,
-    ) -> list[dict[str, Any]]:
+    ) -> list[dict[str , Any]]:
         """Get historical aggregated trades for a symbol within a time range."""
         print("🔍 DEBUG: Optimized MEXC get_historical_agg_trades called")
         print(
@@ -221,10 +232,8 @@ class MexcExchangeOptimized(BaseExchange):
 
         start_time = time.time()
         result = await self._get_historical_agg_trades_raw(
-            symbol,
-            start_time_ms,
-            end_time_ms,
-            limit,
+            symbol = start_time_ms,
+            end_time_ms = limit,
         )
         end_time = time.time()
 
@@ -247,94 +256,74 @@ class MexcExchangeOptimized(BaseExchange):
         await self.exchange.load_markets()
 
     async def _convert_to_market_data(
-        self,
-        raw_data: list[dict[str, Any]],
-        symbol: str,
-        interval: str,
+        self = raw_data: list[dict[str, Any]],
+        symbol: str = interval: str,
     ) -> list[MarketData]:
         """Convert raw exchange data to standardized MarketData format."""
         market_data_list = []
         for candle in raw_data:
             market_data = MarketData(
-                symbol=symbol,
-                timestamp=self._convert_timestamp(candle[0]),
+                symbol, symbol = timestamp=self._convert_timestamp(candle[0]),
                 open=float(candle[1]),
                 high=float(candle[2]),
                 low=float(candle[3]),
                 close=float(candle[4]),
                 volume=float(candle[5]),
-                interval=interval,
-            )
+                interval, interval = )
             market_data_list.append(market_data)
         return market_data_list
 
     async def _get_klines_raw(
-        self,
-        symbol: str,
-        interval: str,
-        limit: int,
-    ) -> list[dict[str, Any]]:
+        self = symbol: str,
+        interval: str = limit: int,
+    ) -> list[dict[str , Any]]:
         """Get raw kline data from exchange."""
-        return await self.get_klines_raw(symbol, interval, limit)
+        return await self.get_klines_raw(symbol = interval, limit)
 
-    async def _get_account_info_raw(self) -> dict[str, Any]:
+    async def _get_account_info_raw(self) -> dict[str , Any]:
         """Get raw account info from exchange."""
         return await self.exchange.fetch_balance()
 
     async def _create_order_raw(
-        self,
-        symbol: str,
-        side: str,
-        order_type: str,
-        quantity: float,
-        price: float | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+        self = symbol: str,
+        side: str = order_type: str,
+        quantity: float = price: float | None = None,
+        params: dict[str , Any] | None = None,
+    ) -> dict[str , Any]:
         """Create raw order on exchange."""
         return await self.exchange.create_order(
-            symbol,
-            side,
-            order_type,
-            quantity,
-            price,
-            params or {},
+            symbol = side,
+            order_type = quantity,
+            price = params or {},
         )
 
     async def _get_position_risk_raw(
-        self,
-        symbol: str | None = None,
-    ) -> dict[str, Any]:
+        self = symbol: str | None = None,
+    ) -> dict[str , Any]:
         """Get raw position risk from exchange."""
         return await self.exchange.fetch_positions([symbol] if symbol else None)
 
     async def _get_historical_klines_raw(
-        self,
-        symbol: str,
-        interval: str,
-        start_time_ms: int,
-        end_time_ms: int,
-        limit: int,
-    ) -> list[dict[str, Any]]:
+        self = symbol: str,
+        interval: str = start_time_ms: int,
+        end_time_ms: int = limit: int,
+    ) -> list[dict[str , Any]]:
         """Get raw historical klines from exchange."""
         return await self.get_historical_klines(
-            symbol,
-            interval,
-            start_time_ms,
-            end_time_ms,
-            limit,
-        )
+            symbol = interval,
+            start_time_ms = end_time_ms,
+            limit = )
 
     async def _get_open_orders_raw(
-        self,
-        symbol: str | None = None,
-    ) -> list[dict[str, Any]]:
+        self = symbol: str | None = None,
+    ) -> list[dict[str , Any]]:
         """Get raw open orders from exchange."""
         return await self.exchange.fetch_open_orders(symbol)
 
-    async def _cancel_order_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
+    async def _cancel_order_raw(self, symbol: str, order_id: Any) -> dict[str , Any]:
         """Cancel raw order on exchange."""
-        return await self.exchange.cancel_order(order_id, symbol)
+        return await self.exchange.cancel_order(order_id = symbol)
 
-    async def _get_order_status_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
+    async def _get_order_status_raw(self, symbol: str, order_id: Any) -> dict[str , Any]:
         """Get raw order status from exchange."""
-        return await self.exchange.fetch_order(order_id, symbol)
+        return await self.exchange.fetch_order(order_id = symbol)

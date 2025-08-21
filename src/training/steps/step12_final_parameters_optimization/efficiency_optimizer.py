@@ -1,7 +1,6 @@
 # src/training/steps/step12_final_parameters_optimization/efficiency_optimizer.py
 
-"""
-Efficiency Optimizer for Hyperparameter Optimization
+"""Efficiency Optimizer for Hyperparameter Optimization.
 
 This module implements various computational efficiency improvements to speed up
 the hyperparameter optimization process while maintaining quality.
@@ -18,22 +17,8 @@ from typing import Any
 
 import numpy as np
 
-from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
+from src.utils.logger import system_logger
 
 
 @dataclass
@@ -76,7 +61,7 @@ class EfficiencyConfig:
 class EfficiencyOptimizer:
     """Optimizes computational efficiency of hyperparameter optimization."""
 
-    def __init__(self, config: EfficiencyConfig):
+    def __init__(self, config: EfficiencyConfig) -> None:
         self.config = config
         self.logger = system_logger.getChild("EfficiencyOptimizer")
 
@@ -103,7 +88,7 @@ class EfficiencyOptimizer:
         default_return=False,
         context="efficiency optimizer initialization",
     )
-    async def initialize(self):
+    async def initialize(self) -> None:
         """Initialize the efficiency optimizer."""
         if self.config.enable_parallel_processing:
             if self.config.use_process_pool:
@@ -128,8 +113,7 @@ class EfficiencyOptimizer:
         n_trials: int,
         timeout_seconds: int = 3600,
     ) -> dict[str, Any]:
-        """
-        Run efficient hyperparameter optimization.
+        """Run efficient hyperparameter optimization.
 
         Args:
             objective_function: Function to optimize
@@ -139,6 +123,7 @@ class EfficiencyOptimizer:
 
         Returns:
             Optimization results with efficiency metrics
+
         """
         try:
             start_time = time.time()
@@ -221,7 +206,7 @@ class EfficiencyOptimizer:
             }
 
         except Exception as e:
-            self.logger.error(f"Error in efficient optimization: {e}")
+            self.logger.exception(f"Error in efficient optimization: {e}")
             raise
 
     def _calculate_adaptive_trials(
@@ -232,7 +217,7 @@ class EfficiencyOptimizer:
         """Calculate adaptive number of trials based on search space complexity."""
         try:
             # Count parameters
-            num_params = len(search_space)
+            len(search_space)
 
             # Estimate complexity based on parameter types and ranges
             complexity_score = 0
@@ -260,7 +245,7 @@ class EfficiencyOptimizer:
             return base_trials
 
         except Exception as e:
-            self.logger.error(f"Error calculating adaptive trials: {e}")
+            self.logger.exception(f"Error calculating adaptive trials: {e}")
             return base_trials
 
     async def _get_warm_start_parameters(
@@ -289,7 +274,7 @@ class EfficiencyOptimizer:
             return warm_start_params
 
         except Exception as e:
-            self.logger.error(f"Error getting warm start parameters: {e}")
+            self.logger.exception(f"Error getting warm start parameters: {e}")
             return []
 
     def _generate_smart_parameters(
@@ -329,7 +314,7 @@ class EfficiencyOptimizer:
             return params_list
 
         except Exception as e:
-            self.logger.error(f"Error generating smart parameters: {e}")
+            self.logger.exception(f"Error generating smart parameters: {e}")
             return [
                 self._generate_random_parameters(search_space) for _ in range(n_trials)
             ]
@@ -369,7 +354,7 @@ class EfficiencyOptimizer:
             return params
 
         except Exception as e:
-            self.logger.error(f"Error generating random parameters: {e}")
+            self.logger.exception(f"Error generating random parameters: {e}")
             return {}
 
     def _generate_diverse_parameters(
@@ -422,7 +407,7 @@ class EfficiencyOptimizer:
             return params
 
         except Exception as e:
-            self.logger.error(f"Error generating diverse parameters: {e}")
+            self.logger.exception(f"Error generating diverse parameters: {e}")
             return {}
 
     def _perturb_parameters(
@@ -479,7 +464,7 @@ class EfficiencyOptimizer:
             return perturbed_params
 
         except Exception as e:
-            self.logger.error(f"Error perturbing parameters: {e}")
+            self.logger.exception(f"Error perturbing parameters: {e}")
             return base_params
 
     async def _process_trials_batch(
@@ -516,7 +501,7 @@ class EfficiencyOptimizer:
                         )  # 5 minute timeout per trial
                         results.append(result)
                     except Exception as e:
-                        self.logger.error(f"Trial evaluation failed: {e}")
+                        self.logger.exception(f"Trial evaluation failed: {e}")
                         results.append({"error": str(e), "value": 0.0})
 
             else:
@@ -527,7 +512,7 @@ class EfficiencyOptimizer:
                         result = self._evaluate_trial(objective_function, params, i)
                         results.append(result)
                     except Exception as e:
-                        self.logger.error(f"Trial evaluation failed: {e}")
+                        self.logger.exception(f"Trial evaluation failed: {e}")
                         results.append({"error": str(e), "value": 0.0})
 
             batch_time = time.time() - start_time
@@ -536,7 +521,7 @@ class EfficiencyOptimizer:
             return results
 
         except Exception as e:
-            self.logger.error(f"Error processing batch {batch_name}: {e}")
+            self.logger.exception(f"Error processing batch {batch_name}: {e}")
             return []
 
     def _evaluate_trial(
@@ -594,7 +579,7 @@ class EfficiencyOptimizer:
             return result
 
         except Exception as e:
-            self.logger.error(f"Error evaluating trial {trial_index}: {e}")
+            self.logger.exception(f"Error evaluating trial {trial_index}: {e}")
             return {
                 "trial_index": trial_index,
                 "params": params,
@@ -610,10 +595,10 @@ class EfficiencyOptimizer:
             sorted_params = sorted(params.items())
             return str(hash(str(sorted_params)))
         except Exception as e:
-            self.logger.error(f"Error generating cache key: {e}")
+            self.logger.exception(f"Error generating cache key: {e}")
             return str(hash(str(params)))
 
-    def _trim_cache(self):
+    def _trim_cache(self) -> None:
         """Trim cache to maintain size limit."""
         try:
             if len(self.evaluation_cache) > self.config.cache_size:
@@ -624,9 +609,9 @@ class EfficiencyOptimizer:
                 for key in keys_to_remove:
                     del self.evaluation_cache[key]
         except Exception as e:
-            self.logger.error(f"Error trimming cache: {e}")
+            self.logger.exception(f"Error trimming cache: {e}")
 
-    async def _clear_old_cache(self):
+    async def _clear_old_cache(self) -> None:
         """Clear old cache entries."""
         try:
             current_time = time.time()
@@ -645,7 +630,7 @@ class EfficiencyOptimizer:
                 self.logger.info(f"Cleared {len(keys_to_remove)} old cache entries")
 
         except Exception as e:
-            self.logger.error(f"Error clearing old cache: {e}")
+            self.logger.exception(f"Error clearing old cache: {e}")
 
     def _calculate_efficiency_metrics(self, start_time: float) -> dict[str, Any]:
         """Calculate efficiency metrics."""
@@ -677,7 +662,7 @@ class EfficiencyOptimizer:
             }
 
         except Exception as e:
-            self.logger.error(f"Error calculating efficiency metrics: {e}")
+            self.logger.exception(f"Error calculating efficiency metrics: {e}")
             return {}
 
     def _calculate_parallel_efficiency(self) -> float:
@@ -699,7 +684,7 @@ class EfficiencyOptimizer:
             return 0.0
 
         except Exception as e:
-            self.logger.error(f"Error calculating parallel efficiency: {e}")
+            self.logger.exception(f"Error calculating parallel efficiency: {e}")
             return 0.0
 
     def _get_memory_usage(self) -> float:
@@ -713,10 +698,10 @@ class EfficiencyOptimizer:
         except ImportError:
             return 0.0
         except Exception as e:
-            self.logger.error(f"Error getting memory usage: {e}")
+            self.logger.exception(f"Error getting memory usage: {e}")
             return 0.0
 
-    async def _load_caches(self):
+    async def _load_caches(self) -> None:
         """Load existing caches from disk."""
         try:
             cache_dir = "data/optimization_cache"
@@ -742,9 +727,9 @@ class EfficiencyOptimizer:
                         self.logger.warning(f"Could not load {cache_name}: {e}")
 
         except Exception as e:
-            self.logger.error(f"Error loading caches: {e}")
+            self.logger.exception(f"Error loading caches: {e}")
 
-    async def save_caches(self):
+    async def save_caches(self) -> None:
         """Save caches to disk."""
         try:
             cache_dir = "data/optimization_cache"
@@ -763,12 +748,12 @@ class EfficiencyOptimizer:
                         pickle.dump(cache_data, f)
                     self.logger.info(f"Saved {len(cache_data)} entries to {cache_name}")
                 except Exception as e:
-                    self.logger.error(f"Error saving {cache_name}: {e}")
+                    self.logger.exception(f"Error saving {cache_name}: {e}")
 
         except Exception as e:
-            self.logger.error(f"Error saving caches: {e}")
+            self.logger.exception(f"Error saving caches: {e}")
 
-    async def cleanup(self):
+    async def cleanup(self) -> None:
         """Cleanup resources."""
         try:
             if self.executor:
@@ -779,7 +764,7 @@ class EfficiencyOptimizer:
             self.logger.info("Efficiency optimizer cleanup completed")
 
         except Exception as e:
-            self.logger.error(f"Error during cleanup: {e}")
+            self.logger.exception(f"Error during cleanup: {e}")
 
 
 def create_efficiency_optimizer(config: EfficiencyConfig) -> EfficiencyOptimizer:
@@ -817,16 +802,14 @@ if __name__ == "__main__":
     # Run optimization
     import asyncio
 
-    async def test():
+    async def test() -> None:
         await optimizer.initialize()
-        results = await optimizer.optimize_trial_efficiency(
+        await optimizer.optimize_trial_efficiency(
             test_objective,
             search_space,
             n_trials=50,
             timeout_seconds=60,
         )
-        print(f"Optimization completed with {len(results['results'])} trials")
-        print(f"Efficiency metrics: {results['efficiency_metrics']}")
         await optimizer.cleanup()
 
     asyncio.run(test())

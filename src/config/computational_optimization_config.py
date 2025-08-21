@@ -1,7 +1,6 @@
 # src/config/computational_optimization_config.py
 
-"""
-Computational optimization configuration for the enhanced training manager.
+"""Computational optimization configuration for the enhanced training manager.
 Based on the computational_optimization_strategies.md document.
 """
 
@@ -9,123 +8,125 @@ from typing import Any
 
 # Default computational optimization configuration
 COMPUTATIONAL_OPTIMIZATION_CONFIG = {
-    "caching": {
-        "enabled": True,
-        "max_cache_size": 1000,
-        "cache_ttl": 3600,  # 1 hour in seconds
-        "cache_types": {
-            "backtest_results": True,
-            "technical_indicators": True,
-            "feature_engineering": True,
-            "model_predictions": True,
+        "caching": {
+            "enabled": True,
+            "max_cache_size": 1000,
+            "cache_ttl": 3600,  # 1 hour in seconds
+            "cache_types": {
+                "backtest_results": True,
+                "technical_indicators": True,
+                "feature_engineering": True,
+                "model_predictions": True,
+            },
         },
-    },
-    "parallelization": {
-        "enabled": True,
-        "max_workers": 8,
-        "chunk_size": 1000,
-        "parallel_components": {
-            "backtesting": True,
-            "feature_engineering": True,
-            "model_training": True,
-            "regime_classification": True,
-            "ensemble_creation": True,
+        "parallelization": {
+            "enabled": True,
+            "max_workers": 8,
+            "chunk_size": 1000,
+            "parallel_components": {
+                "backtesting": True,
+                "feature_engineering": True,
+                "model_training": True,
+                "regime_classification": True,
+                "ensemble_creation": True,
+            },
         },
-    },
-    "early_stopping": {
-        "enabled": True,
-        "patience": 10,
-        "min_trials": 20,
-        "performance_threshold": -0.5,
-        "evaluation_stages": [
-            {"data_ratio": 0.1, "weight": 0.3},
-            {"data_ratio": 0.3, "weight": 0.5},
-            {"data_ratio": 1.0, "weight": 1.0},
-        ],
-    },
-    "surrogate_models": {
-        "enabled": True,
-        "expensive_trials": 50,
-        "update_frequency": 10,
-        "model_types": ["gaussian_process", "random_forest"],
-    },
-    "memory_management": {
-        "enabled": True,
-        "memory_threshold": 0.8,
-        "cleanup_frequency": 100,
-        "optimization_strategies": {
-            "dataframe_optimization": True,
-            "garbage_collection": True,
-            "cache_size_limits": True,
-            "memory_profiling": True,
+        "early_stopping": {
+            "enabled": True,
+            "patience": 10,
+            "min_trials": 20,
+            "performance_threshold": -0.5,
+            "evaluation_stages": [
+                {"data_ratio": 0.1, "weight": 0.3},
+                {"data_ratio": 0.3, "weight": 0.5},
+                {"data_ratio": 1.0, "weight": 1.0},
+            ],
         },
-    },
-    "data_streaming": {
-        "enabled": True,
-        "chunk_size": 10000,
-        "compression": "snappy",
-        "file_formats": {
-            "prefer_parquet": True,
-            "fallback_csv": True,
-            "arrow_support": True,
+        "surrogate_models": {
+            "enabled": True,
+            "expensive_trials": 50,
+            "update_frequency": 10,
+            "model_types": ["gaussian_process", "random_forest"],
         },
-    },
-    "adaptive_sampling": {
-        "enabled": True,
-        "initial_samples": 100,
-        "top_quartile_sampling": True,
-        "perturbation_factor": 0.1,
-        "exploration_exploitation_ratio": 0.7,
-    },
-    "incremental_training": {
-        "enabled": True,
-        "model_caching": True,
-        "state_reuse": True,
-        "checkpoint_frequency": 50,
-    },
-    "feature_optimization": {
-        "precompute_indicators": True,
-        "cache_feature_selection": True,
-        "parallel_computation": True,
-        "memory_efficient_storage": True,
-    },
-    "monitoring": {
-        "continuous_monitoring": True,
-        "monitoring_interval": 30,  # seconds
-        "memory_leak_detection": True,
-        "performance_tracking": True,
-        "alert_thresholds": {
-            "memory_usage_percent": 80,
-            "memory_growth_mb": 100,
-            "execution_time_factor": 2.0,
+        "memory_management": {
+            "enabled": True,
+            "memory_threshold": 0.8,
+            "cleanup_frequency": 100,
+            "optimization_strategies": {
+                "dataframe_optimization": True,
+                "garbage_collection": True,
+                "cache_size_limits": True,
+                "memory_profiling": True,
+            },
         },
-    },
-    "data_sharing": {
-        "enabled": True,
-        "max_cache_size_gb": 8.0,
-        "cache_ttl_hours": 24,
-        "enable_memory_optimization": True,
-        "cache_statistics": True,
-        "step_level_sharing": True,
-    },
-}
+        "data_streaming": {
+            "enabled": True,
+            "chunk_size": 10000,
+            "compression": "snappy",
+            "file_formats": {
+                "prefer_parquet": True,
+                "fallback_csv": True,
+                "arrow_support": True,
+            },
+        },
+        "adaptive_sampling": {
+            "enabled": True,
+            "initial_samples": 100,
+            "top_quartile_sampling": True,
+            "perturbation_factor": 0.1,
+            "exploration_exploitation_ratio": 0.7,
+        },
+        "incremental_training": {
+            "enabled": True,
+            "model_caching": True,
+            "state_reuse": True,
+            "checkpoint_frequency": 50,
+        },
+        "feature_optimization": {
+            "precompute_indicators": True,
+            "cache_feature_selection": True,
+            "parallel_computation": True,
+            "memory_efficient_storage": True,
+        },
+        "monitoring": {
+            "continuous_monitoring": True,
+            "monitoring_interval": 30,  # seconds
+            "memory_leak_detection": True,
+            "performance_tracking": True,
+            "alert_thresholds": {
+                "memory_usage_percent": 80,
+                "memory_growth_mb": 100,
+                "execution_time_factor": 2.0,
+            },
+        },
+        "data_sharing": {
+            "enabled": True,
+            "max_cache_size_gb": 8.0,
+            "cache_ttl_hours": 24,
+            "enable_memory_optimization": True,
+            "cache_statistics": True,
+            "step_level_sharing": True,
+        },
+    }
 
 
-def get_optimization_config(custom_config: dict[str, Any] = None) -> dict[str, Any]:
-    """
-    Get computational optimization configuration.
+def get_optimization_config(
+    custom_config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Get computational optimization configuration.
 
     Args:
         custom_config: Optional custom configuration to override defaults
 
     Returns:
         Dict containing optimization configuration
+
     """
     config = COMPUTATIONAL_OPTIMIZATION_CONFIG.copy()
 
     if custom_config:
         # Deep merge custom configuration
-        config = _deep_merge_config(config, custom_config)
+        config = _deep_merge_config(config = custom_config)
 
     return config
 
@@ -172,14 +173,14 @@ def get_adaptive_sampling_config() -> dict[str, Any]:
 
 
 def is_optimization_enabled(optimization_type: str) -> bool:
-    """
-    Check if a specific optimization is enabled.
+    """Check if a specific optimization is enabled.
 
     Args:
         optimization_type: Type of optimization to check
 
     Returns:
-        True if optimization is enabled, False otherwise
+        True if optimization is enabled = False otherwise
+
     """
     optimization_map = {
         "caching": COMPUTATIONAL_OPTIMIZATION_CONFIG["caching"]["enabled"],
@@ -236,15 +237,17 @@ def get_performance_expectations() -> dict[str, Any]:
 
 
 # Configuration validation
+
+
 def validate_optimization_config(config: dict[str, Any]) -> dict[str, Any]:
-    """
-    Validate optimization configuration.
+    """Validate optimization configuration.
 
     Args:
         config: Configuration to validate
 
     Returns:
         Validation results with any errors or warnings
+
     """
     validation_results = {"valid": True, "errors": [], "warnings": []}
 

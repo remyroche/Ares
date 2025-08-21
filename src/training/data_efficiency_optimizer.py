@@ -25,8 +25,7 @@ from src.utils.warning_symbols import (
 
 
 class DataEfficiencyOptimizer:
-    """
-    Comprehensive data efficiency optimizer for handling large datasets (2+ years of historical data).
+    """Comprehensive data efficiency optimizer for handling large datasets (2+ years of historical data).
 
     Implements multiple strategies:
     1. Intelligent caching with SQLite storage
@@ -43,7 +42,7 @@ class DataEfficiencyOptimizer:
         symbol: str,
         timeframe: str,
         exchange: str = "BINANCE",
-    ):
+    ) -> None:
         self.db_manager = db_manager
         self.symbol = symbol
         self.timeframe = timeframe
@@ -70,7 +69,7 @@ class DataEfficiencyOptimizer:
             f"DataEfficiencyOptimizer initialized for {exchange} {symbol} {timeframe}",
         )
 
-    def _init_database(self):
+    def _init_database(self) -> None:
         """Initialize SQLite database with optimized tables for large datasets."""
         with self.engine.connect() as conn:
             # Raw data table with partitioning by date
@@ -187,7 +186,7 @@ class DataEfficiencyOptimizer:
         """Check if memory cleanup is needed."""
         return self.get_memory_usage() > (self.memory_threshold * 100)
 
-    def cleanup_memory(self):
+    def cleanup_memory(self) -> None:
         """Force garbage collection and memory cleanup."""
         self.logger.info("Performing memory cleanup...")
         gc.collect()
@@ -199,8 +198,7 @@ class DataEfficiencyOptimizer:
         lookback_days: int,
         force_reload: bool = False,
     ) -> dict[str, pd.DataFrame]:
-        """
-        Load data with intelligent caching and memory management.
+        """Load data with intelligent caching and memory management.
 
         Args:
             lookback_days: Number of days to look back
@@ -208,6 +206,7 @@ class DataEfficiencyOptimizer:
 
         Returns:
             Dictionary containing klines, agg_trades, and futures DataFrames
+
         """
         cache_key = f"{self.exchange}_{self.symbol}_{self.timeframe}_{lookback_days}"
         cache_dir = self.cache_dir / f"{cache_key}_cached_data"
@@ -298,7 +297,7 @@ class DataEfficiencyOptimizer:
 
         except Exception as e:
             error_msg = f"Cache validation error: {e}"
-            self.logger.error(error_msg)
+            self.logger.exception(error_msg)
             self.print(validation_error(error_msg))
             return False
 
@@ -455,12 +454,12 @@ class DataEfficiencyOptimizer:
 
         except Exception as e:
             error_msg = f"Error loading data from source: {e}"
-            self.logger.error(error_msg)
+            self.logger.exception(error_msg)
             self.print(error(error_msg))
 
         return data
 
-    def _cache_data(self, data: dict[str, pd.DataFrame], cache_file: Path):
+    def _cache_data(self, data: dict[str, pd.DataFrame], cache_file: Path) -> None:
         """Cache data to disk using Parquet format for high performance."""
         try:
             self.logger.info(f"Caching data to {cache_file}")
@@ -502,8 +501,7 @@ class DataEfficiencyOptimizer:
         data: pd.DataFrame,
         segment_days: int = 30,
     ) -> list[tuple[datetime, datetime, pd.DataFrame]]:
-        """
-        Segment large datasets by time periods for efficient processing.
+        """Segment large datasets by time periods for efficient processing.
 
         Args:
             data: Input DataFrame with timestamp index
@@ -511,6 +509,7 @@ class DataEfficiencyOptimizer:
 
         Returns:
             List of tuples: (start_date, end_date, segment_data)
+
         """
         if data.empty:
             return []
@@ -547,8 +546,7 @@ class DataEfficiencyOptimizer:
         data: pd.DataFrame,
         chunk_size: int | None = None,
     ) -> pd.DataFrame:
-        """
-        Process large datasets in memory-efficient chunks.
+        """Process large datasets in memory-efficient chunks.
 
         Args:
             data: Input DataFrame
@@ -556,6 +554,7 @@ class DataEfficiencyOptimizer:
 
         Returns:
             Processed DataFrame
+
         """
         if chunk_size is None:
             chunk_size = self.chunk_size
@@ -650,13 +649,13 @@ class DataEfficiencyOptimizer:
         self,
         features: pd.DataFrame,
         feature_type: str = "technical",
-    ):
-        """
-        Store computed features in SQLite database in wide format for efficient retrieval.
+    ) -> None:
+        """Store computed features in SQLite database in wide format for efficient retrieval.
 
         Args:
             features: DataFrame with features (timestamp index + feature columns)
             feature_type: Type of features ('technical', 'price', 'volume', 'regime')
+
         """
         if features.empty:
             return
@@ -715,8 +714,7 @@ class DataEfficiencyOptimizer:
         end_date: datetime,
         feature_names: list[str] | None = None,
     ) -> pd.DataFrame:
-        """
-        Load features from database for a specific time period.
+        """Load features from database for a specific time period.
 
         Args:
             start_date: Start of time period
@@ -725,6 +723,7 @@ class DataEfficiencyOptimizer:
 
         Returns:
             DataFrame with features in wide format
+
         """
         with self.Session() as session:
             # Try wide format first (more efficient)
@@ -771,7 +770,7 @@ class DataEfficiencyOptimizer:
 
                 if features_list:
                     features_df = pd.DataFrame(features_list)
-                    features_df.set_index("timestamp", inplace=True)
+                    features_df = features_df.set_index("timestamp")
 
                     # Filter by requested feature names if specified
                     if feature_names:
@@ -835,7 +834,7 @@ class DataEfficiencyOptimizer:
         self,
         checkpoint_name: str,
         metadata: dict[str, Any],
-    ):
+    ) -> None:
         """Create a processing checkpoint for resume capability."""
         with self.Session() as session:
             session.execute(
@@ -874,14 +873,14 @@ class DataEfficiencyOptimizer:
         return None
 
     def optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Optimize DataFrame memory usage by downcasting numeric types.
+        """Optimize DataFrame memory usage by downcasting numeric types.
 
         Args:
             df: Input DataFrame
 
         Returns:
             Memory-optimized DataFrame
+
         """
         # Check if input is actually a DataFrame
         if not isinstance(df, pd.DataFrame):
@@ -976,14 +975,14 @@ class DataEfficiencyOptimizer:
         }
 
     def migrate_pickle_to_parquet(self, pickle_file_path: str) -> bool:
-        """
-        Migrate existing pickle data to Parquet format.
+        """Migrate existing pickle data to Parquet format.
 
         Args:
             pickle_file_path: Path to the pickle file to migrate
 
         Returns:
             True if migration was successful, False otherwise
+
         """
         try:
             self.logger.info(f"Migrating pickle file to Parquet: {pickle_file_path}")
@@ -1032,7 +1031,7 @@ class DataEfficiencyOptimizer:
             self.print(failed(error_msg))
             return False
 
-    def cleanup_old_data(self, days_to_keep: int = 365):
+    def cleanup_old_data(self, days_to_keep: int = 365) -> None:
         """Clean up old data to manage storage."""
         cutoff_date = datetime.now() - timedelta(days=days_to_keep)
 

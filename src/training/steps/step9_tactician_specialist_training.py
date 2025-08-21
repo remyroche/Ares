@@ -1,6 +1,7 @@
 # src/training/steps/step9_tactician_specialist_training.py
 
 import asyncio
+import contextlib
 import json
 import os
 import pickle
@@ -10,39 +11,37 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
+from src.utils.centralized_decorators import (
+    PerformanceLevel,
+    ValidationLevel,
+    adaptive_resource_allocation,
+    comprehensive_validation,
+    guard_dataframe_nulls,
+    handle_errors,
+    intelligent_caching,
+    model_validation,
+    # Advanced decorators
+    performance_monitor,
+    pipeline_checkpoint,
+)
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
-    failed,
 )
-from src.training.steps.unified_data_loader import get_unified_data_loader
-from src.utils.centralized_decorators import (
-    handle_errors,
-    guard_dataframe_nulls,
-    # Advanced decorators
-    performance_monitor,
-    model_validation,
-    pipeline_checkpoint,
-    intelligent_caching,
-    adaptive_resource_allocation,
-    comprehensive_validation,
-    PerformanceLevel,
-    ValidationLevel,
-)
-from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 
 
 class TacticianSpecialistTrainingStep:
     """Step 9: Tactician Specialist Models Training with S/R Level Integration."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
         self.models = {}
 
         # Initialize SRBreakoutPredictor for S/R level integration
         self.sr_predictor = SRBreakoutPredictor(config)
-        
+
         # Initialize enhanced LM optimizer
         self.enhanced_lm_optimizer = None
         try:
@@ -50,11 +49,13 @@ class TacticianSpecialistTrainingStep:
             self.enhanced_lm_optimizer = EnhancedLMOptimizer(config)
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to initialize enhanced LM optimizer: {e}")
-        
+
         # Initialize optimized feature selection manager (fallback)
         self.optimized_feature_selection = None
         try:
-            from src.training.optimized_feature_selection_manager import OptimizedFeatureSelectionManager
+            from src.training.optimized_feature_selection_manager import (
+                OptimizedFeatureSelectionManager,
+            )
             self.optimized_feature_selection = OptimizedFeatureSelectionManager(config)
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to initialize optimized feature selection: {e}")
@@ -73,11 +74,11 @@ class TacticianSpecialistTrainingStep:
             sr_init_success = await self.sr_predictor.initialize()
             if sr_init_success:
                 self.logger.info(
-                    "✅ SRBreakoutPredictor initialized for S/R level integration"
+                    "✅ SRBreakoutPredictor initialized for S/R level integration",
                 )
             else:
                 self.logger.warning(
-                    "⚠️ Failed to initialize SRBreakoutPredictor, continuing without S/R analysis"
+                    "⚠️ Failed to initialize SRBreakoutPredictor, continuing without S/R analysis",
                 )
         except Exception as e:
             self.logger.warning(f"⚠️ Error initializing SRBreakoutPredictor: {e}")
@@ -87,10 +88,9 @@ class TacticianSpecialistTrainingStep:
         )
 
     async def _enhance_training_data_with_sr_context(
-        self, labeled_data: pd.DataFrame, symbol: str, timeframe: str
+        self, labeled_data: pd.DataFrame, symbol: str, timeframe: str,
     ) -> pd.DataFrame:
-        """
-        Enhance training data with S/R context and outcome predictions using HMM-aware multi-timeframe analysis.
+        """Enhance training data with S/R context and outcome predictions using HMM-aware multi-timeframe analysis.
 
         Args:
             labeled_data: Original labeled training data
@@ -99,13 +99,14 @@ class TacticianSpecialistTrainingStep:
 
         Returns:
             pd.DataFrame: Enhanced training data with S/R features
+
         """
         try:
             if labeled_data.empty:
                 return labeled_data
 
             self.logger.info(
-                f"🔄 Enhancing training data with HMM-aware S/R context for {timeframe}..."
+                f"🔄 Enhancing training data with HMM-aware S/R context for {timeframe}...",
             )
 
             # Add S/R context features
@@ -115,7 +116,7 @@ class TacticianSpecialistTrainingStep:
             required_cols = ["open", "high", "low", "close", "volume"]
             if not all(col in enhanced_data.columns for col in required_cols):
                 self.logger.warning(
-                    "⚠️ Missing OHLCV columns for S/R analysis, skipping enhancement"
+                    "⚠️ Missing OHLCV columns for S/R analysis, skipping enhancement",
                 )
                 return enhanced_data
 
@@ -160,10 +161,10 @@ class TacticianSpecialistTrainingStep:
 
                     # Get HMM-aware S/R context and outcome prediction
                     sr_context = await self.sr_predictor.get_sr_context(
-                        market_slice, current_price
+                        market_slice, current_price,
                     )
                     sr_outcome = await self.sr_predictor.predict_sr_outcome(
-                        market_slice, current_price, sr_context
+                        market_slice, current_price, sr_context,
                     )
 
                     # Extract HMM regime information if available
@@ -178,21 +179,21 @@ class TacticianSpecialistTrainingStep:
                     is_near_sr = sr_outcome.get("is_near_sr_level", False)
                     sr_features["sr_proximity"].append(1.0 if is_near_sr else 0.0)
                     sr_features["sr_outcome"].append(
-                        sr_outcome.get("outcome", "consolidation")
+                        sr_outcome.get("outcome", "consolidation"),
                     )
                     sr_features["sr_confidence"].append(
-                        sr_outcome.get("confidence", 0.5)
+                        sr_outcome.get("confidence", 0.5),
                     )
 
                     probabilities = sr_outcome.get("probabilities", {})
                     sr_features["breakout_probability"].append(
-                        probabilities.get("breakout", 0.33)
+                        probabilities.get("breakout", 0.33),
                     )
                     sr_features["rebounce_probability"].append(
-                        probabilities.get("rebounce", 0.33)
+                        probabilities.get("rebounce", 0.33),
                     )
                     sr_features["consolidation_probability"].append(
-                        probabilities.get("consolidation", 0.34)
+                        probabilities.get("consolidation", 0.34),
                     )
                     sr_features["hmm_regime_confidence"].append(hmm_confidence)
 
@@ -203,7 +204,7 @@ class TacticianSpecialistTrainingStep:
 
                 except Exception as e:
                     self.logger.debug(
-                        f"Error processing S/R features for index {idx}: {e}"
+                        f"Error processing S/R features for index {idx}: {e}",
                     )
                     # Default values on error
                     sr_features["sr_proximity"].append(0.0)
@@ -240,19 +241,18 @@ class TacticianSpecialistTrainingStep:
             )
 
             self.logger.info(
-                f"✅ Enhanced training data with HMM-aware S/R context for {timeframe}: {len(enhanced_data)} samples"
+                f"✅ Enhanced training data with HMM-aware S/R context for {timeframe}: {len(enhanced_data)} samples",
             )
             return enhanced_data
 
         except Exception as e:
-            self.logger.error(
-                f"❌ Error enhancing training data with HMM-aware S/R context: {e}"
+            self.logger.exception(
+                f"❌ Error enhancing training data with HMM-aware S/R context: {e}",
             )
             return labeled_data
 
     def _get_timeframe_minutes(self, timeframe: str) -> int:
-        """
-        Convert timeframe string to minutes for adaptive processing.
+        """Convert timeframe string to minutes for adaptive processing.
         Step9 only supports 1m and 5m timeframes.
 
         Args:
@@ -260,18 +260,18 @@ class TacticianSpecialistTrainingStep:
 
         Returns:
             int: Number of minutes
+
         """
         timeframe = timeframe.lower()
         if timeframe == "1m":
             return 1
-        elif timeframe == "5m":
+        if timeframe == "5m":
             return 5
-        else:
-            # Default to 1 minute if unsupported timeframe
-            self.logger.warning(
-                f"Unsupported timeframe '{timeframe}' for Step9, defaulting to 1m"
-            )
-            return 1
+        # Default to 1 minute if unsupported timeframe
+        self.logger.warning(
+            f"Unsupported timeframe '{timeframe}' for Step9, defaulting to 1m",
+        )
+        return 1
 
     @handle_errors(
         exceptions=(Exception,),
@@ -283,8 +283,7 @@ class TacticianSpecialistTrainingStep:
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Execute tactician specialist models training.
+        """Execute tactician specialist models training.
 
         Args:
             training_input: Training input parameters
@@ -292,6 +291,7 @@ class TacticianSpecialistTrainingStep:
 
         Returns:
             Dict containing training results
+
         """
         try:
             self.logger.info("🔄 Executing Tactician Specialist Training...")
@@ -311,7 +311,7 @@ class TacticianSpecialistTrainingStep:
             )
 
             if os.path.exists(labeled_file_parquet) or os.path.exists(
-                labeled_file_pickle
+                labeled_file_pickle,
             ):
                 if os.path.exists(labeled_file_parquet):
                     # Prefer dataset scan if labeled partition exists
@@ -327,7 +327,7 @@ class TacticianSpecialistTrainingStep:
                             current_timeframe = training_input.get("timeframe", "1m")
                             if current_timeframe not in ["1m", "5m"]:
                                 self.logger.warning(
-                                    f"Step9 only supports 1m and 5m timeframes, got: {current_timeframe}"
+                                    f"Step9 only supports 1m and 5m timeframes, got: {current_timeframe}",
                                 )
                                 current_timeframe = "1m"  # Default to 1m
 
@@ -339,7 +339,7 @@ class TacticianSpecialistTrainingStep:
                             ]
                             # Reader shortcut: prefer materialized projection if available
                             feat_cols = training_input.get(
-                                "model_feature_columns"
+                                "model_feature_columns",
                             ) or training_input.get("feature_columns")
                             label_col = training_input.get("label_column", "label")
                             proj_base = os.path.join(
@@ -377,7 +377,7 @@ class TacticianSpecialistTrainingStep:
                                             lambda _pa, pc: (
                                                 tbl.set_column(
                                                     tbl.schema.get_field_index(
-                                                        "timestamp"
+                                                        "timestamp",
                                                     ),
                                                     "timestamp",
                                                     pc.cast(
@@ -389,8 +389,8 @@ class TacticianSpecialistTrainingStep:
                                                     "timestamp" in tbl.schema.names
                                                     and not _pa.types.is_int64(
                                                         tbl.schema.field(
-                                                            "timestamp"
-                                                        ).type
+                                                            "timestamp",
+                                                        ).type,
                                                     )
                                                 )
                                                 else tbl
@@ -425,7 +425,7 @@ class TacticianSpecialistTrainingStep:
                                                 lambda _pa, pc: (
                                                     tbl.set_column(
                                                         tbl.schema.get_field_index(
-                                                            "timestamp"
+                                                            "timestamp",
                                                         ),
                                                         "timestamp",
                                                         pc.cast(
@@ -437,8 +437,8 @@ class TacticianSpecialistTrainingStep:
                                                         "timestamp" in tbl.schema.names
                                                         and not _pa.types.is_int64(
                                                             tbl.schema.field(
-                                                                "timestamp"
-                                                            ).type
+                                                                "timestamp",
+                                                            ).type,
                                                         )
                                                     )
                                                     else tbl
@@ -452,12 +452,12 @@ class TacticianSpecialistTrainingStep:
                         else:
                             try:
                                 feat_cols = training_input.get(
-                                    "model_feature_columns"
+                                    "model_feature_columns",
                                 ) or training_input.get("feature_columns")
                                 label_col = training_input.get("label_column", "label")
                                 from src.utils.logger import (
-                                    log_io_operation,
                                     log_dataframe_overview,
+                                    log_io_operation,
                                 )
 
                                 if isinstance(feat_cols, list) and len(feat_cols) > 0:
@@ -482,23 +482,21 @@ class TacticianSpecialistTrainingStep:
                                         labeled_file_parquet,
                                     ):
                                         labeled_data = pd.read_parquet(
-                                            labeled_file_parquet
+                                            labeled_file_parquet,
                                         )
-                                try:
+                                with contextlib.suppress(Exception):
                                     log_dataframe_overview(
-                                        self.logger, labeled_data, name="labeled_data"
+                                        self.logger, labeled_data, name="labeled_data",
                                     )
-                                except Exception:
-                                    pass
                             except Exception:
                                 with log_io_operation(
-                                    self.logger, "read_parquet", labeled_file_parquet
+                                    self.logger, "read_parquet", labeled_file_parquet,
                                 ):
                                     labeled_data = pd.read_parquet(labeled_file_parquet)
                     except Exception:
                         try:
                             feat_cols = training_input.get(
-                                "model_feature_columns"
+                                "model_feature_columns",
                             ) or training_input.get("feature_columns")
                             label_col = training_input.get("label_column", "label")
                             from src.utils.logger import log_io_operation
@@ -516,12 +514,12 @@ class TacticianSpecialistTrainingStep:
                                     )
                             else:
                                 with log_io_operation(
-                                    self.logger, "read_parquet", labeled_file_parquet
+                                    self.logger, "read_parquet", labeled_file_parquet,
                                 ):
                                     labeled_data = pd.read_parquet(labeled_file_parquet)
                         except Exception:
                             with log_io_operation(
-                                self.logger, "read_parquet", labeled_file_parquet
+                                self.logger, "read_parquet", labeled_file_parquet,
                             ):
                                 labeled_data = pd.read_parquet(labeled_file_parquet)
                 else:
@@ -541,13 +539,13 @@ class TacticianSpecialistTrainingStep:
             try:
                 feat_dir = data_dir
                 feat_train = os.path.join(
-                    feat_dir, f"{exchange}_{symbol}_features_train.pkl"
+                    feat_dir, f"{exchange}_{symbol}_features_train.pkl",
                 )
                 feat_val = os.path.join(
-                    feat_dir, f"{exchange}_{symbol}_features_validation.pkl"
+                    feat_dir, f"{exchange}_{symbol}_features_validation.pkl",
                 )
                 feat_test = os.path.join(
-                    feat_dir, f"{exchange}_{symbol}_features_test.pkl"
+                    feat_dir, f"{exchange}_{symbol}_features_test.pkl",
                 )
                 # Choose appropriate split by inferring from labeled_data
                 if isinstance(labeled_data, pd.DataFrame) and not labeled_data.empty:
@@ -556,13 +554,13 @@ class TacticianSpecialistTrainingStep:
                     if "split" in labeled_data.columns:
                         split_name = str(labeled_data["split"].mode().iloc[0]).lower()
                         if split_name.startswith("train") and os.path.exists(
-                            feat_train
+                            feat_train,
                         ):
                             feat_path = feat_train
                         elif split_name.startswith("val") and os.path.exists(feat_val):
                             feat_path = feat_val
                         elif split_name.startswith("test") and os.path.exists(
-                            feat_test
+                            feat_test,
                         ):
                             feat_path = feat_test
                     if feat_path is None:
@@ -587,7 +585,7 @@ class TacticianSpecialistTrainingStep:
                                 and "timestamp" in feat_df.columns
                             ):
                                 merged = labeled_data.merge(
-                                    feat_df, on="timestamp", how="left"
+                                    feat_df, on="timestamp", how="left",
                                 )
                             else:
                                 # Fallback: align by index size
@@ -595,11 +593,11 @@ class TacticianSpecialistTrainingStep:
                                 merged = pd.concat([labeled_data, feat_df], axis=1)
                             labeled_data = merged
                             self.logger.info(
-                                f"✅ Augmented tactician labeled data with engineered features: +{feat_df.shape[1]} cols"
+                                f"✅ Augmented tactician labeled data with engineered features: +{feat_df.shape[1]} cols",
                             )
             except Exception as _afe:
                 self.logger.warning(
-                    f"Unable to augment tactician data with engineered features: {_afe}"
+                    f"Unable to augment tactician data with engineered features: {_afe}",
                 )
 
             # Convert to DataFrame if needed
@@ -612,7 +610,7 @@ class TacticianSpecialistTrainingStep:
                 current_timeframe = training_input.get("timeframe", "1m")
                 if current_timeframe not in ["1m", "5m"]:
                     self.logger.warning(
-                        f"Step9 only supports 1m and 5m timeframes, got: {current_timeframe}"
+                        f"Step9 only supports 1m and 5m timeframes, got: {current_timeframe}",
                     )
                     current_timeframe = "1m"  # Default to 1m
 
@@ -638,7 +636,7 @@ class TacticianSpecialistTrainingStep:
                                 how="left",
                             )
                             self.logger.info(
-                                f"Merged {len(hmm_cols)} HMM cluster columns for {current_timeframe}"
+                                f"Merged {len(hmm_cols)} HMM cluster columns for {current_timeframe}",
                             )
 
                 # Also try to merge 1m meta-labels if available (for 1m timeframe)
@@ -660,11 +658,11 @@ class TacticianSpecialistTrainingStep:
                                     how="left",
                                 )
                                 self.logger.info(
-                                    f"Merged {len(one_m_cols)} 1m meta-label columns into tactician dataset"
+                                    f"Merged {len(one_m_cols)} 1m meta-label columns into tactician dataset",
                                 )
             except Exception as _merr:
                 self.logger.warning(
-                    f"Skipping HMM cluster and meta-label merge: {_merr}"
+                    f"Skipping HMM cluster and meta-label merge: {_merr}",
                 )
 
             try:
@@ -697,12 +695,12 @@ class TacticianSpecialistTrainingStep:
                                     import joblib
 
                                     sr_models[mf.replace(".joblib", "")] = joblib.load(
-                                        mp
+                                        mp,
                                     )
                                 else:
                                     with open(mp, "rb") as f:
                                         sr_models[mf.replace(".pkl", "")] = pickle.load(
-                                            f
+                                            f,
                                         )
                             except Exception:
                                 continue
@@ -714,7 +712,7 @@ class TacticianSpecialistTrainingStep:
                         if obj_cols:
                             df = df.drop(columns=obj_cols)
                         dt_cols = df.select_dtypes(
-                            include=["datetime", "datetime64", "datetime64[ns]"]
+                            include=["datetime", "datetime64", "datetime64[ns]"],
                         ).columns.tolist()
                         if dt_cols:
                             df = df.drop(columns=dt_cols)
@@ -722,13 +720,13 @@ class TacticianSpecialistTrainingStep:
 
                     # Decorate post-definition to preserve closure
                     _ensure_numeric = guard_dataframe_nulls(mode="warn", arg_index=0)(
-                        _ensure_numeric
+                        _ensure_numeric,
                     )
                     X_all = _ensure_numeric(
                         labeled_data.drop(
                             columns=[c for c in ["label"] if c in labeled_data.columns],
                             errors="ignore",
-                        )
+                        ),
                     ).select_dtypes(include=[np.number])
                     for name, model in sr_models.items():
                         try:
@@ -736,7 +734,7 @@ class TacticianSpecialistTrainingStep:
                             cols = [
                                 c
                                 for c in getattr(
-                                    model, "feature_names_in_", X_all.columns
+                                    model, "feature_names_in_", X_all.columns,
                                 )
                                 if c in X_all.columns
                             ]
@@ -751,11 +749,11 @@ class TacticianSpecialistTrainingStep:
                         except Exception:
                             continue
                     self.logger.info(
-                        f"✅ Augmented tactician features with {len(sr_models)} SR model signals"
+                        f"✅ Augmented tactician features with {len(sr_models)} SR model signals",
                     )
                 else:
                     self.logger.warning(
-                        "No SR models found; tactician SR augmentation skipped"
+                        "No SR models found; tactician SR augmentation skipped",
                     )
             except Exception as _e:
                 self.logger.warning(f"Tactician SR signal augmentation failed: {_e}")
@@ -763,7 +761,7 @@ class TacticianSpecialistTrainingStep:
             # Optionally drop raw S/R features to reduce redundancy (keep SR signals)
             try:
                 drop_raw_sr = bool(
-                    self.config.get("tactician", {}).get("drop_raw_sr_features", False)
+                    self.config.get("tactician", {}).get("drop_raw_sr_features", False),
                 )
                 if drop_raw_sr:
                     sr_raw_cols = [
@@ -789,7 +787,7 @@ class TacticianSpecialistTrainingStep:
                     if present:
                         labeled_data = labeled_data.drop(columns=present)
                         self.logger.info(
-                            f"🔧 Dropped raw SR features from tactician training: {present}"
+                            f"🔧 Dropped raw SR features from tactician training: {present}",
                         )
             except Exception as _ed:
                 self.logger.warning(f"Unable to drop raw SR features: {_ed}")
@@ -800,7 +798,7 @@ class TacticianSpecialistTrainingStep:
                 current_timeframe = training_input.get("timeframe", "1m")
                 if current_timeframe not in ["1m", "5m"]:
                     self.logger.warning(
-                        f"Step9 only supports 1m and 5m timeframes, got: {current_timeframe}"
+                        f"Step9 only supports 1m and 5m timeframes, got: {current_timeframe}",
                     )
                     current_timeframe = "1m"  # Default to 1m
 
@@ -813,18 +811,18 @@ class TacticianSpecialistTrainingStep:
                 )
                 labeled_data = enhanced_labeled_data
                 self.logger.info(
-                    f"✅ Enhanced tactician labeled data with HMM-aware S/R context for {current_timeframe}: {len(labeled_data)} samples"
+                    f"✅ Enhanced tactician labeled data with HMM-aware S/R context for {current_timeframe}: {len(labeled_data)} samples",
                 )
             except Exception as _e:
                 self.logger.warning(
-                    f"Failed to enhance training data with HMM-aware S/R context: {_e}"
+                    f"Failed to enhance training data with HMM-aware S/R context: {_e}",
                 )
 
             # Train tactician specialist models
             from src.utils.logger import heartbeat
 
             with heartbeat(
-                self.logger, name="Step9 train_tactician_models", interval_seconds=60.0
+                self.logger, name="Step9 train_tactician_models", interval_seconds=60.0,
             ):
                 training_results = await self._train_tactician_models(
                     labeled_data,
@@ -872,8 +870,7 @@ class TacticianSpecialistTrainingStep:
         symbol: str,
         exchange: str,
     ) -> dict[str, Any]:
-        """
-        Train tactician specialist models.
+        """Train tactician specialist models.
 
         Args:
             data: Labeled data for tactician
@@ -882,6 +879,7 @@ class TacticianSpecialistTrainingStep:
 
         Returns:
             Dict containing trained models
+
         """
         try:
             self.logger.info(
@@ -961,38 +959,39 @@ class TacticianSpecialistTrainingStep:
 
             # Apply enhanced optimization for tactician models
             if self.enhanced_lm_optimizer is None:
-                raise RuntimeError("Enhanced LM optimizer is required but not initialized")
-            
+                msg = "Enhanced LM optimizer is required but not initialized"
+                raise RuntimeError(msg)
+
             self.logger.info("🚀 Applying enhanced LM optimization for tactician models...")
-            
+
             # Determine model type
-            model_type = "classification" if y_train.dtype == 'object' or len(y_train.unique()) < 10 else "regression"
-            
+            model_type = "classification" if y_train.dtype == "object" or len(y_train.unique()) < 10 else "regression"
+
             # Apply comprehensive optimization
             optimization_results, optimized_features = await self.enhanced_lm_optimizer.optimize_lm_model(
                 step_name="step9",
                 features_df=X_train,
                 target=y_train,
                 model_type=model_type,
-                architecture="LightGBM"  # Primary architecture for tactician
+                architecture="LightGBM",  # Primary architecture for tactician
             )
-            
+
             # Use optimized features directly from the optimizer
             X_train = optimized_features
             X_test = X_test[optimized_features.columns]  # Apply same feature selection to test set
             self.logger.info(f"✅ Applied feature selection: {len(X_train.columns)} features selected")
-            
-            self.logger.info(f"✅ Enhanced optimization completed for tactician models")
-            self.logger.info(f"📊 Optimization metrics:")
+
+            self.logger.info("✅ Enhanced optimization completed for tactician models")
+            self.logger.info("📊 Optimization metrics:")
             self.logger.info(f"   - Feature selection: {optimization_results.get('feature_selection', {}).get('final_features', len(X_train.columns))} features")
             self.logger.info(f"   - Regularization: {optimization_results.get('regularization', {})}")
             self.logger.info(f"   - Hyperparameter optimization: {optimization_results.get('hyperparameter_optimization', {})}")
-            
+
             # Store optimization results
             if not hasattr(self, "enhancement_results"):
                 self.enhancement_results = {}
             self.enhancement_results["enhanced_optimization"] = optimization_results
-            
+
             # Train different model types
             models = {}
 
@@ -1000,10 +999,10 @@ class TacticianSpecialistTrainingStep:
             self.logger.info("Pruning features for ensemble models...")
             X_train_ens, X_test_ens = X_train.copy(), X_test.copy()
             X_train_ens, ens_pruning_metadata = pruning_manager.prune_for_step9_tactician(
-                X_train_ens, y_train, "lightgbm"  # Use a representative ensemble model type
+                X_train_ens, y_train, "lightgbm",  # Use a representative ensemble model type
             )
             X_test_ens = X_test_ens[X_train_ens.columns]  # Ensure same features
-            
+
             models["lightgbm"] = await self._train_lightgbm(
                 X_train_ens,
                 X_test_ens,
@@ -1018,10 +1017,10 @@ class TacticianSpecialistTrainingStep:
             self.logger.info("Pruning features for linear models...")
             X_train_log, X_test_log = X_train.copy(), X_test.copy()
             X_train_log, log_pruning_metadata = pruning_manager.prune_for_step9_tactician(
-                X_train_log, y_train, "calibrated_logistic"
+                X_train_log, y_train, "calibrated_logistic",
             )
             X_test_log = X_test_log[X_train_log.columns]  # Ensure same features
-            
+
             models["calibrated_logistic"] = await self._train_calibrated_logistic(
                 X_train_log,
                 X_test_log,
@@ -1237,29 +1236,30 @@ class TacticianSpecialistTrainingStep:
             # Lightweight HPO for XGBoost (subsampled)
             try:
                 import optuna
-                from src.utils.purged_kfold import PurgedKFoldTime
                 from sklearn.metrics import f1_score
 
+                from src.utils.purged_kfold import PurgedKFoldTime
+
                 def _objective(trial: optuna.Trial) -> float:
-                    params = dict(
-                        n_estimators=trial.suggest_int(
-                            "n_estimators", 100, 600, step=100
+                    params = {
+                        "n_estimators": trial.suggest_int(
+                            "n_estimators", 100, 600, step=100,
                         ),
-                        max_depth=trial.suggest_int("max_depth", 3, 8),
-                        learning_rate=trial.suggest_float(
-                            "learning_rate", 0.01, 0.2, log=True
+                        "max_depth": trial.suggest_int("max_depth", 3, 8),
+                        "learning_rate": trial.suggest_float(
+                            "learning_rate", 0.01, 0.2, log=True,
                         ),
-                        subsample=trial.suggest_float("subsample", 0.6, 1.0),
-                        colsample_bytree=trial.suggest_float(
-                            "colsample_bytree", 0.6, 1.0
+                        "subsample": trial.suggest_float("subsample", 0.6, 1.0),
+                        "colsample_bytree": trial.suggest_float(
+                            "colsample_bytree", 0.6, 1.0,
                         ),
-                        reg_alpha=trial.suggest_float(
-                            "reg_alpha", 1e-8, 1e-1, log=True
+                        "reg_alpha": trial.suggest_float(
+                            "reg_alpha", 1e-8, 1e-1, log=True,
                         ),
-                        reg_lambda=trial.suggest_float(
-                            "reg_lambda", 1e-8, 1e-1, log=True
+                        "reg_lambda": trial.suggest_float(
+                            "reg_lambda", 1e-8, 1e-1, log=True,
                         ),
-                    )
+                    }
                     model = xgb.XGBClassifier(
                         **params,
                         random_state=42,
@@ -1371,23 +1371,23 @@ class TacticianSpecialistTrainingStep:
     ) -> dict[str, Any] | None:
         """Lightweight HPO for CatBoost; returns trained model package or None."""
         try:
-            from catboost import CatBoostClassifier
             import optuna
-            from sklearn.metrics import accuracy_score
+            from catboost import CatBoostClassifier
+            from sklearn.metrics import accuracy_score, f1_score
+
             from src.utils.purged_kfold import PurgedKFoldTime
-            from sklearn.metrics import f1_score
 
             def _objective(trial: optuna.Trial) -> float:
-                params = dict(
-                    iterations=trial.suggest_int("iterations", 200, 800, step=100),
-                    learning_rate=trial.suggest_float(
-                        "learning_rate", 0.01, 0.2, log=True
+                params = {
+                    "iterations": trial.suggest_int("iterations", 200, 800, step=100),
+                    "learning_rate": trial.suggest_float(
+                        "learning_rate", 0.01, 0.2, log=True,
                     ),
-                    depth=trial.suggest_int("depth", 4, 10),
-                    l2_leaf_reg=trial.suggest_float("l2_leaf_reg", 1.0, 10.0),
-                    random_seed=42,
-                    verbose=False,
-                )
+                    "depth": trial.suggest_int("depth", 4, 10),
+                    "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1.0, 10.0),
+                    "random_seed": 42,
+                    "verbose": False,
+                }
                 model = CatBoostClassifier(**params)
                 cv = PurgedKFoldTime(
                     n_splits=3,
@@ -1411,12 +1411,10 @@ class TacticianSpecialistTrainingStep:
             y_pred = model.predict(X_test)
             acc = accuracy_score(y_test, y_pred)
             feature_importance = {}
-            try:
+            with contextlib.suppress(Exception):
                 feature_importance = dict(
-                    zip(X_train.columns, model.get_feature_importance(), strict=False)
+                    zip(X_train.columns, model.get_feature_importance(), strict=False),
                 )
-            except Exception:
-                pass
             return {
                 "model": model,
                 "accuracy": float(acc),
@@ -1489,21 +1487,21 @@ class TacticianSpecialistTrainingStep:
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
-    validate_step_prerequisites,
-    secure_data_processing,
-    prevent_data_leakage,
-    resource_monitor,
-    memory_efficient,
-    debug_training_step,
+    artifact_versioning,
+    artifact_write_lock,
     circuit_breaker_protection,
-    validate_step_output,
-    quality_gate,
+    debug_training_step,
     deterministic_seed,
     idempotent_step,
-    artifact_write_lock,
+    memory_efficient,
     nan_inf_and_constant_guard,
-    artifact_versioning,
+    prevent_data_leakage,
+    quality_gate,
+    resource_monitor,
+    secure_data_processing,
     time_budget_watchdog,
+    validate_step_output,
+    validate_step_prerequisites,
 )
 
 
@@ -1519,37 +1517,37 @@ from src.utils.training_pipeline_decorators import (
     enable_memory_tracking=True,
     enable_cpu_tracking=True,
     save_profile_data=True,
-    level=PerformanceLevel.PROFILING
+    level=PerformanceLevel.PROFILING,
 )
 @model_validation(
     check_overfitting=True,
     check_underfitting=True,
     validation_metrics=["accuracy", "precision", "recall", "f1"],
     overfitting_threshold=0.1,
-    underfitting_threshold=0.6
+    underfitting_threshold=0.6,
 )
 @pipeline_checkpoint(
     save_intermediate_results=True,
     checkpoint_frequency=500,
-    enable_rollback=True
+    enable_rollback=True,
 )
 @intelligent_caching(
     cache_intermediate_results=True,
     cache_validation_data=True,
     cache_model_artifacts=True,
-    cache_ttl_hours=24
+    cache_ttl_hours=24,
 )
 @adaptive_resource_allocation(
     dynamic_memory_allocation=True,
     adaptive_batch_sizes=True,
-    resource_scaling_threshold=0.8
+    resource_scaling_threshold=0.8,
 )
 @comprehensive_validation(
     data_quality_checks=True,
     model_quality_checks=True,
     pipeline_quality_checks=True,
     output_validation=True,
-    validation_level=ValidationLevel.WARNING
+    validation_level=ValidationLevel.WARNING,
 )
 @validate_step_prerequisites(
     required_directories=["data/training", "models"],
@@ -1563,7 +1561,7 @@ from src.utils.training_pipeline_decorators import (
     context="Tactician Specialist Training",
 )
 @secure_data_processing(
-    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True
+    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
 @prevent_data_leakage(
     temporal_validation=True,
@@ -1579,7 +1577,7 @@ from src.utils.training_pipeline_decorators import (
     auto_cleanup=True,
 )
 @memory_efficient(
-    chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=25
+    chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=25,
 )
 @debug_training_step(
     log_intermediate_results=True,
@@ -1616,99 +1614,25 @@ async def run_step(
     force_rerun: bool = False,
     **kwargs,
 ) -> bool:
-    """
-    Run the tactician specialist training step - IMPROVED VERSION.
-
-    IMPROVEMENTS:
-    - Enhanced configuration management with validation
-    - Better error handling and logging
-    - Performance monitoring and metrics
-    - Memory management and cleanup
-    - Parallel processing capabilities
-    - Advanced model training and validation
-    - S/R level integration optimization
+    """Run the tactician specialist training step.
 
     Args:
         symbol: Trading symbol
         exchange: Exchange name
         data_dir: Data directory path
-        force_rerun: Force rerun flag
         **kwargs: Additional parameters
 
     Returns:
         bool: True if successful, False otherwise
+
     """
-    import time
-    start_time = time.time()
-    
     try:
-        from src.utils.logger import system_logger
-        
-        # Enhanced configuration with validation
-        config = {
-            "symbol": symbol,
-            "exchange": exchange,
-            "data_dir": data_dir,
-            "force_rerun": force_rerun,
-            "enable_parallel_processing": kwargs.get("enable_parallel_processing", True),
-            "max_workers": kwargs.get("max_workers", 4),
-            "memory_limit_gb": kwargs.get("memory_limit_gb", 16.0),
-            "enable_early_stopping": kwargs.get("enable_early_stopping", True),
-            "enable_model_checkpointing": kwargs.get("enable_model_checkpointing", True),
-            "validation_split": kwargs.get("validation_split", 0.2),
-            "test_split": kwargs.get("test_split", 0.2),
-            "random_state": kwargs.get("random_state", 42),
-            "batch_size": kwargs.get("batch_size", 64),
-            "learning_rate": kwargs.get("learning_rate", 1e-4),
-            "epochs": kwargs.get("epochs", 100),
-            "early_stopping_patience": kwargs.get("early_stopping_patience", 10),
-            "sr_integration": {
-                "enable_sr_analysis": kwargs.get("enable_sr_analysis", True),
-                "sr_lookback_periods": kwargs.get("sr_lookback_periods", 100),
-                "sr_confidence_threshold": kwargs.get("sr_confidence_threshold", 0.7),
-            },
-            "model_architecture": {
-                "type": kwargs.get("model_type", "CNN"),
-                "layers": kwargs.get("model_layers", [64, 32, 16]),
-                "dropout": kwargs.get("dropout_rate", 0.2),
-                "activation": kwargs.get("activation", "relu"),
-            },
-        }
-        
-        # Validate configuration
-        if not config["symbol"]:
-            raise ValueError("Symbol cannot be empty")
-        
-        if not config["exchange"]:
-            raise ValueError("Exchange cannot be empty")
-        
-        if not config["data_dir"]:
-            raise ValueError("Data directory cannot be empty")
-        
-        if config["memory_limit_gb"] <= 0:
-            raise ValueError("Memory limit must be positive")
-        
-        if config["max_workers"] <= 0:
-            raise ValueError("Max workers must be positive")
-        
-        system_logger.info("🚀 Starting Tactician Specialist Training step - IMPROVED VERSION")
-        system_logger.info(f"📋 Configuration: {len(config)} parameters")
-        system_logger.info(f"   - Symbol: {symbol}")
-        system_logger.info(f"   - Exchange: {exchange}")
-        system_logger.info(f"   - Parallel processing: {'Enabled' if config['enable_parallel_processing'] else 'Disabled'}")
-        system_logger.info(f"   - S/R integration: {'Enabled' if config['sr_integration']['enable_sr_analysis'] else 'Disabled'}")
-        system_logger.info(f"   - Model architecture: {config['model_architecture']['type']}")
+        # Create step instance
+        config = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}
+        step = TacticianSpecialistTrainingStep(config)
+        await step.initialize()
 
-        # Create step instance with enhanced error handling
-        try:
-            step = TacticianSpecialistTrainingStep(config)
-            await step.initialize()
-            system_logger.info("✅ Tactician specialist training step initialized successfully")
-        except Exception as e:
-            system_logger.error(f"❌ Failed to initialize tactician specialist training step: {e}")
-            raise
-
-        # Execute step with enhanced monitoring
+        # Execute step
         training_input = {
             "symbol": symbol,
             "exchange": exchange,
@@ -1718,52 +1642,17 @@ async def run_step(
         }
 
         pipeline_state = {}
-        
-        try:
-            result = await step.execute(training_input, pipeline_state)
-            
-            if result.get("status") == "SUCCESS":
-                # Log completion metrics
-                total_time = time.time() - start_time
-                system_logger.info("✅ Tactician specialist training step completed successfully")
-                system_logger.info(f"   ⏱️ Total time: {total_time:.2f}s")
-                system_logger.info(f"   📊 Configuration: {len(config)} parameters")
-                system_logger.info(f"   🔧 Parallel processing: {'Enabled' if config['enable_parallel_processing'] else 'Disabled'}")
-                
-                # Log result details if available
-                if "metrics" in result:
-                    metrics = result["metrics"]
-                    system_logger.info(f"   📈 Training metrics:")
-                    for metric_name, metric_value in metrics.items():
-                        system_logger.info(f"      - {metric_name}: {metric_value}")
-                
-                # Memory cleanup
-                import gc
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                gc.collect()
-                
-                return True
-            else:
-                error_msg = result.get('error', 'Unknown error')
-                system_logger.error(f"❌ Tactician specialist training step failed: {error_msg}")
-                return False
-                
-        except Exception as e:
-            system_logger.error(f"❌ Error during tactician specialist training execution: {e}")
-            return False
+        result = await step.execute(training_input, pipeline_state)
 
-    except Exception as e:
-        total_time = time.time() - start_time
-        system_logger.error(f"❌ Error in tactician specialist training step: {e}")
-        system_logger.error(f"   Execution time: {total_time:.2f}s")
+        return result.get("status") == "SUCCESS"
+
+    except Exception:
         return False
 
 
 if __name__ == "__main__":
     # Test the step
-    async def test():
-        result = await run_step("ETHUSDT", "BINANCE", "data/training")
-        print(f"Test result: {result}")
+    async def test() -> None:
+        await run_step("ETHUSDT", "BINANCE", "data/training")
 
     asyncio.run(test())

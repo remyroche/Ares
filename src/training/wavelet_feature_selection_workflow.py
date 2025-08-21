@@ -1,5 +1,4 @@
-"""
-Wavelet Feature Selection Workflow
+"""Wavelet Feature Selection Workflow.
 
 This module implements a comprehensive workflow using the two-model strategy:
 1. Discovery Model: Trained on full feature set to identify winning features
@@ -27,7 +26,7 @@ import yaml
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import classification_report
-from sklearn.model_selection import cross_val_score, train_test_split
+from sklearn.model_selection import cross_val_score
 
 from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomputer
 from src.training.steps.vectorized_advanced_feature_engineering import (
@@ -55,8 +54,7 @@ class FeatureImportanceResult:
 
 
 class WaveletFeatureSelectionWorkflow:
-    """
-    Comprehensive workflow for wavelet feature selection using two-model strategy.
+    """Comprehensive workflow for wavelet feature selection using two-model strategy.
 
     This workflow:
     1. Runs full wavelet analysis with all features
@@ -125,7 +123,7 @@ class WaveletFeatureSelectionWorkflow:
         self.feature_precomputer: WaveletFeaturePrecomputer | None = None
 
         # Results storage
-        self.feature_importance_results: list[FeatureImportanceResult] = []
+        self.feature_importance_results: list[FeatureImportanceResult] , []
         self.discovery_model_performance: dict[str, Any] = {}
         self.production_model_performance: dict[str, Any] = {}
         self.optimized_configs: dict[str, Any] = {}
@@ -185,8 +183,7 @@ class WaveletFeatureSelectionWorkflow:
         price_data: pd.DataFrame,
         volume_data: pd.DataFrame,
     ) -> dict[str, Any] | None:
-        """
-        Step 1: Run full, extensive wavelet analysis as in backtesting/training.
+        """Step 1: Run full, extensive wavelet analysis as in backtesting/training.
 
         Args:
             price_data: OHLCV price data
@@ -194,6 +191,7 @@ class WaveletFeatureSelectionWorkflow:
 
         Returns:
             Dictionary containing all wavelet features
+
         """
         try:
             self.logger.info("📊 Step 1: Running full wavelet analysis...")
@@ -240,8 +238,7 @@ class WaveletFeatureSelectionWorkflow:
         features: dict[str, Any],
         labels: pd.Series,
     ) -> dict[str, Any] | None:
-        """
-        Step 2: Train Discovery Model using the rich feature set.
+        """Step 2: Train Discovery Model using the rich feature set.
 
         Args:
             features: All engineered features
@@ -249,6 +246,7 @@ class WaveletFeatureSelectionWorkflow:
 
         Returns:
             Dictionary containing trained discovery model and performance metrics
+
         """
         try:
             self.logger.info("🔍 Step 2: Training Discovery Model...")
@@ -264,13 +262,13 @@ class WaveletFeatureSelectionWorkflow:
             y_test = labels.iloc[split_idx:]
 
             self.logger.info(
-                f"🔀 Time-based train/test split: {len(X_train)}/{len(X_test)} samples"
+                f"🔀 Time-based train/test split: {len(X_train)}/{len(X_test)} samples",
             )
             self.logger.info(
-                f"   → Train period: {X_train.index[0] if len(X_train) > 0 else 'N/A'} to {X_train.index[-1] if len(X_train) > 0 else 'N/A'}"
+                f"   → Train period: {X_train.index[0] if len(X_train) > 0 else 'N/A'} to {X_train.index[-1] if len(X_train) > 0 else 'N/A'}",
             )
             self.logger.info(
-                f"   → Test period: {X_test.index[0] if len(X_test) > 0 else 'N/A'} to {X_test.index[-1] if len(X_test) > 0 else 'N/A'}"
+                f"   → Test period: {X_test.index[0] if len(X_test) > 0 else 'N/A'} to {X_test.index[-1] if len(X_test) > 0 else 'N/A'}",
             )
 
             # Train Discovery Model (optimized for feature selection)
@@ -365,14 +363,14 @@ class WaveletFeatureSelectionWorkflow:
         self,
         discovery_model_data: dict[str, Any],
     ) -> list[FeatureImportanceResult] | None:
-        """
-        Step 3: Perform feature selection using permutation importance and SHAP.
+        """Step 3: Perform feature selection using permutation importance and SHAP.
 
         Args:
             discovery_model_data: Results from discovery model training
 
         Returns:
             List of feature importance results
+
         """
         try:
             self.logger.info("🔍 Step 3: Performing feature selection...")
@@ -487,11 +485,11 @@ class WaveletFeatureSelectionWorkflow:
         context="winner feature identification",
     )
     async def identify_winner_features(self) -> list[FeatureImportanceResult] | None:
-        """
-        Step 4: Identify the most important features for live trading.
+        """Step 4: Identify the most important features for live trading.
 
         Returns:
             List of winner features optimized for live trading
+
         """
         try:
             self.logger.info("🏆 Step 4: Identifying winner features...")
@@ -556,8 +554,7 @@ class WaveletFeatureSelectionWorkflow:
         original_features: dict[str, Any],
         labels: pd.Series,
     ) -> dict[str, Any] | None:
-        """
-        Step 5: Create lean dataset with only winning features.
+        """Step 5: Create lean dataset with only winning features.
 
         Args:
             winner_features: List of identified winner features
@@ -566,6 +563,7 @@ class WaveletFeatureSelectionWorkflow:
 
         Returns:
             Dictionary containing lean dataset
+
         """
         try:
             self.logger.info("📊 Step 5: Creating lean dataset...")
@@ -616,14 +614,14 @@ class WaveletFeatureSelectionWorkflow:
         self,
         lean_dataset: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """
-        Step 6: Train Production Model on lean dataset.
+        """Step 6: Train Production Model on lean dataset.
 
         Args:
             lean_dataset: Lean dataset with only winning features
 
         Returns:
             Dictionary containing trained production model and performance metrics
+
         """
         try:
             self.logger.info("🚀 Step 6: Training Production Model...")
@@ -729,8 +727,7 @@ class WaveletFeatureSelectionWorkflow:
         winner_features: list[FeatureImportanceResult],
         production_model_data: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """
-        Step 7: Create optimized live trading configurations.
+        """Step 7: Create optimized live trading configurations.
 
         Args:
             winner_features: List of identified winner features
@@ -738,6 +735,7 @@ class WaveletFeatureSelectionWorkflow:
 
         Returns:
             Dictionary containing optimized configurations
+
         """
         try:
             self.logger.info("⚡ Step 7: Creating live configurations...")
@@ -932,8 +930,7 @@ class WaveletFeatureSelectionWorkflow:
         volume_data: pd.DataFrame,
         labels: pd.Series,
     ) -> dict[str, Any] | None:
-        """
-        Run the complete wavelet feature selection workflow using two-model strategy.
+        """Run the complete wavelet feature selection workflow using two-model strategy.
 
         Args:
             price_data: OHLCV price data
@@ -942,6 +939,7 @@ class WaveletFeatureSelectionWorkflow:
 
         Returns:
             Complete workflow results
+
         """
         try:
             self.logger.info(

@@ -21,12 +21,11 @@ from src.utils.warning_symbols import (
     error,
     failed,
     initialization_error,
-    invalid,
-    missing,
 )
 
 if TYPE_CHECKING:
     from src.analyst.liquidation_risk_model import LiquidationRiskModel
+    from src.analyst.market_health_analyzer import MarketHealthAnalyzer
     from src.training.dual_model_system import DualModelSystem
 
 
@@ -68,6 +67,13 @@ class Analyst:
         self.dual_model_system: DualModelSystem | None = None
         self.enable_dual_model_system: bool = self.analyst_config.get(
             "enable_dual_model_system",
+            True,
+        )
+
+        # Market Health Analyzer integration
+        self.market_health_analyzer: MarketHealthAnalyzer | None = None
+        self.enable_market_health_analysis: bool = self.analyst_config.get(
+            "enable_market_health_analysis",
             True,
         )
 
@@ -133,6 +139,10 @@ class Analyst:
         # Initialize Dual Model System
         if self.enable_dual_model_system:
             await self._initialize_dual_model_system()
+
+        # Initialize Market Health Analyzer
+        if self.enable_market_health_analysis:
+            await self._initialize_market_health_analyzer()
 
         # Initialize Liquidation Risk Model
         if self.enable_liquidation_risk_analysis:
@@ -241,6 +251,28 @@ class Analyst:
         except Exception:
             self.print(
                 initialization_error("Error initializing Dual Model System: {e}"),
+            )
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="market health analyzer initialization",
+    )
+    async def _initialize_market_health_analyzer(self) -> None:
+        """Initialize Market Health Analyzer."""
+        try:
+            from src.analyst.market_health_analyzer import setup_market_health_analyzer
+
+            self.market_health_analyzer = await setup_market_health_analyzer(
+                self.config,
+            )
+            if self.market_health_analyzer:
+                self.logger.info("✅ Market Health Analyzer initialized successfully")
+            else:
+                self.print(failed("❌ Failed to initialize Market Health Analyzer"))
+        except Exception:
+            self.print(
+                initialization_error("Error initializing Market Health Analyzer: {e}"),
             )
 
     @handle_errors(
@@ -358,7 +390,22 @@ class Analyst:
             else:
                 features_df = market_data
 
-            # 2. Perform liquidation risk analysis
+            # 2. Perform market health analysis
+            market_health_results = {}
+            if self.market_health_analyzer:
+                self.logger.info("Performing market health analysis...")
+                health_input = {
+                    "market_data": features_df,
+                    "current_price": current_price,
+                }
+                await self.market_health_analyzer.execute_market_health_analysis(
+                    health_input,
+                )
+                market_health_results = (
+                    self.market_health_analyzer.get_analysis_results()
+                )
+
+            # 3. Perform liquidation risk analysis
             liquidation_risk_results = {}
             if self.liquidation_risk_model and self.ml_confidence_predictor:
                 self.logger.info("Performing liquidation risk analysis...")
@@ -376,7 +423,7 @@ class Analyst:
                         )
                     )
 
-            # 3. Make trading decision using dual model system
+            # 4. Make trading decision using dual model system
             trading_decision = {}
             if self.dual_model_system:
                 self.logger.info("Making trading decision with dual model system...")
@@ -386,9 +433,10 @@ class Analyst:
                     current_position,
                 )
 
-            # 4. Compile comprehensive analysis results
+            # 5. Compile comprehensive analysis results
             self.analysis_results = {
                 "timestamp": datetime.now().isoformat(),
+                "market_health": market_health_results,
                 "liquidation_risk": liquidation_risk_results,
                 "trading_decision": trading_decision,
                 "features_shape": features_df.shape
@@ -863,6 +911,8 @@ class Analyst:
             "last_analysis": self.analysis_results.get("timestamp"),
             "analysis_count": len(self.analysis_history),
             "dual_model_system_initialized": self.dual_model_system is not None,
+            "market_health_analyzer_initialized": self.market_health_analyzer
+            is not None,
             "liquidation_risk_model_initialized": self.liquidation_risk_model
             is not None,
             "feature_engineering_orchestrator_initialized": self.feature_engineering_orchestrator
@@ -883,6 +933,9 @@ class Analyst:
             # Stop sub-components
             if self.dual_model_system:
                 await self.dual_model_system.stop()
+
+            if self.market_health_analyzer:
+                await self.market_health_analyzer.stop()
 
             if self.liquidation_risk_model:
                 await self.liquidation_risk_model.stop()

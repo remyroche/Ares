@@ -1,6 +1,7 @@
 # src/training/steps/step12_final_parameters_optimization.py
 
 import asyncio
+import contextlib
 import json
 import os
 import pickle
@@ -14,20 +15,19 @@ from src.config_optuna import (
     get_optimizable_parameters,
     get_optuna_config,
 )
-from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
+from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     failed,
     missing,
 )
-from src.training.steps.unified_data_loader import get_unified_data_loader
 
 
 class FinalParametersOptimizationStep:
     """Step 12: Final Parameters Optimization using Optuna with advanced features."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
         self.optuna_config = get_optuna_config()
@@ -66,8 +66,7 @@ class FinalParametersOptimizationStep:
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Execute final parameters optimization with advanced features.
+        """Execute final parameters optimization with advanced features.
 
         Args:
             training_input: Training input parameters
@@ -75,6 +74,7 @@ class FinalParametersOptimizationStep:
 
         Returns:
             Dict containing optimization results
+
         """
         try:
             self.logger.info("🔄 Executing Final Parameters Optimization...")
@@ -101,16 +101,10 @@ class FinalParametersOptimizationStep:
             if not calibration_results:
                 msg = "Calibration results not found"
                 raise FileNotFoundError(msg)
-            try:
+            with contextlib.suppress(Exception):
                 self.logger.info(
-                    f"Loaded calibration results for {exchange}/{symbol}: sections={list(calibration_results.keys())[:10]}"
+                    f"Loaded calibration results for {exchange}/{symbol}: sections={list(calibration_results.keys())[:10]}",
                 )
-                print(
-                    f"Step12Monitor ▶ Calibration loaded: sections={len(calibration_results) if isinstance(calibration_results, dict) else 'n/a'}",
-                    flush=True,
-                )
-            except Exception:
-                pass
 
             # Load previous optimization results for warm start
             with heartbeat(
@@ -134,10 +128,6 @@ class FinalParametersOptimizationStep:
                 self.logger.info(
                     f"Inputs summary — calibration_results: type={type(calibration_results).__name__}, size={_summ(calibration_results)}; previous_results: type={type(previous_results).__name__}, size={_summ(previous_results)}",
                 )
-                print(
-                    f"Step12Monitor ▶ Inputs: prev_results={'yes' if previous_results else 'no'}",
-                    flush=True,
-                )
             except Exception:
                 pass
 
@@ -160,16 +150,12 @@ class FinalParametersOptimizationStep:
                 self.logger.info(
                     f"Optimization finished. Result keys: {keys[:20]} (total={len(keys) if keys else 'n/a'})",
                 )
-                print(
-                    f"Step12Monitor ▶ Optimization sections: {len(keys)}",
-                    flush=True,
-                )
             except Exception:
                 pass
 
             # Validate optimization results
             with heartbeat(
-                self.logger, name="Step12 validate_optimization", interval_seconds=60.0
+                self.logger, name="Step12 validate_optimization", interval_seconds=60.0,
             ):
                 validation_passed = await self._validate_optimization_results(
                     optimization_results,
@@ -181,7 +167,7 @@ class FinalParametersOptimizationStep:
 
             # Save optimization results
             with heartbeat(
-                self.logger, name="Step12 save_results", interval_seconds=60.0
+                self.logger, name="Step12 save_results", interval_seconds=60.0,
             ):
                 await self._save_optimization_results(
                     optimization_results,
@@ -189,28 +175,18 @@ class FinalParametersOptimizationStep:
                     exchange,
                     data_dir,
                 )
-            try:
-                print(
-                    f"Step12Monitor ▶ Saved optimization results",
-                    flush=True,
-                )
-            except Exception:
+            with contextlib.suppress(Exception):
                 pass
 
             # Generate optimization report
             with heartbeat(
-                self.logger, name="Step12 generate_report", interval_seconds=60.0
+                self.logger, name="Step12 generate_report", interval_seconds=60.0,
             ):
                 report = await self._generate_optimization_report(
                     optimization_results,
                     start_time,
                 )
-            try:
-                print(
-                    f"Step12Monitor ▶ Generated optimization report",
-                    flush=True,
-                )
-            except Exception:
+            with contextlib.suppress(Exception):
                 pass
 
             # Update pipeline state
@@ -221,12 +197,7 @@ class FinalParametersOptimizationStep:
             self.logger.info(
                 f"✅ Final parameters optimization completed in {duration:.2f}s",
             )
-            try:
-                print(
-                    f"Step12Monitor ▶ Done in {duration:.2f}s",
-                    flush=True,
-                )
-            except Exception:
+            with contextlib.suppress(Exception):
                 pass
 
             return {
@@ -291,8 +262,7 @@ class FinalParametersOptimizationStep:
         calibration_results: dict[str, Any],
         previous_results: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        """
-        Optimize all parameters using advanced Optuna features.
+        """Optimize all parameters using advanced Optuna features.
 
         Args:
             calibration_results: Results from confidence calibration
@@ -300,6 +270,7 @@ class FinalParametersOptimizationStep:
 
         Returns:
             Dict containing optimized parameters
+
         """
         try:
             self.logger.info("Optimizing all parameters...")
@@ -433,7 +404,7 @@ class FinalParametersOptimizationStep:
                 )
 
             self.logger.info(
-                "Step12: Starting Optuna study for confidence thresholds (multi-objective)"
+                "Step12: Starting Optuna study for confidence thresholds (multi-objective)",
             )
             study = optuna.create_study(
                 directions=["maximize", "maximize", "minimize", "maximize", "minimize"],
@@ -612,7 +583,7 @@ class FinalParametersOptimizationStep:
                 )
 
             self.logger.info(
-                "Step12: Starting Optuna study for position sizing parameters"
+                "Step12: Starting Optuna study for position sizing parameters",
             )
             study = optuna.create_study(direction="maximize")
             # Warm start: enqueue previous best parameters if available
@@ -623,7 +594,7 @@ class FinalParametersOptimizationStep:
                 if prev_params:
                     study.enqueue_trial(prev_params)
             self.logger.info(
-                "Step12: Optimizing position sizing parameters (n_trials=60)"
+                "Step12: Optimizing position sizing parameters (n_trials=60)",
             )
             study.optimize(objective, n_trials=60)
 
@@ -701,7 +672,7 @@ class FinalParametersOptimizationStep:
                 )
 
             self.logger.info(
-                "Step12: Starting Optuna study for risk management parameters"
+                "Step12: Starting Optuna study for risk management parameters",
             )
             study = optuna.create_study(direction="maximize")
             # Warm start: enqueue previous best parameters if available
@@ -712,7 +683,7 @@ class FinalParametersOptimizationStep:
                 if prev_params:
                     study.enqueue_trial(prev_params)
             self.logger.info(
-                "Step12: Optimizing risk management parameters (n_trials=50)"
+                "Step12: Optimizing risk management parameters (n_trials=50)",
             )
             study.optimize(objective, n_trials=50)
 
@@ -853,7 +824,7 @@ class FinalParametersOptimizationStep:
                 return self._evaluate_regime_performance(params, calibration_results)
 
             self.logger.info(
-                "Step12: Starting Optuna study for regime-specific parameters"
+                "Step12: Starting Optuna study for regime-specific parameters",
             )
             study = optuna.create_study(direction="maximize")
             # Warm start: enqueue previous best parameters if available
@@ -864,7 +835,7 @@ class FinalParametersOptimizationStep:
                 if prev_params:
                     study.enqueue_trial(prev_params)
             self.logger.info(
-                "Step12: Optimizing regime-specific parameters (n_trials=30)"
+                "Step12: Optimizing regime-specific parameters (n_trials=30)",
             )
             study.optimize(objective, n_trials=30)
 
@@ -1620,21 +1591,21 @@ class FinalParametersOptimizationStep:
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
-    validate_step_prerequisites,
-    secure_data_processing,
-    prevent_data_leakage,
-    resource_monitor,
-    memory_efficient,
-    debug_training_step,
+    artifact_versioning,
+    artifact_write_lock,
     circuit_breaker_protection,
-    validate_step_output,
-    quality_gate,
+    debug_training_step,
     deterministic_seed,
     idempotent_step,
-    artifact_write_lock,
+    memory_efficient,
     nan_inf_and_constant_guard,
-    artifact_versioning,
+    prevent_data_leakage,
+    quality_gate,
+    resource_monitor,
+    secure_data_processing,
     time_budget_watchdog,
+    validate_step_output,
+    validate_step_prerequisites,
 )
 
 
@@ -1657,7 +1628,7 @@ from src.utils.training_pipeline_decorators import (
     context="Final Parameters Optimization",
 )
 @secure_data_processing(
-    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True
+    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
 @prevent_data_leakage(
     temporal_validation=True,
@@ -1673,7 +1644,7 @@ from src.utils.training_pipeline_decorators import (
     auto_cleanup=True,
 )
 @memory_efficient(
-    chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=25
+    chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=25,
 )
 @debug_training_step(
     log_intermediate_results=True,
@@ -1710,8 +1681,7 @@ async def run_step(
     force_rerun: bool = False,
     **kwargs,
 ) -> bool:
-    """
-    Run the final parameters optimization step.
+    """Run the final parameters optimization step.
 
     Args:
         symbol: Trading symbol
@@ -1721,6 +1691,7 @@ async def run_step(
 
     Returns:
         bool: True if successful, False otherwise
+
     """
     try:
         # Create step instance
@@ -1743,14 +1714,12 @@ async def run_step(
         return result.get("status") == "SUCCESS"
 
     except Exception:
-        print(failed("Final parameters optimization failed: {e}"))
         return False
 
 
 if __name__ == "__main__":
     # Test the step
-    async def test():
-        result = await run_step("ETHUSDT", "BINANCE", "data/training")
-        print(f"Test result: {result}")
+    async def test() -> None:
+        await run_step("ETHUSDT", "BINANCE", "data/training")
 
     asyncio.run(test())

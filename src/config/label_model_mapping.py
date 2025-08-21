@@ -1,14 +1,21 @@
 # src/config/label_model_mapping.py
 
 from __future__ import annotations
-
-from typing import Any, Dict, Tuple
+from typing import Any
+import numpy as np
+from hmmlearn.hmm import GaussianHMM  # type: ignore
+from sklearn.linear_model import LogisticRegression
+from catboost import CatBoostClassifier  # type: ignore
+from sklearn.ensemble import RandomForestClassifier
+import lightgbm as lgb  # type: ignore
+import xgboost as xgb  # type: ignore
+from sklearn.linear_model import SGDClassifier
 
 # Model identifiers used by builder
 # Values map timeframe categories to a model key and default params
 # timeframe categories: 'low' -> 1m-5m, 'high' -> 15m-30m
 
-LABEL_GROUPS: Dict[str, Dict[str, Any]] = {
+LABEL_GROUPS: dict[str, dict[str, Any]] = {
     # Trend continuation and momentum
     "STRONG_TREND_CONTINUATION": {
         "low": ("xgboost", {"max_depth": 5, "eta": 0.1, "subsample": 0.8}),
@@ -22,7 +29,7 @@ LABEL_GROUPS: Dict[str, Dict[str, Any]] = {
         "low": ("xgboost", {"max_depth": 5, "eta": 0.1, "subsample": 0.8}),
         "high": ("logistic_regression", {"C": 1.0, "penalty": "l2"}),
     },
-    # Range/reversion and retests, VAH/VAL
+    # Range/reversion and retests = VAH/VAL
     "RANGE_MEAN_REVERSION": {
         "low": ("catboost", {"depth": 8, "learning_rate": 0.05}),
         "high": ("lightgbm", {"num_leaves": 64, "feature_fraction": 0.8}),
@@ -180,10 +187,8 @@ LABEL_GROUPS: Dict[str, Dict[str, Any]] = {
     },
 }
 
-
 LOW_TF = {"1m", "5m"}
 HIGH_TF = {"15m", "30m"}
-
 
 def _tf_band(timeframe: str) -> str:
     tf = timeframe.strip().lower()
@@ -194,10 +199,9 @@ def _tf_band(timeframe: str) -> str:
     # default to high for unknown intraday
     return "high"
 
-
 def get_model_choice_for_label(
-    label: str, timeframe: str
-) -> Tuple[str, Dict[str, Any]]:
+    label: str, timeframe: str,
+) -> tuple[str, dict[str, Any]]:
     """Return (model_key, params) for the given base label and timeframe.
 
     If label not in mapping, default to a conservative LightGBM.
@@ -210,8 +214,7 @@ def get_model_choice_for_label(
     key, params = cfg.get(band, cfg.get("high"))
     return key, dict(params or {})
 
-
-def build_model(model_key: str, params: Dict[str, Any]):
+def build_model(model_key: str, params: dict[str, Any]):
     """Instantiate a model from a key and params. Returns a fitted-ready estimator.
 
     Supported keys: 'xgboost', 'lightgbm', 'catboost', 'random_forest',
@@ -222,7 +225,6 @@ def build_model(model_key: str, params: Dict[str, Any]):
     key = model_key.lower()
     try:
         if key == "xgboost":
-            import xgboost as xgb  # type: ignore
 
             return xgb.XGBClassifier(
                 n_estimators=params.get("n_estimators", 400),
@@ -236,7 +238,6 @@ def build_model(model_key: str, params: Dict[str, Any]):
                 verbosity=0,
             )
         if key == "lightgbm":
-            import lightgbm as lgb  # type: ignore
 
             return lgb.LGBMClassifier(
                 n_estimators=params.get("n_estimators", 400),
@@ -251,7 +252,6 @@ def build_model(model_key: str, params: Dict[str, Any]):
                 verbose=-1,
             )
         if key == "catboost":
-            from catboost import CatBoostClassifier  # type: ignore
 
             return CatBoostClassifier(
                 iterations=params.get("iterations", 500),
@@ -262,7 +262,6 @@ def build_model(model_key: str, params: Dict[str, Any]):
                 verbose=False,
             )
         if key == "random_forest":
-            from sklearn.ensemble import RandomForestClassifier
 
             return RandomForestClassifier(
                 n_estimators=params.get("n_estimators", 300),
@@ -271,7 +270,6 @@ def build_model(model_key: str, params: Dict[str, Any]):
                 n_jobs=-1,
             )
         if key == "sgd_hinge":
-            from sklearn.linear_model import SGDClassifier
 
             return SGDClassifier(
                 loss="hinge",
@@ -281,7 +279,6 @@ def build_model(model_key: str, params: Dict[str, Any]):
                 n_jobs=-1,
             )
         if key == "sgd_elastic_net":
-            from sklearn.linear_model import SGDClassifier
 
             return SGDClassifier(
                 loss="log_loss",
@@ -293,7 +290,6 @@ def build_model(model_key: str, params: Dict[str, Any]):
                 n_jobs=-1,
             )
         if key == "logistic_regression":
-            from sklearn.linear_model import LogisticRegression
 
             return LogisticRegression(
                 C=float(params.get("C", 1.0)),
@@ -304,22 +300,18 @@ def build_model(model_key: str, params: Dict[str, Any]):
             )
         if key == "hmm_gaussian":
             try:
-                from hmmlearn.hmm import GaussianHMM  # type: ignore
-                from sklearn.linear_model import LogisticRegression
-                import numpy as np
-
                 class HMMWrapper:
+
                     def __init__(self, n_states: int = 4):
                         self.hmm = GaussianHMM(
-                            n_components=n_states,
-                            covariance_type="diag",
+                            n_components=n_states, covariance_type="diag",
                             random_state=42,
                         )
                         self.decoder = LogisticRegression(max_iter=500, random_state=42)
                         self._fitted = False
 
                     def fit(self, X, y):
-                        # Unsupervised fit for HMM, then supervised mapping to y
+                        # Unsupervised fit for HMM = then supervised mapping to y
                         if isinstance(X, (pd.DataFrame, pd.Series)):
                             X_arr = X.to_numpy()
                         else:
@@ -331,13 +323,9 @@ def build_model(model_key: str, params: Dict[str, Any]):
                         return self
 
                     def predict_proba(self, X):
-                        if hasattr(X, "values"):
-                            X_arr = X.values
-                        else:
-                            X_arr = X
+                        X_arr = X.values if hasattr(X, "values") else X
                         states = self.hmm.predict(X_arr)
-                        proba = self.decoder.predict_proba(states.reshape(-1, 1))
-                        return proba
+                        return self.decoder.predict_proba(states.reshape(-1, 1))
 
                     def predict(self, X):
                         proba = self.predict_proba(X)
@@ -349,12 +337,13 @@ def build_model(model_key: str, params: Dict[str, Any]):
                 return build_model("lightgbm", {"num_leaves": 64})
     except Exception:
         # Fallback default
-        from sklearn.ensemble import RandomForestClassifier
 
         return RandomForestClassifier(
-            n_estimators=200, max_depth=10, random_state=42, n_jobs=-1
+            n_estimators=200,
+            max_depth=10,
+            random_state=42,
+            n_jobs=-1,
         )
-
 
 def select_model_for_label_timeframe(label: str, timeframe: str):
     key, params = get_model_choice_for_label(label, timeframe)

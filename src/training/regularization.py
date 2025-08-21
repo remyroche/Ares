@@ -1,12 +1,11 @@
-from typing import Any, Dict, List, Optional, Tuple
-import numpy as np
-import pandas as pd
-import torch
-import torch.nn as nn
+from typing import Any
+
 import lightgbm as lgb
 import optuna
-from sklearn.model_selection import cross_val_score
+import pandas as pd
 from sklearn.linear_model import ElasticNet
+from sklearn.model_selection import cross_val_score
+from torch import nn
 
 # Import necessary ensemble types for type hinting and applying regularization
 # These imports are here to allow the apply_regularization_to_ensembles method
@@ -22,13 +21,12 @@ from src.utils.logger import system_logger
 
 
 class RegularizationManager:
-    """
-    Manages the L1-L2 regularization configuration for the Ares Trading Bot's
+    """Manages the L1-L2 regularization configuration for the Ares Trading Bot's
     machine learning models. It extracts, applies, and validates regularization
     parameters from the global configuration.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.logger = system_logger.getChild("RegularizationManager")
         self.regularization_config = self._get_regularization_config()
         self.logger.info("RegularizationManager initialized.")
@@ -69,9 +67,8 @@ class RegularizationManager:
     def apply_regularization_to_ensembles(
         self,
         ensemble_orchestrator: RegimePredictiveEnsembles,
-    ):
-        """
-        Applies the loaded L1-L2 regularization configuration to all ensemble instances.
+    ) -> None:
+        """Applies the loaded L1-L2 regularization configuration to all ensemble instances.
         This method is called by TrainingManager.
         """
         try:
@@ -96,7 +93,7 @@ class RegularizationManager:
         self,
         ensemble_instance: BaseEnsemble,
         regime_name: str,
-    ):
+    ) -> None:
         """Applies regularization configuration to a specific ensemble instance."""
         try:
             # Check if the ensemble instance has a 'regularization_config' attribute
@@ -127,11 +124,11 @@ class RegularizationManager:
             )
 
     def validate_and_report_regularization(self) -> bool:
-        """
-        Validates regularization configuration and reports on the setup.
+        """Validates regularization configuration and reports on the setup.
 
         Returns:
             bool: True if regularization is properly configured, False otherwise
+
         """
         try:
             self.logger.info("=== L1-L2 Regularization Validation Report ===")
@@ -178,16 +175,7 @@ class RegularizationManager:
             )
 
             self.logger.info("\n📈 Scikit-learn Regularization:")
-            sklearn_config = self.regularization_config.get("sklearn", {})
-            print(
-                f"   - alpha (for Ridge/Lasso): {sklearn_config.get('alpha', 'Not set')}",
-            )
-            print(
-                f"   - l1_ratio (for ElasticNet): {sklearn_config.get('l1_ratio', 'Not set')}",
-            )
-            print(
-                f"   - C (for LogisticRegression): {sklearn_config.get('C', 'Not set')}",
-            )
+            self.regularization_config.get("sklearn", {})
 
             self.logger.info("\n🎯 TabNet Regularization:")
             tabnet_config = self.regularization_config.get("tabnet", {})
@@ -224,227 +212,219 @@ class RegularizationManager:
                 exc_info=True,
             )
             return False
-    
+
     async def optimize_regularization_for_model(
         self,
         features_df: pd.DataFrame,
         target: pd.Series,
         model_type: str,
-        architecture: str
-    ) -> Dict[str, Any]:
-        """
-        Optimize regularization parameters for a specific model type and architecture.
-        
+        architecture: str,
+    ) -> dict[str, Any]:
+        """Optimize regularization parameters for a specific model type and architecture.
+
         Args:
             features_df: Input features DataFrame
             target: Target variable series
             model_type: Model type (classification, regression)
             architecture: Model architecture (LightGBM, CNN, TCN, Transformer)
-            
+
         Returns:
             Dict containing optimized regularization parameters
+
         """
         try:
             if architecture == "LightGBM":
                 return await self._optimize_lightgbm_regularization(features_df, target, model_type)
-            elif architecture in ["CNN", "TCN", "Transformer"]:
+            if architecture in ["CNN", "TCN", "Transformer"]:
                 return await self._optimize_neural_network_regularization(features_df, target, model_type, architecture)
-            else:
-                return await self._optimize_general_regularization(features_df, target, model_type)
-                
+            return await self._optimize_general_regularization(features_df, target, model_type)
+
         except Exception as e:
-            self.logger.error(f"❌ Regularization optimization failed: {e}")
+            self.logger.exception(f"❌ Regularization optimization failed: {e}")
             return self._get_default_regularization_params(architecture)
-    
+
     async def _optimize_lightgbm_regularization(
-        self, 
-        features_df: pd.DataFrame, 
-        target: pd.Series, 
-        model_type: str
-    ) -> Dict[str, Any]:
+        self,
+        features_df: pd.DataFrame,
+        target: pd.Series,
+        model_type: str,
+    ) -> dict[str, Any]:
         """Optimize LightGBM regularization parameters using Optuna."""
         try:
             def objective(trial):
-                reg_alpha = trial.suggest_float('reg_alpha', 0.001, 0.1)
-                reg_lambda = trial.suggest_float('reg_lambda', 0.001, 0.1)
-                
+                reg_alpha = trial.suggest_float("reg_alpha", 0.001, 0.1)
+                reg_lambda = trial.suggest_float("reg_lambda", 0.001, 0.1)
+
                 if model_type == "classification":
                     model = lgb.LGBMClassifier(
                         reg_alpha=reg_alpha,
                         reg_lambda=reg_lambda,
                         n_estimators=100,
                         random_state=42,
-                        verbose=-1
+                        verbose=-1,
                     )
-                    scoring = 'accuracy'
+                    scoring = "accuracy"
                 else:
                     model = lgb.LGBMRegressor(
                         reg_alpha=reg_alpha,
                         reg_lambda=reg_lambda,
                         n_estimators=100,
                         random_state=42,
-                        verbose=-1
+                        verbose=-1,
                     )
-                    scoring = 'neg_mean_squared_error'
-                
+                    scoring = "neg_mean_squared_error"
+
                 scores = cross_val_score(model, features_df, target, cv=3, scoring=scoring)
                 return scores.mean()
-            
-            study = optuna.create_study(direction='maximize')
+
+            study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials=20)
-            
+
             return {
                 "reg_alpha": study.best_params["reg_alpha"],
                 "reg_lambda": study.best_params["reg_lambda"],
-                "best_score": study.best_value
+                "best_score": study.best_value,
             }
-            
+
         except Exception as e:
-            self.logger.error(f"❌ LightGBM regularization optimization failed: {e}")
+            self.logger.exception(f"❌ LightGBM regularization optimization failed: {e}")
             return {"reg_alpha": 0.01, "reg_lambda": 0.001}
-    
+
     async def _optimize_neural_network_regularization(
-        self, 
-        features_df: pd.DataFrame, 
-        target: pd.Series, 
+        self,
+        features_df: pd.DataFrame,
+        target: pd.Series,
         model_type: str,
-        architecture: str
-    ) -> Dict[str, Any]:
+        architecture: str,
+    ) -> dict[str, Any]:
         """Optimize neural network regularization parameters using Optuna."""
         try:
             def objective(trial):
-                weight_decay = trial.suggest_float('weight_decay', 1e-6, 1e-3)
-                dropout = trial.suggest_float('dropout', 0.1, 0.5)
-                
+                weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-3)
+                dropout = trial.suggest_float("dropout", 0.1, 0.5)
+
                 # Create a simple neural network for testing
                 model = self._create_simple_nn_model(
                     input_size=features_df.shape[1],
                     params={"dropout": dropout, "weight_decay": weight_decay},
-                    model_type=model_type
+                    model_type=model_type,
                 )
-                
+
                 # Train and evaluate the model with real metrics
                 try:
-                    from sklearn.model_selection import cross_val_score
                     from sklearn.preprocessing import StandardScaler
-                    import numpy as np
-                    
+
                     # Prepare data
                     X = features_df.values
                     y = target.values
-                    
+
                     # Standardize features
                     scaler = StandardScaler()
                     X_scaled = scaler.fit_transform(X)
-                    
+
                     # Convert to tensors for PyTorch model
                     import torch
                     X_tensor = torch.FloatTensor(X_scaled)
-                    
+
                     if model_type == "classification":
                         y_tensor = torch.LongTensor(y)
                         criterion = torch.nn.CrossEntropyLoss()
-                        scoring = 'accuracy'
                     else:
                         y_tensor = torch.FloatTensor(y).unsqueeze(1)
                         criterion = torch.nn.MSELoss()
-                        scoring = 'neg_mean_squared_error'
-                    
+
                     # Simple training loop
                     optimizer = torch.optim.Adam(model.parameters(), weight_decay=weight_decay)
-                    
+
                     model.train()
-                    for epoch in range(10):  # Short training for optimization
+                    for _epoch in range(10):  # Short training for optimization
                         optimizer.zero_grad()
                         outputs = model(X_tensor)
                         loss = criterion(outputs, y_tensor)
                         loss.backward()
                         optimizer.step()
-                    
+
                     # Evaluate using cross-validation
                     model.eval()
                     with torch.no_grad():
                         predictions = model(X_tensor)
                         if model_type == "classification":
                             _, predicted = torch.max(predictions, 1)
-                            accuracy = (predicted == y_tensor).float().mean().item()
-                            return accuracy
-                        else:
-                            mse = criterion(predictions, y_tensor).item()
-                            return -mse  # Return negative MSE for maximization
-                            
+                            return (predicted == y_tensor).float().mean().item()
+                        mse = criterion(predictions, y_tensor).item()
+                        return -mse  # Return negative MSE for maximization
+
                 except Exception as e:
                     self.logger.warning(f"⚠️ Neural network evaluation failed: {e}")
                     return 0.5  # Fallback score
-            
-            study = optuna.create_study(direction='maximize')
+
+            study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials=20)
-            
+
             return {
                 "weight_decay": study.best_params["weight_decay"],
                 "dropout": study.best_params["dropout"],
-                "best_score": study.best_value
+                "best_score": study.best_value,
             }
-            
+
         except Exception as e:
-            self.logger.error(f"❌ Neural network regularization optimization failed: {e}")
+            self.logger.exception(f"❌ Neural network regularization optimization failed: {e}")
             return {"weight_decay": 1e-4, "dropout": 0.2}
-    
+
     async def _optimize_general_regularization(
-        self, 
-        features_df: pd.DataFrame, 
-        target: pd.Series, 
-        model_type: str
-    ) -> Dict[str, Any]:
+        self,
+        features_df: pd.DataFrame,
+        target: pd.Series,
+        model_type: str,
+    ) -> dict[str, Any]:
         """Optimize general regularization parameters using ElasticNet."""
         try:
             def objective(trial):
-                alpha = trial.suggest_float('alpha', 0.001, 0.1)
-                l1_ratio = trial.suggest_float('l1_ratio', 0.1, 0.9)
-                
+                alpha = trial.suggest_float("alpha", 0.001, 0.1)
+                l1_ratio = trial.suggest_float("l1_ratio", 0.1, 0.9)
+
                 model = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, random_state=42)
-                scoring = 'neg_mean_squared_error' if model_type == "regression" else 'accuracy'
+                scoring = "neg_mean_squared_error" if model_type == "regression" else "accuracy"
                 scores = cross_val_score(model, features_df, target, cv=3, scoring=scoring)
                 return scores.mean()
-            
-            study = optuna.create_study(direction='maximize')
+
+            study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials=20)
-            
+
             return {
                 "alpha": study.best_params["alpha"],
                 "l1_ratio": study.best_params["l1_ratio"],
-                "best_score": study.best_value
+                "best_score": study.best_value,
             }
-            
+
         except Exception as e:
-            self.logger.error(f"❌ General regularization optimization failed: {e}")
+            self.logger.exception(f"❌ General regularization optimization failed: {e}")
             return {"alpha": 0.01, "l1_ratio": 0.5}
-    
-    def _create_simple_nn_model(self, input_size: int, params: Dict[str, Any], model_type: str):
+
+    def _create_simple_nn_model(self, input_size: int, params: dict[str, Any], model_type: str):
         """Create a simple neural network model for regularization testing."""
         class SimpleNN(nn.Module):
-            def __init__(self, input_size, params, model_type):
+            def __init__(self, input_size, params, model_type) -> None:
                 super().__init__()
                 self.layers = nn.Sequential(
                     nn.Linear(input_size, 128),
                     nn.ReLU(),
-                    nn.Dropout(params.get('dropout', 0.2)),
+                    nn.Dropout(params.get("dropout", 0.2)),
                     nn.Linear(128, 64),
                     nn.ReLU(),
-                    nn.Dropout(params.get('dropout', 0.2)),
-                    nn.Linear(64, 1 if model_type == "regression" else 2)
+                    nn.Dropout(params.get("dropout", 0.2)),
+                    nn.Linear(64, 1 if model_type == "regression" else 2),
                 )
-            
+
             def forward(self, x):
                 return self.layers(x)
-        
+
         return SimpleNN(input_size, params, model_type)
-    
-    def _get_default_regularization_params(self, architecture: str) -> Dict[str, Any]:
+
+    def _get_default_regularization_params(self, architecture: str) -> dict[str, Any]:
         """Get default regularization parameters for an architecture."""
         if architecture == "LightGBM":
             return {"reg_alpha": 0.01, "reg_lambda": 0.001}
-        elif architecture in ["CNN", "TCN", "Transformer"]:
+        if architecture in ["CNN", "TCN", "Transformer"]:
             return {"weight_decay": 1e-4, "dropout": 0.2}
-        else:
-            return {"alpha": 0.01, "l1_ratio": 0.5}
+        return {"alpha": 0.01, "l1_ratio": 0.5}

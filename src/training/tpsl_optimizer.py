@@ -9,9 +9,12 @@ try:
     import pandas_ta as ta  # noqa: F401 - ensure .ta accessor is registered
 except ImportError as e:
     # pandas_ta is required for this optimizer per project policy
-    raise ImportError(
+    msg = (
         "pandas_ta must be installed and available for TpSlOptimizer. "
         "Please add it via Poetry and install dependencies."
+    )
+    raise ImportError(
+        msg,
     ) from e
 from sklearn.linear_model import LogisticRegression
 
@@ -40,8 +43,7 @@ def _numba_backtest(
     enable_ml_early_exit: bool,
     early_exit_confidence: float,
 ) -> np.ndarray:
-    """
-    A Numba-accelerated backtesting loop for both long and short trades,
+    """A Numba-accelerated backtesting loop for both long and short trades,
     including asymmetrical barriers and trading fees. Returns an array of
     [pnl, direction] for each trade.
     """
@@ -102,19 +104,18 @@ def _numba_backtest(
 
 
 class TpSlOptimizer:
-    """
-    Optimizes asymmetrical Take Profit (TP) and Stop Loss (SL) thresholds
+    """Optimizes asymmetrical Take Profit (TP) and Stop Loss (SL) thresholds
     for LONG & SHORT strategies, including trading fees.
     """
 
-    def __init__(self, db_manager: SQLiteManager, symbol: str, timeframe: str):
+    def __init__(self, db_manager: SQLiteManager, symbol: str, timeframe: str) -> None:
         self.db_manager = db_manager
         self.symbol = symbol
         self.timeframe = timeframe
         self.data = pd.DataFrame()
         self._prepare_data_and_signals()
 
-    def _prepare_data_and_signals(self):
+    def _prepare_data_and_signals(self) -> None:
         logger.info("Preparing data and generating signals for optimization...")
 
         table_name = f"{self.symbol}_{self.timeframe}"
@@ -137,18 +138,18 @@ class TpSlOptimizer:
                 else:
                     # Best-effort: generate a datetime index if none present
                     self.data["timestamp"] = pd.to_datetime(
-                        self.data.index, errors="coerce"
+                        self.data.index, errors="coerce",
                     )
 
             self.data["timestamp"] = pd.to_datetime(
-                self.data["timestamp"], errors="coerce"
+                self.data["timestamp"], errors="coerce",
             )
             # Drop any rows with invalid timestamps before indexing
             self.data = self.data.dropna(subset=["timestamp"]).copy()
             # Keep column and also use as index
-            self.data.set_index("timestamp", inplace=True, drop=False)
+            self.data = self.data.set_index("timestamp", drop=False)
         except Exception as e:
-            logger.error(f"Failed to standardize timestamp column: {e}")
+            logger.exception(f"Failed to standardize timestamp column: {e}")
             raise
 
         # Normalize OHLCV column names to capitalized form expected downstream
@@ -162,7 +163,7 @@ class TpSlOptimizer:
             for c in ("OPEN", "HIGH", "LOW", "CLOSE", "VOLUME"):
                 if c in self.data.columns:
                     rename_map[c] = c.capitalize()
-            self.data.rename(columns=rename_map, inplace=True)
+            self.data = self.data.rename(columns=rename_map)
         except Exception as e:
             logger.warning(f"Column normalization warning: {e}")
 
@@ -191,7 +192,7 @@ class TpSlOptimizer:
         choices = [1, -1]
         self.data["target"] = np.select(conditions, choices, default=0)
 
-        self.data.dropna(inplace=True)
+        self.data = self.data.dropna()
 
         features = ["RSI_14", "MACD_12_26_9", "BBU_20_2.0", "ATRr_14", "ADX_14"]
         features_in_data = [f for f in features if f in self.data.columns]
@@ -217,7 +218,7 @@ class TpSlOptimizer:
             f"and {len(self.data[self.data['signal'] == -1])} short signals.",
         )
 
-    def _prepare_ml_exit_data(self):
+    def _prepare_ml_exit_data(self) -> None:
         logger.info("Generating ML confidence scores for early exit analysis...")
         momentum = self.data["Close"].pct_change(5).fillna(0)
 
@@ -415,9 +416,8 @@ class TpSlOptimizer:
                 f"Best params theoretical final equity from 100 USDT: {final_equity_usdt:.2f} USDT "
                 f"(x{equity_multiplier:.2f}); Profit Factor: {profit_factor_best:.2f}"
             )
-            print(equity_line)
             logger.info(equity_line)
-            total_trades = int(len(results_df))
+            total_trades = len(results_df)
             long_trades = (
                 int((results_df["direction"] == 1).sum()) if total_trades > 0 else 0
             )
@@ -432,7 +432,6 @@ class TpSlOptimizer:
                 f"TP/SL best params trade summary [{period_start} → {period_end}]: "
                 f"total={total_trades}, long={long_trades}, short={short_trades}"
             )
-            print(summary_line)
             logger.info(summary_line)
         except Exception as e:
             logger.warning(

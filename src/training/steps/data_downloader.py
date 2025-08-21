@@ -1,10 +1,16 @@
+"""Data downloader adapter for training steps.
+
+This module provides a unified interface for downloading data
+using either the optimized or clean downloader.
+"""
+
 from __future__ import annotations
 
 from typing import Any
 
+from src.config import CONFIG
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.config import CONFIG
 
 
 @handle_errors(
@@ -29,7 +35,8 @@ async def download_all_data_with_consolidation(
         if isinstance(CONFIG, dict):
             model_training_cfg: dict[str, Any] | None = CONFIG.get("MODEL_TRAINING")  # type: ignore[assignment]
             if model_training_cfg and isinstance(
-                model_training_cfg.get("lookback_years"), int
+                model_training_cfg.get("lookback_years"),
+                int,
             ):
                 lookback_years = int(model_training_cfg["lookback_years"])  # type: ignore[arg-type]
     except Exception:
@@ -40,6 +47,8 @@ async def download_all_data_with_consolidation(
     try:
         from backtesting.ares_data_downloader_optimized import (
             DownloadConfig as OptimizedDownloadConfig,
+        )
+        from backtesting.ares_data_downloader_optimized import (
             OptimizedDataDownloader,
         )
 
@@ -59,8 +68,10 @@ async def download_all_data_with_consolidation(
     # Fallback: clean downloader
     try:
         from backtesting.ares_data_downloader_clean import (
-            DownloadConfig as CleanDownloadConfig,
             CleanDataDownloader,
+        )
+        from backtesting.ares_data_downloader_clean import (
+            DownloadConfig as CleanDownloadConfig,
         )
 
         clean_cfg = CleanDownloadConfig(
@@ -72,5 +83,5 @@ async def download_all_data_with_consolidation(
         clean = CleanDataDownloader(clean_cfg)
         return await clean.run_clean_download()
     except Exception as e:
-        logger.error(f"All downloader backends failed: {e}")
+        logger.exception(f"All downloader backends failed: {e}")
         return False

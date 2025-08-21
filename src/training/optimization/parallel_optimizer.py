@@ -1,8 +1,6 @@
 # src/training/optimization/parallel_optimizer.py
 
-"""
-Parallel Optimizer for efficient parameter optimization using parallel processing.
-"""
+"""Parallel Optimizer for efficient parameter optimization using parallel processing."""
 
 import asyncio
 import multiprocessing as mp
@@ -33,11 +31,9 @@ class ParallelConfig:
 
 
 class ParallelParameterOptimizer:
-    """
-    Implements parallel optimization for time efficiency.
-    """
+    """Implements parallel optimization for time efficiency."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         """Initialize parallel optimizer."""
         self.config = config
         self.logger = system_logger.getChild("ParallelOptimizer")

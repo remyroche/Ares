@@ -8,13 +8,11 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import (
     AsyncContextManager,
-    ClassVar,
     Generic,
     Protocol,
     TypeVar,
     runtime_checkable,
 )
-
 from src.custom_types import (
     ConfigDict,
     PerformanceMetrics,
@@ -27,7 +25,6 @@ DataT = TypeVar("DataT")
 ResultT = TypeVar("ResultT")
 ErrorT = TypeVar("ErrorT", bound=Exception)
 ComponentT = TypeVar("ComponentT", bound=TradingComponent)
-
 
 # Protocol constraints for data processing
 @runtime_checkable
@@ -103,230 +100,127 @@ class GenericDataProcessor(Generic[DataT, ResultT], ABC):
     Generic base class for data processors with input/output type constraints.
     """
 
+    def __init__(self, config: ConfigDict) -> None:
+        self._config = config
+        self._processing_stats = {"processed": 0, "errors": 0}
+
     @abstractmethod
     async def process(self, data: DataT) -> ResultT:
         """Process input data and return result."""
         ...
 
-    @abstractmethod
-    def validate_input(self, data: DataT) -> bool:
-        """Validate input data."""
-        ...
-
-    @abstractmethod
-    def validate_output(self, result: ResultT) -> bool:
-        """Validate output result."""
-        ...
-
-    async def safe_process(self, data: DataT) -> ResultT | None:
-        """Safely process data with validation."""
-        if not self.validate_input(data):
-            return None
-
-        try:
-            result = await self.process(data)
-            if self.validate_output(result):
-                return result
-            return None
-        except Exception:
-            return None
+    def get_processing_stats(self) -> dict[str, int]:
+        """Get processing statistics."""
+        return self._processing_stats.copy()
 
 
-class GenericRepository(Generic[DataT], ABC):
-    """
-    Generic repository base class with type-safe CRUD operations.
-    """
-
-    @abstractmethod
-    async def create(self, item: DataT) -> str:
-        """Create a new item and return its ID."""
-        ...
-
-    @abstractmethod
-    async def read(self, item_id: str) -> DataT | None:
-        """Read an item by ID."""
-        ...
-
-    @abstractmethod
-    async def update(self, item_id: str, item: DataT) -> bool:
-        """Update an existing item."""
-        ...
-
-    @abstractmethod
-    async def delete(self, item_id: str) -> bool:
-        """Delete an item by ID."""
-        ...
-
-    @abstractmethod
-    async def list_all(self) -> list[DataT]:
-        """List all items."""
-        ...
-
-    @abstractmethod
-    async def find_by_criteria(self, criteria: dict) -> list[DataT]:
-        """Find items matching criteria."""
-        ...
-
-
-class GenericEventHandler(Generic[DataT], ABC):
-    """
-    Generic event handler with type-safe event data.
-    """
-
-    event_types: ClassVar[list[str]] = []
-
-    @abstractmethod
-    async def handle(self, event_type: str, data: DataT) -> None:
-        """Handle an event."""
-        ...
-
-    @abstractmethod
-    def can_handle(self, event_type: str) -> bool:
-        """Check if this handler can handle the event type."""
-        ...
-
-    @abstractmethod
-    def get_priority(self) -> int:
-        """Get handler priority (lower = higher priority)."""
-        ...
-
-
-class GenericModelTrainer(Generic[DataT, ResultT], ABC):
-    """
-    Generic ML model trainer with type-safe data and results.
-    """
-
-    @abstractmethod
-    async def train(self, training_data: DataT) -> ResultT:
-        """Train the model with training data."""
-        ...
-
-    @abstractmethod
-    async def validate(self, validation_data: DataT) -> dict:
-        """Validate the trained model."""
-        ...
-
-    @abstractmethod
-    async def save_model(self, path: str) -> bool:
-        """Save the trained model."""
-        ...
-
-    @abstractmethod
-    async def load_model(self, path: str) -> bool:
-        """Load a trained model."""
-        ...
-
-    @abstractmethod
-    def get_model_metadata(self) -> dict:
-        """Get model metadata."""
-        ...
-
-
-class GenericCacheManager(Generic[DataT], ABC):
-    """
-    Generic cache manager with type-safe cached data.
-    """
-
-    @abstractmethod
-    async def get(self, key: str) -> DataT | None:
-        """Get cached value."""
-        ...
-
-    @abstractmethod
-    async def set(
-        self,
-        key: str,
-        value: DataT,
-        ttl_seconds: int | None = None,
-    ) -> bool:
-        """Set cached value with optional TTL."""
-        ...
-
-    @abstractmethod
-    async def delete(self, key: str) -> bool:
-        """Delete cached value."""
-        ...
-
-    @abstractmethod
-    async def clear(self) -> bool:
-        """Clear all cached values."""
-        ...
-
-    @abstractmethod
-    async def exists(self, key: str) -> bool:
-        """Check if key exists in cache."""
-        ...
-
-
-class GenericAsyncContextManager(Generic[DataT], AsyncContextManager[DataT]):
-    """
-    Generic async context manager with type-safe resource management.
-    """
-
-    def __init__(self, resource_factory: Callable[[], DataT]):
-        self._resource_factory = resource_factory
-        self._resource: DataT | None = None
-
-    async def __aenter__(self) -> DataT:
-        """Enter the async context."""
-        self._resource = await self._acquire_resource()
-        return self._resource
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Exit the async context."""
-        if self._resource:
-            await self._release_resource(self._resource)
-
-    @abstractmethod
-    async def _acquire_resource(self) -> DataT:
-        """Acquire the resource."""
-        ...
-
-    @abstractmethod
-    async def _release_resource(self, resource: DataT) -> None:
-        """Release the resource."""
-        ...
-
-
-# Type-constrained factory base class
-class GenericFactory(Generic[DataT], ABC):
-    """
-    Generic factory with type constraints.
-    """
-
-    @abstractmethod
-    def create(self, **kwargs) -> DataT:
-        """Create an instance."""
-        ...
-
-    @abstractmethod
-    def can_create(self, type_name: str) -> bool:
-        """Check if factory can create the specified type."""
-        ...
-
-    @abstractmethod
-    def get_supported_types(self) -> list[str]:
-        """Get list of supported types."""
-        ...
-
-
-# Error handling with generic constraints
 class GenericErrorHandler(Generic[ErrorT], ABC):
     """
-    Generic error handler with type-safe error handling.
+    Generic base class for error handlers with type-safe error handling.
     """
 
-    @abstractmethod
-    def can_handle(self, error: Exception) -> bool:
-        """Check if this handler can handle the error."""
-        ...
+    def __init__(self, config: ConfigDict) -> None:
+        self._config = config
+        self._error_count = 0
 
     @abstractmethod
-    async def handle(self, error: ErrorT) -> bool:
-        """Handle the error. Return True if handled successfully."""
+    async def handle_error(self, error: ErrorT) -> bool:
+        """Handle an error and return success status."""
         ...
 
+    def get_error_count(self) -> int:
+        """Get total error count."""
+        return self._error_count
+
+
+class GenericAsyncManager(Generic[ComponentT], AsyncContextManager):
+    """
+    Generic base class for async context managers that manage components.
+    """
+
+    def __init__(self, config: ConfigDict) -> None:
+        self._config = config
+        self._components: list[ComponentT] = []
+        self._is_active = False
+
+    async def __aenter__(self) -> "GenericAsyncManager[ComponentT]":
+        """Enter async context."""
+        await self.start()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Exit async context."""
+        await self.stop()
+
     @abstractmethod
-    def get_recovery_strategy(self, error: ErrorT) -> str | None:
-        """Get recovery strategy for the error."""
+    async def start(self) -> None:
+        """Start the manager."""
+        self._is_active = True
+
+    @abstractmethod
+    async def stop(self) -> None:
+        """Stop the manager."""
+        self._is_active = False
+
+    def add_component(self, component: ComponentT) -> None:
+        """Add a component to the manager."""
+        self._components.append(component)
+
+    def remove_component(self, component: ComponentT) -> None:
+        """Remove a component from the manager."""
+        if component in self._components:
+            self._components.remove(component)
+
+    def get_components(self) -> list[ComponentT]:
+        """Get all managed components."""
+        return self._components.copy()
+
+    def is_active(self) -> bool:
+        """Check if manager is active."""
+        return self._is_active
+
+
+class GenericFactory(Generic[ComponentT], ABC):
+    """
+    Generic base class for component factories.
+    """
+
+    def __init__(self, config: ConfigDict) -> None:
+        self._config = config
+        self._created_components: list[ComponentT] = []
+
+    @abstractmethod
+    def create(self, **kwargs) -> ComponentT:
+        """Create a new component instance."""
         ...
+
+    def get_created_components(self) -> list[ComponentT]:
+        """Get all created components."""
+        return self._created_components.copy()
+
+    def clear_components(self) -> None:
+        """Clear all created components."""
+        self._created_components.clear()
+
+
+class GenericValidator(Generic[DataT], ABC):
+    """
+    Generic base class for data validators.
+    """
+
+    def __init__(self, config: ConfigDict) -> None:
+        self._config = config
+        self._validation_rules: list[Callable[[DataT], bool]] = []
+
+    @abstractmethod
+    def validate(self, data: DataT) -> bool:
+        """Validate data and return success status."""
+        ...
+
+    def add_validation_rule(self, rule: Callable[[DataT], bool]) -> None:
+        """Add a validation rule."""
+        self._validation_rules.append(rule)
+
+    def get_validation_rules(self) -> list[Callable[[DataT], bool]]:
+        """Get all validation rules."""
+        return self._validation_rules.copy()

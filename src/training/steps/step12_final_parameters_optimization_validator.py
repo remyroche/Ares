@@ -1,6 +1,4 @@
-"""
-Validator for Step 12: Final Parameters Optimization
-"""
+"""Validator for Step 12: Final Parameters Optimization."""
 
 import os
 import sys
@@ -24,7 +22,7 @@ from src.utils.base_validator import BaseValidator
 class Step12FinalParametersOptimizationValidator(BaseValidator):
     """Validator for Step 12: Final Parameters Optimization."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step12_final_parameters_optimization", config)
 
     async def validate(
@@ -32,8 +30,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
     ) -> bool:
-        """
-        Validate the final parameters optimization step.
+        """Validate the final parameters optimization step.
 
         Args:
             training_input: Training input parameters
@@ -41,6 +38,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
 
         Returns:
             bool: True if validation passed, False otherwise
+
         """
         self.logger.info("🔍 Validating final parameters optimization step...")
 
@@ -117,8 +115,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate that optimization files exist.
+        """Validate that optimization files exist.
 
         Args:
             symbol: Trading symbol
@@ -127,6 +124,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
 
         Returns:
             bool: True if files exist
+
         """
         try:
             # Expected optimization file patterns
@@ -162,8 +160,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate optimization quality metrics.
+        """Validate optimization quality metrics.
 
         Args:
             symbol: Trading symbol
@@ -172,6 +169,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
 
         Returns:
             bool: True if optimization quality is acceptable
+
         """
         try:
             # Load optimization results
@@ -230,8 +228,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate optimization convergence.
+        """Validate optimization convergence.
 
         Args:
             symbol: Trading symbol
@@ -240,6 +237,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
 
         Returns:
             bool: True if optimization converged properly
+
         """
         try:
             # Load optimization history
@@ -320,8 +318,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate optimized parameters quality.
+        """Validate optimized parameters quality.
 
         Args:
             symbol: Trading symbol
@@ -330,6 +327,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
 
         Returns:
             bool: True if parameters are valid
+
         """
         try:
             # Load optimized parameters
@@ -402,8 +400,7 @@ async def run_validator(
     training_input: dict[str, Any],
     pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
-    """
-    Run the step12_final_parameters_optimization validator.
+    """Run the step12_final_parameters_optimization validator.
 
     Args:
         training_input: Training input parameters
@@ -411,6 +408,7 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
+
     """
     validator = Step12FinalParametersOptimizationValidator(CONFIG)
     validation_passed = await validator.validate(training_input, pipeline_state)
@@ -428,7 +426,7 @@ if __name__ == "__main__":
     import asyncio
 
     # Example usage
-    async def test_validator():
+    async def test_validator() -> None:
         training_input = {
             "symbol": "ETHUSDT",
             "exchange": "BINANCE",
@@ -439,7 +437,6 @@ if __name__ == "__main__":
             "final_parameters_optimization": {"status": "SUCCESS", "duration": 900.5},
         }
 
-        result = await run_validator(training_input, pipeline_state)
-        print(f"Validation result: {result}")
+        await run_validator(training_input, pipeline_state)
 
     asyncio.run(test_validator())

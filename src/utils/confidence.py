@@ -1,6 +1,5 @@
 # src/utils/confidence.py
 
-
 # Empirically derived baseline and range for dual confidence normalization
 DUAL_CONF_BASELINE = 0.216
 DUAL_CONF_RANGE = 0.784
@@ -26,18 +25,19 @@ def normalize_dual_confidence(
                     "tactician": float(tactician_confidence),
                     "dual": float(dual),
                     "normalized": float(normalized),
-                }
+                },
             )
     except Exception:
         pass
     return dual, normalized
 
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 
 def _clamp01(value: float) -> float:
-    return 0.0 if value < 0.0 else 1.0 if value > 1.0 else value
+    return 0.0 if value < 0.0 else min(value, 1.0)
 
 
 def direction_to_sign(direction: str) -> int:
@@ -73,6 +73,7 @@ def aggregate_directional_confidences(
 
     Returns:
         dict with {"direction": "LONG"|"SHORT"|"HOLD", "confidence": float, "signed_value": float, "count": int}
+
     """
     signed_sum: float = 0.0
     total_weight: float = 0.0
@@ -84,7 +85,7 @@ def aggregate_directional_confidences(
         conf = _clamp01(conf)
         sign = direction_to_sign(m.get("direction", "HOLD"))
         if sign == 0:
-            # Ignore non-directional inputs for aggregation
+        # Ignore non-directional inputs for aggregation
             continue
         weight = float(m.get("weight", 1.0))
         if weight <= 0.0:

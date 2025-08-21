@@ -13,14 +13,11 @@ import psutil
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    warning,
-)
+from src.utils.warning_symbols import warning
 
 
 class OptimizedBacktester:
-    """
-    Optimized backtester with caching, parallelization, and memory management.
+    """Optimized backtester with caching, parallelization, and memory management.
 
     Key optimizations:
     - Cached backtest results
@@ -30,7 +27,7 @@ class OptimizedBacktester:
     - Memory-efficient data structures
     """
 
-    def __init__(self, market_data: pd.DataFrame, config: dict[str, Any]):
+    def __init__(self, market_data: pd.DataFrame, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("OptimizedBacktester")
 
@@ -54,7 +51,6 @@ class OptimizedBacktester:
 
     def _optimize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame for memory usage."""
-
         # Use appropriate dtypes
         for col in df.select_dtypes(include=["float64"]).columns:
             df[col] = pd.to_numeric(df[col], downcast="float")
@@ -66,7 +62,6 @@ class OptimizedBacktester:
 
     def _precompute_indicators(self) -> dict[str, np.ndarray]:
         """Precompute all technical indicators once."""
-
         self.logger.info("Precomputing technical indicators...")
         indicators = {}
 
@@ -144,7 +139,6 @@ class OptimizedBacktester:
     )
     def run_cached_backtest(self, params: dict[str, Any]) -> float:
         """Run backtest with caching."""
-
         # Check memory usage
         self._check_memory_usage()
 
@@ -172,7 +166,6 @@ class OptimizedBacktester:
 
     def _run_simplified_backtest(self, params: dict[str, Any]) -> float:
         """Run simplified backtest using precomputed indicators."""
-
         # Extract parameters
         tp_multiplier = params.get("tp_multiplier", 2.0)
         sl_multiplier = params.get("sl_multiplier", 1.0)
@@ -229,7 +222,6 @@ class OptimizedBacktester:
 
     def _generate_signals(self, confidence_threshold: float) -> np.ndarray:
         """Generate trading signals using precomputed indicators."""
-
         signals = np.zeros(len(self.market_data))
 
         # Simple signal generation using RSI and moving averages
@@ -253,7 +245,6 @@ class OptimizedBacktester:
 
     def evaluate_batch_parallel(self, param_batch: list[dict[str, Any]]) -> list[float]:
         """Evaluate multiple parameter sets in parallel."""
-
         if len(param_batch) <= 1:
             return [self.run_cached_backtest(params) for params in param_batch]
 
@@ -282,19 +273,18 @@ class OptimizedBacktester:
         params: dict[str, Any],
     ) -> float:
         """Evaluate single parameter set (runs in separate process)."""
-
         # Unpickle data
         market_data = pickle.loads(data_pickle)
         technical_indicators = pickle.loads(indicators_pickle)
 
         # Create temporary backtester for this process
-        temp_backtester = OptimizedBacktester(market_data, {})
+        temp_backtester = OptimizedBacktester(market_data=market_data, config={})
         temp_backtester.technical_indicators = technical_indicators
 
         # Run evaluation
         return temp_backtester._run_simplified_backtest(params)
 
-    def _check_memory_usage(self):
+    def _check_memory_usage(self) -> None:
         """Check and manage memory usage."""
         try:
             memory_percent = psutil.virtual_memory().percent / 100
@@ -307,7 +297,7 @@ class OptimizedBacktester:
             self.logger.warning(error_msg)
             self.print(warning(error_msg))
 
-    def _cleanup_memory(self):
+    def _cleanup_memory(self) -> None:
         """Clean up memory by forcing garbage collection."""
         gc.collect()
 
@@ -322,15 +312,14 @@ class OptimizedBacktester:
     def progressive_evaluate(
         self,
         params: dict[str, Any],
-        stages: list[tuple[float, float]] = None,
+        stages: list[tuple[float, float]] | None = None,
     ) -> float:
         """Evaluate parameters progressively across data subsets."""
-
         if stages is None:
             stages = [
-                (0.1, 0.3),  # 10% data, 30% weight
-                (0.3, 0.5),  # 30% data, 50% weight
-                (1.0, 1.0),  # 100% data, 100% weight
+                (0.1, 0.3),  # 10% data = 30% weight
+                (0.3, 0.5),  # 30% data = 50% weight
+                (1.0, 1.0),  # 100% data = 100% weight
             ]
 
         total_score = 0
@@ -341,7 +330,9 @@ class OptimizedBacktester:
             subset_data = self.market_data.iloc[:subset_size]
 
             # Create temporary backtester for subset
-            temp_backtester = OptimizedBacktester(subset_data, self.config)
+            temp_backtester = OptimizedBacktester(
+                subset_data=subset_data, config=self.config,
+            )
             score = temp_backtester._run_simplified_backtest(params)
 
             total_score += score * weight
@@ -370,7 +361,7 @@ class OptimizedBacktester:
         cache_hits = self.evaluation_count - len(self.cache)
         return max(0, cache_hits / self.evaluation_count)
 
-    def __del__(self):
+    def __del__(self) -> None:
         """Cleanup when object is destroyed."""
         if hasattr(self, "executor"):
             self.executor.shutdown(wait=False)

@@ -1,5 +1,6 @@
 # src/training/dual_model_system.py
 
+import contextlib
 import os
 from datetime import datetime
 from typing import Any
@@ -8,37 +9,34 @@ import pandas as pd
 
 # Import ML Confidence Predictor
 from src.analyst.ml_confidence_predictor import MLConfidencePredictor
+from src.utils.confidence import aggregate_directional_confidences
 from src.utils.error_handler import (
     handle_errors,
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    execution_error,
-    failed,
-    initialization_error,
-    invalid,
-)
-from src.utils.confidence import aggregate_directional_confidences
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
-    validate_step_prerequisites,
-    secure_data_processing,
-    prevent_data_leakage,
-    resource_monitor,
-    memory_efficient,
-    debug_training_step,
     circuit_breaker_protection,
-    validate_step_output,
+    debug_training_step,
+    memory_efficient,
+    prevent_data_leakage,
     quality_gate,
+    resource_monitor,
+    secure_data_processing,
+    validate_step_output,
+    validate_step_prerequisites,
+)
+from src.utils.warning_symbols import (
+    error,
+    execution_error,
+    initialization_error,
 )
 
 
 class DualModelSystem:
-    """
-    Dual Model System for trading decisions.
+    """Dual Model System for trading decisions.
 
     Analyst Model: Decides IF we enter/exit a trade (multi-timeframe: 30m/15m/5m)
     Tactician Model: Decides WHEN we enter/exit a trade (1m timeframe)
@@ -47,11 +45,11 @@ class DualModelSystem:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
-        Initialize Dual Model System.
+        """Initialize Dual Model System.
 
         Args:
             config: Configuration dictionary
+
         """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("DualModelSystem")
@@ -60,10 +58,8 @@ class DualModelSystem:
         if not hasattr(self, "print"):
 
             def _shim_print(message: str) -> None:
-                try:
+                with contextlib.suppress(Exception):
                     self.logger.error(str(message))
-                except Exception:
-                    pass
 
             self.print = _shim_print  # type: ignore[attr-defined]
 
@@ -127,7 +123,7 @@ class DualModelSystem:
 
         # Signal tracking
         self.current_enter_signal: dict[str, Any] | None = None
-        self.signal_history: list[dict[str, Any]] = []
+        self.signal_history: list[dict[str, Any]] , []
 
         # Ensemble configuration
         self.enable_ensemble_analysis: bool = self.dual_model_config.get(
@@ -145,11 +141,11 @@ class DualModelSystem:
         context="dual model system initialization",
     )
     async def initialize(self) -> bool:
-        """
-        Initialize Dual Model System with enhanced error handling.
+        """Initialize Dual Model System with enhanced error handling.
 
         Returns:
             bool: True if initialization successful, False otherwise
+
         """
         try:
             self.logger.info("Initializing Dual Model System...")
@@ -237,7 +233,7 @@ class DualModelSystem:
 
         except Exception as e:
             error_msg = f"Error loading dual model configuration: {e}"
-            self.logger.error(error_msg)
+            self.logger.exception(error_msg)
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -245,11 +241,11 @@ class DualModelSystem:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """
-        Validate dual model configuration.
+        """Validate dual model configuration.
 
         Returns:
             bool: True if configuration is valid, False otherwise
+
         """
         try:
             # Validate analyst timeframes
@@ -290,7 +286,7 @@ class DualModelSystem:
 
         except Exception as e:
             error_msg = f"Error validating dual model configuration: {e}"
-            self.logger.error(error_msg)
+            self.logger.exception(error_msg)
             return False
 
     @handle_errors(
@@ -534,8 +530,7 @@ class DualModelSystem:
         current_price: float,
         current_position: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """
-        Make trading decision using dual model system.
+        """Make trading decision using dual model system.
 
         Args:
             market_data: Market data for analysis
@@ -544,6 +539,7 @@ class DualModelSystem:
 
         Returns:
             Dictionary with trading decision
+
         """
         try:
             if not self.is_initialized:
@@ -564,7 +560,7 @@ class DualModelSystem:
 
         except Exception as e:
             error_msg = f"Error making trading decision: {e}"
-            self.logger.error(error_msg)
+            self.logger.exception(error_msg)
             self.print(error(error_msg))
             return self._get_fallback_decision()
 
@@ -613,11 +609,11 @@ class DualModelSystem:
                         ),
                         "confidence": float(tactician_decision.get("confidence", 0.0)),
                     },
-                ]
+                ],
             )
             final_confidence = float(final_conf_agg.get("confidence", 0.0))
             final_direction = final_conf_agg.get(
-                "direction", analyst_decision.get("direction", "HOLD")
+                "direction", analyst_decision.get("direction", "HOLD"),
             )
 
             # Determine if we should execute the trade
@@ -667,7 +663,7 @@ class DualModelSystem:
 
         except Exception as e:
             error_msg = f"Error making entry decision: {e}"
-            self.logger.error(error_msg)
+            self.logger.exception(error_msg)
             self.print(error(error_msg))
             return self._get_fallback_decision()
 
@@ -730,7 +726,7 @@ class DualModelSystem:
 
         except Exception as e:
             error_msg = f"Error making exit decision: {e}"
-            self.logger.error(error_msg)
+            self.logger.exception(error_msg)
             self.print(error(error_msg))
             return self._get_fallback_decision()
 
@@ -1361,7 +1357,7 @@ class DualModelSystem:
 
         except Exception as e:
             error_msg = f"Error calculating final confidence: {e}"
-            self.logger.error(error_msg)
+            self.logger.exception(error_msg)
             self.print(error(error_msg))
             return 0.0
 
@@ -1374,7 +1370,7 @@ class DualModelSystem:
 
         except Exception as e:
             error_msg = f"Error calculating normalized confidence: {e}"
-            self.logger.error(error_msg)
+            self.logger.exception(error_msg)
             self.print(error(error_msg))
             return 0.0
 
@@ -1392,7 +1388,7 @@ class DualModelSystem:
 
         except Exception as e:
             error_msg = f"Error checking enter signal validity: {e}"
-            self.logger.error(error_msg)
+            self.logger.exception(error_msg)
             self.print(error(error_msg))
             return False
 
@@ -1463,7 +1459,7 @@ class DualModelSystem:
 
         except Exception as e:
             error_msg = f"Error calculating recommended quantity: {e}"
-            self.logger.error(error_msg)
+            self.logger.exception(error_msg)
             self.print(error(error_msg))
             return 0.05  # Default to 5%
 
@@ -1479,7 +1475,7 @@ class DualModelSystem:
 
         except Exception as e:
             error_msg = f"Error calculating recommended leverage: {e}"
-            self.logger.error(error_msg)
+            self.logger.exception(error_msg)
             self.print(error(error_msg))
             return 20.0  # Default to 20x leverage
 
@@ -1509,8 +1505,7 @@ class DualModelSystem:
         training_type: str = "continuous",
         force_training: bool = False,
     ) -> dict[str, Any]:
-        """
-        Trigger model training for the dual model system.
+        """Trigger model training for the dual model system.
 
         Args:
             training_data: Historical data for training
@@ -1519,6 +1514,7 @@ class DualModelSystem:
 
         Returns:
             Dictionary containing training results
+
         """
         try:
             if not self.ml_confidence_predictor:
@@ -1566,7 +1562,7 @@ class DualModelSystem:
 
         except Exception as e:
             error_msg = f"Error updating system after training: {e}"
-            self.logger.error(error_msg)
+            self.logger.exception(error_msg)
             self.print(error(error_msg))
 
     def get_training_status(self) -> dict[str, Any]:
@@ -1623,7 +1619,7 @@ class DualModelSystem:
 
         except Exception as e:
             error_msg = f"Error updating model performance: {e}"
-            self.logger.error(error_msg)
+            self.logger.exception(error_msg)
             self.print(error(error_msg))
 
     def should_trigger_training(self) -> bool:
@@ -1635,7 +1631,7 @@ class DualModelSystem:
 
         except Exception as e:
             error_msg = f"Error checking training trigger: {e}"
-            self.logger.error(error_msg)
+            self.logger.exception(error_msg)
             self.print(error(error_msg))
             return False
 
@@ -1685,7 +1681,7 @@ class DualModelSystem:
 
         except Exception as e:
             error_msg = f"Error stopping dual model system: {e}"
-            self.logger.error(error_msg)
+            self.logger.exception(error_msg)
             self.print(error(error_msg))
 
 
@@ -1701,14 +1697,14 @@ dual_model_system: DualModelSystem | None = None
 async def setup_dual_model_system(
     config: dict[str, Any] | None = None,
 ) -> DualModelSystem | None:
-    """
-    Setup global dual model system.
+    """Setup global dual model system.
 
     Args:
         config: Optional configuration dictionary
 
     Returns:
         Optional[DualModelSystem]: Global dual model system instance
+
     """
     try:
         global dual_model_system
@@ -1738,6 +1734,5 @@ async def setup_dual_model_system(
             return dual_model_system
         return None
 
-    except Exception as e:
-        print(f"Error setting up dual model system: {e}")
+    except Exception:
         return None

@@ -1,21 +1,21 @@
 # Enhanced validation wrapper
+
+
 def enhanced_validate_features(
-    data: pd.DataFrame, dataset_name: str = "features"
-) -> Dict[str, Any]:
+    data: pd.DataFrame = dataset_name: str = "features",
+) -> Dict[str , Any]:
     """Enhanced validation with detailed logging"""
 
-    from src.utils.data_quality_validator import validate_features
-    import json
     from datetime import datetime
+from src.utils.data_quality_validator import validate_features, import json
 
     # Run original validation
-    results = validate_features(data, dataset_name)
+    results , validate_features(data, dataset_name)
 
     # Enhanced logging
     detailed_report = {
         "timestamp": datetime.now().isoformat(),
-        "dataset_name": dataset_name,
-        "data_shape": data.shape,
+        "dataset_name": dataset_name , "data_shape": data.shape,
         "total_features": len(data.columns),
         "validation_summary": results["summary"],
         "detailed_issues": {},
@@ -42,8 +42,7 @@ def enhanced_validate_features(
             "unique_count": series.nunique(),
             "most_common_value": series.mode().iloc[0]
             if len(series.mode()) > 0
-            else None,
-            "most_common_count": (series == series.mode().iloc[0]).sum()
+            else None = "most_common_count": (series == series.mode().iloc[0]).sum()
             if len(series.mode()) > 0
             else 0,
         }
@@ -57,7 +56,7 @@ def enhanced_validate_features(
                     "variance": float(series.var()),
                     "infinite_count": float(np.isinf(series).sum()),
                     "extreme_count": float((series.abs() > 1e6).sum()),
-                }
+                },
             )
 
         feature_analysis[col] = analysis
@@ -66,8 +65,8 @@ def enhanced_validate_features(
 
     # Save detailed report
     report_file = f"validation_detailed_report_{dataset_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    with open(report_file, "w") as f:
-        json.dump(detailed_report, f, indent=2, default=str)
+    with open(report_file = "w") as f:
+        json.dump(detailed_report = f, indent=2, default=str)
 
     print(f"📊 Detailed validation report saved to: {report_file}")
 
@@ -75,5 +74,5 @@ def enhanced_validate_features(
 
 
 # Usage in step1_7_hmm_regime_discovery.py:
-# Replace: validation_results = validate_features(features_df, f"features_{tf}")
-# With: validation_results = enhanced_validate_features(features_df, f"features_{tf}")
+# Replace: validation_results = validate_features(features_df = f"features_{tf}")
+# With: validation_results = enhanced_validate_features(features_df = f"features_{tf}")

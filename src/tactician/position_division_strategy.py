@@ -5,1469 +5,507 @@ Position Division Strategy for tactical position management.
 Defines strategies for multiple positions, take profit, stop loss, and position closure.
 """
 
-import json
-import os
 from datetime import datetime
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from src.utils.error_handler import (
-    create_graceful_degradation_strategy,
-    create_retry_strategy,
     handle_errors,
-    handle_specific_errors,
 )
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-    error,
     failed,
-    initialization_error,
-    missing,
     warning,
 )
 
-
 class PositionDivisionStrategy:
     """
-    Position division strategy that manages multiple positions, take profit,
-    stop loss, and position closure based on ML confidence and short-term analysis.
+    Position Division Strategy for managing multiple positions and their lifecycle.
+
+    Features:
+    - Multiple position management
+    - Take profit and stop loss strategies
+    - Position closure logic
+    - Risk management rules
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
-        self.config: dict[str, Any] = config
+    def __init__(self, config: Dict[str, Any]) -> None:
+        """
+        Initialize the position division strategy.
+
+        Args:
+            config: Configuration dictionary
+        """
+        self.config = config
         self.logger = system_logger.getChild("PositionDivisionStrategy")
 
-        # Load configuration
-        from src.config_optuna import get_parameter_value
+        # Configuration
+        self.strategy_config = config.get("position_division_strategy", {})
+        self.max_positions = self.strategy_config.get("max_positions", 5)
+        self.position_size_limit = self.strategy_config.get("position_size_limit", 0.2)  # 20% per position
+        self.take_profit_pct = self.strategy_config.get("take_profit_pct", 0.02)  # 2%
+        self.stop_loss_pct = self.strategy_config.get("stop_loss_pct", 0.01)  # 1%
 
-        self.division_config: dict[str, Any] = self.config.get("position_division", {})
+        # State tracking
+        self.active_positions: Dict[str, Dict[str, Any]] = {}
+        self.position_history: List[Dict[str, Any]] = []
+        self.strategy_performance: Dict[str, Any] = {}
 
-        # Position entry thresholds
-        self.entry_confidence_threshold: float = get_parameter_value(
-            "position_division_parameters.entry_confidence_threshold",
-            0.7,
-        )
-        self.additional_position_threshold: float = get_parameter_value(
-            "position_division_parameters.additional_position_threshold",
-            0.8,
-        )
-        self.max_positions: int = get_parameter_value(
-            "position_division_parameters.max_positions",
-            3,
-        )
-
-        # Position division parameters
-        self.max_division_ratio: float = get_parameter_value(
-            "position_division_parameters.max_division_ratio",
-            1.0,
-        )  # 100% of original position size
-        self.division_confidence_threshold: float = get_parameter_value(
-            "position_division_parameters.division_confidence_threshold",
-            0.85,
-        )  # Very high confidence for division
-
-        # Load optimized parameters from HPO results if available
-        self._load_optimized_parameters()
-
-        # Position division parameters
-        self.max_position_multiplier: float = get_parameter_value(
-            "position_division_parameters.max_position_multiplier",
-            1.5,
-        )  # 150% max
-        self.high_confidence_threshold: float = get_parameter_value(
-            "position_division_parameters.high_confidence_threshold",
-            0.85,
-        )
-        # Note: division_confidence_threshold already set earlier; avoid duplicate reassignment
-
-        # Take profit thresholds (confidence-based)
-        self.take_profit_confidence_decrease: float = get_parameter_value(
-            "position_division_parameters.take_profit_confidence_decrease",
-            0.1,
-        )
-        self.take_profit_short_term_decrease: float = get_parameter_value(
-            "position_division_parameters.take_profit_short_term_decrease",
-            0.08,
-        )
-
-        # Stop loss thresholds (confidence-based with trailing stop)
-        self.stop_loss_confidence_threshold: float = get_parameter_value(
-            "position_division_parameters.stop_loss_confidence_threshold",
-            0.3,
-        )
-        self.stop_loss_short_term_threshold: float = get_parameter_value(
-            "position_division_parameters.stop_loss_short_term_threshold",
-            0.24,
-        )
-        self.stop_loss_price_threshold: float = get_parameter_value(
-            "position_division_parameters.stop_loss_price_threshold",
-            -0.05,
-        )  # Trailing stop
-
-        # Position closure thresholds (confidence-based)
-        self.full_close_confidence_threshold: float = get_parameter_value(
-            "position_division_parameters.full_close_confidence_threshold",
-            0.2,
-        )
-        self.full_close_short_term_threshold: float = get_parameter_value(
-            "position_division_parameters.full_close_short_term_threshold",
-            0.16,
-        )
-
-        # Position holding time limit (12 hours max)
-        self.max_position_hold_hours: float = get_parameter_value(
-            "position_division_parameters.max_position_hold_hours",
-            12.0,
-        )
-
-        # Enhanced position management thresholds
-        self.dynamic_position_sizing = get_parameter_value(
-            "position_division_parameters.dynamic_position_sizing",
-            True,
-        )
-        self.kelly_criterion_enabled = get_parameter_value(
-            "position_division_parameters.kelly_criterion_enabled",
-            True,
-        )
-        self.volatility_targeting = get_parameter_value(
-            "position_division_parameters.volatility_targeting",
-            True,
-        )
-
-        # Advanced profit-taking mechanisms
-        self.scaled_profit_taking = get_parameter_value(
-            "position_division_parameters.scaled_profit_taking",
-            True,
-        )
-        self.profit_targets = get_parameter_value(
-            "position_division_parameters.profit_targets",
-            [0.01, 0.02, 0.03],
-        )  # 1%, 2%, 3%
-        self.profit_scaling_factors = get_parameter_value(
-            "position_division_parameters.profit_scaling_factors",
-            [0.3, 0.3, 0.4],
-        )  # 30%, 30%, 40%
-
-        # Enhanced stop-loss mechanisms
-        self.trailing_stop_enabled = get_parameter_value(
-            "position_division_parameters.trailing_stop_enabled",
-            True,
-        )
-        self.atr_multiplier = get_parameter_value(
-            "position_division_parameters.atr_multiplier",
-            2.0,
-        )
-        self.confidence_based_stop = get_parameter_value(
-            "position_division_parameters.confidence_based_stop",
-            True,
-        )
-
-        self.is_initialized: bool = False
-        self.position_division_history: list[dict[str, Any]] = []
-
-    def _load_optimized_parameters(self) -> None:
-        """Load optimized parameters from HPO results if available."""
-        try:
-            # Try to load HPO results from multiple possible locations
-            hpo_results_paths = [
-                "data/training/optimized_position_division_params.json",
-                "data/training/hpo_results.json",
-                "data/training/multi_stage_hpo_results.json",
-            ]
-
-            optimized_params = None
-            for path in hpo_results_paths:
-                try:
-                    if os.path.exists(path):
-                        with open(path) as f:
-                            hpo_data = json.load(f)
-
-                            # Extract position division parameters from HPO results
-                            if "best_params" in hpo_data:
-                                best_params = hpo_data["best_params"]
-                                optimized_params = {
-                                    "entry_confidence_threshold": best_params.get(
-                                        "entry_confidence_threshold",
-                                        self.entry_confidence_threshold,
-                                    ),
-                                    "additional_position_threshold": best_params.get(
-                                        "additional_position_threshold",
-                                        self.additional_position_threshold,
-                                    ),
-                                    "division_confidence_threshold": best_params.get(
-                                        "division_confidence_threshold",
-                                        self.division_confidence_threshold,
-                                    ),
-                                    "max_division_ratio": best_params.get(
-                                        "max_division_ratio",
-                                        self.max_division_ratio,
-                                    ),
-                                    "max_positions": best_params.get(
-                                        "max_positions",
-                                        self.max_positions,
-                                    ),
-                                }
-                                self.logger.info(
-                                    f"✅ Loaded optimized position division parameters from {path}",
-                                )
-                                break
-                except Exception as e:
-                    self.logger.debug(f"Could not load from {path}: {e}")
-                    continue
-
-            # Apply optimized parameters if found
-            if optimized_params:
-                self.entry_confidence_threshold = optimized_params[
-                    "entry_confidence_threshold"
-                ]
-                self.additional_position_threshold = optimized_params[
-                    "additional_position_threshold"
-                ]
-                self.division_confidence_threshold = optimized_params[
-                    "division_confidence_threshold"
-                ]
-                self.max_division_ratio = optimized_params["max_division_ratio"]
-                self.max_positions = optimized_params["max_positions"]
-                self.logger.info("✅ Applied optimized position division parameters")
-            else:
-                self.logger.info(
-                    "ℹ️ Using default position division parameters (no HPO results found)",
-                )
-
-        except Exception as e:
-            self.logger.warning(
-                f"⚠️ Error loading optimized parameters: {e}, using defaults",
-            )
-
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False, "Invalid position division configuration"),
-            AttributeError: (False, "Missing required division parameters"),
-            KeyError: (False, "Missing configuration keys"),
-        },
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
         default_return=False,
-        context="position division strategy initialization",
-        recovery_strategies=[
-            create_retry_strategy(max_retries=2, base_delay=1.0),
-            create_graceful_degradation_strategy(default_return=False),
-        ],
+        context="position division strategy initialization"
     )
     async def initialize(self) -> bool:
-        """Initialize the position division strategy."""
+        """
+        Initialize the position division strategy.
+
+        Returns:
+            bool: True if initialization successful
+        """
         try:
-            self.logger.info("🚀 Initializing position division strategy...")
-            self.logger.info(
-                f"📊 Configuration loaded: {len(self.division_config)} parameters",
-            )
+            self.logger.info("Initializing Position Division Strategy...")
 
             # Validate configuration
             if not self._validate_configuration():
-                self.print(failed("❌ Configuration validation failed"))
+                self.logger.error(invalid("Invalid position division strategy configuration"))
                 return False
 
-            self.is_initialized = True
-            self.logger.info("✅ Position division strategy initialized successfully")
-            self.logger.info("📋 Key parameters:")
-            self.logger.info(
-                f"   - Entry threshold: {self.entry_confidence_threshold:.3f}",
-            )
-            self.logger.info(
-                f"   - Additional position threshold: {self.additional_position_threshold:.3f}",
-            )
-            self.logger.info(f"   - Max positions: {self.max_positions}")
-            self.logger.info(
-                f"   - Max position hold time: {self.max_position_hold_hours:.1f} hours",
-            )
+            # Clear state
+            self.active_positions.clear()
+            self.position_history.clear()
+            self.strategy_performance.clear()
 
-            self.logger.info(
-                f"   - Take profit decrease: {self.take_profit_confidence_decrease:.3f}",
-            )
-            self.logger.info(
-                f"   - Stop loss threshold: {self.stop_loss_confidence_threshold:.3f}",
-            )
+            self.logger.info("✅ Position Division Strategy initialized successfully")
             return True
 
         except Exception as e:
-            self.logger.exception(
-                f"❌ Error initializing position division strategy: {e}",
-            )
+            self.logger.error(failed(f"❌ Position Division Strategy initialization failed: {e}"))
+            return False
+
+    def _validate_configuration(self) -> bool:
+        """
+        Validate position division strategy configuration.
+
+        Returns:
+            bool: True if configuration is valid
+        """
+        try:
+            if self.max_positions <= 0:
+                self.logger.error(invalid("Max positions must be positive"))
+                return False
+
+            if not 0 < self.position_size_limit <= 1:
+                self.logger.error(invalid("Position size limit must be between 0 and 1"))
+                return False
+
+            if self.take_profit_pct <= 0:
+                self.logger.error(invalid("Take profit percentage must be positive"))
+                return False
+
+            if self.stop_loss_pct <= 0:
+                self.logger.error(invalid("Stop loss percentage must be positive"))
+                return False
+
+            return True
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
-        context="configuration validation",
+        context="position division calculation"
     )
-    def _validate_configuration(self) -> bool:
-        """Validate position division configuration."""
-        try:
-            self.logger.debug("🔍 Validating position division configuration...")
-
-            required_keys = [
-                "entry_confidence_threshold",
-                "additional_position_threshold",
-                "max_positions",
-                "take_profit_confidence_decrease",
-                "take_profit_short_term_decrease",
-                "stop_loss_confidence_threshold",
-                "stop_loss_short_term_threshold",
-                "stop_loss_price_threshold",
-                "full_close_confidence_threshold",
-                "full_close_short_term_threshold",
-                "max_position_hold_hours",
-            ]
-
-            self.logger.debug(
-                f"📋 Checking {len(required_keys)} required configuration keys...",
-            )
-
-            for key in required_keys:
-                if key not in self.division_config:
-                    self.print(missing("❌ Missing required configuration key: {key}"))
-                    return False
-                self.logger.debug(
-                    f"✅ Found configuration key: {key} = {self.division_config[key]}",
-                )
-
-            # Validate numeric parameters
-            if self.max_positions <= 0:
-                self.logger.error(
-                    f"❌ max_positions must be positive, got: {self.max_positions}",
-                )
-                return False
-
-            if self.max_position_hold_hours <= 0:
-                self.logger.error(
-                    f"❌ max_position_hold_hours must be positive, got: {self.max_position_hold_hours}",
-                )
-                return False
-
-            self.logger.info("✅ Position division configuration validation passed")
-            return True
-
-        except Exception:
-            self.print(error("❌ Error validating configuration: {e}"))
-            return False
-
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (None, "Invalid input data for position division"),
-            AttributeError: (None, "Strategy not properly initialized"),
-        },
-        default_return=None,
-        context="position division analysis",
-    )
-    async def analyze_position_division(
+    async def calculate_position_division(
         self,
-        ml_predictions: dict[str, Any],
-        current_positions: list[dict[str, Any]],
-        current_price: float,
-        short_term_analysis: dict[str, Any] | None = None,
-        analyst_confidence: float = 0.5,
-        tactician_confidence: float = 0.5,
-    ) -> dict[str, Any]:
+        total_capital: float,
+        confidence_score: float,
+        market_conditions: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
         """
-        Analyze position division strategy based on ML confidence and short-term analysis.
+        Calculate position division strategy.
 
         Args:
-            ml_predictions: ML confidence predictions from ml_confidence_predictor
-            current_positions: List of current positions
-            current_price: Current market price
-            short_term_analysis: Short-term price/volume/market microstructure analysis
+            total_capital: Total available capital
+            confidence_score: Confidence score (0-1)
+            market_conditions: Current market conditions
 
         Returns:
-            dict[str, Any]: Position division analysis and recommendations
+            Dict: Position division strategy or None if failed
         """
         try:
-            if not self.is_initialized:
-                self.print(
-                    initialization_error("Position division strategy not initialized"),
-                )
-                return None
+            self.logger.info("Calculating position division strategy...")
 
-            self.logger.info("🔄 Starting position division strategy analysis...")
-            self.logger.info(
-                f"📊 Input data: {len(current_positions)} positions, price: ${current_price:.2f}",
-            )
+            # Calculate number of positions based on confidence
+            num_positions = self._calculate_num_positions(confidence_score)
 
-            # Normalize ml_predictions keys
-            price_target_confidences = (
-                ml_predictions.get("price_target_confidences")
-                or ml_predictions.get("movement_confidence_scores")
-                or {}
-            )
-            adversarial_confidences = (
-                ml_predictions.get("adversarial_confidences") or {}
-            )
-            directional_confidence = ml_predictions.get("directional_confidence") or {}
+            # Calculate position sizes
+            position_sizes = self._calculate_position_sizes(total_capital, num_positions, confidence_score)
 
-            # Calculate final confidence using dual model formula
-            final_confidence = analyst_confidence * (tactician_confidence**2)
+            # Calculate take profit and stop loss levels
+            tp_sl_levels = self._calculate_tp_sl_levels(market_conditions)
 
-            # Calculate normalized confidence
-            normalized_confidence = (final_confidence - 0.216) / 0.784
-            normalized_confidence = max(0.0, min(1.0, normalized_confidence))
-
-            # Extract ML confidence scores
-            # already normalized above
-
-            self.logger.info(
-                f"📈 ML confidence levels: {len(price_target_confidences)} movement levels",
-            )
-            self.logger.info(
-                f"⚠️ Adverse movement risks: {len(adversarial_confidences)} risk levels",
-            )
-            self.logger.info(f"🎯 Directional confidence: {directional_confidence}")
-            self.logger.info(
-                f"🎯 Dual confidence - Analyst: {analyst_confidence:.3f}, Tactician: {tactician_confidence:.3f}",
-            )
-            self.logger.info(
-                f"🎯 Final confidence: {final_confidence:.3f}, Normalized: {normalized_confidence:.3f}",
-            )
-
-            # Calculate average confidence
-            avg_confidence = self._calculate_average_confidence(
-                price_target_confidences,
-            )
-            self.logger.info(f"📊 Average confidence calculated: {avg_confidence:.3f}")
-
-            # Analyze short-term indicators
-            short_term_score = self._analyze_short_term_indicators(short_term_analysis)
-            self.logger.info(f"⚡ Short-term score: {short_term_score:.3f}")
-
-            # Check if we should allow additional positions based on confidence increase
-            should_allow_additional = self._check_confidence_increase(
-                current_positions,
-                normalized_confidence,
-            )
-            self.logger.info(
-                f"📈 Should allow additional positions: {should_allow_additional}",
-            )
-
-            # Generate position division recommendations
-            self.logger.info("🎯 Generating position division recommendations...")
-
-            entry_recommendation = self._analyze_entry_strategy(
-                avg_confidence,
-                len(current_positions),
-                short_term_score,
-                current_positions,
-                should_allow_additional,
-            )
-            take_profit_recommendation = self._analyze_take_profit_strategy(
-                avg_confidence,
-                current_positions,
-                current_price,
-                short_term_score,
-            )
-            stop_loss_recommendation = self._analyze_stop_loss_strategy(
-                avg_confidence,
-                current_positions,
-                current_price,
-                short_term_score,
-            )
-            full_close_recommendation = self._analyze_full_close_strategy(
-                avg_confidence,
-                current_positions,
-                current_price,
-                short_term_score,
-            )
-
-            # Log key recommendations
-            self.logger.info(
-                f"📝 Entry recommendation: {entry_recommendation.get('should_enter', False)} - {entry_recommendation.get('reason', 'No reason')}",
-            )
-            self.logger.info(
-                f"💰 Take profit actions: {len(take_profit_recommendation.get('take_profit_actions', []))} positions",
-            )
-            self.logger.info(
-                f"🛑 Stop loss actions: {len(stop_loss_recommendation.get('stop_loss_actions', []))} positions",
-            )
-            self.logger.info(
-                f"🚪 Full close actions: {len(full_close_recommendation.get('full_close_actions', []))} positions",
-            )
-
-            # Create position division analysis
-            division_analysis = {
-                "timestamp": datetime.now(),
-                "current_price": current_price,
-                "current_positions_count": len(current_positions),
-                "average_confidence": avg_confidence,
-                "short_term_score": short_term_score,
-                "entry_recommendation": entry_recommendation,
-                "take_profit_recommendation": take_profit_recommendation,
-                "stop_loss_recommendation": stop_loss_recommendation,
-                "full_close_recommendation": full_close_recommendation,
-                "price_target_confidences": price_target_confidences,
-                "adversarial_confidences": adversarial_confidences,
-                "directional_confidence": directional_confidence,
-                "division_reason": self._generate_division_reason(
-                    entry_recommendation,
-                    take_profit_recommendation,
-                    stop_loss_recommendation,
-                    full_close_recommendation,
-                    avg_confidence,
-                ),
+            # Create strategy
+            strategy = {
+                "num_positions": num_positions,
+                "position_sizes": position_sizes,
+                "take_profit_levels": tp_sl_levels["take_profit"],
+                "stop_loss_levels": tp_sl_levels["stop_loss"],
+                "confidence_score": confidence_score,
+                "total_capital": total_capital,
+                "timestamp": datetime.now().isoformat()
             }
 
-            # Store in history (efficient management)
-            self.position_division_history.append(division_analysis)
-            if len(self.position_division_history) > 100:  # Keep last 100 entries
-                self.position_division_history = self.position_division_history[-100:]
-
-            self.logger.info("✅ Position division analysis completed successfully")
-            self.logger.info(
-                f"📋 Analysis stored in history (total: {len(self.position_division_history)} entries)",
-            )
-            return division_analysis
+            self.logger.info(f"✅ Position division strategy calculated: {num_positions} positions")
+            return strategy
 
         except Exception as e:
-            self.print(error("❌ Error analyzing position division: {e}"))
-            # Return a safe default analysis instead of None
-            return {
-                "timestamp": datetime.now(),
-                "current_price": current_price,
-                "current_positions_count": len(current_positions),
-                "average_confidence": 0.5,
-                "short_term_score": 0.5,
-                "entry_recommendation": {
-                    "should_enter": False,
-                    "confidence": 0.5,
-                    "reason": "Error in analysis",
-                },
-                "take_profit_recommendation": {
-                    "take_profit_actions": [],
-                    "total_take_profit_size": 0.0,
-                },
-                "stop_loss_recommendation": {
-                    "stop_loss_actions": [],
-                    "total_stop_loss_size": 0.0,
-                },
-                "full_close_recommendation": {
-                    "full_close_actions": [],
-                    "total_full_close_size": 0.0,
-                },
-                "price_target_confidences": {},
-                "adversarial_confidences": {},
-                "directional_confidence": {},
-                "division_reason": "Error in position division analysis",
-                "error": str(e),
-            }
-
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (None, "Invalid input data for position division"),
-            AttributeError: (None, "Strategy not properly initialized"),
-        },
-        default_return=None,
-        context="position division wrapper",
-    )
-    async def analyze_and_divide(
-        self,
-        tactics_input: dict[str, Any],
-        *,
-        market_health_analysis: dict[str, Any] | None = None,
-        strategist_risk_parameters: dict[str, Any] | None = None,
-        analyst_confidence: float = 0.5,
-        tactician_confidence: float = 0.5,
-    ) -> dict[str, Any] | None:
-        """Wrapper to run division analysis and adjust outputs with market health and strategist risk parameters."""
-        try:
-            ml_predictions = tactics_input.get("ml_predictions", {})
-            current_positions = tactics_input.get("current_positions", [])
-            current_price = float(tactics_input.get("current_price", 0.0))
-            short_term = tactics_input.get("short_term_analysis", {})
-
-            base = await self.analyze_position_division(
-                ml_predictions=ml_predictions,
-                current_positions=current_positions,
-                current_price=current_price,
-                short_term_analysis=short_term,
-                analyst_confidence=analyst_confidence,
-                tactician_confidence=tactician_confidence,
-            )
-            if not base:
-                return None
-
-            # Adjust recommendations with market health and strategist risk caps
-            if market_health_analysis:
-                stress = market_health_analysis.get("stress_analysis", {})
-                stress_level = float(stress.get("stress_level", 0.5))
-                if stress_level >= 0.8:
-                    # In extreme stress, avoid adding positions and favor reductions
-                    base["entry_recommendation"]["should_enter"] = False
-                    base["division_reason"] += (
-                        " | Suppressed entries due to extreme stress"
-                    )
-                elif stress_level >= 0.6:
-                    # In high stress, scale down take-profit adds
-                    tp = base.get("take_profit_recommendation", {})
-                    tp_size = float(tp.get("total_take_profit_size", 0.0))
-                    tp["total_take_profit_size"] = tp_size * 0.7
-                    base["take_profit_recommendation"] = tp
-
-            if strategist_risk_parameters:
-                # Cap total adds based on max positions and risk preference
-                max_positions = int(
-                    strategist_risk_parameters.get("max_positions", self.max_positions),
-                )
-                base["entry_recommendation"]["max_positions_allowed"] = max_positions
-
-            base["market_health_context"] = market_health_analysis or {}
-            base["strategist_risk_parameters"] = strategist_risk_parameters or {}
-            return base
-        except Exception:
-            self.print(error("Error in analyze_and_divide: {e}"))
+            self.logger.error(failed(f"❌ Position division calculation failed: {e}"))
             return None
 
-    def _calculate_average_confidence(
-        self,
-        price_target_confidences: dict[str, float],
-    ) -> float:
-        """Calculate average confidence for key movement levels."""
-        try:
-            self.logger.debug(
-                f"🔍 Calculating average confidence from {len(price_target_confidences)} movement levels",
-            )
-
-            if not price_target_confidences:
-                self.logger.warning(
-                    "⚠️ No price target confidence data available, using default 0.5",
-                )
-                return 0.5
-
-            # Get average confidence for target levels (0.5% to 2.0%)
-            target_levels = [0.5, 1.0, 1.5, 2.0]
-            confidences = []
-
-            for level in target_levels:
-                try:
-                    # Find closest available level
-                    available_levels = [
-                        float(k)
-                        for k in price_target_confidences
-                        if k.replace(".", "").isdigit()
-                    ]
-                    if not available_levels:
-                        self.logger.warning(
-                            f"⚠️ No numeric levels found in price_target_confidences, using default 0.5 for level {level}",
-                        )
-                        confidences.append(0.5)
-                        continue
-
-                    closest_level = min(available_levels, key=lambda x: abs(x - level))
-                    confidence = price_target_confidences.get(str(closest_level), 0.5)
-                    confidences.append(confidence)
-                    self.logger.debug(
-                        f"📊 Target {level}% -> closest {closest_level}% -> confidence {confidence:.3f}",
-                    )
-                except (ValueError, TypeError) as e:
-                    self.logger.warning(
-                        f"⚠️ Error processing level {level}: {e}, using default 0.5",
-                    )
-                    confidences.append(0.5)
-
-            if not confidences:
-                self.logger.warning(
-                    "⚠️ No valid confidences calculated, using default 0.5",
-                )
-                return 0.5
-
-            avg_confidence = sum(confidences) / len(confidences)
-            self.logger.debug(
-                f"📈 Average confidence calculated: {avg_confidence:.3f} from {len(confidences)} levels",
-            )
-
-            return avg_confidence
-
-        except Exception:
-            self.print(error("❌ Error calculating average confidence: {e}"))
-            return 0.5
-
-    def _analyze_short_term_indicators(
-        self,
-        short_term_analysis: dict[str, Any] | None,
-    ) -> float:
-        """Analyze short-term ML confidence scores for 1m-5m timeframes."""
-        try:
-            if not short_term_analysis:
-                self.logger.debug(
-                    "📊 No short-term analysis provided, using default score 0.5",
-                )
-                return 0.5
-
-            # Extract short-term ML confidence scores
-            short_term_ml_scores = short_term_analysis.get("ml_confidence_scores", {})
-            self.logger.debug(
-                f"📈 Short-term ML scores available: {list(short_term_ml_scores.keys())}",
-            )
-
-            # Get confidence scores for 1m and 5m timeframes
-            confidence_1m = short_term_ml_scores.get("1m", {}).get("confidence", 0.5)
-            confidence_5m = short_term_ml_scores.get("5m", {}).get("confidence", 0.5)
-
-            self.logger.debug(
-                f"⚡ 1m confidence: {confidence_1m:.3f}, 5m confidence: {confidence_5m:.3f}",
-            )
-
-            # Calculate weighted short-term score (5m has more weight than 1m)
-            short_term_score = confidence_1m * 0.4 + confidence_5m * 0.6
-            short_term_score = max(0.0, min(1.0, short_term_score))
-
-            self.logger.debug(f"📊 Weighted short-term score: {short_term_score:.3f}")
-
-            return short_term_score
-
-        except Exception:
-            self.print(error("❌ Error analyzing short-term indicators: {e}"))
-            return 0.5
-
-    def _analyze_entry_strategy(
-        self,
-        avg_confidence: float,
-        current_positions_count: int,
-        short_term_score: float,
-        current_positions: list[dict[str, Any]] | None = None,
-        should_allow_additional: bool = True,
-    ) -> dict[str, Any]:
-        """Analyze entry strategy for additional positions based on ML confidence scores."""
-        try:
-            self.logger.debug(
-                f"🎯 Analyzing entry strategy: {current_positions_count}/{self.max_positions} positions",
-            )
-            self.logger.debug(
-                f"📊 Input scores - Short-term: {short_term_score:.3f}, Overall: {avg_confidence:.3f}",
-            )
-
-            # Use short-term ML confidence (1m-5m) for entry decisions
-            # Higher weight on short-term confidence for precise entry timing
-            combined_score = short_term_score * 0.7 + avg_confidence * 0.3
-            self.logger.debug(
-                f"📈 Combined score: {combined_score:.3f} (threshold: {self.entry_confidence_threshold:.3f})",
-            )
-
-            should_enter = False
-            reason = ""
-
-            # Check for positions that have exceeded the 12-hour holding limit
-            if current_positions:
-                current_time = datetime.now()
-                for position in current_positions:
-                    entry_timestamp = position.get("entry_timestamp")
-                    if entry_timestamp:
-                        try:
-                            if isinstance(entry_timestamp, str):
-                                entry_time = datetime.fromisoformat(
-                                    entry_timestamp,
-                                )
-                            else:
-                                entry_time = entry_timestamp
-
-                            hours_in_position = (
-                                current_time - entry_time
-                            ).total_seconds() / 3600
-                            if hours_in_position >= self.max_position_hold_hours:
-                                self.logger.warning(
-                                    f"⚠️ Position {position.get('position_id', 'unknown')} has exceeded {self.max_position_hold_hours}h limit ({hours_in_position:.1f}h)",
-                                )
-                                reason = f"Position holding time limit exceeded ({hours_in_position:.1f}h >= {self.max_position_hold_hours}h)"
-                                return {
-                                    "should_enter": False,
-                                    "position_size": 0.0,
-                                    "confidence": combined_score,
-                                    "short_term_confidence": short_term_score,
-                                    "overall_confidence": avg_confidence,
-                                    "reason": reason,
-                                    "max_positions_reached": False,
-                                    "holding_time_exceeded": True,
-                                }
-                        except (ValueError, TypeError):
-                            self.print(warning("⚠️ Error parsing entry timestamp: {e}"))
-                            continue
-
-            # Check if we should enter a new position
-            if current_positions_count < self.max_positions:
-                # Check if confidence has increased for additional positions
-                if current_positions_count > 0 and not should_allow_additional:
-                    should_enter = False
-                    reason = (
-                        "Normalized confidence has not increased since last position"
-                    )
-                    self.logger.info("❌ Entry rejected: Confidence has not increased")
-                elif combined_score >= self.entry_confidence_threshold:
-                    should_enter = True
-                    position_size = min(
-                        combined_score * 0.1,
-                        self.max_position_size,
-                    )  # Cap at max position size
-                    reason = f"High short-term confidence ({short_term_score:.2f}) and good overall confidence ({avg_confidence:.2f})"
-                    self.logger.info(
-                        f"✅ Entry recommended: High confidence ({combined_score:.3f}) - Size: {position_size:.3f}",
-                    )
-                elif combined_score >= self.additional_position_threshold:
-                    should_enter = True
-                    position_size = min(
-                        combined_score * 0.05,
-                        self.max_position_size * 0.5,
-                    )  # Smaller position size, capped
-                    reason = f"Moderate short-term confidence ({short_term_score:.2f}) for additional position"
-                    self.logger.info(
-                        f"⚠️ Entry recommended: Moderate confidence ({combined_score:.3f}) - Size: {position_size:.3f}",
-                    )
-                else:
-                    should_enter = False
-                    reason = f"Low confidence ({combined_score:.3f}) < threshold ({self.entry_confidence_threshold:.3f})"
-                    self.logger.debug(
-                        f"❌ Entry rejected: Low confidence ({combined_score:.3f}) < threshold ({self.entry_confidence_threshold:.3f})",
-                    )
-            else:
-                should_enter = False
-                reason = f"Max positions reached ({current_positions_count}/{self.max_positions})"
-                self.logger.debug(
-                    f"❌ Entry rejected: Max positions reached ({current_positions_count}/{self.max_positions})",
-                )
-
-            result = {
-                "should_enter": should_enter,
-                "confidence": combined_score,
-                "short_term_confidence": short_term_score,
-                "overall_confidence": avg_confidence,
-                "reason": reason,
-                "max_positions_reached": current_positions_count >= self.max_positions,
-            }
-
-            self.logger.debug(f"📋 Entry analysis result: {result}")
-            return result
-
-        except Exception:
-            self.print(error("❌ Error analyzing entry strategy: {e}"))
-            return {
-                "should_enter": False,
-                "confidence": 0.0,
-                "reason": "Error in analysis",
-            }
-
-    def _analyze_take_profit_strategy(
-        self,
-        avg_confidence: float,
-        current_positions: list[dict[str, Any]],
-        current_price: float,
-        short_term_score: float,
-    ) -> dict[str, Any]:
-        """Analyze take profit strategy based on confidence decreases."""
-        try:
-            self.logger.debug(
-                f"💰 Analyzing take profit strategy for {len(current_positions)} positions",
-            )
-            self.logger.debug(
-                f"📊 Current confidence: {avg_confidence:.3f}, Short-term: {short_term_score:.3f}",
-            )
-
-            take_profit_actions = []
-            total_take_profit_size = 0.0
-
-            for i, position in enumerate(current_positions):
-                position.get("entry_price", current_price)
-                position_size = position.get("position_size", 0.0)
-                position_id = position.get("position_id", f"pos_{i}")
-                entry_confidence = position.get("entry_confidence", avg_confidence)
-
-                self.logger.debug(
-                    f"📋 Position {position_id}: Entry confidence {entry_confidence:.3f}, Size {position_size:.3f}",
-                )
-
-                # Calculate confidence decrease
-                confidence_decrease = entry_confidence - avg_confidence
-                short_term_confidence_decrease = entry_confidence - short_term_score
-
-                self.logger.debug(
-                    f"📉 Confidence decreases - Overall: {confidence_decrease:.3f}, Short-term: {short_term_confidence_decrease:.3f}",
-                )
-
-                # Determine take profit action based on confidence decreases (gradual approach)
-                should_take_profit = False
-                take_profit_size = 0.0
-                reason = ""
-
-                # Calculate gradual take profit based on confidence decrease severity
-                if confidence_decrease >= self.take_profit_confidence_decrease:
-                    # Large confidence decrease - take profit on 50% of position
-                    should_take_profit = True
-                    take_profit_size = position_size * 0.5
-                    reason = f"Large confidence decrease ({confidence_decrease:.2f}) - 50% take profit"
-                    self.logger.info(
-                        f"💰 Take profit recommended for {position_id}: Large confidence decrease ({confidence_decrease:.3f}) - Size: {take_profit_size:.3f}",
-                    )
-
-                elif (
-                    short_term_confidence_decrease
-                    >= self.take_profit_short_term_decrease
-                ):
-                    # Short-term confidence decrease - take profit on 30% of position
-                    should_take_profit = True
-                    take_profit_size = position_size * 0.3
-                    reason = f"Short-term confidence decreased ({short_term_confidence_decrease:.2f}) - 30% take profit"
-                    self.logger.info(
-                        f"💰 Take profit recommended for {position_id}: Short-term decrease ({short_term_confidence_decrease:.3f}) - Size: {take_profit_size:.3f}",
-                    )
-
-                elif confidence_decrease >= self.take_profit_confidence_decrease * 0.7:
-                    # Moderate confidence decrease - take profit on 25% of position
-                    should_take_profit = True
-                    take_profit_size = position_size * 0.25
-                    reason = f"Moderate confidence decrease ({confidence_decrease:.2f}) - 25% take profit"
-                    self.logger.info(
-                        f"💰 Take profit recommended for {position_id}: Moderate decrease ({confidence_decrease:.3f}) - Size: {take_profit_size:.3f}",
-                    )
-
-                elif confidence_decrease >= self.take_profit_confidence_decrease * 0.5:
-                    # Small confidence decrease - take profit on 15% of position
-                    should_take_profit = True
-                    take_profit_size = position_size * 0.15
-                    reason = f"Small confidence decrease ({confidence_decrease:.2f}) - 15% take profit"
-                    self.logger.info(
-                        f"💰 Take profit recommended for {position_id}: Small decrease ({confidence_decrease:.3f}) - Size: {take_profit_size:.3f}",
-                    )
-
-                elif confidence_decrease >= self.take_profit_confidence_decrease * 0.3:
-                    # Very small confidence decrease - take profit on 10% of position
-                    should_take_profit = True
-                    take_profit_size = position_size * 0.1
-                    reason = f"Very small confidence decrease ({confidence_decrease:.2f}) - 10% take profit"
-                    self.logger.info(
-                        f"💰 Take profit recommended for {position_id}: Very small decrease ({confidence_decrease:.3f}) - Size: {take_profit_size:.3f}",
-                    )
-
-                else:
-                    self.logger.debug(
-                        f"❌ No take profit for {position_id}: Insufficient confidence decrease ({confidence_decrease:.3f})",
-                    )
-
-                take_profit_actions.append(
-                    {
-                        "position_id": position_id,
-                        "should_take_profit": should_take_profit,
-                        "take_profit_size": take_profit_size,
-                        "confidence_decrease": confidence_decrease,
-                        "short_term_confidence_decrease": short_term_confidence_decrease,
-                        "reason": reason,
-                    },
-                )
-
-                total_take_profit_size += take_profit_size
-
-            result = {
-                "take_profit_actions": take_profit_actions,
-                "total_take_profit_size": total_take_profit_size,
-            }
-
-            self.logger.debug(
-                f"📋 Take profit analysis: {len([a for a in take_profit_actions if a['should_take_profit']])} actions, Total size: {total_take_profit_size:.3f}",
-            )
-            return result
-
-        except Exception:
-            self.print(error("❌ Error analyzing take profit strategy: {e}"))
-            return {"take_profit_actions": [], "total_take_profit_size": 0.0}
-
-    def _analyze_stop_loss_strategy(
-        self,
-        avg_confidence: float,
-        current_positions: list[dict[str, Any]],
-        current_price: float,
-        short_term_score: float,
-    ) -> dict[str, Any]:
-        """Analyze stop loss strategy based on confidence and trailing stop."""
-        try:
-            self.logger.debug(
-                f"🛑 Analyzing stop loss strategy for {len(current_positions)} positions",
-            )
-            self.logger.debug(
-                f"📊 Current confidence: {avg_confidence:.3f}, Short-term: {short_term_score:.3f}",
-            )
-            self.logger.debug(f"💰 Current price: ${current_price:.2f}")
-
-            stop_loss_actions = []
-            total_stop_loss_size = 0.0
-
-            for i, position in enumerate(current_positions):
-                entry_price = position.get("entry_price", current_price)
-                position_size = position.get("position_size", 0.0)
-                position_id = position.get("position_id", f"pos_{i}")
-                entry_confidence = position.get("entry_confidence", avg_confidence)
-
-                # Calculate price change for trailing stop
-                price_change = (current_price - entry_price) / entry_price
-
-                self.logger.debug(
-                    f"📋 Position {position_id}: Entry ${entry_price:.2f}, Size {position_size:.3f}, Entry confidence {entry_confidence:.3f}",
-                )
-                self.logger.debug(
-                    f"📉 Price change: {price_change:.2%}, Confidence thresholds: {self.stop_loss_confidence_threshold:.3f}/{self.stop_loss_short_term_threshold:.3f}",
-                )
-
-                # Determine stop loss action based on confidence and trailing stop (gradual approach)
-                should_stop_loss = False
-                stop_loss_size = 0.0
-                reason = ""
-
-                # Full stop loss if confidence is very low
-                if avg_confidence <= self.stop_loss_confidence_threshold:
-                    should_stop_loss = True
-                    stop_loss_size = position_size  # Full stop loss
-                    reason = (
-                        f"Very low confidence ({avg_confidence:.2f}) - full stop loss"
-                    )
-                    self.logger.warning(
-                        f"🛑 Full stop loss recommended for {position_id}: Very low confidence ({avg_confidence:.3f})",
-                    )
-
-                # Stop loss if short-term confidence is very low
-                elif short_term_score <= self.stop_loss_short_term_threshold:
-                    should_stop_loss = True
-                    stop_loss_size = position_size  # Full stop loss
-                    reason = f"Very low short-term confidence ({short_term_score:.2f}) - full stop loss"
-                    self.logger.warning(
-                        f"🛑 Full stop loss recommended for {position_id}: Very low short-term confidence ({short_term_score:.3f})",
-                    )
-
-                # Trailing stop loss if price moved against us significantly
-                elif price_change <= self.stop_loss_price_threshold:
-                    should_stop_loss = True
-                    stop_loss_size = position_size  # Full stop loss
-                    reason = f"Trailing stop loss triggered: price change ({price_change:.2%})"
-                    self.logger.warning(
-                        f"🛑 Trailing stop loss triggered for {position_id}: Price change {price_change:.2%}",
-                    )
-
-                # Gradual stop loss based on confidence severity
-                elif avg_confidence <= self.stop_loss_confidence_threshold * 1.2:
-                    should_stop_loss = True
-                    stop_loss_size = position_size * 0.75  # 75% stop loss
-                    reason = (
-                        f"Very low confidence ({avg_confidence:.2f}) - 75% stop loss"
-                    )
-                    self.logger.warning(
-                        f"🛑 75% stop loss recommended for {position_id}: Very low confidence ({avg_confidence:.3f})",
-                    )
-
-                elif avg_confidence <= self.stop_loss_confidence_threshold * 1.5:
-                    should_stop_loss = True
-                    stop_loss_size = position_size * 0.5  # 50% stop loss
-                    reason = f"Low confidence ({avg_confidence:.2f}) - 50% stop loss"
-                    self.logger.info(
-                        f"🛑 50% stop loss recommended for {position_id}: Low confidence ({avg_confidence:.3f})",
-                    )
-
-                elif avg_confidence <= self.stop_loss_confidence_threshold * 2.0:
-                    should_stop_loss = True
-                    stop_loss_size = position_size * 0.25  # 25% stop loss
-                    reason = f"Moderate confidence decrease ({avg_confidence:.2f}) - 25% stop loss"
-                    self.logger.info(
-                        f"🛑 25% stop loss recommended for {position_id}: Moderate confidence ({avg_confidence:.3f})",
-                    )
-
-                elif avg_confidence <= self.stop_loss_confidence_threshold * 2.5:
-                    should_stop_loss = True
-                    stop_loss_size = position_size * 0.1  # 10% stop loss
-                    reason = f"Small confidence decrease ({avg_confidence:.2f}) - 10% stop loss"
-                    self.logger.info(
-                        f"🛑 10% stop loss recommended for {position_id}: Small confidence decrease ({avg_confidence:.3f})",
-                    )
-
-                else:
-                    self.logger.debug(
-                        f"❌ No stop loss for {position_id}: Confidence and price within acceptable ranges",
-                    )
-
-                stop_loss_actions.append(
-                    {
-                        "position_id": position_id,
-                        "should_stop_loss": should_stop_loss,
-                        "stop_loss_size": stop_loss_size,
-                        "price_change": price_change,
-                        "confidence_decrease": entry_confidence - avg_confidence,
-                        "short_term_confidence_decrease": entry_confidence
-                        - short_term_score,
-                        "reason": reason,
-                    },
-                )
-
-                total_stop_loss_size += stop_loss_size
-
-            result = {
-                "stop_loss_actions": stop_loss_actions,
-                "total_stop_loss_size": total_stop_loss_size,
-            }
-
-            self.logger.debug(
-                f"📋 Stop loss analysis: {len([a for a in stop_loss_actions if a['should_stop_loss']])} actions, Total size: {total_stop_loss_size:.3f}",
-            )
-            return result
-
-        except Exception:
-            self.print(error("❌ Error analyzing stop loss strategy: {e}"))
-            return {"stop_loss_actions": [], "total_stop_loss_size": 0.0}
-
-    def _analyze_full_close_strategy(
-        self,
-        avg_confidence: float,
-        current_positions: list[dict[str, Any]],
-        current_price: float,
-        short_term_score: float,
-    ) -> dict[str, Any]:
-        """Analyze full position closure strategy based on confidence."""
-        try:
-            self.logger.debug(
-                f"🚪 Analyzing full close strategy for {len(current_positions)} positions",
-            )
-            self.logger.debug(
-                f"📊 Current confidence: {avg_confidence:.3f}, Short-term: {short_term_score:.3f}",
-            )
-            self.logger.debug(f"💰 Current price: ${current_price:.2f}")
-
-            full_close_actions = []
-            total_full_close_size = 0.0
-
-            for i, position in enumerate(current_positions):
-                entry_price = position.get("entry_price", current_price)
-                position_size = position.get("position_size", 0.0)
-                position_id = position.get("position_id", f"pos_{i}")
-                entry_confidence = position.get("entry_confidence", avg_confidence)
-
-                # Calculate price change for reference
-                price_change = (current_price - entry_price) / entry_price
-
-                self.logger.debug(
-                    f"📋 Position {position_id}: Entry ${entry_price:.2f}, Size {position_size:.3f}, Entry confidence {entry_confidence:.3f}",
-                )
-                self.logger.debug(f"📉 Price change: {price_change:.2%}")
-
-                # Determine full close action based on confidence
-                should_full_close = False
-                reason = ""
-
-                # Full close if both overall and short-term confidence are very low
-                if (
-                    avg_confidence <= self.full_close_confidence_threshold
-                    and short_term_score <= self.full_close_short_term_threshold
-                ):
-                    should_full_close = True
-                    reason = f"Full close: very low overall confidence ({avg_confidence:.2f}) and short-term confidence ({short_term_score:.2f})"
-                    self.logger.warning(
-                        f"🚪 Full close recommended for {position_id}: Very low confidence levels",
-                    )
-
-                # Full close if overall confidence dropped dramatically
-                elif avg_confidence <= self.full_close_confidence_threshold * 0.5:
-                    should_full_close = True
-                    reason = f"Full close: extremely low overall confidence ({avg_confidence:.2f})"
-                    self.logger.warning(
-                        f"🚪 Full close recommended for {position_id}: Extremely low overall confidence ({avg_confidence:.3f})",
-                    )
-
-                # Full close if short-term confidence dropped dramatically
-                elif short_term_score <= self.full_close_short_term_threshold * 0.5:
-                    should_full_close = True
-                    reason = f"Full close: extremely low short-term confidence ({short_term_score:.2f})"
-                    self.logger.warning(
-                        f"🚪 Full close recommended for {position_id}: Extremely low short-term confidence ({short_term_score:.3f})",
-                    )
-
-                # Full close when there's over 50% chance of price reversal
-                # 70% weight on short-term, 30% on overall confidence
-                reversal_probability = self._calculate_reversal_probability(
-                    entry_confidence,
-                    avg_confidence,
-                    short_term_score,
-                )
-                if reversal_probability > 0.5:
-                    should_full_close = True
-                    reason = f"Full close: {reversal_probability:.1%} chance of price reversal (70% short-term, 30% overall)"
-                    self.logger.warning(
-                        f"🚪 Full close recommended for {position_id}: High reversal probability ({reversal_probability:.1%})",
-                    )
-                else:
-                    self.logger.debug(
-                        f"📊 Reversal probability for {position_id}: {reversal_probability:.1%} (below 50% threshold)",
-                    )
-
-                # Calculate reversal probability for all positions (for monitoring)
-                reversal_probability = self._calculate_reversal_probability(
-                    entry_confidence,
-                    avg_confidence,
-                    short_term_score,
-                )
-
-                full_close_actions.append(
-                    {
-                        "position_id": position_id,
-                        "should_full_close": should_full_close,
-                        "position_size": position_size if should_full_close else 0.0,
-                        "price_change": price_change,
-                        "confidence_decrease": entry_confidence - avg_confidence,
-                        "short_term_confidence_decrease": entry_confidence
-                        - short_term_score,
-                        "reversal_probability": reversal_probability,
-                        "reason": reason,
-                    },
-                )
-
-                if should_full_close:
-                    total_full_close_size += position_size
-
-            result = {
-                "full_close_actions": full_close_actions,
-                "total_full_close_size": total_full_close_size,
-            }
-
-            self.logger.debug(
-                f"📋 Full close analysis: {len([a for a in full_close_actions if a['should_full_close']])} actions, Total size: {total_full_close_size:.3f}",
-            )
-            return result
-
-        except Exception:
-            self.print(error("❌ Error analyzing full close strategy: {e}"))
-            return {"full_close_actions": [], "total_full_close_size": 0.0}
-
-    def _check_confidence_increase(
-        self,
-        current_positions: list[dict[str, Any]],
-        normalized_confidence: float,
-    ) -> bool:
-        """Check if normalized confidence has increased to allow additional positions."""
-        try:
-            if not current_positions:
-                return True  # Allow first position
-
-            # Get the latest position's confidence
-            latest_position = current_positions[-1]
-            latest_confidence = latest_position.get("normalized_confidence", 0.0)
-
-            # Only allow additional positions if confidence has increased
-            confidence_increased = normalized_confidence > latest_confidence
-
-            self.logger.info(
-                f"📈 Confidence comparison - Current: {normalized_confidence:.3f}, Latest position: {latest_confidence:.3f}, Increased: {confidence_increased}",
-            )
-
-            return confidence_increased
-
-        except Exception:
-            self.print(error("Error checking confidence increase: {e}"))
-            return False
-
-    def _calculate_reversal_probability(
-        self,
-        entry_confidence: float,
-        current_confidence: float,
-        short_term_confidence: float,
-    ) -> float:
+    def _calculate_num_positions(self, confidence_score: float) -> int:
         """
-        Calculate probability of price reversal based on confidence changes.
-        70% weight on short-term confidence, 30% on overall confidence.
+        Calculate number of positions based on confidence score.
 
         Args:
-            entry_confidence: Confidence at position entry
-            current_confidence: Current overall confidence
-            short_term_confidence: Current short-term confidence (1m-5m)
+            confidence_score: Confidence score (0-1)
 
         Returns:
-            float: Probability of price reversal (0.0 to 1.0)
+            int: Number of positions
         """
         try:
-            self.logger.debug(
-                f"🔄 Calculating reversal probability - Entry: {entry_confidence:.3f}, Current: {current_confidence:.3f}, Short-term: {short_term_confidence:.3f}",
-            )
+            # Higher confidence = fewer positions (more concentrated)
+            # Lower confidence = more positions (more diversified)
 
-            # Calculate confidence changes (can be positive or negative)
-            overall_confidence_change = entry_confidence - current_confidence
-            short_term_confidence_change = entry_confidence - short_term_confidence
-
-            self.logger.debug(
-                f"📉 Confidence changes - Overall: {overall_confidence_change:.3f}, Short-term: {short_term_confidence_change:.3f}",
-            )
-
-            # Only consider decreases for reversal probability (positive changes mean confidence improved)
-            overall_confidence_decrease = max(0.0, overall_confidence_change)
-            short_term_confidence_decrease = max(0.0, short_term_confidence_change)
-
-            # Normalize confidence decreases to 0-1 scale
-            max_confidence_decrease = 1.0  # Maximum possible decrease
-
-            # Calculate reversal probability components
-            overall_reversal_prob = min(
-                1.0,
-                overall_confidence_decrease / max_confidence_decrease,
-            )
-            short_term_reversal_prob = min(
-                1.0,
-                short_term_confidence_decrease / max_confidence_decrease,
-            )
-
-            self.logger.debug(
-                f"📊 Raw reversal probabilities - Overall: {overall_reversal_prob:.3f}, Short-term: {short_term_reversal_prob:.3f}",
-            )
-
-            # Weighted combination: 70% short-term, 30% overall
-            reversal_probability = (
-                short_term_reversal_prob * 0.7 + overall_reversal_prob * 0.3
-            )
-
-            self.logger.debug(
-                f"📈 Weighted reversal probability: {reversal_probability:.3f}",
-            )
-
-            # Apply non-linear scaling for more realistic probability
-            # Small confidence decreases = low reversal probability
-            # Large confidence decreases = high reversal probability
-            if reversal_probability <= 0.1:
-                scaled_probability = reversal_probability * 0.5  # Very low probability
-                self.logger.debug(
-                    f"📊 Very low probability scaling: {scaled_probability:.3f}",
-                )
-            elif reversal_probability <= 0.3:
-                scaled_probability = reversal_probability * 0.8  # Low probability
-                self.logger.debug(
-                    f"📊 Low probability scaling: {scaled_probability:.3f}",
-                )
-            elif reversal_probability <= 0.5:
-                scaled_probability = reversal_probability * 1.2  # Moderate probability
-                self.logger.debug(
-                    f"📊 Moderate probability scaling: {scaled_probability:.3f}",
-                )
-            elif reversal_probability <= 0.7:
-                scaled_probability = reversal_probability * 1.5  # High probability
-                self.logger.debug(
-                    f"📊 High probability scaling: {scaled_probability:.3f}",
-                )
+            if confidence_score >= 0.8:
+                return 1  # High confidence = single position
+            elif confidence_score >= 0.6:
+                return 2  # Medium-high confidence = 2 positions
+            elif confidence_score >= 0.4:
+                return 3  # Medium confidence = 3 positions
+            elif confidence_score >= 0.2:
+                return 4  # Medium-low confidence = 4 positions
             else:
-                scaled_probability = min(
-                    1.0,
-                    reversal_probability * 1.8,
-                )  # Very high probability
-                self.logger.debug(
-                    f"📊 Very high probability scaling: {scaled_probability:.3f}",
-                )
+                return min(5, self.max_positions)  # Low confidence = max positions
 
-            final_probability = max(0.0, min(1.0, scaled_probability))
-            self.logger.debug(f"🎯 Final reversal probability: {final_probability:.3f}")
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error calculating number of positions: {e}"))
+            return 1
 
-            return final_probability
-
-        except Exception:
-            self.print(error("❌ Error calculating reversal probability: {e}"))
-            return 0.0
-
-    def _generate_division_reason(
+    def _calculate_position_sizes(
         self,
-        entry_recommendation: dict[str, Any],
-        take_profit_recommendation: dict[str, Any],
-        stop_loss_recommendation: dict[str, Any],
-        full_close_recommendation: dict[str, Any],
-        avg_confidence: float,
-    ) -> str:
-        """Generate reason for position division decisions."""
+        total_capital: float,
+        num_positions: int,
+        confidence_score: float
+    ) -> List[float]:
+        """
+        Calculate position sizes for each position.
+
+        Args:
+            total_capital: Total available capital
+            num_positions: Number of positions
+            confidence_score: Confidence score
+
+        Returns:
+            List[float]: Position sizes
+        """
         try:
-            self.logger.debug(
-                f"📝 Generating division reason with confidence {avg_confidence:.3f}",
-            )
+            position_sizes = []
 
-            actions = []
+            if num_positions == 1:
+                # Single position - use full allocation
+                position_sizes.append(total_capital * self.position_size_limit)
+            else:
+                # Multiple positions - distribute capital
+                base_size = total_capital * self.position_size_limit / num_positions
 
-            if entry_recommendation.get("should_enter", False):
-                actions.append("enter_new_position")
-                self.logger.debug("📝 Adding 'enter_new_position' to actions")
+                # Adjust based on confidence (higher confidence = larger first position)
+                confidence_multiplier = 1 + (confidence_score - 0.5) * 0.5  # 0.75 to 1.25
 
-            if take_profit_recommendation.get("total_take_profit_size", 0.0) > 0:
-                actions.append("take_profit")
-                self.logger.debug(
-                    f"📝 Adding 'take_profit' to actions (size: {take_profit_recommendation.get('total_take_profit_size', 0.0):.3f})",
-                )
+                for i in range(num_positions):
+                    if i == 0:
+                        # First position gets confidence-adjusted size
+                        size = base_size * confidence_multiplier
+                    else:
+                        # Remaining positions get equal size
+                        size = base_size
 
-            if stop_loss_recommendation.get("total_stop_loss_size", 0.0) > 0:
-                actions.append("stop_loss")
-                self.logger.debug(
-                    f"📝 Adding 'stop_loss' to actions (size: {stop_loss_recommendation.get('total_stop_loss_size', 0.0):.3f})",
-                )
+                    position_sizes.append(size)
 
-            if full_close_recommendation.get("total_full_close_size", 0.0) > 0:
-                actions.append("full_close")
-                self.logger.debug(
-                    f"📝 Adding 'full_close' to actions (size: {full_close_recommendation.get('total_full_close_size', 0.0):.3f})",
-                )
+            return position_sizes
 
-            if not actions:
-                reason = f"No position actions recommended with confidence {avg_confidence:.2f}"
-                self.logger.debug(f"📝 Generated reason: {reason}")
-                return reason
-            reason = f"Position actions: {', '.join(actions)} based on confidence {avg_confidence:.2f}"
-            self.logger.debug(f"📝 Generated reason: {reason}")
-            return reason
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error calculating position sizes: {e}"))
+            return [total_capital * 0.1]  # Fallback to 10%
 
-        except Exception:
-            self.print(error("Error generating division reason: {e}"))
-            return "Position division analysis completed"
+    def _calculate_tp_sl_levels(self, market_conditions: Dict[str, Any]) -> Dict[str, List[float]]:
+        """
+        Calculate take profit and stop loss levels.
 
-    def get_position_division_history(
-        self,
-        limit: int | None = None,
-    ) -> list[dict[str, Any]]:
-        """Get position division history."""
-        if limit:
-            return self.position_division_history[-limit:]
-        return self.position_division_history.copy()
+        Args:
+            market_conditions: Current market conditions
+
+        Returns:
+            Dict: Take profit and stop loss levels
+        """
+        try:
+            # Get market volatility
+            volatility = market_conditions.get("volatility", 0.02)  # Default 2%
+
+            # Adjust TP/SL based on volatility
+            tp_adjustment = min(volatility * 2, 0.05)  # Max 5%
+            sl_adjustment = min(volatility, 0.03)  # Max 3%
+
+            take_profit_levels = []
+            stop_loss_levels = []
+
+            # Calculate levels for each position
+            for i in range(self.max_positions):
+                # Progressive TP/SL levels
+                tp_level = self.take_profit_pct + (i * 0.005) + tp_adjustment  # Increase by 0.5% per position
+                sl_level = self.stop_loss_pct + (i * 0.002) + sl_adjustment  # Increase by 0.2% per position
+
+                take_profit_levels.append(tp_level)
+                stop_loss_levels.append(sl_level)
+
+            return {
+                "take_profit": take_profit_levels,
+                "stop_loss": stop_loss_levels
+            }
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error calculating TP/SL levels: {e}"))
+            return {
+                "take_profit": [self.take_profit_pct] * self.max_positions,
+                "stop_loss": [self.stop_loss_pct] * self.max_positions
+            }
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="position division strategy cleanup",
-        recovery_strategies=[
-            create_graceful_degradation_strategy(default_return=None),
-        ],
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="position management"
     )
-    async def stop(self) -> None:
-        """Stop the position division strategy."""
+    async def add_position(
+        self,
+        position_id: str,
+        position_data: Dict[str, Any]
+    ) -> bool:
+        """
+        Add a new position to the strategy.
+
+        Args:
+            position_id: Position ID
+            position_data: Position data
+
+        Returns:
+            bool: True if position added successfully
+        """
         try:
-            self.logger.info("Stopping position division strategy...")
-            self.is_initialized = False
-            self.logger.info("✅ Position division strategy stopped successfully")
-        except Exception:
-            self.print(error("Error stopping position division strategy: {e}"))
+            # Check if we can add more positions
+            if len(self.active_positions) >= self.max_positions:
+                self.logger.warning(warning(f"Cannot add position {position_id}: max positions reached"))
+                return False
 
+            # Add position
+            self.active_positions[position_id] = {
+                **position_data,
+                "added_at": datetime.now().isoformat(),
+                "status": "active"
+            }
 
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="position division strategy setup",
-    recovery_strategies=[
-        create_retry_strategy(max_retries=1, base_delay=0.5),
-        create_graceful_degradation_strategy(default_return=None),
-    ],
-)
-async def setup_position_division_strategy(
-    config: dict[str, Any] | None = None,
-) -> PositionDivisionStrategy | None:
-    """
-    Setup position division strategy.
+            self.logger.info(f"Added position {position_id} to strategy")
+            return True
 
-    Args:
-        config: Configuration dictionary
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error adding position: {e}"))
+            return False
 
-    Returns:
-        Optional[PositionDivisionStrategy]: Initialized position division strategy or None
-    """
-    try:
-        if config is None:
-            config = {}
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="position closure"
+    )
+    async def close_position(
+        self,
+        position_id: str,
+        close_reason: str,
+        pnl: float
+    ) -> bool:
+        """
+        Close a position and record its performance.
 
-        position_division_strategy = PositionDivisionStrategy(config)
+        Args:
+            position_id: Position ID
+            close_reason: Reason for closure
+            pnl: Profit/loss
 
-        if await position_division_strategy.initialize():
-            return position_division_strategy
-        return None
+        Returns:
+            bool: True if position closed successfully
+        """
+        try:
+            if position_id not in self.active_positions:
+                self.logger.warning(warning(f"Position {position_id} not found"))
+                return False
 
-    except Exception:
-        system_logger.exception(
-            failed("Failed to setup Position Division Strategy: {e}")
-        )
-        return None
+            # Get position data
+            position_data = self.active_positions[position_id]
+
+            # Create closure record
+            closure_record = {
+                "position_id": position_id,
+                "symbol": position_data.get("symbol"),
+                "side": position_data.get("side"),
+                "entry_price": position_data.get("entry_price"),
+                "exit_price": position_data.get("current_price"),
+                "quantity": position_data.get("quantity"),
+                "pnl": pnl,
+                "close_reason": close_reason,
+                "entry_time": position_data.get("added_at"),
+                "exit_time": datetime.now().isoformat(),
+                "hold_time": self._calculate_hold_time(position_data.get("added_at"))
+            }
+
+            # Add to history
+            self.position_history.append(closure_record)
+
+            # Remove from active positions
+            del self.active_positions[position_id]
+
+            # Update performance metrics
+            self._update_performance_metrics(closure_record)
+
+            self.logger.info(f"Closed position {position_id}: {pnl:.4f} PnL ({close_reason})")
+            return True
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error closing position: {e}"))
+            return False
+
+    def _calculate_hold_time(self, entry_time: str) -> float:
+        """
+        Calculate position hold time in seconds.
+
+        Args:
+            entry_time: Entry time string
+
+        Returns:
+            float: Hold time in seconds
+        """
+        try:
+            if not entry_time:
+                return 0.0
+
+            entry_dt = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
+            hold_time = (datetime.now() - entry_dt).total_seconds()
+            return hold_time
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error calculating hold time: {e}"))
+            return 0.0
+
+    def _update_performance_metrics(self, closure_record: Dict[str, Any]) -> None:
+        """
+        Update performance metrics based on closed position.
+
+        Args:
+            closure_record: Position closure record
+        """
+        try:
+            # Update basic metrics
+            total_positions = len(self.position_history)
+            total_pnl = sum(pos.get("pnl", 0) for pos in self.position_history)
+            winning_positions = sum(1 for pos in self.position_history if pos.get("pnl", 0) > 0)
+
+            self.strategy_performance.update({
+                "total_positions": total_positions,
+                "total_pnl": total_pnl,
+                "winning_positions": winning_positions,
+                "losing_positions": total_positions - winning_positions,
+                "win_rate": winning_positions / total_positions if total_positions > 0 else 0.0,
+                "average_pnl": total_pnl / total_positions if total_positions > 0 else 0.0,
+                "last_updated": datetime.now().isoformat()
+            })
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error updating performance metrics: {e}"))
+
+    def get_active_positions(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get all active positions.
+
+        Returns:
+            Dict[str, Dict[str, Any]]: Active positions
+        """
+        return self.active_positions.copy()
+
+    def get_position_history(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Get position history.
+
+        Args:
+            limit: Maximum number of records to return
+
+        Returns:
+            List[Dict[str, Any]]: Position history
+        """
+        try:
+            if limit:
+                return self.position_history[-limit:]
+            return self.position_history.copy()
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error getting position history: {e}"))
+            return []
+
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """
+        Get performance metrics.
+
+        Returns:
+            Dict[str, Any]: Performance metrics
+        """
+        return self.strategy_performance.copy()
+
+    def get_strategy_summary(self) -> Dict[str, Any]:
+        """
+        Get strategy summary.
+
+        Returns:
+            Dict[str, Any]: Strategy summary
+        """
+        try:
+            return {
+                "active_positions": len(self.active_positions),
+                "max_positions": self.max_positions,
+                "position_size_limit": self.position_size_limit,
+                "take_profit_pct": self.take_profit_pct,
+                "stop_loss_pct": self.stop_loss_pct,
+                "performance": self.strategy_performance,
+                "timestamp": datetime.now().isoformat()
+            }
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error getting strategy summary: {e}"))
+            return {}
+
+    async def cleanup(self) -> None:
+        """
+        Cleanup resources.
+        """
+        try:
+            self.logger.info("Cleaning up Position Division Strategy...")
+
+            # Save position history if needed
+            if self.position_history:
+                self.logger.info(f"Saving {len(self.position_history)} position records")
+
+            # Clear data
+            self.active_positions.clear()
+            self.position_history.clear()
+            self.strategy_performance.clear()
+
+            self.logger.info("✅ Position Division Strategy cleanup completed")
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Position Division Strategy cleanup failed: {e}"))

@@ -1,8 +1,6 @@
 # src/types/data_types.py
 
-"""
-Data structure type definitions for market data and trading information.
-"""
+"""Data structure type definitions for market data and trading information."""
 
 from typing import Literal, TypedDict
 

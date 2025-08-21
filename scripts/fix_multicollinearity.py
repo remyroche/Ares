@@ -10,9 +10,6 @@ Usage:
     python scripts/fix_multicollinearity.py
 """
 
-import sys
-from pathlib import Path
-
 
 class MulticollinearityFixer:
     """
@@ -28,7 +25,7 @@ class MulticollinearityFixer:
         """
         print("🔧 Generating multicollinearity fixes...")
 
-        fixes = {
+        return {
             "critical_issues": [
                 "🚨 EXTREME VIF detected (> 1,000,000)",
                 "🚨 Multiple redundant price features causing perfect multicollinearity",
@@ -57,20 +54,15 @@ class MulticollinearityFixer:
             ],
         }
 
-        return fixes
-
     def generate_configuration_template(self):
         """
         Generate a configuration template that addresses multicollinearity issues.
         """
-        config_template = {
+        return {
             "vectorized_labelling_orchestrator": {
-                "enable_stationary_checks": True,
-                "enable_data_normalization": True,
-                "enable_lookahead_bias_handling": True,
-                "enable_feature_selection": True,
-                "enable_memory_efficient_types": True,
-                "enable_parquet_saving": True,
+                "enable_stationary_checks": True, "enable_data_normalization": True,
+                "enable_lookahead_bias_handling": True, "enable_feature_selection": True,
+                "enable_memory_efficient_types": True, "enable_parquet_saving": True,
                 "profit_take_multiplier": 0.002,
                 "stop_loss_multiplier": 0.001,
                 "time_barrier_minutes": 30,
@@ -110,16 +102,14 @@ class MulticollinearityFixer:
             },
         }
 
-        return config_template
-
     def generate_code_fixes(self):
         """
         Generate specific code fixes for the feature engineering pipeline.
         """
-        code_fixes = {
+        return {
             "vectorized_advanced_feature_engineering.py": [
                 "# Add this method to filter out redundant price features",
-                "def _filter_redundant_price_features(self, data: pd.DataFrame) -> pd.DataFrame:",
+                "def _filter_redundant_price_features(self = data: pd.DataFrame) -> pd.DataFrame:",
                 '    """Remove redundant price features that cause multicollinearity."""',
                 "    redundant_features = [",
                 "        'open', 'high', 'low', 'avg_price', 'min_price', 'max_price',",
@@ -136,16 +126,16 @@ class MulticollinearityFixer:
                 "    return data",
                 "",
                 "# Add this method to validate VIF scores",
-                "def _validate_vif_scores(self, data: pd.DataFrame, max_vif: float = 10.0) -> bool:",
+                "def _validate_vif_scores(self = data: pd.DataFrame, max_vif: float = 10.0) -> bool:",
                 '    """Validate that all features have acceptable VIF scores."""',
-                "    from sklearn.linear_model import LinearRegression",
-                "    from sklearn.impute import SimpleImputer",
+                "    from sklearn.linear_model import LinearRegression"
+                "    from sklearn.impute import SimpleImputer"
                 "    ",
                 "    # Handle NaN values",
-                "    imputer = SimpleImputer(strategy='median')",
+                "    imputer , SimpleImputer(strategy, 'median')",
                 "    data_imputed = pd.DataFrame(",
                 "        imputer.fit_transform(data),",
-                "        columns=data.columns,",
+                "        columns=data.columns = ",
                 "        index=data.index",
                 "    )",
                 "    ",
@@ -158,7 +148,7 @@ class MulticollinearityFixer:
                 "            y = data_imputed[col]",
                 "            ",
                 "            reg = LinearRegression()",
-                "            reg.fit(X, y)",
+                "            reg.fit(X = y)",
                 "            ",
                 "            y_pred = reg.predict(X)",
                 "            ss_res = np.sum((y - y_pred) ** 2)",
@@ -180,7 +170,7 @@ class MulticollinearityFixer:
             ],
             "vectorized_labelling_orchestrator.py": [
                 "# Add this to the feature selection pipeline",
-                "def _remove_extreme_vif_features(self, data: pd.DataFrame) -> pd.DataFrame:",
+                "def _remove_extreme_vif_features(self = data: pd.DataFrame) -> pd.DataFrame:",
                 '    """Remove features with extreme VIF scores (> 1000)."""',
                 "    extreme_vif_threshold = 1000.0",
                 "    ",
@@ -200,8 +190,6 @@ class MulticollinearityFixer:
                 "    return data",
             ],
         }
-
-        return code_fixes
 
 
 def main():
@@ -244,12 +232,12 @@ def main():
     config_template = fixer.generate_configuration_template()
 
     # Print the configuration in a readable format
-    for section, settings in config_template.items():
+    for section , settings in config_template.items():
         print(f"\n   {section}:")
-        for key, value in settings.items():
-            if isinstance(value, dict):
+        for key , value in settings.items():
+            if isinstance(value , dict):
                 print(f"     {key}:")
-                for sub_key, sub_value in value.items():
+                for sub_key , sub_value in value.items():
                     print(f"       {sub_key}: {sub_value}")
             else:
                 print(f"     {key}: {value}")
@@ -258,7 +246,7 @@ def main():
     print("\n🔧 CODE FIXES:")
     code_fixes = fixer.generate_code_fixes()
 
-    for file_name, fixes in code_fixes.items():
+    for file_name , fixes in code_fixes.items():
         print(f"\n   {file_name}:")
         for fix in fixes:
             print(f"     {fix}")
@@ -267,7 +255,7 @@ def main():
     print("\n🎯 ACTION PLAN:")
     print("   1. 🚨 IMMEDIATE: Update configuration to use stricter VIF thresholds")
     print(
-        "   2. 🔧 CODE: Add redundant feature filtering to feature engineering pipeline"
+        "   2. 🔧 CODE: Add redundant feature filtering to feature engineering pipeline",
     )
     print("   3. 🧪 TEST: Run data quality assessment to validate fixes")
     print("   4. 📊 MONITOR: Ensure VIF < 10 for all features")

@@ -1,21 +1,11 @@
 # src/supervisor/optimizer.py
-import asyncio
 from datetime import datetime
+from src.utils.logger import system_logger
 from typing import Any
-
+import asyncio
 import pandas as pd
 
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    invalid,
-)
-
+from src.utils.error_handler import handle_errors, handle_specific_errors
 
 class Optimizer:
     """
@@ -51,12 +41,12 @@ class Optimizer:
             self.logger.info("Initializing Optimizer...")
             await self._load_optimizer_configuration()
             if not self._validate_configuration():
-                self.print(invalid("Invalid configuration for optimizer"))
+                self.logger.error("Invalid configuration for optimizer")
                 return False
             self.logger.info("✅ Optimizer initialization completed successfully")
             return True
-        except Exception:
-            self.print(failed("❌ Optimizer initialization failed: {e}"))
+        except Exception as e:
+            self.logger.error(f"❌ Optimizer initialization failed: {e}")
             return False
 
     @handle_errors(
@@ -71,8 +61,8 @@ class Optimizer:
             self.optimization_interval = self.optimizer_config["optimization_interval"]
             self.max_history = self.optimizer_config["max_history"]
             self.logger.info("Optimizer configuration loaded successfully")
-        except Exception:
-            self.print(error("Error loading optimizer configuration: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error loading optimizer configuration: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -82,15 +72,15 @@ class Optimizer:
     def _validate_configuration(self) -> bool:
         try:
             if self.optimization_interval <= 0:
-                self.print(invalid("Invalid optimization interval"))
+                self.logger.error("Invalid optimization interval")
                 return False
             if self.max_history <= 0:
-                self.print(invalid("Invalid max history"))
+                self.logger.error("Invalid max history")
                 return False
             self.logger.info("Configuration validation successful")
             return True
-        except Exception:
-            self.print(error("Error validating configuration: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error validating configuration: {e}")
             return False
 
     @handle_specific_errors(
@@ -108,8 +98,8 @@ class Optimizer:
                 await self._perform_optimization()
                 await asyncio.sleep(self.optimization_interval)
             return True
-        except Exception:
-            self.print(error("Error in optimizer run: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error in optimizer run: {e}")
             self.is_running = False
             return False
 
@@ -128,8 +118,8 @@ class Optimizer:
             await self._optimize_parameters()
             await self._update_optimization_results()
             self.logger.info(f"Optimization tick at {now}")
-        except Exception:
-            self.print(error("Error in optimization step: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error in optimization step: {e}")
 
     @handle_errors(
         exceptions=(Exception,),
@@ -147,8 +137,8 @@ class Optimizer:
             }
             self.parameters.update(optimized_params)
             self.logger.info("Parameter optimization completed")
-        except Exception:
-            self.print(error("Error optimizing parameters: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error optimizing parameters: {e}")
 
     @handle_errors(
         exceptions=(Exception,),
@@ -162,8 +152,8 @@ class Optimizer:
             self.optimization_results["optimization_score"] = 0.85
             self.optimization_results["parameters"] = self.parameters.copy()
             self.logger.info("Optimization results updated successfully")
-        except Exception:
-            self.print(error("Error updating optimization results: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error updating optimization results: {e}")
 
     @handle_errors(
         exceptions=(Exception,),
@@ -176,8 +166,8 @@ class Optimizer:
             self.is_running = False
             self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
             self.logger.info("✅ Optimizer stopped successfully")
-        except Exception:
-            self.print(error("Error stopping optimizer: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error stopping optimizer: {e}")
 
     def get_status(self) -> dict[str, Any]:
         return self.status.copy()
@@ -200,14 +190,10 @@ class Optimizer:
         context="global system optimization",
     )
     async def implement_global_system_optimization(
-        self,
-        historical_pnl_data: pd.DataFrame,
-        strategy_breakdown_data: dict,
-        checkpoint_file_path: str,
-        hpo_ranges: dict,
-        klines_df: pd.DataFrame,
-        agg_trades_df: pd.DataFrame,
-        futures_df: pd.DataFrame,
+        self, historical_pnl_data: pd.DataFrame,
+        strategy_breakdown_data: dict, checkpoint_file_path: str,
+        hpo_ranges: dict, klines_df: pd.DataFrame,
+        agg_trades_df: pd.DataFrame, futures_df: pd.DataFrame,
     ) -> dict:
         """
         Implement global system optimization with enhanced error handling.
@@ -269,7 +255,7 @@ class Optimizer:
             return optimization_results
 
         except Exception as e:
-            self.print(error("Error in global system optimization: {e}"))
+            self.logger.error(f"Error in global system optimization: {e}")
             return {"status": "failed", "error": str(e)}
 
     def _get_sr_levels(self, daily_df: pd.DataFrame) -> list:
@@ -289,13 +275,11 @@ class Optimizer:
                 ]
 
             return levels
-        except Exception:
-            self.print(error("Error calculating SR levels: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error calculating SR levels: {e}")
             return []
 
-
 optimizer: Optimizer | None = None
-
 
 @handle_errors(
     exceptions=(Exception,),

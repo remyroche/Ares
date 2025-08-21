@@ -1,7 +1,6 @@
 # src/training/steps/step12_final_parameters_optimization/hyperparameter_optimization_config.py
 
-"""
-Hyperparameter Optimization Configuration
+"""Hyperparameter Optimization Configuration.
 
 This module defines comprehensive search spaces, optimization strategies, and evaluation
 metrics for Step 12: Final Parameters Optimization.
@@ -10,10 +9,6 @@ metrics for Step 12: Final Parameters Optimization.
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
-
-from src.utils.warning_symbols import (
-    error,
-)
 
 
 class OptimizationStrategy(Enum):
@@ -538,7 +533,7 @@ class TimingParametersSearchSpace(SearchSpace):
 class HyperparameterOptimizationConfig:
     """Main configuration class for hyperparameter optimization."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.search_spaces = {
             "confidence_thresholds": ConfidenceThresholdsSearchSpace(),
             "volatility_parameters": VolatilityParametersSearchSpace(),
@@ -708,22 +703,14 @@ if __name__ == "__main__":
     # Validate configuration
     errors = validate_hyperparameter_config()
     if errors:
-        print("Configuration errors:")
-        for error in errors:
-            print(f"  - {error}")
+        for _error in errors:
+            pass
     else:
-        print("✅ Configuration is valid")
+        pass
 
     # Print optimization plan
     plan = get_optimization_plan()
-    print("\nOptimization Plan:")
-    print(f"  Total trials: {plan['summary']['total_trials']}")
-    print(
-        f"  Estimated time: {plan['optimization_plan']['total_estimated_time_hours']:.1f} hours",
-    )
-    print(f"  Parallel execution: {plan['optimization_plan']['parallel_execution']}")
 
     # Print search spaces
-    print("\nSearch Spaces:")
-    for name, space in config.search_spaces.items():
-        print(f"  {name}: {len(space.parameters)} parameters, {space.n_trials} trials")
+    for _name, _space in config.search_spaces.items():
+        pass

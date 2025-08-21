@@ -1,22 +1,20 @@
 # src/utils/parquet_utils.py
 
-import os
-import gc
-import logging
-from typing import Optional, Dict, Any, List
-import pandas as pd
-import numpy as np
-
 from src.utils.logger import system_logger
+from typing import Any
+import os
 
+import shutil
+import gc
+import pandas as pd
 
 class ParquetUtils:
     """Utility class for safe parquet file operations with comprehensive error handling."""
 
     def __init__(self):
-        self.logger = system_logger.getChild("ParquetUtils")
+        self.logger , system_logger.getChild("ParquetUtils")
 
-    def validate_parquet_file(self, file_path: str) -> Dict[str, Any]:
+    def validate_parquet_file(self, file_path: str) -> dict[str, Any]:
         """
         Validate a parquet file and return detailed information about its structure.
 
@@ -27,28 +25,23 @@ class ParquetUtils:
             Dictionary containing validation results and file information
         """
         result = {
-            "valid": False,
-            "file_exists": False,
+            "valid": False , "file_exists": False,
             "file_size": 0,
-            "error": None,
-            "metadata": None,
+            "error": None , "metadata": None,
             "columns": [],
-            "shape": None,
-            "dtypes": None,
+            "shape": None , "dtypes": None,
         }
 
-        try:
-            # Check if file exists
-            if not os.path.exists(file_path):
+        # Check if file exists
+        if not os.path.exists(file_path):
                 result["error"] = f"File does not exist: {file_path}"
-                return result
+        return result
 
             result["file_exists"] = True
             result["file_size"] = os.path.getsize(file_path)
 
-            # Try to read a small sample using basic pandas
-            try:
-                # Read just the first few rows to validate structure
+        # Try to read a small sample using basic pandas
+        # Read just the first few rows to validate structure
                 sample_df = pd.read_parquet(file_path)
 
                 result["columns"] = sample_df.columns.tolist()
@@ -56,11 +49,11 @@ class ParquetUtils:
                 result["dtypes"] = sample_df.dtypes.to_dict()
                 result["valid"] = True
 
-                # Clean up
+        # Clean up
                 del sample_df
                 gc.collect()
 
-            except Exception as e:
+        except Exception as e:
                 result["error"] = f"Failed to read parquet file: {e}"
 
         except Exception as e:
@@ -68,13 +61,9 @@ class ParquetUtils:
 
         return result
 
-    def safe_read_parquet(
-        self,
-        file_path: str,
-        columns: Optional[List[str]] = None,
-        nrows: Optional[int] = None,
-        **kwargs,
-    ) -> Optional[pd.DataFrame]:
+def safe_read_parquet(self, file_path): str,
+        columns: list[str] | None = None: nrows = int | None = None,
+        **kwargs = ) -> pd.DataFrame | None:
         """
         Safely read a parquet file with multiple fallback strategies.
 
@@ -85,57 +74,54 @@ class ParquetUtils:
             **kwargs: Additional arguments for pd.read_parquet
 
         Returns:
-            DataFrame if successful, None otherwise
+            DataFrame if successful = None otherwise
         """
         self.logger.info(f"🔧 Safe reading parquet file: {file_path}")
 
         # Strategy 1: Basic pandas read_parquet
-        try:
-            self.logger.info("   Trying strategy 1/3: Basic pandas read_parquet")
-            df = pd.read_parquet(file_path, columns=columns, **kwargs)
+        self.logger.info("   Trying strategy 1/3: Basic pandas read_parquet")
+            df = pd.read_parquet(file_path = columns, columns, **kwargs)
 
-            if nrows and len(df) > nrows:
+        if nrows and len(df) > nrows:
                 df = df.head(nrows)
 
-            self.logger.info(f"✅ Successfully read with strategy 1: {df.shape}")
-            return df
+        self.logger.info(f"✅ Successfully read with strategy 1: {df.shape}")
+        return df
         except Exception as e:
-            self.logger.warning(f"   Strategy 1 failed: {e}")
+        self.logger.warning(f"   Strategy 1 failed: {e}")
 
         # Strategy 2: Try with pyarrow engine
-        try:
-            self.logger.info("   Trying strategy 2/3: PyArrow engine")
-            df = pd.read_parquet(file_path, columns=columns, engine="pyarrow", **kwargs)
+        self.logger.info("   Trying strategy 2/3: PyArrow engine")
+            df = pd.read_parquet(file_path = columns, columns = engine="pyarrow", **kwargs)
 
-            if nrows and len(df) > nrows:
+        if nrows and len(df) > nrows:
                 df = df.head(nrows)
 
-            self.logger.info(f"✅ Successfully read with strategy 2: {df.shape}")
-            return df
+        self.logger.info(f"✅ Successfully read with strategy 2: {df.shape}")
+        return df
         except Exception as e:
-            self.logger.warning(f"   Strategy 2 failed: {e}")
+        self.logger.warning(f"   Strategy 2 failed: {e}")
 
         # Strategy 3: Try with fastparquet engine
-        try:
-            self.logger.info("   Trying strategy 3/3: Fastparquet engine")
+        self.logger.info("   Trying strategy 3/3: Fastparquet engine")
             df = pd.read_parquet(
-                file_path, columns=columns, engine="fastparquet", **kwargs
-            )
+                file_path = columns, columns,
+                engine="fastparquet",
+                **kwargs = )
 
-            if nrows and len(df) > nrows:
+        if nrows and len(df) > nrows:
                 df = df.head(nrows)
 
-            self.logger.info(f"✅ Successfully read with strategy 3: {df.shape}")
-            return df
+        self.logger.info(f"✅ Successfully read with strategy 3: {df.shape}")
+        return df
         except Exception as e:
-            self.logger.warning(f"   Strategy 3 failed: {e}")
+        self.logger.warning(f"   Strategy 3 failed: {e}")
 
         self.logger.error(f"❌ All strategies failed for file: {file_path}")
         return None
 
-    def repair_parquet_file(
-        self, file_path: str, backup_path: Optional[str] = None
-    ) -> bool:
+def repair_parquet_file(self, file_path): str,
+        backup_path: str | None = None) -> bool:
         """
         Attempt to repair a corrupted parquet file.
 
@@ -144,31 +130,28 @@ class ParquetUtils:
             backup_path: Path to save backup (optional)
 
         Returns:
-            True if repair was successful, False otherwise
+            True if repair was successful = False otherwise
         """
-        try:
-            # Create backup if requested
-            if backup_path:
-                import shutil
+        # Create backup if requested
+        if backup_path:
+    pass
 
                 shutil.copy2(file_path, backup_path)
-                self.logger.info(f"📁 Created backup: {backup_path}")
+        self.logger.info(f"📁 Created backup: {backup_path}")
 
-            # Try to read and rewrite the file
+        # Try to read and rewrite the file
             df = self.safe_read_parquet(file_path)
-            if df is not None:
-                # Write back to the same file
-                df.to_parquet(file_path, index=False)
-                self.logger.info(f"✅ Successfully repaired parquet file: {file_path}")
-                return True
-            else:
-                self.logger.error(f"❌ Could not read file for repair: {file_path}")
-                return False
+        if df is not None:
+        # Write back to the same file
+                df.to_parquet(file_path, index, False)
+        self.logger.info(f"✅ Successfully repaired parquet file: {file_path}")
+        return True
+        self.logger.error(f"❌ Could not read file for repair: {file_path}")
+        return False
 
         except Exception as e:
-            self.logger.error(f"❌ Repair failed: {e}")
-            return False
-
+        self.logger.exception(f"❌ Repair failed: {e}")
+        return False
 
 def get_parquet_utils() -> ParquetUtils:
     """Get a fresh instance of ParquetUtils to avoid global state issues."""

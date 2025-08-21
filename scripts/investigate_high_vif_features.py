@@ -4,23 +4,23 @@ Investigate High VIF Features
 Analyzes and fixes features with high Variance Inflation Factor (VIF) values.
 """
 
-import pandas as pd
-import numpy as np
-import sys
 from pathlib import Path
+from src.utils.logger import system_logger
+import sys
 import warnings
+
+import numpy as np
+import pandas as pd
 
 warnings.filterwarnings("ignore")
 
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-from src.utils.logger import system_logger
-
 
 def analyze_high_vif_features():
     """Analyze the high VIF features and propose fixes."""
-    logger = system_logger.getChild("HighVIFAnalysis")
+    system_logger.getChild("HighVIFAnalysis")
 
     print("=" * 80)
     print("HIGH VIF FEATURES ANALYSIS & FIXES")
@@ -124,7 +124,7 @@ def analyze_high_vif_features():
     print("\n🔧 SYSTEMATIC FIXES BY FEATURE GROUP:")
     print("-" * 60)
 
-    for group, features in feature_groups.items():
+    for group , features in feature_groups.items():
         print(f"\n📋 {group}:")
         for feature in features:
             if feature in high_vif_features:
@@ -173,7 +173,7 @@ def analyze_high_vif_features():
     print("\n💡 DETAILED FIX PROPOSALS:")
     print("-" * 60)
 
-    for group, fix_info in fixes.items():
+    for group , fix_info in fixes.items():
         print(f"\n🎯 {group}:")
         print(f"   Problem: {fix_info['problem']}")
         print(f"   Solution: {fix_info['solution']}")
@@ -197,7 +197,7 @@ def analyze_high_vif_features():
             "low": np.cumsum(np.random.randn(n_samples) * 0.01) + 99.5,
             "open": np.cumsum(np.random.randn(n_samples) * 0.01) + 100,
             "volume": np.random.lognormal(10, 1, n_samples),
-        }
+        },
     )
 
     # Test original vs fixed features
@@ -225,7 +225,8 @@ def analyze_high_vif_features():
     ema_fixed_clean = ema_20_fixed.dropna()
     min_len_fixed = min(len(sma_fixed_clean), len(ema_fixed_clean))
     corr_fixed = np.corrcoef(
-        sma_fixed_clean.iloc[-min_len_fixed:], ema_fixed_clean.iloc[-min_len_fixed:]
+        sma_fixed_clean.iloc[-min_len_fixed:],
+        ema_fixed_clean.iloc[-min_len_fixed:],
     )[0, 1]
 
     print(f"   Original correlation: {corr_orig:.3f}")
@@ -233,8 +234,7 @@ def analyze_high_vif_features():
     print(f"   Improvement: {abs(corr_orig) - abs(corr_fixed):.3f}")
 
     test_results["Moving Averages"] = {
-        "original_corr": corr_orig,
-        "fixed_corr": corr_fixed,
+        "original_corr": corr_orig , "fixed_corr": corr_fixed,
         "improvement": abs(corr_orig) - abs(corr_fixed),
     }
 
@@ -244,27 +244,29 @@ def analyze_high_vif_features():
     # Original features
     momentum_5_orig = close.pct_change(5)
     momentum_10_orig = close.pct_change(10)
-    roc_5_orig = close.pct_change(5)
-    roc_10_orig = close.pct_change(10)
+    close.pct_change(5)
+    close.pct_change(10)
 
     # Fixed features
     momentum_3_fixed = close.pct_change(3)  # Different window
     momentum_7_fixed = close.pct_change(7)  # Different window
-    momentum_accel = momentum_5_orig.diff()  # Momentum acceleration
+    momentum_5_orig.diff()  # Momentum acceleration
 
     # Calculate correlations (ensure same length)
     mom5_clean = momentum_5_orig.dropna()
     mom10_clean = momentum_10_orig.dropna()
     min_len_mom = min(len(mom5_clean), len(mom10_clean))
     corr_mom_orig = np.corrcoef(
-        mom5_clean.iloc[-min_len_mom:], mom10_clean.iloc[-min_len_mom:]
+        mom5_clean.iloc[-min_len_mom:],
+        mom10_clean.iloc[-min_len_mom:],
     )[0, 1]
 
     mom3_clean = momentum_3_fixed.dropna()
     mom7_clean = momentum_7_fixed.dropna()
     min_len_mom_fixed = min(len(mom3_clean), len(mom7_clean))
     corr_mom_fixed = np.corrcoef(
-        mom3_clean.iloc[-min_len_mom_fixed:], mom7_clean.iloc[-min_len_mom_fixed:]
+        mom3_clean.iloc[-min_len_mom_fixed:],
+        mom7_clean.iloc[-min_len_mom_fixed:],
     )[0, 1]
 
     print(f"   Original momentum correlation: {corr_mom_orig:.3f}")
@@ -272,8 +274,7 @@ def analyze_high_vif_features():
     print(f"   Improvement: {abs(corr_mom_orig) - abs(corr_mom_fixed):.3f}")
 
     test_results["Momentum Indicators"] = {
-        "original_corr": corr_mom_orig,
-        "fixed_corr": corr_mom_fixed,
+        "original_corr": corr_mom_orig , "fixed_corr": corr_mom_fixed,
         "improvement": abs(corr_mom_orig) - abs(corr_mom_fixed),
     }
 
@@ -285,21 +286,22 @@ def analyze_high_vif_features():
     price_vol_orig = close.rolling(20).std()
 
     # Fixed features (different estimators)
-    returns = close.pct_change()
+    close.pct_change()
     garman_klass = np.sqrt(
         0.5 * np.log(price_data["high"] / price_data["low"]) ** 2
-        - (2 * np.log(2) - 1) * np.log(price_data["close"] / price_data["open"]) ** 2
+        - (2 * np.log(2) - 1) * np.log(price_data["close"] / price_data["open"]) ** 2,
     )
     garman_klass = garman_klass.rolling(20).mean()
 
     parkinson = np.sqrt(
-        np.log(price_data["high"] / price_data["low"]) ** 2 / (4 * np.log(2))
+        np.log(price_data["high"] / price_data["low"]) ** 2 / (4 * np.log(2)),
     )
     parkinson = parkinson.rolling(20).mean()
 
     # Calculate correlations
     corr_vol_orig = np.corrcoef(realized_vol_orig.dropna(), price_vol_orig.dropna())[
-        0, 1
+        0,
+        1,
     ]
     corr_vol_fixed = np.corrcoef(garman_klass.dropna(), parkinson.dropna())[0, 1]
 
@@ -308,8 +310,7 @@ def analyze_high_vif_features():
     print(f"   Improvement: {abs(corr_vol_orig) - abs(corr_vol_fixed):.3f}")
 
     test_results["Volatility Indicators"] = {
-        "original_corr": corr_vol_orig,
-        "fixed_corr": corr_vol_fixed,
+        "original_corr": corr_vol_orig , "fixed_corr": corr_vol_fixed,
         "improvement": abs(corr_vol_orig) - abs(corr_vol_fixed),
     }
 
@@ -319,7 +320,7 @@ def analyze_high_vif_features():
     print("=" * 80)
 
     total_improvement = 0
-    for group, results in test_results.items():
+    for group , results in test_results.items():
         improvement = results["improvement"]
         total_improvement += improvement
         print(f"   {group}: {improvement:.3f} correlation reduction")

@@ -1,7 +1,6 @@
 # src/training/launcher_integration_patch.py
 
-"""
-Integration patch for ares_launcher.py to enable the new optimization features.
+"""Integration patch for ares_launcher.py to enable the new optimization features.
 This module contains the updated training functions that use the optimized training manager.
 """
 
@@ -18,26 +17,23 @@ from src.training.factory import OptimizedTrainingFactory
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-    error,
     failed,
-    warning,
 )
 
 
 class OptimizedAresLauncherMixin:
-    """
-    Mixin class that provides optimized training methods for AresLauncher.
+    """Mixin class that provides optimized training methods for AresLauncher.
     This can be mixed into the existing AresLauncher class to add optimization features.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Initialize optimization components
         self.optimization_enabled = True
         self.memory_profiler = None
         self.leak_detector = None
         self.optimization_factory = None
 
-    def _setup_optimization_components(self, config: dict[str, Any]):
+    def _setup_optimization_components(self, config: dict[str, Any]) -> None:
         """Setup optimization components if enabled."""
         if not self.optimization_enabled:
             return
@@ -77,15 +73,13 @@ class OptimizedAresLauncherMixin:
         training_mode: str,
         lookback_days: int,
         with_gui: bool = False,
-    ):
+    ) -> bool:
         """Run optimized unified training with enhanced training manager."""
         # Set environment variable for blank training mode
         if training_mode == "blank":
             os.environ["BLANK_TRAINING_MODE"] = "1"
-            print("🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1")
 
         mode_display = f"{training_mode} training (OPTIMIZED)"
-        print(f"🚀 Starting {mode_display} for {symbol} on {exchange}")
         self.logger.info(f"🚀 Starting {mode_display} for {symbol} on {exchange}")
 
         @handle_errors(
@@ -93,7 +87,7 @@ class OptimizedAresLauncherMixin:
             default_return=False,
             context="optimized_enhanced_training_pipeline",
         )
-        async def run_optimized_enhanced_training():
+        async def run_optimized_enhanced_training() -> bool | None:
             """Execute optimized enhanced training using EnhancedTrainingManagerOptimized."""
             from src.database.sqlite_manager import SQLiteManager
 
@@ -110,14 +104,10 @@ class OptimizedAresLauncherMixin:
             logger.info(f"📊 Training Mode: {training_mode}")
             logger.info(f"📈 Lookback Days: {lookback_days}")
             logger.info("🔧 OPTIMIZATIONS ENABLED")
-            print("=" * 80)
-            print("🚀 OPTIMIZED ENHANCED TRAINING PIPELINE START")
-            print("=" * 80)
 
             try:
                 # Initialize database manager
                 logger.info("📊 STEP 0: Initializing Database Manager...")
-                print("   📊 Setting up database manager...")
 
                 default_config = {
                     "database": {
@@ -136,11 +126,9 @@ class OptimizedAresLauncherMixin:
                 )
                 await db_manager.initialize()
                 logger.info("✅ Database manager initialized successfully")
-                print("   ✅ Database manager initialized successfully")
 
                 # Setup optimization configuration
                 logger.info("🔧 STEP 1: Setting up optimization configuration...")
-                print("   🔧 Setting up optimization configuration...")
 
                 # Get optimization config with custom settings for training mode
                 custom_optimization = {}
@@ -189,7 +177,6 @@ class OptimizedAresLauncherMixin:
                 logger.info(
                     "🤖 STEP 2: Initializing Optimized Enhanced Training Manager...",
                 )
-                print("   🤖 Initializing optimized enhanced training manager...")
 
                 training_manager = EnhancedTrainingManagerOptimized(training_config)
 
@@ -202,18 +189,10 @@ class OptimizedAresLauncherMixin:
                     logger.error(
                         "❌ Failed to initialize optimized enhanced training manager",
                     )
-                    print(
-                        failed(
-                            "Failed to initialize optimized enhanced training manager",
-                        ),
-                    )
                     return False
 
                 logger.info(
                     "✅ Optimized enhanced training manager initialized successfully",
-                )
-                print(
-                    "   ✅ Optimized enhanced training manager initialized successfully",
                 )
 
                 # Take initial memory snapshot
@@ -229,7 +208,6 @@ class OptimizedAresLauncherMixin:
                 logger.info(
                     "🚀 STEP 3: Executing Optimized Enhanced Training Pipeline...",
                 )
-                print("   🚀 Starting optimized enhanced training pipeline...")
 
                 # Execute optimized training
                 success = await training_manager.execute_optimized_training(
@@ -242,9 +220,8 @@ class OptimizedAresLauncherMixin:
                 if self.leak_detector:
                     leak_results = self.leak_detector.check_for_leaks()
                     if leak_results["leak_detected"]:
-                        print(warning("⚠️ Memory leak detected during training!"))
                         for _indicator in leak_results.get("indicators", []):
-                            print(warning("  - {indicator}"))
+                            pass
                     else:
                         logger.info("✅ No memory leaks detected")
 
@@ -271,35 +248,22 @@ class OptimizedAresLauncherMixin:
                     logger.info(f"🏢 Exchange: {exchange}")
                     logger.info(f"📊 Training Mode: {training_mode}")
                     logger.info("🔧 WITH OPTIMIZATIONS")
-                    print("=" * 80)
-                    print(
-                        "🎉 OPTIMIZED ENHANCED TRAINING PIPELINE COMPLETED SUCCESSFULLY",
-                    )
-                    print("=" * 80)
-                    print("   ✅ Optimized enhanced training completed successfully!")
 
                     # Print optimization summary
                     if optimization_stats:
-                        print("   📊 Optimization Summary:")
-                        for key, value in optimization_stats.items():
+                        for value in optimization_stats.values():
                             if isinstance(value, bool):
                                 status = "✅" if value else "❌"
-                                print(f"     {key}: {status}")
                             else:
-                                print(f"     {key}: {value}")
+                                pass
 
                     return True
-                print(failed("❌ Optimized enhanced training pipeline failed"))
-                print(failed("Optimized enhanced training pipeline failed"))
                 return False
 
             except Exception as e:
                 logger.exception(
-                    f"💥 OPTIMIZED ENHANCED TRAINING PIPELINE FAILED: {str(e)}",
+                    f"💥 OPTIMIZED ENHANCED TRAINING PIPELINE FAILED: {e!s}",
                 )
-                print(error("📋 Error details: {type(e).__name__}: {str(e)}"))
-                print(failed("OPTIMIZED ENHANCED TRAINING PIPELINE FAILED: {str(e)}"))
-                print(f"📋 Error details: {type(e).__name__}: {str(e)}")
                 return False
 
             finally:
@@ -320,23 +284,16 @@ class OptimizedAresLauncherMixin:
                         logger.info("🧹 Memory profiler stopped")
 
                 except Exception:
-                    print(warning("⚠️ Cleanup warning: {cleanup_error}"))
+                    pass
 
         # Run the async optimized training
-        print("🔄 Starting optimized async training execution...")
-        print("⏳ Optimized training is running... This should be faster than before!")
-        print("📊 You can monitor progress in the logs directory.")
 
         success = asyncio.run(run_optimized_enhanced_training())
 
         if success:
             self.logger.info(f"✅ {mode_display} completed successfully")
-            print(f"✅ {mode_display} completed successfully")
-            print("🎉 Optimized training pipeline finished!")
             return True
         self.print(failed("❌ {mode_display} failed"))
-        print(failed("{mode_display} failed"))
-        print(error("Optimized training pipeline encountered an error."))
         return False
 
     def run_optimized_enhanced_blank_training(
@@ -384,7 +341,6 @@ def create_optimized_launcher_patch():
 
     def patch_launcher(launcher_instance):
         """Apply optimization patches to an existing launcher instance."""
-
         # Add optimization attributes
         launcher_instance.optimization_enabled = True
         launcher_instance.memory_profiler = None
@@ -427,8 +383,7 @@ def create_optimized_launcher_patch():
 
 # Quick integration function for immediate use
 def enable_optimizations_in_launcher():
-    """
-    Quick function to enable optimizations in the current launcher.
+    """Quick function to enable optimizations in the current launcher.
     This can be called from ares_launcher.py to enable the new features.
     """
     import sys
@@ -443,7 +398,5 @@ def enable_optimizations_in_launcher():
     try:
         # This would be used in the actual launcher file
         return create_optimized_launcher_patch()
-    except Exception as e:
-        error_msg = f"Failed to enable optimizations: {e}"
-        print(failed(error_msg))
+    except Exception:
         return None

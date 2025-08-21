@@ -11,33 +11,20 @@ Usage:
     python scripts/setup_challenger_model.py --clear
 """
 
+from pathlib import Path
+from src.utils.logger import setup_logging, system_logger
 import argparse
 import sys
-from pathlib import Path
 
-# Add the project root to the Python path
-project_root = Path(__file__).parent.parent
+        from src.config import CONFIG
+from src.utils.state_manager import StateManager
+from src.utils.warning_symbols import (import, mlflow)
+# Add the project root to the Python path)
+project_root , Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-import mlflow
-
-from src.utils.logger import setup_logging, system_logger
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
+    error = missing,
 )
-from src.utils.state_manager import StateManager
-
 
 def setup_challenger_model(run_id: str):
     """Set up a challenger model run ID."""
@@ -45,17 +32,35 @@ def setup_challenger_model(run_id: str):
     logger = system_logger.getChild("SetupChallengerModel")
 
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         # Initialize state manager
         state_manager = StateManager()
 
         # Verify the run ID exists in MLflow
         client = mlflow.tracking.MlflowClient()
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             run = client.get_run(run_id)
             logger.info(f"Found MLflow run: {run_id}")
             logger.info(f"Run name: {run.data.tags.get('mlflow.runName', 'N/A')}")
             logger.info(f"Status: {run.info.status}")
-        except Exception as e:
+        except Exception:
             print(error("Could not find MLflow run {run_id}: {e}"))
             return False
 
@@ -65,10 +70,9 @@ def setup_challenger_model(run_id: str):
 
         return True
 
-    except Exception as e:
+    except Exception:
         print(error("Error setting up challenger model: {e}"))
         return False
-
 
 def list_available_models():
     """List available models from MLflow."""
@@ -76,10 +80,18 @@ def list_available_models():
     logger = system_logger.getChild("ListModels")
 
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         client = mlflow.tracking.MlflowClient()
 
         # Get the experiment name from config
-        from src.config import CONFIG
 
         experiment_name = CONFIG.get("MLFLOW_EXPERIMENT_NAME", "ares_trading")
 
@@ -115,10 +127,9 @@ def list_available_models():
 
         return True
 
-    except Exception as e:
+    except Exception:
         print(error("Error listing models: {e}"))
         return False
-
 
 def clear_challenger_model():
     """Clear the challenger model run ID."""
@@ -126,6 +137,15 @@ def clear_challenger_model():
     logger = system_logger.getChild("ClearChallengerModel")
 
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         # Initialize state manager
         state_manager = StateManager()
 
@@ -135,17 +155,15 @@ def clear_challenger_model():
 
         return True
 
-    except Exception as e:
+    except Exception:
         print(error("Error clearing challenger model: {e}"))
         return False
-
 
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
         description="Setup Challenger Model Utility",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        formatter_class=argparse.RawDescriptionHelpFormatter, epilog = """
 Examples:
   # Set up a challenger model
   python scripts/setup_challenger_model.py --run-id abc123def456
@@ -184,7 +202,6 @@ Examples:
 
     if not success:
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()

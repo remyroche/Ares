@@ -9,9 +9,8 @@ Usage:
     python scripts/fix_multicollinearity_simple.py
 """
 
-import os
-import sys
 from pathlib import Path
+import sys
 
 
 def fix_feature_engineering_code():
@@ -21,7 +20,7 @@ def fix_feature_engineering_code():
 
     # Path to the feature engineering file
     feature_eng_file = Path(
-        "src/training/steps/vectorized_advanced_feature_engineering.py"
+        "src/training/steps/vectorized_advanced_feature_engineering.py",
     )
 
     if not feature_eng_file.exists():
@@ -30,7 +29,7 @@ def fix_feature_engineering_code():
 
     try:
         # Read the current file
-        with open(feature_eng_file, "r") as f:
+        with open(feature_eng_file) as f:
             content = f.read()
 
         print("📖 Reading current feature engineering code...")
@@ -44,7 +43,7 @@ def fix_feature_engineering_code():
                 "15m": 15,   # 15-period change for 15m
                 "30m": 30,   # 30-period change for 30m
             }
-            
+
             periods = timeframe_periods.get(timeframe, 1)
             price_changes = price_data[price_column].pct_change(periods=periods)"""
 
@@ -92,9 +91,8 @@ def main():
         print("   1. Test your training pipeline again")
         print("   2. Monitor the logs for any remaining issues")
         return True
-    else:
-        print("❌ Multicollinearity fix failed!")
-        return False
+    print("❌ Multicollinearity fix failed!")
+    return False
 
 
 if __name__ == "__main__":

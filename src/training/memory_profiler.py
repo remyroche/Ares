@@ -13,23 +13,16 @@ import numpy as np
 import psutil
 
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    warning,
-)
 
 
 class MemoryProfiler:
-    """
-    Comprehensive memory profiler for detecting memory leaks and optimizing memory usage
+    """Comprehensive memory profiler for detecting memory leaks and optimizing memory usage
     during training processes.
     """
 
     def __init__(
-        self,
-        enable_tracemalloc: bool = True,
-        enable_continuous_monitoring: bool = True,
-    ):
+        self, enable_tracemalloc: bool = True, enable_continuous_monitoring: bool = True,
+    ) -> None:
         self.logger = system_logger.getChild("MemoryProfiler")
         self.enable_tracemalloc = enable_tracemalloc
         self.enable_continuous_monitoring = enable_continuous_monitoring
@@ -64,7 +57,7 @@ class MemoryProfiler:
         if self.enable_continuous_monitoring:
             self.start_continuous_monitoring()
 
-    def take_snapshot(self, label: str = None) -> dict[str, Any]:
+    def take_snapshot(self, label: str | None = None) -> dict[str, Any]:
         """Take a comprehensive memory snapshot."""
         timestamp = datetime.now()
 
@@ -211,9 +204,7 @@ class MemoryProfiler:
 
         if object_growth:
             top_growth = sorted(
-                object_growth.items(),
-                key=lambda x: x[1],
-                reverse=True,
+                object_growth.items(), key=lambda x: x[1], reverse=True,
             )[:5]
             for obj_type, growth in top_growth:
                 if growth > 1000:  # Significant object growth
@@ -228,8 +219,8 @@ class MemoryProfiler:
                 "indicators": leak_indicators,
                 "window_size": self.leak_detection_window,
                 "recommendation": self._generate_leak_recommendations(
-                    rss_growth,
-                    object_growth,
+                    rss_growth=rss_growth,
+                    object_growth=object_growth,
                 ),
             }
 
@@ -267,7 +258,7 @@ class MemoryProfiler:
 
         return recommendations
 
-    def start_continuous_monitoring(self):
+    def start_continuous_monitoring(self) -> None:
         """Start continuous memory monitoring in a background thread."""
         if self.is_monitoring:
             return
@@ -280,14 +271,14 @@ class MemoryProfiler:
         self.monitoring_thread.start()
         self.logger.info("Continuous memory monitoring started")
 
-    def stop_continuous_monitoring(self):
+    def stop_continuous_monitoring(self) -> None:
         """Stop continuous memory monitoring."""
         self.is_monitoring = False
         if self.monitoring_thread:
             self.monitoring_thread.join(timeout=1)
         self.logger.info("Continuous memory monitoring stopped")
 
-    def _monitoring_loop(self):
+    def _monitoring_loop(self) -> None:
         """Background monitoring loop."""
         while self.is_monitoring:
             try:
@@ -304,16 +295,16 @@ class MemoryProfiler:
                     "leak_detection" in snapshot
                     and snapshot["leak_detection"]["detected"]
                 ):
-                    self.print(warning("Potential memory leak detected!"))
+                    self.logger.warning("Potential memory leak detected!")
                     for _indicator in snapshot["leak_detection"]["indicators"]:
-                        self.print(warning("  - {indicator}"))
+                        self.logger.warning(f"  - {_indicator}")
 
                 time.sleep(self.monitoring_interval)
 
             except Exception as e:
                 error_msg = f"Error in memory monitoring loop: {e}"
                 self.logger.exception(error_msg)
-                self.print(error(error_msg))
+                self.logger.exception(error_msg)
                 time.sleep(self.monitoring_interval)
 
     def analyze_memory_trends(self, window_size: int = 50) -> dict[str, Any]:
@@ -448,7 +439,7 @@ class MemoryProfiler:
 
         # Keep only recent snapshots
         if len(self.memory_snapshots) > 100:
-            # Convert to list, slice, and convert back to deque
+            # Convert to list = slice, and convert back to deque
             recent_snapshots = list(self.memory_snapshots)[-50:]
             self.memory_snapshots.clear()
             self.memory_snapshots.extend(recent_snapshots)
@@ -479,8 +470,8 @@ class MemoryProfiler:
 
         # Generate recommendations
         recommendations = self._generate_memory_recommendations(
-            current_snapshot,
-            trends,
+            current_snapshot=current_snapshot,
+            trends=trends,
         )
 
         return {
@@ -543,7 +534,7 @@ class MemoryProfiler:
 
         return recommendations
 
-    def __del__(self):
+    def __del__(self) -> None:
         """Cleanup when profiler is destroyed."""
         self.stop_continuous_monitoring()
         if self.enable_tracemalloc and tracemalloc.is_tracing():
@@ -551,11 +542,9 @@ class MemoryProfiler:
 
 
 class MemoryLeakDetector:
-    """
-    Specialized memory leak detector for long-running training processes.
-    """
+    """Specialized memory leak detector for long-running training processes."""
 
-    def __init__(self, profiler: MemoryProfiler):
+    def __init__(self, profiler: MemoryProfiler) -> None:
         self.profiler = profiler
         self.logger = system_logger.getChild("MemoryLeakDetector")
         self.leak_alerts = []
@@ -573,7 +562,9 @@ class MemoryLeakDetector:
         }
 
         # Method 1: RSS growth analysis
-        rss_analysis = self._analyze_rss_growth(threshold_mb, window_size)
+        rss_analysis = self._analyze_rss_growth(
+            threshold_mb=threshold_mb, window_size=window_size,
+        )
         results["detection_methods"]["rss_growth"] = rss_analysis
 
         # Method 2: Object count analysis
@@ -606,14 +597,12 @@ class MemoryLeakDetector:
                 {"timestamp": datetime.now(), "detection_results": results},
             )
 
-            self.print(warning("Memory leak detected with multiple indicators!"))
+            self.logger.warning("Memory leak detected with multiple indicators!")
 
         return results
 
     def _analyze_rss_growth(
-        self,
-        threshold_mb: float,
-        window_size: int,
+        self, threshold_mb: float, window_size: int,
     ) -> dict[str, Any]:
         """Analyze RSS memory growth for leak detection."""
         if len(self.profiler.memory_snapshots) < window_size:
@@ -681,7 +670,7 @@ class MemoryLeakDetector:
         if not self.profiler.enable_tracemalloc or not tracemalloc.is_tracing():
             return {"status": "tracemalloc_disabled"}
 
-        # This is a simplified analysis - in practice, you'd want to compare
+        # This is a simplified analysis - in practice = you'd want to compare
         # snapshots over time and look for consistently growing allocations
         snapshot = tracemalloc.take_snapshot()
         top_stats = snapshot.statistics("lineno")

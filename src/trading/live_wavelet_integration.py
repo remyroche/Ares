@@ -5,20 +5,15 @@ This module integrates the computationally-aware wavelet analyzer
 into the live trading pipeline with performance monitoring.
 """
 
-import time
+from src.utils.logger import system_logger
 from typing import Any
-
-import numpy as np
-import pandas as pd
+import time
 
 from src.trading.live_wavelet_analyzer import LiveWaveletAnalyzer, WaveletSignal
 from src.utils.error_handler import handle_errors
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    failed,
-)
-
+from src.utils.warning_symbols import error, failed
+import numpy as np
+import pandas as pd
 
 class LiveWaveletIntegration:
     """
@@ -68,7 +63,7 @@ class LiveWaveletIntegration:
 
             success = await self.wavelet_analyzer.initialize()
             if not success:
-                self.print(failed("Failed to initialize wavelet analyzer"))
+                self.logger.error("Failed to initialize wavelet analyzer")
                 return False
 
             self.logger.info("✅ Live Wavelet Integration initialized successfully")
@@ -96,8 +91,7 @@ class LiveWaveletIntegration:
         context="wavelet signal processing",
     )
     async def process_market_data(
-        self,
-        market_data: dict[str, Any],
+        self, market_data: dict[str, Any],
     ) -> dict[str, Any] | None:
         """
         Process market data and generate wavelet signals.
@@ -121,8 +115,7 @@ class LiveWaveletIntegration:
 
             # Generate wavelet signal
             signal = await self.wavelet_analyzer.generate_signal(
-                price_data,
-                volume_data,
+                price_data, volume_data,
             )
 
             if signal is None:
@@ -153,15 +146,14 @@ class LiveWaveletIntegration:
             return results
 
         except (ValueError, KeyError) as e:
-            self.print(error(f"Error processing market data - Invalid data: {e}"))
+            self.logger.error(f"Error processing market data - Invalid data: {e}")
             return None
         except Exception as e:
-            self.print(error(f"Error processing market data - Unexpected error: {e}"))
+            self.logger.error(f"Error processing market data - Unexpected error: {e}")
             return None
 
     def _extract_price_data(
-        self,
-        market_data: dict[str, Any],
+        self, market_data: dict[str, Any],
     ) -> pd.DataFrame | None:
         """Extract price data from market data."""
         try:
@@ -183,15 +175,16 @@ class LiveWaveletIntegration:
             return None
 
         except (KeyError, ValueError) as e:
-            self.print(error(f"Error extracting price data - Invalid data structure: {e}"))
+            self.logger.error(
+                f"Error extracting price data - Invalid data structure: {e}",
+            )
             return None
         except Exception as e:
-            self.print(error(f"Error extracting price data - Unexpected error: {e}"))
+            self.logger.error(f"Error extracting price data - Unexpected error: {e}")
             return None
 
     def _extract_volume_data(
-        self,
-        market_data: dict[str, Any],
+        self, market_data: dict[str, Any],
     ) -> pd.DataFrame | None:
         """Extract volume data from market data."""
         try:
@@ -202,10 +195,12 @@ class LiveWaveletIntegration:
             return None
 
         except (KeyError, ValueError) as e:
-            self.print(error(f"Error extracting volume data - Invalid data structure: {e}"))
+            self.logger.error(
+                f"Error extracting volume data - Invalid data structure: {e}",
+            )
             return None
         except Exception as e:
-            self.print(error(f"Error extracting volume data - Unexpected error: {e}"))
+            self.logger.error(f"Error extracting volume data - Unexpected error: {e}")
             return None
 
     def _validate_signal(self, signal: WaveletSignal) -> bool:
@@ -227,15 +222,14 @@ class LiveWaveletIntegration:
             return True
 
         except (AttributeError, TypeError) as e:
-            self.print(error(f"Error validating signal - Invalid signal object: {e}"))
+            self.logger.error(f"Error validating signal - Invalid signal object: {e}")
             return False
         except Exception as e:
-            self.print(error(f"Error validating signal - Unexpected error: {e}"))
+            self.logger.error(f"Error validating signal - Unexpected error: {e}")
             return False
 
     def _create_analysis_results(
-        self,
-        signal: WaveletSignal,
+        self, signal: WaveletSignal,
         market_data: dict[str, Any],
     ) -> dict[str, Any]:
         """Create analysis results for trading pipeline."""
@@ -259,8 +253,7 @@ class LiveWaveletIntegration:
                     "wavelet_signal": signal.signal_type,
                     "wavelet_confidence": signal.confidence,
                     "combined_signal": self._combine_with_existing_signals(
-                        signal,
-                        market_data,
+                        signal, market_data,
                     ),
                 },
                 # Performance metrics
@@ -272,15 +265,18 @@ class LiveWaveletIntegration:
             }
 
         except (AttributeError, KeyError) as e:
-            self.print(error(f"Error creating analysis results - Invalid signal data: {e}"))
+            self.logger.error(
+                f"Error creating analysis results - Invalid signal data: {e}",
+            )
             return {}
         except Exception as e:
-            self.print(error(f"Error creating analysis results - Unexpected error: {e}"))
+            self.logger.error(
+                f"Error creating analysis results - Unexpected error: {e}",
+            )
             return {}
 
     def _combine_with_existing_signals(
-        self,
-        wavelet_signal: WaveletSignal,
+        self, wavelet_signal: WaveletSignal,
         market_data: dict[str, Any],
     ) -> str:
         """Combine wavelet signal with existing trading signals."""
@@ -303,10 +299,10 @@ class LiveWaveletIntegration:
                 return wavelet_signal.signal_type  # Agreement
             if existing_signal == "hold":
                 return wavelet_signal.signal_type  # Wavelet provides signal
-            return "hold"  # Disagreement, be conservative
+            return "hold"  # Disagreement = be conservative
 
-        except Exception:
-            self.print(error("Error combining signals: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error combining signals: {e}")
             return "hold"
 
     def _update_performance_stats(self, signal: WaveletSignal) -> None:
@@ -330,8 +326,8 @@ class LiveWaveletIntegration:
             if self.wavelet_analyzer:
                 self.performance_stats = self.wavelet_analyzer.get_performance_stats()
 
-        except Exception:
-            self.print(error("Error updating performance stats: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error updating performance stats: {e}")
 
     def get_performance_stats(self) -> dict[str, Any]:
         """Get performance statistics."""
@@ -366,8 +362,8 @@ class LiveWaveletIntegration:
 
             return stats
 
-        except Exception:
-            self.print(error("Error getting performance stats: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error getting performance stats: {e}")
             return {}
 
     def get_latest_signal(self) -> WaveletSignal | None:
@@ -402,8 +398,8 @@ class LiveWaveletIntegration:
 
             return True
 
-        except Exception:
-            self.print(error("Error checking health: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error checking health: {e}")
             return False
 
     def disable(self) -> None:

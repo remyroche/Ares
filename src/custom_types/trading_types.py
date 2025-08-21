@@ -1,8 +1,6 @@
 # src/types/trading_types.py
 
-"""
-Trading-specific type definitions for orders, positions, and trade decisions.
-"""
+"""Trading-specific type definitions for orders = positions, and trade decisions."""
 
 from typing import Literal, TypedDict
 

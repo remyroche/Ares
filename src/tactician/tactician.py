@@ -1,27 +1,11 @@
-# src/tactician/tactician.py
-
-"""
-Refactored Tactician component using modular architecture.
-This module now orchestrates focused components instead of handling everything internally.
-"""
+"""Tactician module for trading strategy execution."""
 
 from datetime import datetime
 from typing import Any
 
-from src.tactician.leverage_sizer import LeverageSizer
-from src.tactician.position_division_strategy import PositionDivisionStrategy
-from src.tactician.position_sizer import PositionSizer
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
+from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    failed,
-    invalid,
-    missing,
-)
-
+from src.utils.warning_symbols import failed, invalid, missing
 
 class Tactician:
     """
@@ -80,14 +64,14 @@ class Tactician:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.print(invalid("Invalid configuration for tactician"))
+                self.logger.error(invalid("Invalid configuration for tactician"))
                 return False
 
             self.logger.info("✅ Refactored Tactician initialized successfully")
             return True
 
-        except Exception:
-            self.print(failed("❌ Refactored Tactician initialization failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"❌ Refactored Tactician initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -99,27 +83,29 @@ class Tactician:
         """Initialize all component managers."""
         try:
             # Initialize tactics orchestrator
-            from src.tactician.tactics_orchestrator import TacticsOrchestrator
-
+            from .tactics_orchestrator import TacticsOrchestrator
             self.tactics_orchestrator = TacticsOrchestrator(self.config)
             await self.tactics_orchestrator.initialize()
 
             # Initialize position sizer
+            from src.tactician.position_sizer import PositionSizer
             self.position_sizer = PositionSizer(self.config)
             await self.position_sizer.initialize()
 
             # Initialize leverage sizer
+            from src.tactician.leverage_sizer import LeverageSizer
             self.leverage_sizer = LeverageSizer(self.config)
             await self.leverage_sizer.initialize()
 
             # Initialize position division strategy
+            from src.tactician.position_division_strategy import PositionDivisionStrategy
             self.position_division_strategy = PositionDivisionStrategy(self.config)
             await self.position_division_strategy.initialize()
 
             self.logger.info("✅ All component managers initialized")
 
-        except Exception:
-            self.print(failed("❌ Failed to initialize component managers: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"❌ Failed to initialize component managers: {e}"))
             raise
 
     @handle_errors(
@@ -147,17 +133,17 @@ class Tactician:
 
             # Validate tactician specific settings
             if self.tactics_interval <= 0:
-                self.print(invalid("Invalid tactics_interval configuration"))
+                self.logger.error(invalid("Invalid tactics_interval configuration"))
                 return False
 
             if self.max_history <= 0:
-                self.print(invalid("Invalid max_history configuration"))
+                self.logger.error(invalid("Invalid max_history configuration"))
                 return False
 
             return True
 
-        except Exception:
-            self.print(failed("Configuration validation failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"Configuration validation failed: {e}"))
             return False
 
     @handle_specific_errors(
@@ -170,8 +156,7 @@ class Tactician:
         context="tactics execution",
     )
     async def execute_tactics(
-        self,
-        tactics_input: dict[str, Any],
+        self, tactics_input: dict[str, Any]
     ) -> bool:
         """
         Execute the complete tactics pipeline.
@@ -196,12 +181,12 @@ class Tactician:
                 self.logger.info("✅ Tactics pipeline completed successfully")
                 await self._store_tactics_results(tactics_input)
             else:
-                self.print(failed("❌ Tactics pipeline failed"))
+                self.logger.error(failed("❌ Tactics pipeline failed"))
 
             return success
 
-        except Exception:
-            self.print(failed("❌ Tactics execution failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"❌ Tactics execution failed: {e}"))
             return False
 
     @handle_errors(
@@ -224,18 +209,18 @@ class Tactician:
 
             for field in required_fields:
                 if field not in tactics_input:
-                    self.print(missing("Missing required tactics input field: {field}"))
+                    self.logger.error(missing(f"Missing required tactics input field: {field}"))
                     return False
 
             # Validate specific field values
             if tactics_input.get("current_price", 0) <= 0:
-                self.print(invalid("Invalid current_price value"))
+                self.logger.error(invalid("Invalid current_price value"))
                 return False
 
             return True
 
-        except Exception:
-            self.print(failed("Tactics input validation failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"Tactics input validation failed: {e}"))
             return False
 
     @handle_errors(
@@ -257,8 +242,7 @@ class Tactician:
             # Add to history
             history_entry = {
                 "timestamp": datetime.now(),
-                "tactics_input": tactics_input,
-                "tactics_results": self.tactics_results.copy(),
+                "tactics_input": tactics_input, "tactics_results": self.tactics_results.copy(),
             }
 
             self.history.append(history_entry)
@@ -271,8 +255,8 @@ class Tactician:
                 f"📁 Stored tactics results (history: {len(self.history)} entries)",
             )
 
-        except Exception:
-            self.print(failed("❌ Failed to store tactics results: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"❌ Failed to store tactics results: {e}"))
 
     @handle_specific_errors(
         error_handlers={
@@ -294,16 +278,15 @@ class Tactician:
 
             # Update status
             self.status = {
-                "is_running": True,
-                "start_time": datetime.now(),
-                "component_count": 4,  # tactics_orchestrator, position_sizer, leverage_sizer, position_division_strategy
+                "is_running": True, "start_time": datetime.now(),
+                "component_count": 4,  # tactics_orchestrator = position_sizer, leverage_sizer = position_division_strategy
             }
 
             self.logger.info("✅ Tactician run completed successfully")
             return True
 
-        except Exception:
-            self.print(failed("❌ Tactician run failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"❌ Tactician run failed: {e}"))
             return False
 
     def get_status(self) -> dict[str, Any]:
@@ -314,8 +297,7 @@ class Tactician:
             dict: Tactician status
         """
         return {
-            "is_running": self.is_running,
-            "status": self.status,
+            "is_running": self.is_running, "status": self.status,
             "history_count": len(self.history),
             "has_results": bool(self.tactics_results),
         }
@@ -352,10 +334,8 @@ class Tactician:
             dict: Tactics modules information
         """
         return {
-            "tactics_orchestrator": self.tactics_orchestrator is not None,
-            "position_sizer": self.position_sizer is not None,
-            "leverage_sizer": self.leverage_sizer is not None,
-            "position_division_strategy": self.position_division_strategy is not None,
+            "tactics_orchestrator": self.tactics_orchestrator is not None, "position_sizer": self.position_sizer is not None,
+            "leverage_sizer": self.leverage_sizer is not None, "position_division_strategy": self.position_division_strategy is not None,
         }
 
     @handle_errors(
@@ -381,9 +361,38 @@ class Tactician:
             self.is_running = False
             self.logger.info("✅ Tactician stopped successfully")
 
-        except Exception:
-            self.print(failed("❌ Failed to stop Tactician: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"❌ Failed to stop Tactician: {e}"))
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="tactician cleanup",
+    )
+    async def cleanup(self) -> None:
+        """Cleanup tactician resources."""
+        try:
+            self.logger.info("Cleaning up Tactician...")
+            await self.stop()
+
+            # Cleanup component managers
+            if self.tactics_orchestrator:
+                await self.tactics_orchestrator.cleanup()
+            if self.position_sizer:
+                await self.position_sizer.cleanup()
+            if self.leverage_sizer:
+                await self.leverage_sizer.cleanup()
+            if self.position_division_strategy:
+                await self.position_division_strategy.cleanup()
+
+            # Clear history and results
+            self.history.clear()
+            self.tactics_results.clear()
+            self.status.clear()
+
+            self.logger.info("✅ Tactician cleanup completed")
+        except Exception as e:
+            self.logger.error(failed(f"❌ Failed to cleanup Tactician: {e}"))
 
 @handle_errors(
     exceptions=(Exception,),

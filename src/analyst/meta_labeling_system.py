@@ -9,29 +9,16 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-import os
-import json
-import time
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
     initialization_error,
-    execution_error,
 )
 
 
-class CompositeHMMRegimeSystem:
+class MetaLabelingSystem:
     """
     Comprehensive meta-labeling system for path-dependent trading signals.
     Implements both analyst labels (setup identification) and tactician labels (entry optimization).
@@ -39,7 +26,7 @@ class CompositeHMMRegimeSystem:
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
-        self.logger = system_logger.getChild("CompositeHMMRegimeSystem")
+        self.logger = system_logger.getChild("MetaLabelingSystem")
 
         # Configuration
         self.labeling_config = config.get("meta_labeling", {})
@@ -54,69 +41,12 @@ class CompositeHMMRegimeSystem:
 
         # Pattern detection parameters
         self.pattern_config = self.labeling_config.get("pattern_detection", {})
-        # Centralized thresholds with defaults
         self.volatility_threshold = self.pattern_config.get(
-            "volatility_threshold", 0.02
+            "volatility_threshold",
+            0.02,
         )
         self.momentum_threshold = self.pattern_config.get("momentum_threshold", 0.01)
         self.volume_threshold = self.pattern_config.get("volume_threshold", 1.5)
-        # Bollinger thresholds
-        self.bb_edge_low = self.pattern_config.get("bb_edge_low", 0.2)
-        self.bb_edge_high = self.pattern_config.get("bb_edge_high", 0.8)
-        self.bb_mid_low = self.pattern_config.get("bb_mid_low", 0.3)
-        self.bb_mid_high = self.pattern_config.get("bb_mid_high", 0.7)
-        self.bb_width_compression = self.pattern_config.get(
-            "bb_width_compression", 0.05
-        )
-        self.bb_width_triangle = self.pattern_config.get("bb_width_triangle", 0.03)
-        # Momentum thresholds
-        self.trend_momentum_strong = self.pattern_config.get(
-            "trend_momentum_strong", 0.02
-        )
-        self.breakout_momentum = self.pattern_config.get("breakout_momentum", 0.01)
-        self.failed_break_momentum = self.pattern_config.get(
-            "failed_break_momentum", 0.005
-        )
-        # RSI thresholds
-        self.rsi_overbought = self.pattern_config.get("rsi_overbought", 70)
-        self.rsi_oversold = self.pattern_config.get("rsi_oversold", 30)
-        self.rsi_momentum_hi = self.pattern_config.get("rsi_momentum_hi", 60)
-        self.rsi_momentum_lo = self.pattern_config.get("rsi_momentum_lo", 40)
-        # Volume ratios
-        self.absorption_volume_spike = self.pattern_config.get(
-            "absorption_volume_spike", 1.5
-        )
-        self.stop_hunt_volume_spike = self.pattern_config.get(
-            "stop_hunt_volume_spike", 2.0
-        )
-        self.ignition_volume_spike = self.pattern_config.get(
-            "ignition_volume_spike", 3.0
-        )
-        # Lookbacks
-        self.lookback_breakout = self.pattern_config.get("lookback_breakout", 20)
-        self.lookback_stop_hunt = self.pattern_config.get("lookback_stop_hunt", 15)
-        self.lookback_price_position = self.pattern_config.get(
-            "lookback_price_position", 20
-        )
-        self.lookback_poc_bins = self.pattern_config.get("lookback_poc_bins", 20)
-        self.lookback_poc_window = self.pattern_config.get("lookback_poc_window", 1440)
-        # Support/Resistance parameters
-        self.sr_lookback = self.pattern_config.get("sr_lookback", 50)
-        self.sr_near_pct = self.pattern_config.get("sr_near_pct", 0.003)  # 0.3%
-        self.sr_break_pct = self.pattern_config.get("sr_break_pct", 0.0005)
-        # Liquidity shift parameters
-        self.liquidity_drain_ratio = self.pattern_config.get(
-            "liquidity_drain_ratio", 0.6
-        )
-        self.wall_removal_drop = self.pattern_config.get("wall_removal_drop", 0.5)
-        self.stacking_increase = self.pattern_config.get("stacking_increase", 0.5)
-        # Volume profile dynamics
-        self.poc_shift_threshold = self.pattern_config.get("poc_shift_threshold", 0.002)
-        self.hvn_percentile = self.pattern_config.get("hvn_percentile", 80)
-        # Ignition range thresholds
-        self.ignition_narrow_env = self.pattern_config.get("ignition_narrow_env", 0.02)
-        # Micro breakout window
-        self.micro_breakout_window = self.pattern_config.get("micro_breakout_window", 3)
 
         # Entry prediction parameters
         self.entry_config = self.labeling_config.get("entry_prediction", {})
@@ -129,107 +59,7 @@ class CompositeHMMRegimeSystem:
             0.02,
         )
 
-        # Aggregation configuration for label weights
-        self.aggregation_config = self.labeling_config.get("aggregation", {})
-        self.alpha = float(self.aggregation_config.get("alpha", 1.0))
-        self.beta = float(self.aggregation_config.get("beta", 1.0))
-        self.gamma = float(self.aggregation_config.get("gamma", 1.0))
-        self.weight_min = float(self.aggregation_config.get("w_min", 0.0))
-        self.weight_max = float(self.aggregation_config.get("w_max", 1.0))
-        self.top_k = int(self.aggregation_config.get("top_k", 0))  # 0 = no pruning
-        self.normalize_weights = bool(
-            self.aggregation_config.get("normalize_weights", False)
-        )
-
-        # Applicability coverage constraints for threshold tuning
-        cov_cfg = self.labeling_config.get("coverage", {})
-        self.min_coverage = float(cov_cfg.get("min_coverage", 0.0))
-        self.max_coverage = float(cov_cfg.get("max_coverage", 1.0))
-
-        # Artifacts directory for persisted thresholds/reliability
-        self.artifacts_dir = self.labeling_config.get(
-            "artifacts_dir", "artifacts/meta_labeling"
-        )
-        # Active labels set for complementarity-aware pruning
-        self.active_labels: set[str] = set()
-        # Debug/performance logging controls
-        self.debug_logging: bool = bool(self.labeling_config.get("debug_logging", True))
-        self.perf_logging: bool = bool(self.labeling_config.get("perf_logging", True))
-
         self.is_initialized = False
-
-        # Simple state for evolving patterns
-        self.state: dict[str, Any] = {
-            "compression_streak": 0,
-            "trend_cont_streak": 0,
-        }
-
-        # Throttled logging for analyst label summaries (per timeframe)
-        self.analyst_log_throttle_seconds: int = int(
-            self.labeling_config.get("log_throttle_seconds", 60)
-        )
-        self._last_analyst_log: dict[str, str] = {}
-        self._last_analyst_log_ts: dict[str, float] = {}
-
-        # Canonical label list (single source of truth)
-        self.all_labels: list[str] = [
-            # Trend/price action
-            "STRONG_TREND_CONTINUATION",
-            "EXHAUSTION_REVERSAL",
-            "RANGE_MEAN_REVERSION",
-            "BREAKOUT_SUCCESS",
-            "BREAKOUT_FAILURE",
-            "FLAG_FORMATION",
-            "TRIANGLE_FORMATION",
-            "RECTANGLE_FORMATION",
-            "MOMENTUM_IGNITION",
-            "IGNITION_BAR",
-            "MICRO_MOMENTUM_DIVERGENCE",
-            # Volatility
-            "VOLATILITY_COMPRESSION",
-            "VOLATILITY_EXPANSION",
-            "FLASH_CRASH_PATTERN",
-            # Volume profile & auction
-            "PRICE_AT_POC",
-            "PRICE_REJECTING_VAH",
-            "PRICE_REJECTING_VAL",
-            "LVN_TRANSIT",
-            "POC_SHIFT",
-            "HIGH_VOLUME_NODE_REJECTION",
-            # S/R related
-            "SR_TOUCH",
-            "SR_BOUNCE",
-            "SR_BREAK",
-            "SR_FAKE_BREAK",
-            # Liquidity & market depth
-            "BID_ASK_COMPRESSION",
-            "ICE_BERG_ORDERS",
-            "LIQUIDITY_DRAIN",
-            "BID_WALL_REMOVAL",
-            "OFFER_STACKING",
-            # Traps & false signals
-            "BULL_TRAP",
-            "BEAR_TRAP",
-            "FAKE_BREAKOUT",
-            # Regime transitions
-            "VOLATILITY_REGIME_CHANGE",
-            "TREND_TO_RANGE_TRANSITION",
-            # Risk/conviction
-            "CHOP_WARNING",
-            "FAKE_OUT_RISK_HIGH",
-            "LOW_CONVICTION_SETUP",
-            "HIGH_CONVICTION_SETUP",
-            # Sentiment/momentum refinements
-            "MOMENTUM_ACCELERATION",
-            "MOMENTUM_DECELERATION",
-            "CAPITULATION_SELLING",
-            "EUPHORIC_BUYING",
-            # Order flow/stop dynamics
-            "STOP_HUNT_BELOW_LOW",
-            "STOP_HUNT_ABOVE_HIGH",
-            "PASSIVE_ABSORPTION_BID",
-            "PASSIVE_ABSORPTION_ASK",
-        ]
 
     @handle_errors(
         exceptions=(Exception,),
@@ -239,21 +69,13 @@ class CompositeHMMRegimeSystem:
     async def initialize(self) -> bool:
         """Initialize meta-labeling system."""
         try:
-            self.logger.info("🚀 Initializing composite HMM regime system...")
+            self.logger.info("🚀 Initializing meta-labeling system...")
             self.is_initialized = True
-            try:
-                self.load_activation_thresholds_from_artifacts()
-                self.load_reliability_from_artifacts()
-                self.load_active_labels_from_artifacts()
-            except Exception as e:
-                self.logger.warning(
-                    f"Could not load artifacts during initialization: {e}"
-                )
-            self.logger.info("✅ Composite HMM regime system initialized successfully")
+            self.logger.info("✅ Meta-labeling system initialized successfully")
             return True
-        except Exception as e:
-            self.logger.exception(
-                f"Error initializing meta-labeling system: {e}",
+        except Exception:
+            self.print(
+                initialization_error("❌ Error initializing meta-labeling system: {e}")
             )
             return False
 
@@ -262,95 +84,12 @@ class CompositeHMMRegimeSystem:
         default_return={},
         context="pattern features calculation",
     )
-    def _prepare_returns_data(self, price_data: pd.DataFrame) -> pd.DataFrame:
-        """Convert price data to returns (stationary data) for analysis."""
-        try:
-            if price_data.empty or "close" not in price_data.columns:
-                return pd.DataFrame()
-
-            # Calculate returns from close prices
-            returns_data = price_data.copy()
-            returns_data["returns"] = price_data["close"].pct_change()
-            # Alias to common naming used elsewhere
-            returns_data["close_returns"] = returns_data["returns"]
-
-            # Calculate log returns for better statistical properties
-            returns_data["log_returns"] = np.log(
-                price_data["close"] / price_data["close"].shift(1)
-            )
-
-            # Calculate rolling returns for different periods
-            for period in [5, 10, 20]:
-                returns_data[f"returns_{period}"] = price_data["close"].pct_change(
-                    period
-                )
-                returns_data[f"log_returns_{period}"] = np.log(
-                    price_data["close"] / price_data["close"].shift(period)
-                )
-
-            # Remove NaN values
-            returns_data = returns_data.dropna()
-
-            return returns_data
-
-        except Exception as e:
-            self.logger.exception(f"Error preparing returns data: {e}")
-            return pd.DataFrame()
-
-    def _prepare_stationary_data(
-        self, price_data: pd.DataFrame, volume_data: pd.DataFrame = None
-    ) -> tuple[pd.DataFrame, pd.DataFrame]:
-        """Convert price and volume data to stationary data for analysis."""
-        try:
-            # Prepare price returns
-            returns_data = self._prepare_returns_data(price_data)
-
-            # Prepare volume stationary data
-            stationary_volume = pd.DataFrame(index=price_data.index)
-            if (
-                volume_data is not None
-                and not volume_data.empty
-                and "volume" in volume_data.columns
-            ):
-                volume_series = volume_data["volume"]
-                # Primary stationary representation: percent change (aligns with VectorizedStationarityChecker)
-                with np.errstate(divide="ignore", invalid="ignore"):
-                    stationary_volume["volume_returns"] = volume_series.pct_change()
-                # Log changes for volume (alternative stationary)
-                with np.errstate(divide="ignore", invalid="ignore"):
-                    stationary_volume["volume_log_returns"] = np.log(
-                        volume_series / volume_series.shift(1)
-                    )
-                # Also expose legacy naming
-                stationary_volume["volume_pct_change"] = stationary_volume[
-                    "volume_returns"
-                ]
-
-                # Calculate rolling volume changes
-                for period in [5, 10, 20]:
-                    with np.errstate(divide="ignore", invalid="ignore"):
-                        stationary_volume[f"volume_log_returns_{period}"] = np.log(
-                            volume_series / volume_series.shift(period)
-                        )
-                    stationary_volume[f"volume_pct_change_{period}"] = (
-                        volume_series.pct_change(period)
-                    )
-
-                # Remove NaN values
-                stationary_volume = stationary_volume.dropna()
-
-            return returns_data, stationary_volume
-
-        except Exception as e:
-            self.logger.exception(f"Error preparing stationary data: {e}")
-            return pd.DataFrame(), pd.DataFrame()
-
     async def _calculate_pattern_features(
         self,
         price_data: pd.DataFrame,
         volume_data: pd.DataFrame,
     ) -> dict[str, Any]:
-        """Calculate comprehensive pattern features for label generation using returns data."""
+        """Calculate comprehensive pattern features for label generation."""
         try:
             if price_data.empty:
                 self.logger.warning(
@@ -385,75 +124,37 @@ class CompositeHMMRegimeSystem:
                 )
                 return {}
 
-            # Prepare stationary data for analysis
-            returns_data, stationary_volume = self._prepare_stationary_data(
-                price_data, volume_data
-            )
-            if returns_data.empty:
-                self.logger.warning(
-                    "Could not prepare returns data, using raw price data"
-                )
-                returns_data = price_data
-            if stationary_volume.empty:
-                self.logger.warning(
-                    "Could not prepare stationary volume data, using raw volume data"
-                )
-                stationary_volume = volume_data
-
             features = {}
 
-            # Technical indicators with error handling (using raw OHLCV data)
+            # Technical indicators with error handling
             try:
                 features.update(self._calculate_technical_indicators(price_data))
-            except Exception as e:
-                self.logger.exception(f"Error calculating technical indicators: {e}")
-
-            # Volume analysis with error handling (using stationary volume data)
-            try:
-                features.update(self._calculate_volume_features(stationary_volume))
-            except Exception as e:
-                self.logger.exception(f"Error calculating volume features: {e}")
-
-            # Price action patterns with error handling (using returns)
-            try:
-                features.update(self._calculate_price_action_patterns(returns_data))
-            except Exception as e:
-                self.logger.exception(f"Error calculating price action patterns: {e}")
-
-            # Volatility patterns with error handling (using returns)
-            try:
-                features.update(self._calculate_volatility_patterns(returns_data))
-            except Exception as e:
-                self.logger.exception(f"Error calculating volatility patterns: {e}")
-
-            # Momentum patterns with error handling (using returns)
-            try:
-                features.update(self._calculate_momentum_patterns(returns_data))
-            except Exception as e:
-                self.logger.exception(f"Error calculating momentum patterns: {e}")
-
-            # Support/Resistance levels (using raw price data for levels)
-            try:
-                features.update(self._calculate_sr_levels(price_data))
-            except Exception as e:
-                self.logger.exception(f"Error calculating S/R levels: {e}")
-
-            # Expose current values for entry and meta usage
-            try:
-                features["current_price"] = float(price_data["close"].iloc[-1])
             except Exception:
-                pass
+                self.print(error("Error calculating technical indicators: {e}"))
+
+            # Volume analysis with error handling
             try:
-                if "volume" in volume_data.columns:
-                    vol_ma10 = (
-                        volume_data["volume"].rolling(10, min_periods=1).mean().iloc[-1]
-                    )
-                    last_vol = volume_data["volume"].iloc[-1]
-                    features["volume_spike"] = (
-                        float(last_vol / vol_ma10) if vol_ma10 else 1.0
-                    )
+                features.update(self._calculate_volume_features(volume_data))
             except Exception:
-                pass
+                self.print(error("Error calculating volume features: {e}"))
+
+            # Price action patterns with error handling
+            try:
+                features.update(self._calculate_price_action_patterns(price_data))
+            except Exception:
+                self.print(error("Error calculating price action patterns: {e}"))
+
+            # Volatility patterns with error handling
+            try:
+                features.update(self._calculate_volatility_patterns(price_data))
+            except Exception:
+                self.print(error("Error calculating volatility patterns: {e}"))
+
+            # Momentum patterns with error handling
+            try:
+                features.update(self._calculate_momentum_patterns(price_data))
+            except Exception:
+                self.print(error("Error calculating momentum patterns: {e}"))
 
             return features
 
@@ -486,16 +187,8 @@ class CompositeHMMRegimeSystem:
             delta = data["close"].diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            # Handle division by zero in RSI: if loss==0, set rs to a large finite value
-            rs = (gain / loss.replace(0, np.nan)).replace([np.inf, -np.inf], np.nan)
-            rs = rs.clip(upper=1e6)  # cap extreme ratios to avoid inf
-            rsi_series = 100 - (100 / (1 + rs))
-            if rsi_series.replace([np.inf, -np.inf], np.nan).notna().any():
-                features["rsi"] = float(
-                    rsi_series.replace([np.inf, -np.inf], np.nan).fillna(100.0).iloc[-1]
-                )
-            else:
-                features["rsi"] = 50
+            rs = gain / loss
+            features["rsi"] = (100 - (100 / (1 + rs))).iloc[-1] if not rs.empty else 50
 
             # MACD
             ema12 = data["close"].ewm(span=12).mean()
@@ -540,248 +233,120 @@ class CompositeHMMRegimeSystem:
                 if len(data) >= 14
                 else true_range.iloc[-1]
             )
-            # Extended ATR windows
-            try:
-                features["atr_20"] = (
-                    true_range.rolling(20).mean().iloc[-1]
-                    if len(data) >= 20
-                    else features["atr"]
-                )
-                features["atr_100"] = (
-                    true_range.rolling(100).mean().iloc[-1]
-                    if len(data) >= 100
-                    else features["atr_20"]
-                )
-            except Exception:
-                features.setdefault("atr_20", features.get("atr", 0.0))
-                features.setdefault("atr_100", features.get("atr_20", 0.0))
-
-            # ADX(14)
-            try:
-                up_move = data["high"].diff()
-                down_move = -data["low"].diff()
-                plus_dm = ((up_move > down_move) & (up_move > 0)).astype(
-                    float
-                ) * up_move
-                minus_dm = ((down_move > up_move) & (down_move > 0)).astype(
-                    float
-                ) * down_move
-                atr14 = true_range.rolling(14).mean()
-                plus_di = 100 * (plus_dm.rolling(14).mean() / atr14.replace(0, np.nan))
-                minus_di = 100 * (
-                    minus_dm.rolling(14).mean() / atr14.replace(0, np.nan)
-                )
-                dx = 100 * (
-                    np.abs(plus_di - minus_di) / (plus_di + minus_di).replace(0, np.nan)
-                )
-                adx = (
-                    dx.rolling(14).mean().replace([np.inf, -np.inf], np.nan).fillna(20)
-                )
-                features["adx"] = float(adx.iloc[-1])
-            except Exception:
-                features["adx"] = 20.0
 
             return features
 
         except Exception as e:
-            self.logger.exception(f"Error calculating technical indicators: {e}")
+            self.logger.error(f"Error calculating technical indicators: {e}")
             return {}
 
     def _calculate_volume_features(self, data: pd.DataFrame) -> dict[str, float]:
-        """Calculate volume-based features using stationary data."""
+        """Calculate volume-based features."""
         try:
             features = {}
 
-            # Prefer percent-change stationary series if available
-            ret_series = None
-            if "volume_returns" in data.columns:
-                ret_series = data["volume_returns"].dropna()
-            elif "volume_log_returns" in data.columns:
-                ret_series = data["volume_log_returns"].dropna()
-            elif "volume_pct_change" in data.columns:
-                ret_series = data["volume_pct_change"].dropna()
-
-            if ret_series is not None and len(ret_series) >= 5:
-                # Volume trend using stationary returns
+            if "volume" in data.columns:
+                features["volume_sma"] = (
+                    data["volume"].rolling(20).mean().iloc[-1]
+                    if len(data) >= 20
+                    else data["volume"].iloc[-1]
+                )
+                features["volume_ratio"] = (
+                    data["volume"].iloc[-1] / features["volume_sma"]
+                    if features["volume_sma"] > 0
+                    else 1.0
+                )
                 features["volume_trend"] = (
-                    ret_series.rolling(10).mean().iloc[-1]
-                    if len(ret_series) >= 10
-                    else ret_series.mean()
-                )
-
-                # Volume volatility (stationary)
-                features["volume_volatility"] = (
-                    ret_series.rolling(20).std().iloc[-1]
-                    if len(ret_series) >= 20
-                    else ret_series.std()
-                )
-
-                # Volume momentum (stationary)
-                features["volume_momentum"] = (
-                    ret_series.rolling(5).mean().iloc[-1]
-                    if len(ret_series) >= 5
-                    else ret_series.mean()
-                )
-
-                # Volume acceleration (stationary)
-                features["volume_acceleration"] = (
-                    ret_series.rolling(5).mean().diff().iloc[-1]
-                    if len(ret_series) >= 5
+                    data["volume"].rolling(10).mean().diff().iloc[-1]
+                    if len(data) >= 10
                     else 0
                 )
 
-                # If an explicit pct-change column exists, expose last value
-                if "volume_pct_change" in data.columns:
-                    vpc = data["volume_pct_change"].dropna()
-                    features["volume_pct_change"] = vpc.iloc[-1] if len(vpc) > 0 else 0
-
-            elif "volume" in data.columns:
-                # Fallback: compute log returns from raw volume
-                pass
+                # VWAP
+                vwap = (data["close"] * data["volume"]).rolling(20).sum() / data[
+                    "volume"
+                ].rolling(20).sum()
+                features["vwap"] = (
+                    vwap.iloc[-1] if not vwap.empty else data["close"].iloc[-1]
+                )
+                features["price_vwap_ratio"] = (
+                    data["close"].iloc[-1] / features["vwap"]
+                    if features["vwap"] > 0
+                    else 1.0
+                )
 
             return features
 
         except Exception as e:
-            self.logger.exception(f"Error calculating volume features: {e}")
+            self.logger.error(f"Error calculating volume features: {e}")
             return {}
 
     def _calculate_price_action_patterns(self, data: pd.DataFrame) -> dict[str, float]:
-        """Calculate price action pattern features using returns data."""
+        """Calculate price action pattern features."""
         try:
             features = {}
 
-            # Use returns data if available, otherwise fall back to price data
-            if "returns" in data.columns:
-                returns = data["returns"]
-                # For returns-based analysis, we focus on returns patterns rather than price levels
-                features["returns_momentum_5"] = (
-                    returns.rolling(5).mean().iloc[-1] if len(returns) >= 5 else 0
-                )
-                features["returns_momentum_10"] = (
-                    returns.rolling(10).mean().iloc[-1] if len(returns) >= 10 else 0
-                )
-                features["returns_acceleration"] = (
-                    returns.rolling(5).mean().diff().iloc[-1]
-                    if len(returns) >= 5
-                    else 0
-                )
-                # Aliases expected downstream by detectors
-                features["price_momentum_5"] = features["returns_momentum_5"]
-                features["price_momentum_10"] = features["returns_momentum_10"]
-                features["price_acceleration"] = features["returns_acceleration"]
+            # Support and resistance levels
+            features["recent_high"] = (
+                data["high"].rolling(20).max().iloc[-1]
+                if len(data) >= 20
+                else data["high"].iloc[-1]
+            )
+            features["recent_low"] = (
+                data["low"].rolling(20).min().iloc[-1]
+                if len(data) >= 20
+                else data["low"].iloc[-1]
+            )
+            features["price_position"] = (
+                (data["close"].iloc[-1] - features["recent_low"])
+                / (features["recent_high"] - features["recent_low"])
+                if features["recent_high"] != features["recent_low"]
+                else 0.5
+            )
 
-                # Returns-based position (relative to recent returns range)
-                if len(returns) >= 20:
-                    recent_high = returns.rolling(20).max().iloc[-1]
-                    recent_low = returns.rolling(20).min().iloc[-1]
-                    current_return = returns.iloc[-1]
-                    features["returns_position"] = (
-                        (current_return - recent_low) / (recent_high - recent_low)
-                        if recent_high != recent_low
-                        else 0.5
-                    )
-                else:
-                    features["returns_position"] = 0.5
+            # Price momentum
+            features["price_momentum_5"] = (
+                data["close"].pct_change(5).iloc[-1] if len(data) >= 5 else 0
+            )
+            features["price_momentum_10"] = (
+                data["close"].pct_change(10).iloc[-1] if len(data) >= 10 else 0
+            )
+            features["price_acceleration"] = (
+                data["close"].pct_change(5).diff().iloc[-1] if len(data) >= 5 else 0
+            )
 
-            elif "close" in data.columns:
-                # Fallback to price-based patterns if returns not available
-                required_columns = ["open", "high", "low", "close"]
-                if not all(col in data.columns for col in required_columns):
-                    missing_cols = [
-                        col for col in required_columns if col not in data.columns
-                    ]
-                    self.logger.warning(
-                        f"Missing required columns for price action patterns: {missing_cols}"
-                    )
-                    return features
-
-                # Support and resistance levels
-                features["recent_high"] = (
-                    data["high"].rolling(20).max().iloc[-1]
-                    if len(data) >= 20
-                    else data["high"].iloc[-1]
-                )
-                features["recent_low"] = (
-                    data["low"].rolling(20).min().iloc[-1]
-                    if len(data) >= 20
-                    else data["low"].iloc[-1]
-                )
-                features["price_position"] = (
-                    (data["close"].iloc[-1] - features["recent_low"])
-                    / (features["recent_high"] - features["recent_low"])
-                    if features["recent_high"] != features["recent_low"]
-                    else 0.5
-                )
-
-                # Price momentum
-                features["price_momentum_5"] = (
-                    data["close"].pct_change(5).iloc[-1] if len(data) >= 5 else 0
-                )
-                features["price_momentum_10"] = (
-                    data["close"].pct_change(10).iloc[-1] if len(data) >= 10 else 0
-                )
-                features["price_acceleration"] = (
-                    data["close"].pct_change(5).diff().iloc[-1] if len(data) >= 5 else 0
-                )
-
-                # Candlestick patterns
-                features["body_size"] = (
-                    np.abs(data["close"].iloc[-1] - data["open"].iloc[-1])
-                    / data["close"].iloc[-1]
-                )
-                features["upper_shadow"] = (
-                    data["high"].iloc[-1]
-                    - np.maximum(data["open"].iloc[-1], data["close"].iloc[-1])
-                ) / data["close"].iloc[-1]
-                features["lower_shadow"] = (
-                    np.minimum(data["open"].iloc[-1], data["close"].iloc[-1])
-                    - data["low"].iloc[-1]
-                ) / data["close"].iloc[-1]
+            # Candlestick patterns
+            features["body_size"] = (
+                np.abs(data["close"].iloc[-1] - data["open"].iloc[-1])
+                / data["close"].iloc[-1]
+            )
+            features["upper_shadow"] = (
+                data["high"].iloc[-1]
+                - np.maximum(data["open"].iloc[-1], data["close"].iloc[-1])
+            ) / data["close"].iloc[-1]
+            features["lower_shadow"] = (
+                np.minimum(data["open"].iloc[-1], data["close"].iloc[-1])
+                - data["low"].iloc[-1]
+            ) / data["close"].iloc[-1]
 
             return features
 
-        except Exception as e:
-            self.logger.exception(f"Error calculating price action patterns: {e}")
+        except Exception:
+            self.print(error("Error calculating price action patterns: {e}"))
             return {}
 
     def _calculate_volatility_patterns(self, data: pd.DataFrame) -> dict[str, float]:
-        """Calculate volatility pattern features using returns data."""
+        """Calculate volatility pattern features."""
         try:
             features = {}
 
-            # Use returns data if available, otherwise fall back to price data
-            if "returns" in data.columns:
-                returns = data["returns"]
-            elif "log_returns" in data.columns:
-                returns = data["log_returns"]
-            elif "close_returns" in data.columns:
-                returns = data["close_returns"]
-            elif "close" in data.columns:
-                returns = data["close"].pct_change()
-            else:
-                self.logger.warning(
-                    "No returns or close data available for volatility patterns"
-                )
-                return features
-
-            # Remove NaN values
-            returns = returns.dropna()
-            if len(returns) < 10:
-                self.logger.warning(
-                    "Insufficient returns data for volatility calculation"
-                )
-                return features
-
-            # Volatility measures using returns
+            # Volatility measures
+            returns = data["close"].pct_change()
             features["volatility_20"] = (
-                returns.rolling(20).std().iloc[-1]
-                if len(returns) >= 20
-                else returns.std()
+                returns.rolling(20).std().iloc[-1] if len(data) >= 20 else returns.std()
             )
             features["volatility_10"] = (
-                returns.rolling(10).std().iloc[-1]
-                if len(returns) >= 10
-                else returns.std()
+                returns.rolling(10).std().iloc[-1] if len(data) >= 10 else returns.std()
             )
             features["volatility_ratio"] = (
                 features["volatility_10"] / features["volatility_20"]
@@ -794,503 +359,48 @@ class CompositeHMMRegimeSystem:
                 1 if features["volatility_20"] > self.volatility_threshold else 0
             )
 
-            # Returns-based Bollinger Band width (using returns instead of price)
-            if len(returns) >= 20:
-                returns_sma20 = returns.rolling(20).mean()
-                returns_std20 = returns.rolling(20).std()
-                bb_width = (returns_sma20 + (returns_std20 * 2)) - (
-                    returns_sma20 - (returns_std20 * 2)
-                )
-                features["bb_width"] = (
-                    bb_width.iloc[-1] / returns_sma20.iloc[-1]
-                    if not returns_sma20.empty and returns_sma20.iloc[-1] > 0
-                    else 0
-                )
-            else:
-                features["bb_width"] = 0
+            # Bollinger Band width
+            sma20 = data["close"].rolling(20).mean()
+            std20 = data["close"].rolling(20).std()
+            bb_width = (sma20 + (std20 * 2)) - (sma20 - (std20 * 2))
+            features["bb_width"] = (
+                bb_width.iloc[-1] / sma20.iloc[-1]
+                if not sma20.empty and sma20.iloc[-1] > 0
+                else 0
+            )
 
             return features
 
-        except Exception as e:
-            self.logger.exception(f"Error calculating volatility patterns: {e}")
+        except Exception:
+            self.print(error("Error calculating volatility patterns: {e}"))
             return {}
 
-    def _calculate_momentum_patterns(self, data: pd.DataFrame) -> dict[str, Any]:
-        """Calculate momentum pattern features using returns data."""
+    def _calculate_momentum_patterns(self, data: pd.DataFrame) -> dict[str, float]:
+        """Calculate momentum pattern features."""
         try:
             features = {}
 
-            # Use returns data if available, otherwise fall back to price data
-            if "returns" in data.columns:
-                returns = data["returns"]
-            elif "log_returns" in data.columns:
-                returns = data["log_returns"]
-            elif "close_returns" in data.columns:
-                returns = data["close_returns"]
-            elif "close" in data.columns:
-                returns = data["close"].pct_change()
-            else:
-                self.logger.warning(
-                    "No returns or close data available for momentum patterns"
-                )
-                return {"MOMENTUM_IGNITION": 0}
-
-            # Remove NaN values
-            returns = returns.dropna()
-            if len(returns) < 5:
-                self.logger.warning(
-                    "Insufficient returns data for momentum calculation"
-                )
-                return {"MOMENTUM_IGNITION": 0}
-
-            # Returns-based momentum
+            # RSI momentum
             features["rsi_momentum"] = (
-                returns.rolling(5).mean().iloc[-1] if len(returns) >= 5 else 0
+                data["close"].pct_change(5).iloc[-1] if len(data) >= 5 else 0
             )
 
-            # MACD momentum using returns
-            ema12 = returns.ewm(span=12).mean()
-            ema26 = returns.ewm(span=26).mean()
+            # MACD momentum
+            ema12 = data["close"].ewm(span=12).mean()
+            ema26 = data["close"].ewm(span=26).mean()
             macd = ema12 - ema26
             features["macd_momentum"] = macd.diff().iloc[-1] if not macd.empty else 0
 
-            # Returns momentum regime
+            # Price momentum
             features["momentum_regime"] = (
                 1 if abs(features["rsi_momentum"]) > self.momentum_threshold else 0
             )
 
-            # Additional returns-based momentum features
-            features["returns_momentum_5"] = (
-                returns.rolling(5).mean().iloc[-1] if len(returns) >= 5 else 0
-            )
-            features["returns_momentum_10"] = (
-                returns.rolling(10).mean().iloc[-1] if len(returns) >= 10 else 0
-            )
-            features["returns_acceleration"] = (
-                returns.rolling(5).mean().diff().iloc[-1] if len(returns) >= 5 else 0
-            )
-
             return features
 
-        except Exception as e:
-            self.logger.exception(f"Error calculating momentum patterns: {e}")
-            return {"MOMENTUM_IGNITION": 0}
-
-    def _detect_additional_analyst_patterns(
-        self,
-        data: pd.DataFrame,
-        features: dict[str, Any],
-        order_flow_data: pd.DataFrame | None = None,
-    ) -> dict[str, Any]:
-        """Detect additional analyst patterns requested by user.
-
-        Uses the centralized 'features' dict; no re-computation.
-        """
-        try:
-            patterns: dict[str, int] = {}
-
-            # Aliases
-            close = data["close"]
-            high = data["high"]
-            low = data["low"]
-            open_ = data["open"]
-            vol = data.get("volume", pd.Series(index=data.index, dtype=float))
-
-            # Derived helpers from features
-            bb_pos = float(features.get("bb_position", 0.5))
-            vol_ratio = float(features.get("volume_ratio", 1.0))
-            vol_20 = float(features.get("volatility_20", 0.0))
-            rng10 = (
-                float(
-                    (high.tail(10).max() - low.tail(10).min())
-                    / max(1e-12, close.iloc[-1])
-                )
-                if len(close) >= 10
-                else 0.0
-            )
-            momentum_5 = float(features.get("price_momentum_5", 0.0))
-            momentum_10 = float(features.get("price_momentum_10", 0.0))
-
-            # 1) ORDERBOOK_IMBALANCE_STRONG_* (requires order_flow_data; fallback heuristics set 0)
-            patterns["ORDERBOOK_IMBALANCE_STRONG_BID"] = 0
-            patterns["ORDERBOOK_IMBALANCE_STRONG_ASK"] = 0
-
-            # 2) PASSIVE_ABSORPTION_* (proxy: large volume delta with small progress)
-            try:
-                # Price progress proxy over last N bars
-                N = 5
-                progress = (
-                    abs(float(close.iloc[-1] - close.iloc[-N]))
-                    / max(1e-12, float(close.iloc[-N]))
-                    if len(close) >= N
-                    else 0.0
-                )
-                vol_spike = vol_ratio > max(1.5, self.volume_threshold)
-                patterns["PASSIVE_ABSORPTION_BID"] = (
-                    1 if (vol_spike and progress < 0.001 and momentum_5 > 0) else 0
-                )
-                patterns["PASSIVE_ABSORPTION_ASK"] = (
-                    1 if (vol_spike and progress < 0.001 and momentum_5 < 0) else 0
-                )
-            except Exception:
-                patterns["PASSIVE_ABSORPTION_BID"] = 0
-                patterns["PASSIVE_ABSORPTION_ASK"] = 0
-
-            # 3) STOP_HUNT_* (poke beyond prior extreme and close back inside)
-            try:
-                M = 15
-                prior_recent_low = (
-                    float(low.rolling(M, min_periods=1).min().shift(1).iloc[-1])
-                    if len(low) >= 2
-                    else float(low.iloc[-1])
-                )
-                prior_recent_high = (
-                    float(high.rolling(M, min_periods=1).max().shift(1).iloc[-1])
-                    if len(high) >= 2
-                    else float(high.iloc[-1])
-                )
-                broke_low = (
-                    float(low.iloc[-1]) < prior_recent_low
-                    and float(close.iloc[-1]) > prior_recent_low
-                )
-                broke_high = (
-                    float(high.iloc[-1]) > prior_recent_high
-                    and float(close.iloc[-1]) < prior_recent_high
-                )
-                vol_spike2 = vol_ratio > 2.0
-                patterns["STOP_HUNT_BELOW_LOW"] = 1 if (broke_low and vol_spike2) else 0
-                patterns["STOP_HUNT_ABOVE_HIGH"] = (
-                    1 if (broke_high and vol_spike2) else 0
-                )
-            except Exception:
-                patterns["STOP_HUNT_BELOW_LOW"] = 0
-                patterns["STOP_HUNT_ABOVE_HIGH"] = 0
-
-            # 4) PRICE_AT_POC / REJECTING_VAH/VAL / LVN_TRANSIT (session profile proxy)
-            # Simple proxy without full profile: use rolling POC as 20-bin histogram on last 1d
-            try:
-                window = min(1440, len(close))
-                if window >= 50:
-                    segment = close.tail(window).values
-                    bins = 20
-                    hist, edges = np.histogram(segment, bins=bins)
-                    poc_idx = int(np.argmax(hist))
-                    poc = float((edges[poc_idx] + edges[poc_idx + 1]) / 2.0)
-                    current = float(close.iloc[-1])
-                    within = abs(current - poc) / max(1e-12, current) <= 0.0005
-                    patterns["PRICE_AT_POC"] = 1 if within else 0
-                    # Define VA as central 70% of mass
-                    cdf = np.cumsum(hist) / max(1, np.sum(hist))
-                    vah_idx = int(np.searchsorted(cdf, 0.85))
-                    val_idx = int(np.searchsorted(cdf, 0.15))
-                    vah = float(edges[min(vah_idx, bins - 1)])
-                    val = float(edges[max(val_idx, 0)])
-                    # Reject VAH/VAL: intrabar breach and close back inside
-                    rejecting_vah = (float(high.iloc[-1]) > vah) and (
-                        float(close.iloc[-1]) < vah
-                    )
-                    rejecting_val = (float(low.iloc[-1]) < val) and (
-                        float(close.iloc[-1]) > val
-                    )
-                    patterns["PRICE_REJECTING_VAH"] = 1 if rejecting_vah else 0
-                    patterns["PRICE_REJECTING_VAL"] = 1 if rejecting_val else 0
-                    # LVN transit: current in low histogram bin region
-                    lvn_threshold = np.percentile(hist, 20)
-                    current_bin = int(np.searchsorted(edges, current) - 1)
-                    patterns["LVN_TRANSIT"] = (
-                        1
-                        if (
-                            0 <= current_bin < len(hist)
-                            and hist[current_bin] <= lvn_threshold
-                        )
-                        else 0
-                    )
-                else:
-                    patterns["PRICE_AT_POC"] = 0
-                    patterns["PRICE_REJECTING_VAH"] = 0
-                    patterns["PRICE_REJECTING_VAL"] = 0
-                    patterns["LVN_TRANSIT"] = 0
-            except Exception:
-                patterns["PRICE_AT_POC"] = 0
-                patterns["PRICE_REJECTING_VAH"] = 0
-                patterns["PRICE_REJECTING_VAL"] = 0
-                patterns["LVN_TRANSIT"] = 0
-
-            # 5) IGNITION_BAR
-            try:
-                rng = (
-                    float((high.iloc[-1] - low.iloc[-1]) / max(1e-12, close.iloc[-1]))
-                    if len(close)
-                    else 0.0
-                )
-                avg_rng = (
-                    float((high - low).tail(20).mean() / max(1e-12, close.iloc[-1]))
-                    if len(close) >= 20
-                    else rng
-                )
-                vol_spike3 = vol_ratio > 3.0
-                patterns["IGNITION_BAR"] = (
-                    1 if (vol_spike3 and rng > 2 * avg_rng and rng10 < 0.02) else 0
-                )
-            except Exception:
-                patterns["IGNITION_BAR"] = 0
-
-            # 6) MICRO_MOMENTUM_DIVERGENCE
-            try:
-                made_higher_high = len(high) >= 10 and float(high.iloc[-1]) > float(
-                    high.iloc[-10:-1].max()
-                )
-                # Compute a short RSI window to detect micro divergence
-                delta = close.diff()
-                gain = delta.where(delta > 0, 0.0).rolling(5, min_periods=1).mean()
-                loss = (-delta.where(delta < 0, 0.0)).rolling(5, min_periods=1).mean()
-                with np.errstate(divide="ignore", invalid="ignore"):
-                    rs = gain / loss.replace(0, np.nan)
-                    rsi_short_series = 100 - (100 / (1 + rs))
-                rsi_short_series = rsi_short_series.fillna(50)
-                rsi_short_now = (
-                    float(rsi_short_series.iloc[-1]) if len(rsi_short_series) else 50.0
-                )
-                rsi_window_max = (
-                    float(
-                        rsi_short_series.rolling(10, min_periods=2)
-                        .max()
-                        .shift(1)
-                        .iloc[-1]
-                    )
-                    if len(rsi_short_series) >= 2
-                    else 50.0
-                )
-                patterns["MICRO_MOMENTUM_DIVERGENCE"] = (
-                    1 if (made_higher_high and rsi_short_now < rsi_window_max) else 0
-                )
-            except Exception:
-                patterns["MICRO_MOMENTUM_DIVERGENCE"] = 0
-
-            # 7) S/R proximity labels (using rolling extremes as SR proxies)
-            try:
-                sr_res = float(features.get("resistance_level", high.max()))
-                sr_sup = float(features.get("support_level", low.min()))
-                cp = float(close.iloc[-1])
-                near_res = abs(cp - sr_res) / max(1e-12, cp) <= self.sr_near_pct
-                near_sup = abs(cp - sr_sup) / max(1e-12, cp) <= self.sr_near_pct
-                patterns["SR_TOUCH"] = 1 if (near_res or near_sup) else 0
-                # Provide distances for ML models to infer bounce/break nuances downstream
-                patterns["SR_DISTANCE_RESISTANCE_PCT"] = float(
-                    abs(cp - sr_res) / max(1e-12, cp)
-                )
-                patterns["SR_DISTANCE_SUPPORT_PCT"] = float(
-                    abs(cp - sr_sup) / max(1e-12, cp)
-                )
-            except Exception:
-                patterns["SR_TOUCH"] = patterns.get("SR_TOUCH", 0)
-                patterns["SR_DISTANCE_RESISTANCE_PCT"] = patterns.get(
-                    "SR_DISTANCE_RESISTANCE_PCT", 1.0
-                )
-                patterns["SR_DISTANCE_SUPPORT_PCT"] = patterns.get(
-                    "SR_DISTANCE_SUPPORT_PCT", 1.0
-                )
-
-            # 8) Liquidity shifts & market depth (requires order_flow_data; use proxies if limited)
-            try:
-                # LIQUIDITY_DRAIN: total depth falls below x% of its rolling mean
-                if order_flow_data is not None and {"bid_depth", "ask_depth"}.issubset(
-                    order_flow_data.columns
-                ):
-                    bd = (
-                        order_flow_data["bid_depth"]
-                        .reindex(close.index, method="ffill")
-                        .fillna(0)
-                    )
-                    ad = (
-                        order_flow_data["ask_depth"]
-                        .reindex(close.index, method="ffill")
-                        .fillna(0)
-                    )
-                    tot = bd + ad
-                    ma = tot.rolling(20, min_periods=5).mean()
-                    drain = (
-                        float(tot.iloc[-1] / max(1e-12, ma.iloc[-1]))
-                        < self.liquidity_drain_ratio
-                    )
-                    patterns["LIQUIDITY_DRAIN"] = 1 if drain else 0
-                    # BID_WALL_REMOVAL: large drop in bid wall size
-                    if "bid_size" in order_flow_data.columns:
-                        bs = (
-                            order_flow_data["bid_size"]
-                            .reindex(close.index, method="ffill")
-                            .fillna(0)
-                        )
-                        drop = bs.diff().iloc[-1] < -abs(
-                            bs.rolling(10, min_periods=3).mean().iloc[-1]
-                            * self.wall_removal_drop
-                        )
-                        patterns["BID_WALL_REMOVAL"] = 1 if drop else 0
-                    else:
-                        patterns["BID_WALL_REMOVAL"] = 0
-                    # OFFER_STACKING: rapid increase in ask depth
-                    if "ask_size" in order_flow_data.columns:
-                        aS = (
-                            order_flow_data["ask_size"]
-                            .reindex(close.index, method="ffill")
-                            .fillna(0)
-                        )
-                        inc = aS.diff().iloc[-1] > abs(
-                            aS.rolling(10, min_periods=3).mean().iloc[-1]
-                            * self.stacking_increase
-                        )
-                        patterns["OFFER_STACKING"] = 1 if inc else 0
-                    else:
-                        patterns["OFFER_STACKING"] = 0
-                else:
-                    patterns.setdefault("LIQUIDITY_DRAIN", 0)
-                    patterns.setdefault("BID_WALL_REMOVAL", 0)
-                    patterns.setdefault("OFFER_STACKING", 0)
-            except Exception:
-                patterns["LIQUIDITY_DRAIN"] = patterns.get("LIQUIDITY_DRAIN", 0)
-                patterns["BID_WALL_REMOVAL"] = patterns.get("BID_WALL_REMOVAL", 0)
-                patterns["OFFER_STACKING"] = patterns.get("OFFER_STACKING", 0)
-
-            # 9) False signals & traps
-            try:
-                recent_high = (
-                    float(
-                        high.rolling(self.lookback_breakout, min_periods=5)
-                        .max()
-                        .shift(1)
-                        .iloc[-1]
-                    )
-                    if len(high)
-                    else float(high.iloc[-1])
-                )
-                recent_low = (
-                    float(
-                        low.rolling(self.lookback_breakout, min_periods=5)
-                        .min()
-                        .shift(1)
-                        .iloc[-1]
-                    )
-                    if len(low)
-                    else float(low.iloc[-1])
-                )
-                broke_up = float(close.iloc[-1]) > recent_high
-                broke_dn = float(close.iloc[-1]) < recent_low
-                mom = float(features.get("price_momentum_5", 0.0))
-                # Trap if break occurs but momentum negative (bull trap) or positive (bear trap) and reversal fast
-                rev5 = float(close.pct_change(5).iloc[-1]) if len(close) >= 6 else 0.0
-                patterns["BULL_TRAP"] = 1 if (broke_up and mom < 0 and rev5 < 0) else 0
-                patterns["BEAR_TRAP"] = 1 if (broke_dn and mom > 0 and rev5 > 0) else 0
-                # Fake breakout: break then bb_position retreats to mid within 5 bars
-                bb_pos = float(features.get("bb_position", 0.5))
-                patterns["FAKE_BREAKOUT"] = (
-                    1 if ((broke_up or broke_dn) and 0.3 < bb_pos < 0.7) else 0
-                )
-            except Exception:
-                patterns["BULL_TRAP"] = patterns.get("BULL_TRAP", 0)
-                patterns["BEAR_TRAP"] = patterns.get("BEAR_TRAP", 0)
-                patterns["FAKE_BREAKOUT"] = patterns.get("FAKE_BREAKOUT", 0)
-
-            # 10) Volume profile & auction dynamics extensions
-            try:
-                # POC_SHIFT: change in POC level vs prior window
-                window = min(self.lookback_poc_window, len(close))
-                if window >= 50:
-                    seg = close.tail(window).values
-                    hist, edges = np.histogram(seg, bins=self.lookback_poc_bins)
-                    poc_idx = int(np.argmax(hist))
-                    poc = float((edges[poc_idx] + edges[poc_idx + 1]) / 2.0)
-                    # Prior window
-                    prev_seg = (
-                        close.tail(window + 50).head(window).values
-                        if len(close) >= window + 50
-                        else seg
-                    )
-                    prev_hist, prev_edges = np.histogram(
-                        prev_seg, bins=self.lookback_poc_bins
-                    )
-                    prev_poc_idx = int(np.argmax(prev_hist))
-                    prev_poc = float(
-                        (prev_edges[prev_poc_idx] + prev_edges[prev_poc_idx + 1]) / 2.0
-                    )
-                    patterns["POC_SHIFT"] = (
-                        1
-                        if (
-                            abs(poc - prev_poc) / max(1e-12, prev_poc)
-                            >= self.poc_shift_threshold
-                        )
-                        else 0
-                    )
-                    # HVN rejection: current price near HVN bin edge then reverse
-                    hvn_cut = np.percentile(hist, self.hvn_percentile)
-                    current = float(close.iloc[-1])
-                    cur_bin = int(np.searchsorted(edges, current) - 1)
-                    hvn_hit = 0 <= cur_bin < len(hist) and hist[cur_bin] >= hvn_cut
-                    patterns["HIGH_VOLUME_NODE_REJECTION"] = (
-                        1
-                        if (
-                            hvn_hit
-                            and (
-                                abs(
-                                    float(close.pct_change(3).iloc[-1])
-                                    if len(close) >= 4
-                                    else 0.0
-                                )
-                                > 0
-                            )
-                        )
-                        else 0
-                    )
-                else:
-                    patterns.setdefault("POC_SHIFT", 0)
-                    patterns.setdefault("HIGH_VOLUME_NODE_REJECTION", 0)
-            except Exception:
-                patterns["POC_SHIFT"] = patterns.get("POC_SHIFT", 0)
-                patterns["HIGH_VOLUME_NODE_REJECTION"] = patterns.get(
-                    "HIGH_VOLUME_NODE_REJECTION", 0
-                )
-
-            # 11) Market regime transitions
-            try:
-                vol20 = float(features.get("volatility_20", 0.0))
-                vol10 = float(features.get("volatility_10", 0.0))
-                prev_regime = int(self.state.get("vol_regime", 0))
-                curr_regime = 1 if vol20 > self.volatility_threshold else 0
-                patterns["VOLATILITY_REGIME_CHANGE"] = (
-                    1 if curr_regime != prev_regime else 0
-                )
-                self.state["vol_regime"] = curr_regime
-                # Trend-to-range transition: ADX falls and bb_width expands into mid
-                adx = float(features.get("adx", 20.0))
-                bb_width = float(features.get("bb_width", 0.0))
-                patterns["TREND_TO_RANGE_TRANSITION"] = (
-                    1 if (adx < 20 and bb_width > self.bb_width_compression) else 0
-                )
-            except Exception:
-                patterns["VOLATILITY_REGIME_CHANGE"] = patterns.get(
-                    "VOLATILITY_REGIME_CHANGE", 0
-                )
-                patterns["TREND_TO_RANGE_TRANSITION"] = patterns.get(
-                    "TREND_TO_RANGE_TRANSITION", 0
-                )
-
-            return patterns
-
-        except Exception as e:
-            self.logger.exception(f"Error detecting additional analyst patterns: {e}")
-            return {
-                "ORDERBOOK_IMBALANCE_STRONG_BID": 0,
-                "ORDERBOOK_IMBALANCE_STRONG_ASK": 0,
-                "PASSIVE_ABSORPTION_BID": 0,
-                "PASSIVE_ABSORPTION_ASK": 0,
-                "STOP_HUNT_BELOW_LOW": 0,
-                "STOP_HUNT_ABOVE_HIGH": 0,
-                "PRICE_AT_POC": 0,
-                "PRICE_REJECTING_VAH": 0,
-                "PRICE_REJECTING_VAL": 0,
-                "LVN_TRANSIT": 0,
-                "IGNITION_BAR": 0,
-                "MICRO_MOMENTUM_DIVERGENCE": 0,
-            }
+        except Exception:
+            self.print(error("Error calculating momentum patterns: {e}"))
+            return {}
 
     # Analyst Label Detection Methods
 
@@ -1307,9 +417,9 @@ class CompositeHMMRegimeSystem:
             bb_position = features.get("bb_position", 0.5)
 
             # Conditions for strong trend continuation
-            is_uptrend = trend_strength > self.trend_momentum_strong
-            is_pullback = self.bb_mid_low < bb_position < self.bb_mid_high
-            is_healthy_rsi = (self.rsi_oversold + 10) < rsi < (self.rsi_overbought)
+            is_uptrend = trend_strength > 0.02  # Strong upward momentum
+            is_pullback = 0.3 < bb_position < 0.7  # Price in middle of BB
+            is_healthy_rsi = 40 < rsi < 70  # Not overbought/oversold
 
             strong_trend_continuation = is_uptrend and is_pullback and is_healthy_rsi
 
@@ -1320,8 +430,8 @@ class CompositeHMMRegimeSystem:
                 else 0,
             }
 
-        except Exception as e:
-            self.logger.exception(f"Error detecting strong trend continuation: {e}")
+        except Exception:
+            self.print(error("Error detecting strong trend continuation: {e}"))
             return {"STRONG_TREND_CONTINUATION": 0, "strong_trend_confidence": 0}
 
     def _detect_exhaustion_reversal(
@@ -1338,8 +448,8 @@ class CompositeHMMRegimeSystem:
             momentum = features.get("price_momentum_5", 0)
 
             # Conditions for exhaustion reversal
-            is_overbought = rsi > self.rsi_overbought or bb_position > self.bb_edge_high
-            is_weakening = momentum < 0
+            is_overbought = rsi > 70 or bb_position > 0.8
+            is_weakening = momentum < 0  # Momentum turning negative
             is_high_volume = volume_ratio > self.volume_threshold
 
             exhaustion_reversal = is_overbought and is_weakening and is_high_volume
@@ -1351,8 +461,8 @@ class CompositeHMMRegimeSystem:
                 else 0,
             }
 
-        except Exception as e:
-            self.logger.exception(f"Error detecting exhaustion reversal: {e}")
+        except Exception:
+            self.print(error("Error detecting exhaustion reversal: {e}"))
             return {"EXHAUSTION_REVERSAL": 0, "exhaustion_confidence": 0}
 
     def _detect_range_mean_reversion(
@@ -1368,13 +478,9 @@ class CompositeHMMRegimeSystem:
             features.get("price_position", 0.5)
 
             # Conditions for range mean reversion
-            is_at_edge = (
-                bb_position < self.bb_edge_low or bb_position > self.bb_edge_high
-            )
+            is_at_edge = bb_position < 0.2 or bb_position > 0.8
             is_low_volatility = volatility < self.volatility_threshold
-            is_sideways = (
-                abs(features.get("price_momentum_10", 0)) < self.momentum_threshold
-            )
+            is_sideways = abs(features.get("price_momentum_10", 0)) < 0.01
 
             range_mean_reversion = is_at_edge and is_low_volatility and is_sideways
 
@@ -1385,8 +491,8 @@ class CompositeHMMRegimeSystem:
                 else 0,
             }
 
-        except Exception as e:
-            self.logger.exception(f"Error detecting range mean reversion: {e}")
+        except Exception:
+            self.print(error("Error detecting range mean reversion: {e}"))
             return {"RANGE_MEAN_REVERSION": 0, "range_reversion_confidence": 0}
 
     def _detect_breakout_patterns(
@@ -1399,34 +505,21 @@ class CompositeHMMRegimeSystem:
             bb_position = features.get("bb_position", 0.5)
             volume_ratio = features.get("volume_ratio", 1.0)
             momentum = features.get("price_momentum_5", 0)
-            current_price = float(data["close"].iloc[-1])
+            recent_high = features.get("recent_high", data["close"].iloc[-1])
+            recent_low = features.get("recent_low", data["close"].iloc[-1])
+            current_price = data["close"].iloc[-1]
 
-            # Use rolling highs/lows excluding current bar to avoid lookahead
-            rolling_high = data["high"].rolling(20, min_periods=1).max().shift(1)
-            rolling_low = data["low"].rolling(20, min_periods=1).min().shift(1)
-            recent_high = (
-                float(rolling_high.iloc[-1])
-                if not rolling_high.empty
-                else current_price
-            )
-            recent_low = (
-                float(rolling_low.iloc[-1]) if not rolling_low.empty else current_price
-            )
-
-            # Breakout success: price breaks prior level and continues with momentum and volume
-            is_breakout_up = (
-                current_price > recent_high and momentum > self.breakout_momentum
-            )
-            is_breakout_down = (
-                current_price < recent_low and momentum < -self.breakout_momentum
-            )
+            # Breakout success: price breaks level and continues
+            is_breakout_up = current_price > recent_high and momentum > 0.01
+            is_breakout_down = current_price < recent_low and momentum < -0.01
             is_high_volume = volume_ratio > self.volume_threshold
+
             breakout_success = (is_breakout_up or is_breakout_down) and is_high_volume
 
-            # Breakout failure: price pushes to BB extremes but lacks follow-through
-            is_failed_breakout = (
-                bb_position > self.bb_edge_high or bb_position < self.bb_edge_low
-            ) and abs(momentum) < self.failed_break_momentum
+            # Breakout failure: price breaks level but reverses
+            is_failed_breakout = (bb_position > 0.8 or bb_position < 0.2) and abs(
+                momentum,
+            ) < 0.005
 
             return {
                 "BREAKOUT_SUCCESS": 1 if breakout_success else 0,
@@ -1436,8 +529,8 @@ class CompositeHMMRegimeSystem:
                 else 0,
             }
 
-        except Exception as e:
-            self.logger.exception(f"Error detecting breakout patterns: {e}")
+        except Exception:
+            self.print(error("Error detecting breakout patterns: {e}"))
             return {
                 "BREAKOUT_SUCCESS": 0,
                 "BREAKOUT_FAILURE": 0,
@@ -1456,9 +549,7 @@ class CompositeHMMRegimeSystem:
             volume_ratio = features.get("volume_ratio", 1.0)
 
             # Volatility compression: BB width narrowing
-            is_compression = (
-                bb_width < self.bb_width_compression and volatility_ratio < 0.8
-            )
+            is_compression = bb_width < 0.05 and volatility_ratio < 0.8
 
             # Volatility expansion: sudden increase in volatility
             is_expansion = (
@@ -1471,8 +562,8 @@ class CompositeHMMRegimeSystem:
                 "volatility_confidence": min(volatility_ratio, 1.0),
             }
 
-        except Exception as e:
-            self.logger.exception(f"Error detecting volatility patterns: {e}")
+        except Exception:
+            self.print(error("Error detecting volatility patterns: {e}"))
             return {
                 "VOLATILITY_COMPRESSION": 0,
                 "VOLATILITY_EXPANSION": 0,
@@ -1496,7 +587,7 @@ class CompositeHMMRegimeSystem:
 
             # Triangle formation: narrowing price range
             bb_width = features.get("bb_width", 0.1)
-            is_triangle = bb_width < self.bb_width_triangle
+            is_triangle = bb_width < 0.03
             patterns["TRIANGLE_FORMATION"] = 1 if is_triangle else 0
 
             # Rectangle formation: horizontal consolidation
@@ -1506,8 +597,8 @@ class CompositeHMMRegimeSystem:
 
             return patterns
 
-        except Exception as e:
-            self.logger.exception(f"Error detecting chart patterns: {e}")
+        except Exception:
+            self.print(error("Error detecting chart patterns: {e}"))
             return {
                 "FLAG_FORMATION": 0,
                 "TRIANGLE_FORMATION": 0,
@@ -1525,21 +616,29 @@ class CompositeHMMRegimeSystem:
 
             # Momentum ignition: momentum indicators breaking out
             rsi = features.get("rsi", 50)
-            macd_hist = features.get("macd_histogram", 0)
+            macd = features.get("macd", 0)
             momentum = features.get("price_momentum_5", 0)
 
             is_momentum_ignition = (
-                (rsi > self.rsi_momentum_hi or rsi < self.rsi_momentum_lo)
-                and abs(macd_hist) > 0.001
+                (rsi > 60 or rsi < 40)
+                and abs(macd) > 0.001
                 and abs(momentum) > self.momentum_threshold
             )
             patterns["MOMENTUM_IGNITION"] = 1 if is_momentum_ignition else 0
 
+            # Gradual momentum fade: declining momentum
+            momentum_10 = features.get("price_momentum_10", 0)
+            is_fade = (
+                abs(momentum) < abs(momentum_10)
+                and abs(momentum) < self.momentum_threshold
+            )
+            patterns["GRADUAL_MOMENTUM_FADE"] = 1 if is_fade else 0
+
             return patterns
 
-        except Exception as e:
-            self.logger.exception(f"Error detecting momentum patterns: {e}")
-            return {"MOMENTUM_IGNITION": 0}
+        except Exception:
+            self.print(error("Error detecting momentum patterns: {e}"))
+            return {"MOMENTUM_IGNITION": 0, "GRADUAL_MOMENTUM_FADE": 0}
 
     # Tactician Label Detection Methods
 
@@ -1582,8 +681,8 @@ class CompositeHMMRegimeSystem:
 
             return features
 
-        except Exception as e:
-            self.logger.exception(f"Error calculating entry features: {e}")
+        except Exception:
+            self.print(error("Error calculating entry features: {e}"))
             return {}
 
     def _calculate_order_imbalance(self, order_flow_data: pd.DataFrame) -> float:
@@ -1598,8 +697,8 @@ class CompositeHMMRegimeSystem:
                 total_vol = bid_vol + ask_vol
                 return (bid_vol - ask_vol) / total_vol if total_vol > 0 else 0
             return 0
-        except Exception as e:
-            self.logger.exception(f"Error calculating order imbalance: {e}")
+        except Exception:
+            self.print(error("Error calculating order imbalance: {e}"))
             return 0
 
     def _predict_price_extremes(
@@ -1626,8 +725,8 @@ class CompositeHMMRegimeSystem:
                 "price_extreme_confidence": min(abs(momentum) * 10, 1.0),
             }
 
-        except Exception as e:
-            self.logger.exception(f"Error predicting price extremes: {e}")
+        except Exception:
+            self.print(error("Error predicting price extremes: {e}"))
             return {
                 "LOWEST_PRICE_NEXT_1m": data["close"].iloc[-1],
                 "HIGHEST_PRICE_NEXT_1m": data["close"].iloc[-1],
@@ -1656,82 +755,63 @@ class CompositeHMMRegimeSystem:
                 "limit_order_confidence": min(abs(momentum) * 5, 1.0),
             }
 
-        except Exception as e:
-            self.logger.exception(f"Error predicting order returns: {e}")
+        except Exception:
+            self.print(error("Error predicting order returns: {e}"))
             return {"LIMIT_ORDER_RETURN": 0.001, "limit_order_confidence": 0}
 
     def _detect_entry_signals(
         self,
-        features: dict[str, Any],
+        data: pd.DataFrame,
+        volume_data: pd.DataFrame,
         order_flow_data: pd.DataFrame | None = None,
     ) -> dict[str, Any]:
         """Detect various entry signals."""
         try:
             signals = {}
 
-            # VWAP reversion entry (use rolling VWAP from features if available)
-            current_price = float(
-                features.get("current_price", 0.0) or features.get("close", 0.0) or 0.0
-            )
-            vwap = float(features.get("vwap", current_price))
-            price_vwap_ratio = current_price / vwap if vwap != 0 else 1.0
+            # Calculate basic features from data
+            current_price = data["close"].iloc[-1]
+            vwap = data["close"].rolling(window=20).mean().iloc[-1]
+            price_vwap_ratio = current_price / vwap if vwap > 0 else 1.0
+            
+            # Calculate momentum
+            momentum = (data["close"].iloc[-1] - data["close"].iloc[-6]) / data["close"].iloc[-6] if len(data) >= 6 else 0
+            
+            # Calculate volume spike
+            volume_spike = volume_data["volume"].iloc[-1] / volume_data["volume"].rolling(window=20).mean().iloc[-1] if len(volume_data) >= 20 else 1.0
+            
+            # Calculate recent high
+            recent_high = data["high"].rolling(window=20).max().iloc[-1]
+            
+            # VWAP reversion entry
             is_vwap_reversion = abs(price_vwap_ratio - 1.0) < 0.01
             signals["VWAP_REVERSION_ENTRY"] = 1 if is_vwap_reversion else 0
 
-            # Market order now: aggressive momentum with volume spike
-            momentum = float(features.get("price_momentum_5", 0.0))
-            volume_spike = float(
-                features.get("volume_spike", features.get("volume_ratio", 1.0))
-            )
+            # Market order now: aggressive momentum
             is_market_order = (
                 abs(momentum) > self.momentum_threshold * 2
                 and volume_spike > self.volume_threshold
             )
             signals["MARKET_ORDER_NOW"] = 1 if is_market_order else 0
 
-            # Chase micro breakout: break last N bars' high/low
-            prev_high = float(features.get("recent_high", current_price))
-            prev_low = float(features.get("recent_low", current_price))
-            is_micro_breakout = (current_price > prev_high) or (
-                current_price < prev_low
-            )
+            # Chase micro breakout
+            is_micro_breakout = current_price > recent_high * 1.001  # Small breakout
             signals["CHASE_MICRO_BREAKOUT"] = 1 if is_micro_breakout else 0
 
-            # Order book imbalance flip (requires order flow)
-            is_imbalance_flip = False
-            if order_flow_data is not None and {"bid_volume", "ask_volume"}.issubset(
-                order_flow_data.columns
-            ):
-                try:
-                    last_b = float(order_flow_data["bid_volume"].iloc[-1])
-                    last_a = float(order_flow_data["ask_volume"].iloc[-1])
-                    prev_b = (
-                        float(order_flow_data["bid_volume"].iloc[-2])
-                        if len(order_flow_data) >= 2
-                        else last_b
-                    )
-                    prev_a = (
-                        float(order_flow_data["ask_volume"].iloc[-2])
-                        if len(order_flow_data) >= 2
-                        else last_a
-                    )
-                    prev_imb = (prev_b - prev_a) / max(1e-12, (prev_b + prev_a))
-                    last_imb = (last_b - last_a) / max(1e-12, (last_b + last_a))
-                    is_imbalance_flip = (prev_imb > 0 and last_imb < 0) or (
-                        prev_imb < 0 and last_imb > 0
-                    )
-                except Exception:
-                    is_imbalance_flip = False
+            # Order book imbalance flip (placeholder - would need order flow data)
+            order_imbalance = 0  # Placeholder
+            is_imbalance_flip = abs(order_imbalance) > 0.3
             signals["ORDERBOOK_IMBALANCE_FLIP"] = 1 if is_imbalance_flip else 0
 
             # Aggressive taker spike
-            is_taker_spike = volume_spike > (self.volume_threshold * 2)
+            volume_ratio = volume_spike  # Use volume spike as proxy
+            is_taker_spike = volume_ratio > self.volume_threshold * 2
             signals["AGGRESSIVE_TAKER_SPIKE"] = 1 if is_taker_spike else 0
 
             return signals
 
-        except Exception as e:
-            self.logger.exception(f"Error detecting entry signals: {e}")
+        except Exception:
+            self.print(error("Error detecting entry signals: {e}"))
             return {
                 "VWAP_REVERSION_ENTRY": 0,
                 "MARKET_ORDER_NOW": 0,
@@ -1764,8 +844,8 @@ class CompositeHMMRegimeSystem:
                 "adverse_excursion_confidence": min(volatility * 50, 1.0),
             }
 
-        except Exception as e:
-            self.logger.exception(f"Error predicting adverse excursion: {e}")
+        except Exception:
+            self.print(error("Error predicting adverse excursion: {e}"))
             return {
                 "MAX_ADVERSE_EXCURSION_RETURN": 0.01,
                 "adverse_excursion_confidence": 0,
@@ -1795,8 +875,8 @@ class CompositeHMMRegimeSystem:
                 "abort_confidence": min(volatility * 20, 1.0) if should_abort else 0,
             }
 
-        except Exception as e:
-            self.logger.exception(f"Error generating abort signal: {e}")
+        except Exception:
+            self.print(error("Error generating abort signal: {e}"))
             return {"ABORT_ENTRY_SIGNAL": 0, "abort_confidence": 0}
 
     @handle_errors(
@@ -1809,8 +889,6 @@ class CompositeHMMRegimeSystem:
         price_data: pd.DataFrame,
         volume_data: pd.DataFrame,
         timeframe: str = "30m",
-        order_flow_data: pd.DataFrame | None = None,
-        precomputed_features: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Generate analyst labels for setup identification (multi-timeframe).
@@ -1825,103 +903,45 @@ class CompositeHMMRegimeSystem:
         """
         try:
             if not self.is_initialized:
-                self.logger.error("Meta-labeling system not initialized")
+                self.print(initialization_error("Meta-labeling system not initialized"))
                 return {}
 
-            # Calculate or accept precomputed pattern features
-            if precomputed_features:
-                features = dict(precomputed_features)
-            else:
-                features = await self._calculate_pattern_features(
-                    price_data, volume_data
-                )
+            # Calculate pattern features
+            features = await self._calculate_pattern_features(price_data, volume_data)
 
-            # 1) Prefer HMM composite regime labels over meta labels, but preserve S/R labels
-            analyst_labels: dict[str, Any] = {}
-            try:
-                # Resolve exchange/symbol from config or features context
-                exchange = str(
-                    self.config.get("EXCHANGE", self.config.get("exchange", "BINANCE"))
-                )
-                symbol = str(
-                    self.config.get("SYMBOL", self.config.get("symbol", "ETHUSDT"))
-                )
-                data_dir = str(self.config.get("DATA_DIR", "data/training"))
+            # Generate analyst-specific labels
+            analyst_labels = {}
 
-                # Use centralized HMM composite manager
-                from src.utils.hmm_composite_manager import get_hmm_composite_manager
+            # Strong trend continuation
+            trend_continuation = self._detect_strong_trend_continuation(
+                price_data,
+                features,
+            )
+            analyst_labels.update(trend_continuation)
 
-                hmm_manager = get_hmm_composite_manager()
+            # Exhaustion reversal
+            exhaustion_reversal = self._detect_exhaustion_reversal(price_data, features)
+            analyst_labels.update(exhaustion_reversal)
 
-                # Load once per run (manager caches and rate-limits logging)
-                comp_df = hmm_manager.load_composite_clusters(
-                    exchange, symbol, timeframe, data_dir, auto_create=True
-                )
-                if comp_df is not None:
-                    # align last timestamp
-                    if "timestamp" in comp_df.columns:
-                        comp_df["timestamp"] = pd.to_datetime(
-                            comp_df["timestamp"], errors="coerce", utc=True
-                        )
-                        comp_df = comp_df.dropna(subset=["timestamp"]).sort_values(
-                            "timestamp"
-                        )
-                        comp_df = comp_df.set_index("timestamp")
-                    # Determine current timestamp context from price_data
-                    ts = None
-                    if (
-                        isinstance(price_data.index, pd.DatetimeIndex)
-                        and len(price_data.index) > 0
-                    ):
-                        ts = price_data.index[-1]
-                    if ts is not None and isinstance(ts, pd.Timestamp):
-                        row = comp_df.loc[comp_df.index <= ts].tail(1)
-                    else:
-                        row = comp_df.tail(1)
-                    if not row.empty:
-                        cid = int(row["composite_cluster_id"].iloc[0])
-                        analyst_labels["HMM_COMPOSITE_CLUSTER"] = cid
-                        # Expose soft probabilities via short-window EWMA of current cluster index (proxy)
-                        # Note: true p_k(t) time series can be persisted later; here we expose basic context
-                        analyst_labels["HMM_IS_ASSIGNED"] = 1 if cid >= 0 else 0
-            except Exception as e:
-                self.logger.warning(f"HMM composite cluster integration failed: {e}")
+            # Range mean reversion
+            range_reversion = self._detect_range_mean_reversion(price_data, features)
+            analyst_labels.update(range_reversion)
 
-            # 2) Always compute and include S/R related labels (must keep them)
-            try:
-                sr_only = {}
-                sr_only.update(self._detect_sr_touch_bounce_break(price_data, features))
-                # Retain only proximity SR labels for downstream ML
-                sr_keys = (
-                    "SR_TOUCH",
-                    "SR_DISTANCE_RESISTANCE_PCT",
-                    "SR_DISTANCE_SUPPORT_PCT",
-                )
-                sr_keep = {k: features.get(k) for k in sr_keys if k in features}
-                analyst_labels.update(sr_keep)
-            except Exception:
-                pass
+            # Breakout patterns
+            breakout_patterns = self._detect_breakout_patterns(price_data, features)
+            analyst_labels.update(breakout_patterns)
 
-            # 3) Do NOT add legacy meta labels; HMM + SR only (explicitly enforced)
-            try:
-                # Intentionally no legacy meta labels added
-                # Ensure prior meta-only labels are not leaking in
-                for k in list(analyst_labels.keys()):
-                    if (
-                        k
-                        not in (
-                            "HMM_COMPOSITE_CLUSTER",
-                            "HMM_IS_ASSIGNED",
-                            "SR_TOUCH",
-                            "SR_DISTANCE_RESISTANCE_PCT",
-                            "SR_DISTANCE_SUPPORT_PCT",
-                        )
-                        and k.isupper()
-                    ):
-                        # Remove any unintended legacy meta label
-                        analyst_labels.pop(k, None)
-            except Exception:
-                pass
+            # Volatility patterns
+            volatility_patterns = self._detect_volatility_patterns(price_data, features)
+            analyst_labels.update(volatility_patterns)
+
+            # Chart patterns
+            chart_patterns = self._detect_chart_patterns(price_data, features)
+            analyst_labels.update(chart_patterns)
+
+            # Momentum patterns
+            momentum_patterns = self._detect_momentum_patterns(price_data, features)
+            analyst_labels.update(momentum_patterns)
 
             # If no patterns detected, generate NO_SETUP label
             if not any(analyst_labels.values()):
@@ -1934,7 +954,6 @@ class CompositeHMMRegimeSystem:
                     "timeframe": timeframe,
                     "timestamp": pd.Timestamp.now().isoformat(),
                     "features_used": list(features.keys()),
-                    "compression_streak": int(self.state.get("compression_streak", 0)),
                     "label_count": len(
                         [
                             v
@@ -1945,53 +964,13 @@ class CompositeHMMRegimeSystem:
                 },
             )
 
-            # No intensity/activation scoring here; HMM-ML system governs regime and model activation
-
-            try:
-                # Build summary line (top 20 active labels) and throttle duplicates
-                summary_parts = [
-                    k
-                    for k, v in analyst_labels.items()
-                    if isinstance(v, (int, float)) and k.isupper() and v > 0
-                ]
-                base_msg = f"Analyst labels [{timeframe}] count={analyst_labels.get('label_count', 0)}"
-                if summary_parts:
-                    msg = (
-                        base_msg
-                        + " | "
-                        + ", ".join(summary_parts[:20])
-                        + (" ..." if len(summary_parts) > 20 else "")
-                    )
-                else:
-                    msg = base_msg
-
-                now_ts = time.time()
-                last_msg = self._last_analyst_log.get(timeframe)
-                last_ts = self._last_analyst_log_ts.get(timeframe, 0.0)
-                should_log = (msg != last_msg) or (
-                    now_ts - last_ts >= self.analyst_log_throttle_seconds
-                )
-                if should_log:
-                    self.logger.info(msg)
-                    self._last_analyst_log[timeframe] = msg
-                    self._last_analyst_log_ts[timeframe] = now_ts
-            except Exception:
-                # On any unexpected error, fall back to a throttled minimal line
-                msg = f"Analyst labels [{timeframe}] count={analyst_labels.get('label_count', 0)}"
-                now_ts = time.time()
-                last_msg = self._last_analyst_log.get(timeframe)
-                last_ts = self._last_analyst_log_ts.get(timeframe, 0.0)
-                should_log = (msg != last_msg) or (
-                    now_ts - last_ts >= self.analyst_log_throttle_seconds
-                )
-                if should_log:
-                    self.logger.info(msg)
-                    self._last_analyst_log[timeframe] = msg
-                    self._last_analyst_log_ts[timeframe] = now_ts
+            self.logger.info(
+                f"Generated {analyst_labels.get('label_count', 0)} analyst labels for {timeframe}",
+            )
             return analyst_labels
 
-        except Exception as e:
-            self.logger.exception(f"Error generating analyst labels: {e}")
+        except Exception:
+            self.print(error("Error generating analyst labels: {e}"))
             return {}
 
     @handle_errors(
@@ -2005,7 +984,6 @@ class CompositeHMMRegimeSystem:
         volume_data: pd.DataFrame,
         order_flow_data: pd.DataFrame | None = None,
         timeframe: str = "1m",
-        precomputed_features: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Generate tactician labels for entry optimization (1m timeframe).
@@ -2021,25 +999,23 @@ class CompositeHMMRegimeSystem:
         """
         try:
             if not self.is_initialized:
-                self.logger.error("Meta-labeling system not initialized")
+                self.print(initialization_error("Meta-labeling system not initialized"))
                 return {}
 
-            # Calculate entry features (or merge with precomputed basics)
-            base_features = dict(precomputed_features or {})
+            # Calculate entry features
             entry_features = await self._calculate_entry_features(
                 price_data,
                 volume_data,
                 order_flow_data,
             )
-            # Merge, with entry_features taking precedence
-            entry_features = {**base_features, **entry_features}
 
             # Generate tactician-specific labels
             tactician_labels = {}
 
             # Entry signals
             entry_signals = self._detect_entry_signals(
-                entry_features,
+                price_data,
+                volume_data,
                 order_flow_data,
             )
             tactician_labels.update(entry_signals)
@@ -2079,39 +1055,13 @@ class CompositeHMMRegimeSystem:
                 },
             )
 
-            # Single consolidated log with compact summaries for all tactician labels
-            try:
-                summaries: dict[str, dict[str, int | float | str]] = {}
-                for k, v in tactician_labels.items():
-                    if k in ("timeframe", "timestamp", "features_used", "signal_count"):
-                        continue
-                    try:
-                        if isinstance(v, (np.ndarray, pd.Series)):
-                            arr = v if isinstance(v, np.ndarray) else v.to_numpy()
-                            summaries[k] = {
-                                "nonzero": int(np.count_nonzero(arr)),
-                                "len": int(arr.size),
-                            }
-                        elif isinstance(v, (int, float)):
-                            summaries[k] = {"value": float(v)}
-                        else:
-                            summaries[k] = {"type": type(v).__name__}
-                    except Exception:
-                        summaries[k] = {"summary": "unavailable"}
-                self.logger.info(
-                    {
-                        "msg": f"Tactician labels summary for {timeframe}",
-                        "timeframe": timeframe,
-                        "signal_count": tactician_labels.get("signal_count", 0),
-                        "labels": summaries,
-                    }
-                )
-            except Exception as e:
-                self.logger.warning(f"Failed to log tactician label summary: {e}")
+            self.logger.info(
+                f"Generated {tactician_labels.get('signal_count', 0)} tactician labels for {timeframe}",
+            )
             return tactician_labels
 
-        except Exception as e:
-            self.logger.exception(f"Error generating tactician labels: {e}")
+        except Exception:
+            self.print(error("Error generating tactician labels: {e}"))
             return {}
 
     @handle_errors(
@@ -2126,7 +1076,6 @@ class CompositeHMMRegimeSystem:
         order_flow_data: pd.DataFrame | None = None,
         analyst_timeframe: str = "30m",
         tactician_timeframe: str = "1m",
-        precomputed_features: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Generate combined analyst and tactician labels.
@@ -2147,8 +1096,6 @@ class CompositeHMMRegimeSystem:
                 price_data,
                 volume_data,
                 analyst_timeframe,
-                order_flow_data,
-                precomputed_features=precomputed_features,
             )
 
             # Generate tactician labels
@@ -2157,47 +1104,27 @@ class CompositeHMMRegimeSystem:
                 volume_data,
                 order_flow_data,
                 tactician_timeframe,
-                precomputed_features=precomputed_features,
             )
 
-            # Combine labels and compute MoE-based weights placeholder
-            label_keys = [
-                k
-                for k, v in analyst_labels.items()
-                if k.isupper() and isinstance(v, (int, float))
-            ]
-            intensities = {
-                k: analyst_labels.get(f"intensity_{k}", 0.0) for k in label_keys
-            }
-            moe_confidences: dict[str, float] = {
-                k: 0.5 for k in label_keys
-            }  # placeholder; replace with real MoE output
-            weights = self.compute_label_weights(intensities, moe_confidences)
-
-            avg_conf = float(np.mean(list(weights.values()))) if weights else 0.0
-
-            return {
+            # Combine labels
+            combined_labels = {
                 "analyst_labels": analyst_labels,
                 "tactician_labels": tactician_labels,
-                "weights": weights,
-                "combined_confidence": avg_conf,
                 "combined_timestamp": pd.Timestamp.now().isoformat(),
                 "total_labels": (
-                    int(analyst_labels.get("label_count", 0))
-                    + int(tactician_labels.get("signal_count", 0))
+                    analyst_labels.get("label_count", 0)
+                    + tactician_labels.get("signal_count", 0)
                 ),
             }
 
-        except Exception as e:
-            self.logger.exception(f"Error generating meta-labels: {e}")
-            return {
-                "analyst_labels": {},
-                "tactician_labels": {},
-                "weights": {},
-                "combined_confidence": 0.0,
-                "combined_timestamp": pd.Timestamp.now().isoformat(),
-                "total_labels": 0,
-            }
+            self.logger.info(
+                f"Generated {combined_labels['total_labels']} combined labels",
+            )
+            return combined_labels
+
+        except Exception:
+            self.print(error("Error generating combined labels: {e}"))
+            return {}
 
     def get_system_info(self) -> dict[str, Any]:
         """Get meta-labeling system information."""
@@ -2224,549 +1151,5 @@ class CompositeHMMRegimeSystem:
         try:
             self.is_initialized = False
             self.logger.info("✅ Meta-Labeling System stopped successfully")
-        except Exception as e:
-            self.logger.exception(f"Error stopping meta-labeling system: {e}")
-
-    # ===== Intensity Scoring and Thresholding Utilities =====
-
-    def _linear_scale(self, value: float, vmin: float, vmax: float) -> float:
-        if vmax == vmin:
-            return 0.0
-        return float(np.clip((value - vmin) / (vmax - vmin), 0.0, 1.0))
-
-    def _percentile_rank(self, series: pd.Series, value: float) -> float:
-        try:
-            s = series.replace([np.inf, -np.inf], np.nan).dropna()
-            if s.empty:
-                return 0.0
-            prc = float((s <= value).mean())
-            return float(np.clip(prc, 0.0, 1.0))
         except Exception:
-            return 0.0
-
-    def _compute_label_intensity(
-        self,
-        label_name: str,
-        price_data: pd.DataFrame,
-        volume_data: pd.DataFrame,
-        features: dict[str, Any],
-    ) -> float:
-        """Compute a 0-1 intensity score per label using bounded linear scaling and percentile ranking for unbounded metrics."""
-        try:
-            close = price_data["close"]
-            volume = (
-                volume_data["volume"]
-                if "volume" in volume_data.columns
-                else pd.Series(index=close.index, dtype=float)
-            )
-            # Common series
-            vol_ratio_series = (
-                volume / volume.rolling(20, min_periods=5).mean()
-            ).replace([np.inf, -np.inf], np.nan)
-            momentum5_series = close.pct_change(5).rolling(5, min_periods=1).sum()
-
-            if label_name == "STRONG_TREND_CONTINUATION":
-                trend = float(features.get("price_momentum_10", 0.0))
-                bb_pos = float(features.get("bb_position", 0.5))
-                rsi = float(features.get("rsi", 50.0))
-                part_trend = self._percentile_rank(close.pct_change(10), trend)
-                part_bb = 1.0 - abs(bb_pos - 0.5) / 0.5
-                part_rsi = 1.0 - abs(
-                    (rsi - (self.rsi_oversold + self.rsi_overbought) / 2) / 50.0
-                )
-                return float(np.clip((part_trend + part_bb + part_rsi) / 3.0, 0.0, 1.0))
-
-            if label_name == "EXHAUSTION_REVERSAL":
-                rsi = float(features.get("rsi", 50.0))
-                bb_pos = float(features.get("bb_position", 0.5))
-                momentum = float(features.get("price_momentum_5", 0.0))
-                vol_ratio = float(features.get("volume_ratio", 1.0))
-                part_rsi = self._linear_scale(rsi, self.rsi_overbought, 100.0)
-                part_bb = self._linear_scale(bb_pos, self.bb_edge_high, 1.0)
-                part_mom = self._percentile_rank(-momentum5_series, -momentum)
-                part_vol = self._percentile_rank(vol_ratio_series, vol_ratio)
-                return float(
-                    np.clip((part_rsi + part_bb + part_mom + part_vol) / 4.0, 0.0, 1.0)
-                )
-
-            if label_name == "RANGE_MEAN_REVERSION":
-                bb_pos = float(features.get("bb_position", 0.5))
-                vol20 = float(features.get("volatility_20", 0.0))
-                mom10 = float(features.get("price_momentum_10", 0.0))
-                part_edge = max(
-                    self._linear_scale(
-                        self.bb_edge_low - bb_pos, 0.0, self.bb_edge_low
-                    ),
-                    self._linear_scale(
-                        bb_pos - self.bb_edge_high, 0.0, 1.0 - self.bb_edge_high
-                    ),
-                )
-                part_vol = 1.0 - self._percentile_rank(
-                    close.pct_change().rolling(20).std(), vol20
-                )
-                part_sideways = 1.0 - self._percentile_rank(
-                    abs(close.pct_change(10)), abs(mom10)
-                )
-                return float(
-                    np.clip((part_edge + part_vol + part_sideways) / 3.0, 0.0, 1.0)
-                )
-
-            if label_name in ("BREAKOUT_SUCCESS", "BREAKOUT_FAILURE"):
-                momentum = float(features.get("price_momentum_5", 0.0))
-                vol_ratio = float(features.get("volume_ratio", 1.0))
-                part_mom = self._percentile_rank(abs(momentum5_series), abs(momentum))
-                part_vol = self._percentile_rank(vol_ratio_series, vol_ratio)
-                base = float(np.clip((part_mom + part_vol) / 2.0, 0.0, 1.0))
-                return base
-
-            if label_name in ("VOLATILITY_COMPRESSION", "VOLATILITY_EXPANSION"):
-                bb_width = float(features.get("bb_width", 0.0))
-                vol_ratio = float(features.get("volatility_ratio", 1.0))
-                if label_name == "VOLATILITY_COMPRESSION":
-                    part_width = 1.0 - self._percentile_rank(
-                        price_data["close"].rolling(20).std(), bb_width
-                    )
-                    part_vr = 1.0 - self._linear_scale(vol_ratio, 1.0, 2.0)
-                else:
-                    part_width = self._percentile_rank(
-                        price_data["close"].rolling(20).std(), bb_width
-                    )
-                    part_vr = self._linear_scale(vol_ratio, 1.0, 2.0)
-                return float(np.clip((part_width + part_vr) / 2.0, 0.0, 1.0))
-
-            if label_name == "MOMENTUM_IGNITION":
-                rsi = float(features.get("rsi", 50.0))
-                macd_hist = float(features.get("macd_histogram", 0.0))
-                momentum = float(features.get("price_momentum_5", 0.0))
-                part_rsi = max(
-                    self._linear_scale(rsi, self.rsi_momentum_hi, 100.0),
-                    self._linear_scale(100.0 - rsi, self.rsi_momentum_lo, 100.0),
-                )
-                part_macd = self._percentile_rank(
-                    price_data["close"].ewm(span=12).mean()
-                    - price_data["close"].ewm(span=26).mean(),
-                    macd_hist,
-                )
-                part_mom = self._percentile_rank(abs(momentum5_series), abs(momentum))
-                return float(np.clip((part_rsi + part_macd + part_mom) / 3.0, 0.0, 1.0))
-
-            if label_name == "CAPITULATION_SELLING":
-                p1 = float(close.pct_change(1).iloc[-1]) if len(close) >= 2 else 0.0
-                p3 = float(close.pct_change(3).iloc[-1]) if len(close) >= 4 else 0.0
-                rsi = float(features.get("rsi", 50.0))
-                volr = float(features.get("volume_ratio", 1.0))
-                part_drop = max(
-                    self._linear_scale(-p1, 0.0, 0.03),
-                    self._linear_scale(-p3, 0.0, 0.05),
-                )
-                part_vol = self._percentile_rank(vol_ratio_series, volr)
-                part_rsi = self._linear_scale(30.0 - rsi, 0.0, 30.0)
-                return float(np.clip((part_drop + part_vol + part_rsi) / 3.0, 0.0, 1.0))
-
-            if label_name == "EUPHORIC_BUYING":
-                p1 = float(close.pct_change(1).iloc[-1]) if len(close) >= 2 else 0.0
-                p3 = float(close.pct_change(3).iloc[-1]) if len(close) >= 4 else 0.0
-                rsi = float(features.get("rsi", 50.0))
-                volr = float(features.get("volume_ratio", 1.0))
-                part_up = max(
-                    self._linear_scale(p1, 0.0, 0.03), self._linear_scale(p3, 0.0, 0.05)
-                )
-                part_vol = self._percentile_rank(vol_ratio_series, volr)
-                part_rsi = self._linear_scale(rsi - 70.0, 0.0, 30.0)
-                return float(np.clip((part_up + part_vol + part_rsi) / 3.0, 0.0, 1.0))
-
-            if label_name == "DULL_MARKET":
-                atr20 = float(features.get("atr_20", features.get("atr", 0.0)))
-                atr100 = float(features.get("atr_100", max(atr20, 1e-12)))
-                ratio = atr20 / max(atr100, 1e-12)
-                return float(np.clip(1.0 - ratio, 0.0, 1.0))
-
-            if label_name == "FAILED_RETEST":
-                # Use proximity to prior extremes and reversal size
-                h = price_data["high"].rolling(50, min_periods=5).max().shift(1)
-                l = price_data["low"].rolling(50, min_periods=5).min().shift(1)
-                cp = float(close.iloc[-1])
-                ph = float(h.iloc[-1]) if not h.empty else cp
-                pl = float(l.iloc[-1]) if not l.empty else cp
-                prox_up = 1.0 - min(abs(cp - ph) / max(ph, 1e-12) / 0.0015, 1.0)
-                prox_dn = 1.0 - min(abs(cp - pl) / max(pl, 1e-12) / 0.0015, 1.0)
-                return float(np.clip(max(prox_up, prox_dn), 0.0, 1.0))
-
-            # Fallback: 1.0 if label present else 0.0
-            return 1.0 if features.get(label_name, 0) else 0.0
-        except Exception:
-            return 0.0
-
-    def compute_intensity_scores(
-        self,
-        price_data: pd.DataFrame,
-        volume_data: pd.DataFrame,
-        features: dict[str, Any],
-        label_names: list[str],
-    ) -> dict[str, float]:
-        scores: dict[str, float] = {}
-        for name in label_names:
-            scores[name] = self._compute_label_intensity(
-                name, price_data, volume_data, features
-            )
-        return scores
-
-    # Activation thresholds and reliability
-    def _init_thresholds_and_reliability(self) -> None:
-        self.activation_thresholds: dict[str, float] = {}
-        self.reliability_scores: dict[str, float] = {}
-        self.default_activation_threshold: float = float(
-            self.pattern_config.get("default_activation_threshold", 0.5)
-        )
-
-    def set_activation_threshold(self, label: str, threshold: float) -> None:
-        if not hasattr(self, "activation_thresholds"):
-            self._init_thresholds_and_reliability()
-        self.activation_thresholds[label] = float(np.clip(threshold, 0.0, 1.0))
-
-    def set_reliability_score(self, label: str, reliability: float) -> None:
-        if not hasattr(self, "reliability_scores"):
-            self._init_thresholds_and_reliability()
-        self.reliability_scores[label] = float(np.clip(reliability, 0.0, 1.0))
-
-    def compute_label_weights(
-        self,
-        intensity_scores: dict[str, float],
-        moe_confidences: dict[str, float] | None = None,
-    ) -> dict[str, float]:
-        if not hasattr(self, "reliability_scores"):
-            self._init_thresholds_and_reliability()
-        t0 = time.time()
-        alpha = getattr(self, "alpha", 1.0)
-        beta = getattr(self, "beta", 1.0)
-        gamma = getattr(self, "gamma", 1.0)
-        top_k = max(0, int(getattr(self, "top_k", 0)))
-        w_min = float(getattr(self, "weight_min", 0.0))
-        w_max = float(getattr(self, "weight_max", 1.0))
-        normalize = bool(getattr(self, "normalize_weights", False))
-
-        scores: dict[str, float] = {}
-        if self.debug_logging:
-            self.logger.info(
-                {
-                    "msg": "compute_label_weights_start",
-                    "labels": len(intensity_scores),
-                    "alpha": alpha,
-                    "beta": beta,
-                    "gamma": gamma,
-                    "top_k": top_k,
-                    "w_min": w_min,
-                    "w_max": w_max,
-                    "normalize": normalize,
-                }
-            )
-        for label, intensity in intensity_scores.items():
-            conf = float(np.clip((moe_confidences or {}).get(label, 0.5), 0.0, 1.0))
-            rel = float(np.clip(self.reliability_scores.get(label, 1.0), 0.0, 1.0))
-            s = float(
-                np.power(np.clip(float(intensity), 0.0, 1.0), alpha)
-                * np.power(conf, beta)
-                * np.power(rel, gamma)
-            )
-            scores[label] = float(np.clip(s, 0.0, 1.0))
-            if self.debug_logging:
-                try:
-                    self.logger.info(
-                        {
-                            "msg": "mixture_components",
-                            "label": label,
-                            "intensity": float(intensity),
-                            "confidence": float(conf),
-                            "reliability": float(rel),
-                            "mixture_score": float(scores[label]),
-                        }
-                    )
-                except Exception:
-                    pass
-
-        if top_k > 0 and len(scores) > top_k:
-            ranked = sorted(scores.items(), key=lambda t: t[1], reverse=True)
-            keep = {k for k, _ in ranked[:top_k]}
-        else:
-            keep = set(scores.keys())
-        if self.debug_logging:
-            try:
-                kept = sorted(list(keep))
-                self.logger.info(
-                    {
-                        "msg": "top_k_selection",
-                        "kept_count": len(kept),
-                        "kept_labels": kept[:20],
-                    }
-                )
-            except Exception:
-                pass
-
-        weights: dict[str, float] = {}
-        for label, s in scores.items():
-            if label in keep:
-                # Enforce complementarity-aware active label filter if available
-                if self.active_labels and (label not in self.active_labels):
-                    weights[label] = 0.0
-                    if self.debug_logging:
-                        self.logger.info(
-                            {"msg": "inactive_label_zeroed", "label": label}
-                        )
-                    continue
-                lo = w_min if w_min > 0 else 0.0
-                hi = w_max if w_max < 1.0 else 1.0
-                w = float(np.clip(s, lo, hi))
-            else:
-                w = 0.0
-            weights[label] = w
-
-        if normalize:
-            total = float(sum(weights.values()))
-            if total > 0:
-                weights = {k: float(v / total) for k, v in weights.items()}
-        if self.perf_logging:
-            dt_ms = int((time.time() - t0) * 1000)
-            try:
-                vmax = max(weights.values()) if weights else 0.0
-            except Exception:
-                vmax = 0.0
-            self.logger.info(
-                {
-                    "msg": "compute_label_weights_end",
-                    "duration_ms": dt_ms,
-                    "labels": len(weights),
-                    "max_weight": float(vmax),
-                }
-            )
-
-        return weights
-
-    def fit_activation_thresholds(
-        self,
-        price_data: pd.DataFrame,
-        volume_data: pd.DataFrame,
-        triple_barrier_df: pd.DataFrame,
-        label_names: list[str],
-        thresholds_grid: list[float] | None = None,
-    ) -> dict[str, dict[str, float]]:
-        """Derive activation thresholds per label using triple-barrier outcomes with stationary data.
-
-        Returns a dict per label with stats: threshold, hit_rate, frequency, profit_factor, avg_return.
-        """
-        try:
-            t0 = time.time()
-            if thresholds_grid is None:
-                thresholds_grid = [round(x, 2) for x in np.linspace(0.1, 0.9, 9)]
-
-            # Prepare outcomes and proxy returns if needed
-            labels_series = (
-                triple_barrier_df.get(
-                    "label", pd.Series(index=price_data.index, dtype=float)
-                )
-                .reindex(price_data.index)
-                .fillna(0)
-                .astype(int)
-            )
-            # If available, use realized return; else next-bar return as proxy
-            if "tb_return" in triple_barrier_df.columns:
-                ret_series = (
-                    triple_barrier_df["tb_return"].reindex(price_data.index).fillna(0.0)
-                )
-            else:
-                ret_series = (
-                    price_data["close"]
-                    .pct_change()
-                    .shift(-1)
-                    .reindex(price_data.index)
-                    .fillna(0.0)
-                )
-
-            best: dict[str, dict[str, float]] = {}
-            # Iterate bars to compute intensities
-            for label in label_names:
-                # Score per bar
-                scores: list[float] = []
-                for i in range(len(price_data)):
-                    p_slice = price_data.iloc[: i + 1]
-                    v_slice = volume_data.iloc[: i + 1]
-
-                    # Prepare stationary data for feature calculation
-                    returns_data = self._prepare_returns_data(p_slice)
-                    if returns_data.empty:
-                        returns_data = p_slice  # Fallback to raw data
-
-                    feats = {}
-                    try:
-                        # Use stationary data for pattern analysis
-                        feats.update(
-                            self._calculate_technical_indicators(p_slice)
-                        )  # Keep raw for technical indicators
-                        feats.update(
-                            self._calculate_volume_features(v_slice)
-                        )  # Uses stationary volume data
-                        feats.update(
-                            self._calculate_price_action_patterns(returns_data)
-                        )  # Uses returns
-                        feats.update(
-                            self._calculate_volatility_patterns(returns_data)
-                        )  # Uses returns
-                        feats.update(
-                            self._calculate_momentum_patterns(returns_data)
-                        )  # Uses returns
-                    except Exception:
-                        pass
-                    scores.append(
-                        self._compute_label_intensity(label, p_slice, v_slice, feats)
-                    )
-                scores_series = pd.Series(scores, index=price_data.index)
-
-                # Evaluate thresholds
-                best_threshold = self.default_activation_threshold
-                best_pf = -np.inf
-                best_stats = {
-                    "threshold": best_threshold,
-                    "hit_rate": 0.0,
-                    "frequency": 0.0,
-                    "profit_factor": 0.0,
-                    "avg_return": 0.0,
-                }
-                for thr in thresholds_grid:
-                    triggers = scores_series >= thr
-                    freq = float(triggers.mean())
-                    if freq <= 0:
-                        continue
-                    y = labels_series[triggers]
-                    r = ret_series[triggers]
-                    wins = r[y == 1]
-                    losses = r[y == -1]
-                    hit_rate = float((y == 1).mean()) if len(y) else 0.0
-                    gross = float(wins.clip(lower=0).sum())
-                    loss = float(-losses.clip(upper=0).sum())
-                    profit_factor = (
-                        (gross / loss) if loss > 0 else (gross if gross > 0 else 0.0)
-                    )
-                    avg_return = float(r.mean()) if len(r) else 0.0
-                    if profit_factor > best_pf and (
-                        self.min_coverage <= freq <= self.max_coverage
-                    ):
-                        best_pf = profit_factor
-                        best_threshold = float(thr)
-                        best_stats = {
-                            "threshold": best_threshold,
-                            "hit_rate": float(hit_rate),
-                            "frequency": float(freq),
-                            "profit_factor": float(profit_factor),
-                            "avg_return": float(avg_return),
-                        }
-                    if self.debug_logging:
-                        try:
-                            self.logger.info(
-                                {
-                                    "msg": "threshold_eval",
-                                    "label": label,
-                                    "thr": float(thr),
-                                    "freq": float(freq),
-                                    "hit_rate": float(hit_rate),
-                                    "profit_factor": float(profit_factor),
-                                    "avg_return": float(avg_return),
-                                }
-                            )
-                        except Exception:
-                            pass
-                self.set_activation_threshold(label, best_threshold)
-                best[label] = best_stats
-                if self.perf_logging:
-                    self.logger.info(
-                        {"msg": "best_threshold", "label": label, **best_stats}
-                    )
-            if self.perf_logging:
-                dt_ms = int((time.time() - t0) * 1000)
-                self.logger.info(
-                    {
-                        "msg": "fit_activation_thresholds_complete",
-                        "labels": len(label_names),
-                        "duration_ms": dt_ms,
-                    }
-                )
-            return best
-        except Exception as e:
-            self.logger.warning(f"Activation threshold fitting failed: {e}")
-            return {}
-
-    def _calculate_sr_levels(self, data: pd.DataFrame) -> dict[str, float]:
-        """Compute simple S/R levels using rolling extremes as proxies and their distances."""
-        out: dict[str, float] = {}
-        look = max(5, int(self.sr_lookback))
-        high_roll = data["high"].rolling(look, min_periods=5).max().shift(1)
-        low_roll = data["low"].rolling(look, min_periods=5).min().shift(1)
-        try:
-            out["resistance_level"] = (
-                float(high_roll.iloc[-1])
-                if not high_roll.empty
-                else float(data["high"].iloc[-1])
-            )
-            out["support_level"] = (
-                float(low_roll.iloc[-1])
-                if not low_roll.empty
-                else float(data["low"].iloc[-1])
-            )
-            cp = float(data["close"].iloc[-1])
-            out["dist_to_resistance_pct"] = float(
-                abs(cp - out["resistance_level"]) / max(1e-12, cp)
-            )
-            out["dist_to_support_pct"] = float(
-                abs(cp - out["support_level"]) / max(1e-12, cp)
-            )
-        except Exception:
-            pass
-        return out
-
-    def load_activation_thresholds_from_artifacts(
-        self, artifacts_dir: str | None = None
-    ) -> None:
-        """Load persisted activation thresholds from artifacts directory if available."""
-        try:
-            path = os.path.join(artifacts_dir or self.artifacts_dir, "thresholds.json")
-            if os.path.exists(path):
-                with open(path, "r") as f:
-                    data = json.load(f)
-                for k, v in data.items():
-                    thr = v.get("threshold", v) if isinstance(v, dict) else v
-                    self.set_activation_threshold(str(k), float(thr))
-        except Exception as e:
-            self.logger.warning(
-                f"Could not load activation thresholds from artifacts: {e}"
-            )
-
-    def load_reliability_from_artifacts(self, artifacts_dir: str | None = None) -> None:
-        """Load persisted label reliability scores from artifacts directory if available."""
-        try:
-            path = os.path.join(artifacts_dir or self.artifacts_dir, "reliability.json")
-            if os.path.exists(path):
-                with open(path, "r") as f:
-                    data = json.load(f)
-                for k, v in data.items():
-                    self.set_reliability_score(str(k), float(v))
-        except Exception as e:
-            self.logger.warning(f"Could not load reliability from artifacts: {e}")
-
-    def load_active_labels_from_artifacts(
-        self, artifacts_dir: str | None = None
-    ) -> None:
-        """Load active/inactive labels to enforce complementarity-aware removal."""
-        try:
-            path = os.path.join(
-                artifacts_dir or self.artifacts_dir, "active_labels.json"
-            )
-            if os.path.exists(path):
-                with open(path, "r") as f:
-                    data = json.load(f)
-                active = data.get("active_labels", []) if isinstance(data, dict) else []
-                if isinstance(active, list):
-                    self.active_labels = {str(x) for x in active}
-        except Exception:
-            pass
-
-
-# Alias for backward compatibility - MetaLabelingSystem is the same as CompositeHMMRegimeSystem
-MetaLabelingSystem = CompositeHMMRegimeSystem
+            self.print(error("Error stopping meta-labeling system: {e}"))

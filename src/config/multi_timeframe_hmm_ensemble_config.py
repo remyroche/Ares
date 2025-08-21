@@ -7,7 +7,7 @@ Configuration settings for the multi-timeframe HMM cluster ensemble system
 that combines predictions from HMM clusters across multiple timeframes.
 """
 
-from typing import Dict, Any, List
+from typing import Any
 from dataclasses import dataclass
 
 
@@ -28,7 +28,7 @@ class TimeframeConfig:
 class EnsembleConfig:
     """Configuration for the multi-timeframe ensemble."""
 
-    timeframes: List[TimeframeConfig]
+    timeframes: list[TimeframeConfig]
     meta_learner_type: str = "lgbm"  # "lgbm", "random_forest", "logistic"
     enable_dynamic_weighting: bool = True
     weight_update_frequency: int = 100  # Update weights every N predictions
@@ -38,11 +38,11 @@ class EnsembleConfig:
     )
 
 
-def get_multi_timeframe_hmm_ensemble_config() -> Dict[str, Any]:
+def get_multi_timeframe_hmm_ensemble_config() -> dict[str, Any]:
     """
     Get multi-timeframe HMM ensemble configuration.
 
-    NOTE: This system predicts REGIME TRANSITIONS only, not price direction.
+    NOTE: This system predicts REGIME TRANSITIONS only = not price direction.
     Price direction predictions (BUY/SELL/HOLD) are made in:
     - src/interfaces/base_interfaces.py (AnalysisResult.signal)
     - src/analyst/predictive_ensembles/ensemble_orchestrator.py (global meta-learner)
@@ -53,31 +53,26 @@ def get_multi_timeframe_hmm_ensemble_config() -> Dict[str, Any]:
     """
     return {
         "MULTI_TIMEFRAME_HMM_ENSEMBLE": {
-            "enabled": True,
-            "timeframes": {
+            "enabled": True, "timeframes": {
                 "5m": {
                     "weight": 0.25,  # Good balance of signal and noise
                     "min_samples": 50,
-                    "enable_hazard_model": True,
-                    "enable_price_prediction": False,
+                    "enable_hazard_model": True, "enable_price_prediction": False,
                 },
                 "15m": {
                     "weight": 0.30,  # Higher weight for medium-term trends
                     "min_samples": 50,
-                    "enable_hazard_model": True,
-                    "enable_price_prediction": False,
+                    "enable_hazard_model": True, "enable_price_prediction": False,
                 },
                 "30m": {
                     "weight": 0.25,  # Good for longer-term regime changes
                     "min_samples": 50,
-                    "enable_hazard_model": True,
-                    "enable_price_prediction": False,
+                    "enable_hazard_model": True, "enable_price_prediction": False,
                 },
                 "1h": {  # Replaced 1m with 1h for better signal quality
                     "weight": 0.20,  # Lower weight but higher quality signals
                     "min_samples": 50,
-                    "enable_hazard_model": True,
-                    "enable_price_prediction": False,  # Hazard models are for regime transitions only
+                    "enable_hazard_model": True, "enable_price_prediction": False,  # Hazard models are for regime transitions only
                 },
             },
             "meta_learner": {
@@ -90,8 +85,7 @@ def get_multi_timeframe_hmm_ensemble_config() -> Dict[str, Any]:
             },
             "ensemble_method": "stacking",  # "meta_learner", "stacking" (weighted_average is fallback only)
             "dynamic_weighting": {
-                "enabled": True,
-                "update_frequency": 100,  # Update weights every N predictions
+                "enabled": True, "update_frequency": 100,  # Update weights every N predictions
                 "performance_window": 1000,  # Keep last N predictions for performance tracking
                 "min_weight": 0.1,  # Minimum weight for any timeframe
                 "max_weight": 0.5,  # Maximum weight for any timeframe
@@ -105,26 +99,23 @@ def get_multi_timeframe_hmm_ensemble_config() -> Dict[str, Any]:
                 "cross_validation_folds": 3,
                 "test_size": 0.2,
                 "random_state": 42,
-                "enable_early_stopping": True,
-                "patience": 10,
+                "enable_early_stopping": True, "patience": 10,
             },
             "model_storage": {
                 "base_dir": "models/multi_timeframe_hmm_ensemble",
-                "save_metadata": True,
-                "save_models": True,
+                "save_metadata": True, "save_models": True,
                 "compression": "gzip",
             },
             "logging": {
                 "level": "INFO",
-                "enable_performance_tracking": True,
-                "log_predictions": True,
+                "enable_performance_tracking": True, "log_predictions": True,
                 "log_weight_updates": True,
             },
-        }
+        },
     }
 
 
-def get_default_timeframe_configs() -> List[TimeframeConfig]:
+def get_default_timeframe_configs() -> list[TimeframeConfig]:
     """
     Get default timeframe configurations.
 
@@ -136,29 +127,25 @@ def get_default_timeframe_configs() -> List[TimeframeConfig]:
             timeframe="1m",
             weight=0.25,
             min_samples=50,
-            enable_hazard_model=True,
-            enable_price_prediction=False,
+            enable_hazard_model=True, enable_price_prediction=False,
         ),
         TimeframeConfig(
             timeframe="5m",
             weight=0.25,
             min_samples=50,
-            enable_hazard_model=True,
-            enable_price_prediction=False,
+            enable_hazard_model=True, enable_price_prediction=False,
         ),
         TimeframeConfig(
             timeframe="15m",
             weight=0.25,
             min_samples=50,
-            enable_hazard_model=True,
-            enable_price_prediction=False,
+            enable_hazard_model=True, enable_price_prediction=False,
         ),
         TimeframeConfig(
             timeframe="30m",
             weight=0.25,
             min_samples=50,
-            enable_hazard_model=True,
-            enable_price_prediction=False,
+            enable_hazard_model=True, enable_price_prediction=False,
         ),
     ]
 
@@ -173,14 +160,13 @@ def get_default_ensemble_config() -> EnsembleConfig:
     return EnsembleConfig(
         timeframes=get_default_timeframe_configs(),
         meta_learner_type="lgbm",
-        enable_dynamic_weighting=True,
-        weight_update_frequency=100,
+        enable_dynamic_weighting=True, weight_update_frequency=100,
         min_confidence_threshold=0.6,
         ensemble_method="meta_learner",
     )
 
 
-def validate_ensemble_config(config: Dict[str, Any]) -> bool:
+def validate_ensemble_config(config: dict[str, Any]) -> bool:
     """
     Validate ensemble configuration.
 
@@ -188,7 +174,7 @@ def validate_ensemble_config(config: Dict[str, Any]) -> bool:
         config: Configuration dictionary
 
     Returns:
-        bool: True if valid, False otherwise
+        bool: True if valid = False otherwise
     """
     try:
         ensemble_config = config.get("MULTI_TIMEFRAME_HMM_ENSEMBLE", {})
@@ -216,16 +202,13 @@ def validate_ensemble_config(config: Dict[str, Any]) -> bool:
         # Check meta-learner type
         meta_learner_type = ensemble_config.get("meta_learner", {}).get("type", "")
         valid_learner_types = ["lgbm", "random_forest", "logistic"]
-        if meta_learner_type not in valid_learner_types:
-            return False
-
-        return True
+        return meta_learner_type in valid_learner_types
 
     except Exception:
         return False
 
 
-def get_optimized_timeframe_weights() -> Dict[str, float]:
+def get_optimized_timeframe_weights() -> dict[str, float]:
     """
     Get optimized timeframe weights based on typical market behavior.
 
@@ -240,16 +223,15 @@ def get_optimized_timeframe_weights() -> Dict[str, float]:
     }
 
 
-def get_adaptive_weighting_config() -> Dict[str, Any]:
+def get_adaptive_weighting_config() -> dict[str , Any]:
     """
     Get adaptive weighting configuration for dynamic weight updates.
 
     Returns:
-        Dict[str, Any]: Adaptive weighting configuration
+        Dict[str = Any]: Adaptive weighting configuration
     """
     return {
-        "enabled": True,
-        "update_frequency": 100,
+        "enabled": True , "update_frequency": 100,
         "performance_window": 1000,
         "min_weight": 0.1,
         "max_weight": 0.5,

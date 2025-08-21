@@ -1,20 +1,21 @@
 # src/database/sqlite_manager.py
 
+from collections import defaultdict
+from datetime import datetime
+from src.utils.logger import system_logger
+from typing import Any
 import asyncio
 import json
 import os
-import sqlite3
 import time
-from collections import defaultdict
-from datetime import datetime
-from typing import Any
+import sqlite3
 
+from src.config.constants import *
 from src.utils.error_handler import (
     handle_errors,
     handle_file_operations,
     handle_specific_errors,
 )
-from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     connection_error,
     error,
@@ -23,7 +24,6 @@ from src.utils.warning_symbols import (
     invalid,
     missing,
 )
-
 
 class ConnectionPool:
     """Async connection pool for database operations."""
@@ -36,7 +36,10 @@ class ConnectionPool:
         self.total_connections_created: int = 0
         self.connection_errors: int = 0
 
-    @handle_errors(exceptions=(OSError, sqlite3.Error, asyncio.TimeoutError), default_return=None)
+    @handle_errors(
+        exceptions=(OSError, sqlite3.Error, asyncio.TimeoutError),
+        default_return=None,
+    )
     async def initialize(self) -> None:
         """Initialize the connection pool."""
         self.connection_pool = asyncio.Queue(maxsize=self.max_connections)
@@ -48,7 +51,10 @@ class ConnectionPool:
                 await self.connection_pool.put(connection)
                 self.total_connections_created += 1
 
-    @handle_errors(exceptions=(OSError, sqlite3.Error, PermissionError), default_return=None)
+    @handle_errors(
+        exceptions=(OSError, sqlite3.Error, PermissionError),
+        default_return=None,
+    )
     async def _create_connection(self) -> sqlite3.Connection | None:
         """Create a new database connection."""
         connection = sqlite3.connect(self.database_path)
@@ -62,7 +68,10 @@ class ConnectionPool:
 
         return connection
 
-    @handle_errors(exceptions=(asyncio.QueueEmpty, asyncio.TimeoutError, OSError), default_return=None)
+    @handle_errors(
+        exceptions=(asyncio.QueueEmpty, asyncio.TimeoutError, OSError),
+        default_return=None,
+    )
     async def get_connection(self) -> sqlite3.Connection | None:
         """Get a connection from the pool."""
         if not self.connection_pool:
@@ -86,7 +95,10 @@ class ConnectionPool:
             self.active_connections += 1
             return connection
 
-    @handle_errors(exceptions=(asyncio.QueueFull, sqlite3.Error, OSError), default_return=None)
+    @handle_errors(
+        exceptions=(asyncio.QueueFull, sqlite3.Error, OSError),
+        default_return=None,
+    )
     async def return_connection(self, connection: sqlite3.Connection) -> None:
         """Return a connection to the pool."""
         if connection and self.connection_pool:
@@ -105,21 +117,18 @@ class ConnectionPool:
     def get_pool_stats(self) -> dict[str, Any]:
         """Get connection pool statistics."""
         return {
-            "max_connections": self.max_connections,
-            "active_connections": self.active_connections,
+            "max_connections": self.max_connections, "active_connections": self.active_connections,
             "pool_size": self.connection_pool.qsize() if self.connection_pool else 0,
-            "total_connections_created": self.total_connections_created,
-            "connection_errors": self.connection_errors,
+            "total_connections_created": self.total_connections_created, "connection_errors": self.connection_errors,
             "utilization_rate": self.active_connections / self.max_connections
             if self.max_connections > 0
             else 0,
         }
 
-
 class SQLiteManager:
     """
-    Enhanced SQLite manager with comprehensive error handling, type safety,
-    async optimization, connection pooling, and automatic recovery.
+    Enhanced SQLite manager with comprehensive error handling = type safety,
+    async optimization = connection pooling, and automatic recovery.
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
@@ -178,7 +187,7 @@ class SQLiteManager:
         Initialize SQLite manager with enhanced error handling.
 
         Returns:
-            bool: True if initialization successful, False otherwise
+            bool: True if initialization successful = False otherwise
         """
         try:
             self.logger.info("Initializing SQLite Manager...")
@@ -204,14 +213,26 @@ class SQLiteManager:
             self.logger.info("✅ SQLite Manager initialization completed successfully")
             return True
 
-        except (OSError, IOError) as e:
-            self.print(failed(f"❌ SQLite Manager initialization failed - File system error: {e}"))
+        except OSError as e:
+            self.print(
+                failed(
+                    f"❌ SQLite Manager initialization failed - File system error: {e}",
+                ),
+            )
             return False
         except sqlite3.Error as e:
-            self.print(failed(f"❌ SQLite Manager initialization failed - Database error: {e}"))
+            self.print(
+                failed(
+                    f"❌ SQLite Manager initialization failed - Database error: {e}",
+                ),
+            )
             return False
         except Exception as e:
-            self.print(failed(f"❌ SQLite Manager initialization failed - Unexpected error: {e}"))
+            self.print(
+                failed(
+                    f"❌ SQLite Manager initialization failed - Unexpected error: {e}",
+                ),
+            )
             return False
 
     @handle_errors(
@@ -223,14 +244,10 @@ class SQLiteManager:
         """Load database configuration."""
         try:
             # Import constants
-            from src.config.constants import (
-                DEFAULT_DATABASE_PATH,
-                DEFAULT_BACKUP_INTERVAL,
-                DEFAULT_MAX_CONNECTIONS,
-                DEFAULT_MAX_RECOVERY_ATTEMPTS,
-                DEFAULT_RECOVERY_COOLDOWN,
-            )
-            
+            DEFAULT_BACKUP_INTERVAL = DEFAULT_DATABASE_PATH
+            DEFAULT_MAX_CONNECTIONS = DEFAULT_MAX_RECOVERY_ATTEMPTS
+            DEFAULT_RECOVERY_COOLDOWN = DEFAULT_MAX_RECOVERY_ATTEMPTS
+
             # Set default database parameters
             self.db_config.setdefault("database_path", DEFAULT_DATABASE_PATH)
             self.db_config.setdefault("auto_backup", True)
@@ -238,7 +255,10 @@ class SQLiteManager:
             self.db_config.setdefault("max_connections", DEFAULT_MAX_CONNECTIONS)
             self.db_config.setdefault("enable_foreign_keys", True)
             self.db_config.setdefault("journal_mode", "WAL")
-            self.db_config.setdefault("max_recovery_attempts", DEFAULT_MAX_RECOVERY_ATTEMPTS)
+            self.db_config.setdefault(
+                "max_recovery_attempts",
+                DEFAULT_MAX_RECOVERY_ATTEMPTS,
+            )
             self.db_config.setdefault("recovery_cooldown", DEFAULT_RECOVERY_COOLDOWN)
 
             # Update configuration
@@ -252,9 +272,13 @@ class SQLiteManager:
             self.logger.info("Database configuration loaded successfully")
 
         except (KeyError, TypeError) as e:
-            self.print(error(f"Error loading database configuration - Invalid config: {e}"))
+            self.print(
+                error(f"Error loading database configuration - Invalid config: {e}"),
+            )
         except Exception as e:
-            self.print(error(f"Error loading database configuration - Unexpected error: {e}"))
+            self.print(
+                error(f"Error loading database configuration - Unexpected error: {e}"),
+            )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -266,7 +290,7 @@ class SQLiteManager:
         Validate database configuration.
 
         Returns:
-            bool: True if configuration is valid, False otherwise
+            bool: True if configuration is valid = False otherwise
         """
         try:
             # Validate database path
@@ -312,8 +336,7 @@ class SQLiteManager:
         """Initialize connection pool."""
         try:
             self.connection_pool = ConnectionPool(
-                max_connections=self.max_connections,
-                database_path=self.db_path,
+                max_connections=self.max_connections, database_path=self.db_path,
             )
             await self.connection_pool.initialize()
 
@@ -321,10 +344,18 @@ class SQLiteManager:
                 f"Connection pool initialized with {self.max_connections} connections",
             )
 
-        except (OSError, IOError) as e:
-            self.print(connection_error(f"Error initializing connection pool - File system error: {e}"))
+        except OSError as e:
+            self.print(
+                connection_error(
+                    f"Error initializing connection pool - File system error: {e}",
+                ),
+            )
         except Exception as e:
-            self.print(connection_error(f"Error initializing connection pool - Unexpected error: {e}"))
+            self.print(
+                connection_error(
+                    f"Error initializing connection pool - Unexpected error: {e}",
+                ),
+            )
 
     @handle_file_operations(
         default_return=False,
@@ -335,7 +366,7 @@ class SQLiteManager:
         Initialize database with enhanced error handling.
 
         Returns:
-            bool: True if initialization successful, False otherwise
+            bool: True if initialization successful = False otherwise
         """
         try:
             # Ensure database directory exists
@@ -373,13 +404,25 @@ class SQLiteManager:
                 await self.connection_pool.return_connection(connection)
 
         except sqlite3.Error as e:
-            self.print(initialization_error(f"Error initializing database - SQLite error: {e}"))
+            self.print(
+                initialization_error(
+                    f"Error initializing database - SQLite error: {e}",
+                ),
+            )
             return False
-        except (OSError, IOError) as e:
-            self.print(initialization_error(f"Error initializing database - File system error: {e}"))
+        except OSError as e:
+            self.print(
+                initialization_error(
+                    f"Error initializing database - File system error: {e}",
+                ),
+            )
             return False
         except Exception as e:
-            self.print(initialization_error(f"Error initializing database - Unexpected error: {e}"))
+            self.print(
+                initialization_error(
+                    f"Error initializing database - Unexpected error: {e}",
+                ),
+            )
             return False
 
     @handle_errors(
@@ -398,9 +441,9 @@ class SQLiteManager:
                     side TEXT NOT NULL,
                     size REAL NOT NULL,
                     price REAL NOT NULL,
-                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                     pnl REAL DEFAULT 0,
-                    status TEXT DEFAULT 'open'
+                    status TEXT DEFAULT 'open',
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
@@ -413,8 +456,8 @@ class SQLiteManager:
                     entry_price REAL NOT NULL,
                     current_price REAL NOT NULL,
                     pnl REAL DEFAULT 0,
-                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    status TEXT DEFAULT 'open'
+                    status TEXT DEFAULT 'open',
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
@@ -475,7 +518,7 @@ class SQLiteManager:
             trade_data: Trade data dictionary
 
         Returns:
-            bool: True if insertion successful, False otherwise
+            bool: True if insertion successful = False otherwise
         """
         try:
             # Validate trade data
@@ -495,8 +538,8 @@ class SQLiteManager:
                 # Insert trade
                 connection.execute(
                     """
-                    INSERT INTO trades (symbol, side, size, price, pnl, status)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO trades (symbol, side, size, price, pnl, status, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """,
                     (
                         trade_data["symbol"],
@@ -545,7 +588,7 @@ class SQLiteManager:
             position_data: Position data dictionary
 
         Returns:
-            bool: True if update successful, False otherwise
+            bool: True if update successful = False otherwise
         """
         try:
             # Validate position data
@@ -570,8 +613,8 @@ class SQLiteManager:
                 # Update or insert position
                 connection.execute(
                     """
-                    INSERT OR REPLACE INTO positions (symbol, size, entry_price, current_price, pnl, status)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT OR REPLACE INTO positions (symbol, size, entry_price, current_price, pnl, status, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """,
                     (
                         position_data["symbol"],
@@ -611,9 +654,7 @@ class SQLiteManager:
         context="trades getting",
     )
     async def get_trades(
-        self,
-        symbol: str | None = None,
-        limit: int | None = None,
+        self, symbol: str | None = None, limit: int | None = None
     ) -> list[dict[str, Any]]:
         """
         Get trades with enhanced error handling and connection pooling.
@@ -780,7 +821,7 @@ class SQLiteManager:
             performance_data: Performance data dictionary
 
         Returns:
-            bool: True if insertion successful, False otherwise
+            bool: True if insertion successful = False otherwise
         """
         try:
             # Validate performance data
@@ -800,8 +841,8 @@ class SQLiteManager:
                 # Insert performance
                 connection.execute(
                     """
-                    INSERT INTO performance (total_pnl, win_rate, sharpe_ratio, max_drawdown)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO performance (total_pnl, win_rate, sharpe_ratio, max_drawdown, timestamp)
+                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """,
                     (
                         performance_data["total_pnl"],
@@ -892,7 +933,7 @@ class SQLiteManager:
             value: Setting value
 
         Returns:
-            bool: True if setting successful, False otherwise
+            bool: True if setting successful = False otherwise
         """
         try:
             # Get connection from pool
@@ -937,10 +978,7 @@ class SQLiteManager:
         context="document setting",
     )
     async def set_document(
-        self,
-        collection: str,
-        key: str,
-        data: dict[str, Any],
+        self, collection: str, key: str, data: dict[str, Any],
     ) -> bool:
         """
         Set document with enhanced error handling and connection pooling.
@@ -951,7 +989,7 @@ class SQLiteManager:
             data: Document data
 
         Returns:
-            bool: True if setting successful, False otherwise
+            bool: True if setting successful = False otherwise
         """
         try:
             # Get connection from pool
@@ -1073,7 +1111,7 @@ class SQLiteManager:
             backup_path: Optional backup path
 
         Returns:
-            bool: True if backup successful, False otherwise
+            bool: True if backup successful = False otherwise
         """
         try:
             if not backup_path:
@@ -1112,14 +1150,10 @@ class SQLiteManager:
         """
         try:
             status = {
-                "is_connected": self.is_connected,
-                "database_path": self.database_path,
-                "auto_backup": self.auto_backup,
-                "backup_interval": self.backup_interval,
-                "max_connections": self.max_connections,
-                "recovery_attempts": self.recovery_attempts,
-                "max_recovery_attempts": self.max_recovery_attempts,
-                "uptime": time.time() - self.start_time,
+                "is_connected": self.is_connected, "database_path": self.database_path,
+                "auto_backup": self.auto_backup, "backup_interval": self.backup_interval,
+                "max_connections": self.max_connections, "recovery_attempts": self.recovery_attempts,
+                "max_recovery_attempts": self.max_recovery_attempts, "uptime": time.time() - self.start_time,
                 "operation_stats": dict(self.operation_stats),
                 "error_stats": dict(self.error_stats),
             }
@@ -1156,10 +1190,8 @@ class SQLiteManager:
         except Exception:
             self.print(error("Error stopping SQLite manager: {e}"))
 
-
 # Global SQLite manager instance
 sqlite_manager: SQLiteManager | None = None
-
 
 @handle_errors(
     exceptions=(Exception,),
@@ -1185,11 +1217,9 @@ async def setup_sqlite_manager(
             config = {
                 "sqlite_manager": {
                     "database_path": "data/ares.db",
-                    "auto_backup": True,
-                    "backup_interval": 3600,
+                    "auto_backup": True, "backup_interval": 3600,
                     "max_connections": 10,
-                    "enable_foreign_keys": True,
-                    "journal_mode": "WAL",
+                    "enable_foreign_keys": True, "journal_mode": "WAL",
                     "max_recovery_attempts": 3,
                     "recovery_cooldown": 60,
                 },

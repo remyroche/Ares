@@ -1,7 +1,7 @@
+from collections.abc import Iterator
+from dataclasses import dataclass
 import numpy as np
 import pandas as pd
-from dataclasses import dataclass
-from typing import Iterator, Tuple
 
 
 @dataclass
@@ -19,21 +19,23 @@ class PurgedKFoldTime:
     purge: pd.Timedelta | int = pd.Timedelta(minutes=30)
     embargo: pd.Timedelta | int = pd.Timedelta(minutes=15)
 
-    def split(
-        self, X: pd.DataFrame, y=None, groups=None
-    ) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
+    def split(self, X: pd.DataFrame,
+              y=None, groups=None,
+              ) -> Iterator[tuple[np.ndarray, np.ndarray]]:
         if not isinstance(X, pd.DataFrame):
-            raise ValueError("X must be a pandas DataFrame with an index")
+            msg = "X must be a pandas DataFrame with an index"
+            raise ValueError(msg)
         index = X.index
         n_samples = len(X)
         if self.n_splits < 2 or self.n_splits > n_samples:
-            raise ValueError("n_splits must be at least 2 and at most n_samples")
+            msg = "n_splits must be at least 2 and at most n_samples"
+            raise ValueError(msg)
 
         # Order by index (time)
-        order = np.argsort(np.arange(n_samples))
+        np.argsort(np.arange(n_samples))
         # Build fold boundaries
         fold_sizes = np.full(self.n_splits, n_samples // self.n_splits, dtype=int)
-        fold_sizes[: n_samples % self.n_splits] += 1
+        fold_sizes[:n_samples % self.n_splits] += 1
         current = 0
         folds = []
         for fold_size in fold_sizes:
@@ -43,7 +45,7 @@ class PurgedKFoldTime:
 
         is_time = isinstance(index, pd.DatetimeIndex)
 
-        for i, (val_start_i, val_stop_i) in enumerate(folds):
+        for _i, (val_start_i, val_stop_i) in enumerate(folds):
             val_idx = np.arange(val_start_i, val_stop_i)
             if is_time:
                 val_start_time = index[val_start_i]

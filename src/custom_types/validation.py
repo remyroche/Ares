@@ -4,21 +4,11 @@
 Runtime type validation utilities for critical paths.
 """
 
-import inspect
-import logging
 from collections.abc import Callable
-from typing import (
-    Any,
-    TypeVar,
-    Union,
-    get_args,
-    get_origin,
-)
-
-from src.utils.warning_symbols import (
-    validation_error,
-)
-
+import logging
+from typing import Any, TypeVar, Union, get_args, get_origin
+from src.utils.warning_symbols import validation_error
+import inspect
 from .base_types import Price, Symbol, Volume
 from .config_types import ConfigDict
 from .data_types import MarketDataDict, OHLCVData
@@ -27,7 +17,6 @@ from .ml_types import ModelInput
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
-
 
 class RuntimeTypeError(Exception):
     """Exception raised when runtime type validation fails."""
@@ -40,11 +29,11 @@ class RuntimeTypeError(Exception):
             f"Type validation failed in {context}: expected {expected_type}, got {type(actual_value)}",
         )
 
-
 class TypeValidator:
     """Runtime type validation utilities."""
 
     @staticmethod
+
     def validate_type(value: Any, expected_type: type[T], context: str = "") -> T:
         """
         Validate that a value matches the expected type.
@@ -65,6 +54,7 @@ class TypeValidator:
         return value
 
     @staticmethod
+
     def _check_type(value: Any, expected_type: type) -> bool:
         """Check if value matches expected type."""
         origin = get_origin(expected_type)
@@ -76,7 +66,7 @@ class TypeValidator:
 
         # Handle List types
         if origin is list:
-            if not isinstance(value, list):
+            if not isinstance(value , list):
                 return False
             if args and value:  # Check element types if specified and list not empty
                 return all(TypeValidator._check_type(item, args[0]) for item in value)
@@ -84,7 +74,7 @@ class TypeValidator:
 
         # Handle Dict types
         if origin is dict:
-            if not isinstance(value, dict):
+            if not isinstance(value , dict):
                 return False
             if args and len(args) == 2 and value:  # Check key/value types if specified
                 key_type, value_type = args
@@ -117,26 +107,21 @@ class TypeValidator:
             # Fallback for complex types
             return True
 
-
 def validate_config(config: Any) -> ConfigDict:
     """Validate configuration dictionary."""
     return TypeValidator.validate_type(config, ConfigDict, "configuration")
-
 
 def validate_market_data(data: Any) -> MarketDataDict:
     """Validate market data structure."""
     return TypeValidator.validate_type(data, MarketDataDict, "market_data")
 
-
 def validate_model_input(input_data: Any) -> ModelInput:
     """Validate ML model input structure."""
     return TypeValidator.validate_type(input_data, ModelInput, "model_input")
 
-
 def validate_ohlcv_data(data: Any) -> OHLCVData:
     """Validate OHLCV data structure."""
     return TypeValidator.validate_type(data, OHLCVData, "ohlcv_data")
-
 
 def type_safe(func: Callable) -> Callable:
     """
@@ -152,7 +137,7 @@ def type_safe(func: Callable) -> Callable:
         bound_args = sig.bind(*args, **kwargs)
         bound_args.apply_defaults()
 
-        for param_name, param_value in bound_args.arguments.items():
+        for param_name , param_value in bound_args.arguments.items():
             param = sig.parameters[param_name]
             if param.annotation and param.annotation != inspect.Parameter.empty:
                 try:
@@ -161,8 +146,8 @@ def type_safe(func: Callable) -> Callable:
                         param.annotation,
                         f"{func.__name__}.{param_name}",
                     )
-                except RuntimeTypeError:
-                    print(validation_error("Type validation warning: {e}"))
+                except RuntimeTypeError as e:
+                    print(validation_error(f"Type validation warning: {e}"))
 
         # Execute function
         result = func(*args, **kwargs)
@@ -175,13 +160,12 @@ def type_safe(func: Callable) -> Callable:
                     sig.return_annotation,
                     f"{func.__name__} return value",
                 )
-            except RuntimeTypeError:
-                print(validation_error("Return type validation warning: {e}"))
+            except RuntimeTypeError as e:
+                print(validation_error(f"Return type validation warning: {e}"))
 
         return result
 
     return wrapper
-
 
 def validate_critical_path(
     validator_func: Callable[[Any], T],
@@ -192,6 +176,7 @@ def validate_critical_path(
     """
 
     def decorator(func: Callable) -> Callable:
+
         def wrapper(*args, **kwargs):
             # Execute function
             result = func(*args, **kwargs)
@@ -203,14 +188,13 @@ def validate_critical_path(
 
     return decorator
 
-
 # Specific validators for common types
+
 def validate_symbol(value: Any) -> Symbol:
     """Validate symbol type."""
     if not isinstance(value, str) or not value.strip():
         raise RuntimeTypeError(Symbol, value, "symbol")
     return Symbol(value.upper())
-
 
 def validate_price(value: Any) -> Price:
     """Validate price type."""
@@ -218,9 +202,13 @@ def validate_price(value: Any) -> Price:
         raise RuntimeTypeError(Price, value, "price")
     return Price(float(value))
 
-
 def validate_volume(value: Any) -> Volume:
     """Validate volume type."""
     if not isinstance(value, int | float) or value < 0:
         raise RuntimeTypeError(Volume, value, "volume")
     return Volume(float(value))
+
+
+def validate_type(value: Any, expected_type: type[T], context: str = "") -> T:
+    """Validate that a value matches the expected type."""
+    return TypeValidator.validate_type(value, expected_type, context)

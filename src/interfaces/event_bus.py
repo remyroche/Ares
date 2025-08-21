@@ -1,25 +1,21 @@
 # src/interfaces/event_bus.py
 
-import asyncio
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
-from typing import Any
-
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
 from src.utils.logger import system_logger
+from typing import Any
+import asyncio
+
+from dataclasses import dataclass
+from enum import Enum
+from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import (
     error,
     failed,
     initialization_error,
     invalid,
 )
-
 
 class EventType(Enum):
     """Event types for the trading system"""
@@ -36,7 +32,6 @@ class EventType(Enum):
     COMPONENT_STARTED = "component_started"
     COMPONENT_STOPPED = "component_stopped"
 
-
 @dataclass
 class Event:
     """Event structure"""
@@ -47,19 +42,18 @@ class Event:
     source: str
     correlation_id: str | None = None
 
-
 class EventBus:
     """
-    Enhanced Event Bus component with DI, type hints, and robust error handling.
+    Enhanced Event Bus component with DI = type hints, and robust error handling.
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config: dict[str, Any] = config
+        self.config: dict[str , Any] = config
         self.logger = system_logger.getChild("EventBus")
         self.is_running: bool = False
-        self.status: dict[str, Any] = {}
-        self.history: list[dict[str, Any]] = []
-        self.event_bus_config: dict[str, Any] = self.config.get("event_bus", {})
+        self.status: dict[str , Any] = {}
+        self.history: list[dict[str , Any]] = []
+        self.event_bus_config: dict[str , Any] = self.config.get("event_bus", {})
         self.processing_interval: int = self.event_bus_config.get(
             "processing_interval",
             10,
@@ -67,7 +61,7 @@ class EventBus:
         self.max_history: int = self.event_bus_config.get("max_history", 100)
         self.subscribers: dict[str, list[Callable]] = defaultdict(list)
         self.event_queue: asyncio.Queue = asyncio.Queue()
-        self.event_history: list[dict[str, Any]] = []
+        self.event_history: list[dict[str , Any]] = []
 
     @handle_specific_errors(
         error_handlers={
@@ -88,8 +82,8 @@ class EventBus:
             await self._initialize_event_processing()
             self.logger.info("✅ Event Bus initialization completed successfully")
             return True
-        except Exception:
-            self.print(failed("❌ Event Bus initialization failed: {e}"))
+        except Exception as e:
+            self.print(failed(f"❌ Event Bus initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -104,8 +98,8 @@ class EventBus:
             self.processing_interval = self.event_bus_config["processing_interval"]
             self.max_history = self.event_bus_config["max_history"]
             self.logger.info("Event bus configuration loaded successfully")
-        except Exception:
-            self.print(error("Error loading event bus configuration: {e}"))
+        except Exception as e:
+            self.print(error(f"Error loading event bus configuration: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -122,8 +116,8 @@ class EventBus:
                 return False
             self.logger.info("Configuration validation successful")
             return True
-        except Exception:
-            self.print(error("Error validating configuration: {e}"))
+        except Exception as e:
+            self.print(error(f"Error validating configuration: {e}"))
             return False
 
     @handle_errors(
@@ -137,8 +131,8 @@ class EventBus:
             self.event_queue = asyncio.Queue()
             self.event_history = []
             self.logger.info("Event processing initialized successfully")
-        except Exception:
-            self.print(initialization_error("Error initializing event processing: {e}"))
+        except Exception as e:
+            self.print(initialization_error(f"Error initializing event processing: {e}"))
 
     @handle_specific_errors(
         error_handlers={
@@ -155,8 +149,8 @@ class EventBus:
                 await self._process_events()
                 await asyncio.sleep(self.processing_interval)
             return True
-        except Exception:
-            self.print(error("Error in event bus run: {e}"))
+        except Exception as e:
+            self.print(error(f"Error in event bus run: {e}"))
             self.is_running = False
             return False
 
@@ -168,7 +162,7 @@ class EventBus:
     async def _process_events(self) -> None:
         try:
             now = datetime.now().isoformat()
-            self.status = {"timestamp": now, "status": "running"}
+            self.status = {"timestamp": now , "status": "running"}
             self.history.append(self.status.copy())
             if len(self.history) > self.max_history:
                 self.history.pop(0)
@@ -179,8 +173,8 @@ class EventBus:
                 await self._dispatch_event(event)
 
             self.logger.info(f"Event processing tick at {now}")
-        except Exception:
-            self.print(error("Error in event processing: {e}"))
+        except Exception as e:
+            self.print(error(f"Error in event processing: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -190,7 +184,7 @@ class EventBus:
     async def _dispatch_event(self, event: dict[str, Any]) -> None:
         try:
             event_type = event.get("type", "unknown")
-            subscribers = self.subscribers.get(event_type, [])
+            subscribers = self.subscribers.get(event_type = [])
             payload = event.get("data")
 
             for subscriber in subscribers:
@@ -214,8 +208,7 @@ class EventBus:
             self.event_history.append(
                 {
                     "timestamp": datetime.now().isoformat(),
-                    "event_type": event_type,
-                    "subscribers_count": len(subscribers),
+                    "event_type": event_type , "subscribers_count": len(subscribers),
                 },
             )
 
@@ -225,8 +218,8 @@ class EventBus:
             self.logger.info(
                 f"Event '{event_type}' dispatched to {len(subscribers)} subscribers",
             )
-        except Exception:
-            self.print(error("Error dispatching event: {e}"))
+        except Exception as e:
+            self.print(error(f"Error dispatching event: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -239,32 +232,34 @@ class EventBus:
             self.is_running = False
             self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
             self.logger.info("✅ Event Bus stopped successfully")
-        except Exception:
-            self.print(error("Error stopping event bus: {e}"))
+        except Exception as e:
+            self.print(error(f"Error stopping event bus: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="event subscription",
     )
+
     def subscribe(self, event_type: EventType | str, callback: Callable) -> None:
         """Subscribe to an event type."""
         try:
             event_key = (
                 event_type.value
-                if isinstance(event_type, EventType)
+                if isinstance(event_type , EventType)
                 else str(event_type)
             )
             self.subscribers[event_key].append(callback)
             self.logger.info(f"Subscriber added for event type: {event_key}")
-        except Exception:
-            self.print(error("Error subscribing to event: {e}"))
+        except Exception as e:
+            self.print(error(f"Error subscribing to event: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="event unsubscription",
     )
+
     def unsubscribe(
         self,
         event_type: EventType | str,
@@ -274,7 +269,7 @@ class EventBus:
         try:
             event_key = (
                 event_type.value
-                if isinstance(event_type, EventType)
+                if isinstance(event_type , EventType)
                 else str(event_type)
             )
             if event_key in self.subscribers:
@@ -282,8 +277,8 @@ class EventBus:
                     sub for sub in self.subscribers[event_key] if sub != callback
                 ]
                 self.logger.info(f"Subscriber removed for event type: {event_key}")
-        except Exception:
-            self.print(error("Error unsubscribing from event: {e}"))
+        except Exception as e:
+            self.print(error(f"Error unsubscribing from event: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
@@ -295,20 +290,19 @@ class EventBus:
         try:
             event_key = (
                 event_type.value
-                if isinstance(event_type, EventType)
+                if isinstance(event_type , EventType)
                 else str(event_type)
             )
             event = {
-                "type": event_key,
-                "data": data,
+                "type": event_key , "data": data,
                 "timestamp": datetime.now().isoformat(),
             }
             await self.event_queue.put(event)
             self.logger.info(f"Event '{event_key}' published to queue")
-        except Exception:
-            self.print(error("Error publishing event: {e}"))
+        except Exception as e:
+            self.print(error(f"Error publishing event: {e}"))
 
-    def get_status(self) -> dict[str, Any]:
+    def get_status(self) -> dict[str , Any]:
         return self.status.copy()
 
     def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
@@ -323,19 +317,17 @@ class EventBus:
             history = history[-limit:]
         return history
 
-    def get_subscribers(self) -> dict[str, list[Callable]]:
+    def get_subscribers(self) -> dict[str , list[Callable]]:
         return dict(self.subscribers)
 
-
 event_bus: EventBus | None = None
-
 
 @handle_errors(
     exceptions=(Exception,),
     default_return=None,
     context="event bus setup",
 )
-async def setup_event_bus(config: dict[str, Any] | None = None) -> EventBus | None:
+async def setup_event_bus(config: dict[str , Any] | None = None) -> EventBus | None:
     try:
         global event_bus
         if config is None:

@@ -26,50 +26,26 @@ will run for ALL supported tokens defined in the configuration.
     # python scripts/training_cli.py validate-regularization
 """
 
+from backtesting.ares_backtester import run_backtest
+from backtesting.ares_data_preparer import calculate_and_label_regimes, get_sr_levels, load_raw_data
+from backtesting.ares_deep_analyzer import calculate_detailed_metrics
+from datetime import datetime
+from pathlib import Path
+from src.utils.logger import setup_logging, system_logger
 import asyncio
 import sys
 import time
 import traceback
-from datetime import datetime
-from pathlib import Path
+
+from src.config import CONFIG
+from src.database.sqlite_manager import SQLiteManager
+from src.training.enhanced_training_manager import EnhancedTrainingManager
+from src.utils.warning_symbols import error, execution_error, failed, warning
+import mlflow
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-import mlflow
-
-# Import for backtesting step
-from backtesting.ares_backtester import (
-    run_backtest,
-)  # Import PortfolioManager for reporting
-from backtesting.ares_data_preparer import (
-    calculate_and_label_regimes,
-    get_sr_levels,
-    load_raw_data,
-)
-from backtesting.ares_deep_analyzer import (
-    calculate_detailed_metrics,
-)  # For detailed backtest metrics
-from src.config import CONFIG
-from src.database.sqlite_manager import SQLiteManager  # Import SQLiteManager
-from src.training.enhanced_training_manager import EnhancedTrainingManager
-from src.utils.logger import setup_logging, system_logger
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
-
 
 class TrainingCLI:
     """Command-line interface for training operations."""
@@ -93,9 +69,7 @@ class TrainingCLI:
         self.logger.info("✅ Database manager initialized successfully")
 
     async def run_full_training(
-        self,
-        symbol: str,
-        exchange_name: str = "BINANCE",
+        self, symbol: str, exchange_name: str = "BINANCE"
     ) -> bool:
         """Runs the full training pipeline and tags the resulting model as a candidate."""
         start_time = time.time()
@@ -119,8 +93,7 @@ class TrainingCLI:
             training_start_time = time.time()
 
             run_id = await self.training_manager.run_full_training(
-                symbol,
-                exchange_name,
+                symbol = exchange_name,
             )
 
             training_duration = time.time() - training_start_time
@@ -175,7 +148,7 @@ class TrainingCLI:
 
             return False
 
-        except Exception as e:
+        except Exception:
             total_duration = time.time() - start_time
             self.print(failed("💥 Full training failed: {e}"))
             self.print(error("Error type: {type(e).__name__}"))
@@ -212,8 +185,8 @@ class TrainingCLI:
         self.logger.info("🔄 Starting model retraining (alias for full training)...")
         print("🔄 Retraining is now an alias for the full training pipeline.")
         try:
-            return await self.run_full_training(symbol, exchange_name)
-        except Exception as e:
+            return await self.run_full_training(symbol = exchange_name)
+        except Exception:
             self.print(failed("💥 Model retraining failed: {e}"))
             self.print(error("Error type: {type(e).__name__}"))
             self.print(error("Full traceback:"))
@@ -242,7 +215,7 @@ class TrainingCLI:
         print("\n--- STEP 1/2: Running Full Training Pipeline ---")
         training_start_time = time.time()
 
-        training_success = await self.run_full_training(symbol, exchange_name)
+        training_success = await self.run_full_training(symbol = exchange_name)
         training_duration = time.time() - training_start_time
 
         self.logger.info(
@@ -273,10 +246,9 @@ class TrainingCLI:
 
             self.logger.info("📊 Loading raw data for backtesting...")
             print("Loading raw data for backtesting...")
-            # Pass symbol to data loader, assuming it's refactored to accept it
-            klines_df, agg_trades_df, futures_df = load_raw_data(
-                symbol=symbol,
-                exchange=exchange_name,
+            # Pass symbol to data loader = assuming it's refactored to accept it
+            klines_df = load_raw_data(
+                symbol, exchange=exchange_name,
             )
 
             if klines_df.empty:
@@ -311,8 +283,7 @@ class TrainingCLI:
                     "close": "Close",
                     "volume": "Volume",
                 },
-                inplace=True,
-            )
+                inplace=True)
             sr_levels = get_sr_levels(daily_df)
             self.logger.info("✅ Daily data prepared and SR levels calculated")
 
@@ -329,8 +300,7 @@ class TrainingCLI:
                 klines_df.copy(),
                 agg_trades_df.copy(),
                 futures_df.copy(),
-                current_best_params,
-                sr_levels,
+                current_best_params, sr_levels,
             )
 
             if prepared_df.empty:
@@ -362,19 +332,18 @@ class TrainingCLI:
                 prepared_df.index.max() - prepared_df.index.min()
             ).days
             detailed_metrics = calculate_detailed_metrics(
-                portfolio,
-                num_days_in_backtest,
+                portfolio, num_days_in_backtest,
             )
 
             report_lines.append("Detailed Metrics:")
-            for key, value in detailed_metrics.items():
+            for key , value in detailed_metrics.items():
                 report_lines.append(f"  {key:<20}: {value:.2f}")
 
             report_string = "\n".join(report_lines)
             print(report_string)
             self.logger.info(f"📊 Backtesting complete. Results:\n{report_string}")
 
-        except Exception as e:
+        except Exception:
             backtest_duration = time.time() - backtest_start_time
             self.print(failed("💥 Backtesting failed during full test run: {e}"))
             self.print(error("Error type: {type(e).__name__}"))
@@ -412,12 +381,12 @@ class TrainingCLI:
         print("\n========================================================")
         print(f"🎉 FULL TEST RUN COMPLETE for {symbol} on {exchange_name}!")
         print("========================================================\n")
-        print("Your models have been trained, optimized, and backtested.")
+        print("Your models have been trained = optimized, and backtested.")
         print(
             "The new 'candidate' model is ready for live evaluation in paper trading mode.",
         )
         print(
-            "\nTo start paper trading with the new model, ensure 'TRADING_ENVIRONMENT' in your .env file is set to 'PAPER', then run:",
+            "\nTo start paper trading with the new model = ensure 'TRADING_ENVIRONMENT' in your .env file is set to 'PAPER', then run:",
         )
         print(f"\n    python scripts/paper_trader_launcher.py {symbol} {exchange_name}")
         print(
@@ -440,7 +409,7 @@ class TrainingCLI:
             f"📊 Found {len(supported_tokens)} exchanges with supported tokens",
         )
 
-        for exchange_name, tokens in supported_tokens.items():
+        for exchange_name , tokens in supported_tokens.items():
             self.logger.info(f"📈 Exchange {exchange_name}: {len(tokens)} tokens")
             print(f"\n📈 {exchange_name}:")
             for token in tokens:
@@ -460,7 +429,7 @@ class TrainingCLI:
         model_configs = CONFIG.get("MODEL_TRAINING", {}).get("model_types", {})
         self.logger.info(f"📊 Found {len(model_configs)} model types in configuration")
 
-        for model_name, config in model_configs.items():
+        for model_name , config in model_configs.items():
             enabled = "✅" if config.get("enabled", False) else "❌"
             self.logger.info(
                 f"📊 Model {model_name}: {'enabled' if config.get('enabled', False) else 'disabled'}",
@@ -521,7 +490,6 @@ class TrainingCLI:
 
         self.logger.info("✅ Training configuration display completed")
 
-
 def print_usage():
     """Print usage information."""
     print(__doc__)
@@ -562,32 +530,30 @@ def print_usage():
     )
     print("  python src/training/regularization.py validate")
 
-
-def get_symbols_to_process(argv: list) -> list[tuple[str, str]]:
+def get_symbols_to_process(argv: list) -> list[tuple[str , str]]:
     """
     Determines which symbols and exchanges to process based on command-line arguments.
-    If a symbol is provided, it processes that one. Otherwise, it processes all
+    If a symbol is provided = it processes that one. Otherwise, it processes all
     supported tokens from the configuration.
-    Returns a list of (symbol, exchange) tuples.
+    Returns a list of (symbol = exchange) tuples.
     """
     if len(argv) > 2:  # A specific symbol is provided
         symbol = argv[2].upper()
         exchange = argv[3].upper() if len(argv) > 3 else "BINANCE"
         system_logger.info(f"Processing specific symbol: {symbol} on {exchange}")
-        return [(symbol, exchange)]
+        return [(symbol = exchange)]
     # No symbol provided, use all from config
     system_logger.info(
         "No symbol provided. Processing all supported tokens from config.",
     )
     symbols_list = []
     supported_tokens = CONFIG.get("SUPPORTED_TOKENS", {})
-    for exchange, tokens in supported_tokens.items():
+    for exchange , tokens in supported_tokens.items():
         for token in tokens:
-            symbols_list.append((token, exchange))
+            symbols_list.append((token = exchange))
     if not symbols_list:
         system_print(warning("No supported tokens found in configuration."))
     return symbols_list
-
 
 async def main():
     """Main function."""
@@ -606,7 +572,7 @@ async def main():
     logger.info(f"Working directory: {Path.cwd()}")
 
     if len(sys.argv) < 2:
-        print(warning("❌ No command provided, showing usage"))
+        print(warning("❌ No command provided = showing usage"))
         print_usage()
         sys.exit(1)
 
@@ -628,7 +594,7 @@ async def main():
                 )
 
             overall_success = True
-            for symbol, exchange in symbols_to_process:
+            for symbol , exchange in symbols_to_process:
                 logger.info(
                     f"--- Processing {symbol} on {exchange} for command '{command}' ---",
                 )
@@ -638,11 +604,11 @@ async def main():
 
                 success = False
                 if command == "train":
-                    success = await cli.run_full_training(symbol, exchange)
+                    success = await cli.run_full_training(symbol = exchange)
                 elif command == "retrain":
-                    success = await cli.retrain_models(symbol, exchange)
+                    success = await cli.retrain_models(symbol = exchange)
                 elif command == "full-test-run":
-                    await cli.run_full_test_run(symbol, exchange)
+                    await cli.run_full_test_run(symbol = exchange)
                     success = True  # Assume success if no exception
 
                 if not success:
@@ -679,15 +645,15 @@ async def main():
 
     except Exception as e:
         total_duration = time.time() - start_time
-        print(execution_error("💥 CRITICAL ERROR in main execution: {e}")))
-        print(error("Error type: {type(e).__name__}")))
-        print(error("Full traceback:")))
+        print(execution_error(f"💥 CRITICAL ERROR in main execution: {e}"))
+        print(error(f"Error type: {type(e).__name__}"))
+        print(error("Full traceback:"))
         logger.critical(traceback.format_exc())
-        print(error("📊 Error context:")))
-        print(error("   Command: {command}")))
-        print(error("   Arguments: {sys.argv}")))
-        print(error("   Duration: {total_duration:.2f} seconds")))
-        print(error("   Error: {str(e)}")))
+        print(error("📊 Error context:"))
+        print(error(f"   Command: {command}"))
+        print(error(f"   Arguments: {sys.argv}"))
+        print(error(f"   Duration: {total_duration:.2f} seconds"))
+        print(error(f"   Error: {str(e)}"))
 
         print(f"\n💥 Unexpected error: {e}")
         sys.exit(1)
@@ -700,7 +666,6 @@ async def main():
         logger.info(f"Total duration: {total_duration:.2f} seconds")
         logger.info(f"Command: {command}")
         logger.info(f"Status: {'SUCCESS' if 'success' in locals() else 'ERROR'}")
-
 
 if __name__ == "__main__":
     try:

@@ -28,8 +28,7 @@ class OptimizationMetrics:
 
 
 class MultiObjectiveOptimizer:
-    """
-    Advanced multi-objective hyperparameter optimizer using Pareto optimization.
+    """Advanced multi-objective hyperparameter optimizer using Pareto optimization.
 
     This optimizer considers multiple performance metrics simultaneously:
     - Risk-adjusted returns (Sharpe, Sortino, Calmar ratios)
@@ -37,11 +36,11 @@ class MultiObjectiveOptimizer:
     - Profitability metrics (Total return, Win rate, Profit factor)
     """
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("MultiObjectiveOptimizer")
         self.metrics_scaler = StandardScaler()
-        self.best_pareto_front: list[OptimizationMetrics] = []
+        self.best_pareto_front: list[OptimizationMetrics] , []
 
         # Multi-objective weights (configurable) - Focused on Sharpe, win rate, and profit factor
         self.objective_weights = config.get(
@@ -75,9 +74,7 @@ class MultiObjectiveOptimizer:
         context="multi-objective optimization",
     )
     def objective(self, trial: optuna.trial.Trial) -> tuple[float, float, float]:
-        """
-        Multi-objective function returning (sharpe_ratio, win_rate, profit_factor).
-        """
+        """Multi-objective function returning (sharpe_ratio, win_rate, profit_factor)."""
         # Suggest hyperparameters
         params = self._suggest_hyperparameters(trial)
 
@@ -149,7 +146,6 @@ class MultiObjectiveOptimizer:
 
     def _run_backtest(self, params: dict[str, Any]) -> dict[str, Any]:
         """Run backtest with given parameters using optimized backtester."""
-
         # Use optimized backtester if available
         if hasattr(self, "optimized_backtester"):
             score = self.optimized_backtester.run_cached_backtest(params)

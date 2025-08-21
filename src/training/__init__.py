@@ -1,7 +1,6 @@
 # src/training/__init__.py
 
-"""
-Training Package
+"""Training Package.
 
 This package contains all training-related components including:
 - Training steps and pipelines

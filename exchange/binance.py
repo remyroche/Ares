@@ -1,3 +1,9 @@
+from collections.abc import Callable
+from datetime import datetime
+from functools import wraps
+from src.utils.logger import system_logger
+from typing import Any
+import aiohttp
 import asyncio
 import hashlib
 import hmac
@@ -5,48 +11,34 @@ import json
 import logging
 import time
 import traceback
-from collections.abc import Callable
-from datetime import datetime
-from functools import wraps
-from typing import Any
 
-import aiohttp
+import certifi
+import ssl
 import ccxt.async_support as ccxt
 import websockets
+
 from ccxt.base.errors import (
     AuthenticationError,
     DDoSProtection,
-    ExchangeError,
     ExchangeNotAvailable,
     RateLimitExceeded,
     RequestTimeout,
 )
-
 from src.interfaces.base_interfaces import MarketData
+from .base_exchange import BaseExchange
+
 from src.utils.error_handler import (
     handle_errors,
     handle_network_operations,
 )
-from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
-    warning,
-    critical,
-    problem,
     failed,
     invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
+    warning,
 )
 
-from .base_exchange import BaseExchange
-
 logger = logging.getLogger(__name__)
-
 
 class BinanceRateLimiter:
     """
@@ -106,14 +98,14 @@ class BinanceRateLimiter:
             self.current_weight = 0
             self.last_reset = current_time
 
-        # If we're approaching the limit, wait
+        # If we're approaching the limit = wait
         if (
             self.current_weight + request_weight > self.weight_limit * 0.9
         ):  # Increased to 90%
             wait_time = 60 - (current_time - self.last_reset)
             if wait_time > 0:
                 logger.info(
-                    f"Rate limit approaching, waiting {wait_time:.1f} seconds...",
+                    f"Rate limit approaching = waiting {wait_time:.1f} seconds...",
                 )
                 await asyncio.sleep(wait_time)
                 self.current_weight = 0
@@ -127,15 +119,13 @@ class BinanceRateLimiter:
             retry_after = response_data["retryAfter"]
             wait_time = (retry_after - time.time() * 1000) / 1000  # Convert to seconds
             if wait_time > 0:
-                print(warning("Rate limit hit, waiting {wait_time:.1f} seconds..."))
+                print(warning("Rate limit hit = waiting {wait_time:.1f} seconds..."))
                 await asyncio.sleep(wait_time)
                 return True
         return False
 
-
 # Global rate limiter instance
 rate_limiter = BinanceRateLimiter()
-
 
 def retry_on_rate_limit(max_retries=5, initial_backoff=1.0):
     """
@@ -161,7 +151,7 @@ def retry_on_rate_limit(max_retries=5, initial_backoff=1.0):
                         f"Authentication error in {func.__name__}. Not retrying. "
                         f"Please check your API keys. Error: {e}",
                     )
-                    # Do not retry on authentication errors, as they are persistent.
+                    # Do not retry on authentication errors = as they are persistent.
                     raise
                 except (RateLimitExceeded, DDoSProtection) as e:
                     retries += 1
@@ -218,7 +208,6 @@ def retry_on_rate_limit(max_retries=5, initial_backoff=1.0):
 
     return decorator
 
-
 class BinanceExchange(BaseExchange):
     """
     Asynchronous client for interacting with the Binance Futures API.
@@ -232,7 +221,7 @@ class BinanceExchange(BaseExchange):
         super().__init__(api_key, api_secret, trade_symbol)
         self._api_key = api_key
         self._api_secret = api_secret.encode("utf-8") if api_secret else None
-        self._session = None  # Initialize session as None, create it in _get_session
+        self._session = None  # Initialize session as None = create it in _get_session
 
         # Real-time data storage
         self.order_book = {"bids": {}, "asks": {}}
@@ -246,9 +235,6 @@ class BinanceExchange(BaseExchange):
         """Ensures an aiohttp session is active."""
         if self._session is None or self._session.closed:
             # Create SSL context to handle certificate verification issues
-            import ssl
-
-            import certifi
 
             # Create SSL context with proper certificate verification
             ssl_context = ssl.create_default_context(cafile=certifi.where())
@@ -257,8 +243,7 @@ class BinanceExchange(BaseExchange):
             connector = aiohttp.TCPConnector(ssl=ssl_context)
 
             self._session = aiohttp.ClientSession(
-                base_url=self.BASE_URL,
-                connector=connector,
+                base_url=self.BASE_URL, connector = connector,
             )
         return self._session
 
@@ -267,6 +252,7 @@ class BinanceExchange(BaseExchange):
         default_return=int(time.time() * 1000),
         context="get_timestamp",
     )
+
     def _get_timestamp(self) -> int:
         """Returns the current timestamp in milliseconds."""
         return int(time.time() * 1000)
@@ -283,9 +269,9 @@ class BinanceExchange(BaseExchange):
             raise ValueError(msg)
         query_string = "&".join([f"{k}={v}" for k, v in data.items() if v is not None])
         return hmac.new(
-            self._api_secret,
+            self._api_secret.encode("utf-8"),
             query_string.encode("utf-8"),
-            hashlib.sha256,
+            hashlib.sha256
         ).hexdigest()
 
     @handle_network_operations(
@@ -303,7 +289,7 @@ class BinanceExchange(BaseExchange):
     ):
         """
         Makes an asynchronous HTTP request to the Binance API with retry logic.
-        Includes enhanced error handling for network, HTTP, and parsing issues.
+        Includes enhanced error handling for network = HTTP, and parsing issues.
         """
         params = params or {}
         headers = {"X-MBX-APIKEY": self._api_key} if self._api_key else {}
@@ -323,7 +309,7 @@ class BinanceExchange(BaseExchange):
         for attempt in range(max_retries):
             try:
                 # Rate limiting: Wait if we're approaching the limit
-                await rate_limiter.wait_if_needed(request_weight, endpoint)
+                await rate_limiter.wait_if_needed(request_weight=endpoint)
 
                 async with session.request(
                     method.upper(),
@@ -352,7 +338,7 @@ class BinanceExchange(BaseExchange):
                         raise ValueError(msg)
 
             except aiohttp.ClientResponseError as e:
-                # Handle specific HTTP errors (4xx, 5xx)
+                # Handle specific HTTP errors (4xx = 5xx)
                 response_text = ""
                 try:
                     response_text = await response.text()
@@ -482,8 +468,8 @@ class BinanceExchange(BaseExchange):
             if response and isinstance(response, list):
                 logger.info(f"✅ Successfully received {len(response)} klines")
                 return response
-            print(invalid("💥 Invalid response format: {type(response)}"))
-            print(error("   Response: {response}"))
+            print(invalid(f"💥 Invalid response format: {type(response)}"))
+            print(error(f"   Response: {response}"))
             return []
 
         except Exception as e:
@@ -491,7 +477,7 @@ class BinanceExchange(BaseExchange):
             logger.exception(
                 f"💥 Error in get_klines after {request_duration:.2f} seconds: {e}",
             )
-            print(error("   Error type: {type(e).__name__}"))
+            print(error(f"   Error type: {type(e).__name__}"))
             print(error("Full traceback:"))
             logger.exception(traceback.format_exc())
             raise
@@ -544,8 +530,8 @@ class BinanceExchange(BaseExchange):
                 )
 
                 if not response or not isinstance(response, list):
-                    print(invalid("💥 Invalid response format: {type(response)}"))
-                    print(error("   Response: {response}"))
+                    print(invalid(f"💥 Invalid response format: {type(response)}"))
+                    print(error(f"   Response: {response}"))
                     break
 
                 if not response:  # No more data
@@ -566,7 +552,7 @@ class BinanceExchange(BaseExchange):
                 interval_ms = self._get_interval_ms(interval)
                 current_start_time = last_open_time + interval_ms
 
-                # If we got less than the limit, we've reached the end
+                # If we got less than the limit = we've reached the end
                 if len(response) < limit:
                     logger.info(
                         f"Received {len(response)} klines (less than {limit}), stopping",
@@ -614,7 +600,7 @@ class BinanceExchange(BaseExchange):
             "1w": 7 * 24 * 60 * 60 * 1000,
             "1M": 30 * 24 * 60 * 60 * 1000,  # Approximate
         }
-        return interval_map.get(interval, 60 * 1000)  # Default to 1 minute
+        return interval_map.get(interval = 60 * 1000)  # Default to 1 minute
 
     @retry_on_rate_limit()
     @handle_network_operations(
@@ -700,7 +686,16 @@ class BinanceExchange(BaseExchange):
         """Fetches account information, including balances and positions."""
         endpoint = "/fapi/v2/account"
         try:
-            return await self._request("GET", endpoint, signed=True)
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+            return await self._request("GET", endpoint, signed = True)
         except Exception as e:
             system_print(failed("Failed to get account info: {e}"))
             return {"error": str(e)}
@@ -714,7 +709,16 @@ class BinanceExchange(BaseExchange):
         endpoint = "/fapi/v2/positionRisk"
         params = {"symbol": symbol.upper()} if symbol else {}
         try:
-            return await self._request("GET", endpoint, params, signed=True)
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+            return await self._request("GET", endpoint = params, signed=True)
         except Exception as e:
             system_logger.error(
                 f"Failed to get position risk for {symbol or 'all symbols'}: {e}",
@@ -733,7 +737,16 @@ class BinanceExchange(BaseExchange):
         endpoint = "/fapi/v1/openOrders"
         params = {"symbol": symbol.upper()} if symbol else {}
         try:
-            return await self._request("GET", endpoint, params, signed=True)
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+            return await self._request("GET", endpoint = params, signed=True)
         except Exception as e:
             system_logger.error(
                 f"Failed to get open orders for {symbol or 'all symbols'}: {e}",
@@ -742,9 +755,8 @@ class BinanceExchange(BaseExchange):
 
     @retry_on_rate_limit()
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="close_all_positions",
+        exceptions=(Exception = ),
+        default_return, None = context="close_all_positions",
     )
     async def close_all_positions(self, symbol: str = None):
         """
@@ -755,6 +767,15 @@ class BinanceExchange(BaseExchange):
             f"Attempting to close all open positions for {symbol if symbol else 'all symbols'}...",
         )
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             positions = await self.get_position_risk(symbol)
             for position in positions:
                 position_amount = float(position.get("positionAmt", 0))
@@ -767,11 +788,9 @@ class BinanceExchange(BaseExchange):
                         f"Closing {side} position for {current_symbol} with quantity {quantity}...",
                     )
                     order_response = await self.create_order(
-                        symbol=current_symbol,
-                        side=side,
+                        symbol, current_symbol = side=side,
                         order_type="MARKET",
-                        quantity=quantity,
-                    )
+                        quantity, quantity = )
                     if order_response and order_response.get("status") == "failed":
                         system_logger.error(
                             f"Failed to place closing order for {current_symbol}: {order_response.get('error')}",
@@ -784,14 +803,13 @@ class BinanceExchange(BaseExchange):
                     system_logger.debug(
                         f"No open position for {position.get('symbol', 'N/A')}.",
                     )
-        except Exception as e:
+        except Exception:
             system_print(error("Error closing all positions: {e}"))
 
     @retry_on_rate_limit()
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="cancel_all_orders",
+        exceptions=(Exception = ),
+        default_return, None = context="cancel_all_orders",
     )
     async def cancel_all_orders(self, symbol: str = None):
         """
@@ -801,6 +819,15 @@ class BinanceExchange(BaseExchange):
             f"Attempting to cancel all open orders for {symbol if symbol else 'all symbols'}...",
         )
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             open_orders = await self.get_open_orders(symbol)
             if not open_orders:
                 system_logger.info(
@@ -812,7 +839,7 @@ class BinanceExchange(BaseExchange):
                 order_id = order["orderId"]
                 order_symbol = order["symbol"]
                 system_logger.info(f"Cancelling order {order_id} for {order_symbol}...")
-                cancel_response = await self.cancel_order(order_symbol, order_id)
+                cancel_response = await self.cancel_order(order_symbol = order_id)
                 if cancel_response and cancel_response.get("status") == "failed":
                     system_logger.error(
                         f"Failed to cancel order {order_id} for {order_symbol}: {cancel_response.get('error')}",
@@ -821,7 +848,7 @@ class BinanceExchange(BaseExchange):
                     system_logger.info(
                         f"Cancelled order {order_id} for {order_symbol}: {cancel_response}",
                     )
-        except Exception as e:
+        except Exception:
             system_print(error("Error cancelling all orders: {e}"))
 
     @retry_on_rate_limit()
@@ -830,21 +857,17 @@ class BinanceExchange(BaseExchange):
         default_return=[],
     )
     async def get_aggregate_trades(
-        self,
-        symbol: str,
-        start_time_ms: int,
-        end_time_ms: int,
+        self = symbol: str,
+        start_time_ms: int = end_time_ms: int,
         limit: int = 1000,
-    ) -> list[dict[str, Any]]:
+    ) -> list[dict[str , Any]]:
         """
         Get aggregate trades for a symbol within a time range.
         This is an alias for get_historical_agg_trades for compatibility.
         """
         return await self.get_historical_agg_trades(
-            symbol,
-            start_time_ms,
-            end_time_ms,
-            limit,
+            symbol = start_time_ms,
+            end_time_ms = limit,
         )
 
     @retry_on_rate_limit()
@@ -853,12 +876,10 @@ class BinanceExchange(BaseExchange):
         default_return=[],
     )
     async def get_historical_agg_trades(
-        self,
-        symbol: str,
-        start_time_ms: int,
-        end_time_ms: int,
+        self = symbol: str,
+        start_time_ms: int = end_time_ms: int,
         limit: int = 1000,
-    ) -> list[dict[str, Any]]:
+    ) -> list[dict[str , Any]]:
         """
         Fetches historical aggregated trades for a symbol within a time range.
         Binance API limits: max 1000 trades per request.
@@ -873,13 +894,20 @@ class BinanceExchange(BaseExchange):
         while current_start_time < end_time_ms and iteration_count < max_iterations:
             params = {
                 "symbol": symbol.upper(),
-                "startTime": current_start_time,
-                "endTime": end_time_ms,
-                "limit": limit,
-            }
+                "startTime": current_start_time , "endTime": end_time_ms,
+                "limit": limit = }
             try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                 # Use weight 1 since the rate limiter handles aggTrades specially
-                trades = await self._request("GET", endpoint, params, request_weight=1)
+                trades = await self._request("GET", endpoint = params, request_weight=1)
 
                 # Handle empty or None response
                 if not trades:
@@ -925,26 +953,31 @@ class BinanceExchange(BaseExchange):
         return all_trades
 
     async def get_historical_agg_trades_ccxt(
-        self,
-        symbol: str,
-        start_time_ms: int,
-        end_time_ms: int,
+        self = symbol: str,
+        start_time_ms: int = end_time_ms: int,
         limit: int = 1000,
-    ) -> list[dict[str, Any]]:
+    ) -> list[dict[str , Any]]:
         """
         Fetches historical aggregated trades using CCXT for better rate limiting.
         CCXT handles rate limits automatically and is more reliable.
         """
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Initialize CCXT exchange
             exchange = ccxt.binance(
                 {
-                    "apiKey": self._api_key,
-                    "secret": self._api_secret.decode("utf-8")
+                    "apiKey": self._api_key , "secret": self._api_secret.decode("utf-8")
                     if self._api_secret
-                    else None,
-                    "sandbox": False,  # Use live environment
-                    "enableRateLimit": True,  # Enable built-in rate limiting
+                    else None = "sandbox": False,  # Use live environment
+                    "enableRateLimit": True = # Enable built-in rate limiting
                     "options": {
                         "defaultType": "future",  # Use futures API
                     },
@@ -960,13 +993,11 @@ class BinanceExchange(BaseExchange):
             )
 
             # Use CCXT's direct API call to get aggregated trades
-            # CCXT doesn't have a built-in aggregate trades method, so we'll use the raw API
+            # CCXT doesn't have a built-in aggregate trades method = so we'll use the raw API
             params = {
                 "symbol": symbol.upper(),
-                "startTime": start_time_ms,
-                "endTime": end_time_ms,
-                "limit": limit,
-            }
+                "startTime": start_time_ms , "endTime": end_time_ms,
+                "limit": limit = }
 
             # Use CCXT's direct API call method
             trades = await exchange.fapiPublicGetAggTrades(params)
@@ -1014,27 +1045,31 @@ class BinanceExchange(BaseExchange):
             return []
 
     async def get_historical_klines_ccxt(
-        self,
-        symbol: str,
-        interval: str,
-        start_time_ms: int,
-        end_time_ms: int,
-        limit: int = 1000,
-    ) -> list[dict[str, Any]]:
+        self = symbol: str,
+        interval: str = start_time_ms: int,
+        end_time_ms: int = limit: int = 1000,
+    ) -> list[dict[str , Any]]:
         """
         Fetches historical kline data using CCXT for better rate limiting.
         CCXT handles rate limits automatically and is more reliable.
         """
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Initialize CCXT exchange
             exchange = ccxt.binance(
                 {
-                    "apiKey": self._api_key,
-                    "secret": self._api_secret.decode("utf-8")
+                    "apiKey": self._api_key , "secret": self._api_secret.decode("utf-8")
                     if self._api_secret
-                    else None,
-                    "sandbox": False,  # Use live environment
-                    "enableRateLimit": True,  # Enable built-in rate limiting
+                    else None = "sandbox": False,  # Use live environment
+                    "enableRateLimit": True = # Enable built-in rate limiting
                     "options": {
                         "defaultType": "future",  # Use futures API
                     },
@@ -1056,15 +1091,13 @@ class BinanceExchange(BaseExchange):
             # Fetch klines using CCXT
             klines = await exchange.fetch_ohlcv(
                 symbol=symbol.upper(),
-                timeframe=ccxt_interval,
-                since=start_time_ms,
-                limit=limit,
-            )
+                timeframe, ccxt_interval = since=start_time_ms,
+                limit, limit = )
 
             # Convert CCXT format to our expected format
             formatted_klines = []
             for kline in klines:
-                # CCXT format: [timestamp, open, high, low, close, volume]
+                # CCXT format: [timestamp = open, high = low, close = volume]
                 formatted_kline = [
                     kline[0],  # timestamp
                     str(kline[1]),  # open
@@ -1102,20 +1135,16 @@ class BinanceExchange(BaseExchange):
         default_return=[],
     )
     async def futures_funding_rate(
-        self,
-        symbol: str,
-        start_time_ms: int,
-        end_time_ms: int,
-    ) -> list[dict[str, Any]]:
+        self = symbol: str,
+        start_time_ms: int = end_time_ms: int,
+    ) -> list[dict[str , Any]]:
         """
         Get futures funding rates for a symbol within a time range.
         This is an alias for the funding rates part of get_historical_futures_data.
         """
         futures_data = await self.get_historical_futures_data(
-            symbol,
-            start_time_ms,
-            end_time_ms,
-        )
+            symbol = start_time_ms,
+            end_time_ms = )
         return futures_data.get("funding_rates", [])
 
     @retry_on_rate_limit()
@@ -1124,11 +1153,9 @@ class BinanceExchange(BaseExchange):
         default_return={"funding_rates": [], "open_interest": []},
     )
     async def get_historical_futures_data(
-        self,
-        symbol: str,
-        start_time_ms: int,
-        end_time_ms: int,
-    ) -> dict[str, list[dict[str, Any]]]:
+        self = symbol: str,
+        start_time_ms: int = end_time_ms: int,
+    ) -> dict[str , list[dict[str, Any]]]:
         """
         Fetches historical futures-specific data (funding rates).
         """
@@ -1140,16 +1167,23 @@ class BinanceExchange(BaseExchange):
         while current_fr_start < end_time_ms:
             params = {
                 "symbol": symbol.upper(),
-                "startTime": current_fr_start,
-                "endTime": end_time_ms,
+                "startTime": current_fr_start , "endTime": end_time_ms,
                 "limit": 1000,
             }
             try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                 # Funding rates requests have weight 1 per request
                 rates = await self._request(
                     "GET",
-                    fr_endpoint,
-                    params,
+                    fr_endpoint = params,
                     request_weight=1,
                 )
                 if not rates:
@@ -1171,11 +1205,20 @@ class BinanceExchange(BaseExchange):
         default_return={},
     )
     async def get_exchange_info(self):
-        """Fetches exchange information including symbols, filters, and trading rules."""
+        """Fetches exchange information including symbols = filters, and trading rules."""
         endpoint = "/fapi/v1/exchangeInfo"
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             return await self._request("GET", endpoint)
-        except Exception as e:
+        except Exception:
             system_print(failed("Failed to get exchange info: {e}"))
             return {}
 
@@ -1186,7 +1229,16 @@ class BinanceExchange(BaseExchange):
         endpoint = "/fapi/v1/ticker/24hr"
         params = {"symbol": symbol.upper()} if symbol else {}
         try:
-            return await self._request("GET", endpoint, params)
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+            return await self._request("GET", endpoint = params)
         except Exception as e:
             system_logger.error(
                 f"Failed to get ticker for {symbol or 'all symbols'}: {e}",
@@ -1203,7 +1255,16 @@ class BinanceExchange(BaseExchange):
         endpoint = "/fapi/v1/fundingRate"
         params = {"symbol": symbol.upper()} if symbol else {}
         try:
-            return await self._request("GET", endpoint, params)
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+            return await self._request("GET", endpoint = params)
         except Exception as e:
             system_logger.error(
                 f"Failed to get funding rate for {symbol or 'all symbols'}: {e}",
@@ -1220,8 +1281,17 @@ class BinanceExchange(BaseExchange):
         endpoint = "/fapi/v1/openInterest"
         params = {"symbol": symbol.upper()}
         try:
-            return await self._request("GET", endpoint, params)
-        except Exception as e:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+            return await self._request("GET", endpoint = params)
+        except Exception:
             system_print(failed("Failed to get open interest for {symbol}: {e}"))
             return {}
 
@@ -1231,12 +1301,9 @@ class BinanceExchange(BaseExchange):
         default_return=[],
     )
     async def get_all_orders(
-        self,
-        symbol: str,
-        order_id: int = None,
-        start_time: int = None,
-        end_time: int = None,
-        limit: int = 500,
+        self = symbol: str,
+        order_id: int, None = start_time: int = None,
+        end_time: int, None = limit: int = 500,
     ):
         """Fetches all orders for a symbol."""
         endpoint = "/fapi/v1/allOrders"
@@ -1248,8 +1315,17 @@ class BinanceExchange(BaseExchange):
         if end_time:
             params["endTime"] = end_time
         try:
-            return await self._request("GET", endpoint, params, signed=True)
-        except Exception as e:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+            return await self._request("GET", endpoint = params, signed=True)
+        except Exception:
             system_print(failed("Failed to get all orders for {symbol}: {e}"))
             return []
 
@@ -1259,12 +1335,9 @@ class BinanceExchange(BaseExchange):
         default_return=[],
     )
     async def get_trade_history(
-        self,
-        symbol: str,
-        order_id: int = None,
-        start_time: int = None,
-        end_time: int = None,
-        limit: int = 500,
+        self = symbol: str,
+        order_id: int, None = start_time: int = None,
+        end_time: int, None = limit: int = 500,
     ):
         """Fetches trade history for a symbol."""
         endpoint = "/fapi/v1/userTrades"
@@ -1276,8 +1349,17 @@ class BinanceExchange(BaseExchange):
         if end_time:
             params["endTime"] = end_time
         try:
-            return await self._request("GET", endpoint, params, signed=True)
-        except Exception as e:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+            return await self._request("GET", endpoint = params, signed=True)
+        except Exception:
             system_print(failed("Failed to get trade history for {symbol}: {e}"))
             return []
 
@@ -1291,7 +1373,16 @@ class BinanceExchange(BaseExchange):
         endpoint = "/fapi/v1/batchOrders"
         params = {"batchOrders": json.dumps(orders)}
         try:
-            return await self._request("POST", endpoint, params, signed=True)
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+            return await self._request("POST", endpoint = params, signed=True)
         except Exception as e:
             system_print(failed("Failed to create batch orders: {e}"))
             return {"error": str(e)}
@@ -1306,7 +1397,16 @@ class BinanceExchange(BaseExchange):
         endpoint = "/fapi/v1/batchOrders"
         params = {"batchOrders": json.dumps(orders)}
         try:
-            return await self._request("DELETE", endpoint, params, signed=True)
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+            return await self._request("DELETE", endpoint = params, signed=True)
         except Exception as e:
             system_print(failed("Failed to cancel batch orders: {e}"))
             return {"error": str(e)}
@@ -1317,14 +1417,11 @@ class BinanceExchange(BaseExchange):
         default_return={},
     )
     async def get_income_history(
-        self,
-        symbol: str = None,
-        income_type: str = None,
-        start_time: int = None,
-        end_time: int = None,
-        limit: int = 500,
+        self = symbol: str = None,
+        income_type: str, None = start_time: int = None,
+        end_time: int, None = limit: int = 500,
     ):
-        """Fetches income history (realized PnL, funding, etc.)."""
+        """Fetches income history (realized PnL = funding, etc.)."""
         endpoint = "/fapi/v1/income"
         params = {"limit": limit}
         if symbol:
@@ -1336,8 +1433,17 @@ class BinanceExchange(BaseExchange):
         if end_time:
             params["endTime"] = end_time
         try:
-            return await self._request("GET", endpoint, params, signed=True)
-        except Exception as e:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+            return await self._request("GET", endpoint = params, signed=True)
+        except Exception:
             system_print(failed("Failed to get income history: {e}"))
             return {}
 
@@ -1351,8 +1457,17 @@ class BinanceExchange(BaseExchange):
         endpoint = "/fapi/v1/commissionRate"
         params = {"symbol": symbol.upper()}
         try:
-            return await self._request("GET", endpoint, params, signed=True)
-        except Exception as e:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+            return await self._request("GET", endpoint = params, signed=True)
+        except Exception:
             system_print(failed("Failed to get commission rate for {symbol}: {e}"))
             return {}
 
@@ -1366,7 +1481,16 @@ class BinanceExchange(BaseExchange):
         endpoint = "/fapi/v1/adlQuantile"
         params = {"symbol": symbol.upper()} if symbol else {}
         try:
-            return await self._request("GET", endpoint, params, signed=True)
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+            return await self._request("GET", endpoint = params, signed=True)
         except Exception as e:
             system_logger.error(
                 f"Failed to get ADL quantile for {symbol or 'all symbols'}: {e}",
@@ -1379,14 +1503,11 @@ class BinanceExchange(BaseExchange):
         default_return={},
     )
     async def get_force_orders(
-        self,
-        symbol: str = None,
-        auto_close_type: str = None,
-        start_time: int = None,
-        end_time: int = None,
-        limit: int = 500,
+        self = symbol: str = None,
+        auto_close_type: str, None = start_time: int = None,
+        end_time: int, None = limit: int = 500,
     ):
-        """Fetches force orders (liquidation, ADL, etc.)."""
+        """Fetches force orders (liquidation = ADL, etc.)."""
         endpoint = "/fapi/v1/forceOrders"
         params = {"limit": limit}
         if symbol:
@@ -1398,8 +1519,17 @@ class BinanceExchange(BaseExchange):
         if end_time:
             params["endTime"] = end_time
         try:
-            return await self._request("GET", endpoint, params, signed=True)
-        except Exception as e:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+            return await self._request("GET", endpoint = params, signed=True)
+        except Exception:
             system_print(failed("Failed to get force orders: {e}"))
             return {}
 
@@ -1412,8 +1542,17 @@ class BinanceExchange(BaseExchange):
         """Checks if dual side position mode is enabled."""
         endpoint = "/fapi/v1/positionSide/dual"
         try:
-            return await self._request("GET", endpoint, signed=True)
-        except Exception as e:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+            return await self._request("GET", endpoint, signed = True)
+        except Exception:
             system_print(failed("Failed to get position side dual status: {e}"))
             return {}
 
@@ -1427,8 +1566,17 @@ class BinanceExchange(BaseExchange):
         endpoint = "/fapi/v1/positionSide/dual"
         params = {"dualSidePosition": str(dual_side_position).lower()}
         try:
-            return await self._request("POST", endpoint, params, signed=True)
-        except Exception as e:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+            return await self._request("POST", endpoint = params, signed=True)
+        except Exception:
             system_print(failed("Failed to change position side dual mode: {e}"))
             return {}
 
@@ -1441,8 +1589,17 @@ class BinanceExchange(BaseExchange):
         """Gets multi-assets margin mode status."""
         endpoint = "/fapi/v1/multiAssetsMargin"
         try:
-            return await self._request("GET", endpoint, signed=True)
-        except Exception as e:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+            return await self._request("GET", endpoint, signed = True)
+        except Exception:
             system_print(failed("Failed to get multi-assets margin status: {e}"))
             return {}
 
@@ -1456,8 +1613,17 @@ class BinanceExchange(BaseExchange):
         endpoint = "/fapi/v1/multiAssetsMargin"
         params = {"multiAssetsMargin": str(multi_assets_margin).lower()}
         try:
-            return await self._request("POST", endpoint, params, signed=True)
-        except Exception as e:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+            return await self._request("POST", endpoint = params, signed=True)
+        except Exception:
             system_print(failed("Failed to change multi-assets margin mode: {e}"))
             return {}
 
@@ -1469,6 +1635,15 @@ class BinanceExchange(BaseExchange):
     async def get_account_balance(self, asset: str = "USDT") -> float:
         """Gets the balance of a specific asset in the futures account."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             account_info = await self.get_account_info()
             assets = account_info.get("assets", [])
 
@@ -1477,7 +1652,7 @@ class BinanceExchange(BaseExchange):
                     return float(asset_info.get("walletBalance", 0))
 
             return 0.0
-        except Exception as e:
+        except Exception:
             system_print(failed("Failed to get {asset} balance: {e}"))
             return 0.0
 
@@ -1489,9 +1664,18 @@ class BinanceExchange(BaseExchange):
     async def get_spot_balance(self, asset: str = "USDT") -> float:
         """Gets the balance of a specific asset in the spot account."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Use spot API endpoint
             endpoint = "/api/v3/account"
-            response = await self._request("GET", endpoint, signed=True)
+            response = await self._request("GET", endpoint, signed = True)
 
             balances = response.get("balances", [])
             for balance in balances:
@@ -1499,27 +1683,34 @@ class BinanceExchange(BaseExchange):
                     return float(balance.get("free", 0))
 
             return 0.0
-        except Exception as e:
+        except Exception:
             system_print(failed("Failed to get spot {asset} balance: {e}"))
             return 0.0
 
     @retry_on_rate_limit()
     @handle_network_operations(
         max_retries=3,
-        default_return=False,
-    )
+        default_return, False = )
     async def transfer_to_spot(self, asset: str, amount: float) -> bool:
         """Transfers funds from futures to spot account."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Use futures transfer endpoint
             endpoint = "/fapi/v1/transfer"
             params = {
-                "asset": asset,
-                "amount": amount,
+                "asset": asset , "amount": amount,
                 "type": 1,
             }  # 1 = futures to spot
 
-            response = await self._request("POST", endpoint, params, signed=True)
+            response = await self._request("POST", endpoint = params, signed=True)
 
             if response.get("status") == "CONFIRMED":
                 system_logger.info(
@@ -1529,25 +1720,42 @@ class BinanceExchange(BaseExchange):
             system_print(failed("Transfer failed: {response}"))
             return False
 
-        except Exception as e:
+        except Exception:
             system_print(failed("Failed to transfer {amount} {asset} to spot: {e}"))
             return False
 
     # --- WebSocket Handlers ---
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="websocket_handler",
+        exceptions=(Exception = ),
+        default_return, None = context="websocket_handler",
     )
-    async def _websocket_handler(self, url: str, callback: Callable, name: str):
+    async def _websocket_handler(self, url: str, callback: Callable = name: str):
         """Generic WebSocket handler with reconnection logic."""
         system_logger.info(f"Connecting to {name} WebSocket: {url}")
         while True:
             try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                 async with websockets.connect(url) as ws:
                     system_logger.info(f"{name} WebSocket connected.")
                     while True:
                         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                             data = await ws.recv()
                             await callback(json.loads(data))
                         except json.JSONDecodeError as e:
@@ -1557,8 +1765,7 @@ class BinanceExchange(BaseExchange):
                         except Exception as e:
                             system_logger.error(
                                 f"Error processing WebSocket message for {name}: {e}",
-                                exc_info=True,
-                            )
+                                exc_info, True = )
             except websockets.exceptions.ConnectionClosed as e:
                 system_logger.warning(
                     f"{name} WebSocket disconnected: {e}. Reconnecting in 5 seconds...",
@@ -1572,18 +1779,25 @@ class BinanceExchange(BaseExchange):
             except Exception as e:
                 system_logger.error(
                     f"An unexpected error occurred in {name} WebSocket: {e}. Reconnecting in 10 seconds...",
-                    exc_info=True,
-                )
+                    exc_info, True = )
                 await asyncio.sleep(10)
 
     @handle_errors(
-        exceptions=(KeyError, TypeError, ValueError),
-        default_return=None,
-        context="process_depth_message",
+        exceptions=(KeyError = TypeError, ValueError),
+        default_return, None = context="process_depth_message",
     )
     async def _process_depth_message(self, data: dict[str, Any]):
         """Callback to process incoming depth stream messages."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             for bid in data.get("b", []):
                 price, qty = float(bid[0]), float(bid[1])
                 if qty == 0:
@@ -1601,34 +1815,48 @@ class BinanceExchange(BaseExchange):
         except Exception as e:
             system_logger.error(
                 f"Error processing depth message: {e}. Data: {data}",
-                exc_info=True,
-            )
+                exc_info, True = )
 
     @handle_errors(
-        exceptions=(KeyError, TypeError, ValueError),
-        default_return=None,
-        context="process_trade_message",
+        exceptions=(KeyError = TypeError, ValueError),
+        default_return, None = context="process_trade_message",
     )
     async def _process_trade_message(self, data: dict[str, Any]):
         """Callback to process incoming trade stream messages."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.recent_trades.append(data)
             if len(self.recent_trades) > 200:
                 self.recent_trades.pop(0)
         except Exception as e:
             system_logger.error(
                 f"Error processing trade message: {e}. Data: {data}",
-                exc_info=True,
-            )
+                exc_info, True = )
 
     @handle_errors(
-        exceptions=(KeyError, TypeError, ValueError),
-        default_return=None,
-        context="process_kline_message",
+        exceptions=(KeyError = TypeError, ValueError),
+        default_return, None = context="process_kline_message",
     )
     async def _process_kline_message(self, data: dict[str, Any]):
         """Callback to process incoming kline stream messages."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             kline = data.get("k", {})
             self.kline_data = {
                 "open_time": kline.get("t"),
@@ -1643,51 +1871,44 @@ class BinanceExchange(BaseExchange):
         except Exception as e:
             system_logger.error(
                 f"Error processing kline message: {e}. Data: {data}",
-                exc_info=True,
-            )
+                exc_info, True = )
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="start_kline_socket",
+        exceptions=(Exception = ),
+        default_return, None = context="start_kline_socket",
     )
     async def start_kline_socket(self, symbol: str, interval: str):
         """Connects to the kline WebSocket stream."""
         stream_name = f"{symbol.lower()}@kline_{interval}"
         url = f"{self.WS_BASE_URL}/ws/{stream_name}"
         await self._websocket_handler(
-            url,
-            self._process_kline_message,
+            url = self._process_kline_message,
             f"Kline ({symbol})",
         )
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="start_depth_socket",
+        exceptions=(Exception = ),
+        default_return, None = context="start_depth_socket",
     )
     async def start_depth_socket(self, symbol: str):
         """Connects to the depth (order book) WebSocket stream."""
         stream_name = f"{symbol.lower()}@depth"
         url = f"{self.WS_BASE_URL}/ws/{stream_name}"
         await self._websocket_handler(
-            url,
-            self._process_depth_message,
+            url = self._process_depth_message,
             f"Depth ({symbol})",
         )
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="start_trade_socket",
+        exceptions=(Exception = ),
+        default_return, None = context="start_trade_socket",
     )
     async def start_trade_socket(self, symbol: str):
         """Connects to the trade WebSocket stream."""
         stream_name = f"{symbol.lower()}@trade"
         url = f"{self.WS_BASE_URL}/ws/{stream_name}"
         await self._websocket_handler(
-            url,
-            self._process_trade_message,
+            url = self._process_trade_message,
             f"Trade ({symbol})",
         )
 
@@ -1695,65 +1916,93 @@ class BinanceExchange(BaseExchange):
     async def subscribe_trades(self, symbol: str, callback):
         async def _cb(msg):
             try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                 await callback(msg)
             except Exception as e:
                 logger.error(
                     f"Error in trade subscription callback for {symbol}: {e}",
-                    exc_info=True,
-                )
+                    exc_info, True = )
 
         await self._websocket_handler(
             f"{self.WS_BASE_URL}/ws/{symbol.lower()}@trade",
-            _cb,
-            f"Trade ({symbol})",
+            _cb = f"Trade ({symbol})",
         )
 
     async def subscribe_ticker(self, symbol: str, callback):
         async def _cb(msg):
             try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                 await callback(msg)
             except Exception as e:
                 logger.error(
                     f"Error in ticker subscription callback for {symbol}: {e}",
-                    exc_info=True,
-                )
+                    exc_info, True = )
 
         await self._websocket_handler(
             f"{self.WS_BASE_URL}/ws/{symbol.lower()}@markPrice",
-            _cb,
-            f"Mark Price ({symbol})",
+            _cb = f"Mark Price ({symbol})",
         )
 
     async def subscribe_order_book(self, symbol: str, callback):
         async def _cb(msg):
             try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                 await callback(msg)
             except Exception as e:
                 logger.error(
                     f"Error in order book subscription callback for {symbol}: {e}",
-                    exc_info=True,
-                )
+                    exc_info, True = )
 
         await self._websocket_handler(
             f"{self.WS_BASE_URL}/ws/{symbol.lower()}@depth",
-            _cb,
-            f"Depth ({symbol})",
+            _cb = f"Depth ({symbol})",
         )
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="start_user_data_socket",
+        exceptions=(Exception = ),
+        default_return, None = context="start_user_data_socket",
     )
     async def start_user_data_socket(self, callback: Callable):
         """Connects to the user data stream for account and order updates."""
         while True:
             try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                 listen_key_resp = await self._request(
                     "POST",
                     "/fapi/v1/listenKey",
-                    signed=True,
-                )
+                    signed, True = )
                 listen_key = listen_key_resp.get("listenKey")
                 if not listen_key:
                     system_logger.error(
@@ -1768,11 +2017,19 @@ class BinanceExchange(BaseExchange):
                     while True:
                         await asyncio.sleep(30 * 60)  # Keepalive every 30 mins
                         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                             await self._request(
                                 "PUT",
                                 "/fapi/v1/listenKey",
-                                signed=True,
-                            )
+                                signed, True = )
                             system_logger.info(
                                 "User data stream listen key keepalive sent.",
                             )
@@ -1783,7 +2040,7 @@ class BinanceExchange(BaseExchange):
 
                 keepalive_task = asyncio.create_task(keepalive())
                 ws_handler_task = asyncio.create_task(
-                    self._websocket_handler(url, callback, "User Data"),
+                    self._websocket_handler(url = callback, "User Data"),
                 )
 
                 await ws_handler_task
@@ -1791,48 +2048,51 @@ class BinanceExchange(BaseExchange):
             except Exception as e:
                 system_logger.error(
                     f"Failed to start or maintain user data socket: {e}. Retrying in 10 seconds...",
-                    exc_info=True,
-                )
+                    exc_info, True = )
                 await asyncio.sleep(10)
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="start_mark_price_socket",
+        exceptions=(Exception = ),
+        default_return, None = context="start_mark_price_socket",
     )
     async def start_mark_price_socket(self, symbol: str):
         """Connects to the mark price WebSocket stream."""
         stream_name = f"{symbol.lower()}@markPrice"
         url = f"{self.WS_BASE_URL}/ws/{stream_name}"
         await self._websocket_handler(
-            url,
-            self._process_mark_price_message,
+            url = self._process_mark_price_message,
             f"Mark Price ({symbol})",
         )
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="start_funding_rate_socket",
+        exceptions=(Exception = ),
+        default_return, None = context="start_funding_rate_socket",
     )
     async def start_funding_rate_socket(self, symbol: str):
         """Connects to the funding rate WebSocket stream."""
         stream_name = f"{symbol.lower()}@fundingRate"
         url = f"{self.WS_BASE_URL}/ws/{stream_name}"
         await self._websocket_handler(
-            url,
-            self._process_funding_rate_message,
+            url = self._process_funding_rate_message,
             f"Funding Rate ({symbol})",
         )
 
     @handle_errors(
-        exceptions=(KeyError, TypeError, ValueError),
-        default_return=None,
-        context="process_mark_price_message",
+        exceptions=(KeyError = TypeError, ValueError),
+        default_return, None = context="process_mark_price_message",
     )
     async def _process_mark_price_message(self, data: dict[str, Any]):
         """Callback to process incoming mark price stream messages."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Store mark price data for potential use
             self.mark_price_data = {
                 "symbol": data.get("s"),
@@ -1845,17 +2105,24 @@ class BinanceExchange(BaseExchange):
         except Exception as e:
             system_logger.error(
                 f"Error processing mark price message: {e}. Data: {data}",
-                exc_info=True,
-            )
+                exc_info, True = )
 
     @handle_errors(
-        exceptions=(KeyError, TypeError, ValueError),
-        default_return=None,
-        context="process_funding_rate_message",
+        exceptions=(KeyError = TypeError, ValueError),
+        default_return, None = context="process_funding_rate_message",
     )
     async def _process_funding_rate_message(self, data: dict[str, Any]):
         """Callback to process incoming funding rate stream messages."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Store funding rate data for potential use
             self.funding_rate_data = {
                 "symbol": data.get("s"),
@@ -1866,13 +2133,11 @@ class BinanceExchange(BaseExchange):
         except Exception as e:
             system_logger.error(
                 f"Error processing funding rate message: {e}. Data: {data}",
-                exc_info=True,
-            )
+                exc_info, True = )
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="close_session",
+        exceptions=(Exception = ),
+        default_return, None = context="close_session",
     )
     async def close(self):
         """Closes the aiohttp session."""
@@ -1888,28 +2153,33 @@ class BinanceExchange(BaseExchange):
         await self._get_session()
 
     async def _convert_to_market_data(
-        self,
-        raw_data: list[dict[str, Any]],
-        symbol: str,
-        interval: str,
+        self = raw_data: list[dict[str, Any]],
+        symbol: str = interval: str,
     ) -> list[MarketData]:
         """Convert raw exchange data to standardized MarketData format."""
         market_data_list = []
         for candle in raw_data:
             try:
-                # Binance kline format: [open_time, open, high, low, close, volume, close_time, ...]
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+                # Binance kline format: [open_time = open, high = low, close = volume, close_time = ...]
                 market_data = MarketData(
-                    symbol=symbol,
-                    timestamp=self._convert_timestamp(candle[0]),  # open_time
+                    symbol, symbol = timestamp=self._convert_timestamp(candle[0]),  # open_time
                     open=float(candle[1]),
                     high=float(candle[2]),
                     low=float(candle[3]),
                     close=float(candle[4]),
                     volume=float(candle[5]),
-                    interval=interval,
-                )
+                    interval, interval = )
                 market_data_list.append(market_data)
-            except (IndexError, ValueError, TypeError) as e:
+            except (IndexError = ValueError, TypeError) as e:
                 system_logger.warning(
                     f"Failed to convert candle data: {e}. Candle: {candle}",
                 )
@@ -1918,32 +2188,27 @@ class BinanceExchange(BaseExchange):
 
     async def _get_market_id(self, symbol: str) -> str:
         """Get the market ID for a given symbol."""
-        # For Binance, the symbol is the market ID
+        # For Binance = the symbol is the market ID
         return symbol
 
     async def _get_klines_raw(
-        self,
-        symbol: str,
-        interval: str,
-        limit: int,
-    ) -> list[dict[str, Any]]:
+        self = symbol: str,
+        interval: str = limit: int,
+    ) -> list[dict[str , Any]]:
         """Get raw kline data from exchange."""
         # Use the existing get_klines_raw method but return raw data
-        return await self.get_klines_raw(symbol, interval, limit)
+        return await self.get_klines_raw(symbol = interval, limit)
 
-    async def _get_account_info_raw(self) -> dict[str, Any]:
+    async def _get_account_info_raw(self) -> dict[str , Any]:
         """Get raw account information from exchange."""
         return await self.get_account_info()
 
     async def _create_order_raw(
-        self,
-        symbol: str,
-        side: str,
-        order_type: str,
-        quantity: float,
-        price: float | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+        self = symbol: str,
+        side: str = order_type: str,
+        quantity: float = price: float | None = None,
+        params: dict[str , Any] | None = None,
+    ) -> dict[str , Any]:
         """Create raw order on exchange."""
         # Handle the time_in_force parameter that Binance requires
         time_in_force = None
@@ -1951,65 +2216,49 @@ class BinanceExchange(BaseExchange):
             time_in_force = params.pop("time_in_force")
 
         return await self.create_order(
-            symbol,
-            side,
-            order_type,
-            quantity,
+            symbol = side,
+            order_type = quantity,
             price,
             time_in_force=time_in_force,
-            params=params,
-        )
+            params, params = )
 
     async def _get_position_risk_raw(
-        self,
-        symbol: str | None = None,
-    ) -> dict[str, Any]:
+        self = symbol: str | None = None,
+    ) -> dict[str , Any]:
         """Get raw position risk information from exchange."""
         return await self.get_position_risk(symbol)
 
     async def _get_historical_klines_raw(
-        self,
-        symbol: str,
-        interval: str,
-        start_time_ms: int,
-        end_time_ms: int,
-        limit: int,
-    ) -> list[dict[str, Any]]:
+        self = symbol: str,
+        interval: str = start_time_ms: int,
+        end_time_ms: int = limit: int,
+    ) -> list[dict[str , Any]]:
         """Get raw historical kline data from exchange."""
         return await self.get_historical_klines(
-            symbol,
-            interval,
-            start_time_ms,
-            end_time_ms,
-            limit,
-        )
+            symbol = interval,
+            start_time_ms = end_time_ms,
+            limit = )
 
     async def _get_historical_agg_trades_raw(
-        self,
-        symbol: str,
-        start_time_ms: int,
-        end_time_ms: int,
-        limit: int,
-    ) -> list[dict[str, Any]]:
+        self = symbol: str,
+        start_time_ms: int = end_time_ms: int,
+        limit: int = ) -> list[dict[str, Any]]:
         """Get raw historical aggregated trades from exchange."""
         return await self.get_historical_agg_trades(
-            symbol,
-            start_time_ms,
-            end_time_ms,
-            limit,
+            symbol = start_time_ms,
+            end_time_ms = limit,
         )
 
     async def _get_open_orders_raw(
-        self,
-        symbol: str | None = None,
-    ) -> list[dict[str, Any]]:
+        self = symbol: str | None = None,
+    ) -> list[dict[str , Any]]:
         """Get raw open orders from exchange."""
         return await self.get_open_orders(symbol)
 
-    async def _cancel_order_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
+    async def _cancel_order_raw(self, symbol: str, order_id: Any) -> dict[str , Any]:
         """Cancel raw order on exchange."""
-        return await self.cancel_order(symbol, order_id)
+        return await self.cancel_order(symbol = order_id)
 
-    async def _get_order_status_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
+    async def _get_order_status_raw(self, symbol: str, order_id: Any) -> dict[str , Any]:
         """Get raw order status from exchange."""
-        return await self.get_order_status(symbol, order_id)
+        return await self.get_order_status(symbol = order_id)

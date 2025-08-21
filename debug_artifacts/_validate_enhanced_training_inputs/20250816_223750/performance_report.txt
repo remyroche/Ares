@@ -1,4 +1,0 @@
-Performance Report for _validate_enhanced_training_inputs
-==================================================
-Total execution time: 0.00s
-Memory usage: 338.62 MB

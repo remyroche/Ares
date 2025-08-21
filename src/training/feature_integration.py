@@ -1,7 +1,6 @@
 # src/training/feature_integration.py
 
-"""
-Feature Integration Module for ML Training Pipeline.
+"""Feature Integration Module for ML Training Pipeline.
 Ensures liquidity features from advanced feature engineering are properly integrated
 into the ML model training process.
 """
@@ -17,23 +16,12 @@ from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
     initialization_error,
-    execution_error,
 )
 
 
 class FeatureIntegrationManager:
-    """
-    Manages integration of advanced features (including liquidity features)
+    """Manages integration of advanced features (including liquidity features)
     into the ML training pipeline.
     """
 
@@ -105,8 +93,7 @@ class FeatureIntegrationManager:
         market_data: pd.DataFrame,
         order_flow_data: pd.DataFrame | None = None,
     ) -> pd.DataFrame:
-        """
-        Integrate advanced features (including liquidity features) into training data.
+        """Integrate advanced features (including liquidity features) into training data.
 
         Args:
             historical_data: Historical price and volume data
@@ -115,11 +102,12 @@ class FeatureIntegrationManager:
 
         Returns:
             DataFrame with integrated features
+
         """
         try:
             if not self.is_initialized:
                 self.print(
-                    initialization_error("Feature integration manager not initialized")
+                    initialization_error("Feature integration manager not initialized"),
                 )
                 return historical_data
 
@@ -156,7 +144,7 @@ class FeatureIntegrationManager:
             self.logger.info(f"✅ Integrated {len(selected_features.columns)} features")
             return selected_features
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error integrating features: {e}"))
             return historical_data
 
@@ -193,7 +181,7 @@ class FeatureIntegrationManager:
 
             return features_df
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error adding advanced features: {e}"))
             return pd.DataFrame()
 
@@ -247,7 +235,7 @@ class FeatureIntegrationManager:
             # Convert to DataFrame
             return pd.DataFrame(liquidity_features)
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error adding liquidity features: {e}"))
             return pd.DataFrame()
 
@@ -300,13 +288,13 @@ class FeatureIntegrationManager:
                     return pca_df
 
                 except Exception as e:
-                    self.logger.error(f"PCA failed, using original features: {e}")
+                    self.logger.exception(f"PCA failed, using original features: {e}")
                     return data_clean
 
             return data_clean
 
         except Exception as e:
-            self.logger.error(f"Error selecting optimal features: {e}")
+            self.logger.exception(f"Error selecting optimal features: {e}")
             return data
 
     def get_feature_importance(
@@ -333,7 +321,7 @@ class FeatureIntegrationManager:
             return {}
 
         except Exception as e:
-            self.logger.error(f"Error getting feature importance: {e}")
+            self.logger.exception(f"Error getting feature importance: {e}")
             return {}
 
     def get_liquidity_feature_summary(self, data: pd.DataFrame) -> dict[str, Any]:
@@ -380,6 +368,6 @@ class FeatureIntegrationManager:
 
             return summary
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error getting liquidity feature summary: {e}"))
             return {}

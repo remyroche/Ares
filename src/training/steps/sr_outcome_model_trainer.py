@@ -1,40 +1,35 @@
 # src/training/steps/sr_outcome_model_trainer.py
 
-"""
-S/R Outcome Model Trainer
+"""S/R Outcome Model Trainer.
 
 Trains ML models to predict S/R outcomes (breakout/rebounce/consolidation)
 using LightGBM + XGBoost ensemble with comprehensive feature engineering and time-series validation.
 """
 
-import asyncio
 import json
 import os
 import pickle
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
 import warnings
+from datetime import datetime
+from typing import Any
 
-import numpy as np
-import pandas as pd
 import lightgbm as lgb
-import xgboost as xgb
-from sklearn.model_selection import TimeSeriesSplit
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
-from sklearn.utils.class_weight import compute_class_weight
-from sklearn.ensemble import VotingClassifier
+import numpy as np
 import optuna
+import pandas as pd
+import xgboost as xgb
+from sklearn.ensemble import VotingClassifier
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.utils.class_weight import compute_class_weight
 
-from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors
-from src.utils.warning_symbols import error, failed, success
-from src.utils.data_quality_decorators import (
-    validate_data_quality,
-    validate_feature_engineering_with_lookahead_bias_detection,
-    ValidationLevel,
-)
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
+from src.utils.data_quality_decorators import (
+    validate_feature_engineering_with_lookahead_bias_detection,
+)
+from src.utils.error_handler import handle_errors
+from src.utils.logger import system_logger
 
 warnings.filterwarnings("ignore")
 
@@ -42,14 +37,14 @@ warnings.filterwarnings("ignore")
 class SROutcomeModelTrainer:
     """Trainer for S/R outcome prediction models using LightGBM + XGBoost ensemble."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("SROutcomeModelTrainer")
 
         # Model configuration
         self.model_config = config.get("sr_outcome_model", {})
         self.model_type = self.model_config.get(
-            "model_type", "ensemble"
+            "model_type", "ensemble",
         )  # ensemble, lightgbm, xgboost
         self.feature_config = self.model_config.get("features", {})
 
@@ -58,23 +53,23 @@ class SROutcomeModelTrainer:
         self.validation_months = self.training_config.get("validation_months", 1)
         self.training_months = self.training_config.get("training_months", 3)
         self.min_samples_per_class = self.training_config.get(
-            "min_samples_per_class", 1000
+            "min_samples_per_class", 1000,
         )
 
         # Ensemble configuration
         self.ensemble_config = self.model_config.get("ensemble", {})
         self.use_ensemble = self.ensemble_config.get("use_ensemble", True)
         self.ensemble_weights = self.ensemble_config.get(
-            "weights", [0.6, 0.4]
+            "weights", [0.6, 0.4],
         )  # LightGBM, XGBoost
         self.voting_method = self.ensemble_config.get("voting", "soft")  # soft, hard
 
         # Feature engineering configuration
         self.use_temporal_features = self.feature_config.get(
-            "use_temporal_features", True
+            "use_temporal_features", True,
         )
         self.use_volatility_regime = self.feature_config.get(
-            "use_volatility_regime", True
+            "use_volatility_regime", True,
         )
         self.use_order_flow = self.feature_config.get("use_order_flow", False)
 
@@ -112,7 +107,7 @@ class SROutcomeModelTrainer:
             return True
 
         except Exception as e:
-            self.logger.error(f"Failed to initialize S/R Outcome Model Trainer: {e}")
+            self.logger.exception(f"Failed to initialize S/R Outcome Model Trainer: {e}")
             return False
 
     @handle_errors(
@@ -120,7 +115,7 @@ class SROutcomeModelTrainer:
         default_return=False,
         context="S/R outcome model training",
     )
-    async def train_model(self, training_data: Dict[str, pd.DataFrame]) -> bool:
+    async def train_model(self, training_data: dict[str, pd.DataFrame]) -> bool:
         """Train the S/R outcome prediction model ensemble."""
         try:
             self.logger.info("🔄 Starting S/R outcome model training...")
@@ -140,14 +135,13 @@ class SROutcomeModelTrainer:
             # Train models based on configuration
             if self.use_ensemble:
                 training_result = await self._train_ensemble_models(X, y)
+            # Train single model based on model_type
+            elif self.model_type == "lightgbm":
+                training_result = await self._train_lightgbm_model(X, y)
+            elif self.model_type == "xgboost":
+                training_result = await self._train_xgboost_model(X, y)
             else:
-                # Train single model based on model_type
-                if self.model_type == "lightgbm":
-                    training_result = await self._train_lightgbm_model(X, y)
-                elif self.model_type == "xgboost":
-                    training_result = await self._train_xgboost_model(X, y)
-                else:
-                    training_result = await self._train_ensemble_models(X, y)
+                training_result = await self._train_ensemble_models(X, y)
 
             if not training_result:
                 self.logger.error("Model training failed")
@@ -160,12 +154,12 @@ class SROutcomeModelTrainer:
             return True
 
         except Exception as e:
-            self.logger.error(f"Training failed: {e}")
+            self.logger.exception(f"Training failed: {e}")
             return False
 
     async def _prepare_training_data(
-        self, training_data: Dict[str, pd.DataFrame]
-    ) -> Optional[pd.DataFrame]:
+        self, training_data: dict[str, pd.DataFrame],
+    ) -> pd.DataFrame | None:
         """Prepare training data with S/R context and outcome labeling."""
         try:
             self.logger.info("🔄 Preparing training data...")
@@ -187,7 +181,7 @@ class SROutcomeModelTrainer:
                 labeled_data = await self._label_sr_outcomes(data_copy, timeframe)
                 if labeled_data is not None:
                     combined_data = pd.concat(
-                        [combined_data, labeled_data], ignore_index=True
+                        [combined_data, labeled_data], ignore_index=True,
                     )
 
             if combined_data.empty:
@@ -198,12 +192,12 @@ class SROutcomeModelTrainer:
             return combined_data
 
         except Exception as e:
-            self.logger.error(f"Error preparing training data: {e}")
+            self.logger.exception(f"Error preparing training data: {e}")
             return None
 
     async def _label_sr_outcomes(
-        self, data: pd.DataFrame, timeframe: str
-    ) -> Optional[pd.DataFrame]:
+        self, data: pd.DataFrame, timeframe: str,
+    ) -> pd.DataFrame | None:
         """Label S/R outcomes for training data."""
         try:
             if data.empty:
@@ -211,7 +205,7 @@ class SROutcomeModelTrainer:
 
             # Sample data for efficiency (process every 10th row for large datasets)
             sample_interval = max(
-                1, len(data) // 5000
+                1, len(data) // 5000,
             )  # Sample up to 5000 points per timeframe
             sample_data = data.iloc[::sample_interval].copy()
 
@@ -229,10 +223,10 @@ class SROutcomeModelTrainer:
 
                     # Get S/R context and outcome prediction
                     sr_context = await self.sr_predictor.get_sr_context(
-                        market_slice, current_price
+                        market_slice, current_price,
                     )
                     sr_outcome = await self.sr_predictor.predict_sr_outcome(
-                        market_slice, current_price, sr_context
+                        market_slice, current_price, sr_context,
                     )
 
                     # Check if near S/R level
@@ -248,10 +242,10 @@ class SROutcomeModelTrainer:
                             "confidence": sr_outcome.get("confidence", 0.5),
                             "sr_context": sr_context,
                             "market_data": market_slice.tail(20).to_dict(
-                                "records"
+                                "records",
                             ),  # Last 20 bars
                             "features": await self._extract_features(
-                                market_slice, current_price, sr_context
+                                market_slice, current_price, sr_context,
                             ),
                         }
                         labeled_samples.append(sample)
@@ -273,11 +267,11 @@ class SROutcomeModelTrainer:
             return balanced_df
 
         except Exception as e:
-            self.logger.error(f"Error labeling S/R outcomes: {e}")
+            self.logger.exception(f"Error labeling S/R outcomes: {e}")
             return None
 
     async def _extract_features(
-        self, market_data: pd.DataFrame, current_price: float, sr_context: dict
+        self, market_data: pd.DataFrame, current_price: float, sr_context: dict,
     ) -> dict:
         """Extract comprehensive features for S/R outcome prediction."""
         try:
@@ -355,14 +349,14 @@ class SROutcomeModelTrainer:
                 ) / current_price
                 features["support_strength"] = sr_context.get("support_strength", 0.5)
                 features["resistance_strength"] = sr_context.get(
-                    "resistance_strength", 0.5
+                    "resistance_strength", 0.5,
                 )
 
                 # Pivot level features
                 pivot_levels = sr_context.get("pivot_levels", {})
                 if pivot_levels:
                     features["nearest_pivot_strength"] = pivot_levels.get(
-                        "nearest_strength", 0.5
+                        "nearest_strength", 0.5,
                     )
                     features["pivot_touches"] = pivot_levels.get("nearest_touches", 0)
                 else:
@@ -372,29 +366,29 @@ class SROutcomeModelTrainer:
             # Market context features
             features["market_trend"] = self._calculate_market_trend(market_data)
             features["momentum_strength"] = self._calculate_momentum_strength(
-                market_data
+                market_data,
             )
 
             # Temporal features
             if self.use_temporal_features:
                 features["time_since_sr_touch"] = self._calculate_time_since_sr_touch(
-                    market_data, sr_context
+                    market_data, sr_context,
                 )
                 features["sr_touch_frequency"] = self._calculate_sr_touch_frequency(
-                    market_data, sr_context
+                    market_data, sr_context,
                 )
 
             # Volatility regime features
             if self.use_volatility_regime:
                 features["volatility_regime"] = self._classify_volatility_regime(
-                    market_data
+                    market_data,
                 )
                 features["atr_ratio"] = self._calculate_atr_ratio(market_data)
 
             return features
 
         except Exception as e:
-            self.logger.error(f"Error extracting features: {e}")
+            self.logger.exception(f"Error extracting features: {e}")
             return {}
 
     def _balance_classes(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -412,7 +406,7 @@ class SROutcomeModelTrainer:
                 if len(outcome_data) > min_count:
                     # Sample down to min_count
                     balanced_samples.append(
-                        outcome_data.sample(n=min_count, random_state=42)
+                        outcome_data.sample(n=min_count, random_state=42),
                     )
                 else:
                     # Keep all samples if below min_count
@@ -421,18 +415,18 @@ class SROutcomeModelTrainer:
             balanced_df = pd.concat(balanced_samples, ignore_index=True)
 
             self.logger.info(
-                f"Balanced classes: {balanced_df['outcome'].value_counts().to_dict()}"
+                f"Balanced classes: {balanced_df['outcome'].value_counts().to_dict()}",
             )
             return balanced_df
 
         except Exception as e:
-            self.logger.error(f"Error balancing classes: {e}")
+            self.logger.exception(f"Error balancing classes: {e}")
             return data
 
     @validate_feature_engineering_with_lookahead_bias_detection
     async def _engineer_features(
-        self, data: pd.DataFrame
-    ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        self, data: pd.DataFrame,
+    ) -> tuple[np.ndarray | None, np.ndarray | None]:
         """Engineer features for model training."""
         try:
             self.logger.info("🔄 Engineering features...")
@@ -471,10 +465,10 @@ class SROutcomeModelTrainer:
             return X_scaled, y_encoded
 
         except Exception as e:
-            self.logger.error(f"Error engineering features: {e}")
+            self.logger.exception(f"Error engineering features: {e}")
             return None, None
 
-    def _create_feature_vector(self, features: dict) -> Optional[List[float]]:
+    def _create_feature_vector(self, features: dict) -> list[float] | None:
         """Create feature vector from features dictionary."""
         try:
             feature_names = self._get_feature_names()
@@ -486,10 +480,10 @@ class SROutcomeModelTrainer:
             return feature_vector
 
         except Exception as e:
-            self.logger.error(f"Error creating feature vector: {e}")
+            self.logger.exception(f"Error creating feature vector: {e}")
             return None
 
-    def _get_feature_names(self) -> List[str]:
+    def _get_feature_names(self) -> list[str]:
         """Get list of feature names in order."""
         base_features = [
             "price_change_1m",
@@ -527,7 +521,7 @@ class SROutcomeModelTrainer:
 
             # Calculate class weights
             class_weights = compute_class_weight("balanced", classes=np.unique(y), y=y)
-            weight_dict = dict(zip(np.unique(y), class_weights))
+            weight_dict = dict(zip(np.unique(y), class_weights, strict=False))
 
             # Create sample weights
             sample_weights = np.array([weight_dict[label] for label in y])
@@ -537,7 +531,7 @@ class SROutcomeModelTrainer:
 
             # Hyperparameter optimization for LightGBM
             best_params = await self._optimize_lightgbm_hyperparameters(
-                X, y, sample_weights, tscv
+                X, y, sample_weights, tscv,
             )
 
             # Train final model with best parameters
@@ -558,7 +552,7 @@ class SROutcomeModelTrainer:
             return True
 
         except Exception as e:
-            self.logger.error(f"Error training LightGBM model: {e}")
+            self.logger.exception(f"Error training LightGBM model: {e}")
             return False
 
     async def _train_xgboost_model(self, X: np.ndarray, y: np.ndarray) -> bool:
@@ -568,7 +562,7 @@ class SROutcomeModelTrainer:
 
             # Calculate class weights
             class_weights = compute_class_weight("balanced", classes=np.unique(y), y=y)
-            weight_dict = dict(zip(np.unique(y), class_weights))
+            weight_dict = dict(zip(np.unique(y), class_weights, strict=False))
 
             # Create sample weights
             sample_weights = np.array([weight_dict[label] for label in y])
@@ -578,7 +572,7 @@ class SROutcomeModelTrainer:
 
             # Hyperparameter optimization for XGBoost
             best_params = await self._optimize_xgboost_hyperparameters(
-                X, y, sample_weights, tscv
+                X, y, sample_weights, tscv,
             )
 
             # Train final model with best parameters
@@ -599,7 +593,7 @@ class SROutcomeModelTrainer:
             return True
 
         except Exception as e:
-            self.logger.error(f"Error training XGBoost model: {e}")
+            self.logger.exception(f"Error training XGBoost model: {e}")
             return False
 
     async def _train_ensemble_models(self, X: np.ndarray, y: np.ndarray) -> bool:
@@ -636,7 +630,7 @@ class SROutcomeModelTrainer:
             return True
 
         except Exception as e:
-            self.logger.error(f"Error training ensemble models: {e}")
+            self.logger.exception(f"Error training ensemble models: {e}")
             return False
 
     async def _optimize_lightgbm_hyperparameters(
@@ -656,21 +650,21 @@ class SROutcomeModelTrainer:
                     "boosting_type": "gbdt",
                     "metric": "multi_logloss",
                     "learning_rate": trial.suggest_float(
-                        "learning_rate", 0.01, 0.1, log=True
+                        "learning_rate", 0.01, 0.1, log=True,
                     ),
                     "num_leaves": trial.suggest_int("num_leaves", 15, 63),
                     "max_depth": trial.suggest_int("max_depth", 4, 12),
                     "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 10, 50),
                     "feature_fraction": trial.suggest_float(
-                        "feature_fraction", 0.6, 0.9
+                        "feature_fraction", 0.6, 0.9,
                     ),
                     "bagging_fraction": trial.suggest_float(
-                        "bagging_fraction", 0.6, 0.9
+                        "bagging_fraction", 0.6, 0.9,
                     ),
                     "bagging_freq": trial.suggest_int("bagging_freq", 1, 10),
                     "reg_alpha": trial.suggest_float("reg_alpha", 0.01, 0.3, log=True),
                     "reg_lambda": trial.suggest_float(
-                        "reg_lambda", 0.01, 0.3, log=True
+                        "reg_lambda", 0.01, 0.3, log=True,
                     ),
                     "random_state": 42,
                 }
@@ -680,7 +674,7 @@ class SROutcomeModelTrainer:
                 for train_idx, val_idx in tscv.split(X):
                     X_train, X_val = X[train_idx], X[val_idx]
                     y_train, y_val = y[train_idx], y[val_idx]
-                    w_train, w_val = sample_weights[train_idx], sample_weights[val_idx]
+                    w_train, _w_val = sample_weights[train_idx], sample_weights[val_idx]
 
                     model = lgb.LGBMClassifier(**params, random_state=42)
                     model.fit(X_train, y_train, sample_weight=w_train)
@@ -703,14 +697,14 @@ class SROutcomeModelTrainer:
                     "boosting_type": "gbdt",
                     "metric": "multi_logloss",
                     "random_state": 42,
-                }
+                },
             )
 
             self.logger.info(f"Best LightGBM hyperparameters: {best_params}")
             return best_params
 
         except Exception as e:
-            self.logger.error(f"Error optimizing LightGBM hyperparameters: {e}")
+            self.logger.exception(f"Error optimizing LightGBM hyperparameters: {e}")
             # Return default parameters
             return {
                 "objective": "multiclass",
@@ -745,18 +739,18 @@ class SROutcomeModelTrainer:
                     "num_class": 3,
                     "eval_metric": "mlogloss",
                     "learning_rate": trial.suggest_float(
-                        "learning_rate", 0.01, 0.1, log=True
+                        "learning_rate", 0.01, 0.1, log=True,
                     ),
                     "max_depth": trial.suggest_int("max_depth", 3, 10),
                     "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
                     "subsample": trial.suggest_float("subsample", 0.6, 0.9),
                     "colsample_bytree": trial.suggest_float(
-                        "colsample_bytree", 0.6, 0.9
+                        "colsample_bytree", 0.6, 0.9,
                     ),
                     "gamma": trial.suggest_float("gamma", 0, 0.5),
                     "reg_alpha": trial.suggest_float("reg_alpha", 0.01, 0.3, log=True),
                     "reg_lambda": trial.suggest_float(
-                        "reg_lambda", 0.01, 0.3, log=True
+                        "reg_lambda", 0.01, 0.3, log=True,
                     ),
                     "random_state": 42,
                 }
@@ -766,7 +760,7 @@ class SROutcomeModelTrainer:
                 for train_idx, val_idx in tscv.split(X):
                     X_train, X_val = X[train_idx], X[val_idx]
                     y_train, y_val = y[train_idx], y[val_idx]
-                    w_train, w_val = sample_weights[train_idx], sample_weights[val_idx]
+                    w_train, _w_val = sample_weights[train_idx], sample_weights[val_idx]
 
                     model = xgb.XGBClassifier(**params, random_state=42)
                     model.fit(X_train, y_train, sample_weight=w_train)
@@ -788,14 +782,14 @@ class SROutcomeModelTrainer:
                     "num_class": 3,
                     "eval_metric": "mlogloss",
                     "random_state": 42,
-                }
+                },
             )
 
             self.logger.info(f"Best XGBoost hyperparameters: {best_params}")
             return best_params
 
         except Exception as e:
-            self.logger.error(f"Error optimizing XGBoost hyperparameters: {e}")
+            self.logger.exception(f"Error optimizing XGBoost hyperparameters: {e}")
             # Return default parameters
             return {
                 "objective": "multi:softprob",
@@ -813,7 +807,7 @@ class SROutcomeModelTrainer:
             }
 
     async def _evaluate_model(
-        self, X: np.ndarray, y: np.ndarray, model_name: str = "Model"
+        self, X: np.ndarray, y: np.ndarray, model_name: str = "Model",
     ) -> None:
         """Evaluate the trained model."""
         try:
@@ -837,7 +831,7 @@ class SROutcomeModelTrainer:
 
             # Metrics
             report = classification_report(
-                y, y_pred, target_names=self.label_encoder.classes_
+                y, y_pred, target_names=self.label_encoder.classes_,
             )
             conf_matrix = confusion_matrix(y, y_pred)
             auc_score = roc_auc_score(y, y_pred_proba, multi_class="ovr")
@@ -849,7 +843,7 @@ class SROutcomeModelTrainer:
                     {
                         "feature": self.feature_names,
                         "importance": model_to_evaluate.feature_importances_,
-                    }
+                    },
                 ).sort_values("importance", ascending=False)
             elif model_name == "Ensemble":
                 # For ensemble, combine feature importance from both models
@@ -874,7 +868,7 @@ class SROutcomeModelTrainer:
                         {
                             "feature": self.feature_names,
                             "importance": weighted_importance,
-                        }
+                        },
                     ).sort_values("importance", ascending=False)
 
             # Log results
@@ -898,14 +892,14 @@ class SROutcomeModelTrainer:
 
             with open(
                 os.path.join(
-                    self.artifacts_dir, f"{model_name.lower()}_evaluation_results.json"
+                    self.artifacts_dir, f"{model_name.lower()}_evaluation_results.json",
                 ),
                 "w",
             ) as f:
                 json.dump(evaluation_results, f, indent=2)
 
         except Exception as e:
-            self.logger.error(f"Error evaluating model: {e}")
+            self.logger.exception(f"Error evaluating model: {e}")
 
     async def _save_model_artifacts(self) -> None:
         """Save model artifacts and metadata."""
@@ -961,17 +955,17 @@ class SROutcomeModelTrainer:
             self.logger.info(f"✅ Model artifacts saved to {self.artifacts_dir}")
 
         except Exception as e:
-            self.logger.error(f"Error saving model artifacts: {e}")
+            self.logger.exception(f"Error saving model artifacts: {e}")
 
     def predict(self, features: dict[str, float]) -> dict[str, Any]:
-        """
-        Make prediction using the trained ensemble or individual model.
+        """Make prediction using the trained ensemble or individual model.
 
         Args:
             features: Feature dictionary
 
         Returns:
             dict: Prediction with probabilities and confidence
+
         """
         try:
             if self.ensemble_model is None:
@@ -1041,7 +1035,7 @@ class SROutcomeModelTrainer:
             }
 
         except Exception as e:
-            self.logger.error(f"Error making prediction: {e}")
+            self.logger.exception(f"Error making prediction: {e}")
             return {
                 "probabilities": {
                     "breakout": 0.33,
@@ -1063,7 +1057,7 @@ class SROutcomeModelTrainer:
         return 100 - (100 / (1 + rs))
 
     def _calculate_macd(
-        self, prices: pd.Series, fast: int = 12, slow: int = 26
+        self, prices: pd.Series, fast: int = 12, slow: int = 26,
     ) -> pd.Series:
         """Calculate MACD indicator."""
         ema_fast = prices.ewm(span=fast).mean()
@@ -1071,7 +1065,7 @@ class SROutcomeModelTrainer:
         return ema_fast - ema_slow
 
     def _calculate_bb_position(
-        self, prices: pd.Series, period: int = 20, std: int = 2
+        self, prices: pd.Series, period: int = 20, std: int = 2,
     ) -> pd.Series:
         """Calculate Bollinger Band position."""
         sma = prices.rolling(window=period).mean()
@@ -1099,7 +1093,7 @@ class SROutcomeModelTrainer:
             return np.clip(normalized_slope * 100, -1, 1)
 
         except Exception as e:
-            self.logger.error(f"Error calculating market trend: {e}")
+            self.logger.exception(f"Error calculating market trend: {e}")
             return 0.0
 
     def _calculate_momentum_strength(self, market_data: pd.DataFrame) -> float:
@@ -1124,18 +1118,18 @@ class SROutcomeModelTrainer:
             return np.clip(momentum * 100, -1, 1)
 
         except Exception as e:
-            self.logger.error(f"Error calculating momentum strength: {e}")
+            self.logger.exception(f"Error calculating momentum strength: {e}")
             return 0.0
 
     def _calculate_time_since_sr_touch(
-        self, market_data: pd.DataFrame, sr_context: dict
+        self, market_data: pd.DataFrame, sr_context: dict,
     ) -> float:
         """Calculate time since last S/R level touch."""
         # Placeholder implementation
         return 0.5
 
     def _calculate_sr_touch_frequency(
-        self, market_data: pd.DataFrame, sr_context: dict
+        self, market_data: pd.DataFrame, sr_context: dict,
     ) -> float:
         """Calculate S/R level touch frequency."""
         # Placeholder implementation
@@ -1163,7 +1157,7 @@ class SROutcomeModelTrainer:
             return min(1.0, normalized_atr * 100)
 
         except Exception as e:
-            self.logger.error(f"Error classifying volatility regime: {e}")
+            self.logger.exception(f"Error classifying volatility regime: {e}")
             return 0.5
 
     def _calculate_atr_ratio(self, market_data: pd.DataFrame) -> float:
@@ -1184,5 +1178,5 @@ class SROutcomeModelTrainer:
             return current_atr / historical_atr if historical_atr > 0 else 1.0
 
         except Exception as e:
-            self.logger.error(f"Error calculating ATR ratio: {e}")
+            self.logger.exception(f"Error calculating ATR ratio: {e}")
             return 1.0

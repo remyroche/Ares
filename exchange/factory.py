@@ -1,5 +1,4 @@
-from src.config import AresConfig
-
+from src.config import get_complete_config
 from .binance import BinanceExchange
 from .gateio import GateioExchange
 from .mexc import MexcExchange
@@ -10,33 +9,33 @@ class ExchangeFactory:
     @staticmethod
     def get_exchange(exchange_name: str):
         exchange_name = exchange_name.lower()
-        ares_config = AresConfig()
+        ares_config = get_complete_config()
         config = ares_config.get("exchanges", {}).get(exchange_name, {})
 
         if exchange_name == "binance":
             return BinanceExchange(
                 api_key=config.get("api_key"),
                 api_secret=config.get("api_secret"),
-                trade_symbol=ares_config.trade_symbol,
+                trade_symbol=ares_config.get("environment", {}).get("trade_symbol")
             )
         if exchange_name == "okx":
             return OkxExchange(
                 api_key=config.get("api_key"),
                 api_secret=config.get("api_secret"),
                 password=config.get("password"),
-                trade_symbol=ares_config.trade_symbol,
+                trade_symbol=ares_config.get("environment", {}).get("trade_symbol")
             )
         if exchange_name == "gateio":
             return GateioExchange(
                 api_key=config.get("api_key"),
                 api_secret=config.get("api_secret"),
-                trade_symbol=ares_config.trade_symbol,
+                trade_symbol=ares_config.get("environment", {}).get("trade_symbol")
             )
         if exchange_name == "mexc":
             return MexcExchange(
                 api_key=config.get("api_key"),
                 api_secret=config.get("api_secret"),
-                trade_symbol=ares_config.trade_symbol,
+                trade_symbol=ares_config.get("environment", {}).get("trade_symbol")
             )
         msg = f"Unsupported exchange: {exchange_name}"
         raise ValueError(msg)

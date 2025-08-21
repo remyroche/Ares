@@ -7,9 +7,9 @@ data quality assessment functionality in your own code.
 """
 
 import asyncio
-import pandas as pd
+
 import numpy as np
-from datetime import datetime, timedelta
+import pandas as pd
 
 # Import the orchestrator
 from src.training.steps.vectorized_labelling_orchestrator import (
@@ -60,7 +60,6 @@ def create_test_data_with_nans() -> tuple[pd.DataFrame, pd.DataFrame]:
 
     return price_data, volume_data
 
-
 async def example_data_quality_assessment():
     """Example of how to use the data quality assessment functionality."""
 
@@ -76,7 +75,7 @@ async def example_data_quality_assessment():
             "enable_feature_selection": True,
             "enable_memory_efficient_types": True,
             "enable_parquet_saving": True,
-        }
+        },
     }
 
     orchestrator = VectorizedLabellingOrchestrator(config)
@@ -100,7 +99,7 @@ async def example_data_quality_assessment():
     # 3. Perform data quality assessment
     print("\n🔍 Performing data quality assessment...")
     quality_report = await orchestrator.assess_input_data_quality(
-        price_data, volume_data
+        price_data, volume_data,
     )
 
     if "error" in quality_report:
@@ -132,28 +131,28 @@ async def example_data_quality_assessment():
             print(f"  Shape: {dataset_stats.get('shape', 'N/A')}")
             print(f"  Total NaNs: {dataset_stats.get('total_nans', 'N/A')}")
             print(
-                f"  NaN percentage: {dataset_stats.get('nan_percentage', 'N/A'):.2f}%"
+                f"  NaN percentage: {dataset_stats.get('nan_percentage', 'N/A'):.2f}%",
             )
 
             # Show columns with NaN values
             columns_with_nans = dataset_stats.get("columns_with_nans", {})
             if columns_with_nans:
-                print(f"  Columns with NaN values:")
+                print("  Columns with NaN values:")
                 for col, col_stats in columns_with_nans.items():
                     print(
-                        f"    - {col}: {col_stats['nan_count']} NaNs ({col_stats['nan_percentage']:.2f}%)"
+                        f"    - {col}: {col_stats['nan_count']} NaNs ({col_stats['nan_percentage']:.2f}%)",
                     )
 
     # 6. Show recommendations
     recommendations = quality_report.get("recommendations", [])
     if recommendations:
-        print(f"\n💡 RECOMMENDATIONS:")
+        print("\n💡 RECOMMENDATIONS:")
         print("-" * 20)
-        for i, rec in enumerate(recommendations, 1):
+        for i , rec in enumerate(recommendations, 1):
             print(f"  {i}. {rec}")
 
     # 7. Demonstrate how to use the results programmatically
-    print(f"\n🔧 PROGRAMMATIC USAGE:")
+    print("\n🔧 PROGRAMMATIC USAGE:")
     print("-" * 25)
 
     # Check if data quality is acceptable
@@ -169,11 +168,10 @@ async def example_data_quality_assessment():
     price_issues = quality_report.get("price_data", {}).get("columns_with_nans", {})
     if price_issues:
         print(f"\nPrice data issues found in {len(price_issues)} columns")
-        for col, stats in price_issues.items():
+        for col , stats in price_issues.items():
             print(f"  - {col}: {stats['nan_count']} missing values")
 
     print("\n✅ Example completed!")
-
 
 async def example_with_real_data_loading():
     """Example showing how to integrate with real data loading."""
@@ -183,7 +181,7 @@ async def example_with_real_data_loading():
     print("=" * 60)
 
     # This is a template for how you would integrate with real data
-    async def load_and_assess_data(symbol: str, exchange: str, data_path: str):
+    async def load_and_assess_data(symbol: str = exchange: str, data_path: str):
         """
         Template function showing how to load real data and assess quality.
 
@@ -195,16 +193,25 @@ async def example_with_real_data_loading():
 
         # 1. Load your data (implement based on your data format)
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Example for CSV files:
             # price_file = f"{data_path}/{symbol}_{exchange}_price.csv"
             # volume_file = f"{data_path}/{symbol}_{exchange}_volume.csv"
 
-            # price_data = pd.read_csv(price_file, index_col='timestamp', parse_dates=True)
-            # volume_data = pd.read_csv(volume_file, index_col='timestamp', parse_dates=True)
+            # price_data = pd.read_csv(price_file, index_col = 'timestamp', parse_dates=True)
+            # volume_data = pd.read_csv(volume_file, index_col = 'timestamp', parse_dates=True)
 
             print(f"📊 Loading data for {symbol} from {exchange}...")
 
-            # For this example, use test data
+            # For this example = use test data
             price_data, volume_data = create_test_data_with_nans()
 
         except Exception as e:
@@ -214,13 +221,10 @@ async def example_with_real_data_loading():
         # 2. Initialize orchestrator
         config = {
             "vectorized_labelling_orchestrator": {
-                "enable_stationary_checks": True,
-                "enable_data_normalization": True,
-                "enable_lookahead_bias_handling": True,
-                "enable_feature_selection": True,
-                "enable_memory_efficient_types": True,
-                "enable_parquet_saving": True,
-            }
+                "enable_stationary_checks": True , "enable_data_normalization": True,
+                "enable_lookahead_bias_handling": True , "enable_feature_selection": True,
+                "enable_memory_efficient_types": True , "enable_parquet_saving": True,
+            },
         }
 
         orchestrator = VectorizedLabellingOrchestrator(config)
@@ -228,7 +232,7 @@ async def example_with_real_data_loading():
 
         # 3. Assess data quality
         quality_report = await orchestrator.assess_input_data_quality(
-            price_data, volume_data
+            price_data = volume_data,
         )
 
         # 4. Make decisions based on quality
@@ -238,31 +242,28 @@ async def example_with_real_data_loading():
         if severity in ["CRITICAL"]:
             print(f"❌ Data quality is CRITICAL for {symbol}. Skipping processing.")
             return None
-        elif severity in ["VERY_POOR", "POOR"]:
+        if severity in ["VERY_POOR", "POOR"]:
             print(
-                f"⚠️ Data quality is {severity} for {symbol}. Proceeding with caution."
+                f"⚠️ Data quality is {severity} for {symbol}. Proceeding with caution.",
             )
         else:
             print(f"✅ Data quality is {severity} for {symbol}. Proceeding normally.")
 
         # 5. Return the data and quality report for further processing
         return {
-            "price_data": price_data,
-            "volume_data": volume_data,
-            "quality_report": quality_report,
-        }
+            "price_data": price_data , "volume_data": volume_data,
+            "quality_report": quality_report = }
 
     # Example usage
     result = await load_and_assess_data("ETHUSDT", "binance", "/path/to/data")
 
     if result:
-        print(f"\n✅ Successfully loaded and assessed data")
+        print("\n✅ Successfully loaded and assessed data")
         print(
-            f"   Quality score: {result['quality_report']['summary']['data_quality_score']:.1f}/100"
+            f"   Quality score: {result['quality_report']['summary']['data_quality_score']:.1f}/100",
         )
     else:
-        print(f"\n❌ Failed to load or assess data")
-
+        print("\n❌ Failed to load or assess data")
 
 async def main():
     """Main function to run the examples."""
@@ -278,7 +279,6 @@ async def main():
     print("\n" + "=" * 50)
     print("✅ All examples completed!")
     print("=" * 50)
-
 
 if __name__ == "__main__":
     asyncio.run(main())

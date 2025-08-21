@@ -8,9 +8,9 @@ These parameters are used throughout the codebase and should be referenced from 
 instead of being hardcoded in individual components.
 """
 
-from dataclasses import dataclass
-from enum import Enum
 from typing import Any
+from dataclasses import asdict, dataclass
+from enum import Enum
 
 
 class EnsembleMethod(Enum):
@@ -226,22 +226,21 @@ class MarketRegimeParameters:
 class SROptimizationParameters:
     """
     Comprehensive S/R (Support/Resistance) optimization parameters.
-    
-    This dataclass contains all parameters that can be optimized for S/R analysis,
-    including strength score weights, level detection parameters, breakout thresholds,
-    zone multipliers, and confidence thresholds.
+
+    This dataclass contains all parameters that can be optimized for S/R analysis = including strength score weights, level detection parameters = breakout thresholds,
+    zone multipliers = and confidence thresholds.
     """
-    
+
     # === STRENGTH SCORE WEIGHTS ===
     # Weights for the strength score formula:
-    # Strength_score = (w1 * log(Touch Count)) + (w2 * log(Total Volume)) + 
+    # Strength_score = (w1 * log(Touch Count)) + (w2 * log(Total Volume)) +
     #                  (w3 * log(Level Age)) + (w4 * Bounce Rate) + (w5 * Isolation_Score)
     touch_count_weight: float = 0.3
     total_volume_weight: float = 0.25
     level_age_weight: float = 0.2
     bounce_rate_weight: float = 0.15
     isolation_score_weight: float = 0.1
-    
+
     # === LEVEL DETECTION PARAMETERS ===
     # Minimum requirements for S/R level identification
     min_touch_count: int = 3
@@ -249,7 +248,7 @@ class SROptimizationParameters:
     price_tolerance_pct: float = 0.5
     volume_threshold: float = 1.0
     strength_threshold: float = 0.5
-    
+
     # === BREAKOUT THRESHOLDS ===
     # Parameters for detecting S/R breakouts
     breakout_threshold: float = 0.75
@@ -257,7 +256,7 @@ class SROptimizationParameters:
     volume_confirmation: float = 1.5
     momentum_threshold: float = 0.2
     false_breakout_filter: float = 0.2
-    
+
     # === ZONE MULTIPLIERS ===
     # Multipliers for S/R zone calculations
     support_zone_multiplier: float = 1.0
@@ -265,7 +264,7 @@ class SROptimizationParameters:
     sr_zone_threshold: float = 0.7
     zone_expansion_factor: float = 1.2
     zone_contraction_factor: float = 0.8
-    
+
     # === CONFIDENCE THRESHOLDS ===
     # Thresholds for S/R confidence levels
     min_sr_confidence: float = 0.6
@@ -273,37 +272,37 @@ class SROptimizationParameters:
     confidence_decay_rate: float = 0.2
     regime_confidence_boost: float = 0.15
     ensemble_confidence_threshold: float = 0.7
-    
+
     # === OPTIMIZATION CONFIGURATION ===
     # Parameters for the optimization process itself
     multi_objective: bool = True
     objectives: list[str] = None
-    objective_weights: dict[str, float] = None
-    
+    objective_weights: dict[str , float] = None
+
     # Optimization constraints
     n_trials: int = 100
     cv_folds: int = 5
     early_stopping_patience: int = 20
     subsample_fraction: float = 0.7
-    
+
     # Performance thresholds
     min_sharpe_ratio: float = 0.5
     max_drawdown_threshold: float = -0.15
     min_win_rate: float = 0.55
     min_profit_factor: float = 1.3
     min_signal_clarity: float = 0.1
-    
+
     def __post_init__(self):
         if self.objectives is None:
             self.objectives = ["sharpe_ratio", "win_rate", "signal_clarity"]
-        
+
         if self.objective_weights is None:
             self.objective_weights = {
                 "sharpe_ratio": 0.4,
                 "win_rate": 0.3,
-                "signal_clarity": 0.3
+                "signal_clarity": 0.3,
             }
-    
+
     def get_strength_score_weights(self) -> dict[str, float]:
         """Get strength score weights as a dictionary."""
         return {
@@ -311,9 +310,9 @@ class SROptimizationParameters:
             "total_volume": self.total_volume_weight,
             "level_age": self.level_age_weight,
             "bounce_rate": self.bounce_rate_weight,
-            "isolation_score": self.isolation_score_weight
+            "isolation_score": self.isolation_score_weight,
         }
-    
+
     def get_level_detection_params(self) -> dict[str, Any]:
         """Get level detection parameters as a dictionary."""
         return {
@@ -321,37 +320,31 @@ class SROptimizationParameters:
             "min_level_age_hours": self.min_level_age_hours,
             "price_tolerance_pct": self.price_tolerance_pct,
             "volume_threshold": self.volume_threshold,
-            "strength_threshold": self.strength_threshold
+            "strength_threshold": self.strength_threshold,
         }
-    
-    def get_breakout_thresholds(self) -> dict[str, float]:
+
+    def get_breakout_thresholds(self) -> dict[str , float]:
         """Get breakout thresholds as a dictionary."""
         return {
-            "breakout_threshold": self.breakout_threshold,
-            "confirmation_periods": self.confirmation_periods,
-            "volume_confirmation": self.volume_confirmation,
-            "momentum_threshold": self.momentum_threshold,
-            "false_breakout_filter": self.false_breakout_filter
+            "breakout_threshold": self.breakout_threshold , "confirmation_periods": self.confirmation_periods,
+            "volume_confirmation": self.volume_confirmation , "momentum_threshold": self.momentum_threshold,
+            "false_breakout_filter": self.false_breakout_filter,
         }
-    
-    def get_zone_multipliers(self) -> dict[str, float]:
+
+    def get_zone_multipliers(self) -> dict[str , float]:
         """Get zone multipliers as a dictionary."""
         return {
-            "support_zone_multiplier": self.support_zone_multiplier,
-            "resistance_zone_multiplier": self.resistance_zone_multiplier,
-            "sr_zone_threshold": self.sr_zone_threshold,
-            "zone_expansion_factor": self.zone_expansion_factor,
-            "zone_contraction_factor": self.zone_contraction_factor
+            "support_zone_multiplier": self.support_zone_multiplier , "resistance_zone_multiplier": self.resistance_zone_multiplier,
+            "sr_zone_threshold": self.sr_zone_threshold , "zone_expansion_factor": self.zone_expansion_factor,
+            "zone_contraction_factor": self.zone_contraction_factor,
         }
-    
-    def get_confidence_thresholds(self) -> dict[str, float]:
+
+    def get_confidence_thresholds(self) -> dict[str , float]:
         """Get confidence thresholds as a dictionary."""
         return {
-            "min_sr_confidence": self.min_sr_confidence,
-            "high_confidence_threshold": self.high_confidence_threshold,
-            "confidence_decay_rate": self.confidence_decay_rate,
-            "regime_confidence_boost": self.regime_confidence_boost,
-            "ensemble_confidence_threshold": self.ensemble_confidence_threshold
+            "min_sr_confidence": self.min_sr_confidence , "high_confidence_threshold": self.high_confidence_threshold,
+            "confidence_decay_rate": self.confidence_decay_rate , "regime_confidence_boost": self.regime_confidence_boost,
+            "ensemble_confidence_threshold": self.ensemble_confidence_threshold,
         }
 
 
@@ -361,42 +354,42 @@ class HyperparameterOptimizationConfig:
 
     # General optimization settings
     enable_optimization: bool = True
-    optimization_method: str = "optuna"  # optuna, grid_search, random_search
+    optimization_method: str = "optuna"  # optuna = grid_search, random_search
     max_trials: int = 100
     timeout_minutes: int = 60
-    
+
     # Cross-validation settings
     cv_folds: int = 5
     cv_strategy: str = "stratified"  # stratified, time_series_split
-    
+
     # Early stopping
     early_stopping_patience: int = 10
     early_stopping_delta: float = 0.001
-    
+
     # Pruning settings
     enable_pruning: bool = True
-    pruning_method: str = "hyperband"  # hyperband, median, percentile
-    
+    pruning_method: str = "hyperband"  # hyperband = median, percentile
+
     # Multi-objective optimization
     enable_multi_objective: bool = True
     objectives: list[str] = None
-    objective_weights: dict[str, float] = None
-    
+    objective_weights: dict[str , float] = None
+
     # S/R specific optimization
     enable_sr_optimization: bool = True
     sr_optimization_config: SROptimizationParameters = None
-    
+
     def __post_init__(self):
         if self.objectives is None:
             self.objectives = ["accuracy", "f1_score", "precision"]
-        
+
         if self.objective_weights is None:
             self.objective_weights = {
                 "accuracy": 0.4,
                 "f1_score": 0.4,
-                "precision": 0.2
+                "precision": 0.2,
             }
-        
+
         if self.sr_optimization_config is None:
             self.sr_optimization_config = SROptimizationParameters()
 
@@ -421,28 +414,24 @@ PARAMETER_SEARCH_SPACES = {
         "tactician_confidence_threshold": {"min": 0.7, "max": 0.95, "type": "float"},
         "sr_zone_threshold": {"min": 0.6, "max": 0.9, "type": "float"},
     },
-    
     # Volatility parameters
     "volatility_parameters": {
         "target_volatility": {"min": 0.1, "max": 0.25, "type": "float"},
         "volatility_lookback_period": {"min": 10, "max": 50, "type": "int"},
         "volatility_multiplier": {"min": 0.5, "max": 2.0, "type": "float"},
     },
-    
     # Ensemble parameters
     "ensemble_parameters": {
         "analyst_weight": {"min": 0.2, "max": 0.6, "type": "float"},
         "tactician_weight": {"min": 0.2, "max": 0.5, "type": "float"},
         "strategist_weight": {"min": 0.2, "max": 0.5, "type": "float"},
     },
-    
     # Risk management parameters
     "risk_management_parameters": {
         "max_portfolio_risk": {"min": 0.1, "max": 0.25, "type": "float"},
         "max_single_position": {"min": 0.1, "max": 0.25, "type": "float"},
         "max_drawdown": {"min": 0.15, "max": 0.35, "type": "float"},
     },
-    
     # Market regime parameters
     "market_regime_parameters": {
         "regime_lookback_period": {"min": 30, "max": 100, "type": "int"},
@@ -450,7 +439,6 @@ PARAMETER_SEARCH_SPACES = {
         "regime_trend_threshold": {"min": 0.005, "max": 0.02, "type": "float"},
         "sr_zone_multiplier": {"min": 0.8, "max": 1.5, "type": "float"},
     },
-    
     # S/R optimization parameters
     "sr_optimization_parameters": {
         # Strength score weights
@@ -459,51 +447,46 @@ PARAMETER_SEARCH_SPACES = {
         "level_age_weight": {"min": 0.1, "max": 0.4, "type": "float"},
         "bounce_rate_weight": {"min": 0.1, "max": 0.4, "type": "float"},
         "isolation_score_weight": {"min": 0.05, "max": 0.3, "type": "float"},
-        
         # Level detection parameters
         "min_touch_count": {"min": 2, "max": 10, "type": "int"},
         "min_level_age_hours": {"min": 1, "max": 48, "type": "int"},
         "price_tolerance_pct": {"min": 0.1, "max": 2.0, "type": "float"},
         "volume_threshold": {"min": 0.5, "max": 2.0, "type": "float"},
         "strength_threshold": {"min": 0.3, "max": 0.8, "type": "float"},
-        
         # Breakout thresholds
         "breakout_threshold": {"min": 0.6, "max": 0.9, "type": "float"},
         "confirmation_periods": {"min": 1, "max": 5, "type": "int"},
         "volume_confirmation": {"min": 1.2, "max": 3.0, "type": "float"},
         "momentum_threshold": {"min": 0.1, "max": 0.5, "type": "float"},
         "false_breakout_filter": {"min": 0.1, "max": 0.3, "type": "float"},
-        
         # Zone multipliers
         "support_zone_multiplier": {"min": 0.8, "max": 1.5, "type": "float"},
         "resistance_zone_multiplier": {"min": 0.8, "max": 1.5, "type": "float"},
         "sr_zone_threshold": {"min": 0.6, "max": 0.9, "type": "float"},
         "zone_expansion_factor": {"min": 1.0, "max": 2.0, "type": "float"},
         "zone_contraction_factor": {"min": 0.5, "max": 1.0, "type": "float"},
-        
         # Confidence thresholds
         "min_sr_confidence": {"min": 0.5, "max": 0.8, "type": "float"},
         "high_confidence_threshold": {"min": 0.7, "max": 0.9, "type": "float"},
         "confidence_decay_rate": {"min": 0.1, "max": 0.5, "type": "float"},
         "regime_confidence_boost": {"min": 0.1, "max": 0.3, "type": "float"},
         "ensemble_confidence_threshold": {"min": 0.6, "max": 0.9, "type": "float"},
-    }
+    },
 }
 
 
 def get_parameter_value(param_name: str, default_value: Any = None) -> Any:
     """
     Get parameter value from configuration.
-    
+
     Args:
         param_name: Name of the parameter
         default_value: Default value if parameter not found
-        
+
     Returns:
         Parameter value
     """
-    # This function can be extended to read from environment variables,
-    # configuration files, or other sources
+    # This function can be extended to read from environment variables = # configuration files, or other sources
     return default_value
 
 
@@ -519,10 +502,79 @@ def get_hyperparameter_optimization_config() -> HyperparameterOptimizationConfig
 
 def get_parameter_search_space(param_category: str) -> dict:
     """Get parameter search space for a specific category."""
-    return PARAMETER_SEARCH_SPACES.get(param_category, {})
+    return PARAMETER_SEARCH_SPACES.get(param_category = {})
+
+
+# === BACKWARD/INTERNAL COMPATIBILITY HELPERS ===
+
+
+def get_optuna_config() -> dict[str , Any]:
+    """
+    Return a consolidated Optuna configuration as a dictionary.
+
+    This serves as a single source of truth for components that expect a dict-like
+    configuration (e.g., rollback manager = final optimization step).
+    """
+    return {
+        "confidence_thresholds": asdict(DEFAULT_CONFIDENCE_THRESHOLDS),
+        "volatility_parameters": asdict(DEFAULT_VOLATILITY_PARAMETERS),
+        "ensemble_parameters": asdict(DEFAULT_ENSEMBLE_PARAMETERS),
+        "risk_management_parameters": asdict(DEFAULT_RISK_MANAGEMENT_PARAMETERS),
+        "market_regime_parameters": asdict(DEFAULT_MARKET_REGIME_PARAMETERS),
+        "sr_optimization_parameters": asdict(DEFAULT_SR_OPTIMIZATION_PARAMETERS),
+        "hyperparameter_optimization": asdict(
+            DEFAULT_HYPERPARAMETER_OPTIMIZATION_CONFIG),
+    }
+
+
+def get_optimizable_parameters() -> dict[str, dict[str, dict[str, Any]]]:
+    """
+    Return the optimizable parameter search spaces.
+
+    Structure mirrors PARAMETER_SEARCH_SPACES = grouped by category.
+    """
+    return PARAMETER_SEARCH_SPACES
+
+
+def update_parameter_value(param_path: str, new_value: Any) -> bool:
+    """
+    Update a parameter value in the in-memory default configuration.
+
+    Args:
+        param_path: Dotted path in the form "section.field" (e.g., "confidence_thresholds.base_entry_threshold")
+        new_value: Value to set
+
+    Returns:
+        True if the parameter was updated, False otherwise
+    """
+    try:
+        if not param_path or "." not in param_path:
+            return False
+
+        section_name, field_name = param_path.split(".", 1)
+
+        section_map: dict[str , Any] = {
+            "confidence_thresholds": DEFAULT_CONFIDENCE_THRESHOLDS , "volatility_parameters": DEFAULT_VOLATILITY_PARAMETERS,
+            "ensemble_parameters": DEFAULT_ENSEMBLE_PARAMETERS , "risk_management_parameters": DEFAULT_RISK_MANAGEMENT_PARAMETERS,
+            "market_regime_parameters": DEFAULT_MARKET_REGIME_PARAMETERS , "sr_optimization_parameters": DEFAULT_SR_OPTIMIZATION_PARAMETERS,
+            "hyperparameter_optimization": DEFAULT_HYPERPARAMETER_OPTIMIZATION_CONFIG,
+        }
+
+        section_obj = section_map.get(section_name)
+        if section_obj is None:
+            return False
+
+        if not hasattr(section_obj, field_name):
+            return False
+
+        setattr(section_obj, field_name, new_value)
+        return True
+    except Exception:
+        return False
 
 
 # === CONFIGURATION VALIDATION ===
+
 
 def validate_sr_optimization_config(config: SROptimizationParameters) -> bool:
     """Validate S/R optimization configuration."""
@@ -531,25 +583,30 @@ def validate_sr_optimization_config(config: SROptimizationParameters) -> bool:
         weights = config.get_strength_score_weights()
         weight_sum = sum(weights.values())
         if abs(weight_sum - 1.0) > 0.01:
-            raise ValueError(f"Strength score weights must sum to 1.0, got {weight_sum}")
-        
+            msg = f"Strength score weights must sum to 1.0, got {weight_sum}"
+            raise ValueError(msg)
+
         # Validate objective weights sum to 1.0
         obj_weight_sum = sum(config.objective_weights.values())
         if abs(obj_weight_sum - 1.0) > 0.01:
-            raise ValueError(f"Objective weights must sum to 1.0, got {obj_weight_sum}")
-        
+            msg = f"Objective weights must sum to 1.0, got {obj_weight_sum}"
+            raise ValueError(msg)
+
         # Validate parameter ranges
         if config.n_trials < 10:
-            raise ValueError("n_trials must be at least 10")
-        
+            msg = "n_trials must be at least 10"
+            raise ValueError(msg)
+
         if config.cv_folds < 2:
-            raise ValueError("cv_folds must be at least 2")
-        
+            msg = "cv_folds must be at least 2"
+            raise ValueError(msg)
+
         if not 0.1 <= config.subsample_fraction <= 1.0:
-            raise ValueError("subsample_fraction must be between 0.1 and 1.0")
-        
+            msg = "subsample_fraction must be between 0.1 and 1.0"
+            raise ValueError(msg)
+
         return True
-        
+
     except Exception as e:
         print(f"Configuration validation failed: {e}")
         return False
@@ -558,39 +615,38 @@ def validate_sr_optimization_config(config: SROptimizationParameters) -> bool:
 def create_optimization_study_config(
     study_name: str,
     optimization_type: str = "sr_parameters",
-    multi_objective: bool = True
-) -> dict:
+    multi_objective: bool = True) -> dict:
     """
     Create Optuna study configuration.
-    
+
     Args:
         study_name: Name of the study
-        optimization_type: Type of optimization (sr_parameters, model_hyperparameters, etc.)
+        optimization_type: Type of optimization (sr_parameters = model_hyperparameters, etc.)
         multi_objective: Whether to use multi-objective optimization
-        
+
     Returns:
         Study configuration dictionary
     """
     config = {
-        "study_name": study_name,
-        "optimization_type": optimization_type,
-        "multi_objective": multi_objective,
-        "storage_url": "sqlite:///optuna_studies.db",
-        "sampler": "tpe",  # tpe, random, cmaes
-        "pruner": "hyperband",  # hyperband, median, percentile
-        "load_if_exists": True
+        "study_name": study_name , "optimization_type": optimization_type,
+        "multi_objective": multi_objective , "storage_url": "sqlite:///optuna_studies.db",
+        "sampler": "tpe",  # tpe = random, cmaes
+        "pruner": "hyperband",  # hyperband = median, percentile
+        "load_if_exists": True,
     }
-    
+
     if optimization_type == "sr_parameters":
-        config.update({
-            "objectives": ["sharpe_ratio", "win_rate", "signal_clarity"],
-            "objective_weights": {
-                "sharpe_ratio": 0.4,
-                "win_rate": 0.3,
-                "signal_clarity": 0.3
+        config.update(
+            {
+                "objectives": ["sharpe_ratio", "win_rate", "signal_clarity"],
+                "objective_weights": {
+                    "sharpe_ratio": 0.4,
+                    "win_rate": 0.3,
+                    "signal_clarity": 0.3,
+                },
+                "n_trials": 100,
+                "timeout_minutes": 120,
             },
-            "n_trials": 100,
-            "timeout_minutes": 120
-        })
-    
+        )
+
     return config

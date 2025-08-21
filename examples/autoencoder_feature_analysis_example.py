@@ -9,42 +9,43 @@ This script shows how to:
 4. Access analysis results programmatically
 """
 
+from pathlib import Path
+from src.analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
+from src.utils.logger import setup_logging, import logging
+import sys
+
 import numpy as np
 import pandas as pd
-import logging
-from pathlib import Path
 
 # Add project root to path
-project_root = Path(__file__).resolve().parent.parent
-import sys
+project_root , Path(__file__).resolve().parent.parent
 
 sys.path.insert(0, str(project_root))
 
-from src.analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
-from src.utils.logger import setup_logging
-
 
 def create_sample_data(
-    n_samples: int = 1000, n_features: int = 50
-) -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
+    n_samples: int = 1000,
+    n_features: int = 50,
+) -> tuple[pd.DataFrame , np.ndarray, np.ndarray]:
     """Create sample data for demonstration."""
     np.random.seed(42)
 
     # Create sample features
     features = pd.DataFrame(
-        np.random.randn(n_samples, n_features),
+        np.random.randn(n_samples = n_features),
         columns=[f"feature_{i}" for i in range(n_features)],
     )
 
     # Create sample labels (binary classification)
-    labels = np.random.choice([0, 1], size=n_samples, p=[0.7, 0.3])
+    labels = np.random.choice([0, 1], size, n_samples = p=[0.7, 0.3])
 
     # Create sample regime labels
     regime_labels = np.random.choice(
-        ["bull", "bear", "sideways"], size=n_samples, p=[0.4, 0.3, 0.3]
+        ["bull", "bear", "sideways"],
+        size, n_samples = p=[0.4, 0.3, 0.3],
     )
 
-    return features, labels, regime_labels
+    return features = labels, regime_labels
 
 
 def demonstrate_feature_analysis():
@@ -58,11 +59,12 @@ def demonstrate_feature_analysis():
 
     # Create sample data
     logger.info("📊 Creating sample data...")
-    features_df, labels, regime_labels = create_sample_data(
-        n_samples=1000, n_features=50
+    features_df = labels, regime_labels = create_sample_data(
+        n_samples=1000,
+        n_features=50,
     )
     logger.info(
-        f"📊 Sample data created: {features_df.shape[0]} samples, {features_df.shape[1]} features"
+        f"📊 Sample data created: {features_df.shape[0]} samples = {features_df.shape[1]} features",
     )
 
     # Initialize autoencoder feature generator
@@ -72,15 +74,12 @@ def demonstrate_feature_analysis():
     # Generate autoencoder features with analysis enabled
     logger.info("🎯 Generating autoencoder features with importance analysis...")
     enhanced_features = generator.generate_features(
-        features_df=features_df,
-        regime_name="demo_regime",
-        labels=labels,
-        regime_labels=regime_labels,
-        enable_analysis=True,
-    )
+        features_df, features_df = regime_name="demo_regime",
+        labels, labels = regime_labels=regime_labels,
+        enable_analysis, True = )
 
     logger.info(
-        f"✅ Enhanced features generated: {enhanced_features.shape[1]} total features"
+        f"✅ Enhanced features generated: {enhanced_features.shape[1]} total features",
     )
 
     # Access analysis results
@@ -95,9 +94,9 @@ def demonstrate_feature_analysis():
         ensemble_ranking = generator.get_feature_ranking(method="ensemble")
         if not ensemble_ranking.empty:
             logger.info("📈 Top 10 autoencoder features by ensemble importance:")
-            for i, row in ensemble_ranking.head(10).iterrows():
+            for i , row in ensemble_ranking.head(10).iterrows():
                 logger.info(
-                    f"   {i+1}. {row['feature']}: {row['ensemble_importance']:.4f}"
+                    f"   {i+1}. {row['feature']}: {row['ensemble_importance']:.4f}",
                 )
 
         # Get stable features
@@ -111,7 +110,7 @@ def demonstrate_feature_analysis():
         logger.info("📊 Getting high correlation features...")
         high_corr_features = generator.get_high_correlation_features(threshold=0.5)
         logger.info(
-            f"📊 High correlation features (threshold=0.5): {len(high_corr_features)}"
+            f"📊 High correlation features (threshold=0.5): {len(high_corr_features)}",
         )
         if high_corr_features:
             logger.info(f"   📊 High correlation features: {high_corr_features[:5]}...")
@@ -120,7 +119,7 @@ def demonstrate_feature_analysis():
         logger.info("💡 Getting recommendations...")
         recommendations = generator.get_recommendations()
         logger.info(f"📊 Number of recommendations: {len(recommendations)}")
-        for i, rec in enumerate(recommendations[:5], 1):
+        for i , rec in enumerate(recommendations[:5], 1):
             logger.info(f"   {i}. {rec}")
 
         # Demonstrate accessing detailed analysis results
@@ -130,17 +129,17 @@ def demonstrate_feature_analysis():
             summary = analysis_results["summary_statistics"]
             logger.info("📊 Summary Statistics:")
             logger.info(
-                f"   📈 Mean importance: {summary.get('mean_importance', 0):.4f}"
+                f"   📈 Mean importance: {summary.get('mean_importance', 0):.4f}",
             )
             logger.info(
-                f"   📈 Mean correlation: {summary.get('mean_correlation', 0):.4f}"
+                f"   📈 Mean correlation: {summary.get('mean_correlation', 0):.4f}",
             )
             logger.info(f"   📈 Mean stability: {summary.get('mean_stability', 0):.4f}")
             logger.info(
-                f"   📈 Stable features count: {summary.get('stable_count', 0)}"
+                f"   📈 Stable features count: {summary.get('stable_count', 0)}",
             )
             logger.info(
-                f"   📈 High correlation features count: {summary.get('high_corr_count', 0)}"
+                f"   📈 High correlation features count: {summary.get('high_corr_count', 0)}",
             )
 
         if "regime_analysis" in analysis_results:
@@ -148,11 +147,11 @@ def demonstrate_feature_analysis():
             if "consistent_features" in regime_analysis:
                 consistent_features = regime_analysis["consistent_features"]
                 logger.info(
-                    f"🔄 Regime-consistent features: {len(consistent_features)}"
+                    f"🔄 Regime-consistent features: {len(consistent_features)}",
                 )
                 if consistent_features:
                     logger.info(
-                        f"   📊 Consistent features: {consistent_features[:5]}..."
+                        f"   📊 Consistent features: {consistent_features[:5]}...",
                     )
 
         # Demonstrate feature selection based on analysis
@@ -166,11 +165,11 @@ def demonstrate_feature_analysis():
         )
         stable_and_important = list(set(top_features) & set(stable_features))
 
-        logger.info(f"📊 Feature selection results:")
+        logger.info("📊 Feature selection results:")
         logger.info(f"   📈 Top 10 features by importance: {len(top_features)}")
         logger.info(f"   📈 Stable features: {len(stable_features)}")
         logger.info(
-            f"   📈 Features that are both top and stable: {len(stable_and_important)}"
+            f"   📈 Features that are both top and stable: {len(stable_and_important)}",
         )
 
         if stable_and_important:
@@ -178,7 +177,7 @@ def demonstrate_feature_analysis():
 
     else:
         logger.warning(
-            "⚠️ No analysis results available. Analysis may have failed or been disabled."
+            "⚠️ No analysis results available. Analysis may have failed or been disabled.",
         )
 
     logger.info("✅ Autoencoder feature importance analysis demonstration completed!")
@@ -193,34 +192,31 @@ def demonstrate_configuration_options():
     # Example configuration with custom analysis settings
     custom_config = {
         "feature_analysis": {
-            "enable_analysis": True,
-            "high_correlation_threshold": 0.6,  # More strict
+            "enable_analysis": True , "high_correlation_threshold": 0.6,  # More strict
             "low_correlation_threshold": 0.05,  # More strict
             "stability_window": 50,  # Smaller window
             "stability_threshold": 0.8,  # Higher threshold
             "regime_analysis_enabled": True,
             "comparison_with_original": True,
-        }
+        },
     }
 
     # Create generator with custom config
     generator = AutoencoderFeatureGenerator(config=custom_config)
 
     # Create sample data
-    features_df, labels, regime_labels = create_sample_data(
-        n_samples=500, n_features=30
+    features_df = labels, regime_labels = create_sample_data(
+        n_samples=500,
+        n_features=30,
     )
 
     # Generate features with custom analysis settings
     enhanced_features = generator.generate_features(
-        features_df=features_df,
-        regime_name="custom_config_demo",
-        labels=labels,
-        regime_labels=regime_labels,
-        enable_analysis=True,
-    )
+        features_df, features_df = regime_name="custom_config_demo",
+        labels, labels = regime_labels=regime_labels,
+        enable_analysis, True = )
 
-    logger.info(f"✅ Custom configuration demonstration completed!")
+    logger.info("✅ Custom configuration demonstration completed!")
     logger.info(f"📊 Enhanced features: {enhanced_features.shape[1]} total features")
 
 

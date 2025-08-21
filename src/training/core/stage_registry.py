@@ -1,5 +1,4 @@
-"""
-Stage registry for the modular training pipeline.
+"""Stage registry for the modular training pipeline.
 
 This module provides a registry system for managing pipeline stages,
 allowing for dynamic stage registration and retrieval.
@@ -8,33 +7,19 @@ allowing for dynamic stage registration and retrieval.
 from datetime import datetime
 from typing import Any
 
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
+from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    execution_error,
-    failed,
-    initialization_error,
-    invalid,
-    missing,
-    validation_error,
-)
 
 
 class StageRegistry:
-    """
-    Stage registry with comprehensive error handling and type safety.
-    """
+    """Stage registry with comprehensive error handling and type safety."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
-        Initialize stage registry with enhanced type safety.
+        """Initialize stage registry with enhanced type safety.
 
         Args:
             config: Configuration dictionary
+
         """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("StageRegistry")
@@ -42,7 +27,7 @@ class StageRegistry:
         # Stage registry state
         self.is_registered: bool = False
         self.stage_results: dict[str, Any] = {}
-        self.stage_history: list[dict[str, Any]] = []
+        self.stage_history: list[dict[str, Any]] , []
 
         # Configuration
         self.stage_config: dict[str, Any] = self.config.get("stage_registry", {})
@@ -67,11 +52,11 @@ class StageRegistry:
         context="stage registry initialization",
     )
     async def initialize(self) -> bool:
-        """
-        Initialize stage registry with enhanced error handling.
+        """Initialize stage registry with enhanced error handling.
 
         Returns:
             bool: True if initialization successful, False otherwise
+
         """
         try:
             self.logger.info("Initializing Stage Registry...")
@@ -81,7 +66,7 @@ class StageRegistry:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.print(invalid("Invalid configuration for stage registry"))
+                self.logger.error("Invalid configuration for stage registry")
                 return False
 
             # Initialize stage modules
@@ -90,8 +75,8 @@ class StageRegistry:
             self.logger.info("✅ Stage Registry initialization completed successfully")
             return True
 
-        except Exception:
-            self.print(failed("❌ Stage Registry initialization failed: {e}"))
+        except Exception as e:
+            self.logger.exception(f"❌ Stage Registry initialization failed: {e}")
             return False
 
     @handle_errors(
@@ -120,8 +105,8 @@ class StageRegistry:
 
             self.logger.info("Stage configuration loaded successfully")
 
-        except Exception:
-            self.print(error("Error loading stage configuration: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error loading stage configuration: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -129,40 +114,39 @@ class StageRegistry:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """
-        Validate stage configuration.
+        """Validate stage configuration.
 
         Returns:
             bool: True if configuration is valid, False otherwise
+
         """
         try:
             # Validate stage interval
             if self.stage_interval <= 0:
-                self.print(invalid("Invalid stage interval"))
+                self.logger.error("Invalid stage interval")
                 return False
 
             # Validate max stage history
             if self.max_stage_history <= 0:
-                self.print(invalid("Invalid max stage history"))
+                self.logger.error("Invalid max stage history")
                 return False
 
             # Validate that at least one stage type is enabled
             if not any(
                 [
-                    self.enable_stage_registration,
-                    self.enable_stage_validation,
+                    self.enable_stage_registration == self.enable_stage_validation,
                     self.stage_config.get("enable_stage_execution", True),
                     self.stage_config.get("enable_stage_monitoring", True),
                 ],
             ):
-                self.print(error("At least one stage type must be enabled"))
+                self.logger.error("At least one stage type must be enabled")
                 return False
 
             self.logger.info("Configuration validation successful")
             return True
 
-        except Exception:
-            self.print(error("Error validating configuration: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error validating configuration: {e}")
             return False
 
     @handle_errors(
@@ -191,8 +175,8 @@ class StageRegistry:
 
             self.logger.info("Stage modules initialized successfully")
 
-        except Exception:
-            self.print(initialization_error("Error initializing stage modules: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error initializing stage modules: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -212,10 +196,8 @@ class StageRegistry:
 
             self.logger.info("Stage registration module initialized")
 
-        except Exception:
-            self.print(
-                initialization_error("Error initializing stage registration: {e}"),
-            )
+        except Exception as e:
+            self.logger.exception(f"Error initializing stage registration: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -235,8 +217,8 @@ class StageRegistry:
 
             self.logger.info("Stage validation module initialized")
 
-        except Exception:
-            self.print(validation_error("Error initializing stage validation: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error initializing stage validation: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -256,8 +238,8 @@ class StageRegistry:
 
             self.logger.info("Stage execution module initialized")
 
-        except Exception:
-            self.print(initialization_error("Error initializing stage execution: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error initializing stage execution: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -277,8 +259,8 @@ class StageRegistry:
 
             self.logger.info("Stage monitoring module initialized")
 
-        except Exception:
-            self.print(initialization_error("Error initializing stage monitoring: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error initializing stage monitoring: {e}")
 
     @handle_specific_errors(
         error_handlers={
@@ -290,14 +272,14 @@ class StageRegistry:
         context="stage execution",
     )
     async def execute_stage(self, stage_input: dict[str, Any]) -> bool:
-        """
-        Execute stage operations.
+        """Execute stage operations.
 
         Args:
             stage_input: Stage input dictionary
 
         Returns:
             bool: True if successful, False otherwise
+
         """
         try:
             if not self._validate_stage_inputs(stage_input):
@@ -335,8 +317,8 @@ class StageRegistry:
             self.logger.info("✅ Stage execution completed successfully")
             return True
 
-        except Exception:
-            self.print(error("Error executing stage: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error executing stage: {e}")
             self.is_registered = False
             return False
 
@@ -346,36 +328,36 @@ class StageRegistry:
         context="stage inputs validation",
     )
     def _validate_stage_inputs(self, stage_input: dict[str, Any]) -> bool:
-        """
-        Validate stage inputs.
+        """Validate stage inputs.
 
         Args:
             stage_input: Stage input dictionary
 
         Returns:
             bool: True if valid, False otherwise
+
         """
         try:
             # Check required stage input fields
             required_fields = ["stage_type", "stage_name", "timestamp"]
             for field in required_fields:
                 if field not in stage_input:
-                    self.print(missing("Missing required stage input field: {field}"))
+                    self.logger.error(f"Missing required stage input field: {field}")
                     return False
 
             # Validate data types
             if not isinstance(stage_input["stage_type"], str):
-                self.print(invalid("Invalid stage type"))
+                self.logger.error("Invalid stage type")
                 return False
 
             if not isinstance(stage_input["stage_name"], str):
-                self.print(invalid("Invalid stage name"))
+                self.logger.error("Invalid stage name")
                 return False
 
             return True
 
-        except Exception:
-            self.print(error("Error validating stage inputs: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error validating stage inputs: {e}")
             return False
 
     @handle_errors(
@@ -387,14 +369,14 @@ class StageRegistry:
         self,
         stage_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Perform stage registration.
+        """Perform stage registration.
 
         Args:
             stage_input: Stage input dictionary
 
         Returns:
             Dict[str, Any]: Stage registration results
+
         """
         try:
             results = {}
@@ -424,8 +406,8 @@ class StageRegistry:
             self.logger.info("Stage registration completed")
             return results
 
-        except Exception:
-            self.print(error("Error performing stage registration: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing stage registration: {e}")
             return {}
 
     @handle_errors(
@@ -437,14 +419,14 @@ class StageRegistry:
         self,
         stage_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Perform stage validation.
+        """Perform stage validation.
 
         Args:
             stage_input: Stage input dictionary
 
         Returns:
             Dict[str, Any]: Stage validation results
+
         """
         try:
             results = {}
@@ -476,8 +458,8 @@ class StageRegistry:
             self.logger.info("Stage validation completed")
             return results
 
-        except Exception:
-            self.print(validation_error("Error performing stage validation: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing stage validation: {e}")
             return {}
 
     @handle_errors(
@@ -489,14 +471,14 @@ class StageRegistry:
         self,
         stage_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Perform stage execution.
+        """Perform stage execution.
 
         Args:
             stage_input: Stage input dictionary
 
         Returns:
             Dict[str, Any]: Stage execution results
+
         """
         try:
             results = {}
@@ -528,8 +510,8 @@ class StageRegistry:
             self.logger.info("Stage execution completed")
             return results
 
-        except Exception:
-            self.print(execution_error("Error performing stage execution: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing stage execution: {e}")
             return {}
 
     @handle_errors(
@@ -541,14 +523,14 @@ class StageRegistry:
         self,
         stage_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Perform stage monitoring.
+        """Perform stage monitoring.
 
         Args:
             stage_input: Stage input dictionary
 
         Returns:
             Dict[str, Any]: Stage monitoring results
+
         """
         try:
             results = {}
@@ -580,11 +562,12 @@ class StageRegistry:
             self.logger.info("Stage monitoring completed")
             return results
 
-        except Exception:
-            self.print(error("Error performing stage monitoring: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing stage monitoring: {e}")
             return {}
 
     # Stage registration methods
+
     def _perform_stage_registration_core(
         self,
         stage_input: dict[str, Any],
@@ -598,8 +581,8 @@ class StageRegistry:
                 "registration_method": "dynamic",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing stage registration core: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing stage registration core: {e}")
             return {}
 
     def _perform_stage_dependencies(
@@ -615,8 +598,8 @@ class StageRegistry:
                 "dependency_graph": "generated",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing stage dependencies: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing stage dependencies: {e}")
             return {}
 
     def _perform_stage_metadata(self, stage_input: dict[str, Any]) -> dict[str, Any]:
@@ -629,8 +612,8 @@ class StageRegistry:
                 "metadata_format": "json",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing stage metadata: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing stage metadata: {e}")
             return {}
 
     def _perform_stage_validation_core(
@@ -646,11 +629,12 @@ class StageRegistry:
                 "validation_method": "schema_check",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(validation_error("Error performing stage validation core: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing stage validation core: {e}")
             return {}
 
     # Stage validation methods
+
     def _perform_input_validation(self, stage_input: dict[str, Any]) -> dict[str, Any]:
         """Perform input validation."""
         try:
@@ -661,8 +645,8 @@ class StageRegistry:
                 "validation_method": "type_check",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(validation_error("Error performing input validation: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing input validation: {e}")
             return {}
 
     def _perform_output_validation(self, stage_input: dict[str, Any]) -> dict[str, Any]:
@@ -675,8 +659,8 @@ class StageRegistry:
                 "validation_method": "quality_check",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(validation_error("Error performing output validation: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing output validation: {e}")
             return {}
 
     def _perform_dependency_validation(
@@ -692,8 +676,8 @@ class StageRegistry:
                 "validation_method": "graph_check",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(validation_error("Error performing dependency validation: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing dependency validation: {e}")
             return {}
 
     def _perform_metadata_validation(
@@ -709,11 +693,12 @@ class StageRegistry:
                 "validation_method": "format_check",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(validation_error("Error performing metadata validation: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing metadata validation: {e}")
             return {}
 
     # Stage execution methods
+
     def _perform_execution_planning(
         self,
         stage_input: dict[str, Any],
@@ -727,8 +712,8 @@ class StageRegistry:
                 "planning_algorithm": "topological_sort",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(execution_error("Error performing execution planning: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing execution planning: {e}")
             return {}
 
     def _perform_execution_coordination(
@@ -744,8 +729,8 @@ class StageRegistry:
                 "coordination_method": "sequential",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(execution_error("Error performing execution coordination: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing execution coordination: {e}")
             return {}
 
     def _perform_execution_monitoring(
@@ -761,8 +746,8 @@ class StageRegistry:
                 "monitoring_metrics": "performance",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(execution_error("Error performing execution monitoring: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing execution monitoring: {e}")
             return {}
 
     def _perform_execution_reporting(
@@ -778,11 +763,12 @@ class StageRegistry:
                 "report_format": "json",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(execution_error("Error performing execution reporting: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing execution reporting: {e}")
             return {}
 
     # Stage monitoring methods
+
     def _perform_performance_monitoring(
         self,
         stage_input: dict[str, Any],
@@ -796,8 +782,8 @@ class StageRegistry:
                 "monitoring_interval": 60,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing performance monitoring: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing performance monitoring: {e}")
             return {}
 
     def _perform_health_monitoring(self, stage_input: dict[str, Any]) -> dict[str, Any]:
@@ -810,8 +796,8 @@ class StageRegistry:
                 "health_score": 0.95,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing health monitoring: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing health monitoring: {e}")
             return {}
 
     def _perform_error_monitoring(self, stage_input: dict[str, Any]) -> dict[str, Any]:
@@ -824,8 +810,8 @@ class StageRegistry:
                 "error_rate": 0.0,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing error monitoring: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing error monitoring: {e}")
             return {}
 
     def _perform_resource_monitoring(
@@ -841,8 +827,8 @@ class StageRegistry:
                 "memory_usage": 0.45,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing resource monitoring: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing resource monitoring: {e}")
             return {}
 
     @handle_errors(
@@ -865,8 +851,8 @@ class StageRegistry:
 
             self.logger.info("Stage results stored successfully")
 
-        except Exception:
-            self.print(error("Error storing stage results: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error storing stage results: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -874,22 +860,22 @@ class StageRegistry:
         context="stage results getting",
     )
     def get_stage_results(self, stage_type: str | None = None) -> dict[str, Any]:
-        """
-        Get stage results.
+        """Get stage results.
 
         Args:
             stage_type: Optional stage type filter
 
         Returns:
             Dict[str, Any]: Stage results
+
         """
         try:
             if stage_type:
                 return self.stage_results.get(stage_type, {})
             return self.stage_results.copy()
 
-        except Exception:
-            self.print(error("Error getting stage results: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error getting stage results: {e}")
             return {}
 
     @handle_errors(
@@ -898,14 +884,14 @@ class StageRegistry:
         context="stage history getting",
     )
     def get_stage_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """
-        Get stage history.
+        """Get stage history.
 
         Args:
             limit: Optional limit on number of records
 
         Returns:
             List[Dict[str, Any]]: Stage history
+
         """
         try:
             history = self.stage_history.copy()
@@ -915,16 +901,16 @@ class StageRegistry:
 
             return history
 
-        except Exception:
-            self.print(error("Error getting stage history: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error getting stage history: {e}")
             return []
 
     def get_stage_status(self) -> dict[str, Any]:
-        """
-        Get stage status information.
+        """Get stage status information.
 
         Returns:
             Dict[str, Any]: Stage status
+
         """
         return {
             "is_registered": self.is_registered,
@@ -964,8 +950,8 @@ class StageRegistry:
 
             self.logger.info("✅ Stage Registry stopped successfully")
 
-        except Exception:
-            self.print(error("Error stopping stage registry: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error stopping stage registry: {e}")
 
 
 # Global stage registry instance
@@ -980,14 +966,14 @@ stage_registry: StageRegistry | None = None
 async def setup_stage_registry(
     config: dict[str, Any] | None = None,
 ) -> StageRegistry | None:
-    """
-    Setup global stage registry.
+    """Setup global stage registry.
 
     Args:
         config: Optional configuration dictionary
 
     Returns:
         Optional[StageRegistry]: Global stage registry instance
+
     """
     try:
         global stage_registry
@@ -1013,6 +999,5 @@ async def setup_stage_registry(
             return stage_registry
         return None
 
-    except Exception as e:
-        print(f"Error setting up stage registry: {e}")
+    except Exception:
         return None

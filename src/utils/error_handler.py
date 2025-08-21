@@ -28,6 +28,14 @@ R = TypeVar("R")
 F = TypeVar("F", bound=Callable[..., Any])
 
 
+class ErrorSeverity(Enum):
+    """Error severity levels."""
+    LOW = auto()
+    MEDIUM = auto()
+    HIGH = auto()
+    CRITICAL = auto()
+
+
 # Lazy import to prevent circular imports
 def get_system_logger() -> logging.Logger:
     """Get system logger with lazy import to prevent circular dependencies."""

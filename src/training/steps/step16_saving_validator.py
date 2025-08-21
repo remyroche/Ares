@@ -1,6 +1,4 @@
-"""
-Validator for Step 16: Saving
-"""
+"""Validator for Step 16: Saving."""
 
 import asyncio
 import os
@@ -28,7 +26,7 @@ from src.utils.base_validator import BaseValidator
 class Step16SavingValidator(BaseValidator):
     """Validator for Step 16: Saving."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step16_saving", config)
 
     async def validate(
@@ -36,8 +34,7 @@ class Step16SavingValidator(BaseValidator):
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
     ) -> bool:
-        """
-        Validate the saving step.
+        """Validate the saving step.
 
         Args:
             training_input: Training input parameters
@@ -45,6 +42,7 @@ class Step16SavingValidator(BaseValidator):
 
         Returns:
             bool: True if validation passed, False otherwise
+
         """
         self.logger.info("🔍 Validating saving step...")
 
@@ -115,8 +113,7 @@ class Step16SavingValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate that final model files exist.
+        """Validate that final model files exist.
 
         Args:
             symbol: Trading symbol
@@ -125,6 +122,7 @@ class Step16SavingValidator(BaseValidator):
 
         Returns:
             bool: True if files exist
+
         """
         try:
             # Expected final model file patterns
@@ -161,8 +159,7 @@ class Step16SavingValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate that all pipeline components are complete.
+        """Validate that all pipeline components are complete.
 
         Args:
             symbol: Trading symbol
@@ -171,6 +168,7 @@ class Step16SavingValidator(BaseValidator):
 
         Returns:
             bool: True if pipeline is complete
+
         """
         try:
             # Check for all expected pipeline files
@@ -250,8 +248,7 @@ class Step16SavingValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate file integrity and accessibility.
+        """Validate file integrity and accessibility.
 
         Args:
             symbol: Trading symbol
@@ -260,6 +257,7 @@ class Step16SavingValidator(BaseValidator):
 
         Returns:
             bool: True if file integrity is acceptable
+
         """
         try:
             # Check final model file integrity
@@ -348,8 +346,7 @@ class Step16SavingValidator(BaseValidator):
             return False
 
     def _unwrap_estimator(self, artifact: Any) -> Any:
-        """
-        Unwrap model artifacts that may have been saved as dicts or wrappers.
+        """Unwrap model artifacts that may have been saved as dicts or wrappers.
         Tries common keys and patterns to retrieve an estimator with predict.
         """
         try:
@@ -371,7 +368,7 @@ class Step16SavingValidator(BaseValidator):
                 inner = getattr(artifact, "best_estimator_", None)
                 if callable(getattr(inner, "predict", None)):
                     return inner
-            if isinstance(artifact, (list, tuple)) and artifact:
+            if isinstance(artifact, list | tuple) and artifact:
                 first = artifact[0]
                 if callable(getattr(first, "predict", None)):
                     return first
@@ -385,8 +382,7 @@ class Step16SavingValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate final model quality metrics.
+        """Validate final model quality metrics.
 
         Args:
             symbol: Trading symbol
@@ -395,6 +391,7 @@ class Step16SavingValidator(BaseValidator):
 
         Returns:
             bool: True if model quality is acceptable
+
         """
         try:
             # Load final model metadata
@@ -492,8 +489,7 @@ async def run_validator(
     training_input: dict[str, Any],
     pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
-    """
-    Run the step16_saving validator.
+    """Run the step16_saving validator.
 
     Args:
         training_input: Training input parameters
@@ -501,6 +497,7 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
+
     """
     validator = Step16SavingValidator(CONFIG)
     validation_passed = await validator.validate(training_input, pipeline_state)
@@ -518,7 +515,7 @@ if __name__ == "__main__":
     import asyncio
 
     # Example usage
-    async def test_validator():
+    async def test_validator() -> None:
         training_input = {
             "symbol": "ETHUSDT",
             "exchange": "BINANCE",
@@ -527,7 +524,6 @@ if __name__ == "__main__":
 
         pipeline_state = {"saving": {"status": "SUCCESS", "duration": 120.5}}
 
-        result = await run_validator(training_input, pipeline_state)
-        print(f"Validation result: {result}")
+        await run_validator(training_input, pipeline_state)
 
     asyncio.run(test_validator())

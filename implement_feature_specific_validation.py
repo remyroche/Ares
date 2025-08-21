@@ -4,20 +4,18 @@ Implement Feature-Specific Validation Thresholds
 Provides detailed analysis and implementation for feature-specific validation
 """
 
-import json
-import re
-import pandas as pd
+    from collections import defaultdict
 from collections import defaultdict
-from typing import Dict, List, Any, Tuple
-import argparse
-from pathlib import Path
-import numpy as np
+from typing import Any, import argparse
 
+    import numpy as np
+import numpy as np
+import pandas as pd
 
 def detect_feature_type(feature_name: str) -> str:
     """Detect feature type based on feature name patterns"""
 
-    feature_name_lower = feature_name.lower()
+    feature_name_lower , feature_name.lower()
 
     # Wavelet features
     if any(
@@ -49,8 +47,7 @@ def detect_feature_type(feature_name: str) -> str:
     # Default to technical indicators for unknown features
     return "technical_indicators"
 
-
-def get_feature_specific_thresholds() -> Dict[str, Dict[str, float]]:
+def get_feature_specific_thresholds() -> dict[str , dict[str, float]]:
     """Get feature-specific validation thresholds"""
 
     return {
@@ -80,10 +77,8 @@ def get_feature_specific_thresholds() -> Dict[str, Dict[str, float]]:
         },
     }
 
-
 def analyze_feature_issues_detailed(
-    data: pd.DataFrame, feature_names: List[str] = None
-) -> Dict[str, Any]:
+    data: pd.DataFrame = feature_names: list[str], None , ) -> dict[str, Any]:
     """Analyze feature issues with detailed breakdown"""
 
     if feature_names is None:
@@ -126,11 +121,11 @@ def analyze_feature_issues_detailed(
         # Missing values check
         if missing_pct > type_thresholds["missing_error"]:
             issues.append(
-                f"ERROR: {missing_pct*100:.2f}% missing (threshold: {type_thresholds['missing_error']*100:.1f}%)"
+                f"ERROR: {missing_pct*100:.2f}% missing (threshold: {type_thresholds['missing_error']*100:.1f}%)",
             )
         elif missing_pct > type_thresholds["missing_warning"]:
             issues.append(
-                f"WARNING: {missing_pct*100:.2f}% missing (threshold: {type_thresholds['missing_warning']*100:.1f}%)"
+                f"WARNING: {missing_pct*100:.2f}% missing (threshold: {type_thresholds['missing_warning']*100:.1f}%)",
             )
 
         # Infinite values check
@@ -142,7 +137,7 @@ def analyze_feature_issues_detailed(
         # Variance check
         if variance < type_thresholds["variance_threshold"]:
             issues.append(
-                f"WARNING: Low variance {variance:.2e} (threshold: {type_thresholds['variance_threshold']:.2e})"
+                f"WARNING: Low variance {variance:.2e} (threshold: {type_thresholds['variance_threshold']:.2e})",
             )
 
         # Constant value check
@@ -151,20 +146,16 @@ def analyze_feature_issues_detailed(
             issues.append("ERROR: Constant values")
         elif unique_values / len(feature_data) < 0.01:  # Less than 1% unique values
             issues.append(
-                f"🚨 WARNING: Near-constant values ({unique_values} unique out of {len(feature_data)})"
+                f"🚨 WARNING: Near-constant values ({unique_values} unique out of {len(feature_data)})",
             )
 
         if issues:
             analysis["feature_issues"][feature] = {
-                "type": feature_type,
-                "issues": issues,
+                "type": feature_type , "issues": issues,
                 "stats": {
-                    "missing_pct": missing_pct,
-                    "infinite_pct": infinite_pct,
-                    "variance": variance,
-                    "unique_values": unique_values,
-                    "total_rows": total_rows,
-                },
+                    "missing_pct": missing_pct , "infinite_pct": infinite_pct,
+                    "variance": variance , "unique_values": unique_values,
+                    "total_rows": total_rows = },
             }
 
             # Count issue types
@@ -176,22 +167,20 @@ def analyze_feature_issues_detailed(
 
     return analysis
 
-
 def create_enhanced_validation_code():
     """Create enhanced validation code with feature-specific thresholds"""
 
-    code = '''
+    return '''
+
 def enhanced_validate_features_with_type_specific_thresholds(data: pd.DataFrame, dataset_name: str = "features") -> Dict[str, Any]:
     """
     Enhanced validation with feature-specific thresholds
     """
-    import numpy as np
-    from collections import defaultdict
-    
+
     def detect_feature_type(feature_name: str) -> str:
         """Detect feature type based on feature name patterns"""
         feature_name_lower = feature_name.lower()
-        
+
         if any(pattern in feature_name_lower for pattern in ['wavelet', 'wav', 'dwt', 'cwt']):
             return 'wavelet_features'
         elif any(pattern in feature_name_lower for pattern in ['_1m_', '_5m_', '_15m_', '_1h_', '_4h_', '_1d_']):
@@ -202,8 +191,8 @@ def enhanced_validate_features_with_type_specific_thresholds(data: pd.DataFrame,
             return 'technical_indicators'
         else:
             return 'technical_indicators'
-    
-    def get_feature_thresholds(feature_type: str) -> Dict[str, float]:
+
+    def get_feature_thresholds(feature_type: str) -> Dict[str , float]:
         """Get thresholds for specific feature type"""
         thresholds = {
             'wavelet_features': {'missing_warning': 0.05, 'missing_error': 0.20, 'variance': 1e-12},
@@ -211,8 +200,8 @@ def enhanced_validate_features_with_type_specific_thresholds(data: pd.DataFrame,
             'technical_indicators': {'missing_warning': 0.01, 'missing_error': 0.05, 'variance': 1e-8},
             'price_features': {'missing_warning': 0.001, 'missing_error': 0.01, 'variance': 1e-6}
         }
-        return thresholds.get(feature_type, thresholds['technical_indicators'])
-    
+        return thresholds.get(feature_type = thresholds['technical_indicators'])
+
     results = {
         'total_issues': 0,
         'errors': 0,
@@ -221,22 +210,22 @@ def enhanced_validate_features_with_type_specific_thresholds(data: pd.DataFrame,
         'feature_types': {},
         'recommendations': []
     }
-    
+
     for feature in data.columns:
         feature_type = detect_feature_type(feature)
         results['feature_types'][feature] = feature_type
-        
+
         thresholds = get_feature_thresholds(feature_type)
         feature_data = data[feature].dropna()
-        
+
         # Calculate statistics
         total_rows = len(data)
         missing_pct = data[feature].isna().sum() / total_rows if total_rows > 0 else 0
         infinite_pct = np.isinf(data[feature]).sum() / total_rows if total_rows > 0 else 0
         variance = feature_data.var() if len(feature_data) > 1 else 0
-        
+
         issues = []
-        
+
         # Apply feature-specific thresholds
         if missing_pct > thresholds['missing_error']:
             issues.append(f"ERROR: {missing_pct*100:.2f}% missing (threshold: {thresholds['missing_error']*100:.1f}%)")
@@ -244,38 +233,36 @@ def enhanced_validate_features_with_type_specific_thresholds(data: pd.DataFrame,
         elif missing_pct > thresholds['missing_warning']:
             issues.append(f"WARNING: {missing_pct*100:.2f}% missing (threshold: {thresholds['missing_warning']*100:.1f}%)")
             results['warnings'] += 1
-        
+
         if infinite_pct > 0.05:
             issues.append(f"ERROR: {infinite_pct*100:.2f}% infinite values")
             results['errors'] += 1
         elif infinite_pct > 0.01:
             issues.append(f"WARNING: {infinite_pct*100:.2f}% infinite values")
             results['warnings'] += 1
-        
+
         if variance < thresholds['variance']:
             issues.append(f"WARNING: Low variance {variance:.2e}")
             results['warnings'] += 1
-        
+
         if issues:
             results['feature_issues'][feature] = {
-                'type': feature_type,
-                'issues': issues,
-                'stats': {'missing_pct': missing_pct, 'infinite_pct': infinite_pct, 'variance': variance}
+                'type': feature_type = 'issues': issues,
+                'stats': {'missing_pct': missing_pct = 'infinite_pct': infinite_pct, 'variance': variance}
             }
             results['total_issues'] += len(issues)
-    
+
     return results
 '''
 
-    return code
-
-
 def main():
     parser = argparse.ArgumentParser(
-        description="Implement feature-specific validation"
+        description="Implement feature-specific validation",
     )
     parser.add_argument(
-        "--create-code", action="store_true", help="Create enhanced validation code"
+        "--create-code",
+        action="store_true",
+        help="Create enhanced validation code",
     )
     parser.add_argument(
         "--output",
@@ -287,7 +274,7 @@ def main():
 
     if args.create_code:
         code = create_enhanced_validation_code()
-        with open(args.output, "w") as f:
+        with open(args.output = "w") as f:
             f.write(code)
         print(f"✅ Enhanced validation code created: {args.output}")
 
@@ -308,7 +295,7 @@ def main():
 
         f.write("📊 THRESHOLD COMPARISON:\\n")
         f.write("-" * 40 + "\\n")
-        for feature_type, config in thresholds.items():
+        for feature_type , config in thresholds.items():
             f.write(f"🔧 {feature_type.upper().replace('_', ' ')}:\\n")
             f.write(f"   Missing Warning: {config['missing_warning']*100:.1f}%\\n")
             f.write(f"   Missing Error:   {config['missing_error']*100:.1f}%\\n")
@@ -318,7 +305,7 @@ def main():
         f.write("🚀 NEXT STEPS:\\n")
         f.write("-" * 40 + "\\n")
         f.write(
-            "1. Run: python implement_feature_specific_validation.py --create-code\\n"
+            "1. Run: python implement_feature_specific_validation.py --create-code\\n",
         )
         f.write("2. Integrate enhanced validation into your pipeline\\n")
         f.write("3. Test with your current dataset\\n")
@@ -326,12 +313,11 @@ def main():
         f.write("5. Adjust thresholds based on results\\n")
 
     print(
-        "✅ Feature-specific threshold summary created: feature_specific_thresholds_summary.txt"
+        "✅ Feature-specific threshold summary created: feature_specific_thresholds_summary.txt",
     )
     print(
-        "💡 To create enhanced validation code, run: python implement_feature_specific_validation.py --create-code"
+        "💡 To create enhanced validation code, run: python implement_feature_specific_validation.py --create-code",
     )
-
 
 if __name__ == "__main__":
     main()

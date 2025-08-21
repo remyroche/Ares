@@ -5,12 +5,13 @@ Handles market transitions (cluster -1) by analyzing intensity scores and
 predicting emerging trends using step9_5 and step10 models.
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Any
+import logging
+
 from dataclasses import dataclass
 from enum import Enum
-import logging
+import numpy as np
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -32,13 +33,13 @@ class TransitionAnalysis:
 
     transition_type: TransitionType
     primary_regime: str
-    secondary_regime: Optional[str]
-    tertiary_regime: Optional[str]
-    regime_weights: Dict[str, float]
+    secondary_regime: str | None
+    tertiary_regime: str | None
+    regime_weights: dict[str, float]
     confidence_score: float
-    predicted_direction: Optional[str]  # "bull", "bear", "sideways"
-    step9_5_prediction: Optional[Dict[str, Any]]
-    step10_prediction: Optional[Dict[str, Any]]
+    predicted_direction: str | None  # "bull", "bear", "sideways"
+    step9_5_prediction: dict[str, Any] | None
+    step10_prediction: dict[str, Any] | None
     intensity_threshold_met: bool
 
 
@@ -47,7 +48,7 @@ class TransitionRegimeHandler:
     Handles market transitions by analyzing intensity scores and model predictions.
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         self.config = config
         self.intensity_threshold = config.get("transition_intensity_threshold", 0.3)
         self.min_combined_intensity = config.get("min_combined_intensity", 0.6)
@@ -61,10 +62,8 @@ class TransitionRegimeHandler:
         self.step10_model = step10_model
 
     def analyze_transition(
-        self,
-        intensity_scores: Dict[str, float],
-        current_features: pd.DataFrame,
-        historical_intensities: Optional[pd.DataFrame] = None,
+        self, intensity_scores: dict[str, float],
+        current_features: pd.DataFrame, historical_intensities: pd.DataFrame | None = None,
     ) -> TransitionAnalysis:
         """
         Analyze a market transition to determine the best trading approach.
@@ -94,24 +93,23 @@ class TransitionRegimeHandler:
 
         # 5. Determine transition type and regime weights
         transition_type, regime_weights, confidence = self._determine_transition_type(
-            regime_intensities,
-            step9_5_prediction,
-            step10_prediction,
-            historical_intensities,
+            regime_intensities, step9_5_prediction,
+            step10_prediction, historical_intensities,
         )
 
         # 6. Extract primary regimes
         sorted_regimes = sorted(
-            regime_weights.items(), key=lambda x: x[1], reverse=True
-        )
+            regime_weights.items(),
+            key=lambda x: x[1],
+            reverse=True)
         primary_regime = sorted_regimes[0][0] if sorted_regimes else None
         secondary_regime = sorted_regimes[1][0] if len(sorted_regimes) > 1 else None
         tertiary_regime = sorted_regimes[2][0] if len(sorted_regimes) > 2 else None
 
         # 7. Predict market direction
         predicted_direction = self._predict_market_direction(
-            regime_weights, step9_5_prediction, step10_prediction
-        )
+            regime_weights, step9_5_prediction,
+            step10_prediction)
 
         analysis = TransitionAnalysis(
             transition_type=transition_type,
@@ -128,15 +126,15 @@ class TransitionRegimeHandler:
 
         logger.info(
             f"📊 Transition Analysis: {transition_type.value} | "
-            f"Primary: {primary_regime} | Confidence: {confidence:.2f}"
+            f"Primary: {primary_regime} | Confidence: {confidence:.2f}",
         )
 
         return analysis
 
     def _get_top_regime_intensities(
-        self, intensity_scores: Dict[str, float]
-    ) -> Dict[str, float]:
-        """Get the top regime intensities, sorted by strength."""
+        self, intensity_scores: dict[str, float],
+    ) -> dict[str, float]:
+        """Get the top regime intensities = sorted by strength."""
         # Filter out cluster -1 (current transition state)
         filtered_scores = {
             k: v
@@ -146,15 +144,16 @@ class TransitionRegimeHandler:
 
         # Sort by intensity and take top N
         sorted_scores = sorted(
-            filtered_scores.items(), key=lambda x: x[1], reverse=True
-        )
+            filtered_scores.items(),
+            key=lambda x: x[1],
+            reverse=True)
         top_scores = sorted_scores[: self.max_regimes_to_consider]
 
         return dict(top_scores)
 
     def _get_step9_5_prediction(
-        self, features: pd.DataFrame
-    ) -> Optional[Dict[str, Any]]:
+        self, features: pd.DataFrame,
+    ) -> dict[str, Any] | None:
         """Get step9_5 prediction for regime transition."""
         if self.step9_5_model is None:
             logger.warning("Step9_5 model not available for transition prediction")
@@ -172,12 +171,12 @@ class TransitionRegimeHandler:
                 "time_to_target": prediction.get("time_to_target", None),
             }
         except Exception as e:
-            logger.error(f"Error getting step9_5 prediction: {e}")
+            logger.exception(f"Error getting step9_5 prediction: {e}")
             return None
 
     def _get_step10_prediction(
-        self, features: pd.DataFrame
-    ) -> Optional[Dict[str, Any]]:
+        self, features: pd.DataFrame,
+    ) -> dict[str, Any] | None:
         """Get step10 prediction for path classification."""
         if self.step10_model is None:
             logger.warning("Step10 model not available for transition prediction")
@@ -194,16 +193,14 @@ class TransitionRegimeHandler:
                 "reliability_score": prediction.get("reliability_score", 0.0),
             }
         except Exception as e:
-            logger.error(f"Error getting step10 prediction: {e}")
+            logger.exception(f"Error getting step10 prediction: {e}")
             return None
 
     def _determine_transition_type(
-        self,
-        regime_intensities: Dict[str, float],
-        step9_5_prediction: Optional[Dict[str, Any]],
-        step10_prediction: Optional[Dict[str, Any]],
-        historical_intensities: Optional[pd.DataFrame],
-    ) -> Tuple[TransitionType, Dict[str, float], float]:
+        self, regime_intensities: dict[str, float],
+        step9_5_prediction: dict[str, Any] | None,
+        step10_prediction: dict[str, Any] | None,
+        historical_intensities: pd.DataFrame | None = None) -> tuple[TransitionType, dict[str, float], float]:
         """Determine the type of transition and calculate regime weights."""
 
         # Base weights on intensity scores
@@ -217,30 +214,31 @@ class TransitionRegimeHandler:
         # Adjust weights based on step9_5 prediction
         if step9_5_prediction:
             base_weights = self._adjust_weights_with_step9_5(
-                base_weights, step9_5_prediction
+                base_weights, step9_5_prediction,
             )
 
         # Adjust weights based on step10 prediction
         if step10_prediction:
             base_weights = self._adjust_weights_with_step10(
-                base_weights, step10_prediction
+                base_weights, step10_prediction,
             )
 
         # Determine transition type
         transition_type = self._classify_transition_type(
-            base_weights, step9_5_prediction, step10_prediction
-        )
+            base_weights, step9_5_prediction,
+            step10_prediction)
 
         # Calculate confidence score
         confidence = self._calculate_confidence(
-            base_weights, step9_5_prediction, step10_prediction
-        )
+            base_weights, step9_5_prediction,
+            step10_prediction)
 
         return transition_type, base_weights, confidence
 
     def _adjust_weights_with_step9_5(
-        self, weights: Dict[str, float], prediction: Dict[str, Any]
-    ) -> Dict[str, float]:
+        self, weights: dict[str, float],
+        prediction: dict[str, Any],
+    ) -> dict[str, float]:
         """Adjust regime weights based on step9_5 predictions."""
         adjusted_weights = weights.copy()
 
@@ -262,8 +260,9 @@ class TransitionRegimeHandler:
         return adjusted_weights
 
     def _adjust_weights_with_step10(
-        self, weights: Dict[str, float], prediction: Dict[str, Any]
-    ) -> Dict[str, float]:
+        self, weights: dict[str, float],
+        prediction: dict[str, Any],
+    ) -> dict[str, float]:
         """Adjust regime weights based on step10 path classification."""
         adjusted_weights = weights.copy()
 
@@ -285,25 +284,27 @@ class TransitionRegimeHandler:
         elif path_class == "reversal":
             # Boost opposite trend regimes
             for regime in adjusted_weights:
-                if "BULL" in regime and "BEAR" not in regime:
-                    adjusted_weights[regime] *= 1.0 - path_prob * 0.2
-                elif "BEAR" in regime and "BULL" not in regime:
+                if (
+                    "BULL" in regime
+                    and "BEAR" not in regime
+                    or "BEAR" in regime
+                    and "BULL" not in regime
+                ):
                     adjusted_weights[regime] *= 1.0 - path_prob * 0.2
 
         # Normalize weights
         total_weight = sum(adjusted_weights.values())
         if total_weight > 0:
             adjusted_weights = {
-                k: v / total_weight for k, v in adjusted_weights.items()
+                k: v / total_weight for k , v in adjusted_weights.items()
             }
 
         return adjusted_weights
 
     def _classify_transition_type(
-        self,
-        weights: Dict[str, float],
-        step9_5_prediction: Optional[Dict[str, Any]],
-        step10_prediction: Optional[Dict[str, Any]],
+        self, weights: dict[str, float],
+        step9_5_prediction: dict[str, Any] | None,
+        step10_prediction: dict[str, Any] | None,
     ) -> TransitionType:
         """Classify the type of transition based on weights and predictions."""
 
@@ -324,29 +325,26 @@ class TransitionRegimeHandler:
                     or "BEAR" in top_regime
                 ):
                     return TransitionType.TREND_EMERGENCE
-                else:
-                    return TransitionType.RANGE_BREAKOUT
+                return TransitionType.RANGE_BREAKOUT
 
-            elif path_class == "reversal":
+            if path_class == "reversal":
                 return TransitionType.TREND_REVERSAL
 
-            elif path_class == "continuation":
+            if path_class == "continuation":
                 return TransitionType.TREND_CONTINUATION
 
         # Fallback classification based on regime type
         if "VOLATILITY" in top_regime:
             return TransitionType.VOLATILITY_SPIKE
-        elif "TREND" in top_regime or "BULL" in top_regime or "BEAR" in top_regime:
+        if "TREND" in top_regime or "BULL" in top_regime or "BEAR" in top_regime:
             return TransitionType.TREND_EMERGENCE
-        else:
-            return TransitionType.RANGE_BREAKOUT
+        return TransitionType.RANGE_BREAKOUT
 
     def _predict_market_direction(
-        self,
-        weights: Dict[str, float],
-        step9_5_prediction: Optional[Dict[str, Any]],
-        step10_prediction: Optional[Dict[str, Any]],
-    ) -> Optional[str]:
+        self, weights: dict[str, float],
+        step9_5_prediction: dict[str, Any] | None,
+        step10_prediction: dict[str, Any] | None,
+    ) -> str | None:
         """Predict overall market direction."""
 
         # Use step9_5 price direction if available
@@ -361,16 +359,14 @@ class TransitionRegimeHandler:
 
         if bull_weight > bear_weight + 0.1:
             return "bull"
-        elif bear_weight > bull_weight + 0.1:
+        if bear_weight > bull_weight + 0.1:
             return "bear"
-        else:
-            return "sideways"
+        return "sideways"
 
     def _calculate_confidence(
-        self,
-        weights: Dict[str, float],
-        step9_5_prediction: Optional[Dict[str, Any]],
-        step10_prediction: Optional[Dict[str, Any]],
+        self, weights: dict[str, float],
+        step9_5_prediction: dict[str, Any] | None,
+        step10_prediction: dict[str, Any] | None,
     ) -> float:
         """Calculate confidence score for the transition analysis."""
 
@@ -385,7 +381,8 @@ class TransitionRegimeHandler:
         if step9_5_prediction:
             # Use TPSL prediction confidence if available
             tpsl_conf = step9_5_prediction.get("tpsl_prediction", {}).get(
-                "confidence", 0.5
+                "confidence",
+                0.5,
             )
             confidence_factors.append(tpsl_conf)
 
@@ -402,27 +399,24 @@ class TransitionRegimeHandler:
         # Average confidence factors
         if confidence_factors:
             return np.mean(confidence_factors)
-        else:
-            return 0.5
+        return 0.5
 
     def get_trading_recommendation(
-        self, analysis: TransitionAnalysis
-    ) -> Dict[str, Any]:
+        self, analysis: TransitionAnalysis,
+    ) -> dict[str, Any]:
         """Get trading recommendations based on transition analysis."""
 
         recommendation = {
             "action": "HOLD",  # Default action
             "position_size": 0.0,
-            "stop_loss": None,
-            "take_profit": None,
-            "confidence": analysis.confidence_score,
-            "reasoning": [],
+            "stop_loss": None, "take_profit": None,
+            "confidence": analysis.confidence_score, "reasoning": [],
         }
 
         # Only trade if intensity threshold is met
         if not analysis.intensity_threshold_met:
             recommendation["reasoning"].append(
-                "Insufficient regime intensity for trading"
+                "Insufficient regime intensity for trading",
             )
             return recommendation
 
@@ -450,14 +444,14 @@ class TransitionRegimeHandler:
         elif analysis.transition_type == TransitionType.RANGE_BREAKOUT:
             recommendation["action"] = "WAIT"
             recommendation["reasoning"].append(
-                "Range breakout detected - wait for confirmation"
+                "Range breakout detected - wait for confirmation",
             )
 
         elif analysis.transition_type == TransitionType.VOLATILITY_SPIKE:
             recommendation["action"] = "REDUCE"
             recommendation["position_size"] = 0.2  # Very conservative
             recommendation["reasoning"].append(
-                "High volatility detected - reduce exposure"
+                "High volatility detected - reduce exposure",
             )
 
         # Adjust position size based on confidence

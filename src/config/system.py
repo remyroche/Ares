@@ -7,11 +7,11 @@ from src.config.environment import get_environment_settings
 
 
 def get_system_config() -> dict[str, Any]:
-    """
-    Get the complete system configuration.
+    """Get the complete system configuration.
 
     Returns:
         dict: Complete system configuration
+
     """
     settings = get_environment_settings()
 
@@ -98,143 +98,66 @@ def get_system_config() -> dict[str, Any]:
 
 
 def get_logging_config() -> dict[str, Any]:
-    """
-    Get logging configuration.
+    """Get logging configuration.
 
     Returns:
         dict: Logging configuration
+
     """
     system_config = get_system_config()
     return system_config.get("logging", {})
 
 
 def get_database_config() -> dict[str, Any]:
-    """
-    Get database configuration.
+    """Get database configuration.
 
     Returns:
         dict: Database configuration
+
     """
     system_config = get_system_config()
     return system_config.get("database", {})
 
 
-def get_data_config() -> dict[str, Any]:
-    """
-    Get data configuration.
-
-    Returns:
-        dict: Data configuration
-    """
-    system_config = get_system_config()
-    return system_config.get("data", {})
-
-
 def get_checkpointing_config() -> dict[str, Any]:
-    """
-    Get checkpointing configuration.
+    """Get checkpointing configuration.
 
     Returns:
         dict: Checkpointing configuration
+
     """
     system_config = get_system_config()
     return system_config.get("checkpointing", {})
 
 
 def get_reporting_config() -> dict[str, Any]:
-    """
-    Get reporting configuration.
+    """Get reporting configuration.
 
     Returns:
         dict: Reporting configuration
+
     """
     system_config = get_system_config()
     return system_config.get("reporting", {})
 
 
 def get_mlflow_config() -> dict[str, Any]:
-    """
-    Get MLflow configuration.
+    """Get MLflow configuration.
 
     Returns:
         dict: MLflow configuration
+
     """
     system_config = get_system_config()
     return system_config.get("mlflow", {})
 
 
 def get_version_info() -> dict[str, Any]:
-    """
-    Get version information.
+    """Get version information.
 
     Returns:
         dict: Version information
+
     """
     system_config = get_system_config()
     return system_config.get("version", {})
-
-
-def get_log_level() -> str:
-    """
-    Get the current log level.
-
-    Returns:
-        str: The log level
-    """
-    logging_config = get_logging_config()
-    return logging_config.get("level", "INFO")
-
-
-def get_log_directory() -> str:
-    """
-    Get the log directory.
-
-    Returns:
-        str: The log directory
-    """
-    logging_config = get_logging_config()
-    return logging_config.get("log_directory", "log")
-
-
-def get_database_type() -> str:
-    """
-    Get the database type.
-
-    Returns:
-        str: The database type
-    """
-    database_config = get_database_config()
-    return database_config.get("type", "sqlite")
-
-
-def get_sqlite_db_path() -> str:
-    """
-    Get the SQLite database path.
-
-    Returns:
-        str: The SQLite database path
-    """
-    database_config = get_database_config()
-    return database_config.get("sqlite_db_path", "data/ares_local_db.sqlite")
-
-
-def get_checkpoint_dir() -> str:
-    """
-    Get the checkpoint directory.
-
-    Returns:
-        str: The checkpoint directory
-    """
-    checkpointing_config = get_checkpointing_config()
-    return checkpointing_config.get("checkpoint_dir", "checkpoints")
-
-
-def get_ares_version() -> str:
-    """
-    Get the Ares version.
-
-    Returns:
-        str: The Ares version
-    """
-    version_info = get_version_info()
-    return version_info.get("ares_version", "2.0.0")

@@ -1,19 +1,10 @@
 # src/tactician/ml_tactics_manager.py
 
 from datetime import datetime
-from typing import Any
-
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    failed,
-    invalid,
-    warning,
-)
-
+from typing import Any
+from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.warning_symbols import failed, invalid, warning
 
 class MLTacticsManager:
     """
@@ -66,7 +57,7 @@ class MLTacticsManager:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.print(invalid("Invalid configuration for ML tactics manager"))
+                self.logger.error(invalid("Invalid configuration for ML tactics manager"))
                 return False
 
             # Initialize ML models
@@ -76,8 +67,8 @@ class MLTacticsManager:
             self.logger.info("✅ ML Tactics Manager initialized successfully")
             return True
 
-        except Exception:
-            self.print(failed("❌ ML Tactics Manager initialization failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"❌ ML Tactics Manager initialization failed: {e}"))
             return False
 
     @handle_errors(
@@ -94,17 +85,17 @@ class MLTacticsManager:
         """
         try:
             if self.confidence_threshold <= 0 or self.confidence_threshold > 1:
-                self.print(invalid("Invalid confidence_threshold configuration"))
+                self.logger.error(invalid("Invalid confidence_threshold configuration"))
                 return False
 
             if self.regime_threshold <= 0 or self.regime_threshold > 1:
-                self.print(invalid("Invalid regime_threshold configuration"))
+                self.logger.error(invalid("Invalid regime_threshold configuration"))
                 return False
 
             return True
 
-        except Exception:
-            self.print(failed("Configuration validation failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"Configuration validation failed: {e}"))
             return False
 
     @handle_errors(
@@ -119,8 +110,8 @@ class MLTacticsManager:
             # This would typically load pre-trained models for various ML predictions
             self.logger.info("✅ ML prediction models initialized")
 
-        except Exception:
-            self.print(failed("❌ Failed to initialize ML models: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"❌ Failed to initialize ML models: {e}"))
             raise
 
     @handle_specific_errors(
@@ -133,8 +124,7 @@ class MLTacticsManager:
         context="ML tactics execution",
     )
     async def execute_ml_tactics(
-        self,
-        tactics_input: dict[str, Any],
+        self, tactics_input: dict[str, Any],
     ) -> dict[str, Any]:
         """
         Execute ML-based tactics.
@@ -156,7 +146,7 @@ class MLTacticsManager:
             ml_predictions = self._get_ml_predictions()
 
             if not ml_predictions:
-                self.print(warning("⚠️ No ML predictions available"))
+                self.logger.warning(warning("⚠️ No ML predictions available"))
                 return {}
 
             # Apply regime and location tactics
@@ -176,7 +166,7 @@ class MLTacticsManager:
 
             # Make ML liquidation risk decisions
             liquidation_decisions = self._make_ml_liquidation_risk_decisions(
-                ml_predictions,
+                ml_predictions
             )
 
             # Calculate position size
@@ -204,8 +194,8 @@ class MLTacticsManager:
 
             return ml_results
 
-        except Exception:
-            self.print(failed("❌ ML tactics execution failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"❌ ML tactics execution failed: {e}"))
             return {}
 
     @handle_errors(
@@ -235,13 +225,13 @@ class MLTacticsManager:
 
             # Validate specific field values
             if tactics_input.get("current_price", 0) <= 0:
-                self.print(invalid("Invalid current_price value"))
+                self.logger.error(invalid("Invalid current_price value"))
                 return False
 
             return True
 
-        except Exception:
-            self.print(failed("ML tactics input validation failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"ML tactics input validation failed: {e}"))
             return False
 
     @handle_errors(
@@ -297,8 +287,8 @@ class MLTacticsManager:
                 },
             }
 
-        except Exception:
-            self.print(failed("❌ Failed to get ML predictions: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"❌ Failed to get ML predictions: {e}"))
             return None
 
     @handle_errors(
@@ -307,8 +297,7 @@ class MLTacticsManager:
         context="regime and location tactics application",
     )
     def _apply_regime_and_location_tactics(
-        self,
-        regime_info: dict[str, Any],
+        self, regime_info: dict[str, Any],
     ) -> dict[str, Any]:
         """
         Apply regime and location tactics.
@@ -333,14 +322,12 @@ class MLTacticsManager:
 
             # Apply regime-based tactics
             regime_tactics = self._get_regime_tactics(
-                dominant_regime,
-                regime_confidence,
+                dominant_regime, regime_confidence,
             )
 
             # Apply location-based tactics
             location_tactics = self._get_location_tactics(
-                dominant_location,
-                location_confidence,
+                dominant_location, location_confidence,
             )
 
             return {
@@ -351,8 +338,7 @@ class MLTacticsManager:
                 "regime_tactics": regime_tactics,
                 "location_tactics": location_tactics,
                 "combined_tactics": self._combine_regime_location_tactics(
-                    regime_tactics,
-                    location_tactics,
+                    regime_tactics, location_tactics,
                 ),
             }
 
@@ -368,8 +354,7 @@ class MLTacticsManager:
         context="ML entry decisions making",
     )
     def _make_ml_entry_decisions(
-        self,
-        ml_predictions: dict[str, Any],
+        self, ml_predictions: dict[str, Any],
     ) -> dict[str, Any]:
         """
         Make ML-based entry decisions.
@@ -406,8 +391,8 @@ class MLTacticsManager:
                 "reasoning": f"ML prediction: {direction} with {confidence:.2f} confidence",
             }
 
-        except Exception:
-            self.print(failed("❌ ML entry decisions making failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"❌ ML entry decisions making failed: {e}"))
             return {}
 
     @handle_errors(
@@ -416,8 +401,7 @@ class MLTacticsManager:
         context="ML sizing decisions making",
     )
     def _make_ml_sizing_decisions(
-        self,
-        ml_predictions: dict[str, Any],
+        self, ml_predictions: dict[str, Any],
     ) -> dict[str, Any]:
         """
         Make ML-based sizing decisions.
@@ -457,8 +441,8 @@ class MLTacticsManager:
                 "reasoning": f"ML sizing: {adjusted_multiplier:.2f}x with {confidence:.2f} confidence",
             }
 
-        except Exception:
-            self.print(failed("❌ ML sizing decisions making failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"❌ ML sizing decisions making failed: {e}"))
             return {}
 
     @handle_errors(
@@ -467,8 +451,7 @@ class MLTacticsManager:
         context="ML leverage decisions making",
     )
     def _make_ml_leverage_decisions(
-        self,
-        ml_predictions: dict[str, Any],
+        self, ml_predictions: dict[str, Any],
     ) -> dict[str, Any]:
         """
         Make ML-based leverage decisions.
@@ -508,8 +491,8 @@ class MLTacticsManager:
                 "reasoning": f"ML leverage: {adjusted_leverage:.2f}x with {confidence:.2f} confidence",
             }
 
-        except Exception:
-            self.print(failed("❌ ML leverage decisions making failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"❌ ML leverage decisions making failed: {e}"))
             return {}
 
     @handle_errors(
@@ -518,8 +501,7 @@ class MLTacticsManager:
         context="ML directional decisions making",
     )
     def _make_ml_directional_decisions(
-        self,
-        ml_predictions: dict[str, Any],
+        self, ml_predictions: dict[str, Any],
     ) -> dict[str, Any]:
         """
         Make ML-based directional decisions.
@@ -556,8 +538,8 @@ class MLTacticsManager:
                 "reasoning": f"ML direction: {direction} with {confidence:.2f} confidence",
             }
 
-        except Exception:
-            self.print(failed("❌ ML directional decisions making failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"❌ ML directional decisions making failed: {e}"))
             return {}
 
     @handle_errors(
@@ -566,8 +548,7 @@ class MLTacticsManager:
         context="ML liquidation risk decisions making",
     )
     def _make_ml_liquidation_risk_decisions(
-        self,
-        ml_predictions: dict[str, Any],
+        self, ml_predictions: dict[str, Any],
     ) -> dict[str, Any]:
         """
         Make ML-based liquidation risk decisions.
@@ -619,8 +600,7 @@ class MLTacticsManager:
         context="position size calculation",
     )
     async def _calculate_position_size(
-        self,
-        ml_predictions: dict[str, Any],
+        self, ml_predictions: dict[str, Any],
     ) -> dict[str, Any]:
         """
         Calculate position size based on ML predictions.
@@ -652,8 +632,8 @@ class MLTacticsManager:
                 "decision": sizing_decisions.get("decision", "MAINTAIN_SIZE"),
             }
 
-        except Exception:
-            self.print(failed("❌ Position size calculation failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"❌ Position size calculation failed: {e}"))
             return {}
 
     @handle_errors(
@@ -662,8 +642,7 @@ class MLTacticsManager:
         context="leverage calculation",
     )
     async def _calculate_leverage(
-        self,
-        ml_predictions: dict[str, Any],
+        self, ml_predictions: dict[str, Any],
     ) -> dict[str, Any]:
         """
         Calculate leverage based on ML predictions.
@@ -695,11 +674,12 @@ class MLTacticsManager:
                 "decision": leverage_decisions.get("decision", "MAINTAIN_LEVERAGE"),
             }
 
-        except Exception:
-            self.print(failed("❌ Leverage calculation failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"❌ Leverage calculation failed: {e}"))
             return {}
 
     # Helper methods for regime and location tactics
+
     def _get_regime_tactics(self, regime: str, confidence: float) -> dict[str, Any]:
         """Get tactics for a specific regime."""
         tactics = {
@@ -708,8 +688,7 @@ class MLTacticsManager:
             "SIDEWAYS_RANGE": {"position_multiplier": 1.0, "risk_tolerance": "MEDIUM"},
         }
         return tactics.get(
-            regime,
-            {"position_multiplier": 1.0, "risk_tolerance": "MEDIUM"},
+            regime, {"position_multiplier": 1.0, "risk_tolerance": "MEDIUM"},
         )
 
     def _get_location_tactics(self, location: str, confidence: float) -> dict[str, Any]:
@@ -725,8 +704,7 @@ class MLTacticsManager:
         )
 
     def _combine_regime_location_tactics(
-        self,
-        regime_tactics: dict[str, Any],
+        self, regime_tactics: dict[str, Any],
         location_tactics: dict[str, Any],
     ) -> dict[str, Any]:
         """Combine regime and location tactics."""
@@ -758,9 +736,23 @@ class MLTacticsManager:
             self.is_initialized = False
             self.logger.info("✅ ML Tactics Manager stopped successfully")
 
-        except Exception:
-            self.print(failed("❌ Failed to stop ML Tactics Manager: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"❌ Failed to stop ML Tactics Manager: {e}"))
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="ML tactics manager cleanup",
+    )
+    async def cleanup(self) -> None:
+        """Cleanup ML tactics manager resources."""
+        try:
+            self.logger.info("Cleaning up ML Tactics Manager...")
+            await self.stop()
+            self.ml_decisions.clear()
+            self.logger.info("✅ ML Tactics Manager cleanup completed")
+        except Exception as e:
+            self.logger.error(f"Error cleaning up ML Tactics Manager: {e}")
 
 @handle_errors(
     exceptions=(Exception,),
@@ -784,6 +776,6 @@ async def setup_ml_tactics_manager(
         if await manager.initialize():
             return manager
         return None
-    except Exception:
-        system_logger.exception(failed("Failed to setup ML Tactics Manager: {e}"))
+    except Exception as e:
+        system_logger.exception(failed(f"Failed to setup ML Tactics Manager: {e}"))
         return None

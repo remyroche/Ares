@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
-import pandas as pd
-import numpy as np
 import os
+
+import numpy as np
+import pandas as pd
 
 
 def convert_csv_to_parquet():
@@ -20,6 +21,15 @@ def convert_csv_to_parquet():
         return True
 
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         print(f"📖 Reading CSV: {csv_path}")
         df = pd.read_csv(csv_path)
         print(f"   📊 Loaded {len(df)} rows")
@@ -33,8 +43,8 @@ def convert_csv_to_parquet():
             print("   🔄 Converted datetime strings to millisecond timestamps")
 
         print(f"💾 Writing Parquet: {parquet_path}")
-        df.to_parquet(parquet_path, index=False)
-        print(f"   ✅ Successfully converted to parquet")
+        df.to_parquet(parquet_path, index = False)
+        print("   ✅ Successfully converted to parquet")
 
         # Verify the file
         df_check = pd.read_parquet(parquet_path)

@@ -13,34 +13,22 @@ Usage:
     python scripts/run_enhanced_training.py --checkpoint  # Run checkpoint demo
 """
 
+from pathlib import Path
+from src.utils.logger import system_logger
 import argparse
 import asyncio
 import sys
-from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from src.config import CONFIG
+from src.database.sqlite_manager import SQLiteManager
+from src.training.enhanced_training_manager import EnhancedTrainingManager
+from src.utils.warning_symbols import failed
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-from src.config import CONFIG
-from src.database.sqlite_manager import SQLiteManager
-from src.training.enhanced_training_manager import EnhancedTrainingManager
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
-
 
 async def run_enhanced_training(symbol: str, lookback_days: int, timeframe: str = "1h"):
     """Run enhanced training with all optimizations."""
@@ -60,10 +48,8 @@ async def run_enhanced_training(symbol: str, lookback_days: int, timeframe: str 
 
     # Run training
     session_id = await training_manager.run_full_training(
-        symbol=symbol,
-        exchange_name="BINANCE",
-        timeframe=timeframe,
-        lookback_days_override=lookback_days,
+        symbol, exchange_name="BINANCE",
+        timeframe=timeframe, lookback_days_override=lookback_days,
     )
 
     if session_id:
@@ -72,13 +58,12 @@ async def run_enhanced_training(symbol: str, lookback_days: int, timeframe: str 
         # Display efficiency stats
         stats = training_manager.get_efficiency_stats()
         logger.info("📊 Final Efficiency Statistics:")
-        for key, value in stats.items():
+        for key , value in stats.items():
             logger.info(f"  {key}: {value}")
 
         return True
     print(failed("❌ Training failed!"))
     return False
-
 
 async def run_efficiency_demo():
     """Run efficiency features demonstration."""
@@ -100,8 +85,6 @@ async def run_efficiency_demo():
     if training_manager.efficiency_optimizer:
         # Demonstrate memory optimization
         logger.info("📊 Memory optimization demo:")
-        import numpy as np
-        import pandas as pd
 
         # Create test data
         test_data = pd.DataFrame(
@@ -130,8 +113,7 @@ async def run_efficiency_demo():
         # Demonstrate segmentation
         logger.info("📊 Data segmentation demo:")
         segments = training_manager.efficiency_optimizer.segment_data_by_time(
-            test_data,
-            segment_days=30,
+            test_data, segment_days=30,
         )
         logger.info(f"  Created {len(segments)} segments")
 
@@ -143,11 +125,10 @@ async def run_efficiency_demo():
         # Demonstrate database stats
         logger.info("📊 Database statistics:")
         stats = training_manager.efficiency_optimizer.get_database_stats()
-        for key, value in stats.items():
+        for key , value in stats.items():
             logger.info(f"  {key}: {value}")
 
     logger.info("✅ Efficiency features demonstration completed")
-
 
 async def run_checkpoint_demo():
     """Run checkpoint and resume demonstration."""
@@ -178,8 +159,7 @@ async def run_checkpoint_demo():
 
         training_manager.efficiency_optimizer.create_processing_checkpoint(
             f"training_{symbol}",
-            test_metadata,
-        )
+            test_metadata)
 
         # Retrieve the checkpoint
         logger.info("📖 Retrieving checkpoint...")
@@ -198,13 +178,11 @@ async def run_checkpoint_demo():
 
     logger.info("✅ Checkpoint and resume demonstration completed")
 
-
 def main():
     """Main function with command line interface."""
     parser = argparse.ArgumentParser(
         description="Enhanced Training Runner for Large Datasets",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        formatter_class=argparse.RawDescriptionHelpFormatter, epilog = """
 Examples:
   # Run training with 2 years of data
   python scripts/run_enhanced_training.py --symbol ETHUSDT --lookback 730
@@ -274,13 +252,10 @@ Examples:
     else:
         success = asyncio.run(
             run_enhanced_training(
-                symbol=args.symbol,
-                lookback_days=args.lookback,
-                timeframe=args.timeframe,
-            ),
+                symbol=args.symbol, lookback_days=args.lookback,
+                timeframe=args.timeframe),
         )
         sys.exit(0 if success else 1)
-
 
 if __name__ == "__main__":
     main()

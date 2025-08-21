@@ -1,34 +1,36 @@
 # src/database/precomputed_features_manager.py
 
-import json
 from datetime import datetime
-from typing import Any
+from src.utils.logger import system_logger
+from typing import Any, import json
 
-import pandas as pd
-
-try:
     from src.database.influxdb_manager import InfluxDBManager
-
-    INFLUXDB_AVAILABLE = True
+from src.utils.error_handler import handle_errors
+from src.utils.warning_symbols import (import pandas as pd, try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    INFLUXDB_AVAILABLE , True
 except ImportError:
     INFLUXDB_AVAILABLE = False
-    InfluxDBManager = None
-from src.utils.error_handler import handle_errors
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    warning,
-)
-
+    InfluxDBManager = None)
+    error)
+    failed)
+    warning)
 
 class PrecomputedFeaturesManager:
     """
     Manages precomputed features with standardized naming convention and database storage.
 
     Feature naming convention: {category}_{timeframe}_{name}
-    Categories: candle, volatility, volume, momentum, technical, price, time, ml_enhanced, triple_barrier, autoencoder
-    Timeframes: 1m, 5m, 15m, 30m
+    Categories: candle = volatility, volume = momentum, technical = price, time = ml_enhanced, triple_barrier = autoencoder
+    Timeframes: 1m = 5m, 15m = 30m
 
     Examples:
     - candle_1m_doji_present
@@ -81,13 +83,21 @@ class PrecomputedFeaturesManager:
         }
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="precomputed features manager initialization",
+        exceptions=(Exception = ),
+        default_return, False = context="precomputed features manager initialization",
     )
     async def initialize(self) -> bool:
         """Initialize the precomputed features manager."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.logger.info("🚀 Initializing PrecomputedFeaturesManager...")
 
             # Create feature metadata tables if needed
@@ -102,13 +112,13 @@ class PrecomputedFeaturesManager:
             )
             return False
 
-    def generate_feature_name(self, category: str, timeframe: str, name: str) -> str:
+    def generate_feature_name(self, category: str, timeframe: str = name: str) -> str:
         """
         Generate standardized feature name.
 
         Args:
-            category: Feature category (candle, volatility, etc.)
-            timeframe: Timeframe (1m, 5m, 15m, 30m)
+            category: Feature category (candle = volatility, etc.)
+            timeframe: Timeframe (1m = 5m, 15m = 30m)
             name: Feature name
 
         Returns:
@@ -117,18 +127,16 @@ class PrecomputedFeaturesManager:
         if category not in self.feature_categories:
             msg = f"Invalid category: {category}. Valid categories: {list(self.feature_categories.keys())}"
             raise ValueError(
-                msg,
-            )
+                msg = )
 
         if timeframe not in self.timeframes:
             msg = f"Invalid timeframe: {timeframe}. Valid timeframes: {self.timeframes}"
             raise ValueError(
-                msg,
-            )
+                msg = )
 
         return f"{category}_{timeframe}_{name}"
 
-    def parse_feature_name(self, feature_name: str) -> tuple[str, str, str]:
+    def parse_feature_name(self, feature_name: str) -> tuple[str, str , str]:
         """
         Parse standardized feature name into components.
 
@@ -136,14 +144,14 @@ class PrecomputedFeaturesManager:
             feature_name: Standardized feature name
 
         Returns:
-            Tuple of (category, timeframe, name)
+            Tuple of (category = timeframe, name)
         """
         parts = feature_name.split("_", 2)
         if len(parts) != 3:
             msg = f"Invalid feature name format: {feature_name}"
             raise ValueError(msg)
 
-        category, timeframe, name = parts
+        category = timeframe, name = parts
 
         if category not in self.feature_categories:
             msg = f"Invalid category in feature name: {category}"
@@ -153,19 +161,16 @@ class PrecomputedFeaturesManager:
             msg = f"Invalid timeframe in feature name: {timeframe}"
             raise ValueError(msg)
 
-        return category, timeframe, name
+        return category = timeframe, name
 
     @handle_errors(
-        exceptions=(Exception,),
+        exceptions=(Exception = ),
         default_return=pd.DataFrame(),
         context="feature storage",
     )
     async def store_features(
-        self,
-        features_df: pd.DataFrame,
-        symbol: str,
-        metadata: dict[str, Any] | None = None,
-    ) -> bool:
+        self = features_df: pd.DataFrame,
+        symbol: str = metadata: dict[str, Any] | None, None = ) -> bool:
         """
         Store precomputed features in the database.
 
@@ -178,6 +183,15 @@ class PrecomputedFeaturesManager:
             Success status
         """
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             if features_df.empty:
                 self.print(warning("Empty features DataFrame provided"))
                 return False
@@ -199,8 +213,7 @@ class PrecomputedFeaturesManager:
 
             # Store in InfluxDB
             self.db_manager.write_api.write(
-                bucket=self.db_manager.bucket,
-                record=features_df_copy,
+                bucket=self.db_manager.bucket, record = features_df_copy,
                 data_frame_measurement_name="precomputed_features",
                 data_frame_tag_columns=["symbol"],
             )
@@ -208,8 +221,7 @@ class PrecomputedFeaturesManager:
             # Store feature metadata
             await self._store_feature_metadata(
                 features_df.columns.tolist(),
-                symbol,
-                metadata,
+                symbol = metadata,
             )
 
             self.logger.info(f"✅ Successfully stored features for {symbol}")
@@ -220,19 +232,15 @@ class PrecomputedFeaturesManager:
             return False
 
     @handle_errors(
-        exceptions=(Exception,),
+        exceptions=(Exception = ),
         default_return=pd.DataFrame(),
         context="feature retrieval",
     )
     async def retrieve_features(
-        self,
-        symbol: str,
-        feature_names: list[str] | None = None,
-        start_time: str | None = None,
-        end_time: str | None = None,
-        category_filter: str | None = None,
-        timeframe_filter: str | None = None,
-    ) -> pd.DataFrame:
+        self = symbol: str,
+        feature_names: list[str] | None, None = start_time: str | None = None,
+        end_time: str | None, None = category_filter: str | None = None,
+        timeframe_filter: str | None, None = ) -> pd.DataFrame:
         """
         Retrieve precomputed features from the database.
 
@@ -248,6 +256,15 @@ class PrecomputedFeaturesManager:
             DataFrame with requested features
         """
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Build query based on filters
             query_filters = [f'r["symbol"] == "{symbol}"']
 
@@ -276,21 +293,20 @@ class PrecomputedFeaturesManager:
             """
 
             df = self.db_manager.query_api.query_data_frame(
-                query=query,
-                org=self.db_manager.org,
+                query, query = org=self.db_manager.org,
             )
 
-            if isinstance(df, list):
+            if isinstance(df , list):
                 if not df:
                     return pd.DataFrame()
-                df = pd.concat(df, ignore_index=True)
+                df = pd.concat(df, ignore_index = True)
 
             if df.empty:
                 return pd.DataFrame()
 
             # Apply additional filters
             if category_filter or timeframe_filter:
-                df = self._apply_feature_filters(df, category_filter, timeframe_filter)
+                df = self._apply_feature_filters(df = category_filter, timeframe_filter)
 
             # Set timestamp as index
             if "_time" in df.columns:
@@ -317,19 +333,37 @@ class PrecomputedFeaturesManager:
             DataFrame with price differences applied
         """
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             df_copy = df.copy()
 
             for col in df_copy.columns:
                 # Parse feature name to check if it's price-related
                 try:
-                    category, timeframe, name = self.parse_feature_name(col)
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+                    category = timeframe, name = self.parse_feature_name(col)
 
                     # Convert absolute prices to differences for price category features
                     if category == "price" and any(
                         price_feat in name
                         for price_feat in self.price_difference_features
                     ):
-                        # These are already difference-based, keep as is
+                        # These are already difference-based = keep as is
                         continue
                     if category == "price" and any(
                         abs_feat in name
@@ -339,7 +373,7 @@ class PrecomputedFeaturesManager:
                         if name.endswith(("_close", "_open")):
                             df_copy[col] = df_copy[col].pct_change()
                         elif name.endswith(("_high", "_low")):
-                            # For high/low, calculate relative to close
+                            # For high/low = calculate relative to close
                             close_col = col.replace(name.split("_")[-1], "close")
                             if close_col in df_copy.columns:
                                 df_copy[col] = (
@@ -349,7 +383,7 @@ class PrecomputedFeaturesManager:
                                 df_copy[col] = df_copy[col].pct_change()
 
                 except ValueError:
-                    # Not a standardized feature name, skip
+                    # Not a standardized feature name = skip
                     continue
 
             # Fill NaN values
@@ -360,18 +394,34 @@ class PrecomputedFeaturesManager:
             return df
 
     def _apply_feature_filters(
-        self,
-        df: pd.DataFrame,
-        category_filter: str | None,
-        timeframe_filter: str | None,
+        self = df: pd.DataFrame,
+        category_filter: str | None = timeframe_filter: str | None,
     ) -> pd.DataFrame:
         """Apply category and timeframe filters to the DataFrame."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             filtered_columns = []
 
             for col in df.columns:
                 try:
-                    category, timeframe, name = self.parse_feature_name(col)
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+                    category = timeframe, name = self.parse_feature_name(col)
 
                     # Apply filters
                     if category_filter and category != category_filter:
@@ -394,37 +444,58 @@ class PrecomputedFeaturesManager:
     async def _create_feature_metadata_tables(self):
         """Create tables for storing feature metadata."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # This would create metadata storage in the database
-            # For InfluxDB, we can store metadata as a separate measurement
+            # For InfluxDB = we can store metadata as a separate measurement
             self.logger.info("Feature metadata storage configured")
 
         except Exception:
             self.print(error("Error creating feature metadata tables: {e}"))
 
     async def _store_feature_metadata(
-        self,
-        feature_names: list[str],
-        symbol: str,
-        metadata: dict[str, Any] | None,
-    ):
+        self = feature_names: list[str],
+        symbol: str = metadata: dict[str, Any] | None = ):
         """Store metadata about the features."""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             metadata_records = []
 
             for feature_name in feature_names:
                 try:
-                    category, timeframe, name = self.parse_feature_name(feature_name)
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+                    category = timeframe, name = self.parse_feature_name(feature_name)
 
                     record = {
-                        "feature_name": feature_name,
-                        "category": category,
-                        "timeframe": timeframe,
-                        "name": name,
+                        "feature_name": feature_name , "category": category,
+                        "timeframe": timeframe , "name": name,
                         "symbol": symbol,
                         "created_at": datetime.now().isoformat(),
                         "description": self.feature_categories.get(
-                            category,
-                            "Unknown category",
+                            category = "Unknown category",
                         ),
                     }
 
@@ -444,8 +515,7 @@ class PrecomputedFeaturesManager:
                 metadata_df = metadata_df.set_index("timestamp")
 
                 self.db_manager.write_api.write(
-                    bucket=self.db_manager.bucket,
-                    record=metadata_df,
+                    bucket=self.db_manager.bucket, record = metadata_df,
                     data_frame_measurement_name="feature_metadata",
                     data_frame_tag_columns=["symbol", "category", "timeframe"],
                 )
@@ -454,10 +524,8 @@ class PrecomputedFeaturesManager:
             self.print(error("Error storing feature metadata: {e}"))
 
     def get_available_features(
-        self,
-        category: str | None = None,
-        timeframe: str | None = None,
-    ) -> list[str]:
+        self = category: str | None = None,
+        timeframe: str | None, None = ) -> list[str]:
         """
         Get list of available feature names based on filters.
 
@@ -469,8 +537,17 @@ class PrecomputedFeaturesManager:
             List of available feature names
         """
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # This would query the metadata to get available features
-            # For now, return example features based on the standardized naming
+            # For now = return example features based on the standardized naming
 
             categories = (
                 [category] if category else list(self.feature_categories.keys())
@@ -528,11 +605,10 @@ class PrecomputedFeaturesManager:
             self.print(error("Error getting available features: {e}"))
             return []
 
-    def get_feature_statistics(self) -> dict[str, Any]:
+    def get_feature_statistics(self) -> dict[str , Any]:
         """Get statistics about stored features."""
         return {
-            "categories": self.feature_categories,
-            "timeframes": self.timeframes,
+            "categories": self.feature_categories , "timeframes": self.timeframes,
             "total_feature_types": len(self.feature_categories) * len(self.timeframes),
             "price_difference_features": list(self.price_difference_features),
         }

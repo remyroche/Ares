@@ -1,51 +1,36 @@
+from sklearn.decomposition import PCA
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import StratifiedKFold
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from typing import Any
 import logging
 import os  # For path manipulation
 import warnings
-from typing import Any
-
 import joblib  # For saving/loading models
 import numpy as np
 import optuna
 import pandas as pd
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    warning,
-)
-from src.utils.lookahead_bias_detector import (
-    detect_lookahead_bias,
-    apply_feature_lagging,
-)
-
 # Import SMOTE with fallback
 try:
     from imblearn.over_sampling import SMOTE
-
     SMOTE_AVAILABLE = True
 except ImportError:
     SMOTE_AVAILABLE = False
-
     # Create a dummy SMOTE class for fallback
     class SMOTE:
         def __init__(self, *args, **kwargs):
             pass
-
         def fit_resample(self, X, y):
             return X, y
 
-
 from lightgbm import LGBMClassifier
-from sklearn.decomposition import PCA
-from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import StratifiedKFold
+from src.utils.error_handler import handle_errors
 from src.utils.purged_kfold import PurgedKFoldTime
-from sklearn.preprocessing import LabelEncoder, StandardScaler
+from src.utils.warning_symbols import error, failed, warning
 
 warnings.filterwarnings("ignore", category=UserWarning, module="arch")
 optuna.logging.set_verbosity(optuna.logging.WARNING)
-
 
 class BaseEnsemble:
     """
@@ -56,8 +41,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return=None,
-        context="ensemble initialization",
+        default_return=None, context="ensemble initialization",
     )
     def __init__(self, config: dict, ensemble_name: str):
         self.config = config.get("analyst", {}).get(ensemble_name, {})
@@ -100,7 +84,7 @@ class BaseEnsemble:
             "volume_delta",
             "autoencoder_reconstruction_error",
             "funding_rate",
-            # Add more time-series relevant features from FE
+        # Add more time-series relevant features from FE
             "Realized_Volatility",
             "Volatility_Regime_Numeric",
             "Hour_Sin",
@@ -118,7 +102,7 @@ class BaseEnsemble:
             "Volatility_Momentum",
             "RSI_MACD_Divergence",
             "Volume_Price_Divergence",
-            # SR Context Features (Phase 1 Enhancement)
+        # SR Context Features (Phase 1 Enhancement)
             "distance_to_sr",
             "sr_strength",
             "sr_type",
@@ -185,7 +169,7 @@ class BaseEnsemble:
             "Price_SMA_21_Ratio",
             "Price_SMA_50_Ratio",
             "Volatility_Regime",
-            # Advanced liquidity features
+        # Advanced liquidity features
             "volume_liquidity",
             "price_impact",
             "spread_liquidity",
@@ -216,7 +200,7 @@ class BaseEnsemble:
             "adaptive_sma",
             "adaptive_ema",
             "adaptive_period",
-            # Normalized features (Step 4 Enhancement)
+        # Normalized features (Step 4 Enhancement)
             "volume_log_diff",
             "volume_pct_change",
             "volume_z_score",
@@ -279,7 +263,7 @@ class BaseEnsemble:
             "momentum_20_acceleration",
             "momentum_50_z_score",
             "momentum_50_acceleration",
-            # Newly engineered order book features (stationary)
+        # Newly engineered order book features (stationary)
             "nearest_bid_wall_dist_pct",
             "nearest_ask_wall_dist_pct",
             "nearest_bid_wall_size_change",
@@ -299,7 +283,7 @@ class BaseEnsemble:
             "cvd_slope",
             "OBV",
             "CMF",
-            # Advanced liquidity features from advanced feature engineering
+        # Advanced liquidity features from advanced feature engineering
             "volume_liquidity",
             "price_impact",
             "spread_liquidity",
@@ -318,7 +302,7 @@ class BaseEnsemble:
             "Order_Flow_Imbalance",
             "Large_Order_Count",
             "Liquidity_Score",
-            # Normalized order flow features (Step 4 Enhancement)
+        # Normalized order flow features (Step 4 Enhancement)
             "volume_log_diff",
             "volume_pct_change",
             "volume_z_score",
@@ -357,7 +341,7 @@ class BaseEnsemble:
             "vwap_deviation_z_score",
             "large_order_ratio_bounded",
             "large_order_ratio_z_score",
-            # Newly engineered order book features (stationary) for order-flow models
+        # Newly engineered order book features (stationary) for order-flow models
             "nearest_bid_wall_dist_pct",
             "nearest_ask_wall_dist_pct",
             "nearest_bid_wall_size_change",
@@ -374,14 +358,11 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return=None,
-        context="ensemble training",
+        default_return=None, context="ensemble training",
     )
     def train_ensemble(
-        self,
-        historical_features: pd.DataFrame,
-        historical_targets: pd.Series,
-    ):
+        self, historical_features: pd.DataFrame,
+        historical_targets: pd.Series = None):
         self.logger.info(f"Starting full training pipeline for {self.ensemble_name}...")
         if historical_features.empty:
             self.logger.warning(
@@ -455,7 +436,7 @@ class BaseEnsemble:
 
         # Fit scaler and PCA on training data only
         self.logger.info(
-            "Scaling and applying PCA to meta-features (train-only fit)..."
+            "Scaling and applying PCA to meta-features (train-only fit)...",
         )
         self.meta_feature_scaler = StandardScaler()
         X_meta_scaled = self.meta_feature_scaler.fit_transform(X_meta_train)
@@ -468,8 +449,7 @@ class BaseEnsemble:
         self.best_meta_params = self._tune_hyperparameters(
             LGBMClassifier,
             self._get_lgbm_search_space,
-            X_meta_pca_df,
-            y_meta_train,
+            X_meta_pca_df, y_meta_train,
         )
         self._train_meta_learner(X_meta_pca_df, y_meta_train, self.best_meta_params)
         self.trained = True
@@ -480,15 +460,14 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return=False,
-        context="ensemble state validation",
+        default_return=False, context="ensemble state validation",
     )
     def _validate_ensemble_state(self) -> bool:
         """Validate that the ensemble is properly trained and ready for prediction."""
         try:
             if not self.trained:
                 self.logger.warning(
-                    f"{self.ensemble_name}: Ensemble not marked as trained"
+                    f"{self.ensemble_name}: Ensemble not marked as trained",
                 )
                 return False
 
@@ -502,7 +481,7 @@ class BaseEnsemble:
 
             if not self.meta_feature_scaler:
                 self.logger.warning(
-                    f"{self.ensemble_name}: No meta-feature scaler found"
+                    f"{self.ensemble_name}: No meta-feature scaler found",
                 )
                 return False
 
@@ -514,8 +493,8 @@ class BaseEnsemble:
             return True
 
         except Exception as e:
-            self.logger.error(
-                f"{self.ensemble_name}: Error validating ensemble state: {e}"
+            self.logger.exception(
+                f"{self.ensemble_name}: Error validating ensemble state: {e}",
             )
             return False
 
@@ -535,7 +514,7 @@ class BaseEnsemble:
 
         # Apply comprehensive feature normalization (Step 4 Enhancement)
         self.logger.info(
-            "Applying comprehensive feature normalization for prediction..."
+            "Applying comprehensive feature normalization for prediction...",
         )
         current_features = self.normalize_non_price_features(current_features)
 
@@ -548,9 +527,7 @@ class BaseEnsemble:
                 current_features[col] = 0.0
 
         meta_features = self._get_meta_features(
-            current_features,
-            is_live=True,
-            **kwargs,
+            current_features, is_live=True, **kwargs
         )
 
         # Ensure meta_features contains all columns the scaler was fitted on
@@ -559,14 +536,14 @@ class BaseEnsemble:
         if hasattr(self.meta_feature_scaler, "feature_names_in_"):
             missing_cols = list(
                 set(self.meta_feature_scaler.feature_names_in_)
-                - set(meta_input_df.columns)
+                - set(meta_input_df.columns),
             )
-            if missing_cols:
-                self.logger.warning(
-                    f"Missing meta features at inference: {missing_cols}"
-                )
+        if missing_cols:
+            self.logger.warning(
+                f"Missing meta features at inference: {missing_cols}",
+            )
             meta_input_df = meta_input_df.reindex(
-                columns=self.meta_feature_scaler.feature_names_in_,
+                columns=self.meta_feature_scaler.feature_names_in_
             ).fillna(0)
         else:
             self.logger.error(
@@ -581,24 +558,23 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return=None,
-        context="SMOTE training",
+        default_return=None, context="SMOTE training",
     )
     def _train_with_smote(self, model, X, y):
         """Applies SMOTE to balance the dataset before training."""
         if self.use_smote and len(np.unique(y)) > 1:
             try:
                 smote = SMOTE(random_state=42)
-                X_res, y_res = smote.fit_resample(X, y)
+                X_res, y_res, smote.fit_resample(X, y)
                 self.logger.info(
                     f"Applied SMOTE: Original size {X.shape[0]}, Resampled size {X_res.shape[0]}",
                 )
                 model.fit(X_res, y_res)
             except Exception:
-                self.print(failed("SMOTE failed: {e}. Training on original data."))
+                self.logger.warning(f"SMOTE failed: {e}. Training on original data.")
                 model.fit(X, y)
-        else:
-            model.fit(X, y)
+            else:
+                model.fit(X, y)
         return model
 
     @handle_errors(
@@ -615,23 +591,23 @@ class BaseEnsemble:
         def objective(trial):
             params = search_space_func(trial)
             model = model_class(**params, random_state=42, verbose=-1)
-            # Prefer purged CV for time series with DatetimeIndex
-            if isinstance(X, pd.DataFrame) and isinstance(X.index, pd.DatetimeIndex):
-                cv = PurgedKFoldTime(n_splits=3)
-                splits = cv.split(X)
-            else:
-                cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
-                splits = cv.split(X, y)
-            scores = []
-            for train_idx, val_idx in splits:
-                X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
-                y_train, y_val = y[train_idx], y[val_idx]
-                model.fit(X_train, y_train)
-                scores.append(model.score(X_val, y_val))
-            return np.mean(scores)
+        # Prefer purged CV for time series with DatetimeIndex
+        if isinstance(X, pd.DataFrame) and isinstance(X.index, pd.DatetimeIndex):
+            cv = PurgedKFoldTime(n_splits=3)
+            splits = cv.split(X)
+        else:
+            cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+            splits = cv.split(X, y)
+        scores = []
+        for train_idx, val_idx in splits:
+            X_train, X_val, X.iloc[train_idx], X.iloc[val_idx]
+            y_train, y_val, y[train_idx], y[val_idx]
+            model.fit(X_train, y_train)
+            scores.append(model.score(X_val, y_val))
+        return np.mean(scores)
 
         study = optuna.create_study(direction="maximize")
-        study.optimize(objective, n_trials=n_trials, n_jobs=-1)
+        study.optimize(objective, n_trials, n_trials, n_jobs=-1)
         self.logger.info(
             f"Optuna best params for {model_class.__name__}: {study.best_params}",
         )
@@ -648,7 +624,7 @@ class BaseEnsemble:
             "n_estimators": trial.suggest_int("n_estimators", 50, 500),
             "learning_rate": trial.suggest_float("learning_rate", 1e-3, 0.2, log=True),
             "num_leaves": trial.suggest_int("num_leaves", 20, 300),
-            # Encourage robustness with higher feature counts via subsampling
+        # Encourage robustness with higher feature counts via subsampling
             "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 0.95),
             "subsample": trial.suggest_float("subsample", 0.6, 0.95),
         }
@@ -702,7 +678,7 @@ class BaseEnsemble:
             model = LogisticRegression(
                 penalty="elasticnet",
                 C=sklearn_config.get("C", 1.0),
-                l1_ratio=sklearn_config.get("l1_ratio", 0.5),  # 0.5 = equal L1/L2
+                l1_ratio=sklearn_config.get("l1_ratio", 0.5),  # 0.5, equal L1/L2
                 solver="saga",  # Required for elasticnet
                 random_state=42,
                 max_iter=1000,
@@ -717,7 +693,7 @@ class BaseEnsemble:
                 max_iter=1000,
                 solver="liblinear",
             )
-            self.logger.info(
+        self.logger.info(
                 "Created standard LogisticRegression (no regularization config available)",
             )
 
@@ -738,8 +714,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return=None,
-        context="meta learner training",
+        default_return=None, context="meta learner training",
     )
     def _train_meta_learner(self, X, y, params):
         self.meta_learner = LGBMClassifier(**params, random_state=42, verbose=-1)
@@ -766,19 +741,19 @@ class BaseEnsemble:
         context="historical prediction",
     )
     def get_prediction_on_historical_data(
-        self, historical_features: pd.DataFrame
+        self, historical_features: pd.DataFrame,
     ) -> pd.DataFrame:
         """Get predictions for historical data with comprehensive error handling."""
         try:
             if not self.trained:
                 self.logger.warning(
-                    f"{self.ensemble_name}: Ensemble not trained, returning empty DataFrame"
+                    f"{self.ensemble_name}: Ensemble not trained, returning empty DataFrame",
                 )
                 return pd.DataFrame()
 
             if historical_features.empty:
                 self.logger.warning(
-                    f"{self.ensemble_name}: Empty historical features provided"
+                    f"{self.ensemble_name}: Empty historical features provided",
                 )
                 return pd.DataFrame()
 
@@ -804,7 +779,7 @@ class BaseEnsemble:
 
             if not isinstance(meta_features, pd.DataFrame) or meta_features.empty:
                 self.logger.warning(
-                    f"{self.ensemble_name}: Empty meta features generated"
+                    f"{self.ensemble_name}: Empty meta features generated",
                 )
                 return pd.DataFrame()
 
@@ -812,14 +787,14 @@ class BaseEnsemble:
             if hasattr(self.meta_feature_scaler, "feature_names_in_"):
                 missing_cols = list(
                     set(self.meta_feature_scaler.feature_names_in_)
-                    - set(meta_features.columns)
+                    - set(meta_features.columns),
                 )
-                if missing_cols:
-                    self.logger.warning(
-                        f"Missing meta features for historical prediction: {missing_cols}"
-                    )
+            if missing_cols:
+                self.logger.warning(
+                    f"Missing meta features for historical prediction: {missing_cols}",
+                )
                 meta_features = meta_features.reindex(
-                    columns=self.meta_feature_scaler.feature_names_in_,
+                    columns=self.meta_feature_scaler.feature_names_in_
                 ).fillna(0)
 
             # Transform and predict
@@ -835,23 +810,23 @@ class BaseEnsemble:
                         {
                             "prediction": pred_result["prediction"],
                             "confidence": pred_result["confidence"],
-                        }
+                        },
                     )
                 except Exception as e:
                     self.logger.warning(
-                        f"{self.ensemble_name}: Error predicting row {i}: {e}"
+                        f"{self.ensemble_name}: Error predicting row {i}: {e}",
                     )
                     predictions.append({"prediction": "HOLD", "confidence": 0.0})
 
             result_df = pd.DataFrame(predictions, index=historical_features.index)
             self.logger.info(
-                f"{self.ensemble_name}: Generated predictions for {len(result_df)} historical samples"
+                f"{self.ensemble_name}: Generated predictions for {len(result_df)} historical samples",
             )
             return result_df
 
         except Exception as e:
-            self.logger.error(
-                f"{self.ensemble_name}: Error in historical prediction: {e}"
+            self.logger.exception(
+                f"{self.ensemble_name}: Error in historical prediction: {e}",
             )
             return pd.DataFrame()
 
@@ -866,12 +841,12 @@ class BaseEnsemble:
             issues = []
             status = "healthy"
 
-            # Check training status
+        # Check training status
             if not self.trained:
                 issues.append("Ensemble not trained")
                 status = "unhealthy"
 
-            # Check base models
+        # Check base models
             if not self.models:
                 issues.append("No base models available")
                 status = "unhealthy"
@@ -881,12 +856,12 @@ class BaseEnsemble:
                         issues.append(f"Base model '{model_name}' is None")
                         status = "degraded"
 
-            # Check meta-learner
+        # Check meta-learner
             if not self.meta_learner:
                 issues.append("No meta-learner available")
                 status = "unhealthy"
 
-            # Check scalers and encoders
+        # Check scalers and encoders
             if not self.meta_feature_scaler:
                 issues.append("No meta-feature scaler available")
                 status = "unhealthy"
@@ -895,25 +870,22 @@ class BaseEnsemble:
                 issues.append("No label encoder available")
                 status = "unhealthy"
 
-            # Check PCA
+        # Check PCA
             if not self.pca:
                 issues.append("No PCA transformer available")
                 status = "degraded"
 
-            # Check configuration
+        # Check configuration
             if not self.config:
                 issues.append("No configuration available")
                 status = "degraded"
 
             health_report = {
-                "status": status,
-                "ensemble_name": self.ensemble_name,
+                "status": status, "ensemble_name": self.ensemble_name,
                 "trained": self.trained,
                 "num_base_models": len(self.models) if self.models else 0,
-                "has_meta_learner": self.meta_learner is not None,
-                "has_scaler": self.meta_feature_scaler is not None,
-                "has_encoder": self.label_encoder is not None,
-                "has_pca": self.pca is not None,
+                "has_meta_learner": self.meta_learner is not None, "has_scaler": self.meta_feature_scaler is not None,
+                "has_encoder": self.label_encoder is not None, "has_pca": self.pca is not None,
                 "issues": issues,
                 "timestamp": pd.Timestamp.now().isoformat(),
             }
@@ -922,42 +894,38 @@ class BaseEnsemble:
                 self.logger.info(f"{self.ensemble_name}: Ensemble health check passed")
             elif status == "degraded":
                 self.logger.warning(
-                    f"{self.ensemble_name}: Ensemble health check shows degraded status: {issues}"
+                    f"{self.ensemble_name}: Ensemble health check shows degraded status: {issues}",
                 )
             else:
                 self.logger.error(
-                    f"{self.ensemble_name}: Ensemble health check failed: {issues}"
+                    f"{self.ensemble_name}: Ensemble health check failed: {issues}",
                 )
 
             return health_report
 
         except Exception as e:
-            self.logger.error(f"{self.ensemble_name}: Error during health check: {e}")
+            self.logger.exception(
+                f"{self.ensemble_name}: Error during health check: {e}",
+            )
             return {
                 "status": "error",
-                "ensemble_name": self.ensemble_name,
-                "issues": [f"Health check error: {e}"],
+                "ensemble_name": self.ensemble_name, "issues": [f"Health check error: {e}"],
                 "timestamp": pd.Timestamp.now().isoformat(),
             }
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError, OSError),
-        default_return=None,
-        context="model saving",
+        default_return=None, context="model saving",
     )
     def save_model(self, path: str):
         """Saves the entire ensemble instance to a file."""
         try:
             # Save relevant components
             model_data = {
-                "models": self.models,
-                "meta_learner": self.meta_learner,
-                "pca": self.pca,
-                "meta_feature_scaler": self.meta_feature_scaler,
-                "label_encoder": self.label_encoder,
-                "trained": self.trained,
-                "best_meta_params": self.best_meta_params,
-                "ensemble_weights": self.ensemble_weights,
+                "models": self.models, "meta_learner": self.meta_learner,
+                "pca": self.pca, "meta_feature_scaler": self.meta_feature_scaler,
+                "label_encoder": self.label_encoder, "trained": self.trained,
+                "best_meta_params": self.best_meta_params, "ensemble_weights": self.ensemble_weights,
             }
             joblib.dump(model_data, path)
             self.logger.info(f"Ensemble {self.ensemble_name} model saved to {path}")
@@ -969,8 +937,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError, OSError),
-        default_return=False,
-        context="model loading",
+        default_return=False, context="model loading",
     )
     def load_model(self, path: str) -> bool:
         """Loads the entire ensemble instance from a file."""
@@ -1014,10 +981,8 @@ class BaseEnsemble:
         context="pivot levels extraction",
     )
     def _extract_pivot_levels(
-        self,
-        sr_analyzer,
-        features_df: pd.DataFrame,
-    ) -> dict[str, list[float]]:
+        self, sr_analyzer,
+        features_df: pd.DataFrame = None) -> dict[str, list[float]]:
         """
         Extract pivot levels from features DataFrame.
 
@@ -1032,7 +997,7 @@ class BaseEnsemble:
             supports = []
             resistances = []
 
-            # Calculate rolling pivots for the last few periods
+        # Calculate rolling pivots for the last few periods
             for i in range(max(0, len(features_df) - 24), len(features_df)):
                 if i < 5:  # Need at least 5 data points
                     continue
@@ -1058,7 +1023,7 @@ class BaseEnsemble:
             }
 
         except Exception:
-            self.print(error("Error extracting pivot levels: {e}"))
+            self.logger.error(f"Error extracting pivot levels: {e}")
             return {"supports": [], "resistances": []}
 
     @handle_errors(
@@ -1067,10 +1032,8 @@ class BaseEnsemble:
         context="HVN levels extraction",
     )
     def _extract_hvn_levels(
-        self,
-        sr_analyzer,
-        features_df: pd.DataFrame,
-    ) -> dict[str, list[float]]:
+        self, sr_analyzer,
+        features_df: pd.DataFrame = None) -> dict[str, list[float]]:
         """
         Extract HVN levels from features DataFrame.
 
@@ -1085,21 +1048,21 @@ class BaseEnsemble:
             supports = []
             resistances = []
 
-            # Analyze volume levels for the last period
+        # Analyze volume levels for the last period
             if len(features_df) >= 720:  # Need enough data for HVN analysis
                 hvn_window = features_df.iloc[-720:]
                 volume_levels = sr_analyzer._analyze_volume_levels(hvn_window)
 
-                if volume_levels:
-                    for level_data in volume_levels.values():
-                        level_price = level_data["price"]
-                        current_price = features_df["close"].iloc[-1]
+            if volume_levels:
+                for level_data in volume_levels.values():
+                    level_price = level_data["price"]
+                    current_price = features_df["close"].iloc[-1]
 
-                        # Classify as support or resistance based on current price
-                        if current_price > level_price:
-                            supports.append(level_price)
-                        else:
-                            resistances.append(level_price)
+        # Classify as support or resistance based on current price
+                    if current_price > level_price:
+                        supports.append(level_price)
+                    else:
+                        resistances.append(level_price)
 
             return {
                 "supports": list(set(supports)),  # Remove duplicates
@@ -1107,18 +1070,14 @@ class BaseEnsemble:
             }
 
         except Exception:
-            self.print(error("Error extracting HVN levels: {e}"))
+            self.logger.error(f"Error extracting HVN levels: {e}")
             return {"supports": [], "resistances": []}
 
     def _calculate_sr_distances(
-        self,
-        sr_features: pd.DataFrame,
-        row_idx: int,
-        current_price: float,
-        pivot_levels: dict,
-        hvn_levels: dict,
-        current_location: str,
-    ) -> None:
+        self, sr_features: pd.DataFrame,
+        row_idx: int, current_price: float,
+        pivot_levels: dict, hvn_levels: dict,
+        current_location: str = None) -> None:
         """
         Calculate S/R distances and strength metrics for a specific row.
 
@@ -1138,79 +1097,65 @@ class BaseEnsemble:
 
             if pivot_supports:
                 nearest_pivot_support = min(
-                    pivot_supports,
-                    key=lambda x: abs(x - current_price),
+                    pivot_supports, key=lambda x: abs(x - current_price),
                 )
                 sr_features.iloc[
-                    row_idx,
-                    sr_features.columns.get_loc("distance_to_pivot_support"),
+                    row_idx, sr_features.columns.get_loc("distance_to_pivot_support"),
                 ] = (current_price - nearest_pivot_support) / current_price
 
-                # Add pivot strength features
-                if pivot_strengths:
-                    strength_data = self._get_nearest_level_strength_data(
-                        nearest_pivot_support,
-                        pivot_supports,
-                        pivot_strengths,
-                    )
-                    if strength_data:
-                        sr_features.iloc[
-                            row_idx,
-                            sr_features.columns.get_loc("nearest_pivot_strength"),
-                        ] = strength_data.get("strength", 0.0)
-                        sr_features.iloc[
-                            row_idx,
-                            sr_features.columns.get_loc("nearest_pivot_touches"),
-                        ] = strength_data.get("touches", 0.0)
-                        sr_features.iloc[
-                            row_idx,
-                            sr_features.columns.get_loc("nearest_pivot_volume"),
-                        ] = strength_data.get("volume", 0.0)
-                        sr_features.iloc[
-                            row_idx,
-                            sr_features.columns.get_loc("nearest_pivot_age"),
-                        ] = strength_data.get("age", 0.0)
+            # Add pivot strength features
+            if pivot_strengths:
+                strength_data = self._get_nearest_level_strength_data(
+                    nearest_pivot_support, pivot_supports,
+                    pivot_strengths
+                )
+            if strength_data:
+                sr_features.iloc[
+                    row_idx, sr_features.columns.get_loc("nearest_pivot_strength"),
+                ] = strength_data.get("strength", 0.0)
+                sr_features.iloc[
+                    row_idx, sr_features.columns.get_loc("nearest_pivot_touches"),
+                ] = strength_data.get("touches", 0.0)
+                sr_features.iloc[
+                    row_idx, sr_features.columns.get_loc("nearest_pivot_volume"),
+                ] = strength_data.get("volume", 0.0)
+                sr_features.iloc[
+                    row_idx, sr_features.columns.get_loc("nearest_pivot_age"),
+                ] = strength_data.get("age", 0.0)
 
             if pivot_resistances:
                 nearest_pivot_resistance = min(
-                    pivot_resistances,
-                    key=lambda x: abs(x - current_price),
+                    pivot_resistances, key=lambda x: abs(x - current_price),
                 )
                 sr_features.iloc[
-                    row_idx,
-                    sr_features.columns.get_loc("distance_to_pivot_resistance"),
+                    row_idx, sr_features.columns.get_loc("distance_to_pivot_resistance"),
                 ] = (nearest_pivot_resistance - current_price) / current_price
 
-                # Add pivot resistance strength features
-                if pivot_strengths:
-                    strength_data = self._get_nearest_level_strength_data(
-                        nearest_pivot_resistance,
-                        pivot_resistances,
-                        pivot_strengths,
-                    )
-                    if strength_data:
-                        sr_features.iloc[
-                            row_idx,
-                            sr_features.columns.get_loc(
-                                "nearest_pivot_resistance_strength",
-                            ),
-                        ] = strength_data.get("strength", 0.0)
-                        sr_features.iloc[
-                            row_idx,
-                            sr_features.columns.get_loc(
-                                "nearest_pivot_resistance_touches",
-                            ),
-                        ] = strength_data.get("touches", 0.0)
-                        sr_features.iloc[
-                            row_idx,
-                            sr_features.columns.get_loc(
-                                "nearest_pivot_resistance_volume",
-                            ),
-                        ] = strength_data.get("volume", 0.0)
-                        sr_features.iloc[
-                            row_idx,
-                            sr_features.columns.get_loc("nearest_pivot_resistance_age"),
-                        ] = strength_data.get("age", 0.0)
+            # Add pivot resistance strength features
+            if pivot_strengths:
+                strength_data = self._get_nearest_level_strength_data(
+                    nearest_pivot_resistance, pivot_resistances,
+                    pivot_strengths
+                )
+            if strength_data:
+                sr_features.iloc[
+                    row_idx, sr_features.columns.get_loc(
+                        "nearest_pivot_resistance_strength",
+                    ),
+                ] = strength_data.get("strength", 0.0)
+                sr_features.iloc[
+                    row_idx, sr_features.columns.get_loc(
+                        "nearest_pivot_resistance_touches",
+                    ),
+                ] = strength_data.get("touches", 0.0)
+                sr_features.iloc[
+                    row_idx, sr_features.columns.get_loc(
+                        "nearest_pivot_resistance_volume",
+                    ),
+                ] = strength_data.get("volume", 0.0)
+                sr_features.iloc[
+                    row_idx, sr_features.columns.get_loc("nearest_pivot_resistance_age"),
+                ] = strength_data.get("age", 0.0)
 
             # Calculate distances to HVN levels
             hvn_supports = hvn_levels.get("supports", [])
@@ -1219,95 +1164,78 @@ class BaseEnsemble:
 
             if hvn_supports:
                 nearest_hvn_support = min(
-                    hvn_supports,
-                    key=lambda x: abs(x - current_price),
+                    hvn_supports, key=lambda x: abs(x - current_price),
                 )
                 sr_features.iloc[
-                    row_idx,
-                    sr_features.columns.get_loc("distance_to_hvn_support"),
+                    row_idx, sr_features.columns.get_loc("distance_to_hvn_support"),
                 ] = (current_price - nearest_hvn_support) / current_price
 
-                # Add HVN strength features
-                if hvn_strengths:
-                    strength_data = self._get_nearest_level_strength_data(
-                        nearest_hvn_support,
-                        hvn_supports,
-                        hvn_strengths,
-                    )
-                    if strength_data:
-                        sr_features.iloc[
-                            row_idx,
-                            sr_features.columns.get_loc("nearest_hvn_strength"),
-                        ] = strength_data.get("strength", 0.0)
-                        sr_features.iloc[
-                            row_idx,
-                            sr_features.columns.get_loc("nearest_hvn_touches"),
-                        ] = strength_data.get("touches", 0.0)
-                        sr_features.iloc[
-                            row_idx,
-                            sr_features.columns.get_loc("nearest_hvn_volume"),
-                        ] = strength_data.get("volume", 0.0)
-                        sr_features.iloc[
-                            row_idx,
-                            sr_features.columns.get_loc("nearest_hvn_age"),
-                        ] = strength_data.get("age", 0.0)
+            # Add HVN strength features
+            if hvn_strengths:
+                strength_data = self._get_nearest_level_strength_data(
+                    nearest_hvn_support, hvn_supports,
+                    hvn_strengths
+                )
+            if strength_data:
+                sr_features.iloc[
+                    row_idx, sr_features.columns.get_loc("nearest_hvn_strength"),
+                ] = strength_data.get("strength", 0.0)
+                sr_features.iloc[
+                    row_idx, sr_features.columns.get_loc("nearest_hvn_touches"),
+                ] = strength_data.get("touches", 0.0)
+                sr_features.iloc[
+                    row_idx, sr_features.columns.get_loc("nearest_hvn_volume"),
+                ] = strength_data.get("volume", 0.0)
+                sr_features.iloc[
+                    row_idx, sr_features.columns.get_loc("nearest_hvn_age"),
+                ] = strength_data.get("age", 0.0)
 
             if hvn_resistances:
                 nearest_hvn_resistance = min(
-                    hvn_resistances,
-                    key=lambda x: abs(x - current_price),
+                    hvn_resistances, key=lambda x: abs(x - current_price),
                 )
                 sr_features.iloc[
-                    row_idx,
-                    sr_features.columns.get_loc("distance_to_hvn_resistance"),
+                    row_idx, sr_features.columns.get_loc("distance_to_hvn_resistance"),
                 ] = (nearest_hvn_resistance - current_price) / current_price
 
-                # Add HVN resistance strength features
-                if hvn_strengths:
-                    strength_data = self._get_nearest_level_strength_data(
-                        nearest_hvn_resistance,
-                        hvn_resistances,
-                        hvn_strengths,
-                    )
-                    if strength_data:
-                        sr_features.iloc[
-                            row_idx,
-                            sr_features.columns.get_loc(
-                                "nearest_hvn_resistance_strength",
-                            ),
-                        ] = strength_data.get("strength", 0.0)
-                        sr_features.iloc[
-                            row_idx,
-                            sr_features.columns.get_loc(
-                                "nearest_hvn_resistance_touches",
-                            ),
-                        ] = strength_data.get("touches", 0.0)
-                        sr_features.iloc[
-                            row_idx,
-                            sr_features.columns.get_loc(
-                                "nearest_hvn_resistance_volume",
-                            ),
-                        ] = strength_data.get("volume", 0.0)
-                        sr_features.iloc[
-                            row_idx,
-                            sr_features.columns.get_loc("nearest_hvn_resistance_age"),
-                        ] = strength_data.get("age", 0.0)
+            # Add HVN resistance strength features
+            if hvn_strengths:
+                strength_data = self._get_nearest_level_strength_data(
+                    nearest_hvn_resistance, hvn_resistances,
+                    hvn_strengths
+                )
+            if strength_data:
+                sr_features.iloc[
+                    row_idx, sr_features.columns.get_loc(
+                        "nearest_hvn_resistance_strength",
+                    ),
+                ] = strength_data.get("strength", 0.0)
+                sr_features.iloc[
+                    row_idx, sr_features.columns.get_loc(
+                        "nearest_hvn_resistance_touches",
+                    ),
+                ] = strength_data.get("touches", 0.0)
+                sr_features.iloc[
+                    row_idx, sr_features.columns.get_loc(
+                        "nearest_hvn_resistance_volume",
+                    ),
+                ] = strength_data.get("volume", 0.0)
+                sr_features.iloc[
+                    row_idx, sr_features.columns.get_loc("nearest_hvn_resistance_age"),
+                ] = strength_data.get("age", 0.0)
 
             # Set location classification features
             sr_features.iloc[
-                row_idx,
-                sr_features.columns.get_loc("is_pivot_support"),
+                row_idx, sr_features.columns.get_loc("is_pivot_support"),
             ] = 1.0 if "PIVOT_S" in current_location else 0.0
             sr_features.iloc[
-                row_idx,
-                sr_features.columns.get_loc("is_pivot_resistance"),
+                row_idx, sr_features.columns.get_loc("is_pivot_resistance"),
             ] = 1.0 if "PIVOT_R" in current_location else 0.0
             sr_features.iloc[row_idx, sr_features.columns.get_loc("is_hvn_support")] = (
                 1.0 if "HVN_SUPPORT" in current_location else 0.0
             )
             sr_features.iloc[
-                row_idx,
-                sr_features.columns.get_loc("is_hvn_resistance"),
+                row_idx, sr_features.columns.get_loc("is_hvn_resistance"),
             ] = 1.0 if "HVN_RESISTANCE" in current_location else 0.0
             sr_features.iloc[row_idx, sr_features.columns.get_loc("is_confluence")] = (
                 1.0 if "CONFLUENCE" in current_location else 0.0
@@ -1327,11 +1255,9 @@ class BaseEnsemble:
         context="level strength data extraction",
     )
     def _get_nearest_level_strength_data(
-        self,
-        nearest_level: float,
+        self, nearest_level: float,
         levels: list[float],
-        strengths: dict,
-    ) -> dict:
+        strengths: dict = None) -> dict:
         """Get strength data for the nearest level."""
         try:
             if not levels or not strengths:
@@ -1344,14 +1270,12 @@ class BaseEnsemble:
 
             return {}
         except Exception:
-            self.print(warning("Error getting nearest level strength data: {e}"))
+            self.logger.warning(f"Error getting nearest level strength data: {e}")
             return {}
 
     def _calculate_simplified_sr_features(
-        self,
-        sr_features: pd.DataFrame,
-        df: pd.DataFrame,
-    ) -> None:
+        self, sr_features: pd.DataFrame,
+        df: pd.DataFrame = None) -> None:
         """
         Calculate simplified S/R features as fallback.
 
@@ -1364,11 +1288,10 @@ class BaseEnsemble:
                 try:
                     df.iloc[i]["close"]
 
-                    # Simplified SR context calculation
-                    # Default values for SR features
+        # Simplified SR context calculation
+        # Default values for SR features
                     sr_features.iloc[
-                        i,
-                        sr_features.columns.get_loc("distance_to_sr"),
+                        i, sr_features.columns.get_loc("distance_to_sr"),
                     ] = 1.0  # Default distance
                     sr_features.iloc[i, sr_features.columns.get_loc("sr_strength")] = (
                         0.0  # Default strength
@@ -1384,7 +1307,7 @@ class BaseEnsemble:
                     continue
 
         except Exception:
-            self.print(error("Error calculating simplified SR features: {e}"))
+            self.logger.error(f"Error calculating simplified SR features: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
@@ -1392,17 +1315,13 @@ class BaseEnsemble:
         context="meta features extraction",
     )
     def _get_meta_features(
-        self,
-        df: pd.DataFrame,
-        is_live: bool = False,
-        **kwargs,
-    ) -> pd.DataFrame | dict:
+        self, df: pd.DataFrame,
+        is_live: bool = False, **kwargs) -> pd.DataFrame | dict:
         raise NotImplementedError
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return=None,
-        context="feature normalization",
+        default_return=None, context="feature normalization",
     )
     def normalize_non_price_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -1424,28 +1343,28 @@ class BaseEnsemble:
         try:
             normalized_df = df.copy()
 
-            # 1. Volume normalization
+        # 1. Volume normalization
             if "volume" in df.columns:
-                # Log1p + first-difference for stationarity
+        # Log1p + first-difference for stationarity
                 normalized_df["volume_log_diff"] = np.log1p(df["volume"]).diff()
 
-                # Percentage change
+        # Percentage change
                 normalized_df["volume_pct_change"] = df["volume"].pct_change()
 
-                # Rolling z-score of log volume
+        # Rolling z-score of log volume
                 log_volume = np.log1p(df["volume"])
                 normalized_df["volume_z_score"] = self._calculate_rolling_z_score(
-                    log_volume, self.normalization_windows["medium"]
+                    log_volume, self.normalization_windows["medium"],
                 )
 
-                # Volume relative to rolling turnover (if available)
-                if "volume_ma_ratio" not in df.columns:
-                    volume_ma_20 = df["volume"].rolling(window=20, min_periods=1).mean()
-                    normalized_df["volume_ma_ratio"] = df["volume"] / (
-                        volume_ma_20 + 1e-8
-                    )
+        # Volume relative to rolling turnover (if available)
+            if "volume_ma_ratio" not in df.columns:
+                volume_ma_20 = df["volume"].rolling(window=20, min_periods=1).mean()
+                normalized_df["volume_ma_ratio"] = df["volume"] / (
+                    volume_ma_20 + 1e-8
+                )
 
-            # 2. Spread and microstructure normalization
+        # 2. Spread and microstructure normalization
             spread_features = [
                 "spread_liquidity",
                 "price_impact",
@@ -1454,24 +1373,25 @@ class BaseEnsemble:
             ]
             for feature in spread_features:
                 if feature in df.columns:
-                    # Convert to bps if not already (assuming raw values)
+            # Convert to bps if not already (assuming raw values)
                     if feature in ["spread_liquidity", "price_impact"]:
-                        # These might already be in bps, but ensure they're properly scaled
+            # These might already be in bps, but ensure they're properly scaled
                         normalized_df[f"{feature}_bps"] = df[feature] * 1e4
 
-                    # Rolling z-score
+            # Rolling z-score
                     normalized_df[f"{feature}_z_score"] = (
                         self._calculate_rolling_z_score(
-                            df[feature], self.normalization_windows["medium"]
+                            df[feature],
+                            self.normalization_windows["medium"],
                         )
                     )
 
-                    # Changes - use percentage change to avoid perfect correlation with base features
+            # Changes - use percentage change to avoid perfect correlation with base features
                     normalized_df[f"{feature}_pct_change"] = df[feature].pct_change()
-                    # Use standard difference for better predictive power while avoiding perfect correlation
+            # Use standard difference for better predictive power while avoiding perfect correlation
                     normalized_df[f"{feature}_change"] = df[feature].diff().fillna(0)
 
-            # 3. Liquidity depth normalization
+        # 3. Liquidity depth normalization
             liquidity_features = [
                 "volume_liquidity",
                 "liquidity_percentile",
@@ -1479,26 +1399,27 @@ class BaseEnsemble:
             ]
             for feature in liquidity_features:
                 if feature in df.columns:
-                    # Log-transform heavy-tailed metrics
+            # Log-transform heavy-tailed metrics
                     if feature in ["volume_liquidity"]:
                         normalized_df[f"{feature}_log"] = np.log1p(np.abs(df[feature]))
 
-                    # Rolling z-score
+            # Rolling z-score
                     normalized_df[f"{feature}_z_score"] = (
                         self._calculate_rolling_z_score(
-                            df[feature], self.normalization_windows["medium"]
+                            df[feature],
+                            self.normalization_windows["medium"],
                         )
                     )
 
-                    # Changes for non-bounded features - use standard difference for better predictive power
+            # Changes for non-bounded features - use standard difference for better predictive power
                     if feature not in [
-                        "liquidity_percentile"
+                        "liquidity_percentile",
                     ]:  # Percentiles are already bounded
                         normalized_df[f"{feature}_change"] = (
                             df[feature].diff().fillna(0)
                         )
 
-            # 4. Order flow imbalance normalization
+        # 4. Order flow imbalance normalization
             ofi_features = [
                 "order_flow_imbalance",
                 "Order_Flow_Imbalance",
@@ -1506,10 +1427,10 @@ class BaseEnsemble:
             ]
             for feature in ofi_features:
                 if feature in df.columns:
-                    # Ensure bounded to [-1, 1]
+            # Ensure bounded to [-1, 1]
                     normalized_df[f"{feature}_bounded"] = np.clip(df[feature], -1, 1)
 
-                    # Rolling z-score of bounded values
+            # Rolling z-score of bounded values
                     normalized_df[f"{feature}_z_score"] = (
                         self._calculate_rolling_z_score(
                             normalized_df[f"{feature}_bounded"],
@@ -1517,7 +1438,7 @@ class BaseEnsemble:
                         )
                     )
 
-                    # Short-horizon changes (avoid over-differencing bounded ratios)
+            # Short-horizon changes (avoid over-differencing bounded ratios)
                     normalized_df[f"{feature}_change_1"] = normalized_df[
                         f"{feature}_bounded"
                     ].diff(1)
@@ -1525,15 +1446,15 @@ class BaseEnsemble:
                         f"{feature}_bounded"
                     ].diff(3)
 
-            # 5. VWAP normalization
+        # 5. VWAP normalization
             if "vwap" in df.columns and "close" in df.columns:
-                # VWAP deviation from mid price
+        # VWAP deviation from mid price
                 mid_price = df["close"]
                 normalized_df["vwap_deviation"] = (df["vwap"] - mid_price) / (
                     mid_price + 1e-8
                 )
 
-                # Rolling z-score of VWAP deviation
+            # Rolling z-score of VWAP deviation
                 normalized_df["vwap_deviation_z_score"] = (
                     self._calculate_rolling_z_score(
                         normalized_df["vwap_deviation"],
@@ -1541,11 +1462,13 @@ class BaseEnsemble:
                     )
                 )
 
-            # 6. Large order ratio normalization (already bounded)
+        # 6. Large order ratio normalization (already bounded)
             if "large_order_ratio" in df.columns:
-                # Clip to [0, 1] and rolling z-score
+            # Clip to [0, 1] and rolling z-score
                 normalized_df["large_order_ratio_bounded"] = np.clip(
-                    df["large_order_ratio"], 0, 1
+                    df["large_order_ratio"],
+                    0,
+                    1,
                 )
 
                 normalized_df["large_order_ratio_z_score"] = (
@@ -1555,14 +1478,15 @@ class BaseEnsemble:
                     )
                 )
 
-            # 7. Funding rate normalization
+        # 7. Funding rate normalization
             if "funding_rate" in df.columns:
-                # Funding rates are already in percentage form, normalize with rolling z-score
+            # Funding rates are already in percentage form, normalize with rolling z-score
                 normalized_df["funding_rate_z_score"] = self._calculate_rolling_z_score(
-                    df["funding_rate"], self.normalization_windows["medium"]
+                    df["funding_rate"],
+                    self.normalization_windows["medium"],
                 )
 
-                # Funding rate changes - use multi-period difference to reduce correlation
+            # Funding rate changes - use multi-period difference to reduce correlation
                 normalized_df["funding_rate_change"] = (
                     df["funding_rate"].diff(3).fillna(0)
                 )
@@ -1570,7 +1494,7 @@ class BaseEnsemble:
                     normalized_df["funding_rate_change"].diff(2).fillna(0)
                 )
 
-            # 8. Volatility normalization
+        # 8. Volatility normalization
             volatility_features = [
                 "realized_volatility",
                 "parkinson_volatility",
@@ -1578,10 +1502,11 @@ class BaseEnsemble:
             ]
             for feature in volatility_features:
                 if feature in df.columns:
-                    # Log-transform for heavy-tailed volatility
-                    normalized_df[f"{feature}_log"] = np.log1p(df[feature])
+            # Log-transform for heavy-tailed volatility
+                    if feature in ["realized_volatility", "parkinson_volatility", "garman_klass_volatility"]:
+                        normalized_df[f"{feature}_log"] = np.log1p(df[feature])
 
-                    # Rolling z-score
+            # Rolling z-score
                     normalized_df[f"{feature}_z_score"] = (
                         self._calculate_rolling_z_score(
                             normalized_df[f"{feature}_log"],
@@ -1589,12 +1514,12 @@ class BaseEnsemble:
                         )
                     )
 
-                    # Volatility changes - use percentage change to avoid perfect correlation
+            # Volatility changes - use percentage change to avoid perfect correlation
                     normalized_df[f"{feature}_pct_change"] = df[feature].pct_change()
-                    # Use multi-period difference for change to reduce correlation
+            # Use multi-period difference for change to reduce correlation
                     normalized_df[f"{feature}_change"] = df[feature].diff(3).fillna(0)
 
-            # 9. Momentum normalization
+        # 9. Momentum normalization
             momentum_features = [
                 "momentum_5",
                 "momentum_10",
@@ -1603,26 +1528,27 @@ class BaseEnsemble:
             ]
             for feature in momentum_features:
                 if feature in df.columns:
-                    # Rolling z-score of momentum
+            # Rolling z-score of momentum
                     normalized_df[f"{feature}_z_score"] = (
                         self._calculate_rolling_z_score(
-                            df[feature], self.normalization_windows["medium"]
+                            df[feature],
+                            self.normalization_windows["medium"],
                         )
                     )
 
-                    # Momentum acceleration - use multi-period difference to reduce correlation
+            # Momentum acceleration - use multi-period difference to reduce correlation
                     normalized_df[f"{feature}_acceleration"] = (
                         df[feature].diff(3).fillna(0)
                     )
 
-            # 10. Winsorize outliers before final scaling
+        # 10. Winsorize outliers before final scaling
             self._winsorize_features(normalized_df)
 
-            # 11. Final cleanup: handle any remaining NaN values
+        # 11. Final cleanup: handle any remaining NaN values
             normalized_df = normalized_df.fillna(0)
 
             self.logger.info(
-                f"Applied comprehensive feature normalization to {len(normalized_df.columns)} features"
+                f"Applied comprehensive feature normalization to {len(normalized_df.columns)} features",
             )
             return normalized_df
 
@@ -1636,7 +1562,8 @@ class BaseEnsemble:
         context="rolling z-score calculation",
     )
     def _calculate_rolling_z_score(
-        self, series: pd.Series, window: int = 60
+        self, series: pd.Series,
+        window: int = 60,
     ) -> pd.Series:
         """
         Calculate rolling z-score with proper handling of infinite values.
@@ -1649,20 +1576,18 @@ class BaseEnsemble:
             Series with rolling z-scores
         """
         try:
-            rolling_mean = series.rolling(window=window, min_periods=1).mean()
-            rolling_std = series.rolling(window=window, min_periods=1).std()
+            rolling_mean = series.rolling(window, min_periods=1).mean()
+            rolling_std = series.rolling(window, min_periods=1).std()
             z_score = (series - rolling_mean) / (rolling_std + 1e-8)
-            # Handle infinite values
-            z_score = z_score.replace([np.inf, -np.inf], 0)
-            return z_score
+        # Handle infinite values
+            return z_score.replace([np.inf, -np.inf], 0)
         except Exception as e:
             self.logger.warning(f"Error calculating rolling z-score: {e}")
             return pd.Series(0, index=series.index)
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return=None,
-        context="feature winsorization",
+        default_return=None, context="feature winsorization",
     )
     def _winsorize_features(self, df: pd.DataFrame, percentile: float = 0.01) -> None:
         """
@@ -1675,19 +1600,19 @@ class BaseEnsemble:
         try:
             for col in df.columns:
                 if df[col].dtype in ["float64", "float32", "int64", "int32"]:
-                    # Skip binary/categorical features
+            # Skip binary/categorical features
                     if df[col].nunique() <= 2:
                         continue
 
-                    # Handle NaN values first
+            # Handle NaN values first
                     if df[col].isna().any():
                         df[col] = df[col].fillna(df[col].median())
 
-                    # Calculate percentiles
+            # Calculate percentiles
                     lower_percentile = df[col].quantile(percentile)
                     upper_percentile = df[col].quantile(1 - percentile)
 
-                    # Clip outliers
+            # Clip outliers
                     df[col] = np.clip(df[col], lower_percentile, upper_percentile)
 
         except Exception as e:

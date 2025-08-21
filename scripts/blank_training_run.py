@@ -10,38 +10,31 @@ Usage:
     python scripts/blank_training_run.py --symbol BTCUSDT --exchange BINANCE
 """
 
+from src.training.steps.data_preparation_components.aggtrades_data_formatting import (
+    AggTradesDataFormatter
+)
+from src.training.steps.data_preparation_components.training_validation_config import (
+    TrainingValidationConfig
+)
+import os
+import traceback
+from datetime import datetime
+from pathlib import Path
+from src.config import CONFIG  # Import the global CONFIG dictionary
+from src.utils.logger import setup_logging, system_logger
+import argparse
 import asyncio
 import sys
 import time
-from datetime import datetime
-from pathlib import Path
+
+import pandas as pd
+import pickle
+from src.database.sqlite_manager import SQLiteManager
+from src.training.enhanced_training_manager import EnhancedTrainingManager
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-# Import necessary modules
-import argparse
-
-from src.config import CONFIG  # Import the global CONFIG dictionary
-from src.database.sqlite_manager import SQLiteManager
-from src.training.enhanced_training_manager import EnhancedTrainingManager
-from src.utils.logger import setup_logging, system_logger
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
-
 
 async def main():
     """
@@ -135,25 +128,24 @@ async def main():
         )
 
         # Check if all required data files exist
-        import os
 
         required_files = [klines_filename, agg_trades_filename, futures_filename]
         missing_files = [f for f in required_files if not os.path.exists(f)]
 
         if missing_files:
-            print(missing("❌ Missing required data files: {missing_files}"))
+            print(f"❌ Missing required data files: {missing_files}")
             logger.error(
                 "Please run data downloading first or ensure data files exist.",
             )
-            print(error("Expected files:"))
-            for file in required_files:
-                print(error("  - {file}"))
+            print("Expected files:")
+            for _file in required_files:
+                print(f"  - {_file}")
             sys.exit(1)
 
         logger.info("✅ All required data files found, proceeding with training")
         print("✅ All required data files found, proceeding with training")
 
-        # Run the training pipeline stages manually, skipping data collection
+        # Run the training pipeline stages manually = skipping data collection
         logger.info(
             "🚀 Running training pipeline stages manually (skipping data collection)",
         )
@@ -173,7 +165,6 @@ async def main():
             print("🔧 Stage 1: Setting up training environment...")
             setup_success = await training_manager._setup_training_environment(
                 args.symbol,
-                args.exchange,
                 "1m",
             )
             if not setup_success:
@@ -194,23 +185,18 @@ async def main():
             print("🔄 Using CSV formatting script to ensure proper data format...")
 
             # Import and run the CSV formatting script
-            from src.training.steps.data_preparation_components.aggtrades_data_formatting import (
-                auto_reformat_aggtrades_files_for_exchange,
+            auto_reformat_aggtrades_files_for_exchange = AggTradesDataFormatter(
+                args.exchange, args.symbol
             )
 
             # Run the CSV formatting to ensure data files for this exchange/symbol are in correct format
             logger.info("📋 Running CSV format validation and conversion...")
             print("📋 Running CSV format validation and conversion...")
-            auto_reformat_aggtrades_files_for_exchange(args.exchange, args.symbol)
+            auto_reformat_aggtrades_files_for_exchange.reformat_aggtrades_files()
 
             # Create the required pickle file from existing CSV data
             logger.info("🔄 Creating pickle file from existing CSV data...")
             print("🔄 Creating pickle file from existing CSV data...")
-
-            import os
-            import pickle
-
-            import pandas as pd
 
             # Read the CSV data (now properly formatted)
             if not os.path.exists(csv_data_file):
@@ -219,19 +205,19 @@ async def main():
 
             klines_df = pd.read_csv(csv_data_file)
             logger.info(
-                f"📊 Loaded CSV data: {len(klines_df)} rows, {len(klines_df.columns)} columns",
+                f"📊 Loaded CSV data: {len(klines_df)} rows = {len(klines_df.columns)} columns",
             )
             print(
-                f"📊 Loaded CSV data: {len(klines_df)} rows, {len(klines_df.columns)} columns",
+                f"📊 Loaded CSV data: {len(klines_df)} rows = {len(klines_df.columns)} columns",
             )
 
             # Add quality validation checks
             logger.info("🔍 Running data quality validation...")
             print("🔍 Running data quality validation...")
 
-            from src.training.steps.data_preparation_components.training_validation_config import (
-                validate_data_format,
-                validate_data_quality,
+            validation_config = TrainingValidationConfig()
+            validate_data_format, validate_data_quality = validation_config.validate_data(
+                klines_df
             )
 
             # Load additional data for validation
@@ -251,7 +237,7 @@ async def main():
                 logger.info(f"📊 Loaded agg trades: {len(agg_trades_df)} rows")
             else:
                 logger.warning(
-                    "⚠️  Aggregated trades file not found, skipping validation",
+                    "⚠️  Aggregated trades file not found = skipping validation",
                 )
 
             # Load futures data if available
@@ -260,13 +246,13 @@ async def main():
                 validation_data["futures"] = futures_df
                 logger.info(f"📊 Loaded futures: {len(futures_df)} rows")
             else:
-                print(missing("⚠️  Futures file not found, skipping validation"))
+                print("⚠️  Futures file not found = skipping validation")
 
             # Validate data format
             format_valid, format_errors = validate_data_format(validation_data)
             if not format_valid:
-                print(failed("❌ Data format validation failed: {format_errors}"))
-                print(failed("Data format validation failed: {format_errors}"))
+                print(f"❌ Data format validation failed: {format_errors}")
+                print(f"Data format validation failed: {format_errors}")
                 msg = "Data format validation failed"
                 raise Exception(msg)
             logger.info("✅ Data format validation passed")
@@ -275,8 +261,8 @@ async def main():
             # Validate data quality
             quality_valid, quality_errors = validate_data_quality(validation_data)
             if not quality_valid:
-                print(failed("❌ Data quality validation failed: {quality_errors}"))
-                print(failed("Data quality validation failed: {quality_errors}"))
+                print(f"❌ Data quality validation failed: {quality_errors}")
+                print(f"Data quality validation failed: {quality_errors}")
                 msg = "Data quality validation failed"
                 raise Exception(msg)
             logger.info("✅ Data quality validation passed")
@@ -303,7 +289,6 @@ async def main():
             print("🔧 Stage 3: Optimizing and training models...")
             training_success = await training_manager._optimize_and_train_models(
                 args.symbol,
-                "1h",
                 data_file,
             )
             if not training_success:
@@ -316,7 +301,6 @@ async def main():
             logger.info("🔧 Stage 4: Validating and testing models...")
             print("🔧 Stage 4: Validating and testing models...")
             validation_success = await training_manager._validate_and_test_models(
-                args.symbol,
                 data_file,
             )
             if not validation_success:
@@ -331,7 +315,6 @@ async def main():
             logger.info("🔧 Stage 5: Finalizing training...")
             print("🔧 Stage 5: Finalizing training...")
             finalize_success = await training_manager._finalize_training(
-                args.symbol,
                 session_id,
                 run_id,
             )
@@ -346,13 +329,12 @@ async def main():
             print("✅ All training stages completed successfully")
 
         except Exception as e:
-            print(failed("❌ Training pipeline failed with exception: {e}"))
-            print(failed("Training pipeline failed with exception: {e}"))
-            print(error("Exception type: {type(e).__name__}"))
+            print(f"❌ Training pipeline failed with exception: {e}")
+            print(f"Training pipeline failed with exception: {e}")
             print(f"Exception type: {type(e).__name__}")
-            print(error("Full traceback:"))
+            print(f"Exception type: {type(e).__name__}")
             print("Full traceback:")
-            import traceback
+            print("Full traceback:")
 
             logger.exception(traceback.format_exc())
             print(traceback.format_exc())
@@ -371,27 +353,27 @@ async def main():
             logger.info(f"   Duration: {training_duration:.2f} seconds")
             logger.info("   Status: SUCCESS")
         else:
-            print(failed("❌ 'Blank' training pipeline failed."))
-            print(error("📊 Training summary:"))
-            print(error("   Symbol: {args.symbol}"))
-            print(error("   Exchange: {args.exchange}"))
-            print(error("   Duration: {training_duration:.2f} seconds"))
-            print(failed("   Status: FAILED"))
+            print("❌ 'Blank' training pipeline failed.")
+            print("📊 Training summary:")
+            print(f"   Symbol: {args.symbol}")
+            print(f"   Exchange: {args.exchange}")
+            print(f"   Duration: {training_duration:.2f} seconds")
+            print("   Status: FAILED")
             sys.exit(1)
 
-    except Exception as e:
-        print(critical("💥 CRITICAL ERROR during blank training run"))
-        print(error("Error type: {type(e).__name__}"))
-        print(error("Error message: {str(e)}"))
-        print(error("Full traceback:"))
+    except Exception:
+        print("💥 CRITICAL ERROR during blank training run")
+        print(f"Error type: {type(e).__name__}")
+        print(f"Error message: {str(e)}")
+        print("Full traceback:")
         logger.critical(traceback.format_exc())
 
         # Log additional debugging information
-        print(error("📊 Error context:"))
-        print(error("   Symbol: {args.symbol}"))
-        print(error("   Exchange: {args.exchange}"))
-        print(error("   Python path: {sys.path[:3]}..."))  # First 3 entries
-        print(error("   Working directory: {Path.cwd()}"))
+        print("📊 Error context:")
+        print(f"   Symbol: {args.symbol}")
+        print(f"   Exchange: {args.exchange}")
+        print(f"   Python path: {sys.path[:3]}...")  # First 3 entries
+        print(f"   Working directory: {Path.cwd()}")
 
         sys.exit(1)
     finally:
@@ -410,7 +392,6 @@ async def main():
         logger.info(f"Symbol: {args.symbol}")
         logger.info(f"Exchange: {args.exchange}")
         logger.info("🏁 'Blank' training pipeline finished.")
-
 
 if __name__ == "__main__":
     try:

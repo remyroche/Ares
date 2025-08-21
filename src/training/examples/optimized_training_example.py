@@ -1,7 +1,6 @@
 # src/training/examples/optimized_training_example.py
 
-"""
-Example script demonstrating how to use the optimized enhanced training manager
+"""Example script demonstrating how to use the optimized enhanced training manager
 with all computational optimization strategies.
 """
 
@@ -24,15 +23,11 @@ from src.training.factory import (
     create_optimized_training_system,
     get_optimization_recommendations,
 )
+from src.training.memory_profiler import MemoryProfiler
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    failed,
-    warning,
-)
-from src.training.memory_profiler import profile_memory_usage, MemoryProfiler
 
 
-async def main():
+async def main() -> None:
     """Main example function demonstrating optimized training."""
     logger = system_logger.getChild("OptimizedTrainingExample")
     logger.info("🚀 Starting Optimized Training Example")
@@ -66,15 +61,13 @@ async def main():
     # 3. Validate configuration
     validation_results = validate_optimization_config(optimization_config)
     if not validation_results["valid"]:
-        print(failed("Configuration validation failed:"))
-        for error in validation_results["errors"]:
-            print(error("  - {error}"))
+        for _error in validation_results["errors"]:
+            pass
         return
 
     if validation_results["warnings"]:
-        print(warning("Configuration warnings:"))
-        for warning in validation_results["warnings"]:
-            print(warning("  - {warning}"))
+        for _warning in validation_results["warnings"]:
+            pass
 
     # 4. Get optimization recommendations
     recommendations = get_optimization_recommendations(base_config)
@@ -122,7 +115,6 @@ async def main():
 
     # Initialize training manager
     if not await training_manager.initialize():
-        print(failed("Failed to initialize training manager"))
         return
 
     # 9. Take initial memory snapshot
@@ -158,7 +150,6 @@ async def main():
         # logger.info("Training completed via step executor")
 
     except Exception:
-        print(failed("Training failed: {e}"))
         training_results = {}
 
     # 11. Memory analysis after training
@@ -170,12 +161,10 @@ async def main():
     # Check for memory leaks
     leak_results = leak_detector.check_for_leaks()
     if leak_results["leak_detected"]:
-        print(warning("Memory leak detected!"))
         for _indicator in leak_results.get("indicators", []):
-            print(warning("  - {indicator}"))
-        print(warning("Recommendations:"))
+            pass
         for rec in leak_results.get("recommendations", []):
-            print(warning("  - {rec}"))
+            pass
     else:
         logger.info("No memory leaks detected")
 
@@ -241,7 +230,7 @@ async def main():
         logger.info(f"Parallel Workers Used: {stats.get('parallel_workers_used', 1)}")
 
 
-def demonstrate_individual_components():
+def demonstrate_individual_components() -> None:
     """Demonstrate individual optimization components."""
     logger = system_logger.getChild("ComponentDemo")
     logger.info("🔧 Demonstrating Individual Optimization Components")
@@ -285,5 +274,4 @@ if __name__ == "__main__":
     asyncio.run(main())
 
     # Run component demonstrations
-    print("\n" + "=" * 50)
     demonstrate_individual_components()

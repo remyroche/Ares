@@ -3,30 +3,17 @@
 Run Scans - Code Quality and Analysis Tool
 
 This script provides a comprehensive mapping of available code analysis features
-and their corresponding functions. It can run various code quality checks,
-static analysis, and maintainability assessments.
+and their corresponding functions. It can run various code quality checks, static analysis, and maintainability assessments.
 """
 
 import argparse
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
 import logging
 import subprocess
 import sys
+
 from dataclasses import dataclass
 from enum import Enum
+from src.utils.warning_symbols import error, failed, warning
 
 # Configure logging
 logging.basicConfig(
@@ -77,48 +64,43 @@ class ScanManager:
                 name="Code Formatting",
                 description="Format code using ruff formatter",
                 command="poetry run ruff format .",
-                enabled=True,
+                enabled=True
             ),
             ScanType.LINTING.value: ScanFeature(
                 name="Code Linting",
                 description="Check code style and potential issues using ruff",
                 command="poetry run ruff check . --fix",
-                enabled=True,
+                enabled=True
             ),
             ScanType.TYPE_CHECKING.value: ScanFeature(
                 name="Static Type Checking",
                 description="Perform static type checking using mypy",
                 command="poetry run mypy --ignore-missing-imports --package src",
-                enabled=True,
-                ignore_errors=True,
+                enabled=True, ignore_errors=True,
             ),
             ScanType.COMPLEXITY.value: ScanFeature(
                 name="Cyclomatic Complexity Analysis",
                 description="Analyze code complexity using radon",
                 command="poetry run radon cc src/ -s -nc",
-                enabled=True,
-                ignore_errors=True,
+                enabled=True, ignore_errors=True,
             ),
             ScanType.MAINTAINABILITY.value: ScanFeature(
                 name="Maintainability Index",
                 description="Calculate maintainability index using radon",
                 command="poetry run radon mi src/ -s -nc",
-                enabled=True,
-                ignore_errors=True,
+                enabled=True, ignore_errors=True,
             ),
             ScanType.DEAD_CODE.value: ScanFeature(
                 name="Dead Code Detection",
                 description="Find unused code using vulture",
                 command="poetry run vulture src/",
-                enabled=True,
-                ignore_errors=True,
+                enabled=True, ignore_errors=True,
             ),
             ScanType.CIRCULAR_IMPORTS.value: ScanFeature(
                 name="Circular Import Detection",
                 description="Detect circular imports using pylint",
                 command="poetry run pylint --disable=all --enable=cyclic-import src/",
-                enabled=True,
-                ignore_errors=True,
+                enabled=True, ignore_errors=True,
             ),
             ScanType.SECURITY.value: ScanFeature(
                 name="Security Analysis",
@@ -161,12 +143,12 @@ class ScanManager:
     def run_scan(self, scan_type: str, verbose: bool = False) -> bool:
         """Run a specific scan type"""
         if scan_type not in self.features:
-            print(error("Unknown scan type: {scan_type}"))
+            print(error(f"Unknown scan type: {scan_type}"))
             return False
 
         feature = self.features[scan_type]
         if not feature.enabled:
-            print(warning("Feature '{feature.name}' is disabled"))
+            print(warning(f"Feature '{feature.name}' is disabled"))
             return False
 
         logger.info(f"Running {feature.name}...")
@@ -210,7 +192,7 @@ class ScanManager:
             )
             return False
         except Exception as e:
-            print(failed("✗ {feature.name} failed with error: {e}"))
+            print(failed(f"✗ {feature.name} failed with error: {e}"))
             return False
 
     def run_all_scans(self, verbose: bool = False) -> dict[str, bool]:
@@ -233,7 +215,7 @@ class ScanManager:
             self.features[scan_type].enabled = True
             logger.info(f"Enabled feature: {self.features[scan_type].name}")
             return True
-        print(error("Unknown feature: {scan_type}"))
+        print(error(f"Unknown feature: {scan_type}"))
         return False
 
     def disable_feature(self, scan_type: str) -> bool:
@@ -242,7 +224,7 @@ class ScanManager:
             self.features[scan_type].enabled = False
             logger.info(f"Disabled feature: {self.features[scan_type].name}")
             return True
-        print(error("Unknown feature: {scan_type}"))
+        print(error(f"Unknown feature: {scan_type}"))
         return False
 
     def get_feature_info(self, scan_type: str) -> ScanFeature | None:
@@ -339,7 +321,7 @@ Examples:
             print(f"Timeout: {feature.timeout} seconds")
             print(f"Ignore Errors: {feature.ignore_errors}")
         else:
-            print(error("Unknown feature: {args.info}"))
+            print(error(f"Unknown feature: {args.info}"))
         return
 
     # Run scans
@@ -351,7 +333,7 @@ Examples:
         if success:
             logger.info(f"Scan '{args.scan}' completed successfully")
         else:
-            print(failed("Scan '{args.scan}' failed"))
+            print(failed(f"Scan '{args.scan}' failed"))
             sys.exit(1)
     else:
         # Default behavior: run all scans

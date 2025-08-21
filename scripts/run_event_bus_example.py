@@ -10,29 +10,17 @@ This script demonstrates the enhanced event bus capabilities including:
 - Metrics collection
 """
 
-import asyncio
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
-import sys
+import traceback
 from pathlib import Path
+import asyncio
+import sys
+
+from src.examples.enhanced_event_bus_example import main
+from src.utils.warning_symbols import warning
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-from src.examples.enhanced_event_bus_example import main
 
 if __name__ == "__main__":
     print("🚀 Running Enhanced Event Bus Example")
@@ -43,9 +31,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n⚠️ Example interrupted by user")
     except Exception as e:
-        print(warning("Error running example: {e}"))
-        import traceback
-
+        print(warning(f"Error running example: {e}"))
         traceback.print_exc()
 
     print("=" * 50)

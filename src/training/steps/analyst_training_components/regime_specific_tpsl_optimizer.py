@@ -1,7 +1,6 @@
 # src/training/regime_specific_tpsl_optimizer.py
 
-"""
-Regime-Specific SL/TP Optimizer
+"""Regime-Specific SL/TP Optimizer.
 
 This module provides regime-specific optimization of Stop Loss (SL) and Take Profit (TP)
 parameters based on the current market context identified by the meta-labeling system.
@@ -37,19 +36,18 @@ from src.utils.warning_symbols import (
 
 
 class RegimeSpecificTPSLOptimizer:
-    """
-    Optimizes Take Profit (TP) and Stop Loss (SL) parameters based on HMM market regimes.
+    """Optimizes Take Profit (TP) and Stop Loss (SL) parameters based on HMM market regimes.
 
     This optimizer uses HMM market regimes to identify the current market state
     and then applies regime-specific optimization based on backtest performance.
     """
 
-    def __init__(self, config: dict[str, Any]):
-        """
-        Initialize the regime-specific TP/SL optimizer.
+    def __init__(self, config: dict[str, Any]) -> None:
+        """Initialize the regime-specific TP/SL optimizer.
 
         Args:
             config: Configuration dictionary
+
         """
         self.config = config
         self.logger = system_logger.getChild("RegimeSpecificTPSLOptimizer")
@@ -57,7 +55,7 @@ class RegimeSpecificTPSLOptimizer:
 
         # Meta-labeling system removed - using only HMM market regimes
         self.logger.info(
-            "ℹ️ Meta-labeling system removed - using only HMM market regimes for labeling"
+            "ℹ️ Meta-labeling system removed - using only HMM market regimes for labeling",
         )
 
         # Regime-specific parameters for HMM clusters (seeded defaults)
@@ -217,15 +215,15 @@ class RegimeSpecificTPSLOptimizer:
         context="regime-specific TP/SL optimizer initialization",
     )
     async def initialize(self) -> bool:
-        """
-        Initialize the regime-specific TP/SL optimizer.
+        """Initialize the regime-specific TP/SL optimizer.
 
         Returns:
             bool: True if initialization successful, False otherwise
+
         """
         try:
             self.logger.info(
-                "Initializing Regime-Specific TP/SL Optimizer (Meta-Label)..."
+                "Initializing Regime-Specific TP/SL Optimizer (Meta-Label)...",
             )
 
             # Initialize Meta-Labeling system
@@ -248,31 +246,29 @@ class RegimeSpecificTPSLOptimizer:
             return False
 
     async def _initialize_meta_label_system(self) -> bool:
-        """
-        Initialize the MetaLabelingSystem.
+        """Initialize the MetaLabelingSystem.
 
         Returns:
             bool: True if initialization successful, False otherwise
+
         """
         try:
             ok = await self.meta_labeling_system.initialize()
             if ok:
                 self.logger.info(
-                    "✅ Meta-Labeling system initialized for regime identification"
+                    "✅ Meta-Labeling system initialized for regime identification",
                 )
                 return True
             self.logger.warning("Meta-Labeling system failed to initialize")
             return False
         except Exception as e:
             self.print(
-                initialization_error(f"Error initializing Meta-Labeling system: {e}")
+                initialization_error(f"Error initializing Meta-Labeling system: {e}"),
             )
             return False
 
     async def _load_optimization_results(self) -> None:
-        """
-        Load existing optimization results from disk.
-        """
+        """Load existing optimization results from disk."""
         try:
             results_file = os.path.join(self.model_dir, "optimization_results.json")
             if os.path.exists(results_file):
@@ -287,9 +283,7 @@ class RegimeSpecificTPSLOptimizer:
             self.print(warning("Could not load optimization results: {e}"))
 
     async def _save_optimization_results(self) -> None:
-        """
-        Save optimization results to disk.
-        """
+        """Save optimization results to disk."""
         try:
             results_file = os.path.join(self.model_dir, "optimization_results.json")
             import json
@@ -309,22 +303,22 @@ class RegimeSpecificTPSLOptimizer:
         self,
         current_data: pd.DataFrame,
     ) -> tuple[str, float, dict[str, Any]]:
-        """
-        Identify the current dominant meta-label driven market regime.
+        """Identify the current dominant meta-label driven market regime.
 
         Args:
             current_data: Current market OHLCV data
 
         Returns:
             Tuple of (regime_label, confidence, additional_info)
+
         """
         try:
             # Require meta-labeling to be initialized
             if not getattr(self.meta_labeling_system, "is_initialized", False):
                 self.print(
                     warning(
-                        "Meta-Labeling system not initialized, using default regime"
-                    )
+                        "Meta-Labeling system not initialized, using default regime",
+                    ),
                 )
                 return "SIDEWAYS_RANGE", 0.5, {"method": "default"}
 
@@ -341,7 +335,7 @@ class RegimeSpecificTPSLOptimizer:
             for label in self.candidate_labels:
                 intensities[label] = float(labels.get(f"intensity_{label}", 0.0))
                 actives[label] = int(
-                    labels.get(f"active_{label}", labels.get(label, 0))
+                    labels.get(f"active_{label}", labels.get(label, 0)),
                 )
 
             # Choose the dominant label by intensity, breaking ties by active flag
@@ -365,7 +359,7 @@ class RegimeSpecificTPSLOptimizer:
                     "confidence": round(confidence, 3),
                     "top3": [(k, round(v, 3)) for k, v in top3],
                     "timeframe": self.analysis_timeframe,
-                }
+                },
             )
             return (
                 best_label,
@@ -393,8 +387,7 @@ class RegimeSpecificTPSLOptimizer:
         historical_data: pd.DataFrame,
         current_data: pd.DataFrame,
     ) -> dict[str, Any]:
-        """
-        Optimize TP/SL parameters for a specific label-driven market regime.
+        """Optimize TP/SL parameters for a specific label-driven market regime.
 
         Args:
             regime: Regime/meta-label to optimize for
@@ -403,6 +396,7 @@ class RegimeSpecificTPSLOptimizer:
 
         Returns:
             Dictionary with optimized TP/SL parameters
+
         """
         try:
             self.logger.info(f"🎯 Optimizing TP/SL for regime: {regime}")
@@ -465,8 +459,7 @@ class RegimeSpecificTPSLOptimizer:
         historical_data: pd.DataFrame,
         base_params: dict[str, Any],
     ) -> float:
-        """
-        Evaluate TP/SL parameters using backtesting simulation.
+        """Evaluate TP/SL parameters using backtesting simulation.
 
         Args:
             trial: Optuna trial object
@@ -476,6 +469,7 @@ class RegimeSpecificTPSLOptimizer:
 
         Returns:
             float: Optimization score (higher is better)
+
         """
         try:
             # Suggest parameters within reasonable bounds
@@ -534,8 +528,7 @@ class RegimeSpecificTPSLOptimizer:
         stop_pct: float,
         regime: str,
     ) -> list[dict[str, Any]]:
-        """
-        Simulate trades using given TP/SL parameters.
+        """Simulate trades using given TP/SL parameters.
 
         Args:
             data: Historical price data
@@ -545,6 +538,7 @@ class RegimeSpecificTPSLOptimizer:
 
         Returns:
             List of trade dictionaries
+
         """
         trades = []
         position_open = False
@@ -603,8 +597,7 @@ class RegimeSpecificTPSLOptimizer:
         historical_data: pd.DataFrame,
         force_optimization: bool = False,
     ) -> dict[str, Any]:
-        """
-        Get optimized TP/SL parameters for the current label-driven market regime.
+        """Get optimized TP/SL parameters for the current label-driven market regime.
 
         Args:
             current_data: Current market data (OHLCV)
@@ -613,6 +606,7 @@ class RegimeSpecificTPSLOptimizer:
 
         Returns:
             Dictionary with optimized TP/SL parameters
+
         """
         try:
             # Identify current regime via meta-labels
@@ -656,11 +650,11 @@ class RegimeSpecificTPSLOptimizer:
             }
 
     def get_regime_statistics(self) -> dict[str, Any]:
-        """
-        Get statistics about regime-specific TP/SL optimization.
+        """Get statistics about regime-specific TP/SL optimization.
 
         Returns:
             Dictionary with optimization statistics
+
         """
         return {
             "optimized_regimes": list(self.optimization_results.keys()),

@@ -1,8 +1,6 @@
 # src/types/ml_types.py
 
-"""
-Machine learning type definitions for model inputs, outputs, and metrics.
-"""
+"""Machine learning type definitions for model inputs = outputs, and metrics."""
 
 from typing import Literal, TypedDict
 
@@ -15,8 +13,9 @@ FeatureArray = np.ndarray
 TargetArray = np.ndarray
 PredictionArray = np.ndarray
 
-
 # Feature engineering types
+
+
 class FeatureDict(TypedDict, total=False):
     """Type-safe feature dictionary."""
 
@@ -113,6 +112,8 @@ class EnsembleConfig(TypedDict):
 
 
 # Regime and market state types
+
+
 class RegimeClassification(TypedDict):
     """Type-safe regime classification result."""
 

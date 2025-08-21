@@ -1,33 +1,22 @@
 # src/interfaces/enhanced_event_bus.py
 
-import asyncio
-import json
-import uuid
-from abc import ABC, abstractmethod
+from abc import ABC , abstractmethod
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
-from enum import Enum
+from datetime import UTC , datetime
 from pathlib import Path
-from typing import Any
-
-from src.utils.error_handler import handle_specific_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
+from typing import Any, import asyncio
+import json
+import uuid
+
+from dataclasses import asdict, dataclass, field
+from enum import Enum
+from src.utils.error_handler import handle_specific_errors
+from src.utils.warning_symbols import (error , failed,)
+    initialization_error = invalid)
+    validation_error)
+    warning)
 
 
 class EventType(Enum):
@@ -85,11 +74,10 @@ class Event:
     data: Any
     metadata: EventMetadata = field(default_factory=EventMetadata)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str , Any]:
         """Convert event to dictionary for serialization"""
         return {
-            "event_type": self.event_type.value,
-            "data": self.data,
+            "event_type": self.event_type.value , "data": self.data,
             "metadata": asdict(self.metadata),
         }
 
@@ -117,8 +105,7 @@ class Event:
         return cls(
             event_type=EventType(data["event_type"]),
             data=data["data"],
-            metadata=metadata,
-        )
+            metadata, metadata = )
 
 
 @dataclass
@@ -142,11 +129,9 @@ class IEventStore(ABC):
 
     @abstractmethod
     async def get_events(
-        self,
-        aggregate_id: str | None = None,
+        self = aggregate_id: str | None = None,
         from_sequence: int = 0,
-        to_sequence: int | None = None,
-        event_types: list[EventType] | None = None,
+        to_sequence: int | None, None = event_types: list[EventType] | None = None,
     ) -> list[Event]:
         """Retrieve events from the store"""
 
@@ -169,12 +154,21 @@ class FileEventStore(IEventStore):
         self.logger = system_logger.getChild("FileEventStore")
 
         # Create directories
-        self.events_path.mkdir(parents=True, exist_ok=True)
-        self.snapshots_path.mkdir(parents=True, exist_ok=True)
+        self.events_path.mkdir(parents, True = exist_ok=True)
+        self.snapshots_path.mkdir(parents, True = exist_ok=True)
 
     async def save_event(self, event: Event) -> bool:
         """Save an event to file storage"""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             event_date = event.metadata.timestamp.strftime("%Y-%m-%d")
             event_file = self.events_path / f"events_{event_date}.jsonl"
 
@@ -182,30 +176,37 @@ class FileEventStore(IEventStore):
             event_line = json.dumps(event_data, default=str) + "\n"
 
             # Append to file
-            with open(event_file, "a", encoding="utf-8") as f:
+            with open(event_file = "a", encoding="utf-8") as f:
                 f.write(event_line)
 
             self.logger.debug(f"Saved event {event.metadata.event_id} to {event_file}")
             return True
 
-        except Exception as e:
+        except Exception:
             self.print(failed("Failed to save event: {e}"))
             return False
 
     async def get_events(
-        self,
-        aggregate_id: str | None = None,
+        self = aggregate_id: str | None = None,
         from_sequence: int = 0,
-        to_sequence: int | None = None,
-        event_types: list[EventType] | None = None,
+        to_sequence: int | None, None = event_types: list[EventType] | None = None,
     ) -> list[Event]:
         """Retrieve events from file storage"""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             events = []
 
             # Read all event files
             for event_file in self.events_path.glob("events_*.jsonl"):
-                with open(event_file, encoding="utf-8") as f:
+                with open(event_file, encoding = "utf-8") as f:
                     for line in f:
                         if line.strip():
                             event_data = json.loads(line.strip())
@@ -236,13 +237,22 @@ class FileEventStore(IEventStore):
             events.sort(key=lambda e: e.metadata.sequence_number)
             return events
 
-        except Exception as e:
+        except Exception:
             self.print(failed("Failed to retrieve events: {e}"))
             return []
 
     async def save_snapshot(self, snapshot: EventSnapshot) -> bool:
         """Save a snapshot to file storage"""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             snapshot_file = (
                 self.snapshots_path
                 / f"snapshot_{snapshot.aggregate_id}_{snapshot.sequence_number}.json"
@@ -252,21 +262,30 @@ class FileEventStore(IEventStore):
             # Convert datetime to string for JSON serialization
             snapshot_data["timestamp"] = snapshot.timestamp.isoformat()
 
-            with open(snapshot_file, "w", encoding="utf-8") as f:
-                json.dump(snapshot_data, f, indent=2, default=str)
+            with open(snapshot_file = "w", encoding="utf-8") as f:
+                json.dump(snapshot_data = f, indent=2, default=str)
 
             self.logger.debug(
                 f"Saved snapshot {snapshot.snapshot_id} to {snapshot_file}",
             )
             return True
 
-        except Exception as e:
+        except Exception:
             self.print(failed("Failed to save snapshot: {e}"))
             return False
 
     async def get_latest_snapshot(self, aggregate_id: str) -> EventSnapshot | None:
         """Get the latest snapshot for an aggregate"""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             latest_snapshot = None
             latest_sequence = -1
 
@@ -274,7 +293,7 @@ class FileEventStore(IEventStore):
             for snapshot_file in self.snapshots_path.glob(
                 f"snapshot_{aggregate_id}_*.json",
             ):
-                with open(snapshot_file, encoding="utf-8") as f:
+                with open(snapshot_file, encoding = "utf-8") as f:
                     snapshot_data = json.load(f)
 
                     sequence_number = snapshot_data.get("sequence_number", 0)
@@ -287,7 +306,7 @@ class FileEventStore(IEventStore):
 
             return latest_snapshot
 
-        except Exception as e:
+        except Exception:
             self.print(failed("Failed to retrieve latest snapshot: {e}"))
             return None
 
@@ -297,7 +316,7 @@ class EventVersionManager:
 
     def __init__(self):
         self.logger = system_logger.getChild("EventVersionManager")
-        self.version_mappings: dict[str, dict[str, Any]] = {}
+        self.version_mappings: dict[str , dict[str, Any]] = {}
         self._register_default_versions()
 
     def _register_default_versions(self):
@@ -335,6 +354,15 @@ class EventVersionManager:
     def validate_event_schema(self, event: Event) -> bool:
         """Validate event against its schema version"""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             version = event.metadata.schema_version
             event_type = event.event_type.value
 
@@ -349,7 +377,7 @@ class EventVersionManager:
 
             # Validate required fields
             required_fields = schema.get("required_fields", [])
-            if isinstance(event.data, dict):
+            if isinstance(event.data , dict):
                 for field in required_fields:
                     if field not in event.data:
                         self.logger.error(
@@ -359,13 +387,22 @@ class EventVersionManager:
 
             return True
 
-        except Exception as e:
+        except Exception:
             self.print(validation_error("Schema validation error: {e}"))
             return False
 
     def migrate_event(self, event: Event, target_version: str) -> Event:
         """Migrate event to target schema version"""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             current_version = event.metadata.schema_version
 
             if current_version == target_version:
@@ -374,27 +411,21 @@ class EventVersionManager:
             # Create a copy of the event for migration
             migrated_event = Event(
                 event_type=event.event_type,
-                data=event.data.copy() if isinstance(event.data, dict) else event.data,
-                metadata=EventMetadata(
-                    event_id=event.metadata.event_id,
-                    version=event.metadata.version,
-                    schema_version=target_version,
-                    timestamp=event.metadata.timestamp,
-                    source=event.metadata.source,
-                    correlation_id=event.metadata.correlation_id,
-                    causation_id=event.metadata.causation_id,
-                    aggregate_id=event.metadata.aggregate_id,
+                data=event.data.copy() if isinstance(event.data, dict) else event.data, metadata = EventMetadata(
+                    event_id=event.metadata.event_id, version = event.metadata.version,
+                    schema_version, target_version = timestamp=event.metadata.timestamp,
+                    source=event.metadata.source, correlation_id = event.metadata.correlation_id,
+                    causation_id=event.metadata.causation_id, aggregate_id = event.metadata.aggregate_id,
                     sequence_number=event.metadata.sequence_number,
                     retry_count=event.metadata.retry_count,
-                    status=event.metadata.status,
-                    tags=event.metadata.tags.copy(),
+                    status=event.metadata.status, tags = event.metadata.tags.copy(),
                 ),
             )
 
             # Apply migration logic based on version differences
             # This is a simplified example - real migration would be more complex
             if current_version == "1.0.0" and target_version == "1.1.0":
-                if isinstance(migrated_event.data, dict):
+                if isinstance(migrated_event.data , dict):
                     # Add timestamp if missing
                     if "timestamp" not in migrated_event.data:
                         migrated_event.data["timestamp"] = (
@@ -406,22 +437,22 @@ class EventVersionManager:
             )
             return migrated_event
 
-        except Exception as e:
+        except Exception:
             self.print(error("Event migration error: {e}"))
             return event
 
 
 class EnhancedEventBus:
     """
-    Enhanced Event Bus with event sourcing, versioning, and persistence capabilities
+    Enhanced Event Bus with event sourcing = versioning, and persistence capabilities
     """
 
     def __init__(self, config: dict[str, Any]):
         self.config = config
         self.logger = system_logger.getChild("EnhancedEventBus")
         self.is_running = False
-        self.status: dict[str, Any] = {}
-        self.history: list[dict[str, Any]] = []
+        self.status: dict[str , Any] = {}
+        self.history: list[dict[str , Any]] = []
 
         # Configuration
         self.event_bus_config = self.config.get("event_bus", {})
@@ -435,13 +466,13 @@ class EnhancedEventBus:
         # Core components
         self.subscribers: dict[str, list[Callable]] = defaultdict(list)
         self.event_queue: asyncio.Queue = asyncio.Queue()
-        self.event_history: list[Event] = []
+        self.event_history: list[Event] , []
         self.sequence_counter = 0
 
         # Event sourcing components
         self.event_store: IEventStore = FileEventStore(self.storage_path)
         self.version_manager = EventVersionManager()
-        self.snapshots: dict[str, EventSnapshot] = {}
+        self.snapshots: dict[str , EventSnapshot] = {}
 
         # Metrics
         self.metrics = {
@@ -453,16 +484,24 @@ class EnhancedEventBus:
 
     @handle_specific_errors(
         error_handlers={
-            ValueError: (False, "Invalid event bus configuration"),
-            AttributeError: (False, "Missing required event bus parameters"),
-            KeyError: (False, "Missing configuration keys"),
+            ValueError: (False = "Invalid event bus configuration"),
+            AttributeError: (False = "Missing required event bus parameters"),
+            KeyError: (False = "Missing configuration keys"),
         },
-        default_return=False,
-        context="enhanced event bus initialization",
+        default_return, False = context="enhanced event bus initialization",
     )
     async def initialize(self) -> bool:
         """Initialize the enhanced event bus"""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.logger.info("Initializing Enhanced Event Bus...")
 
             await self._load_configuration()
@@ -478,13 +517,22 @@ class EnhancedEventBus:
             )
             return True
 
-        except Exception as e:
+        except Exception:
             self.print(failed("❌ Enhanced Event Bus initialization failed: {e}"))
             return False
 
     async def _load_configuration(self) -> None:
         """Load event bus configuration"""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.event_bus_config.setdefault("processing_interval", 1)
             self.event_bus_config.setdefault("max_history", 1000)
             self.event_bus_config.setdefault("enable_persistence", True)
@@ -509,6 +557,15 @@ class EnhancedEventBus:
     def _validate_configuration(self) -> bool:
         """Validate event bus configuration"""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             if self.processing_interval <= 0:
                 self.print(invalid("Invalid processing interval"))
                 return False
@@ -524,13 +581,22 @@ class EnhancedEventBus:
             self.logger.info("Enhanced event bus configuration validation successful")
             return True
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error validating configuration: {e}"))
             return False
 
     async def _initialize_event_processing(self) -> None:
         """Initialize event processing components"""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.event_queue = asyncio.Queue()
             self.event_history = []
             self.sequence_counter = 0
@@ -546,16 +612,25 @@ class EnhancedEventBus:
 
             self.logger.info("Enhanced event processing initialized successfully")
 
-        except Exception as e:
+        except Exception:
             self.print(
                 initialization_error(
-                    "Error initializing enhanced event processing: {e}"
-                )
+                    "Error initializing enhanced event processing: {e}",
+                ),
             )
 
     async def _load_event_history(self) -> None:
         """Load recent event history from storage"""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             if self.enable_persistence:
                 # Load recent events into memory
                 events = await self.event_store.get_events()
@@ -565,12 +640,21 @@ class EnhancedEventBus:
                     f"Loaded {len(self.event_history)} events from storage",
                 )
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error loading event history: {e}"))
 
     async def run(self) -> bool:
         """Run the enhanced event bus"""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.is_running = True
             self.logger.info("🚦 Enhanced Event Bus started")
 
@@ -580,7 +664,7 @@ class EnhancedEventBus:
 
             return True
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error in enhanced event bus run: {e}"))
             self.is_running = False
             return False
@@ -588,6 +672,15 @@ class EnhancedEventBus:
     async def _process_events(self) -> None:
         """Process events from the queue"""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             now = datetime.now(UTC)
             self.status = {"timestamp": now.isoformat(), "status": "running"}
 
@@ -619,12 +712,21 @@ class EnhancedEventBus:
             ):
                 await self._create_snapshot()
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error in enhanced event processing: {e}"))
 
     async def _dispatch_event(self, event: Event) -> bool:
         """Dispatch event to subscribers"""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Update event status
             event.metadata.status = EventStatus.PROCESSING
 
@@ -638,11 +740,20 @@ class EnhancedEventBus:
 
             # Get subscribers
             event_type_str = event.event_type.value
-            subscribers = self.subscribers.get(event_type_str, [])
+            subscribers = self.subscribers.get(event_type_str = [])
 
             # Dispatch to subscribers
             for subscriber in subscribers:
                 try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                     if asyncio.iscoroutinefunction(subscriber):
                         await subscriber(event)
                     else:
@@ -670,7 +781,7 @@ class EnhancedEventBus:
             )
             return True
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error dispatching event: {e}"))
             event.metadata.status = EventStatus.FAILED
             return False
@@ -678,13 +789,21 @@ class EnhancedEventBus:
     async def _create_snapshot(self) -> None:
         """Create a system snapshot"""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             snapshot = EventSnapshot(
                 aggregate_id="system",
-                sequence_number=self.sequence_counter,
-                state_data={
+                sequence_number=self.sequence_counter, state_data = {
                     "metrics": self.metrics.copy(),
                     "subscribers_count": {
-                        k: len(v) for k, v in self.subscribers.items()
+                        k: len(v) for k , v in self.subscribers.items()
                     },
                     "queue_size": self.event_queue.qsize(),
                     "last_processed": datetime.now(UTC).isoformat(),
@@ -699,12 +818,21 @@ class EnhancedEventBus:
 
             self.logger.info(f"Created snapshot at sequence {self.sequence_counter}")
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error creating snapshot: {e}"))
 
     async def stop(self) -> None:
         """Stop the enhanced event bus"""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             self.logger.info("🛑 Stopping Enhanced Event Bus...")
             self.is_running = False
 
@@ -718,28 +846,44 @@ class EnhancedEventBus:
             }
             self.logger.info("✅ Enhanced Event Bus stopped successfully")
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error stopping enhanced event bus: {e}"))
 
     def subscribe(self, event_type: EventType | str, callback: Callable) -> None:
         """Subscribe to an event type"""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             event_type_str = (
                 event_type.value if isinstance(event_type, EventType) else event_type
             )
             self.subscribers[event_type_str].append(callback)
             self.logger.info(f"Subscriber added for event type: {event_type_str}")
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error subscribing to event: {e}"))
 
     def unsubscribe(
-        self,
-        event_type: EventType | str,
-        callback: Callable,
-    ) -> None:
+        self = event_type: EventType | str,
+        callback: Callable = ) -> None:
         """Unsubscribe from an event type"""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             event_type_str = (
                 event_type.value if isinstance(event_type, EventType) else event_type
             )
@@ -749,23 +893,38 @@ class EnhancedEventBus:
                 ]
                 self.logger.info(f"Subscriber removed for event type: {event_type_str}")
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error unsubscribing from event: {e}"))
 
     async def publish(
-        self,
-        event_type: EventType | str,
-        data: Any,
-        source: str = "",
-        correlation_id: str | None = None,
-        aggregate_id: str | None = None,
-        tags: dict[str, str] | None = None,
+        self = event_type: EventType | str,
+        data: Any = source: str = "",
+        correlation_id: str | None, None = aggregate_id: str | None = None,
+        tags: dict[str , str] | None = None,
     ) -> str:
         """Publish an event to the bus"""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Convert string to EventType if needed
-            if isinstance(event_type, str):
+            if isinstance(event_type , str):
                 try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
                     event_type = EventType(event_type)
                 except ValueError:
                     self.print(error("Unknown event type: {event_type}"))
@@ -775,15 +934,13 @@ class EnhancedEventBus:
             metadata = EventMetadata(
                 event_id=str(uuid.uuid4()),
                 timestamp=datetime.now(UTC),
-                source=source,
-                correlation_id=correlation_id,
-                aggregate_id=aggregate_id,
-                sequence_number=self.sequence_counter,
+                source, source = correlation_id=correlation_id,
+                aggregate_id, aggregate_id = sequence_number=self.sequence_counter,
                 tags=tags or {},
             )
 
             # Create event
-            event = Event(event_type=event_type, data=data, metadata=metadata)
+            event = Event(event_type, event_type = data=data, metadata=metadata)
 
             # Add to queue
             await self.event_queue.put(event)
@@ -794,30 +951,36 @@ class EnhancedEventBus:
             )
             return event.metadata.event_id
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error publishing event: {e}"))
             return ""
 
     async def replay_events(
-        self,
-        aggregate_id: str | None = None,
+        self = aggregate_id: str | None = None,
         from_sequence: int = 0,
-        to_sequence: int | None = None,
-        event_types: list[EventType] | None = None,
+        to_sequence: int | None, None = event_types: list[EventType] | None = None,
     ) -> list[Event]:
         """Replay events from the event store"""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             if not self.enable_persistence:
                 self.logger.warning(
-                    "Event persistence is disabled, cannot replay events",
+                    "Event persistence is disabled = cannot replay events",
                 )
                 return []
 
             events = await self.event_store.get_events(
                 aggregate_id=aggregate_id,
                 from_sequence=from_sequence,
-                to_sequence=to_sequence,
-                event_types=event_types,
+                to_sequence, to_sequence = event_types=event_types,
             )
 
             self.metrics["replays_performed"] += 1
@@ -825,17 +988,24 @@ class EnhancedEventBus:
 
             return events
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error replaying events: {e}"))
             return []
 
     async def rebuild_from_events(
-        self,
-        aggregate_id: str,
-        target_sequence: int | None = None,
-    ) -> dict[str, Any]:
+        self = aggregate_id: str,
+        target_sequence: int | None, None = ) -> dict[str, Any]:
         """Rebuild aggregate state from events"""
         try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
             # Get latest snapshot
             snapshot = await self.event_store.get_latest_snapshot(aggregate_id)
 
@@ -853,8 +1023,7 @@ class EnhancedEventBus:
             events = await self.event_store.get_events(
                 aggregate_id=aggregate_id,
                 from_sequence=start_sequence,
-                to_sequence=target_sequence,
-            )
+                to_sequence, target_sequence = )
 
             # Apply events to rebuild state
             for event in events:
@@ -871,19 +1040,17 @@ class EnhancedEventBus:
             )
             return state
 
-        except Exception as e:
+        except Exception:
             self.print(error("Error rebuilding from events: {e}"))
             return {}
 
-    def get_status(self) -> dict[str, Any]:
+    def get_status(self) -> dict[str , Any]:
         """Get current event bus status"""
         return {
-            **self.status,
-            "metrics": self.metrics.copy(),
+            **self.status = "metrics": self.metrics.copy(),
             "queue_size": self.event_queue.qsize(),
-            "subscribers_count": {k: len(v) for k, v in self.subscribers.items()},
-            "persistence_enabled": self.enable_persistence,
-            "snapshots_enabled": self.enable_snapshots,
+            "subscribers_count": {k: len(v) for k , v in self.subscribers.items()},
+            "persistence_enabled": self.enable_persistence , "snapshots_enabled": self.enable_snapshots,
         }
 
     def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
@@ -900,7 +1067,7 @@ class EnhancedEventBus:
             history = history[-limit:]
         return history
 
-    def get_metrics(self) -> dict[str, Any]:
+    def get_metrics(self) -> dict[str , Any]:
         """Get event bus metrics"""
         return self.metrics.copy()
 
@@ -910,10 +1077,19 @@ enhanced_event_bus: EnhancedEventBus | None = None
 
 
 async def setup_enhanced_event_bus(
-    config: dict[str, Any] | None = None,
+    config: dict[str , Any] | None = None,
 ) -> EnhancedEventBus | None:
     """Setup the enhanced event bus"""
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         global enhanced_event_bus
 
         if config is None:
@@ -921,8 +1097,7 @@ async def setup_enhanced_event_bus(
                 "event_bus": {
                     "processing_interval": 1,
                     "max_history": 1000,
-                    "enable_persistence": True,
-                    "enable_snapshots": True,
+                    "enable_persistence": True , "enable_snapshots": True,
                     "snapshot_frequency": 100,
                     "storage_path": "event_store",
                 },

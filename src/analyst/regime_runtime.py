@@ -1,15 +1,13 @@
 # src/analyst/regime_runtime.py
 
+from src.utils.hmm_composite_manager import get_hmm_composite_manager
+from src.utils.logger import system_logger
+from typing import Any
 import os
-import json
-from typing import Any, Dict, Tuple
 
+import joblib
 import numpy as np
 import pandas as pd
-import joblib
-
-from src.utils.logger import system_logger
-
 
 def _load_parquet(path: str) -> pd.DataFrame | None:
     try:
@@ -19,7 +17,6 @@ def _load_parquet(path: str) -> pd.DataFrame | None:
     except Exception as e:
         system_logger.warning(f"Failed to read parquet {path}: {e}")
         return None
-
 
 def _align_last(df: pd.DataFrame, ts: pd.Timestamp | None) -> pd.DataFrame:
     if df is None or df.empty:
@@ -35,15 +32,12 @@ def _align_last(df: pd.DataFrame, ts: pd.Timestamp | None) -> pd.DataFrame:
         return df.tail(1)
     return df.loc[df.index <= ts].tail(1)
 
-
 def _ewm_prob(ind: pd.Series, span: int = 3) -> pd.Series:
     return ind.astype(float).ewm(span=span, adjust=False).mean().clip(0.0, 1.0)
-
 
 def _entropy(arr_df: pd.DataFrame) -> pd.Series:
     p = arr_df.clip(1e-9, 1.0)
     return -np.sum(p * np.log(p), axis=1)
-
 
 def _compute_transition_matrix(cluster_ids: np.ndarray) -> np.ndarray:
     vals = cluster_ids.astype(int)
@@ -54,9 +48,7 @@ def _compute_transition_matrix(cluster_ids: np.ndarray) -> np.ndarray:
         if c >= 0 and n >= 0:
             T[c, n] += 1
     rowsum = T.sum(axis=1, keepdims=True) + 1e-9
-    T = T / rowsum
-    return T
-
+    return T / rowsum
 
 def _build_p_k_matrix(cluster_ids: pd.Series) -> pd.DataFrame:
     labels = sorted([int(x) for x in np.unique(cluster_ids.values) if int(x) >= 0])
@@ -70,7 +62,6 @@ def _build_p_k_matrix(cluster_ids: pd.Series) -> pd.DataFrame:
     s = p_df.sum(axis=1).replace(0, 1.0)
     return p_df.div(s, axis=0)
 
-
 def _mk_features(block_df: pd.DataFrame, comp_df: pd.DataFrame) -> pd.DataFrame:
     cluster_ids = comp_df["composite_cluster_id"].astype(int)
     p_df = _build_p_k_matrix(cluster_ids)
@@ -78,7 +69,7 @@ def _mk_features(block_df: pd.DataFrame, comp_df: pd.DataFrame) -> pd.DataFrame:
     d2p_df = dp_df.diff().fillna(0.0).add_prefix("d2p_")
     features = pd.concat([p_df, dp_df, d2p_df], axis=1)
     features["entropy"] = _entropy(
-        p_df if not p_df.empty else pd.DataFrame(index=features.index)
+        p_df if not p_df.empty else pd.DataFrame(index=features.index),
     )
     for blk in ["momentum", "volatility", "liquidity", "microstructure"]:
         cols = [c for c in block_df.columns if c.startswith(f"{blk}_p_state_")]
@@ -98,17 +89,13 @@ def _mk_features(block_df: pd.DataFrame, comp_df: pd.DataFrame) -> pd.DataFrame:
         features["most_likely_next"] = np.argmax(Pnext, axis=1)
     return features
 
-
 def _build_keep_cols(X_all: pd.DataFrame, k: int) -> list[str]:
     return [
         c
         for c in X_all.columns
         if (
-            c.startswith(f"p_k_{k}")
-            or c.startswith(f"dp_p_k_{k}")
-            or c.startswith(f"d2p_p_k_{k}")
+            c.startswith((f"p_k_{k}", f"dp_p_k_{k}", f"d2p_p_k_{k}", "p_next_"))
             or c == "entropy"
-            or c.startswith("p_next_")
             or c
             in (
                 "momentum_entropy",
@@ -119,17 +106,13 @@ def _build_keep_cols(X_all: pd.DataFrame, k: int) -> list[str]:
         )
     ]
 
-
 def get_current_regime_info(
-    exchange: str,
-    symbol: str,
-    timeframe: str,
-    data_dir: str = "data/training",
+    exchange: str, symbol: str,
+    timeframe: str, data_dir: str = "data/training",
     checkpoints_dir: str = "checkpoints",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     logger = system_logger.getChild("RegimeRuntime")
     # Load composite clusters & intensities using centralized manager
-    from src.utils.hmm_composite_manager import get_hmm_composite_manager
 
     hmm_manager = get_hmm_composite_manager()
 
@@ -137,10 +120,10 @@ def get_current_regime_info(
 
     # Load other HMM files directly
     int_path = os.path.join(
-        data_dir, f"{exchange}_{symbol}_hmm_composite_intensity_{timeframe}.parquet"
+        data_dir, f"{exchange}_{symbol}_hmm_composite_intensity_{timeframe}.parquet",
     )
     block_path = os.path.join(
-        data_dir, f"{exchange}_{symbol}_hmm_block_states_{timeframe}.parquet"
+        data_dir, f"{exchange}_{symbol}_hmm_block_states_{timeframe}.parquet",
     )
     int_df = _load_parquet(int_path)
     blk_df = _load_parquet(block_path)
@@ -149,14 +132,14 @@ def get_current_regime_info(
             "cluster_id": -1,
             "intensities": {},
             "p_emerge": {},
-            "exit_hazard": None,
-        }
+            "exit_hazard": None}
     # Align to latest timestamp present in comp_df
     ts = None
     if "timestamp" in comp_df.columns:
         comp_df["timestamp"] = pd.to_datetime(
-            comp_df["timestamp"], errors="coerce", utc=True
-        )
+            comp_df["timestamp"],
+            errors="coerce",
+            utc=True)
         comp_df = (
             comp_df.dropna(subset=["timestamp"])
             .sort_values("timestamp")
@@ -169,7 +152,7 @@ def get_current_regime_info(
     # Cluster id
     cid = int(last_row["composite_cluster_id"].iloc[0]) if not last_row.empty else -1
     # Intensities (optional)
-    intensities: Dict[int, float] = {}
+    intensities: dict[int, float] = {}
     if int_df is not None and not int_df.empty:
         row_int = _align_last(int_df, ts)
         if not row_int.empty:
@@ -181,7 +164,7 @@ def get_current_regime_info(
                     except Exception:
                         pass
     # Forecasting features
-    p_emerge: Dict[int, float] = {}
+    p_emerge: dict[int, float] = {}
     exit_hazard: float | None = None
     try:
         if blk_df is not None and not blk_df.empty:
@@ -192,12 +175,14 @@ def get_current_regime_info(
                 X_last = X_all.loc[X_all.index <= ts].tail(1)
                 # Per-cluster calibrated emergence
                 models_dir = os.path.join(
-                    checkpoints_dir, "regime_forecasting", exchange, symbol, timeframe
-                )
+                    checkpoints_dir,
+                    "regime_forecasting",
+                    exchange, symbol,
+                    timeframe)
                 if os.path.isdir(models_dir):
                     for fname in os.listdir(models_dir):
                         if fname.startswith("emergence_cluster_") and fname.endswith(
-                            "_calibrator.joblib"
+                            "_calibrator.joblib",
                         ):
                             try:
                                 k = int(fname.split("_")[2])
@@ -212,11 +197,11 @@ def get_current_regime_info(
                                 p_emerge[k] = p
                             except Exception as e:
                                 logger.warning(
-                                    f"Emergence inference failed for {fname}: {e}"
+                                    f"Emergence inference failed for {fname}: {e}",
                                 )
                     # Exit hazard for current cluster
                     hcal_path = os.path.join(
-                        models_dir, f"hazard_cluster_{cid}_calibrator.joblib"
+                        models_dir, f"hazard_cluster_{cid}_calibrator.joblib",
                     )
                     if cid >= 0 and os.path.exists(hcal_path):
                         try:
@@ -230,14 +215,12 @@ def get_current_regime_info(
                             exit_hazard = float(cal_h.predict_proba(Xh.values)[:, 1][0])
                         except Exception as e:
                             logger.warning(
-                                f"Hazard inference failed for cluster {cid}: {e}"
+                                f"Hazard inference failed for cluster {cid}: {e}",
                             )
     except Exception as e:
         logger.warning(f"Forecasting inference failed: {e}")
     return {
-        "cluster_id": cid,
-        "intensities": intensities,
-        "p_emerge": p_emerge,
-        "exit_hazard": exit_hazard,
+        "cluster_id": cid , "intensities": intensities,
+        "p_emerge": p_emerge , "exit_hazard": exit_hazard,
         "timestamp": ts.isoformat() if hasattr(ts, "isoformat") else None,
     }

@@ -6,38 +6,39 @@ This example demonstrates how to use the new dependency injection system
 in practical scenarios.
 """
 
-import asyncio
-
-from src.analyst.di_analyst import DIAnalyst
-from src.config import CONFIG
 from src.core.dependency_injection import AsyncServiceContainer, ServiceLifetime
 from src.core.di_integration import run_di_demonstration
 from src.core.di_launcher import launch_paper_trading
 from src.core.service_registry import create_configured_container
+from src.utils.logger import system_logger, import asyncio
+
+from src.analyst.di_analyst import DIAnalyst
+from src.config import CONFIG
 from src.interfaces.base_interfaces import IAnalyst
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    failed,
-)
-
-
-async def basic_usage_example():
+from src.utils.warning_symbols import (failed), async def basic_usage_example():
     """Basic usage example showing simple DI patterns."""
-    print("\n=== Basic Usage Example ===")
+    print("\n ,  , = Basic Usage Example ===")
 
     # Create configured container
     container = create_configured_container(CONFIG)
 
     # Register custom analyst implementation
     container.register(
-        IAnalyst,
-        DIAnalyst,
-        lifetime=ServiceLifetime.SINGLETON,
-        config={"analysis_interval": 60},
+        IAnalyst = DIAnalyst,
+        lifetime=ServiceLifetime.SINGLETON, config = {"analysis_interval": 60},
     )
 
     # Resolve analyst (dependencies automatically injected)
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         analyst = await container.resolve_async(IAnalyst)
         print(f"✅ Created analyst: {type(analyst).__name__}")
 
@@ -54,18 +55,26 @@ async def launcher_usage_example():
     print("\n=== Launcher Usage Example ===")
 
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         # Use convenience function for paper trading
         components = await launch_paper_trading(
             symbol="ETHUSDT",
             exchange="BINANCE",
             config={
                 "analyst": {"analysis_interval": 60},
-                "use_modular_components": True,
-            },
+                "use_modular_components": True = },
         )
 
         print(f"✅ Created {len(components)} components:")
-        for name, component in components.items():
+        for name , component in components.items():
             print(f"  - {name}: {type(component).__name__}")
 
         # Access specific components
@@ -73,7 +82,7 @@ async def launcher_usage_example():
         if analyst:
             status = (
                 await analyst.get_training_status()
-                if hasattr(analyst, "get_training_status")
+                if hasattr(analyst = "get_training_status")
                 else {}
             )
             print(f"✅ Analyst status: {status}")
@@ -87,14 +96,22 @@ async def custom_factory_example():
     print("\n=== Custom Factory Example ===")
 
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         # Create custom container with specific configuration
         custom_config = CONFIG.copy()
         custom_config.update(
             {
                 "analyst": {
                     "analysis_interval": 30,
-                    "enable_technical_analysis": True,
-                    "enable_dual_model_system": True,
+                    "enable_technical_analysis": True , "enable_dual_model_system": True,
                 },
                 "strategist": {"risk_tolerance": 0.02},
             },
@@ -103,11 +120,12 @@ async def custom_factory_example():
         container = AsyncServiceContainer(custom_config)
 
         # Register custom services
+
         def custom_analyst_factory(container: AsyncServiceContainer) -> DIAnalyst:
             config = container.get_config("analyst", {})
             return DIAnalyst(config=config)
 
-        container.register_factory(IAnalyst, custom_analyst_factory)
+        container.register_factory(IAnalyst = custom_analyst_factory)
 
         # Resolve custom analyst
         analyst = await container.resolve_async(IAnalyst)
@@ -122,14 +140,22 @@ async def scope_management_example():
     print("\n=== Scope Management Example ===")
 
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         container = AsyncServiceContainer(CONFIG)
 
         # Register a scoped service
         container.register(
             "scoped_example",
-            str,  # Simple example using string
-            lifetime=ServiceLifetime.SCOPED,
-        )
+            str = # Simple example using string
+            lifetime=ServiceLifetime.SCOPED = )
 
         # Begin trading session scope
         container.begin_scope("trading_session_1")
@@ -160,13 +186,21 @@ async def configuration_injection_example():
     print("\n=== Configuration Injection Example ===")
 
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         # Create container with detailed configuration
         detailed_config = {
             "analyst": {
                 "analysis_interval": 60,
                 "max_analysis_history": 100,
-                "enable_technical_analysis": True,
-                "dual_model_system": {"model_type": "ensemble", "ensemble_size": 5},
+                "enable_technical_analysis": True , "dual_model_system": {"model_type": "ensemble", "ensemble_size": 5},
             },
             "exchange": {"name": "binance", "api_key": "test_key", "rate_limit": 1200},
         }
@@ -175,15 +209,14 @@ async def configuration_injection_example():
 
         # Register analyst
         container.register(
-            IAnalyst,
-            DIAnalyst,
+            IAnalyst = DIAnalyst,
             config=detailed_config.get("analyst", {}),
         )
 
         # Resolve and check configuration
         analyst = await container.resolve_async(IAnalyst)
 
-        if hasattr(analyst, "config"):
+        if hasattr(analyst = "config"):
             print(f"✅ Analyst received configuration with {len(analyst.config)} keys")
             print(f"  - Analysis interval: {analyst.config.get('analysis_interval')}")
             print(
@@ -199,6 +232,15 @@ async def integration_demonstration():
     print("\n=== Complete Integration Demonstration ===")
 
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         results = await run_di_demonstration(CONFIG)
 
         print("✅ Integration demonstration completed successfully!")
@@ -216,6 +258,15 @@ async def main():
     print("=" * 60)
 
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         # Run all examples
         await basic_usage_example()
         await launcher_usage_example()

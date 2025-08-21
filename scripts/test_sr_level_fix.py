@@ -4,18 +4,18 @@ Test S/R Level Count Fix
 Verifies that support_levels_count and resistance_levels_count are no longer constant.
 """
 
-import pandas as pd
-import numpy as np
-import sys
 from pathlib import Path
+from src.utils.logger import system_logger
+import sys
 import warnings
+
+import numpy as np
+import pandas as pd
 
 warnings.filterwarnings("ignore")
 
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
-
-from src.utils.logger import system_logger
 
 
 def test_sr_level_fix():
@@ -36,7 +36,7 @@ def test_sr_level_fix():
                 "low": base_price + np.cumsum(np.random.randn(n_samples) * 0.1) - 0.5,
                 "close": base_price + np.cumsum(np.random.randn(n_samples) * 0.1),
                 "volume": np.random.lognormal(10, 1, n_samples),
-            }
+            },
         )
 
         # Ensure we have a good price range
@@ -65,13 +65,14 @@ def test_sr_level_fix():
                 if level_type == "support":
                     percentile_rank = price_series.rank(pct=True)
                     return (1 - percentile_rank) * 3
-                else:  # resistance
-                    percentile_rank = price_series.rank(pct=True)
-                    return percentile_rank * 3
+                # resistance
+                percentile_rank = price_series.rank(pct=True)
+                return percentile_rank * 3
 
             # Calculate how many levels are "active" for each price point
             active_counts = pd.Series(
-                np.zeros(len(price_series)), index=price_series.index
+                np.zeros(len(price_series)),
+                index=price_series.index
             )
 
             for level in levels:
@@ -102,16 +103,19 @@ def test_sr_level_fix():
         # Test with S/R levels
         close = price_data["close"]
         support_counts = _calculate_dynamic_level_counts(
-            close, sr_levels["support_levels"], "support"
+            close, sr_levels["support_levels"],
+            "support",
         )
         resistance_counts = _calculate_dynamic_level_counts(
-            close, sr_levels["resistance_levels"], "resistance"
+            close, sr_levels["resistance_levels"],
+            "resistance",
         )
 
         # Test without S/R levels (fallback)
         support_counts_fallback = _calculate_dynamic_level_counts(close, [], "support")
         resistance_counts_fallback = _calculate_dynamic_level_counts(
-            close, [], "resistance"
+            close, [],
+            "resistance",
         )
 
         # Analyze results
@@ -147,30 +151,30 @@ def test_sr_level_fix():
 
         print("\n📊 WITH S/R LEVELS:")
         print(
-            f"   Support counts: {results['with_sr_levels']['support_unique']} unique values"
+            f"   Support counts: {results['with_sr_levels']['support_unique']} unique values",
         )
         print(f"   Support range: {results['with_sr_levels']['support_range']}")
         print(f"   Support mean: {results['with_sr_levels']['support_mean']:.3f}")
         print(
-            f"   Resistance counts: {results['with_sr_levels']['resistance_unique']} unique values"
+            f"   Resistance counts: {results['with_sr_levels']['resistance_unique']} unique values",
         )
         print(f"   Resistance range: {results['with_sr_levels']['resistance_range']}")
         print(f"   Resistance mean: {results['with_sr_levels']['resistance_mean']:.3f}")
 
         print("\n📊 WITHOUT S/R LEVELS (FALLBACK):")
         print(
-            f"   Support counts: {results['without_sr_levels']['support_unique']} unique values"
+            f"   Support counts: {results['without_sr_levels']['support_unique']} unique values",
         )
         print(f"   Support range: {results['without_sr_levels']['support_range']}")
         print(f"   Support mean: {results['without_sr_levels']['support_mean']:.3f}")
         print(
-            f"   Resistance counts: {results['without_sr_levels']['resistance_unique']} unique values"
+            f"   Resistance counts: {results['without_sr_levels']['resistance_unique']} unique values",
         )
         print(
-            f"   Resistance range: {results['without_sr_levels']['resistance_range']}"
+            f"   Resistance range: {results['without_sr_levels']['resistance_range']}",
         )
         print(
-            f"   Resistance mean: {results['without_sr_levels']['resistance_mean']:.3f}"
+            f"   Resistance mean: {results['without_sr_levels']['resistance_mean']:.3f}",
         )
 
         # Check if fix is working
@@ -198,7 +202,7 @@ def test_sr_level_fix():
         return support_fixed and resistance_fixed
 
     except Exception as e:
-        logger.error(f"Error testing S/R level fix: {e}")
+        logger.exception(f"Error testing S/R level fix: {e}")
         return False
 
 

@@ -1,6 +1,4 @@
-"""
-Validator for Step 11: Confidence Calibration
-"""
+"""Validator for Step 11: Confidence Calibration."""
 
 import asyncio
 import os
@@ -25,7 +23,7 @@ from src.utils.base_validator import BaseValidator
 class Step11ConfidenceCalibrationValidator(BaseValidator):
     """Validator for Step 11: Confidence Calibration."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step11_confidence_calibration", config)
 
     async def validate(
@@ -33,8 +31,7 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
     ) -> bool:
-        """
-        Validate the confidence calibration step.
+        """Validate the confidence calibration step.
 
         Args:
             training_input: Training input parameters
@@ -42,6 +39,7 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
 
         Returns:
             bool: True if validation passed, False otherwise
+
         """
         self.logger.info("🔍 Validating confidence calibration step...")
 
@@ -102,8 +100,7 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate that calibration files exist.
+        """Validate that calibration files exist.
 
         Args:
             symbol: Trading symbol
@@ -112,6 +109,7 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
 
         Returns:
             bool: True if files exist
+
         """
         try:
             # Expected calibration file patterns
@@ -147,8 +145,7 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate calibration quality metrics.
+        """Validate calibration quality metrics.
 
         Args:
             symbol: Trading symbol
@@ -157,6 +154,7 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
 
         Returns:
             bool: True if calibration quality is acceptable
+
         """
         try:
             # Load calibration metadata
@@ -234,8 +232,7 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate calibration performance metrics.
+        """Validate calibration performance metrics.
 
         Args:
             symbol: Trading symbol
@@ -244,6 +241,7 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
 
         Returns:
             bool: True if calibration metrics are acceptable
+
         """
         try:
             # Load calibration results
@@ -325,8 +323,7 @@ async def run_validator(
     training_input: dict[str, Any],
     pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
-    """
-    Run the step11_confidence_calibration validator.
+    """Run the step11_confidence_calibration validator.
 
     Args:
         training_input: Training input parameters
@@ -334,6 +331,7 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
+
     """
     validator = Step11ConfidenceCalibrationValidator(CONFIG)
     validation_passed = await validator.validate(training_input, pipeline_state)
@@ -351,7 +349,7 @@ if __name__ == "__main__":
     import asyncio
 
     # Example usage
-    async def test_validator():
+    async def test_validator() -> None:
         training_input = {
             "symbol": "ETHUSDT",
             "exchange": "BINANCE",
@@ -362,7 +360,6 @@ if __name__ == "__main__":
             "confidence_calibration": {"status": "SUCCESS", "duration": 180.5},
         }
 
-        result = await run_validator(training_input, pipeline_state)
-        print(f"Validation result: {result}")
+        await run_validator(training_input, pipeline_state)
 
     asyncio.run(test_validator())

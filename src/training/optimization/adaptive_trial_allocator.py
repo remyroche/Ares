@@ -1,8 +1,6 @@
 # src/training/optimization/adaptive_trial_allocator.py
 
-"""
-Adaptive Trial Allocator for intelligent trial distribution based on parameter importance.
-"""
+"""Adaptive Trial Allocator for intelligent trial distribution based on parameter importance."""
 
 from collections import defaultdict
 from dataclasses import dataclass
@@ -33,11 +31,9 @@ class TrialAllocationConfig:
 
 
 class AdaptiveTrialAllocator:
-    """
-    Allocates trials based on parameter importance and performance.
-    """
+    """Allocates trials based on parameter importance and performance."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         """Initialize adaptive trial allocator."""
         self.config = config
         self.logger = system_logger.getChild("AdaptiveTrialAllocator")
@@ -326,8 +322,7 @@ class AdaptiveTrialAllocator:
             performance_weights = {}
             for param in parameters:
                 if (
-                    param in self.parameter_performance
-                    and self.parameter_performance[param]
+                    self.parameter_performance.get(param)
                 ):
                     # Higher variance = more trials needed
                     variance = np.var(self.parameter_performance[param])

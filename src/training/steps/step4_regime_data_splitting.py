@@ -1,48 +1,41 @@
 # src/training/steps/step4_regime_data_splitting.py
 
 import asyncio
-import os
 import json
+import os
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
-import numpy as np
 import pandas as pd
-
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import failed
-from src.training.steps.unified_data_loader import get_unified_data_loader
 
 # Import the auto-fix decorator for data quality issues
 from src.training.steps.raw_data_quality_checker import auto_fix_data_quality_issues
+from src.training.steps.unified_data_loader import get_unified_data_loader
+from src.utils.logger import system_logger
 
 
 class RegimeDataSplittingStep:
     """Step 4: Data Splitting for Training - HMM composite clusters only."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("Step4.RegimeSplit")
 
     async def initialize(self) -> None:
         self.logger.info("🚀 Initializing Step 4: HMM Composite Regime Data Splitting...")
-        print("Step4Split ▶ init")
         self.logger.info("✅ HMM Composite Regime Data Splitting initialized successfully")
 
     async def execute(self) -> dict[str, Any]:
         try:
             self.logger.info("🔄 Loading unified data for HMM composite regime data splitting...")
-            print("Step4Split ▶ load_unified_data")
             data_loader = get_unified_data_loader(self.config)
             from src.config.constants import (
                 BLANK_TRAINING_LOOKBACK_DAYS,
-                FULL_TRAINING_LOOKBACK_DAYS,
-                SHORT_BLANK_LOOKBACK_DAYS,
             )
 
             # Use lookback_days from config (should be passed from enhanced training manager)
             config_lookback = self.config.get(
-                "lookback_days", BLANK_TRAINING_LOOKBACK_DAYS
+                "lookback_days", BLANK_TRAINING_LOOKBACK_DAYS,
             )
             unified_data = await data_loader.load_unified_data(
                 symbol=self.config.get("symbol", "ETHUSDT"),
@@ -53,12 +46,12 @@ class RegimeDataSplittingStep:
 
             self.logger.info(f"✅ Loaded unified data: {len(unified_data)} rows")
             self.logger.info(
-                f"   Date range: {unified_data.index.min()} to {unified_data.index.max()}"
+                f"   Date range: {unified_data.index.min()} to {unified_data.index.max()}",
             )
 
             # HMM COMPOSITE CLUSTERS ONLY - NO FALLBACKS
             self.logger.info("🎯 Using HMM composite clusters for regime splitting (PARAMOUNT)")
-            
+
             # Check for HMM composite cluster data
             if "composite_cluster_id" not in unified_data.columns:
                 self.logger.error("🚨 HMM composite_cluster_id column is missing from unified data")
@@ -82,7 +75,7 @@ class RegimeDataSplittingStep:
             for cluster_id in unique_clusters:
                 cluster_mask = unified_data["composite_cluster_id"] == cluster_id
                 cluster_data = unified_data[cluster_mask].copy()
-                
+
                 if not cluster_data.empty:
                     regime_name = f"hmm_composite_{cluster_id}"
                     regime_splits[regime_name] = cluster_data
@@ -93,7 +86,6 @@ class RegimeDataSplittingStep:
                 return {"success": False, "error": "No valid regime splits created"}
 
             self.logger.info(f"✅ Successfully created {len(regime_splits)} HMM composite regime splits")
-            print(f"Step4Split ▶ hmm_composite_splits={len(regime_splits)}")
 
             # Save regime splits & summary
             self._save_regime_splits(regime_splits)
@@ -103,13 +95,12 @@ class RegimeDataSplittingStep:
                 json.dump(summary, f, indent=2)
 
             self.logger.info("✅ HMM composite regime data splitting completed successfully")
-            print("Step4Split ▶ done")
             return {"success": True, "regime_splits": summary}
         except Exception as e:
-            self.logger.error(f"❌ HMM composite regime data splitting failed: {e}")
+            self.logger.exception(f"❌ HMM composite regime data splitting failed: {e}")
             return {"success": False, "error": str(e)}
 
-    def _save_regime_splits(self, regime_splits: dict[str, pd.DataFrame]):
+    def _save_regime_splits(self, regime_splits: dict[str, pd.DataFrame]) -> None:
         data_dir = self.config.get("data_dir", "data/training")
         os.makedirs(data_dir, exist_ok=True)
         regime_data_dir = os.path.join(data_dir, "regime_data")
@@ -120,10 +111,10 @@ class RegimeDataSplittingStep:
                 try:
                     regime_df.to_parquet(regime_file, index=False)
                     self.logger.info(
-                        f"✅ Saved {regime} regime data: {len(regime_df)} rows -> {regime_file}"
+                        f"✅ Saved {regime} regime data: {len(regime_df)} rows -> {regime_file}",
                     )
                 except Exception as e:
-                    self.logger.error(f"🚨 Failed to save {regime} regime data: {e}")
+                    self.logger.exception(f"🚨 Failed to save {regime} regime data: {e}")
             else:
                 self.logger.warning(f"⚠️ No data for {regime} regime")
 
@@ -152,21 +143,21 @@ class RegimeDataSplittingStep:
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
-    validate_step_prerequisites,
-    secure_data_processing,
-    prevent_data_leakage,
-    resource_monitor,
-    memory_efficient,
-    debug_training_step,
+    artifact_versioning,
+    artifact_write_lock,
     circuit_breaker_protection,
-    validate_step_output,
-    quality_gate,
+    debug_training_step,
     deterministic_seed,
     idempotent_step,
-    artifact_write_lock,
+    memory_efficient,
     nan_inf_and_constant_guard,
-    artifact_versioning,
+    prevent_data_leakage,
+    quality_gate,
+    resource_monitor,
+    secure_data_processing,
     time_budget_watchdog,
+    validate_step_output,
+    validate_step_prerequisites,
 )
 
 
@@ -188,7 +179,7 @@ from src.utils.training_pipeline_decorators import (
     context="Regime Data Splitting",
 )
 @secure_data_processing(
-    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True
+    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
 @prevent_data_leakage(
     temporal_validation=True,
@@ -203,7 +194,7 @@ from src.utils.training_pipeline_decorators import (
     auto_cleanup=True,
 )
 @memory_efficient(
-    chunk_size=20000, streaming_processing=True, memory_pool=True, cleanup_frequency=40
+    chunk_size=20000, streaming_processing=True, memory_pool=True, cleanup_frequency=40,
 )
 @debug_training_step(
     log_intermediate_results=True,
@@ -253,8 +244,7 @@ async def run_step(
 
 
 if __name__ == "__main__":
-    async def _test():
-        ok = await run_step("ETHUSDT", "BINANCE", "data/training")
-        print(f"Step 4 test result: {ok}")
+    async def _test() -> None:
+        await run_step("ETHUSDT", "BINANCE", "data/training")
 
     asyncio.run(_test())

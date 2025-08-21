@@ -1,8 +1,6 @@
 # src/training/optimization/progressive_optimizer.py
 
-"""
-Progressive Optimizer for efficient parameter optimization using tiered approach.
-"""
+"""Progressive Optimizer for efficient parameter optimization using tiered approach."""
 
 import time
 from dataclasses import dataclass
@@ -50,11 +48,9 @@ class ProgressiveConfig:
 
 
 class ProgressiveOptimizer:
-    """
-    Implements progressive optimization strategy for efficiency.
-    """
+    """Implements progressive optimization strategy for efficiency."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         """Initialize progressive optimizer."""
         self.config = config
         self.logger = system_logger.getChild("ProgressiveOptimizer")

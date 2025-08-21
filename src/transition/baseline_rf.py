@@ -1,23 +1,18 @@
 # src/transition/baseline_rf.py
 
 from __future__ import annotations
-
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report
+from src.utils.logger import system_logger
+from typing import Any
 from dataclasses import dataclass
-from typing import Any, List
-
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report
 
 try:
     import shap  # type: ignore
 except Exception:  # pragma: no cover
     shap = None  # type: ignore
-
-from src.utils.logger import system_logger
-
 
 @dataclass
 class RFConfig:
@@ -29,8 +24,8 @@ class RFConfig:
     max_train_samples: int
     enable_shap: bool
 
-
 class TransitionRandomForest:
+
     def __init__(self, config: dict[str, Any]) -> None:
         self.logger = system_logger.getChild("TransitionRandomForest")
         tm = (config or {}).get("TRANSITION_MODELING", {})
@@ -45,11 +40,13 @@ class TransitionRandomForest:
             enable_shap=bool(tm.get("enable_shap", True)),
         )
         self.model: RandomForestClassifier | None = None
-        self.label_names: List[str] = []
-        self.feature_names_: List[str] = []
+        self.label_names: list[str] = []
+        self.feature_names_: list[str] = []
 
     def _assemble_features(
-        self, samples: list[dict[str, Any]], label_index: list[str]
+        self,
+        samples: list[dict[str, Any]],
+        label_index: list[str],
     ) -> tuple[pd.DataFrame, pd.Series]:
         rows: list[dict[str, Any]] = []
         y: list[str] = []
@@ -71,7 +68,9 @@ class TransitionRandomForest:
         return X, pd.Series(y)
 
     def fit(
-        self, samples: list[dict[str, Any]], label_index: list[str]
+        self,
+        samples: list[dict[str, Any]],
+        label_index: list[str],
     ) -> dict[str, Any]:
         if not self.cfg.enabled or not samples:
             return {"trained": False}
@@ -111,7 +110,7 @@ class TransitionRandomForest:
         result = {"trained": True, "report": rep}
         if classes:
             result.update(
-                {"val_true": val_true, "val_proba": val_proba, "classes": classes}
+                {"val_true": val_true, "val_proba": val_proba, "classes": classes},
             )
         # SHAP (optional)
         if self.cfg.enable_shap and shap is not None:
@@ -124,7 +123,8 @@ class TransitionRandomForest:
                 if isinstance(shap_vals, list):
                     # multiclass returns list per class
                     abs_mean = np.mean(
-                        [np.abs(v).mean(axis=0) for v in shap_vals], axis=0
+                        [np.abs(v).mean(axis=0) for v in shap_vals],
+                        axis=0,
                     )
                 else:
                     abs_mean = np.abs(shap_vals).mean(axis=0)

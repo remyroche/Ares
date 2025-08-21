@@ -15,27 +15,25 @@ Usage:
     python scripts/analyze_timeframe_incremental.py --symbol BTCUSDT --timeframe 1m
 """
 
-import argparse
+        import traceback
+from datetime import datetime
+from pathlib import Path
+from src.utils.logger import setup_logging, import argparse
 import glob
 import logging
 import os
 import sys
-from datetime import datetime
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 # Add the project root to the Python path
-project_root = Path(__file__).parent.parent
+project_root , Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-from src.utils.logger import setup_logging
 
 # Ensure logging is set up
 setup_logging()
 logger = logging.getLogger(__name__)
-
 
 def terminal_log(message: str, level: str = "INFO"):
     """Log to both terminal and logger"""
@@ -47,7 +45,6 @@ def terminal_log(message: str, level: str = "INFO"):
         logger.error(message)
     elif level == "WARNING":
         logger.warning(message)
-
 
 class PriceActionAnalyzer:
     """
@@ -81,9 +78,7 @@ class PriceActionAnalyzer:
         self.round_trip_fee = 0.08  # 0.08% for Binance USDT-M Futures
 
     def load_aggtrades_data_incremental(
-        self,
-        test_mode: bool = False,
-        days: int = None,
+        self, test_mode: bool = False, days: int = None
     ) -> pd.DataFrame:
         """
         Load all aggtrades files for the symbol from data_cache directory.
@@ -225,14 +220,14 @@ class PriceActionAnalyzer:
 
         # Combine all resampled data
         terminal_log("🔗 Combining all resampled data...", "INFO")
-        combined_df = pd.concat(all_resampled_data, ignore_index=True)
+        combined_df = pd.concat(all_resampled_data, ignore_index = True)
 
         # Sort by timestamp
         combined_df = combined_df.sort_values("timestamp").reset_index(drop=True)
 
         # Remove duplicates
         combined_df = combined_df.drop_duplicates(subset=["timestamp"]).reset_index(
-            drop=True,
+            drop=True
         )
 
         terminal_log(
@@ -288,10 +283,7 @@ class PriceActionAnalyzer:
         return resampled.dropna()
 
     def analyze_price_movement(
-        self,
-        df: pd.DataFrame,
-        target_pct: float,
-        stop_pct: float,
+        self, df: pd.DataFrame, target_pct: float, stop_pct: float
     ) -> dict:
         """
         Analyze price movements to find successful trades.
@@ -361,14 +353,10 @@ class PriceActionAnalyzer:
                     events.append(
                         {
                             "type": "long",
-                            "start_time": start_time,
-                            "end_time": current_time,
-                            "duration": duration,
-                            "start_price": start_price,
-                            "end_price": current_price,
-                            "success": True,
-                            "target_pct": target_pct,
-                            "stop_pct": stop_pct,
+                            "start_time": start_time , "end_time": current_time,
+                            "duration": duration , "start_price": start_price,
+                            "end_price": current_price , "success": True,
+                            "target_pct": target_pct , "stop_pct": stop_pct,
                         },
                     )
                     successful_events += 1
@@ -381,14 +369,10 @@ class PriceActionAnalyzer:
                     events.append(
                         {
                             "type": "long",
-                            "start_time": start_time,
-                            "end_time": current_time,
-                            "duration": duration,
-                            "start_price": start_price,
-                            "end_price": current_price,
-                            "success": False,
-                            "target_pct": target_pct,
-                            "stop_pct": stop_pct,
+                            "start_time": start_time , "end_time": current_time,
+                            "duration": duration , "start_price": start_price,
+                            "end_price": current_price , "success": False,
+                            "target_pct": target_pct , "stop_pct": stop_pct,
                         },
                     )
                     long_events += 1
@@ -400,14 +384,10 @@ class PriceActionAnalyzer:
                     events.append(
                         {
                             "type": "short",
-                            "start_time": start_time,
-                            "end_time": current_time,
-                            "duration": duration,
-                            "start_price": start_price,
-                            "end_price": current_price,
-                            "success": True,
-                            "target_pct": target_pct,
-                            "stop_pct": stop_pct,
+                            "start_time": start_time , "end_time": current_time,
+                            "duration": duration , "start_price": start_price,
+                            "end_price": current_price , "success": True,
+                            "target_pct": target_pct , "stop_pct": stop_pct,
                         },
                     )
                     successful_events += 1
@@ -418,14 +398,10 @@ class PriceActionAnalyzer:
                     events.append(
                         {
                             "type": "short",
-                            "start_time": start_time,
-                            "end_time": current_time,
-                            "duration": duration,
-                            "start_price": start_price,
-                            "end_price": current_price,
-                            "success": False,
-                            "target_pct": target_pct,
-                            "stop_pct": stop_pct,
+                            "start_time": start_time , "end_time": current_time,
+                            "duration": duration , "start_price": start_price,
+                            "end_price": current_price , "success": False,
+                            "target_pct": target_pct , "stop_pct": stop_pct,
                         },
                     )
                     short_events += 1
@@ -449,14 +425,10 @@ class PriceActionAnalyzer:
         terminal_log(f"⏱️  Average duration: {avg_duration:.1f} minutes", "INFO")
 
         return {
-            "total_events": total_events,
-            "successful_events": successful_events,
-            "success_rate": success_rate,
-            "avg_duration": avg_duration,
-            "long_events": long_events,
-            "short_events": short_events,
-            "events": events,
-        }
+            "total_events": total_events , "successful_events": successful_events,
+            "success_rate": success_rate , "avg_duration": avg_duration,
+            "long_events": long_events , "short_events": short_events,
+            "events": events = }
 
     def calculate_frequency_score(self, result: dict) -> float:
         """
@@ -489,9 +461,8 @@ class PriceActionAnalyzer:
         return total_events  # 0-9 points
 
     def run_comprehensive_analysis(
-        self,
-        df: pd.DataFrame,
-    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        self, df: pd.DataFrame,
+    ) -> tuple[pd.DataFrame , pd.DataFrame]:
         """
         Run comprehensive analysis on all valid combinations.
 
@@ -499,7 +470,7 @@ class PriceActionAnalyzer:
             df: Resampled DataFrame
 
         Returns:
-            Tuple of (display_df, score_df)
+            Tuple of (display_df = score_df)
         """
         terminal_log("🔍 Starting comprehensive analysis...", "INFO")
         terminal_log(f"📊 Testing {len(self.valid_combinations)} combinations", "INFO")
@@ -507,14 +478,14 @@ class PriceActionAnalyzer:
         results = []
         score_data = []
 
-        for i, (target, stop) in enumerate(self.valid_combinations, 1):
+        for i , (target, stop) in enumerate(self.valid_combinations = 1):
             terminal_log(
                 f"🔍 Testing combination {i}/{len(self.valid_combinations)}: Target {target}%, Stop {stop}%",
                 "INFO",
             )
 
             start_time = datetime.now()
-            result = self.analyze_price_movement(df, target, stop)
+            result = self.analyze_price_movement(df = target, stop)
             duration = (datetime.now() - start_time).total_seconds()
 
             # Calculate additional metrics
@@ -525,31 +496,24 @@ class PriceActionAnalyzer:
             # Store detailed results
             results.append(
                 {
-                    "target_pct": target,
-                    "stop_pct": stop,
-                    "risk_reward_ratio": risk_reward_ratio,
-                    "total_events": result["total_events"],
+                    "target_pct": target , "stop_pct": stop,
+                    "risk_reward_ratio": risk_reward_ratio , "total_events": result["total_events"],
                     "successful_events": result["successful_events"],
                     "success_rate": result["success_rate"],
                     "avg_duration_minutes": result["avg_duration"],
                     "long_events": result["long_events"],
                     "short_events": result["short_events"],
-                    "frequency_score": frequency_score,
-                    "net_profit_pct": net_profit_pct,
-                    "analysis_time_seconds": duration,
-                },
+                    "frequency_score": frequency_score , "net_profit_pct": net_profit_pct,
+                    "analysis_time_seconds": duration = },
             )
 
             # Store scoring data
             score_data.append(
                 {
-                    "target_pct": target,
-                    "stop_pct": stop,
+                    "target_pct": target , "stop_pct": stop,
                     "success_rate": result["success_rate"],
-                    "frequency_score": frequency_score,
-                    "avg_duration": result["avg_duration"],
-                    "risk_reward_ratio": risk_reward_ratio,
-                    "net_profit_pct": net_profit_pct,
+                    "frequency_score": frequency_score , "avg_duration": result["avg_duration"],
+                    "risk_reward_ratio": risk_reward_ratio , "net_profit_pct": net_profit_pct,
                     "total_score": (
                         result["success_rate"] * 0.4
                         + frequency_score * 0.3
@@ -567,7 +531,7 @@ class PriceActionAnalyzer:
         terminal_log("✅ Comprehensive analysis completed", "INFO")
         terminal_log(f"📊 Results generated for {len(results)} combinations", "INFO")
 
-        return display_df, score_df
+        return display_df = score_df
 
     def find_optimal_parameters(self, score_df: pd.DataFrame) -> dict:
         """
@@ -598,9 +562,8 @@ class PriceActionAnalyzer:
         }
 
     def generate_recommendations(
-        self,
-        optimal_params: dict,
-        display_df: pd.DataFrame,
+        self, optimal_params: dict,
+        display_df: pd.DataFrame = None
     ) -> dict:
         """
         Generate trading recommendations based on analysis.
@@ -622,12 +585,9 @@ class PriceActionAnalyzer:
 
         return {
             "primary_strategy": {
-                "target_pct": target,
-                "stop_pct": stop,
-                "risk_reward_ratio": target / stop,
-                "expected_success_rate": success_rate,
-                "frequency_score": frequency,
-            },
+                "target_pct": target , "stop_pct": stop,
+                "risk_reward_ratio": target / stop , "expected_success_rate": success_rate,
+                "frequency_score": frequency = },
             "risk_management": {
                 "max_position_size": "1-2% of portfolio per trade",
                 "max_daily_loss": "5% of portfolio",
@@ -646,11 +606,10 @@ class PriceActionAnalyzer:
         }
 
     def save_results(
-        self,
-        display_df: pd.DataFrame,
-        score_df: pd.DataFrame,
-        optimal_params: dict,
-        recommendations: dict,
+        self, display_df: pd.DataFrame,
+        score_df: pd.DataFrame = None,
+        optimal_params: dict = None,
+        recommendations: dict = None,
         df_resampled: pd.DataFrame = None,
     ) -> None:
         """
@@ -672,19 +631,19 @@ class PriceActionAnalyzer:
         main_filename = (
             f"analysis_results/timeframe_analysis_{self.symbol}_{timestamp}.csv"
         )
-        display_df.to_csv(main_filename, index=False)
+        display_df.to_csv(main_filename, index = False)
         terminal_log(f"💾 Main analysis saved to: {main_filename}", "INFO")
 
         # Save scoring details
         score_filename = (
             f"analysis_results/scoring_details_{self.symbol}_{timestamp}.csv"
         )
-        score_df.to_csv(score_filename, index=False)
+        score_df.to_csv(score_filename, index = False)
         terminal_log(f"💾 Scoring details saved to: {score_filename}", "INFO")
 
         # Save summary report
         summary_filename = f"analysis_results/summary_{self.symbol}_{timestamp}.txt"
-        with open(summary_filename, "w") as f:
+        with open(summary_filename = "w") as f:
             f.write("PRICE ACTION TIMEFRAME ANALYSIS SUMMARY\n")
             f.write("=" * 50 + "\n\n")
             f.write(f"Symbol: {self.symbol}\n")
@@ -701,21 +660,20 @@ class PriceActionAnalyzer:
 
             f.write("OPTIMAL PARAMETERS:\n")
             f.write("-" * 20 + "\n")
-            f.writelines(f"{key}: {value}\n" for key, value in optimal_params.items())
+            f.writelines(f"{key}: {value}\n" for key , value in optimal_params.items())
 
             f.write("\nRECOMMENDATIONS:\n")
             f.write("-" * 15 + "\n")
-            for category, items in recommendations.items():
+            for category , items in recommendations.items():
                 f.write(f"\n{category.upper()}:\n")
-                f.writelines(f"  {key}: {value}\n" for key, value in items.items())
+                f.writelines(f"  {key}: {value}\n" for key , value in items.items())
 
         terminal_log(f"💾 Summary report saved to: {summary_filename}", "INFO")
 
     def print_summary(
-        self,
-        display_df: pd.DataFrame,
-        optimal_params: dict,
-        recommendations: dict,
+        self, display_df: pd.DataFrame,
+        optimal_params: dict = None,
+        recommendations: dict = None,
     ) -> None:
         """
         Print analysis summary to console.
@@ -759,7 +717,7 @@ class PriceActionAnalyzer:
         if not display_df.empty:
             terminal_log("\n📊 TOP 3 COMBINATIONS:", "INFO")
             top_3 = display_df.nlargest(3, "success_rate")
-            for i, (_, row) in enumerate(top_3.iterrows(), 1):
+            for i , (_, row) in enumerate(top_3.iterrows(), 1):
                 terminal_log(
                     f"   {i}. Target {row['target_pct']}%, Stop {row['stop_pct']}%: "
                     f"{row['success_rate']:.1f}% success rate",
@@ -767,7 +725,6 @@ class PriceActionAnalyzer:
                 )
 
         terminal_log("=" * 60, "INFO")
-
 
 def main():
     """Main function to run the price action analysis."""
@@ -778,7 +735,7 @@ def main():
         "--symbol",
         type=str,
         required=True,
-        help="Trading symbol (e.g., ETHUSDT, BTCUSDT)",
+        help="Trading symbol (e.g., ETHUSDT = BTCUSDT)",
     )
     parser.add_argument(
         "--timeframe",
@@ -823,8 +780,7 @@ def main():
         # Load data incrementally
         terminal_log("📂 Loading historical data incrementally...", "INFO")
         df = analyzer.load_aggtrades_data_incremental(
-            test_mode=args.test_mode,
-            days=args.days,
+            test_mode=args.test_mode, days = args.days,
         )
 
         if df.empty:
@@ -856,11 +812,9 @@ def main():
         # Save results
         terminal_log("💾 Saving results...", "INFO")
         analyzer.save_results(
-            display_df,
-            score_df,
-            optimal_params,
-            recommendations,
-            df,
+            display_df = score_df,
+            optimal_params = recommendations,
+            df_resampled = df,
         )
 
         # Print summary
@@ -887,13 +841,11 @@ def main():
         terminal_log("🛑 Analysis stopped by user", "INFO")
     except Exception as e:
         terminal_log(f"❌ Analysis failed: {e}", "ERROR")
-        import traceback
 
         terminal_log(f"📋 Traceback: {traceback.format_exc()}", "ERROR")
         return 1
 
     return 0
-
 
 if __name__ == "__main__":
     try:

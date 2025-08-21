@@ -1,6 +1,4 @@
-"""
-Validator for Step 13: Walk Forward Validation
-"""
+"""Validator for Step 13: Walk Forward Validation."""
 
 import os
 import sys
@@ -26,7 +24,7 @@ from src.utils.base_validator import BaseValidator
 class Step13WalkForwardValidationValidator(BaseValidator):
     """Validator for Step 13: Walk Forward Validation."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step13_walk_forward_validation", config)
 
     async def validate(
@@ -34,8 +32,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
     ) -> bool:
-        """
-        Validate the walk forward validation step.
+        """Validate the walk forward validation step.
 
         Args:
             training_input: Training input parameters
@@ -43,6 +40,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
 
         Returns:
             bool: True if validation passed, False otherwise
+
         """
         self.logger.info("🔍 Validating walk forward validation step...")
 
@@ -123,8 +121,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate that walk forward validation files exist.
+        """Validate that walk forward validation files exist.
 
         Args:
             symbol: Trading symbol
@@ -133,6 +130,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
 
         Returns:
             bool: True if files exist
+
         """
         try:
             # Expected walk forward validation file patterns
@@ -172,8 +170,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate walk forward validation performance metrics.
+        """Validate walk forward validation performance metrics.
 
         Args:
             symbol: Trading symbol
@@ -182,6 +179,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
 
         Returns:
             bool: True if performance is acceptable
+
         """
         try:
             # Load walk forward performance results
@@ -264,8 +262,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate walk forward validation stability.
+        """Validate walk forward validation stability.
 
         Args:
             symbol: Trading symbol
@@ -274,6 +271,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
 
         Returns:
             bool: True if stability is acceptable
+
         """
         try:
             # Load walk forward metadata
@@ -340,8 +338,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         exchange: str,
         data_dir: str,
     ) -> bool:
-        """
-        Validate walk forward validation consistency.
+        """Validate walk forward validation consistency.
 
         Args:
             symbol: Trading symbol
@@ -350,6 +347,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
 
         Returns:
             bool: True if consistency is acceptable
+
         """
         try:
             # Load walk forward results
@@ -411,8 +409,7 @@ async def run_validator(
     training_input: dict[str, Any],
     pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
-    """
-    Run the step13_walk_forward_validation validator.
+    """Run the step13_walk_forward_validation validator.
 
     Args:
         training_input: Training input parameters
@@ -420,6 +417,7 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
+
     """
     validator = Step13WalkForwardValidationValidator(CONFIG)
     validation_passed = await validator.validate(training_input, pipeline_state)
@@ -437,7 +435,7 @@ if __name__ == "__main__":
     import asyncio
 
     # Example usage
-    async def test_validator():
+    async def test_validator() -> None:
         training_input = {
             "symbol": "ETHUSDT",
             "exchange": "BINANCE",
@@ -448,7 +446,6 @@ if __name__ == "__main__":
             "walk_forward_validation": {"status": "SUCCESS", "duration": 1200.5},
         }
 
-        result = await run_validator(training_input, pipeline_state)
-        print(f"Validation result: {result}")
+        await run_validator(training_input, pipeline_state)
 
     asyncio.run(test_validator())

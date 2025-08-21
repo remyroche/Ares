@@ -1,4 +1,0 @@
-Performance Report for execute_enhanced_training
-==================================================
-Total execution time: 244.28s
-Memory usage: 2292.72 MB

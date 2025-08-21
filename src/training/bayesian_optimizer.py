@@ -12,8 +12,7 @@ from src.utils.logger import system_logger
 
 
 class AdvancedHyperparameterOptimizer:
-    """
-    Advanced hyperparameter optimization with decomposed search spaces and proper constraints.
+    """Advanced hyperparameter optimization with decomposed search spaces and proper constraints.
 
     Features:
     - Decomposed optimization (feature engineering → model → trading strategy)
@@ -23,7 +22,7 @@ class AdvancedHyperparameterOptimizer:
     - Multi-dimensional optimization
     """
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("HyperparameterOptimizer")
 
@@ -54,7 +53,6 @@ class AdvancedHyperparameterOptimizer:
     )
     def create_study(self, direction: str = "maximize") -> optuna.Study:
         """Create an Optuna study with advanced configuration."""
-
         # Choose sampler based on configuration
         if self.sampling_strategy == "tpe":
             sampler = optuna.samplers.TPESampler(
@@ -206,9 +204,8 @@ class AdvancedHyperparameterOptimizer:
         self,
         trial: optuna.trial.Trial,
         params: dict[str, Any],
-    ):
+    ) -> None:
         """Add constraints for feature engineering parameters."""
-
         # Ensure lookback window is reasonable for the data
         if params["lookback_window"] > 100:
             # Prune trials with very large lookback windows
@@ -221,9 +218,8 @@ class AdvancedHyperparameterOptimizer:
             msg = "Feature selection threshold too high"
             raise optuna.TrialPruned(msg)
 
-    def _add_model_constraints(self, trial: optuna.trial.Trial, params: dict[str, Any]):
+    def _add_model_constraints(self, trial: optuna.trial.Trial, params: dict[str, Any]) -> None:
         """Add constraints for model parameters."""
-
         # Model-specific constraints
         if params["model_type"] == "random_forest":
             if params["max_depth"] > 20:
@@ -248,9 +244,8 @@ class AdvancedHyperparameterOptimizer:
         self,
         trial: optuna.trial.Trial,
         params: dict[str, Any],
-    ):
+    ) -> None:
         """Add constraints for trading parameters."""
-
         # Ensure TP > SL (proper constraint with pruning)
         if params["tp_multiplier"] <= params["sl_multiplier"]:
             msg = "TP multiplier must be greater than SL multiplier"
@@ -274,7 +269,6 @@ class AdvancedHyperparameterOptimizer:
     )
     def feature_engineering_objective(self, trial: optuna.trial.Trial) -> Number:
         """Objective function for feature engineering optimization."""
-
         # Suggest feature engineering parameters
         params = self.suggest_feature_engineering_params(trial)
 
@@ -304,7 +298,6 @@ class AdvancedHyperparameterOptimizer:
     )
     def model_optimization_objective(self, trial: optuna.trial.Trial) -> Number:
         """Objective function for model optimization."""
-
         # Suggest model parameters
         params = self.suggest_model_params(trial)
 
@@ -338,7 +331,6 @@ class AdvancedHyperparameterOptimizer:
     )
     def trading_strategy_objective(self, trial: optuna.trial.Trial) -> Number:
         """Objective function for trading strategy optimization."""
-
         # Suggest trading parameters
         params = self.suggest_trading_params(trial)
 
@@ -434,7 +426,6 @@ class AdvancedHyperparameterOptimizer:
         objective_func: Callable | None = None,
     ) -> dict[str, Any]:
         """Run decomposed hyperparameter optimization with three focused stages."""
-
         self.logger.info("Starting decomposed hyperparameter optimization...")
 
         # Step 1: Optimize Feature Engineering
@@ -489,7 +480,7 @@ class AdvancedHyperparameterOptimizer:
         self,
         study: optuna.Study,
         trial: optuna.trial.FrozenTrial,
-    ):
+    ) -> None:
         """Callback function for optimization monitoring."""
         if trial.state == optuna.trial.TrialState.COMPLETE:
             self.logger.info(f"Trial {trial.number}: Score = {trial.value:.4f}")
@@ -501,7 +492,6 @@ class AdvancedHyperparameterOptimizer:
 
     def _analyze_optimization_results(self, study: optuna.Study) -> dict[str, Any]:
         """Analyze and summarize optimization results."""
-
         # Get best trial
         best_trial = study.best_trial
 
@@ -525,7 +515,6 @@ class AdvancedHyperparameterOptimizer:
 
     def _combine_optimization_results(self) -> dict[str, Any]:
         """Combine results from all optimization stages."""
-
         # Combine best parameters from all stages
         combined_params = {}
         if self.feature_engineering_results:
@@ -564,7 +553,6 @@ class AdvancedHyperparameterOptimizer:
 
     def _calculate_convergence_metrics(self, study: optuna.Study) -> dict[str, Any]:
         """Calculate convergence and optimization quality metrics."""
-
         trials = [
             t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE
         ]
@@ -600,7 +588,6 @@ class AdvancedHyperparameterOptimizer:
 
     def suggest_hyperparameter_ranges(self, param_name: str) -> dict[str, Any]:
         """Suggest optimal hyperparameter ranges based on optimization history."""
-
         if not self.trial_history:
             return {}
 

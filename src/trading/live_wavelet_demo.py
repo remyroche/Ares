@@ -5,30 +5,15 @@ This script demonstrates the computationally-aware wavelet integration
 for live trading with performance monitoring and real-time signal generation.
 """
 
+from src.trading.live_wavelet_integration import LiveWaveletIntegration
+from src.utils.logger import system_logger
 import asyncio
 import time
 
+from src.utils.warning_symbols import error, failed, initialization_error, warning
 import numpy as np
 import pandas as pd
 import yaml
-
-from src.trading.live_wavelet_integration import LiveWaveletIntegration
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
-
 
 class LiveWaveletDemo:
     """
@@ -59,7 +44,7 @@ class LiveWaveletDemo:
             with open(self.config_path) as f:
                 return yaml.safe_load(f)
         except Exception as e:
-            self.print(error("Error loading config: {e}"))
+            self.logger.error(f"Error loading config: {e}")
             return {}
 
     async def initialize(self) -> bool:
@@ -70,7 +55,7 @@ class LiveWaveletDemo:
             # Initialize wavelet integration
             success = await self.wavelet_integration.initialize()
             if not success:
-                self.print(failed("Failed to initialize wavelet integration"))
+                self.logger.error("Failed to initialize wavelet integration")
                 return False
 
             # Generate demo data
@@ -80,7 +65,7 @@ class LiveWaveletDemo:
             return True
 
         except Exception as e:
-            self.print(initialization_error("❌ Error initializing demo: {e}"))
+            self.logger.error(f"❌ Error initializing demo: {e}")
             return False
 
     def _generate_demo_data(self) -> None:
@@ -130,7 +115,7 @@ class LiveWaveletDemo:
             self.logger.info(f"📊 Generated {len(self.demo_data)} demo data points")
 
         except Exception as e:
-            self.print(error("Error generating demo data: {e}"))
+            self.logger.error(f"Error generating demo data: {e}")
 
     async def run_demo(self, duration: int = 60) -> None:
         """
@@ -155,7 +140,7 @@ class LiveWaveletDemo:
 
                 # Process with wavelet integration
                 results = await self.wavelet_integration.process_market_data(
-                    market_data,
+                    market_data
                 )
 
                 if results:
@@ -176,7 +161,7 @@ class LiveWaveletDemo:
             self._log_final_stats()
 
         except Exception as e:
-            self.print(error("Error running demo: {e}"))
+            self.logger.error(f"Error running demo: {e}")
         finally:
             self.is_running = False
 
@@ -197,7 +182,7 @@ class LiveWaveletDemo:
             }
 
         except Exception as e:
-            self.print(error("Error creating market data: {e}"))
+            self.logger.error(f"Error creating market data: {e}")
             return {}
 
     def _log_signal_results(self, results: dict) -> None:
@@ -219,7 +204,7 @@ class LiveWaveletDemo:
                 )
 
         except Exception as e:
-            self.print(error("Error logging signal results: {e}"))
+            self.logger.error(f"Error logging signal results: {e}")
 
     def _log_performance_stats(self) -> None:
         """Log performance statistics."""
@@ -236,13 +221,13 @@ class LiveWaveletDemo:
 
                 self.logger.info(
                     f"📈 Performance: "
-                    f"Signals: {buy_count}B/{sell_count}S/{hold_count}H, "
+                    f"Signals: {buy_count}B/{sell_count}S/{hold_count}H = "
                     f"Avg Confidence: {avg_confidence:.2f}, "
                     f"Avg Time: {avg_time:.3f}s",
                 )
 
         except Exception as e:
-            self.print(error("Error logging performance stats: {e}"))
+            self.logger.error(f"Error logging performance stats: {e}")
 
     def _check_health(self) -> None:
         """Check system health."""
@@ -250,12 +235,12 @@ class LiveWaveletDemo:
             is_healthy = self.wavelet_integration.is_healthy()
 
             if not is_healthy:
-                self.print(failed("⚠️ Wavelet integration health check failed"))
+                self.logger.error("⚠️ Wavelet integration health check failed")
             else:
                 self.logger.info("✅ Wavelet integration healthy")
 
         except Exception as e:
-            self.print(error("Error checking health: {e}"))
+            self.logger.error(f"Error checking health: {e}")
 
     def _log_final_stats(self) -> None:
         """Log final statistics."""
@@ -289,13 +274,12 @@ class LiveWaveletDemo:
                 )
 
         except Exception as e:
-            self.print(error("Error logging final stats: {e}"))
+            self.logger.error(f"Error logging final stats: {e}")
 
     def stop_demo(self) -> None:
         """Stop the demo."""
         self.is_running = False
         self.logger.info("🛑 Demo stopped by user")
-
 
 async def main():
     """Main demo function."""
@@ -305,7 +289,7 @@ async def main():
 
         success = await demo.initialize()
         if not success:
-            print(failed("Failed to initialize demo"))
+            print("Failed to initialize demo")
             return
 
         # Run demo for 60 seconds
@@ -314,8 +298,7 @@ async def main():
     except KeyboardInterrupt:
         print("\n🛑 Demo interrupted by user")
     except Exception as e:
-        print(warning("Error in demo: {e}"))
-
+        print(f"Error in demo: {e}")
 
 if __name__ == "__main__":
     asyncio.run(main())

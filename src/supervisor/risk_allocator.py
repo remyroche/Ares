@@ -1,22 +1,12 @@
 # src/supervisor/risk_allocator.py
 
-import asyncio
 from datetime import datetime
+from src.utils.logger import system_logger
 from typing import Any
-
+import asyncio
 import numpy as np
 
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    invalid,
-)
-
+from src.utils.error_handler import handle_errors, handle_specific_errors
 
 class RiskAllocator:
     """
@@ -60,12 +50,12 @@ class RiskAllocator:
             self.logger.info("Initializing Risk Allocator...")
             await self._load_risk_configuration()
             if not self._validate_configuration():
-                self.print(invalid("Invalid configuration for risk allocator"))
+                self.logger.error("Invalid configuration for risk allocator")
                 return False
             self.logger.info("✅ Risk Allocator initialization completed successfully")
             return True
-        except Exception:
-            self.print(failed("❌ Risk Allocator initialization failed: {e}"))
+        except Exception as e:
+            self.logger.error(f"❌ Risk Allocator initialization failed: {e}")
             return False
 
     @handle_errors(
@@ -80,8 +70,8 @@ class RiskAllocator:
             self.allocation_interval = self.risk_config["allocation_interval"]
             self.max_history = self.risk_config["max_history"]
             self.logger.info("Risk allocator configuration loaded successfully")
-        except Exception:
-            self.print(error("Error loading risk configuration: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error loading risk configuration: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -91,15 +81,15 @@ class RiskAllocator:
     def _validate_configuration(self) -> bool:
         try:
             if self.allocation_interval <= 0:
-                self.print(invalid("Invalid allocation interval"))
+                self.logger.error("Invalid allocation interval")
                 return False
             if self.max_history <= 0:
-                self.print(invalid("Invalid max history"))
+                self.logger.error("Invalid max history")
                 return False
             self.logger.info("Configuration validation successful")
             return True
-        except Exception:
-            self.print(error("Error validating configuration: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error validating configuration: {e}")
             return False
 
     @handle_specific_errors(
@@ -117,8 +107,8 @@ class RiskAllocator:
                 await self._perform_risk_allocation()
                 await asyncio.sleep(self.allocation_interval)
             return True
-        except Exception:
-            self.print(error("Error in risk allocator run: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error in risk allocator run: {e}")
             self.is_running = False
             return False
 
@@ -137,8 +127,8 @@ class RiskAllocator:
             await self._calculate_risk_allocations()
             await self._update_risk_limits()
             self.logger.info(f"Risk allocation tick at {now}")
-        except Exception:
-            self.print(error("Error in risk allocation step: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error in risk allocation step: {e}")
 
     @handle_errors(
         exceptions=(Exception,),
@@ -156,8 +146,8 @@ class RiskAllocator:
             }
             self.risk_allocations.update(allocations)
             self.logger.info("Risk allocation calculation completed")
-        except Exception:
-            self.print(error("Error calculating risk allocations: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error calculating risk allocations: {e}")
 
     @handle_errors(
         exceptions=(Exception,),
@@ -175,8 +165,8 @@ class RiskAllocator:
             }
             self.risk_limits.update(limits)
             self.logger.info("Risk limits updated successfully")
-        except Exception:
-            self.print(error("Error updating risk limits: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error updating risk limits: {e}")
 
     @handle_errors(
         exceptions=(Exception,),
@@ -189,8 +179,8 @@ class RiskAllocator:
             self.is_running = False
             self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
             self.logger.info("✅ Risk Allocator stopped successfully")
-        except Exception:
-            self.print(error("Error stopping risk allocator: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error stopping risk allocator: {e}")
 
     def get_status(self) -> dict[str, Any]:
         return self.status.copy()
@@ -205,9 +195,8 @@ class RiskAllocator:
         return self.risk_allocations.copy()
 
     def calculate_var(
-        self,
-        returns: list[float],
-        confidence_level: float = None,
+        self, returns: list[float],
+        confidence_level: float = None
     ) -> float:
         """
         Calculate Value at Risk (VaR).
@@ -229,14 +218,13 @@ class RiskAllocator:
             var = np.percentile(returns, percentile)
             return abs(var)  # Return absolute value for risk measurement
 
-        except Exception:
-            self.print(error("Error calculating VaR: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error calculating VaR: {e}")
             return 0.0
 
     def calculate_expected_shortfall(
-        self,
-        returns: list[float],
-        confidence_level: float = None,
+        self, returns: list[float],
+        confidence_level: float = None
     ) -> float:
         """
         Calculate Expected Shortfall (ES) / Conditional VaR.
@@ -265,13 +253,12 @@ class RiskAllocator:
             es = np.mean(tail_returns)
             return abs(es)  # Return absolute value
 
-        except Exception:
-            self.print(error("Error calculating Expected Shortfall: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error calculating Expected Shortfall: {e}")
             return 0.0
 
     def calculate_multi_timeframe_var(
-        self,
-        portfolio_data: dict[str, Any],
+        self, portfolio_data: dict[str, Any],
     ) -> dict[str, float]:
         """
         Calculate VaR across multiple timeframes.
@@ -296,14 +283,13 @@ class RiskAllocator:
 
             return var_results
 
-        except Exception:
-            self.print(error("Error calculating multi-timeframe VaR: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error calculating multi-timeframe VaR: {e}")
             return {}
 
     def monitor_risk_limits(
-        self,
-        current_var: float,
-        current_es: float,
+        self, current_var: float,
+        current_es: float
     ) -> dict[str, Any]:
         """
         Monitor risk limits and generate alerts.
@@ -368,8 +354,8 @@ class RiskAllocator:
 
             return risk_metrics
 
-        except Exception:
-            self.print(error("Error monitoring risk limits: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error monitoring risk limits: {e}")
             return {}
 
     def get_risk_metrics(self, timeframe: str = "all") -> dict[str, Any]:
@@ -395,11 +381,11 @@ class RiskAllocator:
             # Filter by timeframe (simplified implementation)
             return {
                 "latest_metrics": self.var_history[-1] if self.var_history else {},
-                "timeframe": timeframe,
+                "timeframe": timeframe
             }
 
-        except Exception:
-            self.print(error("Error getting risk metrics: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error getting risk metrics: {e}")
             return {}
 
     def _calculate_risk_summary(self) -> dict[str, Any]:
@@ -429,13 +415,11 @@ class RiskAllocator:
                 ),
             }
 
-        except Exception:
-            self.print(error("Error calculating risk summary: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error calculating risk summary: {e}")
             return {}
 
-
 risk_allocator: RiskAllocator | None = None
-
 
 @handle_errors(
     exceptions=(Exception,),

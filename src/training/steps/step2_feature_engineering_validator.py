@@ -1,30 +1,29 @@
 # src/training/steps/step2_feature_engineering_validator.py
 
-"""
-Validator for Step 2: Feature Engineering
-"""
+"""Validator for Step 2: Feature Engineering."""
 
 import asyncio
 import os
-import sys
 import pickle
-import pandas as pd
-import numpy as np
-from typing import Any, Dict, List
+import sys
 from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.base_validator import BaseValidator
 from src.config import CONFIG
+from src.utils.base_validator import BaseValidator
 
 
 class Step2FeatureEngineeringValidator(BaseValidator):
     """Validator for feature engineering (Step 2)."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step2_feature_engineering", config)
         # Fine-tuned parameters for ML training (more lenient to avoid stopping training)
         self.min_feature_count = 40  # Minimum 40 relevant features required
@@ -35,10 +34,9 @@ class Step2FeatureEngineeringValidator(BaseValidator):
         self.data_balance_threshold = 0.15  # More lenient balance requirements
 
     async def validate(
-        self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]
+        self, training_input: dict[str, Any], pipeline_state: dict[str, Any],
     ) -> bool:
-        """
-        Validate the feature engineering step.
+        """Validate the feature engineering step.
 
         Args:
             training_input: Training input parameters
@@ -46,11 +44,11 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
         Returns:
             bool: True if validation passed, False otherwise
+
         """
         self.logger.info(
-            "🔍 Validating feature engineering outputs (Step 2)..."
+            "🔍 Validating feature engineering outputs (Step 2)...",
         )
-        print("Validator ▶ Step2 start")
 
         # Extract parameters
         symbol = training_input.get("symbol", "ETHUSDT")
@@ -66,69 +64,67 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
         if not error_passed:
             self.logger.error(
-                "❌ Feature engineering step had critical errors - stopping process"
+                "❌ Feature engineering step had critical errors - stopping process",
             )
             return False
 
         # 2. Validate feature engineering outputs (CRITICAL - blocks process)
         features_passed = self._validate_feature_engineering_outputs(
-            symbol, exchange, data_dir
+            symbol, exchange, data_dir,
         )
         if not features_passed:
             self.logger.error(
-                "❌ Feature engineering outputs validation failed - stopping process"
+                "❌ Feature engineering outputs validation failed - stopping process",
             )
             return False
 
         # 2.5. Validate minimum relevant features requirement (CRITICAL - make or break)
         relevant_features_passed = self._validate_minimum_relevant_features(
-            symbol, exchange, data_dir
+            symbol, exchange, data_dir,
         )
         if not relevant_features_passed:
             self.logger.error(
-                "❌ Minimum relevant features requirement not met - stopping process"
+                "❌ Minimum relevant features requirement not met - stopping process",
             )
             return False
 
         # 3. Validate feature quality (CRITICAL - blocks process if insufficient relevant features)
         feature_quality_passed = self._validate_feature_quality(
-            symbol, exchange, data_dir
+            symbol, exchange, data_dir,
         )
         if not feature_quality_passed:
             self.logger.error(
-                "❌ Feature quality validation failed - stopping process"
+                "❌ Feature quality validation failed - stopping process",
             )
             return False
 
         # 4. Validate outcome favorability (WARNING - doesn't block)
         outcome_passed, outcome_metrics = self.validate_outcome_favorability(
-            step_result
+            step_result,
         )
         self.validation_results["outcome_favorability"] = outcome_metrics
 
         if not outcome_passed:
             self.logger.warning(
-                "⚠️ Feature engineering outcome is not favorable - continuing with caution"
+                "⚠️ Feature engineering outcome is not favorable - continuing with caution",
             )
 
         # Overall validation passes if critical checks pass
         critical_passed = error_passed and features_passed and relevant_features_passed and feature_quality_passed
         if critical_passed:
             self.logger.info(
-                "✅ Feature engineering validation passed (critical checks only)"
+                "✅ Feature engineering validation passed (critical checks only)",
             )
             return True
-        else:
-            self.logger.error(
-                "❌ Feature engineering validation failed (critical checks failed)"
-            )
-            return False
+        self.logger.error(
+            "❌ Feature engineering validation failed (critical checks failed)",
+        )
+        return False
 
     def _validate_feature_engineering_outputs(
-        self, symbol: str, exchange: str, data_dir: str
+        self, symbol: str, exchange: str, data_dir: str,
     ) -> bool:
-        """
-        Validate feature engineering outputs.
+        """Validate feature engineering outputs.
 
         Args:
             symbol: Trading symbol
@@ -137,6 +133,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
         Returns:
             bool: True if outputs are valid
+
         """
         try:
             # Expected feature engineering output files (Parquet preferred)
@@ -149,14 +146,14 @@ class Step2FeatureEngineeringValidator(BaseValidator):
             missing_files = []
             for file_path in expected_files:
                 file_passed, file_metrics = self.validate_file_exists(
-                    file_path, "feature_engineering"
+                    file_path, "feature_engineering",
                 )
                 if not file_passed:
                     missing_files.append(file_path)
 
             if missing_files:
                 self.logger.error(
-                    f"❌ Missing feature engineering files: {missing_files} - stopping process"
+                    f"❌ Missing feature engineering files: {missing_files} - stopping process",
                 )
                 return False
 
@@ -167,35 +164,33 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
                     # Validate feature data quality
                     quality_passed, quality_metrics = self.validate_data_quality(
-                        feature_data, "feature_data"
+                        feature_data, "feature_data",
                     )
                     if not quality_passed:
                         self.logger.error(
-                            f"❌ Feature data quality validation failed for {file_path} - stopping process"
+                            f"❌ Feature data quality validation failed for {file_path} - stopping process",
                         )
                         return False
 
                 except Exception as e:
-                    self.logger.error(
-                        f"❌ Error validating feature file {file_path}: {e} - stopping process"
+                    self.logger.exception(
+                        f"❌ Error validating feature file {file_path}: {e} - stopping process",
                     )
                     return False
 
             self.logger.info("✅ Feature engineering outputs validation passed")
-            print("Validator ▶ Step3 features ok")
             return True
 
         except Exception as e:
-            self.logger.error(
-                f"❌ Error during feature engineering outputs validation: {e}"
+            self.logger.exception(
+                f"❌ Error during feature engineering outputs validation: {e}",
             )
             return False
 
     def _validate_labeling_quality(
-        self, symbol: str, exchange: str, data_dir: str
+        self, symbol: str, exchange: str, data_dir: str,
     ) -> bool:
-        """
-        Validate labeling quality.
+        """Validate labeling quality.
 
         Args:
             symbol: Trading symbol
@@ -204,6 +199,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
         Returns:
             bool: True if labeling quality is acceptable
+
         """
         try:
             # Load labeled data files
@@ -216,7 +212,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
             for file_path in labeled_files:
                 if not os.path.exists(file_path):
                     self.logger.warning(
-                        f"⚠️ Labeled data file not found: {file_path} - continuing with caution"
+                        f"⚠️ Labeled data file not found: {file_path} - continuing with caution",
                     )
                     continue
 
@@ -226,7 +222,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
                     # Check for label column
                     if "label" not in labeled_data.columns:
                         self.logger.warning(
-                            f"⚠️ No label column found in {file_path} - continuing with caution"
+                            f"⚠️ No label column found in {file_path} - continuing with caution",
                         )
                         return False
 
@@ -237,10 +233,10 @@ class Step2FeatureEngineeringValidator(BaseValidator):
                     ]
                     if missing_ohlcv:
                         self.logger.warning(
-                            f"⚠️ Missing OHLCV columns in {file_path}: {missing_ohlcv} - this may affect labeling quality"
+                            f"⚠️ Missing OHLCV columns in {file_path}: {missing_ohlcv} - this may affect labeling quality",
                         )
                         self.logger.warning(
-                            "Triple barrier labeling requires proper OHLCV data for accurate labels"
+                            "Triple barrier labeling requires proper OHLCV data for accurate labels",
                         )
 
                     # Validate label values
@@ -250,16 +246,16 @@ class Step2FeatureEngineeringValidator(BaseValidator):
                     # Check for reasonable number of classes (more lenient)
                     if len(unique_labels) < 2:
                         self.logger.warning(
-                            f"⚠️ Insufficient label classes: {len(unique_labels)} - continuing with caution"
+                            f"⚠️ Insufficient label classes: {len(unique_labels)} - continuing with caution",
                         )
                         self.logger.warning(
-                            "This may indicate missing OHLCV data or improper triple barrier labeling"
+                            "This may indicate missing OHLCV data or improper triple barrier labeling",
                         )
                         return False
 
                     if len(unique_labels) > self.max_label_classes:
                         self.logger.warning(
-                            f"⚠️ Many label classes: {len(unique_labels)} (max: {self.max_label_classes}) - continuing with caution"
+                            f"⚠️ Many label classes: {len(unique_labels)} (max: {self.max_label_classes}) - continuing with caution",
                         )
 
                     # Check for label balance (more lenient)
@@ -270,7 +266,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
                     if balance_ratio < self.min_label_balance:
                         self.logger.warning(
-                            f"⚠️ Label balance is poor: {balance_ratio:.3f} (min: {self.min_label_balance:.3f}) - continuing with caution"
+                            f"⚠️ Label balance is poor: {balance_ratio:.3f} (min: {self.min_label_balance:.3f}) - continuing with caution",
                         )
                         return False
 
@@ -280,32 +276,30 @@ class Step2FeatureEngineeringValidator(BaseValidator):
                         missing_ratio = missing_labels / len(labels)
                         if missing_ratio > 0.1:  # More than 10% missing
                             self.logger.warning(
-                                f"⚠️ High missing label ratio: {missing_ratio:.3f} - continuing with caution"
+                                f"⚠️ High missing label ratio: {missing_ratio:.3f} - continuing with caution",
                             )
                         else:
                             self.logger.info(
-                                f"ℹ️ Found {missing_labels} missing labels (acceptable)"
+                                f"ℹ️ Found {missing_labels} missing labels (acceptable)",
                             )
 
                 except Exception as e:
-                    self.logger.error(
-                        f"❌ Error validating labeled data file {file_path}: {e}"
+                    self.logger.exception(
+                        f"❌ Error validating labeled data file {file_path}: {e}",
                     )
                     return False
 
             self.logger.info("✅ Labeling quality validation passed")
-            print("Validator ▶ Step2 labels ok")
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Error during labeling quality validation: {e}")
+            self.logger.exception(f"❌ Error during labeling quality validation: {e}")
             return False
 
     def _validate_feature_quality(
-        self, symbol: str, exchange: str, data_dir: str
+        self, symbol: str, exchange: str, data_dir: str,
     ) -> bool:
-        """
-        Validate feature quality.
+        """Validate feature quality.
 
         Args:
             symbol: Trading symbol
@@ -314,6 +308,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
         Returns:
             bool: True if feature quality is acceptable
+
         """
         try:
             # Load feature files
@@ -326,7 +321,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
             for file_path in feature_files:
                 if not os.path.exists(file_path):
                     self.logger.warning(
-                        f"⚠️ Feature file not found: {file_path} - continuing with caution"
+                        f"⚠️ Feature file not found: {file_path} - continuing with caution",
                     )
                     continue
 
@@ -344,7 +339,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
                     ]
                     if present_forbidden:
                         self.logger.warning(
-                            f"⚠️ Raw OHLCV columns found in features ({present_forbidden}) for {file_path} - removing them automatically"
+                            f"⚠️ Raw OHLCV columns found in features ({present_forbidden}) for {file_path} - removing them automatically",
                         )
                         # Remove the forbidden columns automatically
                         feature_data = feature_data.drop(columns=present_forbidden)
@@ -353,7 +348,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
                             with open(file_path, "wb") as f:
                                 pickle.dump(feature_data, f)
                             self.logger.info(
-                                f"✅ Cleaned and saved feature data without raw OHLCV columns"
+                                "✅ Cleaned and saved feature data without raw OHLCV columns",
                             )
                         except Exception as e:
                             self.logger.warning(f"⚠️ Could not save cleaned data: {e}")
@@ -382,10 +377,10 @@ class Step2FeatureEngineeringValidator(BaseValidator):
                     # Check relevant feature count (CRITICAL - blocks process if insufficient)
                     if relevant_feature_count < self.min_feature_count:
                         self.logger.error(
-                            f"❌ Insufficient relevant features: {relevant_feature_count} (minimum required: {self.min_feature_count}) - stopping process"
+                            f"❌ Insufficient relevant features: {relevant_feature_count} (minimum required: {self.min_feature_count}) - stopping process",
                         )
                         self.logger.error(
-                            f"❌ Problematic features excluded: {len(problematic_features)} (constant: {len(constant_features)}, high missing: {len(high_missing_features)})"
+                            f"❌ Problematic features excluded: {len(problematic_features)} (constant: {len(constant_features)}, high missing: {len(high_missing_features)})",
                         )
                         return False
 
@@ -393,24 +388,24 @@ class Step2FeatureEngineeringValidator(BaseValidator):
                     feature_count = len(feature_data.columns)
                     if feature_count > self.max_feature_count:
                         self.logger.warning(
-                            f"⚠️ Too many features: {feature_count} (max: {self.max_feature_count}) - continuing with caution"
+                            f"⚠️ Too many features: {feature_count} (max: {self.max_feature_count}) - continuing with caution",
                         )
 
                     if constant_features:
                         # Previously allowed up to a ratio; now warn strictly if any constant features
                         self.logger.warning(
-                            f"⚠️ Found {len(constant_features)} constant features - this should be 0. Examples: {constant_features[:5]}"
+                            f"⚠️ Found {len(constant_features)} constant features - this should be 0. Examples: {constant_features[:5]}",
                         )
                         # Do not fail the step here (warning), but make it visible
 
                     if high_missing_features:
                         self.logger.warning(
-                            f"⚠️ Found {len(high_missing_features)} features with >50% missing values - continuing with caution"
+                            f"⚠️ Found {len(high_missing_features)} features with >50% missing values - continuing with caution",
                         )
 
                     # Check for high correlation features
                     numeric_cols = feature_data.select_dtypes(
-                        include=[np.number]
+                        include=[np.number],
                     ).columns
                     if len(numeric_cols) > 1:
                         corr_matrix = feature_data[numeric_cols].corr().abs()
@@ -421,17 +416,17 @@ class Step2FeatureEngineeringValidator(BaseValidator):
                                     corr_matrix.iloc[i, j] > 0.95
                                 ):  # Very high correlation
                                     high_corr_pairs.append(
-                                        (corr_matrix.columns[i], corr_matrix.columns[j])
+                                        (corr_matrix.columns[i], corr_matrix.columns[j]),
                                     )
 
                         if high_corr_pairs:
                             self.logger.warning(
-                                f"⚠️ Found {len(high_corr_pairs)} highly correlated feature pairs - continuing with caution"
+                                f"⚠️ Found {len(high_corr_pairs)} highly correlated feature pairs - continuing with caution",
                             )
 
                 except Exception as e:
-                    self.logger.error(
-                        f"❌ Error validating feature file {file_path}: {e}"
+                    self.logger.exception(
+                        f"❌ Error validating feature file {file_path}: {e}",
                     )
                     return False
 
@@ -439,15 +434,14 @@ class Step2FeatureEngineeringValidator(BaseValidator):
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Error during feature quality validation: {e}")
+            self.logger.exception(f"❌ Error during feature quality validation: {e}")
             return False
 
     def _validate_minimum_relevant_features(
-        self, symbol: str, exchange: str, data_dir: str
+        self, symbol: str, exchange: str, data_dir: str,
     ) -> bool:
-        """
-        Validate minimum relevant features requirement (MAKE OR BREAK).
-        
+        """Validate minimum relevant features requirement (MAKE OR BREAK).
+
         This is a critical validation that ensures we have at least 40 relevant features
         (non-constant, non-problematic features) before proceeding with training.
 
@@ -458,10 +452,11 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
         Returns:
             bool: True if minimum relevant features requirement is met, False otherwise
+
         """
         try:
             self.logger.info(f"🔍 Validating minimum relevant features requirement ({self.min_feature_count} required)...")
-            
+
             # Load feature files
             feature_files = [
                 f"{data_dir}/{exchange}_{symbol}_features_train.pkl",
@@ -475,7 +470,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
             for file_path in feature_files:
                 if not os.path.exists(file_path):
                     self.logger.warning(
-                        f"⚠️ Feature file not found: {file_path} - skipping"
+                        f"⚠️ Feature file not found: {file_path} - skipping",
                     )
                     continue
 
@@ -514,15 +509,15 @@ class Step2FeatureEngineeringValidator(BaseValidator):
                         f"📊 {file_path}: {relevant_feature_count} relevant features "
                         f"(total: {len(feature_data.columns)}, "
                         f"constant: {len(constant_features)}, "
-                        f"high missing: {len(high_missing_features)})"
+                        f"high missing: {len(high_missing_features)})",
                     )
 
                     total_relevant_features += relevant_feature_count
                     file_count += 1
 
                 except Exception as e:
-                    self.logger.error(
-                        f"❌ Error processing feature file {file_path}: {e}"
+                    self.logger.exception(
+                        f"❌ Error processing feature file {file_path}: {e}",
                     )
                     return False
 
@@ -536,26 +531,25 @@ class Step2FeatureEngineeringValidator(BaseValidator):
             if avg_relevant_features < self.min_feature_count:
                 self.logger.error(
                     f"❌ INSUFFICIENT RELEVANT FEATURES: {avg_relevant_features:.1f} average "
-                    f"(minimum required: {self.min_feature_count}) - STOPPING PROCESS"
+                    f"(minimum required: {self.min_feature_count}) - STOPPING PROCESS",
                 )
                 self.logger.error(
-                    "❌ This is a MAKE-OR-BREAK requirement. Training cannot proceed without sufficient relevant features."
+                    "❌ This is a MAKE-OR-BREAK requirement. Training cannot proceed without sufficient relevant features.",
                 )
                 return False
 
             self.logger.info(
                 f"✅ Minimum relevant features requirement met: {avg_relevant_features:.1f} average "
-                f"(required: {self.min_feature_count})"
+                f"(required: {self.min_feature_count})",
             )
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Error during minimum relevant features validation: {e}")
+            self.logger.exception(f"❌ Error during minimum relevant features validation: {e}")
             return False
 
     def _validate_data_balance(self, symbol: str, exchange: str, data_dir: str) -> bool:
-        """
-        Validate data balance across splits.
+        """Validate data balance across splits.
 
         Args:
             symbol: Trading symbol
@@ -564,6 +558,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
         Returns:
             bool: True if data balance is acceptable
+
         """
         try:
             # Load labeled data from all splits
@@ -590,13 +585,13 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
                     except Exception as e:
                         self.logger.warning(
-                            f"⚠️ Error loading {split_name} split: {e} - continuing with caution"
+                            f"⚠️ Error loading {split_name} split: {e} - continuing with caution",
                         )
                         continue
 
             if len(split_data) < 2:
                 self.logger.warning(
-                    "⚠️ Insufficient splits for balance validation - continuing with caution"
+                    "⚠️ Insufficient splits for balance validation - continuing with caution",
                 )
                 return False
 
@@ -614,7 +609,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
                     missing_labels = set(train_labels.index) - set(split_labels.index)
                     if missing_labels:
                         self.logger.warning(
-                            f"⚠️ Missing labels in {split_name} split: {missing_labels} - continuing with caution"
+                            f"⚠️ Missing labels in {split_name} split: {missing_labels} - continuing with caution",
                         )
 
                     # Check label distribution similarity
@@ -630,7 +625,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
                         avg_diff = np.mean(distribution_diffs)
                         if avg_diff > self.data_balance_threshold:
                             self.logger.warning(
-                                f"⚠️ Large distribution difference in {split_name} split: {avg_diff:.3f} - continuing with caution"
+                                f"⚠️ Large distribution difference in {split_name} split: {avg_diff:.3f} - continuing with caution",
                             )
                             return False
 
@@ -638,15 +633,14 @@ class Step2FeatureEngineeringValidator(BaseValidator):
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Error during data balance validation: {e}")
+            self.logger.exception(f"❌ Error during data balance validation: {e}")
             return False
 
 
 async def run_validator(
-    training_input: Dict[str, Any], pipeline_state: Dict[str, Any]
-) -> Dict[str, Any]:
-    """
-    Run the Step 2 Feature Engineering validator.
+    training_input: dict[str, Any], pipeline_state: dict[str, Any],
+) -> dict[str, Any]:
+    """Run the Step 2 Feature Engineering validator.
 
     Args:
         training_input: Training input parameters
@@ -654,6 +648,7 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
+
     """
     validator = Step2FeatureEngineeringValidator(CONFIG)
     validation_passed = await validator.validate(training_input, pipeline_state)
@@ -671,7 +666,7 @@ if __name__ == "__main__":
     import asyncio
 
     # Example usage
-    async def test_validator():
+    async def test_validator() -> None:
         training_input = {
             "symbol": "ETHUSDT",
             "exchange": "BINANCE",
@@ -682,10 +677,9 @@ if __name__ == "__main__":
             "analyst_labeling_feature_engineering": {
                 "status": "SUCCESS",
                 "duration": 180.5,
-            }
+            },
         }
 
-        result = await run_validator(training_input, pipeline_state)
-        print(f"Validation result: {result}")
+        await run_validator(training_input, pipeline_state)
 
     asyncio.run(test_validator())

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Tuple
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -21,8 +21,7 @@ class RegimeSummary:
 
 
 class LiveRegimeCalculator:
-    """
-    Compute live-trading features once and derive unified regime flags.
+    """Compute live-trading features once and derive unified regime flags.
 
     This consolidates core indicators used across modules (trend, volatility,
     momentum, volume, S/R proximity) into a single, fast computation path.
@@ -37,16 +36,16 @@ class LiveRegimeCalculator:
 
         # Thresholds (aligned with existing modules defaults where possible)
         analyst_cfg = self.config.get("analyst", {}).get(
-            "unified_regime_classifier", {}
+            "unified_regime_classifier", {},
         )
         pattern_cfg = self.config.get("meta_labeling", {}).get("pattern_detection", {})
 
         # Trend/ADX thresholds
         self.adx_sideways_threshold: float = float(
-            analyst_cfg.get("adx_sideways_threshold", 18.0)
+            analyst_cfg.get("adx_sideways_threshold", 18.0),
         )
         self.adx_trend_threshold: float = float(
-            analyst_cfg.get("adx_trend_threshold", 25.0)
+            analyst_cfg.get("adx_trend_threshold", 25.0),
         )
         self.ema_fast: int = int(pattern_cfg.get("ema_fast", 21))
         self.ema_slow: int = int(pattern_cfg.get("ema_slow", 55))
@@ -54,10 +53,10 @@ class LiveRegimeCalculator:
 
         # Volatility
         self.volatility_threshold: float = float(
-            analyst_cfg.get("volatility_threshold", 0.020)
+            analyst_cfg.get("volatility_threshold", 0.020),
         )
         # For MarketHealth-like regime classification bands
-        self.vol_regime_bands: Tuple[float, float, float] = (
+        self.vol_regime_bands: tuple[float, float, float] = (
             float(pattern_cfg.get("vol_low_max", 0.02)),
             float(pattern_cfg.get("vol_normal_max", 0.04)),
             float(pattern_cfg.get("vol_high_max", 0.08)),
@@ -65,10 +64,10 @@ class LiveRegimeCalculator:
 
         # Momentum / Breakout
         self.momentum_threshold: float = float(
-            pattern_cfg.get("momentum_threshold", 0.01)
+            pattern_cfg.get("momentum_threshold", 0.01),
         )
         self.breakout_momentum: float = float(
-            pattern_cfg.get("breakout_momentum", 0.01)
+            pattern_cfg.get("breakout_momentum", 0.01),
         )
 
         # Volume
@@ -80,17 +79,16 @@ class LiveRegimeCalculator:
 
         # Bollinger compression heuristic
         self.bb_width_compression: float = float(
-            pattern_cfg.get("bb_width_compression", 0.05)
+            pattern_cfg.get("bb_width_compression", 0.05),
         )
 
     # --------------------------- Public API ---------------------------
 
     @handle_errors(
-        exceptions=(Exception,), default_return={}, context="calculate_features"
+        exceptions=(Exception,), default_return={}, context="calculate_features",
     )
     def calculate_features(self, ohlcv: pd.DataFrame) -> dict[str, float]:
-        """
-        Compute a unified set of features on the latest bar.
+        """Compute a unified set of features on the latest bar.
 
         Returns a flat dict of feature_name -> float for the last index.
         Missing values are filled conservatively where reasonable.
@@ -106,7 +104,7 @@ class LiveRegimeCalculator:
         if not data.index.is_monotonic_increasing:
             data = data.sort_index()
 
-        features: Dict[str, float] = {}
+        features: dict[str, float] = {}
 
         close = data["close"]
         high = data["high"]
@@ -192,7 +190,7 @@ class LiveRegimeCalculator:
         denom = max(features["bb_upper"] - features["bb_lower"], 1e-12)
         features["bb_position"] = float((last_close - features["bb_lower"]) / denom)
         features["bb_width"] = float(
-            (bb_upper.iloc[-1] - bb_lower.iloc[-1]) / max(bb_mid.iloc[-1], 1e-12)
+            (bb_upper.iloc[-1] - bb_lower.iloc[-1]) / max(bb_mid.iloc[-1], 1e-12),
         )
 
         # ATR(14), plus extended ATR windows
@@ -220,7 +218,7 @@ class LiveRegimeCalculator:
             else max(last_close, 1.0)
         )
         features["atr_normalized"] = float(
-            np.clip(features["atr"] / max(atr_den, 1e-8), 0.0, 10.0)
+            np.clip(features["atr"] / max(atr_den, 1e-8), 0.0, 10.0),
         )
 
         # ADX(14)
@@ -249,7 +247,7 @@ class LiveRegimeCalculator:
         features["recent_low"] = float(recent_low.iloc[-1])
         denom_pr = max(features["recent_high"] - features["recent_low"], 1e-12)
         features["price_position"] = float(
-            (last_close - features["recent_low"]) / denom_pr
+            (last_close - features["recent_low"]) / denom_pr,
         )
 
         # Momentum
@@ -275,21 +273,19 @@ class LiveRegimeCalculator:
         features["resistance_level"] = resistance
         features["support_level"] = support
         features["dist_to_resistance_pct"] = float(
-            abs(last_close - resistance) / max(1e-12, last_close)
+            abs(last_close - resistance) / max(1e-12, last_close),
         )
         features["dist_to_support_pct"] = float(
-            abs(last_close - support) / max(1e-12, last_close)
+            abs(last_close - support) / max(1e-12, last_close),
         )
 
         return features
 
     @handle_errors(
-        exceptions=(Exception,), default_return={}, context="calculate_regime_flags"
+        exceptions=(Exception,), default_return={}, context="calculate_regime_flags",
     )
     def calculate_regime_flags(self, features: dict[str, float]) -> dict[str, Any]:
-        """
-        Derive unified regime flags from computed features.
-        """
+        """Derive unified regime flags from computed features."""
         if not features:
             return {}
 
@@ -313,11 +309,11 @@ class LiveRegimeCalculator:
         # Trend confidence (mirrors simple rules style)
         denom_sw = max(self.adx_sideways_threshold, 1e-6)
         conf_sideways = float(
-            np.clip((self.adx_sideways_threshold - adx_val) / denom_sw, 0.2, 1.0)
+            np.clip((self.adx_sideways_threshold - adx_val) / denom_sw, 0.2, 1.0),
         )
         denom_tr = max(self.adx_trend_threshold - self.adx_sideways_threshold, 1e-6)
         adx_component = float(
-            np.clip((adx_val - self.adx_sideways_threshold) / denom_tr, 0.0, 1.0)
+            np.clip((adx_val - self.adx_sideways_threshold) / denom_tr, 0.0, 1.0),
         )
         sep_component = float(np.clip(ema_sep_norm * 10.0, 0.0, 1.0))
         conf_trend = float(np.clip(0.5 * adx_component + 0.5 * sep_component, 0.2, 1.0))
@@ -370,7 +366,7 @@ class LiveRegimeCalculator:
         is_expansion = (vol_ratio > 1.5) and (volume_ratio > self.volume_threshold)
 
         # Consolidate flags
-        flags: Dict[str, Any] = {
+        flags: dict[str, Any] = {
             "is_bull_trend": bool(is_bull),
             "is_bear_trend": bool(is_bear),
             "is_sideways": bool(is_sideways),
@@ -403,8 +399,7 @@ class LiveRegimeCalculator:
 
     @handle_errors(exceptions=(ValueError, TypeError, KeyError, pd.errors.EmptyDataError), default_return={}, context="build_snapshot")
     def build_snapshot(self, ohlcv: pd.DataFrame) -> dict[str, Any]:
-        """
-        Compute features and unified regime flags in one pass for live trading.
+        """Compute features and unified regime flags in one pass for live trading.
 
         Returns a dict with keys: 'features', 'flags', and convenience keys
         duplicated at the top level for quick access.

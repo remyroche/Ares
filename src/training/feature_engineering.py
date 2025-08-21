@@ -1,18 +1,18 @@
 from collections.abc import Callable
 
 import pandas as pd
-from src.utils.decorators import (
-    validate_call_or_runtime_types,
+
+from src.utils.centralized_decorators import (
     guard_dataframe_nulls,
+    validate_call_or_runtime_types,
     with_tracing_span,
 )
 
 
 class FeatureGenerator:
     def __init__(
-        self,
-        custom_features: list[Callable[[pd.DataFrame], pd.DataFrame]] = None,
-    ):
+        self, custom_features: list[Callable[[pd.DataFrame], pd.DataFrame]] | None = None,
+    ) -> None:
         self.feature_functions = [
             self.price_features,
             self.moving_averages,
@@ -31,7 +31,7 @@ class FeatureGenerator:
         for func in self.feature_functions:
             feat = func(data)
             features = features.join(feat, how="outer")
-        return features.fillna(0)  # Default, can be replaced by handle_missing_data
+        return features.fillna(0)  # Default - can be replaced by handle_missing_data
 
     def generate_labels(self, data: pd.DataFrame) -> pd.Series:
         # Example: simple trend-following label
@@ -109,11 +109,10 @@ class FeatureGenerator:
         return 100 - (100 / (1 + rs))
 
     def _calculate_macd(
-        self,
-        prices: pd.Series,
-        fast: int = 12,
-        slow: int = 26,
+        self, prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9,
     ) -> pd.Series:
         ema_fast = prices.ewm(span=fast).mean()
         ema_slow = prices.ewm(span=slow).mean()
-        return ema_fast - ema_slow
+        macd_line = ema_fast - ema_slow
+        signal_line = macd_line.ewm(span=signal).mean()
+        return macd_line - signal_line

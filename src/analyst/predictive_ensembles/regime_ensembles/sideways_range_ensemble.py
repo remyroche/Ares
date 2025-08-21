@@ -1,17 +1,13 @@
-import numpy as np
-import pandas as pd
 from lightgbm import LGBMClassifier
 from sklearn.cluster import KMeans
 from sklearn.svm import SVC
-
-from src.utils.warning_symbols import (
-    failed,
-)
-
+import numpy as np
+import pandas as pd
+from src.utils.warning_symbols import failed
 from .base_ensemble import BaseEnsemble
 
-
 class SidewaysRangeEnsemble(BaseEnsemble):
+
     def __init__(self, config: dict, ensemble_name: str = "SidewaysRangeEnsemble"):
         super().__init__(config, ensemble_name)
         self.model_config = {"kmeans_clusters": 4}
@@ -28,56 +24,49 @@ class SidewaysRangeEnsemble(BaseEnsemble):
                 random_state=42,
                 n_init=10,
             ).fit(cluster_features)
-        except Exception:
-            self.print(failed("KMeans training failed: {e}"))
+        except Exception as e:
+            self.logger.warning(f"KMeans training failed: {e}")
 
         X_of = aligned_data[self.order_flow_features].fillna(0)
         of_params = self._tune_hyperparameters(
             LGBMClassifier,
             self._get_lgbm_search_space,
-            X_of,
-            y_encoded,
+            X_of, y_encoded,
         )
         self.models["order_flow_lgbm"] = self._train_with_smote(
             LGBMClassifier(**of_params, random_state=42, verbose=-1),
-            X_of,
-            y_encoded,
+            X_of, y_encoded,
         )
 
         sample_size = min(len(X_flat), 2000)
         X_sample = X_flat.sample(n=sample_size, random_state=42)
         y_sample = pd.Series(y_encoded).loc[X_sample.index].values
         svm_params = self._tune_hyperparameters(
-            SVC,
-            self._get_svm_search_space,
-            X_sample,
-            y_sample,
+            SVC, self._get_svm_search_space,
+            X_sample, y_sample,
         )
         self.models["svm"] = self._train_with_smote(
             SVC(**svm_params, random_state=42),
-            X_flat,
-            y_encoded,
+            X_flat, y_encoded,
         )
 
     def _get_meta_features(
-        self,
-        df: pd.DataFrame,
-        is_live: bool = False,
-        **kwargs,
+        self, df: pd.DataFrame,
+        is_live: bool = False, **kwargs,
     ) -> pd.DataFrame | dict:
         X_flat = df[self.flat_features].fillna(0)
         X_of = df[self.order_flow_features].fillna(0)
         meta_label_cols = [
             c
-            for c in df.columns
-            if any(
+        for c in df.columns
+        if any(
                 c.startswith(prefix) and c.endswith(suffix)
-                for suffix in [
+        for suffix in [
                     "STRONG_TREND_CONTINUATION",
                     "RANGE_MEAN_REVERSION",
                     "EXHAUSTION_REVERSAL",
                 ]
-                for prefix in ["1m_", "5m_", "15m_", "30m_"]
+        for prefix in ["1m_", "5m_", "15m_", "30m_"]
             )
         ]
 
@@ -98,16 +87,16 @@ class SidewaysRangeEnsemble(BaseEnsemble):
                     self.models["svm"].predict_proba(current_row_flat),
                 )
             meta.update(current_row_flat.iloc[0].to_dict())
-            for col in meta_label_cols:
-                try:
-                    meta[col] = int(df[col].iloc[-1])
-                except Exception:
-                    meta[col] = 0
-            if meta_label_cols:
-                self.logger.info(
-                    f"SidewaysRangeEnsemble meta-learner live features include meta-labels: {meta_label_cols}"
-                )
-            return meta
+        for col in meta_label_cols:
+            try:
+                meta[col] = int(df[col].iloc[-1])
+            except Exception:
+                meta[col] = 0
+        if meta_label_cols:
+            self.logger.info(
+                f"SidewaysRangeEnsemble meta-learner live features include meta-labels: {meta_label_cols}",
+            )
+        return meta
         meta_df = pd.DataFrame(index=df.index)
         if self.models.get("clustering"):
             meta_df["price_cluster"] = self.models["clustering"].predict(
@@ -126,7 +115,7 @@ class SidewaysRangeEnsemble(BaseEnsemble):
         meta_df = meta_df.join(X_flat)
         if meta_label_cols:
             meta_df = meta_df.join(df[meta_label_cols].astype(float))
-            self.logger.info(
-                f"SidewaysRangeEnsemble meta-learner train features include meta-labels: {meta_label_cols}"
-            )
+        self.logger.info(
+            f"SidewaysRangeEnsemble meta-learner train features include meta-labels: {meta_label_cols}",
+        )
         return meta_df.fillna(0)

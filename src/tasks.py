@@ -1,12 +1,16 @@
 # src/tasks.py
-import os
 
+import asyncio
+import os
+from src.ares_pipeline import AresPipeline
+from src.config import get_environment_settings
+from src.database.sqlite_manager import SQLiteManager
+from src.training.enhanced_training_manager import EnhancedTrainingManager
 from celery import Celery
 from celery.schedules import crontab
 
 # Configure Celery
 app = Celery("ares_tasks", broker="redis://localhost:6379/0")
-
 
 @app.task
 def run_trading_bot_instance(symbol: str, exchange: str) -> None:
@@ -14,9 +18,7 @@ def run_trading_bot_instance(symbol: str, exchange: str) -> None:
     Celery task to run a single trading bot instance.
     This is now called by the main pipeline, not directly by the user.
     """
-    from src.ares_pipeline import (
-        AresPipeline,
-    )  # Import locally to avoid circular dependencies
+    # Import locally to avoid circular dependencies
 
     # Set environment variables for this specific instance
     os.environ["ARES_SYMBOL"] = symbol
@@ -25,10 +27,8 @@ def run_trading_bot_instance(symbol: str, exchange: str) -> None:
     pipeline = AresPipeline()
     # The pipeline's run_async method will be called by the worker
     # We assume the pipeline is designed to run indefinitely.
-    import asyncio
 
     asyncio.run(pipeline.run_async())
-
 
 @app.task
 def run_monthly_training_pipeline() -> None:
@@ -37,12 +37,6 @@ def run_monthly_training_pipeline() -> None:
     """
     print("Celery Task: Kicking off monthly training pipeline...")
     try:
-        import asyncio
-
-        from src.config import get_environment_settings
-        from src.database.sqlite_manager import SQLiteManager
-        from src.training.enhanced_training_manager import EnhancedTrainingManager
-
         async def run_training():
             # Initialize database manager
             db_manager = SQLiteManager({})
@@ -74,7 +68,6 @@ def run_monthly_training_pipeline() -> None:
         print(
             f"An unexpected error occurred while running the training pipeline task: {e}",
         )
-
 
 # --- Celery Beat Schedule ---
 # This schedule automatically triggers tasks at specified times.

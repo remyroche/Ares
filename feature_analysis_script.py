@@ -4,17 +4,15 @@ Feature Analysis Script
 Analyzes detailed validation reports to provide actionable insights
 """
 
-import json
-import pandas as pd
 from collections import defaultdict
-from typing import Dict, List, Any
-import argparse
+from typing import Any, import argparse
+import json
 
 
-def analyze_validation_report(report_file: str) -> Dict[str, Any]:
+def analyze_validation_report(report_file: str) -> dict[str , Any]:
     """Analyze a detailed validation report"""
 
-    with open(report_file, "r") as f:
+    with open(report_file) as f:
         report = json.load(f)
 
     analysis = {
@@ -25,7 +23,7 @@ def analyze_validation_report(report_file: str) -> Dict[str, Any]:
     }
 
     # Analyze issues by category
-    for issue_type, issues in report["issue_categories"].items():
+    for issue_type , issues in report["issue_categories"].items():
         analysis["issue_breakdown"][issue_type] = {
             "count": len(issues),
             "features": [issue["feature"] for issue in issues],
@@ -36,17 +34,17 @@ def analyze_validation_report(report_file: str) -> Dict[str, Any]:
     feature_analysis = report["feature_analysis"]
     problematic = defaultdict(list)
 
-    for feature, analysis_data in feature_analysis.items():
+    for feature , analysis_data in feature_analysis.items():
         issues = []
 
         # Check missing values
         if analysis_data["missing_percentage"] > 50:
             issues.append(
-                f"CRITICAL: {analysis_data['missing_percentage']:.1f}% missing"
+                f"CRITICAL: {analysis_data['missing_percentage']:.1f}% missing",
             )
         elif analysis_data["missing_percentage"] > 10:
             issues.append(
-                f"WARNING: {analysis_data['missing_percentage']:.1f}% missing"
+                f"WARNING: {analysis_data['missing_percentage']:.1f}% missing",
             )
 
         # Check infinite values
@@ -83,9 +81,9 @@ def analyze_validation_report(report_file: str) -> Dict[str, Any]:
                 "priority": "HIGH",
                 "action": "Implement proper NaN handling in feature engineering",
                 "affected_features": len(
-                    analysis["issue_breakdown"]["missing_values"]["features"]
+                    analysis["issue_breakdown"]["missing_values"]["features"],
                 ),
-            }
+            },
         )
 
     if "infinite_values" in analysis["issue_breakdown"]:
@@ -95,9 +93,9 @@ def analyze_validation_report(report_file: str) -> Dict[str, Any]:
                 "priority": "HIGH",
                 "action": "Check division by zero and log calculations",
                 "affected_features": len(
-                    analysis["issue_breakdown"]["infinite_values"]["features"]
+                    analysis["issue_breakdown"]["infinite_values"]["features"],
                 ),
-            }
+            },
         )
 
     if "zero_variance" in analysis["issue_breakdown"]:
@@ -107,15 +105,15 @@ def analyze_validation_report(report_file: str) -> Dict[str, Any]:
                 "priority": "MEDIUM",
                 "action": "Remove features with zero variance",
                 "affected_features": len(
-                    analysis["issue_breakdown"]["zero_variance"]["features"]
+                    analysis["issue_breakdown"]["zero_variance"]["features"],
                 ),
-            }
+            },
         )
 
     return analysis
 
 
-def print_analysis(analysis: Dict[str, Any]):
+def print_analysis(analysis: dict[str , Any]):
     """Print the analysis results"""
 
     print("=" * 80)
@@ -124,7 +122,7 @@ def print_analysis(analysis: Dict[str, Any]):
 
     # Summary
     summary = analysis["summary"]
-    print(f"\n📊 VALIDATION SUMMARY:")
+    print("\n📊 VALIDATION SUMMARY:")
     print(f"  Total Issues: {summary['total_issues']}")
     print(f"  Critical: {summary['critical_issues']}")
     print(f"  Errors: {summary['error_issues']}")
@@ -132,8 +130,8 @@ def print_analysis(analysis: Dict[str, Any]):
     print(f"  Info: {summary['info_issues']}")
 
     # Issue breakdown
-    print(f"\n🔍 ISSUE BREAKDOWN:")
-    for issue_type, details in analysis["issue_breakdown"].items():
+    print("\n🔍 ISSUE BREAKDOWN:")
+    for issue_type , details in analysis["issue_breakdown"].items():
         print(f"  {issue_type}: {details['count']} issues")
         if details["count"] <= 10:
             for feature in details["features"]:
@@ -142,12 +140,12 @@ def print_analysis(analysis: Dict[str, Any]):
             print(f"    - Sample: {', '.join(details['features'][:5])}...")
 
     # Problematic features
-    print(f"\n⚠️ PROBLEMATIC FEATURES:")
-    for feature, issues in analysis["problematic_features"].items():
+    print("\n⚠️ PROBLEMATIC FEATURES:")
+    for feature , issues in analysis["problematic_features"].items():
         print(f"  {feature}: {', '.join(issues)}")
 
     # Recommendations
-    print(f"\n💡 RECOMMENDATIONS:")
+    print("\n💡 RECOMMENDATIONS:")
     for rec in analysis["recommendations"]:
         print(f"  [{rec['priority']}] {rec['type']}: {rec['action']}")
         print(f"    Affects {rec['affected_features']} features")
@@ -156,7 +154,8 @@ def print_analysis(analysis: Dict[str, Any]):
 def main():
     parser = argparse.ArgumentParser(description="Analyze detailed validation report")
     parser.add_argument(
-        "report_file", help="Path to the detailed validation report JSON file"
+        "report_file",
+        help="Path to the detailed validation report JSON file",
     )
 
     args = parser.parse_args()

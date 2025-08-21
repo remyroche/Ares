@@ -3,37 +3,23 @@
 Compare aggregated trades formats between MEXC and Binance to ensure compatibility.
 """
 
-import asyncio
-import sys
+import argparse
 from datetime import datetime, timedelta
 from pathlib import Path
-
+from src.utils.logger import system_logger
+import asyncio
+import sys
 import pandas as pd
+
+from exchange.factory import ExchangeFactory
+from src.utils.error_handler import handle_errors
+from src.utils.warning_symbols import error, failed, missing, warning
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from exchange.factory import ExchangeFactory
-from src.utils.error_handler import handle_errors
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
-
 logger = system_logger.getChild("AggTradesFormatComparator")
-
 
 @handle_errors(
     exceptions=(Exception,),
@@ -42,7 +28,7 @@ logger = system_logger.getChild("AggTradesFormatComparator")
 )
 async def compare_agg_trades_formats(
     symbol: str = "BTCUSDT",
-    lookback_hours: int = 24,
+    lookback_hours: int = 24
 ) -> bool:
     """
     Compare aggregated trades formats between MEXC and Binance.
@@ -79,10 +65,8 @@ async def compare_agg_trades_formats(
 
             try:
                 trades = await exchange.get_historical_agg_trades(
-                    symbol=symbol,
-                    start_time_ms=start_time_ms,
-                    end_time_ms=end_time_ms,
-                    limit=100,
+                    symbol, start_time_ms=start_time_ms,
+                    end_time_ms=end_time_ms, limit=100,
                 )
 
                 if trades:
@@ -92,7 +76,7 @@ async def compare_agg_trades_formats(
                         f"✅ Downloaded {len(trades)} trades from {exchange_name.upper()}",
                     )
                 else:
-                    print(warning("⚠️ No trades received from {exchange_name.upper()}"))
+                    print(warning(f"⚠️ No trades received from {exchange_name.upper()}"))
                     results[exchange_name] = pd.DataFrame()
 
             except Exception as e:
@@ -143,7 +127,7 @@ async def compare_agg_trades_formats(
         # Check data ranges
         logger.info("🔍 Comparing data ranges...")
 
-        for col in ["p", "q", "T"]:  # price, quantity, timestamp
+        for col in ["p", "q", "T"]:  # price = quantity, timestamp
             if col in binance_cols and col in mexc_cols:
                 binance_min = results["binance"][col].min()
                 binance_max = results["binance"][col].max()
@@ -200,14 +184,12 @@ async def compare_agg_trades_formats(
 
         return True
 
-    except Exception as e:
+    except Exception:
         print(error("❌ Error comparing formats: {e}"))
         return False
 
-
 async def main():
     """Main function to run the comparison script."""
-    import argparse
 
     parser = argparse.ArgumentParser(description="Compare aggregated trades formats")
     parser.add_argument("--symbol", default="BTCUSDT", help="Trading symbol")
@@ -221,8 +203,7 @@ async def main():
     args = parser.parse_args()
 
     success = await compare_agg_trades_formats(
-        symbol=args.symbol,
-        lookback_hours=args.hours,
+        symbol=args.symbol, lookback_hours = args.hours,
     )
 
     if success:
@@ -231,7 +212,6 @@ async def main():
     else:
         print(failed("❌ Format comparison failed!"))
         sys.exit(1)
-
 
 if __name__ == "__main__":
     asyncio.run(main())

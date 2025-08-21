@@ -1,7 +1,6 @@
 # src/training/steps/step5_5_unified_regime_intelligence.py
 
-"""
-Step 5.5: Unified Regime Intelligence System
+"""Step 5.5: Unified Regime Intelligence System.
 
 This unified step consolidates:
 1. Multi-timeframe HMM state analysis with intensity scores for regime detection
@@ -20,30 +19,28 @@ Key Features:
 - Position logic: buy when no position + high confidence, hold when position + high confidence, sell when confidence drops
 """
 
-import asyncio
-import os
 import json
+import os
 import pickle
+import re
 import time
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, Union
 import warnings
+from datetime import datetime
+from typing import Any
 
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from torch import nn
+from torch.nn.utils import prune
 from torch.utils.data import DataLoader, TensorDataset
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-import lightgbm as lgb
 
-from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors
-from src.utils.warning_symbols import error, failed, success, timeout
-from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
+from src.utils.error_handler import handle_errors
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import error, failed, timeout
 
 warnings.filterwarnings("ignore")
 
@@ -61,11 +58,11 @@ except ImportError:
 class MultiTimeframeHMMEncoder(nn.Module):
     """Multi-timeframe HMM state encoder using attention mechanisms."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         super().__init__()
 
         self.timeframes = config.get(
-            "timeframes", ["5m", "15m", "30m"]
+            "timeframes", ["5m", "15m", "30m"],
         )  # Less noisy for regime detection
         self.hmm_states_per_tf = config.get("hmm_states_per_tf", 5)
         self.d_model = config.get("d_model", 256)
@@ -77,10 +74,10 @@ class MultiTimeframeHMMEncoder(nn.Module):
         self.hmm_embeddings = nn.ModuleDict(
             {
                 tf: nn.Embedding(
-                    self.hmm_states_per_tf, self.d_model // len(self.timeframes)
+                    self.hmm_states_per_tf, self.d_model // len(self.timeframes),
                 )
                 for tf in self.timeframes
-            }
+            },
         )
 
         # Multi-head attention for cross-timeframe analysis
@@ -100,7 +97,7 @@ class MultiTimeframeHMMEncoder(nn.Module):
             batch_first=True,
         )
         self.transformer = nn.TransformerEncoder(
-            encoder_layer, num_layers=self.num_layers
+            encoder_layer, num_layers=self.num_layers,
         )
 
         # Output projections - will be dynamically set based on actual data
@@ -113,17 +110,16 @@ class MultiTimeframeHMMEncoder(nn.Module):
         )
         self.transition_predictor = nn.Linear(self.d_model, 2)  # transition probability
         self.tpsl_predictor = nn.Linear(
-            self.d_model, 2
+            self.d_model, 2,
         )  # TPSL-based direction (long/short only)
         self.confidence_predictor = nn.Linear(self.d_model, 1)  # confidence score
         # Persisted feature projection (initialized lazily to match input feature dimension)
-        self.feature_projection: Optional[nn.Linear] = None
+        self.feature_projection: nn.Linear | None = None
 
     def forward(
-        self, hmm_states: Dict[str, torch.Tensor], features: torch.Tensor
-    ) -> Dict[str, torch.Tensor]:
-        """
-        Forward pass through the unified regime intelligence model.
+        self, hmm_states: dict[str, torch.Tensor], features: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        """Forward pass through the unified regime intelligence model.
 
         Args:
             hmm_states: Dict of HMM state sequences per timeframe
@@ -131,6 +127,7 @@ class MultiTimeframeHMMEncoder(nn.Module):
 
         Returns:
             Dict containing regime classification, transition predictions, and S/R detection
+
         """
         batch_size = features.size(0)
         seq_len = features.size(1)
@@ -147,7 +144,7 @@ class MultiTimeframeHMMEncoder(nn.Module):
             hmm_encoded = torch.cat(tf_embeddings, dim=-1)
         else:
             hmm_encoded = torch.zeros(
-                batch_size, seq_len, self.d_model, device=features.device
+                batch_size, seq_len, self.d_model, device=features.device,
             )
 
         # Combine with market features (lazy-init projection to avoid recreating each forward)
@@ -190,13 +187,13 @@ class MultiTimeframeHMMEncoder(nn.Module):
 class UnifiedRegimeIntelligenceStep:
     """Unified Step 9: Regime Intelligence System."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = logger
 
         # Model configuration
         self.timeframes = config.get(
-            "timeframes", ["5m", "15m", "30m"]
+            "timeframes", ["5m", "15m", "30m"],
         )  # Less noisy for regime detection
         self.hmm_states_per_tf = config.get("hmm_states_per_tf", 5)
         self.sequence_length = config.get("sequence_length", 20)
@@ -218,7 +215,7 @@ class UnifiedRegimeIntelligenceStep:
 
         # Artifacts
         self.artifacts_dir = config.get(
-            "artifacts_dir", "checkpoints/unified_regime_intelligence"
+            "artifacts_dir", "checkpoints/unified_regime_intelligence",
         )
         os.makedirs(self.artifacts_dir, exist_ok=True)
 
@@ -226,13 +223,13 @@ class UnifiedRegimeIntelligenceStep:
         self.enhancement_config = config.get("enhancement", {})
         self.hpo_enabled = self.enhancement_config.get("hpo_enabled", False)
         self.architecture_optimization_enabled = self.enhancement_config.get(
-            "architecture_optimization_enabled", False
+            "architecture_optimization_enabled", False,
         )
         self.hpo_config = self.enhancement_config.get("hpo", {})
         self.n_trials = self.hpo_config.get("n_trials", 20)
         self.hpo_timeout = self.hpo_config.get("timeout", 900)
         self.hpo_pruning = self.hpo_config.get("pruning_enabled", True)
-        
+
         # Initialize enhanced LM optimizer
         self.enhanced_lm_optimizer = None
         if ENHANCED_OPTIMIZER_AVAILABLE:
@@ -259,12 +256,12 @@ class UnifiedRegimeIntelligenceStep:
             if torch.cuda.is_available():
                 return "cuda"
             # MPS check can occasionally hang; guard with timeout
-            import threading
             import queue
+            import threading
 
             result_queue = queue.Queue()
 
-            def check_mps():
+            def check_mps() -> None:
                 try:
                     is_available = torch.backends.mps.is_available()
                     result_queue.put(("mps" if is_available else "cpu", None))
@@ -280,10 +277,10 @@ class UnifiedRegimeIntelligenceStep:
                     return "cpu"
                 return device
             except queue.Empty:
-                self.logger.error(timeout("MPS availability check timed out, using CPU"))
+                self.logger.exception(timeout("MPS availability check timed out, using CPU"))
                 return "cpu"
         except Exception as ex:
-            self.logger.error(error(f"Error checking device availability: {ex}, using CPU"))
+            self.logger.exception(error(f"Error checking device availability: {ex}, using CPU"))
             return "cpu"
 
     @handle_errors(
@@ -308,17 +305,17 @@ class UnifiedRegimeIntelligenceStep:
             sr_init_success = await self.sr_predictor.initialize()
             if not sr_init_success:
                 self.logger.warning(
-                    "⚠️ Failed to initialize SRBreakoutPredictor, continuing without S/R analysis"
+                    "⚠️ Failed to initialize SRBreakoutPredictor, continuing without S/R analysis",
                 )
 
             self.logger.info(
-                "✅ Unified Regime Intelligence Step initialized successfully"
+                "✅ Unified Regime Intelligence Step initialized successfully",
             )
             return True
 
         except Exception as e:
-            self.logger.error(
-                f"🚨 Failed to initialize Unified Regime Intelligence Step: {e}"
+            self.logger.exception(
+                f"🚨 Failed to initialize Unified Regime Intelligence Step: {e}",
             )
             return False
 
@@ -327,40 +324,42 @@ class UnifiedRegimeIntelligenceStep:
         default_return=False,
         context="unified regime intelligence training",
     )
-    async def train(self, data: Dict[str, pd.DataFrame]) -> bool:
+    async def train(self, data: dict[str, pd.DataFrame]) -> bool:
         """Train the unified regime intelligence model."""
         try:
             self.logger.info("🚀 Starting Unified Regime Intelligence training...")
 
             # Enhanced optimization for step6_5
             if self.enhanced_lm_optimizer is None:
-                raise RuntimeError("Enhanced LM optimizer is required but not initialized")
-            
+                msg = "Enhanced LM optimizer is required but not initialized"
+                raise RuntimeError(msg)
+
             # Initialize the optimizer if not already done
-            if not hasattr(self.enhanced_lm_optimizer, 'initialization_status'):
+            if not hasattr(self.enhanced_lm_optimizer, "initialization_status"):
                 await self.enhanced_lm_optimizer.initialize()
-            
+
             self.logger.info("🔧 Enhanced LM optimization enabled: starting comprehensive optimization...")
-            
+
             # Prepare data for optimization
             optimization_data = await self._prepare_optimization_data(data)
             if not optimization_data:
-                raise RuntimeError("Failed to prepare optimization data")
-            
+                msg = "Failed to prepare optimization data"
+                raise RuntimeError(msg)
+
             optimization_results, optimized_features = await self.enhanced_lm_optimizer.optimize_lm_model(
                 step_name="step6_5",
                 features_df=optimization_data["features"],
                 target=optimization_data["target"],
                 model_type="classification",
-                architecture="Transformer"
+                architecture="Transformer",
             )
-            
+
             self.logger.info("✅ Enhanced optimization completed for step6_5")
             # Store optimization results
             if not hasattr(self, "enhancement_results"):
                 self.enhancement_results = {}
             self.enhancement_results["enhanced_optimization"] = optimization_results
-            
+
             # Check if HPO is enabled
             if self.hpo_enabled:
                 self.logger.info("🔧 HPO enabled: starting short optimization...")
@@ -406,17 +405,17 @@ class UnifiedRegimeIntelligenceStep:
             await self._save_artifacts()
 
             self.logger.info(
-                "✅ Unified Regime Intelligence training completed successfully"
+                "✅ Unified Regime Intelligence training completed successfully",
             )
             return True
 
         except Exception as e:
-            self.logger.error(f"🚨 Training failed: {e}")
+            self.logger.exception(f"🚨 Training failed: {e}")
             return False
 
     async def _prepare_optimization_data(
-        self, data: Dict[str, pd.DataFrame]
-    ) -> Optional[Dict[str, Any]]:
+        self, data: dict[str, pd.DataFrame],
+    ) -> dict[str, Any] | None:
         """Prepare data for enhanced optimization."""
         try:
             # Load HMM composite data for each timeframe
@@ -426,7 +425,7 @@ class UnifiedRegimeIntelligenceStep:
                 if os.path.exists(hmm_file):
                     hmm_data[tf] = pd.read_parquet(hmm_file)
                     self.logger.info(
-                        f"📦 Loaded HMM data for optimization: {tf}: {len(hmm_data[tf])} rows"
+                        f"📦 Loaded HMM data for optimization: {tf}: {len(hmm_data[tf])} rows",
                     )
 
             if not hmm_data:
@@ -436,35 +435,35 @@ class UnifiedRegimeIntelligenceStep:
             # Use the first timeframe for optimization
             tf = self.timeframes[0]
             tf_data = hmm_data[tf]
-            
+
             # Prepare features and target
             feature_columns = [col for col in tf_data.columns if col not in ["composite_cluster_id", "timestamp"]]
             features = tf_data[feature_columns].fillna(0)
             target = tf_data["composite_cluster_id"].fillna(-1)
-            
+
             # Remove noise cluster (-1) from target
             valid_mask = target != -1
             features = features[valid_mask]
             target = target[valid_mask]
-            
+
             if len(features) == 0:
                 self.logger.error("🚨 No valid data for optimization")
                 return None
-                
+
             self.logger.info(f"📊 Prepared optimization data: {len(features)} samples, {len(features.columns)} features")
-            
+
             return {
                 "features": features,
-                "target": target
+                "target": target,
             }
-            
+
         except Exception as e:
-            self.logger.error(f"🚨 Failed to prepare optimization data: {e}")
+            self.logger.exception(f"🚨 Failed to prepare optimization data: {e}")
             return None
 
     async def _prepare_training_data(
-        self, data: Dict[str, pd.DataFrame]
-    ) -> Optional[Dict[str, Any]]:
+        self, data: dict[str, pd.DataFrame],
+    ) -> dict[str, Any] | None:
         """Prepare training data from multi-timeframe HMM states, intensity scores, and features."""
         try:
             # Load HMM composite data for each timeframe
@@ -474,7 +473,7 @@ class UnifiedRegimeIntelligenceStep:
                 if os.path.exists(hmm_file):
                     hmm_data[tf] = pd.read_parquet(hmm_file)
                     self.logger.info(
-                        f"📦 Loaded HMM data for {tf}: {len(hmm_data[tf])} rows"
+                        f"📦 Loaded HMM data for {tf}: {len(hmm_data[tf])} rows",
                     )
 
             if not hmm_data:
@@ -497,17 +496,17 @@ class UnifiedRegimeIntelligenceStep:
                 return None
 
             self.logger.info(
-                f"📊 Determined {self.num_regimes} regimes from HMM data: {sorted(all_cluster_ids)}"
+                f"📊 Determined {self.num_regimes} regimes from HMM data: {sorted(all_cluster_ids)}",
             )
 
             # Initialize output layers with correct dimensions
             if self.model is not None:
                 self.model.num_regimes = self.num_regimes
                 self.model.regime_classifier = nn.Linear(
-                    self.model.d_model, self.num_regimes
+                    self.model.d_model, self.num_regimes,
                 )
                 self.model.intensity_predictor = nn.Linear(
-                    self.model.d_model, self.num_regimes
+                    self.model.d_model, self.num_regimes,
                 )
 
             # Load intensity data from step1_7
@@ -519,11 +518,11 @@ class UnifiedRegimeIntelligenceStep:
                 if os.path.exists(intensity_file):
                     intensity_data[tf] = pd.read_parquet(intensity_file)
                     self.logger.info(
-                        f"📦 Loaded intensity data for {tf}: {len(intensity_data[tf])} rows"
+                        f"📦 Loaded intensity data for {tf}: {len(intensity_data[tf])} rows",
                     )
                 else:
                     self.logger.warning(
-                        f"⚠️ Intensity data not found for {tf}, generating from HMM states"
+                        f"⚠️ Intensity data not found for {tf}, generating from HMM states",
                     )
                     # Generate intensity scores from HMM states (fallback)
                     intensity_data[tf] = self._generate_intensity_scores(hmm_data[tf])
@@ -532,7 +531,7 @@ class UnifiedRegimeIntelligenceStep:
             combined_features = data.get("combined_features", pd.DataFrame())
             if combined_features.empty:
                 self.logger.warning(
-                    "⚠️ No combined features provided, using HMM data only"
+                    "⚠️ No combined features provided, using HMM data only",
                 )
 
             # Align all data to the same index (use 1m as base)
@@ -544,14 +543,13 @@ class UnifiedRegimeIntelligenceStep:
             base_index = hmm_data[base_tf].index
 
             # Prepare sequences
-            sequences = await self._create_sequences(
-                hmm_data, intensity_data, combined_features, base_index
+            return await self._create_sequences(
+                hmm_data, intensity_data, combined_features, base_index,
             )
 
-            return sequences
 
         except Exception as e:
-            self.logger.error(f"🚨 Error preparing training data: {e}")
+            self.logger.exception(f"🚨 Error preparing training data: {e}")
             return None
 
     def _generate_intensity_scores(self, hmm_df: pd.DataFrame) -> pd.DataFrame:
@@ -559,13 +557,13 @@ class UnifiedRegimeIntelligenceStep:
         try:
             # Get unique cluster IDs
             cluster_ids = hmm_df.get(
-                "composite_cluster_id", hmm_df.get("hmm_state", np.arange(20))
+                "composite_cluster_id", hmm_df.get("hmm_state", np.arange(20)),
             )
             unique_clusters = np.unique(cluster_ids)
-            
+
             # Create intensity columns for each cluster
             intensity_df = pd.DataFrame(index=hmm_df.index)
-            
+
             # Basic intensity scores (probability of being in each cluster)
             for cluster_id in unique_clusters:
                 cluster_mask = (cluster_ids == cluster_id).astype(float)
@@ -573,34 +571,34 @@ class UnifiedRegimeIntelligenceStep:
                 intensity_5 = cluster_mask.rolling(window=5, min_periods=1).mean()
                 intensity_10 = cluster_mask.rolling(window=10, min_periods=1).mean()
                 intensity_20 = cluster_mask.rolling(window=20, min_periods=1).mean()
-                
+
                 intensity_df[f"intensity_cluster_{cluster_id}"] = intensity_10  # Main intensity
                 intensity_df[f"intensity_cluster_{cluster_id}_short"] = intensity_5  # Short-term
                 intensity_df[f"intensity_cluster_{cluster_id}_long"] = intensity_20  # Long-term
-            
+
             # Regime persistence features
             for cluster_id in unique_clusters:
                 cluster_mask = (cluster_ids == cluster_id).astype(float)
                 # Calculate how long we've been in this regime
                 persistence = cluster_mask.groupby((cluster_mask != cluster_mask.shift()).cumsum()).cumsum()
                 intensity_df[f"persistence_cluster_{cluster_id}"] = persistence
-            
+
             # Regime transition features
             for cluster_id in unique_clusters:
                 cluster_mask = (cluster_ids == cluster_id).astype(float)
                 # Transition probability (likelihood of staying in this regime)
                 transition_prob = cluster_mask.rolling(window=10, min_periods=1).apply(
-                    lambda x: (x == 1).sum() / len(x) if len(x) > 0 else 0
+                    lambda x: (x == 1).sum() / len(x) if len(x) > 0 else 0,
                 )
                 intensity_df[f"transition_prob_cluster_{cluster_id}"] = transition_prob
-            
+
             # Volatility of intensity (regime stability)
             for cluster_id in unique_clusters:
                 cluster_mask = (cluster_ids == cluster_id).astype(float)
                 intensity = cluster_mask.rolling(window=10, min_periods=1).mean()
                 intensity_vol = intensity.rolling(window=5, min_periods=1).std()
                 intensity_df[f"intensity_vol_cluster_{cluster_id}"] = intensity_vol
-            
+
             # Cross-regime correlation features
             if len(unique_clusters) > 1:
                 # Calculate correlation between different regime intensities
@@ -610,24 +608,24 @@ class UnifiedRegimeIntelligenceStep:
                         intensity2 = intensity_df[f"intensity_cluster_{cluster_id2}"]
                         correlation = intensity1.rolling(window=20, min_periods=1).corr(intensity2)
                         intensity_df[f"corr_{cluster_id1}_{cluster_id2}"] = correlation
-            
+
             # Regime dominance features
             all_intensities = [intensity_df[f"intensity_cluster_{cid}"] for cid in unique_clusters]
             if all_intensities:
                 intensity_matrix = pd.concat(all_intensities, axis=1)
                 # Dominant regime (highest intensity)
                 dominant_regime = intensity_matrix.idxmax(axis=1)
-                intensity_df["dominant_regime"] = dominant_regime.astype('category').cat.codes
-                
+                intensity_df["dominant_regime"] = dominant_regime.astype("category").cat.codes
+
                 # Regime diversity (number of regimes with significant intensity)
                 significant_intensities = (intensity_matrix > 0.1).sum(axis=1)
                 intensity_df["regime_diversity"] = significant_intensities
-            
+
             self.logger.info(f"📊 Generated {len(intensity_df.columns)} comprehensive intensity features")
             return intensity_df
 
         except Exception as e:
-            self.logger.error(f"🚨 Error generating intensity scores: {e}")
+            self.logger.exception(f"🚨 Error generating intensity scores: {e}")
             # Return basic intensity scores as fallback
             return pd.DataFrame(
                 {
@@ -638,16 +636,15 @@ class UnifiedRegimeIntelligenceStep:
             )
 
     async def _create_cross_timeframe_correlations(
-        self, 
-        intensity_data: Dict[str, pd.DataFrame], 
-        base_index: pd.DatetimeIndex
+        self,
+        intensity_data: dict[str, pd.DataFrame],
+        base_index: pd.DatetimeIndex,
     ) -> pd.DataFrame:
         """Create cross-timeframe intensity correlations."""
-        
         try:
             # Initialize correlation dataframe
             correlation_df = pd.DataFrame(index=base_index)
-            
+
             # Get intensity columns from each timeframe
             tf_intensities = {}
             for tf in self.timeframes:
@@ -655,135 +652,131 @@ class UnifiedRegimeIntelligenceStep:
                     tf_data = intensity_data[tf]
                     if tf != "1m":
                         tf_data = tf_data.reindex(base_index, method="ffill")
-                    
+
                     # Get intensity columns
                     intensity_cols = [col for col in tf_data.columns if col.startswith("intensity_cluster_")]
                     tf_intensities[tf] = tf_data[intensity_cols]
-            
+
             # Calculate cross-timeframe correlations
             if len(tf_intensities) >= 2:
-                timeframes = list(tf_intensities.keys())
-                
+                list(tf_intensities.keys())
+
                 # 1. 1m-5m correlation
                 if "1m" in tf_intensities and "5m" in tf_intensities:
                     correlation_df["corr_1m_5m"] = self._calculate_intensity_correlation(
-                        tf_intensities["1m"], tf_intensities["5m"], window=20
+                        tf_intensities["1m"], tf_intensities["5m"], window=20,
                     )
-                
-                # 2. 1m-15m correlation  
+
+                # 2. 1m-15m correlation
                 if "1m" in tf_intensities and "15m" in tf_intensities:
                     correlation_df["corr_1m_15m"] = self._calculate_intensity_correlation(
-                        tf_intensities["1m"], tf_intensities["15m"], window=20
+                        tf_intensities["1m"], tf_intensities["15m"], window=20,
                     )
-                
+
                 # 3. 5m-15m correlation
                 if "5m" in tf_intensities and "15m" in tf_intensities:
                     correlation_df["corr_5m_15m"] = self._calculate_intensity_correlation(
-                        tf_intensities["5m"], tf_intensities["15m"], window=20
+                        tf_intensities["5m"], tf_intensities["15m"], window=20,
                     )
-                
+
                 # 4. Multi-timeframe alignment score
                 correlation_df["multi_tf_alignment"] = self._calculate_multi_timeframe_alignment(
-                    tf_intensities, window=20
+                    tf_intensities, window=20,
                 )
-                
+
                 # 5. Temporal consistency score
                 correlation_df["temporal_consistency"] = self._calculate_temporal_consistency(
-                    tf_intensities, window=20
+                    tf_intensities, window=20,
                 )
-                
+
                 # 6. Regime synchronization score
                 correlation_df["regime_synchronization"] = self._calculate_regime_synchronization(
-                    tf_intensities, window=20
+                    tf_intensities, window=20,
                 )
-            
+
             self.logger.info(f"📊 Generated {len(correlation_df.columns)} cross-timeframe correlation features")
             return correlation_df
-            
+
         except Exception as e:
-            self.logger.error(f"🚨 Error creating cross-timeframe correlations: {e}")
+            self.logger.exception(f"🚨 Error creating cross-timeframe correlations: {e}")
             return pd.DataFrame(index=base_index)
 
     def _calculate_intensity_correlation(
-        self, 
-        tf1_intensities: pd.DataFrame, 
-        tf2_intensities: pd.DataFrame, 
-        window: int = 20
+        self,
+        tf1_intensities: pd.DataFrame,
+        tf2_intensities: pd.DataFrame,
+        window: int = 20,
     ) -> pd.Series:
         """Calculate rolling correlation between two timeframe intensities."""
-        
         try:
             # Calculate mean intensity per timeframe
             tf1_mean = tf1_intensities.mean(axis=1)
             tf2_mean = tf2_intensities.mean(axis=1)
-            
+
             # Calculate rolling correlation
             correlation = tf1_mean.rolling(window=window, min_periods=1).corr(tf2_mean)
-            
+
             return correlation.fillna(0)
-            
+
         except Exception as e:
-            self.logger.error(f"🚨 Error calculating intensity correlation: {e}")
+            self.logger.exception(f"🚨 Error calculating intensity correlation: {e}")
             return pd.Series(0, index=tf1_intensities.index)
 
     def _calculate_multi_timeframe_alignment(
-        self, 
-        tf_intensities: Dict[str, pd.DataFrame], 
-        window: int = 20
+        self,
+        tf_intensities: dict[str, pd.DataFrame],
+        window: int = 20,
     ) -> pd.Series:
         """Calculate how well all timeframes are aligned."""
-        
         try:
             # Get dominant regime for each timeframe
             dominant_regimes = {}
             for tf, intensities in tf_intensities.items():
                 dominant_regimes[tf] = intensities.idxmax(axis=1)
-            
+
             # Calculate alignment score (percentage of timeframes with same dominant regime)
             alignment_scores = []
-            for i in range(len(list(tf_intensities.values())[0])):
+            for i in range(len(next(iter(tf_intensities.values())))):
                 regimes_at_time = [regimes.iloc[i] for regimes in dominant_regimes.values()]
                 alignment = len(set(regimes_at_time)) / len(regimes_at_time)
                 alignment_scores.append(1 - alignment)  # Higher = better alignment
-            
-            return pd.Series(alignment_scores, index=list(tf_intensities.values())[0].index)
-            
+
+            return pd.Series(alignment_scores, index=next(iter(tf_intensities.values())).index)
+
         except Exception as e:
-            self.logger.error(f"🚨 Error calculating multi-timeframe alignment: {e}")
-            return pd.Series(0, index=list(tf_intensities.values())[0].index)
+            self.logger.exception(f"🚨 Error calculating multi-timeframe alignment: {e}")
+            return pd.Series(0, index=next(iter(tf_intensities.values())).index)
 
     def _calculate_temporal_consistency(
-        self, 
-        tf_intensities: Dict[str, pd.DataFrame], 
-        window: int = 20
+        self,
+        tf_intensities: dict[str, pd.DataFrame],
+        window: int = 20,
     ) -> pd.Series:
         """Calculate temporal consistency across timeframes."""
-        
         try:
             # Calculate intensity stability for each timeframe
             stability_scores = []
-            for tf, intensities in tf_intensities.items():
+            for intensities in tf_intensities.values():
                 # Calculate rolling standard deviation of mean intensity
                 mean_intensity = intensities.mean(axis=1)
                 stability = 1 / (1 + mean_intensity.rolling(window=window, min_periods=1).std())
                 stability_scores.append(stability)
-            
+
             # Average stability across timeframes
             avg_stability = pd.concat(stability_scores, axis=1).mean(axis=1)
-            
+
             return avg_stability.fillna(0)
-            
+
         except Exception as e:
-            self.logger.error(f"🚨 Error calculating temporal consistency: {e}")
-            return pd.Series(0, index=list(tf_intensities.values())[0].index)
+            self.logger.exception(f"🚨 Error calculating temporal consistency: {e}")
+            return pd.Series(0, index=next(iter(tf_intensities.values())).index)
 
     def _calculate_regime_synchronization(
-        self, 
-        tf_intensities: Dict[str, pd.DataFrame], 
-        window: int = 20
+        self,
+        tf_intensities: dict[str, pd.DataFrame],
+        window: int = 20,
     ) -> pd.Series:
         """Calculate regime synchronization across timeframes."""
-        
         try:
             # Calculate regime change points for each timeframe
             change_points = {}
@@ -791,165 +784,160 @@ class UnifiedRegimeIntelligenceStep:
                 dominant_regimes = intensities.idxmax(axis=1)
                 changes = (dominant_regimes != dominant_regimes.shift(1)).astype(int)
                 change_points[tf] = changes
-            
+
             # Calculate synchronization (how often changes happen simultaneously)
             sync_scores = []
-            for i in range(len(list(tf_intensities.values())[0])):
+            for i in range(len(next(iter(tf_intensities.values())))):
                 changes_at_time = [changes.iloc[i] for changes in change_points.values()]
                 sync_score = sum(changes_at_time) / len(changes_at_time)
                 sync_scores.append(sync_score)
-            
+
             # Rolling average for smoothing
-            sync_series = pd.Series(sync_scores, index=list(tf_intensities.values())[0].index)
+            sync_series = pd.Series(sync_scores, index=next(iter(tf_intensities.values())).index)
             return sync_series.rolling(window=window, min_periods=1).mean().fillna(0)
-            
+
         except Exception as e:
-            self.logger.error(f"🚨 Error calculating regime synchronization: {e}")
-            return pd.Series(0, index=list(tf_intensities.values())[0].index)
+            self.logger.exception(f"🚨 Error calculating regime synchronization: {e}")
+            return pd.Series(0, index=next(iter(tf_intensities.values())).index)
 
     async def _create_regime_transition_features(
-        self, 
-        hmm_data: Dict[str, pd.DataFrame], 
-        base_index: pd.DatetimeIndex
+        self,
+        hmm_data: dict[str, pd.DataFrame],
+        base_index: pd.DatetimeIndex,
     ) -> pd.DataFrame:
         """Create regime transition probability features."""
-        
         try:
             # Initialize transition dataframe
             transition_df = pd.DataFrame(index=base_index)
-            
+
             # Get regime data from 1m (base timeframe)
             if "1m" in hmm_data:
                 regime_data = hmm_data["1m"]
                 if "composite_cluster_id" in regime_data.columns:
                     regimes = regime_data["composite_cluster_id"]
-                    
+
                     # Get unique regimes (excluding noise cluster -1)
                     unique_regimes = sorted([r for r in regimes.unique() if r >= 0])
-                    
+
                     # Calculate transition probabilities for each regime
                     for regime_id in unique_regimes:
                         # 1. Stay probability (probability of staying in this regime)
                         stay_prob = self._calculate_stay_probability(regimes, regime_id, window=20)
                         transition_df[f"stay_prob_regime_{regime_id}"] = stay_prob
-                        
+
                         # 2. Transition velocity (how quickly we transition from this regime)
                         transition_vel = self._calculate_transition_velocity(regimes, regime_id, window=20)
                         transition_df[f"transition_vel_regime_{regime_id}"] = transition_vel
-                        
+
                         # 3. Regime persistence (how long we typically stay in this regime)
                         persistence = self._calculate_regime_persistence(regimes, regime_id, window=20)
                         transition_df[f"persistence_regime_{regime_id}"] = persistence
-                        
+
                         # 4. Regime momentum (tendency to continue in this regime)
                         momentum = self._calculate_regime_momentum(regimes, regime_id, window=20)
                         transition_df[f"momentum_regime_{regime_id}"] = momentum
-            
+
             self.logger.info(f"📊 Generated {len(transition_df.columns)} regime transition features")
             return transition_df
-            
+
         except Exception as e:
-            self.logger.error(f"🚨 Error creating regime transition features: {e}")
+            self.logger.exception(f"🚨 Error creating regime transition features: {e}")
             return pd.DataFrame(index=base_index)
 
     def _calculate_stay_probability(
-        self, 
-        regimes: pd.Series, 
-        regime_id: int, 
-        window: int = 20
+        self,
+        regimes: pd.Series,
+        regime_id: int,
+        window: int = 20,
     ) -> pd.Series:
         """Calculate probability of staying in a specific regime."""
-        
         try:
             # Create regime mask
             regime_mask = (regimes == regime_id).astype(int)
-            
+
             # Calculate rolling probability of staying in regime
             stay_prob = regime_mask.rolling(window=window, min_periods=1).mean()
-            
+
             return stay_prob.fillna(0)
-            
+
         except Exception as e:
-            self.logger.error(f"🚨 Error calculating stay probability: {e}")
+            self.logger.exception(f"🚨 Error calculating stay probability: {e}")
             return pd.Series(0, index=regimes.index)
 
     def _calculate_transition_velocity(
-        self, 
-        regimes: pd.Series, 
-        regime_id: int, 
-        window: int = 20
+        self,
+        regimes: pd.Series,
+        regime_id: int,
+        window: int = 20,
     ) -> pd.Series:
         """Calculate how quickly we transition from a specific regime."""
-        
         try:
             # Create regime mask
             regime_mask = (regimes == regime_id).astype(int)
-            
+
             # Calculate transition points (when we leave this regime)
             transitions = ((regime_mask == 1) & (regime_mask.shift(1) == 0)).astype(int)
-            
+
             # Calculate rolling transition frequency
             transition_freq = transitions.rolling(window=window, min_periods=1).sum() / window
-            
+
             return transition_freq.fillna(0)
-            
+
         except Exception as e:
-            self.logger.error(f"🚨 Error calculating transition velocity: {e}")
+            self.logger.exception(f"🚨 Error calculating transition velocity: {e}")
             return pd.Series(0, index=regimes.index)
 
     def _calculate_regime_persistence(
-        self, 
-        regimes: pd.Series, 
-        regime_id: int, 
-        window: int = 20
+        self,
+        regimes: pd.Series,
+        regime_id: int,
+        window: int = 20,
     ) -> pd.Series:
         """Calculate typical persistence length of a specific regime."""
-        
         try:
             # Create regime mask
             regime_mask = (regimes == regime_id).astype(int)
-            
+
             # Calculate consecutive periods in regime
             persistence = regime_mask.groupby((regime_mask != regime_mask.shift()).cumsum()).cumsum()
-            
+
             # Calculate rolling average persistence
             avg_persistence = persistence.rolling(window=window, min_periods=1).mean()
-            
+
             return avg_persistence.fillna(0)
-            
+
         except Exception as e:
-            self.logger.error(f"🚨 Error calculating regime persistence: {e}")
+            self.logger.exception(f"🚨 Error calculating regime persistence: {e}")
             return pd.Series(0, index=regimes.index)
 
     def _calculate_regime_momentum(
-        self, 
-        regimes: pd.Series, 
-        regime_id: int, 
-        window: int = 20
+        self,
+        regimes: pd.Series,
+        regime_id: int,
+        window: int = 20,
     ) -> pd.Series:
         """Calculate momentum of a specific regime."""
-        
         try:
             # Create regime mask
             regime_mask = (regimes == regime_id).astype(int)
-            
+
             # Calculate rate of change in regime probability
             regime_prob = regime_mask.rolling(window=window, min_periods=1).mean()
             momentum = regime_prob.diff().rolling(window=5, min_periods=1).mean()
-            
+
             return momentum.fillna(0)
-            
+
         except Exception as e:
-            self.logger.error(f"🚨 Error calculating regime momentum: {e}")
+            self.logger.exception(f"🚨 Error calculating regime momentum: {e}")
             return pd.Series(0, index=regimes.index)
 
     async def _create_sequences(
         self,
-        hmm_data: Dict[str, pd.DataFrame],
-        intensity_data: Dict[str, pd.DataFrame],
+        hmm_data: dict[str, pd.DataFrame],
+        intensity_data: dict[str, pd.DataFrame],
         features: pd.DataFrame,
         base_index: pd.DatetimeIndex,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create training sequences for the unified model."""
         try:
             sequences = []
@@ -957,12 +945,12 @@ class UnifiedRegimeIntelligenceStep:
 
             # Create cross-timeframe correlations
             cross_tf_correlations = await self._create_cross_timeframe_correlations(
-                intensity_data, base_index
+                intensity_data, base_index,
             )
 
             # Create regime transition features
             transition_features = await self._create_regime_transition_features(
-                hmm_data, base_index
+                hmm_data, base_index,
             )
 
             # Create sliding windows
@@ -990,7 +978,7 @@ class UnifiedRegimeIntelligenceStep:
                         tf_intensity = intensity_data[tf]
                         if tf != "1m":
                             tf_intensity = tf_intensity.reindex(
-                                base_index, method="ffill"
+                                base_index, method="ffill",
                             )
 
                         window_intensity = tf_intensity.iloc[window_start:window_end]
@@ -1018,17 +1006,17 @@ class UnifiedRegimeIntelligenceStep:
 
                 # Combine all features - only use actual features
                 all_feature_arrays = []
-                
+
                 # Add additional features if available
                 if feature_values.size > 0:
                     all_feature_arrays.append(feature_values)
-                
+
                 # Add intensity features
                 all_feature_arrays.extend(intensity_features)
-                
+
                 # Add cross-timeframe correlation features
                 all_feature_arrays.extend(correlation_features)
-                
+
                 # Add regime transition features
                 all_feature_arrays.extend(transition_feature_values)
 
@@ -1045,16 +1033,16 @@ class UnifiedRegimeIntelligenceStep:
                 future_regimes = (
                     hmm_data["1m"].iloc[i : i + 5]["composite_cluster_id"].values
                 )
-                transition = 1 if len(set(future_regimes)) > 1 else 0
+                1 if len(set(future_regimes)) > 1 else 0
 
                 # TPSL-based direction prediction (long/short only)
                 tpsl_direction = await self._calculate_tpsl_direction(
-                    hmm_data["1m"], i, window_start, window_end
+                    hmm_data["1m"], i, window_start, window_end,
                 )
 
                 # Intensity-based transition detection
                 transition_detected = self._detect_intensity_transition(
-                    intensity_data, i, window_start, window_end
+                    intensity_data, i, window_start, window_end,
                 )
 
                 sequences.append({"hmm_states": hmm_states, "features": all_features})
@@ -1073,16 +1061,16 @@ class UnifiedRegimeIntelligenceStep:
                 hmm_tensors[tf] = torch.tensor(tf_states, dtype=torch.long)
 
             feature_tensor = torch.tensor(
-                [seq["features"] for seq in sequences], dtype=torch.float32
+                [seq["features"] for seq in sequences], dtype=torch.float32,
             )
 
             # Log feature count information with enhanced features
             await self._log_feature_count_info(
-                feature_tensor, 
-                intensity_features, 
-                features, 
-                cross_tf_correlations, 
-                transition_features
+                feature_tensor,
+                intensity_features,
+                features,
+                cross_tf_correlations,
+                transition_features,
             )
 
             # Encode labels now that we have full sequences
@@ -1101,10 +1089,10 @@ class UnifiedRegimeIntelligenceStep:
             }
 
         except Exception as e:
-            self.logger.error(f"🚨 Error creating sequences: {e}")
+            self.logger.exception(f"🚨 Error creating sequences: {e}")
             return None
 
-    async def _log_feature_count_info(self, feature_tensor: torch.Tensor, intensity_features: List[np.ndarray], features: pd.DataFrame, cross_tf_correlations: pd.DataFrame, transition_features: pd.DataFrame):
+    async def _log_feature_count_info(self, feature_tensor: torch.Tensor, intensity_features: list[np.ndarray], features: pd.DataFrame, cross_tf_correlations: pd.DataFrame, transition_features: pd.DataFrame) -> None:
         """Log detailed information about feature counts and dimensions."""
         try:
             total_features = feature_tensor.shape[-1] if len(feature_tensor.shape) > 1 else 0
@@ -1112,7 +1100,7 @@ class UnifiedRegimeIntelligenceStep:
             additional_feature_count = features.shape[1] if not features.empty else 0
             cross_tf_correlation_count = cross_tf_correlations.shape[1] if not cross_tf_correlations.empty else 0
             transition_feature_count = transition_features.shape[1] if not transition_features.empty else 0
-            
+
             self.logger.info("📊 Enhanced Feature Count Analysis:")
             self.logger.info(f"   Total features: {total_features}")
             self.logger.info(f"   Intensity features: {intensity_feature_count}")
@@ -1120,38 +1108,38 @@ class UnifiedRegimeIntelligenceStep:
             self.logger.info(f"   Cross-timeframe correlations: {cross_tf_correlation_count}")
             self.logger.info(f"   Regime transition features: {transition_feature_count}")
             self.logger.info(f"   Timeframes: {len(self.timeframes)} ({', '.join(self.timeframes)})")
-            
+
             # Log intensity features per timeframe
             for i, tf in enumerate(self.timeframes):
                 if intensity_features is not None and i < len(intensity_features):
                     tf_features = intensity_features[i].shape[-1] if len(intensity_features[i].shape) > 1 else 0
                     self.logger.info(f"   {tf} intensity features: {tf_features}")
-            
+
             # Log cross-timeframe correlation features
             if not cross_tf_correlations.empty:
                 self.logger.info("   Cross-timeframe correlation features:")
                 for col in cross_tf_correlations.columns:
                     self.logger.info(f"     - {col}")
-            
+
             # Log regime transition features
             if not transition_features.empty:
                 self.logger.info("   Regime transition features:")
                 for col in transition_features.columns:
                     self.logger.info(f"     - {col}")
-            
+
             # Log feature tensor shape
             if len(feature_tensor.shape) >= 2:
                 self.logger.info(f"   Feature tensor shape: {feature_tensor.shape}")
                 self.logger.info(f"   Sequences: {feature_tensor.shape[0]}")
                 self.logger.info(f"   Sequence length: {feature_tensor.shape[1]}")
                 self.logger.info(f"   Features per timestep: {feature_tensor.shape[2]}")
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error logging feature count info: {e}")
 
     def _detect_intensity_transition(
         self,
-        intensity_data: Dict[str, pd.DataFrame],
+        intensity_data: dict[str, pd.DataFrame],
         current_idx: int,
         window_start: int,
         window_end: int,
@@ -1219,8 +1207,7 @@ class UnifiedRegimeIntelligenceStep:
             # Transition detected if multiple regimes show significant intensity changes
             if significant_changes >= 2:
                 return 1  # transition detected
-            else:
-                return 0  # no transition
+            return 0  # no transition
 
         except Exception as e:
             self.logger.warning(f"⚠️ Error detecting intensity transition: {e}")
@@ -1274,30 +1261,31 @@ class UnifiedRegimeIntelligenceStep:
             self.logger.warning(f"⚠️ Error calculating TPSL direction: {e}")
             return 0  # hold as fallback
 
-    async def _train_model(self, train_data: Dict[str, Any]) -> bool:
+    async def _train_model(self, train_data: dict[str, Any]) -> bool:
         """Train the unified regime intelligence model."""
         try:
             # Apply model-specific pruning for Step 6.5
             if "features" in train_data and len(train_data["features"]) > 0:
                 from src.training.model_specific_pruning import ModelSpecificPruning
                 pruning_manager = ModelSpecificPruning(self.config)
-                
+
                 # Convert features to DataFrame for pruning
                 features_df = pd.DataFrame(train_data["features"].numpy())
                 # Use real target labels for pruning, not a dummy target.
                 # The target should be available in `train_data`.
                 if "target" not in train_data:
-                    raise ValueError("Target labels are required for feature pruning but not found in train_data.")
+                    msg = "Target labels are required for feature pruning but not found in train_data."
+                    raise ValueError(msg)
                 target_series = pd.Series(train_data["target"].numpy())
-                
+
                 pruned_features, pruning_metadata = pruning_manager.prune_for_step6_5_unified_regime(
-                    features_df, target_series
+                    features_df, target_series,
                 )
-                
+
                 # Update features with pruned version
                 train_data["features"] = torch.FloatTensor(pruned_features.values)
                 self.logger.info(f"✅ Applied model-specific pruning: {features_df.shape[1]} -> {pruned_features.shape[1]} features")
-            
+
             # Split data
             num_samples = train_data["num_sequences"]
             split_idx = int(num_samples * (1 - self.validation_split))
@@ -1326,7 +1314,7 @@ class UnifiedRegimeIntelligenceStep:
                 train_labels["tpsl"],
             )
             train_loader = DataLoader(
-                train_dataset, batch_size=self.batch_size, shuffle=False
+                train_dataset, batch_size=self.batch_size, shuffle=False,
             )
 
             val_dataset = TensorDataset(
@@ -1376,7 +1364,7 @@ class UnifiedRegimeIntelligenceStep:
                     # Calculate losses
                     regime_loss = criterion(outputs["regime_logits"], batch_regime)
                     transition_loss = criterion(
-                        outputs["transition_logits"], batch_transition
+                        outputs["transition_logits"], batch_transition,
                     )
                     tpsl_loss = criterion(outputs["tpsl_logits"], batch_tpsl)
                     confidence_loss = F.mse_loss(
@@ -1422,7 +1410,7 @@ class UnifiedRegimeIntelligenceStep:
 
                         regime_loss = criterion(outputs["regime_logits"], batch_regime)
                         transition_loss = criterion(
-                            outputs["transition_logits"], batch_transition
+                            outputs["transition_logits"], batch_transition,
                         )
                         tpsl_loss = criterion(outputs["tpsl_logits"], batch_tpsl)
                         confidence_loss = F.mse_loss(
@@ -1439,7 +1427,7 @@ class UnifiedRegimeIntelligenceStep:
                 if epoch % 10 == 0:
                     self.logger.info(
                         f"📊 Epoch {epoch}: Train Loss: {train_loss/len(train_loader):.4f}, "
-                        f"Val Loss: {val_loss/len(val_loader):.4f}"
+                        f"Val Loss: {val_loss/len(val_loader):.4f}",
                     )
 
                 # Save best model
@@ -1454,7 +1442,7 @@ class UnifiedRegimeIntelligenceStep:
             return True
 
         except Exception as e:
-            self.logger.error(f"🚨 Error training model: {e}")
+            self.logger.exception(f"🚨 Error training model: {e}")
             return False
 
     async def _save_artifacts(self) -> None:
@@ -1469,7 +1457,7 @@ class UnifiedRegimeIntelligenceStep:
             # Save label encoders
             for name, encoder in self.label_encoders.items():
                 with open(
-                    os.path.join(self.artifacts_dir, f"{name}_encoder.pkl"), "wb"
+                    os.path.join(self.artifacts_dir, f"{name}_encoder.pkl"), "wb",
                 ) as f:
                     pickle.dump(encoder, f)
 
@@ -1489,13 +1477,12 @@ class UnifiedRegimeIntelligenceStep:
             self.logger.info(f"💾 Artifacts saved to {self.artifacts_dir}")
 
         except Exception as e:
-            self.logger.error(f"🚨 Error saving artifacts: {e}")
+            self.logger.exception(f"🚨 Error saving artifacts: {e}")
 
     def predict(
-        self, hmm_states: Dict[str, np.ndarray], features: np.ndarray
-    ) -> Dict[str, Any]:
-        """
-        Make predictions using the trained unified model.
+        self, hmm_states: dict[str, np.ndarray], features: np.ndarray,
+    ) -> dict[str, Any]:
+        """Make predictions using the trained unified model.
 
         Args:
             hmm_states: HMM state sequences for each timeframe
@@ -1503,10 +1490,12 @@ class UnifiedRegimeIntelligenceStep:
 
         Returns:
             Dict containing regime prediction, transition probability, and S/R detection
+
         """
         try:
             if self.model is None:
-                raise ValueError("Model not trained or loaded")
+                msg = "Model not trained or loaded"
+                raise ValueError(msg)
 
             # Use configured device if available
             device = next(self.model.parameters()).device
@@ -1548,7 +1537,7 @@ class UnifiedRegimeIntelligenceStep:
                 "transition": {
                     "prediction": transition_pred,
                     "probability": transition_probs[
-                        0, 1
+                        0, 1,
                     ].item(),  # Probability of transition
                     "confidence": torch.max(transition_probs).item(),
                 },
@@ -1564,18 +1553,17 @@ class UnifiedRegimeIntelligenceStep:
             }
 
         except Exception as e:
-            self.logger.error(f"🚨 Error making prediction: {e}")
+            self.logger.exception(f"🚨 Error making prediction: {e}")
             return None
 
     def predict_with_position_logic(
         self,
-        hmm_states: Dict[str, np.ndarray],
+        hmm_states: dict[str, np.ndarray],
         features: np.ndarray,
         current_position: str = "none",
         confidence_threshold: float = 0.7,
-    ) -> Dict[str, Any]:
-        """
-        Make predictions with position logic integration.
+    ) -> dict[str, Any]:
+        """Make predictions with position logic integration.
 
         Args:
             hmm_states: HMM state sequences for each timeframe
@@ -1585,6 +1573,7 @@ class UnifiedRegimeIntelligenceStep:
 
         Returns:
             Dict containing predictions with position action logic
+
         """
         try:
             # Get base predictions
@@ -1605,7 +1594,7 @@ class UnifiedRegimeIntelligenceStep:
             )
 
             # Combine base prediction with position logic
-            enhanced_prediction = {
+            return {
                 **base_prediction,
                 "position_logic": position_action,
                 "trading_decision": {
@@ -1619,10 +1608,9 @@ class UnifiedRegimeIntelligenceStep:
                 },
             }
 
-            return enhanced_prediction
 
         except Exception as e:
-            self.logger.error(f"🚨 Error in prediction with position logic: {e}")
+            self.logger.exception(f"🚨 Error in prediction with position logic: {e}")
             return None
 
     def _determine_position_action(
@@ -1631,9 +1619,8 @@ class UnifiedRegimeIntelligenceStep:
         confidence_score: float,
         current_position: str = "none",
         confidence_threshold: float = 0.7,
-    ) -> Dict[str, Any]:
-        """
-        Determine position action based on TPSL prediction, confidence, and current position.
+    ) -> dict[str, Any]:
+        """Determine position action based on TPSL prediction, confidence, and current position.
 
         Args:
             tpsl_prediction: 0 for short/no position, 1 for long
@@ -1643,6 +1630,7 @@ class UnifiedRegimeIntelligenceStep:
 
         Returns:
             Dict with position action and reasoning
+
         """
         try:
             # Determine intended direction from TPSL prediction
@@ -1669,15 +1657,14 @@ class UnifiedRegimeIntelligenceStep:
                         "intended_direction": intended_direction,
                         "confidence": confidence_score,
                     }
-                else:
-                    return {
-                        "action": "hold",
-                        "reason": f"Confidence insufficient to open position ({confidence_score:.3f} < {confidence_threshold})",
-                        "intended_direction": intended_direction,
-                        "confidence": confidence_score,
-                    }
+                return {
+                    "action": "hold",
+                    "reason": f"Confidence insufficient to open position ({confidence_score:.3f} < {confidence_threshold})",
+                    "intended_direction": intended_direction,
+                    "confidence": confidence_score,
+                }
 
-            elif current_position == "long":
+            if current_position == "long":
                 # Currently long
                 if intended_direction == "long":
                     # Intending to stay long - hold if confidence is high
@@ -1688,23 +1675,21 @@ class UnifiedRegimeIntelligenceStep:
                             "intended_direction": intended_direction,
                             "confidence": confidence_score,
                         }
-                    else:
-                        return {
-                            "action": "close_long",
-                            "reason": f"Closing long position due to low confidence ({confidence_score:.3f} < {confidence_threshold})",
-                            "intended_direction": intended_direction,
-                            "confidence": confidence_score,
-                        }
-                else:
-                    # Intending to go short - close long and potentially open short
                     return {
                         "action": "close_long",
-                        "reason": f"Closing long position to switch to short direction",
+                        "reason": f"Closing long position due to low confidence ({confidence_score:.3f} < {confidence_threshold})",
                         "intended_direction": intended_direction,
                         "confidence": confidence_score,
                     }
+                # Intending to go short - close long and potentially open short
+                return {
+                    "action": "close_long",
+                    "reason": "Closing long position to switch to short direction",
+                    "intended_direction": intended_direction,
+                    "confidence": confidence_score,
+                }
 
-            elif current_position == "short":
+            if current_position == "short":
                 # Currently short
                 if intended_direction == "short":
                     # Intending to stay short - hold if confidence is high
@@ -1715,21 +1700,19 @@ class UnifiedRegimeIntelligenceStep:
                             "intended_direction": intended_direction,
                             "confidence": confidence_score,
                         }
-                    else:
-                        return {
-                            "action": "close_short",
-                            "reason": f"Closing short position due to low confidence ({confidence_score:.3f} < {confidence_threshold})",
-                            "intended_direction": intended_direction,
-                            "confidence": confidence_score,
-                        }
-                else:
-                    # Intending to go long - close short and potentially open long
                     return {
                         "action": "close_short",
-                        "reason": f"Closing short position to switch to long direction",
+                        "reason": f"Closing short position due to low confidence ({confidence_score:.3f} < {confidence_threshold})",
                         "intended_direction": intended_direction,
                         "confidence": confidence_score,
                     }
+                # Intending to go long - close short and potentially open long
+                return {
+                    "action": "close_short",
+                    "reason": "Closing short position to switch to long direction",
+                    "intended_direction": intended_direction,
+                    "confidence": confidence_score,
+                }
 
             # Fallback
             return {
@@ -1740,7 +1723,7 @@ class UnifiedRegimeIntelligenceStep:
             }
 
         except Exception as e:
-            self.logger.error(f"🚨 Error determining position action: {e}")
+            self.logger.exception(f"🚨 Error determining position action: {e}")
             return {
                 "action": "hold",
                 "reason": f"Error in position logic: {e}",
@@ -1755,13 +1738,12 @@ class UnifiedRegimeIntelligenceStep:
     )
     async def predict_with_sr_integration(
         self,
-        hmm_states: Dict[str, np.ndarray],
+        hmm_states: dict[str, np.ndarray],
         market_features: np.ndarray,
         market_data: pd.DataFrame,
         current_price: float,
-    ) -> Dict[str, Any]:
-        """
-        Make unified predictions with S/R level integration.
+    ) -> dict[str, Any]:
+        """Make unified predictions with S/R level integration.
 
         Args:
             hmm_states: HMM states for each timeframe
@@ -1771,6 +1753,7 @@ class UnifiedRegimeIntelligenceStep:
 
         Returns:
             dict: Unified predictions with S/R integration
+
         """
         try:
             # Get base unified predictions
@@ -1778,10 +1761,10 @@ class UnifiedRegimeIntelligenceStep:
 
             # Get S/R context and outcome prediction
             sr_context = await self.sr_predictor.get_sr_context(
-                market_data, current_price
+                market_data, current_price,
             )
             sr_outcome = await self.sr_predictor.predict_sr_outcome(
-                market_data, current_price, sr_context
+                market_data, current_price, sr_context,
             )
 
             # Combine predictions based on S/R proximity
@@ -1804,10 +1787,10 @@ class UnifiedRegimeIntelligenceStep:
                         "reason": "Near S/R level - using specialist outcome prediction",
                     },
                     "combined_confidence": self._calculate_sr_combined_confidence(
-                        unified_prediction, sr_outcome
+                        unified_prediction, sr_outcome,
                     ),
                     "risk_management": self._calculate_sr_risk_parameters(
-                        unified_prediction, sr_outcome
+                        unified_prediction, sr_outcome,
                     ),
                 }
             else:
@@ -1831,11 +1814,11 @@ class UnifiedRegimeIntelligenceStep:
                         "reason": "Not near S/R level - using standard regime prediction",
                     },
                     "combined_confidence": unified_prediction.get(
-                        "confidence_score", 0.5
+                        "confidence_score", 0.5,
                     ),
                     "risk_management": {
                         "position_size": min(
-                            unified_prediction.get("confidence_score", 0.5), 0.8
+                            unified_prediction.get("confidence_score", 0.5), 0.8,
                         ),
                         "stop_loss_multiplier": 1.0
                         + (1.0 - unified_prediction.get("confidence_score", 0.5)) * 0.5,
@@ -1846,8 +1829,8 @@ class UnifiedRegimeIntelligenceStep:
             return combined_prediction
 
         except Exception as e:
-            self.logger.error(
-                f"🚨 Error in unified prediction with S/R integration: {e}"
+            self.logger.exception(
+                f"🚨 Error in unified prediction with S/R integration: {e}",
             )
             return {
                 "error": "Failed to integrate S/R analysis",
@@ -1863,7 +1846,7 @@ class UnifiedRegimeIntelligenceStep:
                 },
             }
 
-    async def _run_hyperparameter_optimization(self) -> Optional[Dict[str, Any]]:
+    async def _run_hyperparameter_optimization(self) -> dict[str, Any] | None:
         """Optional short hyperparameter optimization using Optuna.
 
         Returns a dict with best_params/best_value or None if Optuna unavailable.
@@ -1873,7 +1856,7 @@ class UnifiedRegimeIntelligenceStep:
                 import optuna  # type: ignore
             except Exception as ex:
                 self.logger.warning(
-                    f"⚠️ Optuna not available for HPO ({ex}); skipping optimization"
+                    f"⚠️ Optuna not available for HPO ({ex}); skipping optimization",
                 )
                 return None
 
@@ -1895,7 +1878,7 @@ class UnifiedRegimeIntelligenceStep:
                 return float(score)
 
             study.optimize(
-                objective, n_trials=self.n_trials, timeout=self.hpo_timeout, show_progress_bar=False
+                objective, n_trials=self.n_trials, timeout=self.hpo_timeout, show_progress_bar=False,
             )
 
             best_params = study.best_params
@@ -1909,13 +1892,13 @@ class UnifiedRegimeIntelligenceStep:
                 "n_trials": len(study.trials),
             }
         except Exception as ex:
-            self.logger.error(f"Error in hyperparameter optimization: {ex}")
+            self.logger.exception(f"Error in hyperparameter optimization: {ex}")
             return None
 
-    def _apply_structured_pruning(self, model: nn.Module) -> Dict[str, Any]:
+    def _apply_structured_pruning(self, model: nn.Module) -> dict[str, Any]:
         """Apply light pruning to reduce model complexity (optional)."""
         try:
-            pruning_results: Dict[str, Any] = {}
+            pruning_results: dict[str, Any] = {}
             # Attention pruning
             if hasattr(model, "cross_timeframe_attention"):
                 attn = model.cross_timeframe_attention
@@ -1934,24 +1917,24 @@ class UnifiedRegimeIntelligenceStep:
                     self.logger.warning(f"⚠️ Classifier pruning failed: {ex}")
             return pruning_results
         except Exception as ex:
-            self.logger.error(f"Error in structured pruning: {ex}")
+            self.logger.exception(f"Error in structured pruning: {ex}")
             return {}
 
-    def _optimize_architecture(self, model: nn.Module) -> Dict[str, Any]:
+    def _optimize_architecture(self, model: nn.Module) -> dict[str, Any]:
         """Placeholder architecture optimization flags for diagnostics."""
         try:
-            results: Dict[str, Any] = {}
+            results: dict[str, Any] = {}
             if hasattr(model, "transformer"):
                 results["transformer_optimization"] = True
             if hasattr(model, "hmm_embeddings"):
                 results["embedding_optimization"] = True
             return results
         except Exception as ex:
-            self.logger.error(f"Error in architecture optimization: {ex}")
+            self.logger.exception(f"Error in architecture optimization: {ex}")
             return {}
 
     def _calculate_sr_combined_confidence(
-        self, unified_prediction: Dict[str, Any], sr_outcome: Dict[str, Any]
+        self, unified_prediction: dict[str, Any], sr_outcome: dict[str, Any],
     ) -> float:
         """Calculate combined confidence when near S/R levels."""
         try:
@@ -1965,16 +1948,16 @@ class UnifiedRegimeIntelligenceStep:
             return max(0.0, min(1.0, combined_confidence))
 
         except Exception as e:
-            self.logger.error(f"🚨 Error calculating SR combined confidence: {e}")
+            self.logger.exception(f"🚨 Error calculating SR combined confidence: {e}")
             return 0.5
 
     def _calculate_sr_risk_parameters(
-        self, unified_prediction: Dict[str, Any], sr_outcome: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, unified_prediction: dict[str, Any], sr_outcome: dict[str, Any],
+    ) -> dict[str, Any]:
         """Calculate risk management parameters when near S/R levels."""
         try:
             combined_confidence = self._calculate_sr_combined_confidence(
-                unified_prediction, sr_outcome
+                unified_prediction, sr_outcome,
             )
             outcome = sr_outcome.get("outcome", "consolidation")
 
@@ -2015,7 +1998,7 @@ class UnifiedRegimeIntelligenceStep:
             }
 
         except Exception as e:
-            self.logger.error(f"🚨 Error calculating SR risk parameters: {e}")
+            self.logger.exception(f"🚨 Error calculating SR risk parameters: {e}")
             return {
                 "position_size": 0.5,
                 "stop_loss_multiplier": 1.25,
@@ -2026,22 +2009,23 @@ class UnifiedRegimeIntelligenceStep:
 
 
 from src.utils.training_pipeline_decorators import (
-    validate_step_prerequisites,
-    secure_data_processing,
-    prevent_data_leakage,
-    resource_monitor,
-    memory_efficient,
-    debug_training_step,
+    artifact_versioning,
+    artifact_write_lock,
     circuit_breaker_protection,
-    validate_step_output,
-    quality_gate,
+    debug_training_step,
     deterministic_seed,
     idempotent_step,
-    artifact_write_lock,
+    memory_efficient,
     nan_inf_and_constant_guard,
-    artifact_versioning,
+    prevent_data_leakage,
+    quality_gate,
+    resource_monitor,
+    secure_data_processing,
     time_budget_watchdog,
+    validate_step_output,
+    validate_step_prerequisites,
 )
+
 
 @deterministic_seed(42)
 @idempotent_step(step_key="step5_5_unified_regime_intelligence")
@@ -2061,7 +2045,7 @@ from src.utils.training_pipeline_decorators import (
     context="Unified Regime Intelligence",
 )
 @secure_data_processing(
-    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True
+    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
 @prevent_data_leakage(
     temporal_validation=True,
@@ -2077,7 +2061,7 @@ from src.utils.training_pipeline_decorators import (
     auto_cleanup=True,
 )
 @memory_efficient(
-    chunk_size=20000, streaming_processing=True, memory_pool=True, cleanup_frequency=50
+    chunk_size=20000, streaming_processing=True, memory_pool=True, cleanup_frequency=50,
 )
 @debug_training_step(
     log_intermediate_results=True,
@@ -2103,11 +2087,10 @@ async def run_step(
     symbol: str,
     exchange: str = "BINANCE",
     timeframe: str = "1m",
-    training_config: Dict[str, Any] | None = None,
+    training_config: dict[str, Any] | None = None,
     force_rerun: bool = False,
 ) -> bool:
-    """
-    Run the unified regime intelligence step - IMPROVED VERSION.
+    """Run the unified regime intelligence step.
 
     This step consolidates:
     - Multi-timeframe HMM state analysis
@@ -2115,71 +2098,17 @@ async def run_step(
     - Support/Resistance level detection
     - Expert activation logic
 
-    IMPROVEMENTS:
-    - Modular architecture with separate classes for different responsibilities
-    - Better memory management and GPU utilization
-    - Improved error handling and validation
-    - Enhanced model training with early stopping
-    - Comprehensive logging and monitoring
-    - Advanced neural network architectures
-    - Ensemble methods and model selection
-
     Replaces step9_5 and step10 with a single, efficient model.
     """
     # Log step parameters for debugging
     logger.info("=" * 80)
-    logger.info("🚀 STEP 5_5: Unified Regime Intelligence - IMPROVED VERSION")
+    logger.info("🚀 STEP 5_5: Unified Regime Intelligence")
     logger.info("=" * 80)
-    logger.info(f"📋 Step 5_5 Parameters:")
+    logger.info("📋 Step 5_5 Parameters:")
     logger.info(f"   Symbol: {symbol}")
     logger.info(f"   Exchange: {exchange}")
     logger.info(f"   Timeframe: {timeframe}")
     logger.info(f"   Force Rerun: {force_rerun}")
-    
-    start_time = time.time()
-    
-    # Initialize configuration
-    config = {
-        "symbol": symbol,
-        "exchange": exchange,
-        "timeframe": timeframe,
-        "force_rerun": force_rerun,
-        "enable_parallel_processing": training_config.get("enable_parallel_processing", True) if training_config else True,
-        "max_workers": training_config.get("max_workers", 4) if training_config else 4,
-        "memory_limit_gb": training_config.get("memory_limit_gb", 12.0) if training_config else 12.0,
-        "model_config": training_config.get("model_config", {
-            "d_model": 256,
-            "nhead": 8,
-            "num_layers": 4,
-            "dropout": 0.1,
-            "learning_rate": 1e-4,
-            "batch_size": 64,
-            "epochs": 100,
-            "early_stopping_patience": 10,
-        }) if training_config else {
-            "d_model": 256,
-            "nhead": 8,
-            "num_layers": 4,
-            "dropout": 0.1,
-            "learning_rate": 1e-4,
-            "batch_size": 64,
-            "epochs": 100,
-            "early_stopping_patience": 10,
-        },
-        "training_config": training_config.get("training_config", {
-            "validation_split": 0.2,
-            "test_split": 0.2,
-            "random_state": 42,
-            "enable_early_stopping": True,
-            "enable_model_checkpointing": True,
-        }) if training_config else {
-            "validation_split": 0.2,
-            "test_split": 0.2,
-            "random_state": 42,
-            "enable_early_stopping": True,
-            "enable_model_checkpointing": True,
-        },
-    }
 
     step_start_time = time.time()
     step_phases = {
@@ -2192,7 +2121,7 @@ async def run_step(
 
     try:
         logger.info(
-            f"🔄 Starting Unified Regime Intelligence Step for {exchange}:{symbol}"
+            f"🔄 Starting Unified Regime Intelligence Step for {exchange}:{symbol}",
         )
 
         # Phase 1: Load configuration
@@ -2203,14 +2132,14 @@ async def run_step(
 
             if not uri_config.get("enabled", True):
                 logger.info(
-                    "⏭️ Unified Regime Intelligence disabled; skipping step 5_5."
+                    "⏭️ Unified Regime Intelligence disabled; skipping step 5_5.",
                 )
                 return True
 
             logger.info(f"✅ Configuration loaded: {len(uri_config)} parameters")
             step_phases["configuration"] = True
         except Exception as e:
-            logger.error(f"❌ Configuration loading failed: {e}")
+            logger.exception(f"❌ Configuration loading failed: {e}")
             return False
 
         # Phase 2: Initialize step
@@ -2224,7 +2153,7 @@ async def run_step(
             logger.info("✅ Unified Regime Intelligence Step initialized successfully")
             step_phases["initialization"] = True
         except Exception as e:
-            logger.error(f"❌ Initialization failed: {e}")
+            logger.exception(f"❌ Initialization failed: {e}")
             return False
 
         # Phase 3: Load data
@@ -2241,7 +2170,7 @@ async def run_step(
             logger.info(f"✅ Data loaded: {len(data)} data sources")
             step_phases["data_loading"] = True
         except Exception as e:
-            logger.error(f"❌ Data loading failed: {e}")
+            logger.exception(f"❌ Data loading failed: {e}")
             return False
 
         # Phase 4: Train model
@@ -2254,7 +2183,7 @@ async def run_step(
             logger.info("✅ Model training completed successfully")
             step_phases["training"] = True
         except Exception as e:
-            logger.error(f"❌ Model training failed: {e}")
+            logger.exception(f"❌ Model training failed: {e}")
             return False
 
         # Phase 5: Validation
@@ -2264,55 +2193,44 @@ async def run_step(
             logger.info("✅ Model validation completed")
             step_phases["validation"] = True
         except Exception as e:
-            logger.error(f"❌ Model validation failed: {e}")
+            logger.exception(f"❌ Model validation failed: {e}")
             # Don't fail the entire step for validation issues
             step_phases["validation"] = False
 
-        # Final summary with improved metrics
+        # Final summary
         step_duration = time.time() - step_start_time
         successful_phases = sum(step_phases.values())
         total_phases = len(step_phases)
 
         logger.info("=" * 80)
-        logger.info("📊 STEP 5_5 EXECUTION SUMMARY - IMPROVED VERSION")
+        logger.info("📊 STEP 5_5 EXECUTION SUMMARY")
         logger.info("=" * 80)
-        logger.info(f"⏱️ Total execution time: {step_duration:.2f}s")
-        logger.info(f"📊 Successful phases: {successful_phases}/{total_phases}")
-        logger.info(f"🔧 Configuration:")
-        logger.info(f"   - Parallel processing: {'Enabled' if config.get('enable_parallel_processing', True) else 'Disabled'}")
-        logger.info(f"   - Max workers: {config.get('max_workers', 4)}")
-        logger.info(f"   - Memory limit: {config.get('memory_limit_gb', 12.0)} GB")
-        logger.info(f"   - Model config: {len(config.get('model_config', {}))} parameters")
-        logger.info(f"   - Training config: {len(config.get('training_config', {}))} parameters")
-        
-        logger.info(f"📋 Phase status:")
+        logger.info(f"Total execution time: {step_duration:.2f}s")
+        logger.info(f"Successful phases: {successful_phases}/{total_phases}")
+        logger.info("Phase status:")
         for phase, status in step_phases.items():
             status_emoji = "✅" if status else "❌"
             logger.info(
-                f"   {status_emoji} {phase}: {'SUCCESS' if status else 'FAILED'}"
+                f"   {status_emoji} {phase}: {'SUCCESS' if status else 'FAILED'}",
             )
 
         if successful_phases >= 4:  # At least 4 out of 5 phases successful
-            logger.info(f"✅ Step 5_5: Unified Regime Intelligence completed successfully")
+            logger.info(
+                "✅ Step 5_5: Unified Regime Intelligence completed successfully",
+            )
             logger.info(f"   Success rate: {successful_phases/total_phases*100:.1f}%")
         else:
-            logger.error(f"❌ Step 5_5: Unified Regime Intelligence failed")
+            logger.error("❌ Step 5_5: Unified Regime Intelligence failed")
             logger.error(f"   Success rate: {successful_phases/total_phases*100:.1f}%")
-
-        # Memory cleanup
-        import gc
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        gc.collect()
 
         logger.info("=" * 80)
         return successful_phases >= 4
 
     except Exception as e:
         step_duration = time.time() - step_start_time
-        logger.error(
-            f"❌ Step 5_5: Unified Regime Intelligence failed with exception: {e}"
+        logger.exception(
+            f"❌ Step 5_5: Unified Regime Intelligence failed with exception: {e}",
         )
-        logger.error(f"   Execution time: {step_duration:.2f}s")
-        logger.error(f"   Phase status: {step_phases}")
+        logger.exception(f"   Execution time: {step_duration:.2f}s")
+        logger.exception(f"   Phase status: {step_phases}")
         return False

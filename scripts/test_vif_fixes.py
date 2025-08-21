@@ -4,18 +4,18 @@ Test VIF Fixes
 Verifies that the root cause VIF fixes are working correctly.
 """
 
-import pandas as pd
-import numpy as np
-import sys
 from pathlib import Path
+from src.utils.logger import system_logger
+import sys
 import warnings
+
+import numpy as np
+import pandas as pd
 
 warnings.filterwarnings("ignore")
 
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
-
-from src.utils.logger import system_logger
 
 
 def test_vif_fixes():
@@ -39,10 +39,10 @@ def test_vif_fixes():
                 "low": np.cumsum(np.random.randn(n_samples) * 0.01) + 99.5,
                 "open": np.cumsum(np.random.randn(n_samples) * 0.01) + 100,
                 "volume": np.random.lognormal(10, 1, n_samples),
-            }
+            },
         )
 
-        volume_data = pd.DataFrame({"volume": price_data["volume"].copy()})
+        pd.DataFrame({"volume": price_data["volume"].copy()})
 
         print(f"\n📊 Test data created: {n_samples} samples")
 
@@ -67,7 +67,8 @@ def test_vif_fixes():
         ema_clean = ema_20_orig.dropna()
         min_len = min(len(sma_clean), len(ema_clean))
         corr_orig = np.corrcoef(sma_clean.iloc[-min_len:], ema_clean.iloc[-min_len:])[
-            0, 1
+            0,
+            1,
         ]
 
         price_dev_clean1 = price_dev_sma20.dropna()
@@ -101,14 +102,16 @@ def test_vif_fixes():
         mom10_clean = momentum_10_orig.dropna()
         min_len_mom = min(len(mom5_clean), len(mom10_clean))
         corr_mom_orig = np.corrcoef(
-            mom5_clean.iloc[-min_len_mom:], mom10_clean.iloc[-min_len_mom:]
+            mom5_clean.iloc[-min_len_mom:],
+            mom10_clean.iloc[-min_len_mom:],
         )[0, 1]
 
         mom3_clean = momentum_3_fixed.dropna()
         mom8_clean = momentum_8_fixed.dropna()
         min_len_mom_fixed = min(len(mom3_clean), len(mom8_clean))
         corr_mom_fixed = np.corrcoef(
-            mom3_clean.iloc[-min_len_mom_fixed:], mom8_clean.iloc[-min_len_mom_fixed:]
+            mom3_clean.iloc[-min_len_mom_fixed:],
+            mom8_clean.iloc[-min_len_mom_fixed:],
         )[0, 1]
 
         print(f"   Original momentum correlation: {corr_mom_orig:.3f}")
@@ -139,14 +142,16 @@ def test_vif_fixes():
         vol_orig2 = price_vol_orig.dropna()
         min_len_vol = min(len(vol_orig1), len(vol_orig2))
         corr_vol_orig = np.corrcoef(
-            vol_orig1.iloc[-min_len_vol:], vol_orig2.iloc[-min_len_vol:]
+            vol_orig1.iloc[-min_len_vol:],
+            vol_orig2.iloc[-min_len_vol:],
         )[0, 1]
 
         vol_fixed1 = realized_vol_fixed.dropna()
         vol_fixed2 = garman_klass_vol.dropna()
         min_len_vol_fixed = min(len(vol_fixed1), len(vol_fixed2))
         corr_vol_fixed = np.corrcoef(
-            vol_fixed1.iloc[-min_len_vol_fixed:], vol_fixed2.iloc[-min_len_vol_fixed:]
+            vol_fixed1.iloc[-min_len_vol_fixed:],
+            vol_fixed2.iloc[-min_len_vol_fixed:],
         )[0, 1]
 
         print(f"   Original volatility correlation: {corr_vol_orig:.3f}")
@@ -158,29 +163,21 @@ def test_vif_fixes():
 
         # Calculate feature diversity metrics
         features_orig = {
-            "sma_20": sma_20_orig,
-            "ema_20": ema_20_orig,
-            "momentum_5": momentum_5_orig,
-            "momentum_10": momentum_10_orig,
-            "realized_vol": realized_vol_orig,
-            "price_vol": price_vol_orig,
+            "sma_20": sma_20_orig , "ema_20": ema_20_orig,
+            "momentum_5": momentum_5_orig , "momentum_10": momentum_10_orig,
+            "realized_vol": realized_vol_orig , "price_vol": price_vol_orig,
         }
 
         features_fixed = {
-            "price_dev_sma20": price_dev_sma20,
-            "price_dev_sma50": price_dev_sma50,
-            "ma_crossover": ma_crossover,
-            "price_acceleration": price_acceleration,
-            "momentum_3": momentum_3_fixed,
-            "momentum_8": momentum_8_fixed,
-            "momentum_13": momentum_13_fixed,
-            "momentum_accel": momentum_accel,
-            "realized_vol": realized_vol_fixed,
-            "garman_klass_vol": garman_klass_vol,
-            "range_vol": range_vol,
-        }
+            "price_dev_sma20": price_dev_sma20 , "price_dev_sma50": price_dev_sma50,
+            "ma_crossover": ma_crossover , "price_acceleration": price_acceleration,
+            "momentum_3": momentum_3_fixed , "momentum_8": momentum_8_fixed,
+            "momentum_13": momentum_13_fixed , "momentum_accel": momentum_accel,
+            "realized_vol": realized_vol_fixed , "garman_klass_vol": garman_klass_vol,
+            "range_vol": range_vol}
 
         # Calculate average correlation for original vs fixed features
+
         def calculate_avg_correlation(features_dict):
             correlations = []
             feature_list = list(features_dict.values())
@@ -188,7 +185,8 @@ def test_vif_fixes():
                 for j in range(i + 1, len(feature_list)):
                     try:
                         corr = np.corrcoef(
-                            feature_list[i].dropna(), feature_list[j].dropna()
+                            feature_list[i].dropna(),
+                            feature_list[j].dropna(),
                         )[0, 1]
                         if not np.isnan(corr):
                             correlations.append(abs(corr))
@@ -211,6 +209,7 @@ def test_vif_fixes():
         print(f"   Feature increase: {len(features_fixed) - len(features_orig)}")
 
         # Calculate feature variance (diversity measure)
+
         def calculate_feature_variance(features_dict):
             variances = []
             for feature in features_dict.values():
@@ -238,8 +237,7 @@ def test_vif_fixes():
             abs(corr_orig) - abs(corr_fixed),
             abs(corr_mom_orig) - abs(corr_mom_fixed),
             abs(corr_vol_orig) - abs(corr_vol_fixed),
-            avg_corr_orig - avg_corr_fixed,
-        ]
+            avg_corr_orig - avg_corr_fixed]
 
         total_improvement = sum(improvements)
 
@@ -268,7 +266,7 @@ def test_vif_fixes():
         return total_improvement > 1.0 and avg_corr_fixed < 0.5
 
     except Exception as e:
-        logger.error(f"Error testing VIF fixes: {e}")
+        logger.exception(f"Error testing VIF fixes: {e}")
         return False
 
 

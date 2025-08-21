@@ -23,6 +23,6 @@ from .modular_tactician import ModularTactician
 __all__ = [
     "ModularAnalyst",
     "ModularStrategist",
-    "ModularTactician",
     "ModularSupervisor",
+    "ModularTactician",
 ]

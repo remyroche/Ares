@@ -16,17 +16,16 @@ from src.utils.warning_symbols import (
 
 
 class CalibrationManager:
-    """
-    Calibration manager responsible for model calibration and confidence estimation.
+    """Calibration manager responsible for model calibration and confidence estimation.
     This module handles model calibration to improve prediction reliability.
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
-        Initialize calibration manager.
+        """Initialize calibration manager.
 
         Args:
             config: Configuration dictionary
+
         """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("CalibrationManager")
@@ -63,11 +62,11 @@ class CalibrationManager:
         context="calibration manager initialization",
     )
     async def initialize(self) -> bool:
-        """
-        Initialize calibration manager.
+        """Initialize calibration manager.
 
         Returns:
             bool: True if initialization successful, False otherwise
+
         """
         try:
             self.logger.info("Initializing Calibration Manager...")
@@ -93,11 +92,11 @@ class CalibrationManager:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """
-        Validate calibration manager configuration.
+        """Validate calibration manager configuration.
 
         Returns:
             bool: True if configuration is valid, False otherwise
+
         """
         try:
             # Validate calibration manager specific settings
@@ -160,8 +159,7 @@ class CalibrationManager:
         ensemble_results: dict[str, Any],
         training_input: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """
-        Calibrate models to improve prediction reliability.
+        """Calibrate models to improve prediction reliability.
 
         Args:
             ensemble_results: Results from ensemble creation
@@ -169,6 +167,7 @@ class CalibrationManager:
 
         Returns:
             dict: Calibration results
+
         """
         try:
             self.logger.info("🎯 Starting model calibration...")
@@ -224,8 +223,7 @@ class CalibrationManager:
         ensemble_results: dict[str, Any],
         training_input: dict[str, Any],
     ) -> bool:
-        """
-        Validate calibration input parameters.
+        """Validate calibration input parameters.
 
         Args:
             ensemble_results: Results from ensemble creation
@@ -233,6 +231,7 @@ class CalibrationManager:
 
         Returns:
             bool: True if inputs are valid, False otherwise
+
         """
         try:
             # Validate ensemble results
@@ -268,8 +267,7 @@ class CalibrationManager:
         analyst_ensembles: dict[str, Any],
         training_input: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """
-        Calibrate analyst model ensembles.
+        """Calibrate analyst model ensembles.
 
         Args:
             analyst_ensembles: Analyst ensemble results
@@ -277,6 +275,7 @@ class CalibrationManager:
 
         Returns:
             dict: Analyst calibration results
+
         """
         try:
             self.logger.info("🧠 Calibrating analyst models...")
@@ -312,8 +311,7 @@ class CalibrationManager:
         tactician_ensembles: dict[str, Any],
         training_input: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """
-        Calibrate tactician model ensembles.
+        """Calibrate tactician model ensembles.
 
         Args:
             tactician_ensembles: Tactician ensemble results
@@ -321,6 +319,7 @@ class CalibrationManager:
 
         Returns:
             dict: Tactician calibration results
+
         """
         try:
             self.logger.info("🎯 Calibrating tactician models...")
@@ -357,8 +356,7 @@ class CalibrationManager:
         ensemble_name: str,
         ensemble_type: str,
     ) -> dict[str, Any] | None:
-        """
-        Calibrate a single ensemble.
+        """Calibrate a single ensemble.
 
         Args:
             ensemble: Ensemble to calibrate
@@ -367,6 +365,7 @@ class CalibrationManager:
 
         Returns:
             dict: Calibrated ensemble
+
         """
         try:
             self.logger.info(
@@ -426,14 +425,14 @@ class CalibrationManager:
         self,
         ensemble: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """
-        Apply temperature scaling calibration.
+        """Apply temperature scaling calibration.
 
         Args:
             ensemble: Ensemble to calibrate
 
         Returns:
             dict: Temperature scaling calibration result
+
         """
         try:
             # This would implement actual temperature scaling logic
@@ -457,14 +456,14 @@ class CalibrationManager:
         self,
         ensemble: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """
-        Apply isotonic regression calibration.
+        """Apply isotonic regression calibration.
 
         Args:
             ensemble: Ensemble to calibrate
 
         Returns:
             dict: Isotonic regression calibration result
+
         """
         try:
             # This would implement actual isotonic regression logic
@@ -488,14 +487,14 @@ class CalibrationManager:
         self,
         ensemble: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """
-        Apply confidence calibration.
+        """Apply confidence calibration.
 
         Args:
             ensemble: Ensemble to calibrate
 
         Returns:
             dict: Confidence calibration result
+
         """
         try:
             # This would implement actual confidence calibration logic
@@ -519,11 +518,11 @@ class CalibrationManager:
         self,
         calibration_results: dict[str, Any],
     ) -> None:
-        """
-        Store calibration results.
+        """Store calibration results.
 
         Args:
             calibration_results: Calibration results to store
+
         """
         try:
             self.logger.info("📁 Storing calibration results...")
@@ -538,11 +537,11 @@ class CalibrationManager:
             self.print(failed("❌ Failed to store calibration results: {e}"))
 
     def get_calibration_status(self) -> dict[str, Any]:
-        """
-        Get current calibration status.
+        """Get current calibration status.
 
         Returns:
             dict: Calibration status information
+
         """
         return {
             "is_calibrating": self.is_calibrating,
@@ -553,11 +552,11 @@ class CalibrationManager:
         }
 
     def get_calibration_results(self) -> dict[str, Any]:
-        """
-        Get the latest calibration results.
+        """Get the latest calibration results.
 
         Returns:
             dict: Calibration results
+
         """
         return self.calibration_results.copy()
 
@@ -584,14 +583,14 @@ class CalibrationManager:
 async def setup_calibration_manager(
     config: dict[str, Any] | None = None,
 ) -> CalibrationManager | None:
-    """
-    Setup and return a configured CalibrationManager instance.
+    """Setup and return a configured CalibrationManager instance.
 
     Args:
         config: Configuration dictionary
 
     Returns:
         CalibrationManager: Configured calibration manager instance
+
     """
     try:
         manager = CalibrationManager(config or {})

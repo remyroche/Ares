@@ -1,28 +1,24 @@
 # src/training/steps/step5_5_unified_regime_intelligence_validator.py
 
-"""
-Step 5.5 Unified Regime Intelligence Validator
+"""Step 5.5 Unified Regime Intelligence Validator.
 
 This validator ensures quality insurance for the Unified Regime Intelligence step.
 """
 
-import asyncio
-import os
 import json
+import os
 import pickle
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, Union
 import warnings
+from datetime import datetime
+from typing import Any
 
 import numpy as np
 import pandas as pd
 import torch
-from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.preprocessing import LabelEncoder
 
-from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
-from src.utils.warning_symbols import error, failed, success, warning, validation_error
-from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
+from src.utils.logger import system_logger
 
 warnings.filterwarnings("ignore")
 
@@ -32,20 +28,20 @@ logger = system_logger.getChild("Step5_5_UnifiedRegimeIntelligenceValidator")
 class UnifiedRegimeIntelligenceValidator:
     """Validator for the Unified Regime Intelligence step."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
 
         # Validation configuration
         self.validation_config = config.get("validation", {})
         self.data_quality_threshold = self.validation_config.get(
-            "data_quality_threshold", 0.95
+            "data_quality_threshold", 0.95,
         )
         self.model_performance_threshold = self.validation_config.get(
-            "model_performance_threshold", 0.7
+            "model_performance_threshold", 0.7,
         )
         self.artifact_completeness_threshold = self.validation_config.get(
-            "artifact_completeness_threshold", 0.9
+            "artifact_completeness_threshold", 0.9,
         )
 
         # Validation results
@@ -75,12 +71,12 @@ class UnifiedRegimeIntelligenceValidator:
                 return False
 
             self.logger.info(
-                "Unified Regime Intelligence Validator initialized successfully"
+                "Unified Regime Intelligence Validator initialized successfully",
             )
             return True
 
         except Exception as e:
-            self.logger.error(f"Failed to initialize validator: {e}")
+            self.logger.exception(f"Failed to initialize validator: {e}")
             return False
 
     def _validate_configuration(self) -> bool:
@@ -107,13 +103,13 @@ class UnifiedRegimeIntelligenceValidator:
             return True
 
         except Exception as e:
-            self.logger.error(f"Configuration validation failed: {e}")
+            self.logger.exception(f"Configuration validation failed: {e}")
             return False
 
     @handle_errors(
-        exceptions=(Exception,), default_return=False, context="data quality validation"
+        exceptions=(Exception,), default_return=False, context="data quality validation",
     )
-    async def validate_data_quality(self, data: Dict[str, pd.DataFrame]) -> bool:
+    async def validate_data_quality(self, data: dict[str, pd.DataFrame]) -> bool:
         """Validate input data quality."""
         try:
             self.logger.info("Validating data quality...")
@@ -141,7 +137,7 @@ class UnifiedRegimeIntelligenceValidator:
                         hmm_files_found += 1
 
             validation_results["hmm_data_completeness"] = hmm_files_found / len(
-                timeframes
+                timeframes,
             )
 
             # Check intensity data completeness
@@ -201,17 +197,16 @@ class UnifiedRegimeIntelligenceValidator:
             # Check if overall score meets threshold
             if validation_results["overall_score"] >= self.data_quality_threshold:
                 self.logger.info(
-                    f"✅ Data quality validation passed: {validation_results['overall_score']:.3f}"
+                    f"✅ Data quality validation passed: {validation_results['overall_score']:.3f}",
                 )
                 return True
-            else:
-                self.logger.error(
-                    f"❌ Data quality validation failed: {validation_results['overall_score']:.3f}"
-                )
-                return False
+            self.logger.error(
+                f"❌ Data quality validation failed: {validation_results['overall_score']:.3f}",
+            )
+            return False
 
         except Exception as e:
-            self.logger.error(f"Data quality validation failed: {e}")
+            self.logger.exception(f"Data quality validation failed: {e}")
             return False
 
     @handle_errors(
@@ -261,7 +256,7 @@ class UnifiedRegimeIntelligenceValidator:
                 # Check device compatibility
                 try:
                     device = torch.device(
-                        "cuda" if torch.cuda.is_available() else "cpu"
+                        "cuda" if torch.cuda.is_available() else "cpu",
                     )
                     model.to(device)
                     validation_results["device_compatibility"] = True
@@ -284,17 +279,16 @@ class UnifiedRegimeIntelligenceValidator:
 
             if validation_results["overall_score"] >= 0.8:
                 self.logger.info(
-                    f"✅ Model architecture validation passed: {validation_results['overall_score']:.3f}"
+                    f"✅ Model architecture validation passed: {validation_results['overall_score']:.3f}",
                 )
                 return True
-            else:
-                self.logger.error(
-                    f"❌ Model architecture validation failed: {validation_results['overall_score']:.3f}"
-                )
-                return False
+            self.logger.error(
+                f"❌ Model architecture validation failed: {validation_results['overall_score']:.3f}",
+            )
+            return False
 
         except Exception as e:
-            self.logger.error(f"Model architecture validation failed: {e}")
+            self.logger.exception(f"Model architecture validation failed: {e}")
             return False
 
     @handle_errors(
@@ -302,7 +296,7 @@ class UnifiedRegimeIntelligenceValidator:
         default_return=False,
         context="training process validation",
     )
-    async def validate_training_process(self, training_data: Dict[str, Any]) -> bool:
+    async def validate_training_process(self, training_data: dict[str, Any]) -> bool:
         """Validate training process integrity."""
         try:
             self.logger.info("Validating training process...")
@@ -356,7 +350,7 @@ class UnifiedRegimeIntelligenceValidator:
                         validation_results["sequence_creation"],
                         validation_results["label_encoding"],
                         validation_results["training_split"],
-                    ]
+                    ],
                 )
                 / 4.0
             )
@@ -365,21 +359,20 @@ class UnifiedRegimeIntelligenceValidator:
 
             if validation_results["overall_score"] >= 0.75:
                 self.logger.info(
-                    f"✅ Training process validation passed: {validation_results['overall_score']:.3f}"
+                    f"✅ Training process validation passed: {validation_results['overall_score']:.3f}",
                 )
                 return True
-            else:
-                self.logger.error(
-                    f"❌ Training process validation failed: {validation_results['overall_score']:.3f}"
-                )
-                return False
+            self.logger.error(
+                f"❌ Training process validation failed: {validation_results['overall_score']:.3f}",
+            )
+            return False
 
         except Exception as e:
-            self.logger.error(f"Training process validation failed: {e}")
+            self.logger.exception(f"Training process validation failed: {e}")
             return False
 
     @handle_errors(
-        exceptions=(Exception,), default_return=False, context="artifacts validation"
+        exceptions=(Exception,), default_return=False, context="artifacts validation",
     )
     async def validate_artifacts(self, artifacts_dir: str) -> bool:
         """Validate saved artifacts."""
@@ -407,7 +400,7 @@ class UnifiedRegimeIntelligenceValidator:
                 file_path = os.path.join(artifacts_dir, file_name)
                 if os.path.exists(file_path):
                     validation_results["file_sizes"][file_name] = os.path.getsize(
-                        file_path
+                        file_path,
                     )
                     files_found += 1
 
@@ -445,23 +438,22 @@ class UnifiedRegimeIntelligenceValidator:
                 >= self.artifact_completeness_threshold
             ):
                 self.logger.info(
-                    f"✅ Artifacts validation passed: {validation_results['overall_score']:.3f}"
+                    f"✅ Artifacts validation passed: {validation_results['overall_score']:.3f}",
                 )
                 return True
-            else:
-                self.logger.error(
-                    f"❌ Artifacts validation failed: {validation_results['overall_score']:.3f}"
-                )
-                return False
+            self.logger.error(
+                f"❌ Artifacts validation failed: {validation_results['overall_score']:.3f}",
+            )
+            return False
 
         except Exception as e:
-            self.logger.error(f"Artifacts validation failed: {e}")
+            self.logger.exception(f"Artifacts validation failed: {e}")
             return False
 
     @handle_errors(
-        exceptions=(Exception,), default_return=False, context="predictions validation"
+        exceptions=(Exception,), default_return=False, context="predictions validation",
     )
-    async def validate_predictions(self, model: Any, test_data: Dict[str, Any]) -> bool:
+    async def validate_predictions(self, model: Any, test_data: dict[str, Any]) -> bool:
         """Validate model predictions."""
         try:
             self.logger.info("Validating predictions...")
@@ -475,7 +467,7 @@ class UnifiedRegimeIntelligenceValidator:
 
             if model is None or test_data is None:
                 self.logger.warning(
-                    "Model or test data not available for prediction validation"
+                    "Model or test data not available for prediction validation",
                 )
                 return False
 
@@ -514,7 +506,7 @@ class UnifiedRegimeIntelligenceValidator:
                         validation_results["prediction_structure"],
                         validation_results["output_ranges"],
                         validation_results["confidence_scores"],
-                    ]
+                    ],
                 )
                 / 3.0
             )
@@ -523,17 +515,16 @@ class UnifiedRegimeIntelligenceValidator:
 
             if validation_results["overall_score"] >= 0.67:
                 self.logger.info(
-                    f"✅ Predictions validation passed: {validation_results['overall_score']:.3f}"
+                    f"✅ Predictions validation passed: {validation_results['overall_score']:.3f}",
                 )
                 return True
-            else:
-                self.logger.error(
-                    f"❌ Predictions validation failed: {validation_results['overall_score']:.3f}"
-                )
-                return False
+            self.logger.error(
+                f"❌ Predictions validation failed: {validation_results['overall_score']:.3f}",
+            )
+            return False
 
         except Exception as e:
-            self.logger.error(f"Predictions validation failed: {e}")
+            self.logger.exception(f"Predictions validation failed: {e}")
             return False
 
     @handle_errors(
@@ -579,17 +570,16 @@ class UnifiedRegimeIntelligenceValidator:
 
             if validation_results["overall_score"] >= 0.5:
                 self.logger.info(
-                    f"✅ S/R integration validation passed: {validation_results['overall_score']:.3f}"
+                    f"✅ S/R integration validation passed: {validation_results['overall_score']:.3f}",
                 )
                 return True
-            else:
-                self.logger.warning(
-                    f"⚠️ S/R integration validation partial: {validation_results['overall_score']:.3f}"
-                )
-                return True  # Don't fail the entire validation for S/R issues
+            self.logger.warning(
+                f"⚠️ S/R integration validation partial: {validation_results['overall_score']:.3f}",
+            )
+            return True  # Don't fail the entire validation for S/R issues
 
         except Exception as e:
-            self.logger.error(f"S/R integration validation failed: {e}")
+            self.logger.exception(f"S/R integration validation failed: {e}")
             return False
 
     @handle_errors(
@@ -599,16 +589,16 @@ class UnifiedRegimeIntelligenceValidator:
     )
     async def run_comprehensive_validation(
         self,
-        data: Dict[str, pd.DataFrame],
+        data: dict[str, pd.DataFrame],
         model: Any,
-        training_data: Dict[str, Any],
+        training_data: dict[str, Any],
         artifacts_dir: str,
-        test_data: Dict[str, Any] = None,
+        test_data: dict[str, Any] | None = None,
     ) -> bool:
         """Run comprehensive validation of the Unified Regime Intelligence step."""
         try:
             self.logger.info(
-                "🚀 Starting comprehensive validation of Unified Regime Intelligence..."
+                "🚀 Starting comprehensive validation of Unified Regime Intelligence...",
             )
 
             validation_passed = True
@@ -656,17 +646,17 @@ class UnifiedRegimeIntelligenceValidator:
 
             if validation_passed:
                 self.logger.info(
-                    f"🎉 Comprehensive validation PASSED with overall score: {overall_score:.3f}"
+                    f"🎉 Comprehensive validation PASSED with overall score: {overall_score:.3f}",
                 )
             else:
                 self.logger.error(
-                    f"💥 Comprehensive validation FAILED with overall score: {overall_score:.3f}"
+                    f"💥 Comprehensive validation FAILED with overall score: {overall_score:.3f}",
                 )
 
             return validation_passed
 
         except Exception as e:
-            self.logger.error(f"Comprehensive validation failed: {e}")
+            self.logger.exception(f"Comprehensive validation failed: {e}")
             return False
 
     async def _generate_validation_report(self) -> None:
@@ -707,20 +697,19 @@ class UnifiedRegimeIntelligenceValidator:
             self.logger.info(f"Validation report saved to {report_path}")
 
         except Exception as e:
-            self.logger.error(f"Failed to generate validation report: {e}")
+            self.logger.exception(f"Failed to generate validation report: {e}")
 
 
 @handle_errors(
-    exceptions=(Exception,), default_return=False, context="step5_5 validation"
+    exceptions=(Exception,), default_return=False, context="step5_5 validation",
 )
 async def run_step5_5_validation(
     symbol: str,
     exchange: str = "BINANCE",
     timeframe: str = "1m",
-    training_config: Dict[str, Any] | None = None,
+    training_config: dict[str, Any] | None = None,
 ) -> bool:
-    """
-    Run validation for step5_5_unified_regime_intelligence.
+    """Run validation for step5_5_unified_regime_intelligence.
 
     Args:
         symbol: Trading symbol
@@ -730,10 +719,11 @@ async def run_step5_5_validation(
 
     Returns:
         bool: True if validation passed, False otherwise
+
     """
     try:
         logger.info(
-            f"Starting validation for Unified Regime Intelligence Step ({exchange}:{symbol})"
+            f"Starting validation for Unified Regime Intelligence Step ({exchange}:{symbol})",
         )
 
         # Load configuration
@@ -757,7 +747,7 @@ async def run_step5_5_validation(
 
         # Load model and artifacts for validation
         artifacts_dir = config.get(
-            "artifacts_dir", "checkpoints/unified_regime_intelligence"
+            "artifacts_dir", "checkpoints/unified_regime_intelligence",
         )
 
         # Run comprehensive validation
@@ -777,5 +767,5 @@ async def run_step5_5_validation(
         return validation_passed
 
     except Exception as e:
-        logger.error(f"Step 5.5 validation failed: {e}")
+        logger.exception(f"Step 5.5 validation failed: {e}")
         return False

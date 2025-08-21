@@ -1,16 +1,22 @@
-from __future__ import annotations
+"""
+Time utilities for Ares Trading System
+"""
 
-import os
 from datetime import datetime, timezone
-from typing import Optional
+import os
+from typing import Union
+
+UTC = timezone.utc
 
 
-def parse_datetime_to_ms(dt_str: str) -> Optional[int]:
-    """Parse a datetime string to milliseconds since epoch (UTC).
+def parse_datetime_to_ms(dt_str: str | None) -> int | None:
+    """Parse datetime string to milliseconds timestamp.
 
-    Accepts common ISO-8601 formats like '2024-07-01', '2024-07-01T12:34:56Z',
-    '2024-07-01 12:34:56', with or without timezone; assumes UTC if none.
-    Returns None if parsing fails.
+    Args:
+        dt_str: Datetime string in various formats
+
+    Returns:
+        Milliseconds timestamp or None if parsing fails
     """
     if not dt_str:
         return None
@@ -26,16 +32,16 @@ def parse_datetime_to_ms(dt_str: str) -> Optional[int]:
     for fmt in fmts:
         try:
             dt = datetime.strptime(dt_str, fmt)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return int(dt.timestamp() * 1000)
+        if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+        return int(dt.timestamp() * 1000)
         except Exception:
             continue
     try:
         # Last-resort: fromisoformat without 'Z'
         dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return int(dt.timestamp() * 1000)
     except Exception:
         return None
@@ -43,7 +49,7 @@ def parse_datetime_to_ms(dt_str: str) -> Optional[int]:
 
 def resolve_time_window_ms(
     config: dict | None = None,
-) -> tuple[Optional[int], Optional[int]]:
+) -> tuple[int | None, int | None]:
     """Resolve t0_ms/t1_ms from config or environment.
 
     Order of precedence:
@@ -55,13 +61,14 @@ def resolve_time_window_ms(
     """
     cfg = config or {}
 
-    def as_int(v: object) -> Optional[int]:
+    def as_int(v: object) -> int | None:
+        """Convert value to int or return None."""
         try:
-            if v is None:
-                return None
-            return int(v)
+        if v is None:
+        return None
+        return int(v)
         except Exception:
-            return None
+        return None
 
     t0 = (
         as_int(cfg.get("t0_ms"))
@@ -76,11 +83,85 @@ def resolve_time_window_ms(
 
     if t0 is None:
         t0 = parse_datetime_to_ms(
-            cfg.get("start_datetime") or os.environ.get("ARES_START_DATETIME", "")
+            cfg.get("start_datetime") or os.environ.get("ARES_START_DATETIME", ""),
         )
     if t1 is None:
         t1 = parse_datetime_to_ms(
-            cfg.get("end_datetime") or os.environ.get("ARES_END_DATETIME", "")
+            cfg.get("end_datetime") or os.environ.get("ARES_END_DATETIME", ""),
         )
 
     return t0, t1
+
+
+def format_timestamp_ms(timestamp_ms: int) -> str:
+    """Format milliseconds timestamp to ISO string.
+
+    Args:
+        timestamp_ms: Milliseconds timestamp
+
+    Returns:
+        ISO formatted datetime string
+    """
+    dt = datetime.fromtimestamp(timestamp_ms / 1000, tz=UTC)
+    return dt.isoformat()
+
+
+def get_current_timestamp_ms() -> int:
+    """Get current timestamp in milliseconds.
+
+    Returns:
+        Current timestamp in milliseconds
+    """
+    return int(datetime.now(UTC).timestamp() * 1000)
+
+
+def is_valid_timestamp_ms(timestamp_ms: int) -> bool:
+    """Check if timestamp is valid (positive and reasonable).
+
+    Args:
+        timestamp_ms: Timestamp in milliseconds
+
+    Returns:
+        True if timestamp is valid
+    """
+    if timestamp_ms <= 0:
+        return False
+    
+    # Check if timestamp is not too far in the future (e.g., 10 years)
+    max_future = get_current_timestamp_ms() + (10 * 365 * 24 * 60 * 60 * 1000)
+    if timestamp_ms > max_future:
+        return False
+    
+    return True
+
+
+def calculate_duration_ms(start_ms: int, end_ms: int) -> int:
+    """Calculate duration between two timestamps in milliseconds.
+
+    Args:
+        start_ms: Start timestamp in milliseconds
+        end_ms: End timestamp in milliseconds
+
+    Returns:
+        Duration in milliseconds
+    """
+    return end_ms - start_ms
+
+
+def format_duration_ms(duration_ms: int) -> str:
+    """Format duration in milliseconds to human readable string.
+
+    Args:
+        duration_ms: Duration in milliseconds
+
+    Returns:
+        Human readable duration string
+    """
+    if duration_ms < 1000:
+        return f"{duration_ms}ms"
+    elif duration_ms < 60000:
+        return f"{duration_ms / 1000:.1f}s"
+    elif duration_ms < 3600000:
+        return f"{duration_ms / 60000:.1f}m"
+    else:
+        return f"{duration_ms / 3600000:.1f}h"

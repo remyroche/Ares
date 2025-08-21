@@ -6,36 +6,20 @@ This example demonstrates how to use the enhanced reporting system
 for paper trading and backtesting with comprehensive metrics.
 """
 
-import asyncio
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
-from datetime import datetime, timedelta
+from datetime import datetime , timedelta
+from src.config.enhanced_reporting_config import get_enhanced_reporting_config, import asyncio
 
-import numpy as np
-import pandas as pd
-
-from src.config.enhanced_reporting_config import get_enhanced_reporting_config
 from src.launcher.enhanced_trading_launcher import setup_enhanced_trading_launcher
-
+from src.utils.warning_symbols import (import numpy as, np, import pandas as pd)
+    failed)
+    warning)
 
 async def example_paper_trading():
     """Example of paper trading with enhanced reporting."""
     print("🚀 Starting Paper Trading Example with Enhanced Reporting...")
 
     # Get configuration
-    config = get_enhanced_reporting_config()
+    config , get_enhanced_reporting_config()
 
     # Setup enhanced trading launcher
     launcher = await setup_enhanced_trading_launcher(config)
@@ -225,7 +209,6 @@ async def example_paper_trading():
     await launcher.stop()
     print("✅ Paper trading example completed")
 
-
 async def example_backtesting():
     """Example of backtesting with enhanced reporting."""
     print("\n🚀 Starting Backtesting Example with Enhanced Reporting...")
@@ -249,8 +232,7 @@ async def example_backtesting():
             "close": np.random.uniform(100, 200, len(dates)),
             "volume": np.random.uniform(1000000, 5000000, len(dates)),
         },
-        index=dates,
-    )
+        index, dates = )
 
     # Generate sample strategy signals
     strategy_signals = pd.DataFrame(
@@ -259,8 +241,7 @@ async def example_backtesting():
             "close": historical_data["close"],
             "symbol": ["ETHUSDT"] * len(dates),
         },
-        index=dates,
-    )
+        index, dates = )
 
     # Add some trend to make it more realistic
     trend = np.cumsum(np.random.normal(0, 0.01, len(dates)))
@@ -327,10 +308,8 @@ async def example_backtesting():
 
     # Launch backtest
     results = await launcher.launch_backtest(
-        historical_data=historical_data,
-        strategy_signals=strategy_signals,
-        backtest_config=backtest_config,
-    )
+        historical_data, historical_data = strategy_signals=strategy_signals,
+        backtest_config, backtest_config = )
 
     if results:
         print("✅ Backtest completed successfully")
@@ -362,13 +341,21 @@ async def example_backtesting():
     await launcher.stop()
     print("✅ Backtesting example completed")
 
-
 async def main():
     """Main function to run examples."""
     print("🎯 Enhanced Reporting System Examples")
     print("=" * 50)
 
     try:
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
+    pass
+except Exception as e:
+    pass
         # Run paper trading example
         await example_paper_trading()
 
@@ -377,9 +364,8 @@ async def main():
 
         print("\n🎉 All examples completed successfully!")
 
-    except Exception as e:
+    except Exception:
         print(warning("Error running examples: {e}"))
-
 
 if __name__ == "__main__":
     asyncio.run(main())

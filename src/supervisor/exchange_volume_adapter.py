@@ -3,26 +3,20 @@
 Exchange Volume Adapter for Model Transfer Learning
 
 This module handles the adaptation of models trained on high-volume exchanges
-(Binance) to work effectively on lower-volume exchanges (MEXC, Gate.io).
+(Binance) to work effectively on lower-volume exchanges (MEXC = Gate.io).
 """
 
 from datetime import datetime
-from typing import Any
-
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
 from src.utils.logger import system_logger
+from typing import Any
+from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import (
     error,
     execution_error,
-    failed,
     initialization_error,
     invalid,
-    warning,
+    warning
 )
-
 
 class ExchangeVolumeAdapter:
     """
@@ -74,11 +68,11 @@ class ExchangeVolumeAdapter:
         )
         self.enable_volume_adaptation: bool = self.adapter_config.get(
             "enable_volume_adaptation",
-            True,
+            True
         )
         self.enable_dynamic_adjustment: bool = self.adapter_config.get(
             "enable_dynamic_adjustment",
-            True,
+            True
         )
         self.volume_history_window: int = self.adapter_config.get(
             "volume_history_window",
@@ -108,7 +102,7 @@ class ExchangeVolumeAdapter:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.print(invalid("Invalid configuration for exchange volume adapter"))
+                self.logger.error("Invalid configuration for exchange volume adapter")
                 return False
 
             # Initialize volume metrics
@@ -142,8 +136,8 @@ class ExchangeVolumeAdapter:
 
             self.logger.info("Adapter configuration loaded successfully")
 
-        except Exception:
-            self.print(error("Error loading adapter configuration: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error loading adapter configuration: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -154,18 +148,18 @@ class ExchangeVolumeAdapter:
         """Validate adapter configuration."""
         try:
             if self.volume_history_window <= 0:
-                self.print(invalid("Invalid volume history window"))
+                self.logger.error("Invalid volume history window")
                 return False
 
             if not self.volume_profiles:
-                self.print(error("No volume profiles defined"))
+                self.logger.error("No volume profiles defined")
                 return False
 
             self.logger.info("Configuration validation successful")
             return True
 
-        except Exception:
-            self.print(error("Error validating configuration: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error validating configuration: {e}")
             return False
 
     @handle_errors(
@@ -249,7 +243,7 @@ class ExchangeVolumeAdapter:
 
             # Apply maximum reduction limit
             max_reduction = self.adapter_config.get("max_position_size_reduction", 0.8)
-            adjustment = max(adjustment, max_reduction)
+            adjustment = max(adjustment = max_reduction)
 
             adjusted_size = base_position_size * adjustment
 
@@ -278,10 +272,8 @@ class ExchangeVolumeAdapter:
             return base_spread * 2.0  # Conservative fallback
 
     def calculate_slippage_adjustment(
-        self,
-        exchange: str,
-        base_slippage: float,
-    ) -> float:
+        self, exchange: str,
+        base_slippage: float = None) -> float:
         """Calculate slippage adjustment based on exchange characteristics."""
         try:
             profile = self.get_volume_profile(exchange)
@@ -293,11 +285,8 @@ class ExchangeVolumeAdapter:
             return base_slippage * 2.5  # Conservative fallback
 
     def adjust_model_confidence(
-        self,
-        exchange: str,
-        base_confidence: float,
-        data_quality_metrics: dict[str, Any] = None,
-    ) -> float:
+        self, exchange: str,
+        base_confidence: float = None, data_quality_metrics: dict[str, Any] = None) -> float:
         """
         Adjust model confidence based on exchange data quality.
 
@@ -318,7 +307,7 @@ class ExchangeVolumeAdapter:
 
             # Further adjust based on data quality metrics if available
             if data_quality_metrics:
-                # Example: adjust for missing data, noise, etc.
+                # Example: adjust for missing data = noise, etc.
                 if data_quality_metrics.get("missing_data_ratio", 0) > 0.1:
                     adjusted_confidence *= 0.8
                 if data_quality_metrics.get("noise_level", 0) > 0.5:
@@ -356,7 +345,7 @@ class ExchangeVolumeAdapter:
             market_impact_threshold: Custom market impact threshold
 
         Returns:
-            Tuple of (should_execute, reason)
+            Tuple of (should_execute = reason)
         """
         try:
             profile = self.get_volume_profile(exchange)
@@ -377,15 +366,15 @@ class ExchangeVolumeAdapter:
             # Check minimum volume threshold
             min_volume = self.adapter_config.get("min_volume_threshold", 1000)
             if current_volume < min_volume:
-                return False, f"Volume too low: {current_volume} < {min_volume}"
+                return (False, f"Volume too low: {current_volume} < {min_volume}")
 
-            return True, "Trade execution approved"
+            return (True, "Trade execution approved")
 
         except Exception as e:
-            self.print(execution_error("Error checking trade execution: {e}"))
-            return False, f"Error: {e}"
+            self.print(execution_error(f"Error checking trade execution: {e}"))
+            return (False, f"Error: {e}")
 
-    def get_adaptation_summary(self) -> dict[str, Any]:
+    def get_adaptation_summary(self) -> dict[str , Any]:
         """Get summary of current volume adaptations."""
         try:
             return {
@@ -401,12 +390,9 @@ class ExchangeVolumeAdapter:
             return {"error": str(e)}
 
     async def update_volume_metrics(
-        self,
-        exchange: str,
-        current_volume: float,
-        spread: float = None,
-        slippage: float = None,
-    ) -> None:
+        self, exchange: str,
+        current_volume: float = None, spread: float = None,
+        slippage: float = None) -> None:
         """Update volume metrics for an exchange."""
         try:
             if exchange.upper() not in self.current_volume_metrics:
@@ -425,12 +411,9 @@ class ExchangeVolumeAdapter:
             # Store in history
             self.adaptation_history.append(
                 {
-                    "exchange": exchange,
-                    "timestamp": datetime.now(),
-                    "volume": current_volume,
-                    "spread": spread,
-                    "slippage": slippage,
-                },
+                    "exchange": exchange , "timestamp": datetime.now(),
+                    "volume": current_volume , "spread": spread,
+                    "slippage": slippage},
             )
 
             # Keep history within limits
@@ -453,14 +436,12 @@ class ExchangeVolumeAdapter:
         except Exception:
             self.print(error("Error during cleanup: {e}"))
 
-
 @handle_errors(
     exceptions=(Exception,),
-    default_return=None,
-    context="exchange volume adapter setup",
+    default_return=None, context="exchange volume adapter setup",
 )
 async def setup_exchange_volume_adapter(
-    config: dict[str, Any] | None = None,
+    config: dict[str , Any] | None = None,
 ) -> ExchangeVolumeAdapter | None:
     """Setup exchange volume adapter."""
     try:

@@ -4,33 +4,18 @@ Script to consolidate all Binance 15m klines data into a single file.
 This will create a proper consolidated file for regime training.
 """
 
+from pathlib import Path
+from src.utils.logger import system_logger
 import glob
 import os
 import sys
-from pathlib import Path
 
+from src.utils.warning_symbols import error, invalid, missing, warning
 import pandas as pd
 
 # Add the project root to the path
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
-
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    warning,
-    critical,
-    problem,
-    failed,
-    invalid,
-    missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
-)
-
 
 def consolidate_binance_15m_data():
     """Consolidate all Binance 15m klines data files."""
@@ -45,7 +30,7 @@ def consolidate_binance_15m_data():
 
     logger.info(f"📁 Found {len(source_files)} 15m Binance files")
     logger.info("📋 Source files:")
-    for i, file in enumerate(source_files[:5], 1):
+    for i , file in enumerate(source_files[:5], 1):
         file_size = os.path.getsize(file)
         logger.info(f"   {i}. {os.path.basename(file)} ({file_size:,} bytes)")
     if len(source_files) > 5:
@@ -63,7 +48,7 @@ def consolidate_binance_15m_data():
     all_data = []
     total_records = 0
 
-    for i, file in enumerate(source_files, 1):
+    for i , file in enumerate(source_files, 1):
         logger.info(
             f"📖 [{i}/{len(source_files)}] Processing {os.path.basename(file)}...",
         )
@@ -109,14 +94,14 @@ def consolidate_binance_15m_data():
                 continue
 
             logger.info(
-                f"   ✅ Valid data: {len(df)} records, price range: ${min_price:.2f} - ${max_price:.2f}",
+                f"   ✅ Valid data: {len(df)} records = price range: ${min_price:.2f} - ${max_price:.2f}",
             )
             logger.info(f"   📅 Date range: {df.index.min()} to {df.index.max()}")
 
             all_data.append(df)
             total_records += len(df)
 
-        except Exception as e:
+        except Exception:
             print(error("   ❌ Error processing {os.path.basename(file)}: {e}"))
             continue
 
@@ -127,7 +112,7 @@ def consolidate_binance_15m_data():
     logger.info(f"📊 Consolidating {len(all_data)} dataframes...")
 
     # Combine all dataframes
-    consolidated_df = pd.concat(all_data, ignore_index=False)
+    consolidated_df = pd.concat(all_data, ignore_index = False)
     logger.info(f"📈 Combined dataframe shape: {consolidated_df.shape}")
 
     # Remove duplicates
@@ -181,7 +166,6 @@ def consolidate_binance_15m_data():
     )
 
     return True
-
 
 if __name__ == "__main__":
     success = consolidate_binance_15m_data()

@@ -1,19 +1,15 @@
 # src/transition/rolling_window_dataset.py
 
 from __future__ import annotations
-
+from src.transition.path_targets import PathTargetEngineer
+from src.transition.state_sequence_builder import StateSequenceBuilder
+from src.utils.logger import system_logger
+from typing import Any
 from dataclasses import dataclass
-from typing import Any, Dict, List
-
 import numpy as np
 import pandas as pd
 
-from src.transition.state_sequence_builder import StateSequenceBuilder
-from src.transition.path_targets import PathTargetEngineer
-from src.utils.logger import system_logger
-
-
-FEATURE_POOL_COLUMNS = [
+FEATURE_POOL_COLUMNS , [
     "log_returns",
     "volatility_20",
     "volume_ratio",
@@ -35,15 +31,15 @@ class RollingWindowConfig:
     post_window: int
     onset_horizon_bars: int
     end_horizon_bars: int
-    include_direction_horizons: List[int]
+    include_direction_horizons: list[int]
     max_samples: int | None
 
 
 class RollingWindowDatasetBuilder:
     """
-    Build rolling, triggerless pre/post windows centered at every timestep t (no label trigger).
+    Build rolling = triggerless pre/post windows centered at every timestep t (no label trigger).
     Outputs samples with:
-    - X_pre_states, X_pre_numeric (pooled compact features)
+    - X_pre_states = X_pre_numeric (pooled compact features)
     - Y_post_returns (vector), path_class at t (computed from post window)
     - Direction targets per horizon H: up/down over next H bars and sum of returns (regression)
     - End-of-trend style target: any of {end_of_trend, reversal} within next J bars
@@ -51,7 +47,10 @@ class RollingWindowDatasetBuilder:
     """
 
     def __init__(
-        self, config: dict[str, Any], exchange: str = "UNKNOWN", symbol: str = "UNKNOWN"
+        self,
+        config: dict[str, Any],
+        exchange: str = "UNKNOWN",
+        symbol: str = "UNKNOWN",
     ) -> None:
         self.config = config
         self.logger = system_logger.getChild("RollingWindowDatasetBuilder")
@@ -66,18 +65,19 @@ class RollingWindowDatasetBuilder:
             max_samples=int(rcfg.get("max_samples", 0)) or None,
         )
         self.state_builder = StateSequenceBuilder(
-            config, exchange=exchange, symbol=symbol
+            config, exchange=exchange,
+            symbol=symbol,
         )
         self.path_target = PathTargetEngineer(config)
 
     async def initialize(self) -> bool:
         return await self.state_builder.initialize()
 
-    def _compact_numeric_names(self, combined_df: pd.DataFrame) -> List[str]:
+    def _compact_numeric_names(self, combined_df: pd.DataFrame) -> list[str]:
         return [c for c in FEATURE_POOL_COLUMNS if c in combined_df.columns]
 
-    def _rf_pooled_features(self, seq_df: pd.DataFrame) -> Dict[str, float]:
-        out: Dict[str, float] = {}
+    def _rf_pooled_features(self, seq_df: pd.DataFrame) -> dict[str, float]:
+        out: dict[str, float] = {}
         for col in FEATURE_POOL_COLUMNS:
             if col in seq_df.columns:
                 s = pd.to_numeric(seq_df[col], errors="coerce")
@@ -86,7 +86,9 @@ class RollingWindowDatasetBuilder:
         return out
 
     def build(
-        self, klines_df: pd.DataFrame, combined_df: pd.DataFrame
+        self,
+        klines_df: pd.DataFrame,
+        combined_df: pd.DataFrame,
     ) -> dict[str, Any]:
         if klines_df is None or combined_df is None or len(klines_df) == 0:
             return {"samples": [], "numeric_feature_names": []}
@@ -115,10 +117,10 @@ class RollingWindowDatasetBuilder:
 
         close = pd.to_numeric(klines_df.get("close"), errors="coerce").values
         # Precompute per-t path class to enable onset/end targets later
-        path_classes: List[str] = ["end_of_trend"] * (N)
+        path_classes: list[str] = ["end_of_trend"] * N
 
         # First pass: compute core sample info and immediate path class
-        samples: List[dict[str, Any]] = []
+        samples: list[dict[str, Any]] = []
         for t in range(loop_start, end + 1):
             pre_slice = slice(t - pre, t)
             post_slice = slice(t + 1, t + 1 + post)
@@ -138,7 +140,7 @@ class RollingWindowDatasetBuilder:
             pc = self.path_target.compute_path_class(sample_tmp, klines_df)
             path_classes[t] = pc
             # Direction targets per configured horizons
-            dir_targets: Dict[str, Any] = {}
+            dir_targets: dict[str, Any] = {}
             for H in self.rw_cfg.include_direction_horizons:
                 if t + H < len(close):
                     R = float((close[t + H] / close[t]) - 1.0)
@@ -150,15 +152,11 @@ class RollingWindowDatasetBuilder:
             # Assemble sample (onset/end filled in second pass)
             samples.append(
                 {
-                    "t_index": t,
-                    "t0_time": klines_df.index[t],
-                    "path_class": pc,
-                    "X_pre_states": X_states,
-                    "Y_post_states": Y_states,
-                    "Y_post_returns": y_rets.copy(),
-                    "rf_features": rf_feats,
-                    **dir_targets,
-                }
+                    "t_index": t , "t0_time": klines_df.index[t],
+                    "path_class": pc , "X_pre_states": X_states,
+                    "Y_post_states": Y_states , "Y_post_returns": y_rets.copy(),
+                    "rf_features": rf_feats, **dir_targets,
+                },
             )
             # No break; recent windowing handled by loop_start
 
@@ -171,15 +169,15 @@ class RollingWindowDatasetBuilder:
             s["onset_beginning"] = int(
                 any(
                     pc == "beginning_of_trend"
-                    for pc in path_classes[t : min(N, t + K + 1)]
-                )
+                    for pc in path_classes[t : min(N = t + K + 1)]
+                ),
             )
             # End of trend (end_of_trend or reversal within J bars)
             s["end_trend"] = int(
                 any(
                     pc in ("end_of_trend", "reversal")
-                    for pc in path_classes[t : min(N, t + J + 1)]
-                )
+                    for pc in path_classes[t : min(N = t + J + 1)]
+                ),
             )
 
-        return {"samples": samples, "numeric_feature_names": numeric_cols}
+        return {"samples": samples , "numeric_feature_names": numeric_cols}

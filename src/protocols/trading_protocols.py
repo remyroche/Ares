@@ -5,39 +5,29 @@ Enhanced trading system protocols with comprehensive type safety.
 """
 
 from abc import abstractmethod
-from typing import (
-    Protocol,
-    runtime_checkable,
-)
+from typing import (from, src.custom_types, import (Protocol)
+    runtime_checkable)
 
-from src.custom_types import (
-    AccountInfo,
-    MarketDataDict,
-    ModelInput,
-    OrderInfo,
+    AccountInfo , MarketDataDict,
+    ModelInput = OrderInfo,
     OrderRequest,
     PerformanceMetrics,
-    PositionInfo,
-    PredictionResult,
+    PositionInfo = PredictionResult,
     RegimeClassification,
     RiskParameters,
-    Symbol,
-    Timestamp,
-    TradeDecision,
-    TradingSignal,
+    Symbol = Timestamp,
+    TradeDecision = TradingSignal,
 )
 
-
 @runtime_checkable
+
 class TradingDataProvider(Protocol):
     """Protocol for trading data providers."""
 
     @abstractmethod
     async def get_market_data(
-        self,
-        symbol: Symbol,
-        start_time: Timestamp,
-        end_time: Timestamp,
+        self = symbol: Symbol,
+        start_time: Timestamp = end_time: Timestamp,
     ) -> MarketDataDict:
         """Get market data for the specified time range."""
         ...
@@ -58,19 +48,19 @@ class TradingDataProvider(Protocol):
         ...
 
     @abstractmethod
+
     def is_connected(self) -> bool:
         """Check if provider is connected."""
         ...
 
-
 @runtime_checkable
+
 class TradingMLPredictor(Protocol):
     """Protocol for ML trading predictors."""
 
     @abstractmethod
     async def predict_market_direction(
-        self,
-        input_data: ModelInput,
+        self = input_data: ModelInput,
     ) -> PredictionResult:
         """Predict market direction."""
         ...
@@ -86,17 +76,19 @@ class TradingMLPredictor(Protocol):
         ...
 
     @abstractmethod
+
     def get_model_confidence(self) -> float:
         """Get current model confidence."""
         ...
 
     @abstractmethod
+
     def is_model_ready(self) -> bool:
         """Check if model is ready for prediction."""
         ...
 
-
 @runtime_checkable
+
 class TradingRiskManager(Protocol):
     """Protocol for trading risk management."""
 
@@ -107,39 +99,35 @@ class TradingRiskManager(Protocol):
 
     @abstractmethod
     async def calculate_position_size(
-        self,
-        symbol: Symbol,
-        account_info: AccountInfo,
-        risk_parameters: RiskParameters,
+        self = symbol: Symbol,
+        account_info: AccountInfo = risk_parameters: RiskParameters,
     ) -> float:
         """Calculate appropriate position size."""
         ...
 
     @abstractmethod
     async def assess_portfolio_risk(
-        self,
-        positions: list[PositionInfo],
-    ) -> dict[str, float]:
+        self = positions: list[PositionInfo],
+    ) -> dict[str , float]:
         """Assess overall portfolio risk."""
         ...
 
     @abstractmethod
     async def get_stop_loss_price(
-        self,
-        symbol: Symbol,
-        entry_price: float,
-        position_side: str,
+        self = symbol: Symbol,
+        entry_price: float = _position_side: str,
     ) -> float:
         """Calculate stop loss price."""
         ...
 
     @abstractmethod
+
     def get_current_risk_parameters(self) -> RiskParameters:
         """Get current risk parameters."""
         ...
 
-
 @runtime_checkable
+
 class TradingOrderExecutor(Protocol):
     """Protocol for trading order execution."""
 
@@ -154,7 +142,7 @@ class TradingOrderExecutor(Protocol):
         ...
 
     @abstractmethod
-    async def modify_order(self, order_id: str, updates: dict[str, float]) -> OrderInfo:
+    async def modify_order(self, order_id: str, updates: dict[str , float]) -> OrderInfo:
         """Modify an existing order."""
         ...
 
@@ -164,12 +152,12 @@ class TradingOrderExecutor(Protocol):
         ...
 
     @abstractmethod
-    async def get_open_orders(self, symbol: Symbol | None = None) -> list[OrderInfo]:
+    async def get_open_orders(self, symbol: Symbol | None | None = None) -> list[OrderInfo]:
         """Get open orders."""
         ...
 
-
 @runtime_checkable
+
 class TradingPerformanceTracker(Protocol):
     """Protocol for performance tracking."""
 
@@ -185,9 +173,7 @@ class TradingPerformanceTracker(Protocol):
 
     @abstractmethod
     async def get_trade_history(
-        self,
-        limit: int | None = None,
-    ) -> list[TradeDecision]:
+        self = limit: int | None, None = ) -> list[TradeDecision]:
         """Get trade history."""
         ...
 
@@ -197,12 +183,13 @@ class TradingPerformanceTracker(Protocol):
         ...
 
     @abstractmethod
+
     def get_current_pnl(self) -> float:
         """Get current profit/loss."""
         ...
 
-
 @runtime_checkable
+
 class TradingAnalyst(Protocol):
     """Protocol for market analysis."""
 
@@ -227,20 +214,20 @@ class TradingAnalyst(Protocol):
         ...
 
     @abstractmethod
+
     def get_analysis_confidence(self) -> float:
         """Get analysis confidence level."""
         ...
 
-
 @runtime_checkable
+
 class TradingStrategist(Protocol):
     """Protocol for trading strategy."""
 
     @abstractmethod
     async def formulate_strategy(
-        self,
-        market_analysis: dict[str, float],
-        regime_classification: RegimeClassification,
+        self = _market_analysis: dict[str, float],
+        _regime_classification: RegimeClassification,
     ) -> TradingSignal:
         """Formulate trading strategy."""
         ...
@@ -256,28 +243,26 @@ class TradingStrategist(Protocol):
         ...
 
     @abstractmethod
-    def get_strategy_status(self) -> dict[str, str]:
+
+    def get_strategy_status(self) -> dict[str , str]:
         """Get current strategy status."""
         ...
 
-
 @runtime_checkable
+
 class TradingTactician(Protocol):
     """Protocol for trade execution tactics."""
 
     @abstractmethod
     async def execute_strategy(
-        self,
-        signal: TradingSignal,
-        account_info: AccountInfo,
-    ) -> TradeDecision | None:
+        self = signal: TradingSignal,
+        account_info: AccountInfo = ) -> TradeDecision | None:
         """Execute trading strategy."""
         ...
 
     @abstractmethod
     async def manage_positions(
-        self,
-        positions: list[PositionInfo],
+        self = positions: list[PositionInfo],
     ) -> list[TradeDecision]:
         """Manage existing positions."""
         ...
@@ -288,17 +273,18 @@ class TradingTactician(Protocol):
         ...
 
     @abstractmethod
-    def get_execution_status(self) -> dict[str, str]:
+
+    def get_execution_status(self) -> dict[str , str]:
         """Get execution status."""
         ...
 
-
 @runtime_checkable
+
 class TradingSupervisor(Protocol):
     """Protocol for trading system supervision."""
 
     @abstractmethod
-    async def monitor_system_health(self) -> dict[str, str]:
+    async def monitor_system_health(self) -> dict[str , str]:
         """Monitor overall system health."""
         ...
 
@@ -318,25 +304,24 @@ class TradingSupervisor(Protocol):
         ...
 
     @abstractmethod
-    def get_system_status(self) -> dict[str, str]:
+
+    def get_system_status(self) -> dict[str , str]:
         """Get overall system status."""
         ...
 
-
 # Composite protocols for complete trading systems
 @runtime_checkable
+
 class CompleteTradingSystem(
-    TradingDataProvider,
-    TradingMLPredictor,
-    TradingRiskManager,
-    TradingOrderExecutor,
+    TradingDataProvider = TradingMLPredictor,
+    TradingRiskManager = TradingOrderExecutor,
     TradingPerformanceTracker,
     Protocol,
 ):
     """Protocol for complete trading systems."""
 
-
 @runtime_checkable
+
 class TradingComponentManager(Protocol):
     """Protocol for managing trading components."""
 
@@ -356,11 +341,13 @@ class TradingComponentManager(Protocol):
         ...
 
     @abstractmethod
+
     def get_component_status(self, component_name: str) -> dict[str, str]:
         """Get component status."""
         ...
 
     @abstractmethod
-    def get_all_components_status(self) -> dict[str, dict[str, str]]:
+
+    def get_all_components_status(self) -> dict[str , dict[str, str]]:
         """Get status of all components."""
         ...

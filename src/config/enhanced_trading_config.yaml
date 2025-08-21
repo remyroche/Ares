@@ -1,0 +1,121 @@
+# Enhanced Trading Configuration
+# This file enables the three major enhancements:
+# 1. Confidence Calibration
+# 2. Enhanced Ensemble Weighting  
+# 3. Real-Time Performance Tracking
+
+# Confidence Calibration Configuration
+confidence_calibration:
+  enable_platt_scaling: true
+  enable_isotonic_calibration: true
+  enable_temperature_scaling: true
+  calibration_window: 1000
+  calibration_update_frequency: 100
+  min_samples_for_calibration: 10
+  ensemble_weights:
+    platt: 0.4
+    isotonic: 0.4
+    temperature: 0.2
+
+# Enhanced Ensemble Weighting Configuration
+dynamic_weighter:
+  weighting_interval: 3600
+  max_weighting_history: 100
+  enable_performance_weighting: true
+  enable_risk_weighting: true
+  enable_adaptive_weighting: true
+  enable_online_learning: true
+  enable_regime_awareness: true
+  enable_uncertainty_weighting: true
+  learning_rate: 0.01
+  performance_window: 100
+  weight_combination:
+    online_learning: 0.4
+    regime_awareness: 0.4
+    uncertainty_weighting: 0.2
+
+# Real-Time Performance Tracking Configuration
+performance_monitor:
+  monitor_interval: 30
+  max_history: 100
+  enable_real_time_tracking: true
+  performance_window: 100
+  retraining_threshold: 0.1
+  drift_detection:
+    detection_window: 100
+    drift_threshold: 0.05
+  performance_metrics:
+    accuracy_threshold: 0.5
+    f1_threshold: 0.4
+    recent_accuracy_weight: 0.4
+    overall_accuracy_weight: 0.3
+    f1_score_weight: 0.3
+
+# Regime-Specific Model Performance Multipliers
+regime_performance_multipliers:
+  BULL:
+    tcn: 1.1
+    transformer: 1.0
+    lstm: 0.9
+    gru: 0.9
+    tabnet: 1.0
+  BEAR:
+    tcn: 0.9
+    transformer: 1.1
+    lstm: 1.0
+    gru: 1.0
+    tabnet: 0.9
+  SIDEWAYS:
+    tcn: 1.0
+    transformer: 1.0
+    lstm: 1.1
+    gru: 1.0
+    tabnet: 1.0
+  SR:
+    tcn: 1.2
+    transformer: 1.0
+    lstm: 0.8
+    gru: 0.8
+    tabnet: 1.1
+  CANDLE:
+    tcn: 0.9
+    transformer: 1.2
+    lstm: 1.0
+    gru: 1.0
+    tabnet: 0.9
+
+# System Health Thresholds
+system_health:
+  healthy:
+    accuracy_threshold: 0.7
+    f1_threshold: 0.6
+  warning:
+    accuracy_threshold: 0.5
+    f1_threshold: 0.4
+  critical:
+    accuracy_threshold: 0.3
+    f1_threshold: 0.2
+
+# Retraining Triggers
+retraining_triggers:
+  performance_degradation:
+    accuracy_threshold: 0.5
+    severity: "high"
+  f1_degradation:
+    f1_threshold: 0.4
+    severity: "medium"
+  concept_drift:
+    drift_threshold: 0.05
+    severity: "high"
+  recent_performance_drop:
+    drop_threshold: 0.1
+    severity: "medium"
+
+# Integration Settings
+integration:
+  enable_ml_confidence_predictor_calibration: true
+  enable_dynamic_weighter_integration: true
+  enable_performance_monitor_integration: true
+  calibration_update_interval: 100
+  weight_update_interval: 50
+  performance_update_interval: 10

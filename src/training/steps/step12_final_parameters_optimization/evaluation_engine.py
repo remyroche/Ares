@@ -144,8 +144,8 @@ class AdvancedEvaluationEngine:
 
             return metrics
 
-        except Exception:
-            self.print(error("Error evaluating parameters: {e}"))
+        except Exception as e:
+            self.logger.exception(error(f"Error evaluating parameters: {e}"))
             return PerformanceMetrics()
 
     def _simulate_trading_performance(
@@ -239,8 +239,8 @@ class AdvancedEvaluationEngine:
                 "n_trades": len(trades),
             }
 
-        except Exception:
-            self.print(error("Error simulating trading performance: {e}"))
+        except Exception as e:
+            self.logger.exception(error(f"Error simulating trading performance: {e}"))
             return {
                 "trades": [],
                 "returns": [],
@@ -265,8 +265,8 @@ class AdvancedEvaluationEngine:
 
             # Basic metrics
             total_trades = len(trades)
-            winning_trades = len(df[df["is_win"] is True])
-            losing_trades = len(df[df["is_win"] is False])
+            winning_trades = int((df["is_win"] == True).sum())
+            losing_trades = int((df["is_win"] == False).sum())
             win_rate = winning_trades / total_trades if total_trades > 0 else 0.0
 
             # Return metrics
@@ -282,10 +282,10 @@ class AdvancedEvaluationEngine:
 
             # Average win/loss
             average_win = (
-                df[df["is_win"] is True]["return"].mean() if winning_trades > 0 else 0.0
+                df.loc[df["is_win"] == True, "return"].mean() if winning_trades > 0 else 0.0
             )
             average_loss = (
-                df[df["is_win"] is False]["return"].mean() if losing_trades > 0 else 0.0
+                df.loc[df["is_win"] == False, "return"].mean() if losing_trades > 0 else 0.0
             )
 
             # Largest win/loss
@@ -349,8 +349,8 @@ class AdvancedEvaluationEngine:
                 risk_reward_ratio=risk_reward_ratio,
             )
 
-        except Exception:
-            self.print(error("Error calculating performance metrics: {e}"))
+        except Exception as e:
+            self.logger.exception(error(f"Error calculating performance metrics: {e}"))
             return PerformanceMetrics()
 
     def _calculate_sharpe_ratio(self, returns: pd.Series) -> float:
@@ -364,8 +364,8 @@ class AdvancedEvaluationEngine:
                 return 0.0
 
             return excess_returns.mean() / excess_returns.std() * np.sqrt(252)
-        except Exception:
-            self.print(error("Error calculating Sharpe ratio: {e}"))
+        except Exception as e:
+            self.logger.exception(error(f"Error calculating Sharpe ratio: {e}"))
             return 0.0
 
     def _calculate_sortino_ratio(self, returns: pd.Series) -> float:
@@ -381,8 +381,8 @@ class AdvancedEvaluationEngine:
                 return 0.0
 
             return excess_returns.mean() / downside_returns.std() * np.sqrt(252)
-        except Exception:
-            self.print(error("Error calculating Sortino ratio: {e}"))
+        except Exception as e:
+            self.logger.exception(error(f"Error calculating Sortino ratio: {e}"))
             return 0.0
 
     def _calculate_max_drawdown(self, returns: pd.Series) -> float:
@@ -395,8 +395,8 @@ class AdvancedEvaluationEngine:
             rolling_max = cumulative_returns.expanding().max()
             drawdown = (cumulative_returns - rolling_max) / rolling_max
             return abs(drawdown.min())
-        except Exception:
-            self.print(error("Error calculating max drawdown: {e}"))
+        except Exception as e:
+            self.logger.exception(error(f"Error calculating max drawdown: {e}"))
             return 0.0
 
     def _calculate_value_at_risk(
@@ -410,8 +410,8 @@ class AdvancedEvaluationEngine:
                 return 0.0
 
             return np.percentile(returns, (1 - confidence_level) * 100)
-        except Exception:
-            self.print(error("Error calculating VaR: {e}"))
+        except Exception as e:
+            self.logger.exception(error(f"Error calculating VaR: {e}"))
             return 0.0
 
     def _calculate_conditional_value_at_risk(
@@ -426,8 +426,8 @@ class AdvancedEvaluationEngine:
 
             var = self._calculate_value_at_risk(returns, confidence_level)
             return returns[returns <= var].mean()
-        except Exception:
-            self.print(error("Error calculating CVaR: {e}"))
+        except Exception as e:
+            self.logger.exception(error(f"Error calculating CVaR: {e}"))
             return 0.0
 
     def _calculate_max_consecutive_wins(self, df: pd.DataFrame) -> int:
@@ -447,8 +447,8 @@ class AdvancedEvaluationEngine:
                     consecutive_wins = 0
 
             return max_consecutive_wins
-        except Exception:
-            self.print(error("Error calculating max consecutive wins: {e}"))
+        except Exception as e:
+            self.logger.exception(error(f"Error calculating max consecutive wins: {e}"))
             return 0
 
     def _calculate_max_consecutive_losses(self, df: pd.DataFrame) -> int:
@@ -471,8 +471,8 @@ class AdvancedEvaluationEngine:
                     consecutive_losses = 0
 
             return max_consecutive_losses
-        except Exception:
-            self.print(error("Error calculating max consecutive losses: {e}"))
+        except Exception as e:
+            self.logger.exception(error(f"Error calculating max consecutive losses: {e}"))
             return 0
 
     def _validate_metrics(self, metrics: PerformanceMetrics) -> bool:
@@ -489,7 +489,7 @@ class AdvancedEvaluationEngine:
 
             # Check win rate threshold
             if metrics.win_rate < thresholds.get("min_win_rate", 0.4):
-                self.print(warning("Win rate below threshold: {metrics.win_rate:.3f}"))
+                self.logger.warning(warning(f"Win rate below threshold: {metrics.win_rate:.3f}"))
 
             # Check profit factor threshold
             if metrics.profit_factor < thresholds.get("min_profit_factor", 1.2):
@@ -511,8 +511,8 @@ class AdvancedEvaluationEngine:
 
             return True
 
-        except Exception:
-            self.print(error("Error validating metrics: {e}"))
+        except Exception as e:
+            self.logger.exception(error(f"Error validating metrics: {e}"))
             return False
 
     def calculate_composite_score(self, metrics: PerformanceMetrics) -> float:
@@ -573,8 +573,8 @@ class AdvancedEvaluationEngine:
             if avg_win_amount < avg_loss_amount * 0.5:
                 composite_score *= 0.8  # 20% penalty for small wins vs large losses
             return composite_score
-        except Exception:
-            self.print(error("Error calculating composite score: {e}"))
+        except Exception as e:
+            self.logger.exception(error(f"Error calculating composite score: {e}"))
             return 0.0
 
     def generate_evaluation_report(self, metrics: PerformanceMetrics) -> dict[str, Any]:
@@ -611,7 +611,7 @@ class AdvancedEvaluationEngine:
             }
 
         except Exception as e:
-            self.print(error("Error generating evaluation report: {e}"))
+            self.logger.exception(error(f"Error generating evaluation report: {e}"))
             return {"error": str(e)}
 
 

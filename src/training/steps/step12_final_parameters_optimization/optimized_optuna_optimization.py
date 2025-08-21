@@ -235,8 +235,8 @@ class AdvancedOptunaManager:
 
             except optuna.TrialPruned:
                 raise
-            except Exception:
-                self.print(failed("Trial {trial.number} failed with error: {e}"))
+            except Exception as e:
+                self.logger.exception(failed(f"Trial {trial.number} failed with error: {e}"))
                 return 0.0  # Return a poor score to guide sampler away
 
         callbacks = []

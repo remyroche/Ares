@@ -67,17 +67,17 @@ class HMMBasedTrainingStep:
 
         # Model architecture mapping from config
         hmm_lm_config, config.get("HMM_LM", {})
-        specialist_config, hmm_lm_config.get("specialist_models", {})
+        specialist_config = hmm_lm_config.get("specialist_models", {})
 
         self.model_architectures = {}
         for timeframe, model_config in specialist_config.items():
-        self.model_architectures[timeframe] = model_config.get(
+            self.model_architectures[timeframe] = model_config.get(
                 "architecture", "LightGBM",
             )
 
         # Fallback to default if config not available
         if not self.model_architectures:
-        self.model_architectures = {
+            self.model_architectures = {
                 "1m": "CNN",  # Tactician
                 "5m": "TCN",  # Analyst
                 "15m": "Transformer",  # Analyst
@@ -136,9 +136,9 @@ class HMMBasedTrainingStep:
         self.enhanced_lm_optimizer = None
         try:
             from src.training.enhanced_lm_optimizer import EnhancedLMOptimizer
-        self.enhanced_lm_optimizer = EnhancedLMOptimizer(config)
+            self.enhanced_lm_optimizer = EnhancedLMOptimizer(config)
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to initialize enhanced LM optimizer: {e}")
+            self.logger.warning(f"⚠️ Failed to initialize enhanced LM optimizer: {e}")
 
         # Initialize optimized feature selection manager (fallback)
         self.optimized_feature_selection = None
@@ -146,9 +146,9 @@ class HMMBasedTrainingStep:
             from src.training.optimized_feature_selection_manager import (
                 OptimizedFeatureSelectionManager,
             )
-        self.optimized_feature_selection = OptimizedFeatureSelectionManager(config)
+            self.optimized_feature_selection = OptimizedFeatureSelectionManager(config)
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to initialize optimized feature selection: {e}")
+            self.logger.warning(f"⚠️ Failed to initialize optimized feature selection: {e}")
 
         # All available features - will be optimized by feature selection
         # Note: These should be returns-based features, not raw data
@@ -265,7 +265,7 @@ class HMMBasedTrainingStep:
         """Get all available features from the dataset, excluding target and metadata columns."""
         try:
         # Exclude non-feature columns
-            exclude_columns = [,
+            exclude_columns = [
                 "target",
                 "timeframe",
                 "composite_cluster_id",

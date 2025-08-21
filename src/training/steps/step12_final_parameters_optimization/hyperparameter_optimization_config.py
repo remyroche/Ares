@@ -44,13 +44,13 @@ class SearchSpace:
     """Defines the search space for a parameter category."""
 
     name: str = ""
-    parameters: dict[str = dict[str, Any]] = field(default_factory=dict)
+    parameters: dict[str, dict[str, Any]] = field(default_factory=dict)
     optimization_strategy: OptimizationStrategy = OptimizationStrategy.SINGLE_OBJECTIVE
     n_trials: int = 50
     timeout_seconds: int = 1800
     early_stopping_patience: int = 10
     evaluation_metrics: list[EvaluationMetric] = field(default_factory=list)
-    constraints: dict[str = Any] = field(default_factory=dict)
+    constraints: dict[str, Any] = field(default_factory=dict)
     warm_start: bool = True
     parallel_trials: int = 1
 

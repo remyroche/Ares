@@ -120,6 +120,12 @@ class VolatilityTargetingStrategy:
             return self._calculate_adaptive_volatility(returns, price_data)
         return self._calculate_ewma_volatility(returns)
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=0.0,
+        context="simple volatility calculation",
+    )
     def _calculate_simple_volatility(self, returns: pd.Series) -> float:
         """Calculate simple historical volatility."""
         if len(returns) < self.config.lookback_period:
@@ -130,6 +136,12 @@ class VolatilityTargetingStrategy:
         vol = returns.tail(period).std() * np.sqrt(252)
         return vol if not pd.isna(vol) else self.config.target_volatility
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=0.0,
+        context="EWMA volatility calculation",
+    )
     def _calculate_ewma_volatility(self, returns: pd.Series) -> float:
         """Calculate EWMA volatility."""
         ewma_vol = (
@@ -137,6 +149,12 @@ class VolatilityTargetingStrategy:
         )
         return ewma_vol if not pd.isna(ewma_vol) else self.config.target_volatility
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=0.0,
+        context="GARCH volatility calculation",
+    )
     def _calculate_garch_volatility(self, returns: pd.Series) -> float:
         """Calculate GARCH-like volatility (simplified)."""
         # Simplified GARCH(1,1) approximation
@@ -149,6 +167,12 @@ class VolatilityTargetingStrategy:
         garch_vol = np.sqrt(squared_returns.tail(period).mean()) * np.sqrt(252)
         return garch_vol if not pd.isna(garch_vol) else self.config.target_volatility
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=0.0,
+        context="Parkinson volatility calculation",
+    )
     def _calculate_parkinson_volatility(self, price_data: pd.DataFrame) -> float:
         """Calculate Parkinson volatility using high-low range."""
         if not all(col in price_data.columns for col in ["high", "low"]):
@@ -168,6 +192,12 @@ class VolatilityTargetingStrategy:
             else self.config.target_volatility
         )
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=0.0,
+        context="adaptive volatility calculation",
+    )
     def _calculate_adaptive_volatility(
         self,
         returns: pd.Series,
@@ -193,6 +223,12 @@ class VolatilityTargetingStrategy:
             adaptive_vol if not pd.isna(adaptive_vol) else self.config.target_volatility
         )
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=1.0,
+        context="momentum factor calculation",
+    )
     def _calculate_momentum_factor(self, price_data: pd.DataFrame) -> float:
         """Calculate momentum factor for position sizing adjustment."""
         if len(price_data) < 10:
@@ -212,6 +248,12 @@ class VolatilityTargetingStrategy:
             return 1.1
         return 1.0
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=1.0,
+        context="regime factor calculation",
+    )
     def _calculate_regime_factor(
         self,
         price_data: pd.DataFrame,
@@ -239,6 +281,12 @@ class VolatilityTargetingStrategy:
             return 1.3  # Increase exposure
         return 1.0  # Normal regime
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=1.0,
+        context="Kelly factor calculation",
+    )
     def _calculate_kelly_factor(self, price_data: pd.DataFrame) -> float:
         """Calculate Kelly criterion enhancement factor with leverage adjustment."""
         if len(price_data) < self.config.lookback_period:
@@ -276,6 +324,12 @@ class VolatilityTargetingStrategy:
         # Return as enhancement factor
         return 1.0 + kelly_fraction
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=0.5,
+        context="market confidence calculation",
+    )
     def _get_market_confidence(self, price_data: pd.DataFrame) -> float:
         """Calculate market confidence based on volatility and trend strength."""
         if len(price_data) < 20:
@@ -399,6 +453,12 @@ class VolatilityTargetingStrategy:
 
         return stats
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=0.0,
+        context="maximum drawdown calculation",
+    )
     def _calculate_max_drawdown(self, prices: pd.Series) -> float:
         """Calculate maximum drawdown."""
         if len(prices) < 2:

@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 from src.utils.logger import system_logger
 from typing import Any
 from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.enhanced_data_quality_decorators import validate_memory_optimized_data_quality
+from src.utils.trading_decorators import performance_monitor
 from src.utils.warning_symbols import error, initialization_error, invalid, missing
 import numpy as np
 
@@ -260,6 +262,8 @@ class ModularStrategist:
                 initialization_error(f"Error initializing dynamic rebalancing: {e}"),
             )
 
+    @performance_monitor
+    @validate_memory_optimized_data_quality
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid strategy parameters"),
@@ -385,6 +389,8 @@ class ModularStrategist:
             self.logger.error(error(f"Error validating strategy inputs: {e}"))
             return False
 
+    @performance_monitor
+    @validate_memory_optimized_data_quality
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -443,6 +449,8 @@ class ModularStrategist:
             self.logger.error(error(f"Error performing position sizing: {e}"))
             return {}
 
+    @performance_monitor
+    @validate_memory_optimized_data_quality
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -501,6 +509,8 @@ class ModularStrategist:
             self.logger.error(error(f"Error performing risk management: {e}"))
             return {}
 
+    @performance_monitor
+    @validate_memory_optimized_data_quality
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -559,6 +569,8 @@ class ModularStrategist:
             self.logger.error(error(f"Error performing portfolio optimization: {e}"))
             return {}
 
+    @performance_monitor
+    @validate_memory_optimized_data_quality
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -617,6 +629,12 @@ class ModularStrategist:
 
     # Position sizing calculation methods
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=0.0,
+        context="Kelly criterion calculation",
+    )
     def _calculate_kelly_criterion(
         self,
         market_data: dict[str, Any],
@@ -635,6 +653,12 @@ class ModularStrategist:
             self.logger.error(error(f"Error calculating Kelly Criterion: {e}"))
             return 0.0
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=0.0,
+        context="fixed fraction calculation",
+    )
     def _calculate_fixed_fraction(
         self,
         market_data: dict[str, Any],
@@ -651,6 +675,12 @@ class ModularStrategist:
             self.logger.error(error(f"Error calculating Fixed Fraction: {e}"))
             return 0.0
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=0.0,
+        context="volatility targeting calculation",
+    )
     def _calculate_volatility_targeting(
         self,
         market_data: dict[str, Any],
@@ -667,6 +697,12 @@ class ModularStrategist:
             self.logger.error(error(f"Error calculating Volatility Targeting: {e}"))
             return 0.0
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=0.0,
+        context="risk parity calculation",
+    )
     def _calculate_risk_parity(
         self,
         market_data: dict[str, Any],
@@ -683,6 +719,12 @@ class ModularStrategist:
 
     # Risk management calculation methods
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=0.0,
+        context="stop loss calculation",
+    )
     def _calculate_stop_loss(
         self,
         market_data: dict[str, Any],
@@ -699,6 +741,12 @@ class ModularStrategist:
             self.logger.error(error(f"Error calculating Stop Loss: {e}"))
             return 0.0
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=0.0,
+        context="take profit calculation",
+    )
     def _calculate_take_profit(
         self,
         market_data: dict[str, Any],
@@ -715,6 +763,12 @@ class ModularStrategist:
             self.logger.error(error(f"Error calculating Take Profit: {e}"))
             return 0.0
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=0.0,
+        context="trailing stop calculation",
+    )
     def _calculate_trailing_stop(
         self,
         market_data: dict[str, Any],
@@ -731,6 +785,12 @@ class ModularStrategist:
             self.logger.error(error(f"Error calculating Trailing Stop: {e}"))
             return 0.0
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return={"max_position_size": 0.0, "max_leverage": 0.0, "max_drawdown": 0.0},
+        context="position limits calculation",
+    )
     def _calculate_position_limits(
         self,
         market_data: dict[str, Any],
@@ -750,6 +810,17 @@ class ModularStrategist:
 
     # Portfolio optimization calculation methods
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return={
+            "optimal_weight": 0.0,
+            "expected_return": 0.0,
+            "volatility": 0.0,
+            "sharpe_ratio": 0.0,
+        },
+        context="mean variance calculation",
+    )
     def _calculate_mean_variance(
         self,
         market_data: dict[str, Any],
@@ -773,6 +844,17 @@ class ModularStrategist:
                 "sharpe_ratio": 0.0,
             }
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return={
+            "optimal_weight": 0.0,
+            "expected_return": 0.0,
+            "volatility": 0.0,
+            "confidence": 0.0,
+        },
+        context="black litterman calculation",
+    )
     def _calculate_black_litterman(
         self,
         market_data: dict[str, Any],
@@ -796,6 +878,16 @@ class ModularStrategist:
                 "confidence": 0.0,
             }
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return={
+            "risk_contribution": 0.0,
+            "volatility": 0.0,
+            "diversification_ratio": 0.0,
+        },
+        context="portfolio risk parity calculation",
+    )
     def _calculate_portfolio_risk_parity(
         self,
         market_data: dict[str, Any],
@@ -817,6 +909,17 @@ class ModularStrategist:
                 "diversification_ratio": 0.0,
             }
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return={
+            "optimal_weight": 0.0,
+            "expected_return": 0.0,
+            "volatility": 0.0,
+            "sharpe_ratio": 0.0,
+        },
+        context="maximum sharpe calculation",
+    )
     def _calculate_maximum_sharpe(
         self,
         market_data: dict[str, Any],
@@ -842,6 +945,12 @@ class ModularStrategist:
 
     # Dynamic rebalancing calculation methods
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=False,
+        context="threshold rebalancing calculation",
+    )
     def _calculate_threshold_rebalancing(
         self,
         market_data: dict[str, Any],
@@ -858,6 +967,12 @@ class ModularStrategist:
             self.logger.error(error(f"Error calculating Threshold Rebalancing: {e}"))
             return False
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=False,
+        context="calendar rebalancing calculation",
+    )
     def _calculate_calendar_rebalancing(
         self,
         market_data: dict[str, Any],
@@ -875,6 +990,12 @@ class ModularStrategist:
             self.logger.error(error(f"Error calculating Calendar Rebalancing: {e}"))
             return False
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=False,
+        context="drift rebalancing calculation",
+    )
     def _calculate_drift_rebalancing(
         self,
         market_data: dict[str, Any],
@@ -891,6 +1012,12 @@ class ModularStrategist:
             self.logger.error(error(f"Error calculating Drift Rebalancing: {e}"))
             return False
 
+    @performance_monitor
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=False,
+        context="volatility rebalancing calculation",
+    )
     def _calculate_volatility_rebalancing(
         self,
         market_data: dict[str, Any],

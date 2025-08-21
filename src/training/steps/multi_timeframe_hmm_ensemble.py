@@ -258,19 +258,21 @@ class MultiTimeframeHMMEnsemble:
             )
             return False
 
-        # Store timeframe models
-        self.timeframe_models[timeframe] = {
-                "hazard_models": hazard_models,
+        # Store timeframe models metadata
+        self.timeframe_models.setdefault(timeframe, {})
+        self.timeframe_models[timeframe].update(
+            {
                 "timeframe": timeframe,
                 "config": tf_config,
                 "trained_at": time.time(),
             }
+        )
 
         return True
 
         except Exception as e:
-        self.logger.exception(f"💥 Error training {timeframe} models: {e}")
-        return False
+            self.logger.exception(f"💥 Error training {timeframe} models: {e}")
+            return False
 
     @handle_errors(
         exceptions=(Exception,), default_return=False, context="meta-learner training"
@@ -846,10 +848,10 @@ class MultiTimeframeHMMEnsemble:
             "ensemble_weights": self.ensemble_weights,
             "prediction_count": self.prediction_count,
             "timeframe_models_count": {
-                tf: len(models.get("hazard_models" = {}))
+                tf: len(models.get("hazard_models", {}))
         for tf, models in self.timeframe_models.items()
             },
             "performance_history": {
-                tf: len(perf) for tf = perf in self.timeframe_performance.items()
+                tf: len(perf) for tf, perf in self.timeframe_performance.items()
             },
         }

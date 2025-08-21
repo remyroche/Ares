@@ -25,7 +25,7 @@ class RawDataQualityChecker:
     This should be called immediately after data download to prevent downstream problems.
     """
 
-    def __init__(self, config: dict[str, Any] | None, None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.logger = system_logger.getChild("RawDataQualityChecker")
         self.config = config or self._get_default_config()
 
@@ -35,22 +35,22 @@ class RawDataQualityChecker:
         Attempts to fix missing datetime index automatically.
         """
         @functools.wraps(func)
-        def wrapper(self, data: pd.DataFrame = *args, **kwargs):
-        if not isinstance(data.index, pd.DatetimeIndex):
-        self.logger.warning(f"⚠️ {func.__name__}: Data does not have datetime index, attempting to fix...")
+        def wrapper(self, data: pd.DataFrame, *args, **kwargs):
+            if not isinstance(data.index, pd.DatetimeIndex):
+                self.logger.warning(f"⚠️ {func.__name__}: Data does not have datetime index, attempting to fix...")
 
-        # Create a mock results dict for the fix_datetime_index method
+                # Create a mock results dict for the fix_datetime_index method
                 mock_results = {"warnings": [], "critical_issues": []}
-                fixed_data, self._fix_datetime_index(data, mock_results)
+                fixed_data = self._fix_datetime_index(data, mock_results)
 
-        if fixed_data is not None:
-        self.logger.info(f"✅ {func.__name__}: Successfully created datetime index")
+                if fixed_data is not None:
+                    self.logger.info(f"✅ {func.__name__}: Successfully created datetime index")
                     data = fixed_data
                 else:
-        self.logger.error(f"❌ {func.__name__}: Failed to create datetime index")
-        # Return a safe fallback result
-        if func.__name__ == "validate_raw_data":
-        return {
+                    self.logger.error(f"❌ {func.__name__}: Failed to create datetime index")
+                    # Return a safe fallback result
+                    if func.__name__ == "validate_raw_data":
+                        return {
                             "validation_passed": False,
                             "critical_issues": ["Failed to create datetime index"],
                             "warnings": [],
@@ -60,21 +60,21 @@ class RawDataQualityChecker:
                             "timestamp": datetime.now().isoformat(),
                             "data_shape": data.shape,
                         }, data
-        return None
+                    return None
 
-        return func(self, data, *args, **kwargs)
+            return func(self, data, *args, **kwargs)
         return wrapper
 
     @staticmethod
     def validate_data_structure(func):
         """Decorator to validate basic data structure before processing."""
         @functools.wraps(func)
-        def wrapper(self, data: pd.DataFrame = *args, **kwargs):
-        # Check if data is empty
-        if data is None or data.empty:
-        self.logger.error(f"❌ {func.__name__}: Empty or None data provided")
-        if func.__name__ == "validate_raw_data":
-        return {
+        def wrapper(self, data: pd.DataFrame, *args, **kwargs):
+            # Check if data is empty
+            if data is None or data.empty:
+                self.logger.error(f"❌ {func.__name__}: Empty or None data provided")
+                if func.__name__ == "validate_raw_data":
+                    return {
                         "validation_passed": False,
                         "critical_issues": ["Empty or None data provided"],
                         "warnings": [],
@@ -84,16 +84,16 @@ class RawDataQualityChecker:
                         "timestamp": datetime.now().isoformat(),
                         "data_shape": (0, 0) if data is None else data.shape,
                     }, data if data is not None else pd.DataFrame()
-        return None
+                return None
 
-        # Check for required columns
+            # Check for required columns
             required_columns = ["open", "high", "low", "close", "volume"]
             missing_columns = [col for col in required_columns if col not in data.columns]
 
-        if missing_columns:
-        self.logger.error(f"❌ {func.__name__}: Missing required columns: {missing_columns}")
-        if func.__name__ == "validate_raw_data":
-        return {
+            if missing_columns:
+                self.logger.error(f"❌ {func.__name__}: Missing required columns: {missing_columns}")
+                if func.__name__ == "validate_raw_data":
+                    return {
                         "validation_passed": False,
                         "critical_issues": [f"Missing required columns: {missing_columns}"],
                         "warnings": [],
@@ -103,22 +103,23 @@ class RawDataQualityChecker:
                         "timestamp": datetime.now().isoformat(),
                         "data_shape": data.shape,
                     }, data
-        return None
+                return None
 
-        return func(self, data, *args, **kwargs)
+            return func(self, data, *args, **kwargs)
         return wrapper
 
     @staticmethod
     def handle_validation_errors(func):
         """Decorator to handle validation errors gracefully."""
         @functools.wraps(func)
-        def wrapper(self, data: pd.DataFrame = *args, **kwargs):
-        try: return func(self = data, *args, **kwargs)
-        except Exception as e:
-        self.logger.exception(f"❌ {func.__name__}: Validation error: {e}")
+        def wrapper(self, data: pd.DataFrame, *args, **kwargs):
+            try:
+                return func(self, data, *args, **kwargs)
+            except Exception as e:
+                self.logger.exception(f"❌ {func.__name__}: Validation error: {e}")
 
-        if func.__name__ == "validate_raw_data":
-        return {
+                if func.__name__ == "validate_raw_data":
+                    return {
                         "validation_passed": False,
                         "critical_issues": [f"Validation error: {e!s}"],
                         "warnings": [],
@@ -128,35 +129,36 @@ class RawDataQualityChecker:
                         "timestamp": datetime.now().isoformat(),
                         "data_shape": data.shape if data is not None else (0, 0),
                     }, data if data is not None else pd.DataFrame()
-        return None
+                return None
         return wrapper
 
     @staticmethod
     def log_validation_progress(func):
         """Decorator to log validation progress and timing."""
         @functools.wraps(func)
-        def wrapper(self, data: pd.DataFrame = *args, **kwargs):
+        def wrapper(self, data: pd.DataFrame, *args, **kwargs):
             start_time = datetime.now()
-        self.logger.info(f"🚀 {func.__name__}: Starting validation...")
+            self.logger.info(f"🚀 {func.__name__}: Starting validation...")
 
-        try: result = func(self, data, *args, **kwargs)
+            try:
+                result = func(self, data, *args, **kwargs)
 
                 end_time = datetime.now()
                 duration = (end_time - start_time).total_seconds()
 
-        if func.__name__ == "validate_raw_data" and isinstance(result, tuple):
-                    validation_results = _, result
+                if func.__name__ == "validate_raw_data" and isinstance(result, tuple):
+                    validation_results, _ = result
                     status = "✅ PASSED" if validation_results.get("validation_passed", False) else "❌ FAILED"
-        self.logger.info(f"{status} {func.__name__}: Completed in {duration:.2f}s")
+                    self.logger.info(f"{status} {func.__name__}: Completed in {duration:.2f}s")
                 else:
-        self.logger.info(f"✅ {func.__name__}: Completed in {duration:.2f}s")
+                    self.logger.info(f"✅ {func.__name__}: Completed in {duration:.2f}s")
 
-        return result
+                return result
 
-        except Exception as e:
+            except Exception as e:
                 end_time = datetime.now()
                 duration = (end_time - start_time).total_seconds()
-        self.logger.exception(f"❌ {func.__name__}: Failed after {duration:.2f}s - {e}")
+                self.logger.exception(f"❌ {func.__name__}: Failed after {duration:.2f}s - {e}")
                 raise
 
         return wrapper
@@ -166,40 +168,41 @@ class RawDataQualityChecker:
         """Decorator to handle async context issues in data download methods."""
         @functools.wraps(func)
         def wrapper(self, *args, **kwargs):
-        try: return func(self = *args, **kwargs)
-        except RuntimeError as e:
-        if "asyncio.run() cannot be called from a running event loop" in str(e):
-        self.logger.warning(f"⚠️ {func.__name__}: Async context issue detected, skipping async operations")
-        # Return None to indicate the operation was skipped
-        return None
+            try:
+                return func(self, *args, **kwargs)
+            except RuntimeError as e:
+                if "asyncio.run() cannot be called from a running event loop" in str(e):
+                    self.logger.warning(f"⚠️ {func.__name__}: Async context issue detected, skipping async operations")
+                    # Return None to indicate the operation was skipped
+                    return None
                 raise
-        except Exception as e:
-        self.logger.exception(f"❌ {func.__name__}: Error: {e}")
-        return None
+            except Exception as e:
+                self.logger.exception(f"❌ {func.__name__}: Error: {e}")
+                return None
         return wrapper
 
     @staticmethod
     def ensure_data_types(func):
         """Decorator to ensure proper data types for OHLCV columns."""
         @functools.wraps(func)
-        def wrapper(self, data: pd.DataFrame = *args, **kwargs):
-        if data is not None and not data.empty:
-        # Ensure OHLCV columns are numeric
+        def wrapper(self, data: pd.DataFrame, *args, **kwargs):
+            if data is not None and not data.empty:
+                # Ensure OHLCV columns are numeric
                 ohlcv_columns = ["open", "high", "low", "close", "volume"]
-        for col in ohlcv_columns:
-        if col in data.columns:
-        try:
+                for col in ohlcv_columns:
+                    if col in data.columns:
+                        try:
                             data[col] = pd.to_numeric(data[col], errors="coerce")
-        except Exception as e:
-        self.logger.warning(f"⚠️ {func.__name__}: Failed to convert {col} to numeric: {e}")
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ {func.__name__}: Failed to convert {col} to numeric: {e}")
 
-        # Handle any NaN values created by conversion
-        if data[ohlcv_columns].isna().any().any():
-        self.logger.warning(f"⚠️ {func.__name__}: NaN values detected after type conversion")
-        # Forward fill to handle NaN values
+                # Handle any NaN values created by conversion
+                if data[ohlcv_columns].isna().any().any():
+                    self.logger.warning(f"⚠️ {func.__name__}: NaN values detected after type conversion")
+                    # Forward fill to handle NaN values
                     data[ohlcv_columns] = data[ohlcv_columns].fillna(method="ffill").fillna(method="bfill")
 
-        return func(self, data, *args, **kwargs)
+            return func(self, data, *args, **kwargs)
         return wrapper
 
     def _get_default_config(self) -> dict[str, Any]:
@@ -260,7 +263,7 @@ class RawDataQualityChecker:
     @ensure_data_types
     @ensure_datetime_index
     def validate_raw_data(
-        self = data: pd.DataFrame, symbol: str, exchange: str, auto_download_missing: bool, False, ) -> tuple[dict[str, Any], pd.DataFrame]:
+        self, data: pd.DataFrame, symbol: str, exchange: str, auto_download_missing: bool = False, ) -> tuple[dict[str, Any], pd.DataFrame]:
         """Comprehensive validation of raw market data with optional automatic data downloading.
 
         Args:
@@ -294,77 +297,77 @@ class RawDataQualityChecker:
         }
 
         try:
-        # Basic structure validation (this may fix the datetime index)
-            structure_valid, self._validate_data_structure(data, results)
-        if not structure_valid:
+            # Basic structure validation (this may fix the datetime index)
+            structure_valid = self._validate_data_structure(data, results)
+            if not structure_valid:
                 results["validation_passed"] = False
-        return results, data
+                return results, data
 
-        # Data completeness validation
-            completeness_valid, self._validate_data_completeness(data, results)
-        if not completeness_valid:
+            # Data completeness validation
+            completeness_valid = self._validate_data_completeness(data, results)
+            if not completeness_valid:
                 results["validation_passed"] = False
-        return results, data
+                return results, data
 
-        # Data integrity validation
-            integrity_valid, self._validate_data_integrity(data, results)
-        if not integrity_valid:
+            # Data integrity validation
+            integrity_valid = self._validate_data_integrity(data, results)
+            if not integrity_valid:
                 results["validation_passed"] = False
-        return results, data
+                return results, data
 
-        # Market-specific validation
-            market_valid, self._validate_market_specific_issues(data, results)
-        if not market_valid:
+            # Market-specific validation
+            market_valid = self._validate_market_specific_issues(data, results)
+            if not market_valid:
                 results["validation_passed"] = False
-        return results, data
+                return results, data
 
-        # Feature engineering specific validation
-            feature_eng_valid, self._validate_feature_engineering_requirements(
-                data = results,
+            # Feature engineering specific validation
+            feature_eng_valid = self._validate_feature_engineering_requirements(
+                data, results,
             )
-        if not feature_eng_valid:
+            if not feature_eng_valid:
                 results["validation_passed"] = False
-        return results, data
+                return results, data
 
-        # Multi-timeframe validation
-            multi_timeframe_valid, self._validate_multi_timeframe_alignment(data, results)
-        if not multi_timeframe_valid:
+            # Multi-timeframe validation
+            multi_timeframe_valid = self._validate_multi_timeframe_alignment(data, results)
+            if not multi_timeframe_valid:
                 results["validation_passed"] = False
-        return results, data
+                return results, data
 
-        # Check for irregular intervals and auto-fix if enabled
-        if self.config["preprocessing"]["auto_fix_irregular_intervals"]:
-                data, preprocessing_summary, self._auto_fix_irregular_intervals(data, symbol, exchange, results)
+            # Check for irregular intervals and auto-fix if enabled
+            if self.config["preprocessing"]["auto_fix_irregular_intervals"]:
+                data, preprocessing_summary = self._auto_fix_irregular_intervals(data, symbol, exchange, results)
                 results["preprocessing_applied"] = preprocessing_summary
 
-        # Check for large gaps and optionally download missing data
-        if auto_download_missing:
-                data, download_summary, self._handle_missing_data_download(data, symbol, exchange, results)
+            # Check for large gaps and optionally download missing data
+            if auto_download_missing:
+                data, download_summary = self._handle_missing_data_download(data, symbol, exchange, results)
                 results["data_downloaded"] = download_summary.get("data_downloaded", False)
                 results["download_summary"] = download_summary
 
-        # Calculate overall quality score
+            # Calculate overall quality score
             results["data_quality_score"] = self._calculate_quality_score(results)
 
-        # Generate recommendations
+            # Generate recommendations
             results["recommendations"] = self._generate_recommendations(results)
 
-        if results["validation_passed"]:
-        self.logger.info(
+            if results["validation_passed"]:
+                self.logger.info(
                     f"✅ Raw data validation passed for {symbol} (Score: {results['data_quality_score']:.2f})",
                 )
             else:
-        self.logger.error(f"❌ Raw data validation failed for {symbol}")
-        for issue in results["critical_issues"]:
-        self.logger.error(f"   {critical(issue)}")
+                self.logger.error(f"❌ Raw data validation failed for {symbol}")
+                for issue in results["critical_issues"]:
+                    self.logger.error(f"   {issue}")
 
-        return results, data
+            return results, data
 
         except Exception as e:
-        self.logger.exception(f"Error during raw data validation: {e}")
+            self.logger.exception(f"Error during raw data validation: {e}")
             results["validation_passed"] = False
             results["critical_issues"].append(f"Validation error: {e!s}")
-        return results, data
+            return results, data
 
     def _auto_fix_irregular_intervals(
         self, data: pd.DataFrame, symbol: str, exchange: str, results: dict[str, Any], ) -> tuple[pd.DataFrame, dict[str, Any]]:
@@ -389,16 +392,16 @@ class RawDataQualityChecker:
         }
 
         try:
-        # Check if irregular intervals are detected
+            # Check if irregular intervals are detected
             time_diffs = data.index.to_series().diff().dropna()
-        if len(time_diffs) == 0:
-        return data, preprocessing_summary
+            if len(time_diffs) == 0:
+                return data, preprocessing_summary
 
-        # Determine expected interval
+            # Determine expected interval
             expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
             expected_interval_seconds = expected_interval.total_seconds()
 
-        # Check for irregular intervals
+            # Check for irregular intervals
             tolerance_percentage = 0.15  # 15% tolerance
             tolerance_seconds = expected_interval_seconds * tolerance_percentage
             irregular_intervals = time_diffs[
@@ -406,21 +409,21 @@ class RawDataQualityChecker:
             ]
             irregular_ratio = len(irregular_intervals) / len(time_diffs)
 
-        # Only apply preprocessing if irregular intervals are significant
-        if irregular_ratio > 0.01:  # More than 1% irregular intervals
-        self.logger.info(f"🔧 Auto-fixing irregular intervals (ratio: {irregular_ratio:.3f})")
+            # Only apply preprocessing if irregular intervals are significant
+            if irregular_ratio > 0.01:  # More than 1% irregular intervals
+                self.logger.info(f"🔧 Auto-fixing irregular intervals (ratio: {irregular_ratio:.3f})")
 
-        # Apply enhanced preprocessing
-                fixed_data, self.enhanced_preprocess_market_data(
-                    data=data
-                    symbol=symbol
-                    exchange=exchange
-                    expected_interval_seconds=int(expected_interval_seconds)
-                    max_forward_fill_seconds=self.config["preprocessing"]["max_forward_fill_seconds"]
+                # Apply enhanced preprocessing
+                fixed_data = self.enhanced_preprocess_market_data(
+                    data=data,
+                    symbol=symbol,
+                    exchange=exchange,
+                    expected_interval_seconds=int(expected_interval_seconds),
+                    max_forward_fill_seconds=self.config["preprocessing"]["max_forward_fill_seconds"],
                     download_missing_data=self.config["preprocessing"]["download_missing_data"]
                 )
 
-        # Update preprocessing summary
+                # Update preprocessing summary
                 preprocessing_summary.update({
                     "irregular_intervals_fixed": True,
                     "final_shape": fixed_data.shape,
@@ -428,24 +431,25 @@ class RawDataQualityChecker:
                     "expected_interval_seconds": expected_interval_seconds,
                 })
 
-        # Check quality improvement
-        if len(fixed_data) > len(data):
+                # Check quality improvement
+                if len(fixed_data) > len(data):
                     preprocessing_summary["gaps_filled"] = len(fixed_data) - len(data)
 
-        # Re-validate the fixed data
-                fixed_results, self._quick_validate_fixed_data(fixed_data, symbol, exchange)
+                # Re-validate the fixed data
+                fixed_results = self._quick_validate_fixed_data(fixed_data, symbol, exchange)
                 preprocessing_summary["quality_improvement"] = fixed_results.get("data_quality_score", 0) - results.get("data_quality_score", 0)
 
-        self.logger.info(f"✅ Auto-fix completed. Quality improvement: {preprocessing_summary['quality_improvement']:.3f}")
+                self.logger.info(f"✅ Auto-fix completed. Quality improvement: {preprocessing_summary['quality_improvement']:.3f}")
 
-        return fixed_data, preprocessing_summary
-        self.logger.info(f"✅ No irregular intervals detected (ratio: {irregular_ratio:.3f})")
-        return data, preprocessing_summary
+                return fixed_data, preprocessing_summary
+            else:
+                self.logger.info(f"✅ No irregular intervals detected (ratio: {irregular_ratio:.3f})")
+                return data, preprocessing_summary
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in auto-fix irregular intervals: {e}")
+            self.logger.exception(f"❌ Error in auto-fix irregular intervals: {e}")
             preprocessing_summary["error"] = str(e)
-        return data, preprocessing_summary
+            return data, preprocessing_summary
 
     def _quick_validate_fixed_data(self, data: pd.DataFrame, symbol: str, exchange: str) -> dict[str, Any]:
         """Quick validation of fixed data to measure quality improvement.
@@ -460,30 +464,30 @@ class RawDataQualityChecker:
 
         """
         try:
-        # Quick quality check
+            # Quick quality check
             time_diffs = data.index.to_series().diff().dropna()
-        if len(time_diffs) == 0:
-        return {"data_quality_score": 0.0}
+            if len(time_diffs) == 0:
+                return {"data_quality_score": 0.0}
 
             expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
             tolerance_percentage = 0.15
-            tolerance_seconds, expected_interval.total_seconds() * tolerance_percentage
+            tolerance_seconds = expected_interval.total_seconds() * tolerance_percentage
             irregular_intervals = time_diffs[
                 abs(time_diffs - expected_interval) > pd.Timedelta(seconds=tolerance_seconds)
             ]
             irregular_ratio = len(irregular_intervals) / len(time_diffs)
 
-        # Calculate quality score based on regularity
-            quality_score, max(0.0, 1.0 - irregular_ratio * 10)  # Penalize irregular intervals
+            # Calculate quality score based on regularity
+            quality_score = max(0.0, 1.0 - irregular_ratio * 10)  # Penalize irregular intervals
 
-        return {
+            return {
                 "data_quality_score": quality_score,
                 "irregular_ratio": irregular_ratio,
                 "total_intervals": len(time_diffs),
             }
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in quick validation: {e}")
+            self.logger.exception(f"❌ Error in quick validation: {e}")
         return {"data_quality_score": 0.0}
 
     def enhanced_preprocess_market_data(
@@ -517,8 +521,8 @@ class RawDataQualityChecker:
         # Step 1: Handle duplicate timestamps
         if data.index.duplicated().any():
             duplicates = data.index.duplicated().sum()
-        self.logger.warning(f"⚠️ Found {duplicates} duplicate timestamps, removing duplicates")
-            data, data[~data.index.duplicated(keep="last")]
+            self.logger.warning(f"⚠️ Found {duplicates} duplicate timestamps, removing duplicates")
+            data = data[~data.index.duplicated(keep="last")]
 
         # Step 2: Resample to expected intervals
         freq = f"{expected_interval_seconds}S"
@@ -546,41 +550,41 @@ class RawDataQualityChecker:
 
         # Calculate time differences
         time_diffs = combined_data.index.to_series().diff().dropna()
-        gaps, time_diffs[time_diffs > pd.Timedelta(seconds=expected_interval_seconds)]
+        gaps = time_diffs[time_diffs > pd.Timedelta(seconds=expected_interval_seconds)]
 
         if len(gaps) > 0:
-        self.logger.info(f"🔍 Found {len(gaps)} gaps in the data")
+            self.logger.info(f"🔍 Found {len(gaps)} gaps in the data")
 
-        # Categorize gaps
-            small_gaps, gaps[gaps <= pd.Timedelta(seconds=max_forward_fill_seconds)]
-            large_gaps, gaps[gaps > pd.Timedelta(seconds=max_forward_fill_seconds)]
+            # Categorize gaps
+            small_gaps = gaps[gaps <= pd.Timedelta(seconds=max_forward_fill_seconds)]
+            large_gaps = gaps[gaps > pd.Timedelta(seconds=max_forward_fill_seconds)]
 
-        self.logger.info(f"   Small gaps (≤{max_forward_fill_seconds}s): {len(small_gaps)}")
-        self.logger.info(f"   Large gaps (>{max_forward_fill_seconds}s): {len(large_gaps)}")
+            self.logger.info(f"   Small gaps (≤{max_forward_fill_seconds}s): {len(small_gaps)}")
+            self.logger.info(f"   Large gaps (>{max_forward_fill_seconds}s): {len(large_gaps)}")
 
-        # Step 4a: Forward-fill small gaps
-        if len(small_gaps) > 0:
-        self.logger.info("🔧 Step 4a: Forward-filling small gaps")
-                combined_data, combined_data.fillna(method="ffill")
+            # Step 4a: Forward-fill small gaps
+            if len(small_gaps) > 0:
+                self.logger.info("🔧 Step 4a: Forward-filling small gaps")
+                combined_data = combined_data.fillna(method="ffill")
 
-        # Step 4b: Download missing data for large gaps
-        if len(large_gaps) > 0 and download_missing_data:
-        self.logger.info("🔧 Step 4b: Downloading missing data for large gaps")
-                combined_data, self._download_and_fill_missing_data(
-                    combined_data = symbol, exchange, large_gaps,
+            # Step 4b: Download missing data for large gaps
+            if len(large_gaps) > 0 and download_missing_data:
+                self.logger.info("🔧 Step 4b: Downloading missing data for large gaps")
+                combined_data = self._download_and_fill_missing_data(
+                    combined_data, symbol, exchange, large_gaps,
                 )
             elif len(large_gaps) > 0:
-        self.logger.warning(f"⚠️ {len(large_gaps)} large gaps remain unfilled (download disabled)")
+                self.logger.warning(f"⚠️ {len(large_gaps)} large gaps remain unfilled (download disabled)")
 
         # Step 5: Final forward-fill for any remaining small gaps
         remaining_nulls = combined_data.isnull().sum().sum()
         if remaining_nulls > 0:
-        self.logger.info(f"🔧 Step 5: Final forward-fill for {remaining_nulls} remaining nulls")
-            combined_data, combined_data.fillna(method="ffill")
+            self.logger.info(f"🔧 Step 5: Final forward-fill for {remaining_nulls} remaining nulls")
+            combined_data = combined_data.fillna(method="ffill")
 
         # Log final results
         final_gaps = combined_data.index.to_series().diff().dropna()
-        final_large_gaps, final_gaps[final_gaps > pd.Timedelta(seconds=expected_interval_seconds)]
+        final_large_gaps = final_gaps[final_gaps > pd.Timedelta(seconds=expected_interval_seconds)]
 
         self.logger.info("✅ Enhanced preprocessing completed:")
         self.logger.info(f"   Original shape: {data.shape}")
@@ -607,7 +611,7 @@ class RawDataQualityChecker:
         self.logger.info(f"🔧 Downloading missing data for {len(gaps)} large gaps")
 
         try:
-        # Import the unified data downloader
+            # Import the unified data downloader
             from src.training.steps.data_downloader import (
                 download_all_data_with_consolidation,
             )

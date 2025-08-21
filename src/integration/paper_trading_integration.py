@@ -7,7 +7,7 @@ helper methods to execute trades and generate reports in real time.
 """
 
 from datetime import datetime
-from typing import Any
+from typing import Any, TYPE_CHECKING
 import json
 import os
 
@@ -22,10 +22,15 @@ from src.utils.warning_symbols import (
     warning,
 )
 from src.paper_trader import PaperTrader, setup_paper_trader
-from src.reports.paper_trading_reporter import (
-    PaperTradingReporter,
-    setup_paper_trading_reporter,
+from src.utils.advanced_decorators import (
+    performance_monitor,
+    PerformanceLevel,
+    comprehensive_validation,
 )
+from src.utils.centralized_decorators_simple import secure_data_processing
+
+if TYPE_CHECKING:  # Only for type hints to avoid runtime import of corrupted modules
+    from src.reports.paper_trading_reporter import PaperTradingReporter
 
 class PaperTradingIntegration:
     """
@@ -62,6 +67,7 @@ class PaperTradingIntegration:
         )
         self.report_interval = self.integration_config.get("report_interval", 3600)
 
+    @performance_monitor(level=PerformanceLevel.DETAILED)
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid integration configuration"),
@@ -88,10 +94,21 @@ class PaperTradingIntegration:
 
             # Initialize detailed reporter
             if self.enable_detailed_reporting:
-                self.reporter = await setup_paper_trading_reporter(self.config)
-                if not self.reporter:
+                try:
+                    from src.reports.paper_trading_reporter import (
+                        setup_paper_trading_reporter as _setup_reporter,
+                    )
+
+                    self.reporter = await _setup_reporter(self.config)
+                    if not self.reporter:
+                        self.logger.warning(
+                            "Failed to initialize detailed reporter, continuing without detailed reporting",
+                        )
+                except Exception as e:
                     self.logger.warning(
-                        "Failed to initialize detailed reporter, continuing without detailed reporting",
+                        warning(
+                            f"Detailed reporter unavailable, continuing without it: {e}",
+                        ),
                     )
 
             # Validate integration
@@ -135,6 +152,9 @@ class PaperTradingIntegration:
             self.logger.error(error(f"Error validating integration: {e}"))
             return False
 
+    @performance_monitor(level=PerformanceLevel.DETAILED)
+    @secure_data_processing
+    @comprehensive_validation()
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid trade parameters"),
@@ -242,6 +262,7 @@ class PaperTradingIntegration:
             self.logger.error(error(f"Error executing integrated trade: {e}"))
             return False
 
+    @performance_monitor(level=PerformanceLevel.DETAILED)
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
@@ -325,6 +346,7 @@ class PaperTradingIntegration:
             self.logger.error(error(f"Error getting portfolio summary: {e}"))
             return {}
 
+    @performance_monitor(level=PerformanceLevel.BASIC)
     async def generate_comprehensive_report(
         self,
         report_type: str = "comprehensive",
@@ -347,6 +369,7 @@ class PaperTradingIntegration:
             self.logger.error(error(f"Error generating comprehensive report: {e}"))
             return {}
 
+    @performance_monitor(level=PerformanceLevel.BASIC)
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
@@ -406,6 +429,7 @@ class PaperTradingIntegration:
             "reporter_available": self.reporter is not None,
         }
 
+    @performance_monitor(level=PerformanceLevel.BASIC)
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,

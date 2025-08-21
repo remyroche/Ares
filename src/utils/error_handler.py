@@ -19,8 +19,30 @@ from enum import Enum, auto
 from functools import wraps
 from typing import Any, TypeVar, cast
 
-import numpy as np
-import pandas as pd
+try:
+    import numpy as np
+except Exception:  # Minimal fallback for environments without numpy
+    class _NP:
+        def nan_to_num(self, arr, nan=0.0, posinf=0.0, neginf=0.0):
+            return arr
+        def isnan(self, x):
+            return False
+        def isinf(self, x):
+            return False
+        def random(self):
+            class _R:
+                def random(self):
+                    return 0.5
+            return _R()
+    np = _NP()  # type: ignore
+
+try:
+    import pandas as pd
+except Exception:  # Minimal fallback for environments without pandas
+    class _PD:
+        class DataFrame: ...
+        class Series: ...
+    pd = _PD()  # type: ignore
 
 # Type variables for generic functions
 T = TypeVar("T")

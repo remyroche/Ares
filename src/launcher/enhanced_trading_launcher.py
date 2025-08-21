@@ -11,7 +11,12 @@ from typing import Any
 import json
 import os
 
-import pandas as pd
+try:
+    import pandas as pd
+except Exception:  # Fallback for environments without pandas
+    class _PD:
+        DataFrame = Any  # type: ignore
+    pd = _PD()  # type: ignore
 
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors, handle_specific_errors
@@ -31,6 +36,7 @@ from src.backtesting.enhanced_backtester import (
     EnhancedBacktester,
     setup_enhanced_backtester,
 )
+from src.utils.advanced_decorators import performance_monitor, PerformanceLevel
 
 class EnhancedTradingLauncher:
     """
@@ -79,6 +85,7 @@ class EnhancedTradingLauncher:
         default_return=False,
         context="launcher initialization",
     )
+    @performance_monitor(level=PerformanceLevel.DETAILED)
     async def initialize(self) -> bool:
         """
         Initialize enhanced trading launcher.
@@ -133,6 +140,7 @@ class EnhancedTradingLauncher:
         default_return=None,
         context="components initialization",
     )
+    @performance_monitor(level=PerformanceLevel.BASIC)
     async def _initialize_components(self) -> None:
         """Initialize trading components."""
         try:
@@ -167,6 +175,7 @@ class EnhancedTradingLauncher:
         default_return=False,
         context="paper trading launch",
     )
+    @performance_monitor(level=PerformanceLevel.DETAILED)
     async def launch_paper_trading(
         self,
         trading_config: dict[str, Any] | None = None,
@@ -216,6 +225,7 @@ class EnhancedTradingLauncher:
         default_return=False,
         context="live trading launch",
     )
+    @performance_monitor(level=PerformanceLevel.DETAILED)
     async def launch_live_trading(
         self,
         trading_config: dict[str, Any] | None = None,
@@ -263,6 +273,7 @@ class EnhancedTradingLauncher:
         default_return=False,
         context="backtest launch",
     )
+    @performance_monitor(level=PerformanceLevel.DETAILED)
     async def launch_backtest(
         self,
         historical_data: pd.DataFrame,
@@ -323,6 +334,7 @@ class EnhancedTradingLauncher:
         default_return=False,
         context="trade execution",
     )
+    @performance_monitor(level=PerformanceLevel.DETAILED)
     async def execute_trade(
         self,
         symbol: str,
@@ -421,6 +433,7 @@ class EnhancedTradingLauncher:
             self.logger.error(error(f"Error getting portfolio summary: {e}"))
             return {}
 
+    @performance_monitor(level=PerformanceLevel.BASIC)
     async def generate_comprehensive_report(
         self,
         report_type: str = "comprehensive",
@@ -452,6 +465,7 @@ class EnhancedTradingLauncher:
         default_return=None,
         context="basic report generation",
     )
+    @performance_monitor(level=PerformanceLevel.BASIC)
     async def _generate_basic_report(
         self,
         report_type: str,
@@ -515,6 +529,7 @@ class EnhancedTradingLauncher:
         default_return=None,
         context="launcher cleanup",
     )
+    @performance_monitor(level=PerformanceLevel.BASIC)
     async def stop(self) -> None:
         """Stop enhanced trading launcher."""
         try:

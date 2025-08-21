@@ -40,7 +40,7 @@ class MultiObjectiveOptimizer:
         self.config = config
         self.logger = system_logger.getChild("MultiObjectiveOptimizer")
         self.metrics_scaler = StandardScaler()
-        self.best_pareto_front: list[OptimizationMetrics] , []
+        self.best_pareto_front: list[OptimizationMetrics] = []
 
         # Multi-objective weights (configurable) - Focused on Sharpe, win rate, and profit factor
         self.objective_weights = config.get(

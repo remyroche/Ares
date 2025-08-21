@@ -34,7 +34,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
         self.data_balance_threshold = 0.15  # More lenient balance requirements
 
     async def validate(
-        self = training_input: dict[str, Any], pipeline_state: dict[str, Any], ) -> bool:
+        async def validate(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> bool:
         """Validate the feature engineering step.
 
         Args:

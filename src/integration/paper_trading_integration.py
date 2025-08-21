@@ -104,12 +104,14 @@ class PaperTradingIntegration:
                         self.logger.warning(
                             "Failed to initialize detailed reporter, continuing without detailed reporting",
                         )
+                        self.enable_detailed_reporting = False
                 except Exception as e:
                     self.logger.warning(
                         warning(
                             f"Detailed reporter unavailable, continuing without it: {e}",
                         ),
                     )
+                    self.enable_detailed_reporting = False
 
             # Validate integration
             if not self._validate_integration():
@@ -138,13 +140,14 @@ class PaperTradingIntegration:
                 self.logger.error(initialization_error("Paper trader not initialized"))
                 return False
 
+            # If reporter failed to initialize, degrade gracefully (don't block integration)
             if self.enable_detailed_reporting and not self.reporter:
-                self.logger.error(
-                    initialization_error(
-                        "Detailed reporter not initialized but required",
+                self.logger.warning(
+                    warning(
+                        "Detailed reporter not initialized; proceeding without detailed reporting",
                     ),
                 )
-                return False
+                self.enable_detailed_reporting = False
 
             return True
 

@@ -7,7 +7,7 @@ backtesting with integrated detailed reporting capabilities.
 """
 
 from datetime import datetime
-from typing import Any
+from typing import Any, TYPE_CHECKING
 import json
 import os
 
@@ -32,10 +32,8 @@ from src.integration.paper_trading_integration import (
     PaperTradingIntegration,
     setup_paper_trading_integration,
 )
-from src.backtesting.enhanced_backtester import (
-    EnhancedBacktester,
-    setup_enhanced_backtester,
-)
+if TYPE_CHECKING:
+    from src.backtesting.enhanced_backtester import EnhancedBacktester  # type: ignore
 from src.utils.advanced_decorators import performance_monitor, PerformanceLevel
 
 class EnhancedTradingLauncher:
@@ -55,7 +53,7 @@ class EnhancedTradingLauncher:
 
         # Trading components
         self.paper_trading_integration: PaperTradingIntegration | None = None
-        self.enhanced_backtester: EnhancedBacktester | None = None
+        self.enhanced_backtester: "EnhancedBacktester | None" = None
 
         # Launcher state
         self.is_initialized: bool = False
@@ -158,7 +156,14 @@ class EnhancedTradingLauncher:
 
             # Initialize enhanced backtester
             if self.enable_backtesting:
-                self.enhanced_backtester = await setup_enhanced_backtester(self.config)
+                try:
+                    from src.backtesting.enhanced_backtester import (
+                        setup_enhanced_backtester as _setup_backtester,
+                    )
+                    self.enhanced_backtester = await _setup_backtester(self.config)
+                except Exception as e:
+                    self.logger.error(failed(f"Backtester import/setup failed: {e}"))
+                    self.enhanced_backtester = None
                 if self.enhanced_backtester:
                     self.logger.info("✅ Enhanced backtester initialized")
                 else:

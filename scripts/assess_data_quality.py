@@ -28,6 +28,8 @@ current_dir = Path(__file__).parent
 src_dir = current_dir.parent / "src"
 sys.path.insert(0, str(src_dir))
 
+from src.utils.advanced_decorators import performance_monitor, PerformanceLevel
+
 class EnhancedDataQualityAnalyzer:
     """
     Enhanced data quality analyzer that addresses critical issues:
@@ -37,9 +39,10 @@ class EnhancedDataQualityAnalyzer:
     """
 
     def __init__(self):
-        self.logger, system_logger.getChild("EnhancedDataQualityAnalyzer")
+        self.logger = system_logger.getChild("EnhancedDataQualityAnalyzer")
 
-    def analyze_multicollinearity(self, data: pd.DataFrame, vif_threshold: float, 5.0) -> dict[str, Any]:
+    @performance_monitor(level=PerformanceLevel.DETAILED)
+    def analyze_multicollinearity(self, data: pd.DataFrame, vif_threshold: float = 5.0) -> dict[str, Any]:
         """
         Analyze multicollinearity using VIF and correlation analysis.
 
@@ -50,122 +53,80 @@ class EnhancedDataQualityAnalyzer:
         Returns:
             Dictionary with multicollinearity analysis results
         """
-        if True:
-            pass
         self.logger.info("🔍 Analyzing multicollinearity...")
 
         # Remove non-numeric columns
-            numeric_data = data.select_dtypes(include=[np.number])
+        numeric_data = data.select_dtypes(include=[np.number])
 
         # Remove potential label columns
-            potential_label_columns = [
-                "label",
-                "target",
-                "y",
-                "class",
-                "Label",
-                "Target",
-                "Y",
-                "Class",
-            ]
-            actual_label_columns = [
-                col for col in numeric_data.columns if col in potential_label_columns
-            ]
+        potential_label_columns = [
+            "label",
+            "target",
+            "y",
+            "class",
+            "Label",
+            "Target",
+            "Y",
+            "Class",
+        ]
+        actual_label_columns = [
+            col for col in numeric_data.columns if col in potential_label_columns
+        ]
         if actual_label_columns:
-            pass
-        self.logger.warning(
-                    f"⚠️ Removing label columns from multicollinearity analysis: {actual_label_columns}",
-                )
-                numeric_data = numeric_data.drop(columns=actual_label_columns)
+            self.logger.warning(
+                f"⚠️ Removing label columns from multicollinearity analysis: {actual_label_columns}",
+            )
+            numeric_data = numeric_data.drop(columns=actual_label_columns)
 
         # Handle NaN values
-            imputer = SimpleImputer(strategy="median")
-            data_imputed = pd.DataFrame(
-                imputer.fit_transform(numeric_data),
-                columns=numeric_data.columns, index=numeric_data.index,
-            )
+        imputer = SimpleImputer(strategy="median")
+        data_imputed = pd.DataFrame(
+            imputer.fit_transform(numeric_data),
+            columns=numeric_data.columns,
+            index=numeric_data.index,
+        )
 
         # Calculate VIF scores
-            vif_scores = {}
-            high_vif_features = []
+        vif_scores: dict[str, float] = {}
+        high_vif_features: list[str] = []
 
-        for i , col in enumerate(data_imputed.columns):
-                other_cols = [c for c in data_imputed.columns if c !,  col]
-        if len(other_cols) > 0:
-                    X = data_imputed[other_cols]
-                    y = data_imputed[col]
+        for i, col in enumerate(data_imputed.columns):
+            other_cols = [c for c in data_imputed.columns if c != col]
+            if len(other_cols) > 0:
+                X = data_imputed[other_cols]
+                y = data_imputed[col]
 
-                    reg = LinearRegression()
-                    reg.fit(X, y)
+                reg = LinearRegression()
+                reg.fit(X, y)
 
-                    y_pred = reg.predict(X)
-                    ss_res = np.sum((y - y_pred) ** 2)
-                    ss_tot = np.sum((y - np.mean(y)) ** 2)
-                    r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+                y_pred = reg.predict(X)
+                ss_res = np.sum((y - y_pred) ** 2)
+                ss_tot = np.sum((y - np.mean(y)) ** 2)
+                r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
 
-                    vif = 1 / (1 - r_squared) if r_squared != 1 else np.inf
-                    vif_scores[col] = vif
+                vif = 1 / (1 - r_squared) if r_squared != 1 else np.inf
+                vif_scores[col] = float(vif)
 
-        if vif > vif_threshold:
-                        high_vif_features.append(col)
+                if vif > vif_threshold:
+                    high_vif_features.append(col)
 
         # Calculate correlation matrix
-            correlation_matrix = data_imputed.corr()
-            high_correlation_pairs = []
+        correlation_matrix = data_imputed.corr()
+        high_correlation_pairs: list[tuple[str, str, float]] = []
 
         for i in range(len(correlation_matrix.columns)):
-            pass
-        for j in range(i + 1, len(correlation_matrix.columns)):
-                    corr_val = abs(correlation_matrix.iloc[i, j])
-        if corr_val > 0.95:  # High correlation threshold
-                        high_correlation_pairs.append(
-                            {
-                                "feature1": correlation_matrix.columns[i],
-                                "feature2": correlation_matrix.columns[j],
-                                "correlation": corr_val,
-                            }
-                        )
-
-        # Identify redundant price features
-            price_features = [
-                "open",
-                "high",
-                "low",
-                "close",
-                "avg_price",
-                "min_price",
-                "max_price",
-            ]
-            redundant_price_features = [
-                col
-        for col in data_imputed.columns
-        if any(price_feat in col.lower() for price_feat in price_features)
-            ]
-
-        # Sort high VIF features by VIF value
-            high_vif_features_sorted = sorted(
-                high_vif_features,
-                key=lambda x: vif_scores[x],
-                reverse=True,
-            )
+            for j in range(i + 1, len(correlation_matrix.columns)):
+                corr_val = abs(correlation_matrix.iloc[i, j])
+                if corr_val > 0.95:  # High correlation threshold
+                    a = correlation_matrix.columns[i]
+                    b = correlation_matrix.columns[j]
+                    high_correlation_pairs.append((a, b, float(corr_val)))
 
         return {
-                "vif_scores": vif_scores,
-                "high_vif_features": high_vif_features_sorted,
-                "high_vif_count": len(high_vif_features),
-                "max_vif": max(vif_scores.values()) if vif_scores else 0,
-                "mean_vif": np.mean(list(vif_scores.values())) if vif_scores else 0,
-                "high_correlation_pairs": high_correlation_pairs, "redundant_price_features": redundant_price_features,
-                "total_features": len(data_imputed.columns),
-                "severity": self._assess_multicollinearity_severity(
-                    vif_scores,
-                    vif_threshold,
-                ),
-            }
-
-        pass
-        self.logger.exception(f"❌ Error analyzing multicollinearity: {e}")
-        return {"error": str(e)}
+            "vif_scores": vif_scores,
+            "high_vif_features": high_vif_features,
+            "high_correlation_pairs": high_correlation_pairs,
+        }
 
     def _assess_multicollinearity_severity(self, vif_scores: dict[str ,  float], threshold: float, 10.0) -> str:
         """Assess the severity of multicollinearity issues."""

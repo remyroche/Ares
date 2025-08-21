@@ -20,15 +20,30 @@ from src.utils.warning_symbols import (
     warning,
 )
 
-from .backtesting_pipeline import BacktestingPipeline
+# Base and live trading pipelines are required
 from .base_pipeline import BasePipeline, PipelineConfig
 from .live_trading_pipeline import LiveTradingPipeline
-from .training_pipeline import TrainingPipeline
+
+# Optional pipelines that may not be present in some builds
+BacktestingPipeline = None
+TrainingPipeline = None
+try:
+    from .backtesting_pipeline import BacktestingPipeline  # type: ignore
+except Exception:
+    BacktestingPipeline = None
+
+try:
+    from .training_pipeline import TrainingPipeline  # type: ignore
+except Exception:
+    TrainingPipeline = None
 
 __all__ = [
     "BasePipeline",
     "PipelineConfig",
     "LiveTradingPipeline",
-    "BacktestingPipeline",
-    "TrainingPipeline",
 ]
+
+if BacktestingPipeline is not None:
+    __all__.append("BacktestingPipeline")
+if TrainingPipeline is not None:
+    __all__.append("TrainingPipeline")

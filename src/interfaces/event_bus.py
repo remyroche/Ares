@@ -69,6 +69,17 @@ class EventBus:
         self.event_queue: asyncio.Queue = asyncio.Queue()
         self.event_history: list[dict[str, Any]] = []
 
+    def print(self, message: str) -> None:
+        """Lightweight print wrapper to ensure class uses logger and stdout consistently."""
+        try:
+            self.logger.info(message)
+        finally:
+            try:
+                builtins_print = __builtins__["print"] if isinstance(__builtins__, dict) else __builtins__.print  # type: ignore
+                builtins_print(message)
+            except Exception:
+                pass
+
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid event bus configuration"),
@@ -150,14 +161,15 @@ class EventBus:
     async def run(self) -> bool:
         try:
             self.is_running = True
-            self.logger.info("🚦 Event Bus started.")
+            self.logger.info("🚀 Event Bus started")
+
             while self.is_running:
                 await self._process_events()
-                await asyncio.sleep(self.processing_interval)
+
+            self.logger.info("🛑 Event Bus stopped")
             return True
         except Exception:
             self.print(error("Error in event bus run: {e}"))
-            self.is_running = False
             return False
 
     @handle_errors(
@@ -167,164 +179,80 @@ class EventBus:
     )
     async def _process_events(self) -> None:
         try:
-            now = datetime.now().isoformat()
-            self.status = {"timestamp": now, "status": "running"}
-            self.history.append(self.status.copy())
-            if len(self.history) > self.max_history:
-                self.history.pop(0)
-
             # Process events from queue
             while not self.event_queue.empty():
                 event = await self.event_queue.get()
                 await self._dispatch_event(event)
-
-            self.logger.info(f"Event processing tick at {now}")
         except Exception:
             self.print(error("Error in event processing: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
-        context="event dispatch",
+        context="event dispatching",
     )
-    async def _dispatch_event(self, event: dict[str, Any]) -> None:
+    async def _dispatch_event(self, event: Event) -> None:
         try:
-            event_type = event.get("type", "unknown")
-            subscribers = self.subscribers.get(event_type, [])
-            payload = event.get("data")
-
-            for subscriber in subscribers:
-                try:
-                    if asyncio.iscoroutinefunction(subscriber):
-                        try:
-                            await subscriber(payload)
-                        except TypeError:
-                            await subscriber()
-                    else:
-                        try:
-                            subscriber(payload)
-                        except TypeError:
-                            subscriber()
-                except Exception as e:
-                    self.logger.exception(
-                        f"Error in event subscriber {getattr(subscriber, '__name__', str(subscriber))}: {e}",
-                    )
-
-            # Add to event history
-            self.event_history.append(
-                {
-                    "timestamp": datetime.now().isoformat(),
-                    "event_type": event_type,
-                    "subscribers_count": len(subscribers),
-                },
-            )
-
-            if len(self.event_history) > self.max_history:
-                self.event_history.pop(0)
-
-            self.logger.info(
-                f"Event '{event_type}' dispatched to {len(subscribers)} subscribers",
-            )
+            subscribers = self.subscribers.get(event.event_type.value, [])
+            for callback in subscribers:
+                if asyncio.iscoroutinefunction(callback):
+                    await callback(event)
+                else:
+                    callback(event)
         except Exception:
             self.print(error("Error dispatching event: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
-        context="event bus stop",
+        context="event bus cleanup",
     )
     async def stop(self) -> None:
-        self.logger.info("🛑 Stopping Event Bus...")
         try:
             self.is_running = False
-            self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
-            self.logger.info("✅ Event Bus stopped successfully")
+            self.logger.info("🛑 Event Bus stopping...")
         except Exception:
             self.print(error("Error stopping event bus: {e}"))
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
         context="event subscription",
     )
-    def subscribe(self, event_type: EventType | str, callback: Callable) -> None:
-        """Subscribe to an event type."""
+    async def subscribe(self, event_type: EventType, callback: Callable) -> bool:
         try:
-            event_key = (
-                event_type.value
-                if isinstance(event_type, EventType)
-                else str(event_type)
-            )
-            self.subscribers[event_key].append(callback)
-            self.logger.info(f"Subscriber added for event type: {event_key}")
+            self.subscribers[event_type.value].append(callback)
+            return True
         except Exception:
             self.print(error("Error subscribing to event: {e}"))
+            return False
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
         context="event unsubscription",
     )
-    def unsubscribe(
-        self,
-        event_type: EventType | str,
-        callback: Callable,
-    ) -> None:
-        """Unsubscribe from an event type."""
+    async def unsubscribe(self, event_type: EventType, callback: Callable) -> bool:
         try:
-            event_key = (
-                event_type.value
-                if isinstance(event_type, EventType)
-                else str(event_type)
-            )
-            if event_key in self.subscribers:
-                self.subscribers[event_key] = [
-                    sub for sub in self.subscribers[event_key] if sub != callback
-                ]
-                self.logger.info(f"Subscriber removed for event type: {event_key}")
+            if callback in self.subscribers[event_type.value]:
+                self.subscribers[event_type.value].remove(callback)
+            return True
         except Exception:
             self.print(error("Error unsubscribing from event: {e}"))
+            return False
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
         context="event publishing",
     )
-    async def publish(self, event_type: EventType | str, data: Any) -> None:
-        """Publish an event to the bus."""
+    async def publish(self, event: Event) -> bool:
         try:
-            event_key = (
-                event_type.value
-                if isinstance(event_type, EventType)
-                else str(event_type)
-            )
-            event = {
-                "type": event_key,
-                "data": data,
-                "timestamp": datetime.now().isoformat(),
-            }
             await self.event_queue.put(event)
-            self.logger.info(f"Event '{event_key}' published to queue")
+            return True
         except Exception:
             self.print(error("Error publishing event: {e}"))
-
-    def get_status(self) -> dict[str, Any]:
-        return self.status.copy()
-
-    def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        history = self.history.copy()
-        if limit:
-            history = history[-limit:]
-        return history
-
-    def get_event_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        history = self.event_history.copy()
-        if limit:
-            history = history[-limit:]
-        return history
-
-    def get_subscribers(self) -> dict[str, list[Callable]]:
-        return dict(self.subscribers)
+            return False
 
 
 event_bus: EventBus | None = None

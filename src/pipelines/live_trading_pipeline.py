@@ -86,6 +86,17 @@ class LiveTradingPipeline:
         # Trade tracking
         self.trade_tracker = get_trade_tracker()
 
+    def print(self, message: str) -> None:
+        """Lightweight print wrapper to ensure class uses logger and stdout consistently."""
+        try:
+            self.logger.info(message)
+        finally:
+            try:
+                builtins_print = __builtins__["print"] if isinstance(__builtins__, dict) else __builtins__.print  # type: ignore
+                builtins_print(message)
+            except Exception:
+                pass
+
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid live trading pipeline configuration"),
@@ -602,6 +613,51 @@ class LiveTradingPipeline:
         except Exception:
             self.print(execution_error("Error performing order execution: {e}"))
             return {}
+
+    async def _derive_decision(self, market_data: dict[str, Any]) -> dict[str, Any] | None:
+        """Create a minimal trade decision from available signals/market data."""
+        try:
+            signal = self.trading_results.get("signal_generation", {}).get(
+                "momentum_indicators",
+                {},
+            )
+            momentum_score = signal.get("momentum_score", 0.0)
+            if momentum_score > 0.55:
+                side = OrderSide.BUY
+            elif momentum_score < 0.45:
+                side = OrderSide.SELL
+            else:
+                return None
+
+            price = float(market_data.get("price", 0))
+            qty = float(self.trading_config.get("default_order_qty", 0.001))
+            return {
+                "side": side,
+                "price": price,
+                "quantity": qty,
+                "type": OrderType.MARKET,
+            }
+        except Exception:
+            return None
+
+    async def _execute_decision(self, decision: dict[str, Any]) -> dict[str, Any]:
+        """Execute a simple decision via EnhancedOrderManager if available."""
+        try:
+            if not self.order_manager:
+                return {"status": "no_order_manager"}
+
+            request = OrderRequest(
+                side=decision.get("side", OrderSide.BUY),
+                order_type=decision.get("type", OrderType.MARKET),
+                quantity=float(decision.get("quantity", 0.0)),
+                symbol=self.trading_config.get("symbol", "BTC/USDT"),
+                price=decision.get("price"),
+            )
+            result = await self.order_manager.place_order(request)
+            return {"status": "submitted", "order_id": getattr(result, "order_id", None)}
+        except Exception as e:
+            self.logger.warning(f"Order execution failed: {e}")
+            return {"status": "error", "error": str(e)}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),

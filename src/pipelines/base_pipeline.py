@@ -163,6 +163,18 @@ class BasePipeline:
             True,
         )
 
+    def print(self, message: str) -> None:
+        """Lightweight print wrapper to ensure class uses logger and stdout consistently."""
+        try:
+            self.logger.info(message)
+        finally:
+            # Mirror to stdout for visibility
+            try:
+                builtins_print = __builtins__["print"] if isinstance(__builtins__, dict) else __builtins__.print  # type: ignore
+                builtins_print(message)
+            except Exception:
+                pass
+
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid base pipeline configuration"),

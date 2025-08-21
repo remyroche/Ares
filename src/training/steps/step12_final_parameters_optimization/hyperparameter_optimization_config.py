@@ -44,13 +44,13 @@ class SearchSpace:
     """Defines the search space for a parameter category."""
 
     name: str = ""
-    parameters: dict[str, dict[str, Any]] = field(default_factory=dict)
+    parameters: dict[str = dict[str, Any]] = field(default_factory=dict)
     optimization_strategy: OptimizationStrategy = OptimizationStrategy.SINGLE_OBJECTIVE
     n_trials: int = 50
     timeout_seconds: int = 1800
     early_stopping_patience: int = 10
     evaluation_metrics: list[EvaluationMetric] = field(default_factory=list)
-    constraints: dict[str, Any] = field(default_factory=dict)
+    constraints: dict[str = Any] = field(default_factory=dict)
     warm_start: bool = True
     parallel_trials: int = 1
 
@@ -595,20 +595,20 @@ class HyperparameterOptimizationConfig:
 
         # Check parameter definitions
         for param_name, param_config in search_space.parameters.items():
-            if "type" not in param_config:
+        if "type" not in param_config:
                 errors.append(f"Parameter {param_name} missing type definition")
 
             param_type = param_config.get("type")
-            if param_type == "float":
-                if "min" not in param_config or "max" not in param_config:
+        if param_type == "float":
+        if "min" not in param_config or "max" not in param_config:
                     errors.append(
                         f"Float parameter {param_name} missing min/max values",
                     )
             elif param_type == "int":
-                if "min" not in param_config or "max" not in param_config:
+        if "min" not in param_config or "max" not in param_config:
                     errors.append(f"Int parameter {param_name} missing min/max values")
             elif param_type == "categorical":
-                if "choices" not in param_config:
+        if "choices" not in param_config:
                     errors.append(f"Categorical parameter {param_name} missing choices")
 
         return errors

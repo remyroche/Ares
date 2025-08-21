@@ -38,7 +38,7 @@ class PipelineOrchestrator:
         # Pipeline orchestrator state
         self.is_orchestrating: bool = False
         self.pipeline_results: dict[str, Any] = {}
-        self.pipeline_history: list[dict[str, Any]] , []
+        self.pipeline_history: list[dict[str, Any]] = []
 
         # Configuration
         self.pipeline_config: dict[str, Any] = self.config.get(
@@ -89,7 +89,7 @@ class PipelineOrchestrator:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.print(invalid("Invalid configuration for pipeline orchestrator"))
+                self.logger.error("Invalid configuration for pipeline orchestrator")
                 return False
 
             # Initialize pipeline modules
@@ -121,6 +121,7 @@ class PipelineOrchestrator:
             self.pipeline_config.setdefault("enable_pipeline_monitoring", True)
             self.pipeline_config.setdefault("enable_pipeline_optimization", True)
             self.pipeline_config.setdefault("enable_pipeline_validation", True)
+            self.pipeline_config.setdefault("enable_step_execution", True)
 
             # Update configuration
             self.pipeline_interval = self.pipeline_config["pipeline_interval"]
@@ -134,8 +135,8 @@ class PipelineOrchestrator:
 
             self.logger.info("Pipeline configuration loaded successfully")
 
-        except Exception:
-            self.print(error("Error loading pipeline configuration: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error loading pipeline configuration: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -152,12 +153,12 @@ class PipelineOrchestrator:
         try:
             # Validate pipeline interval
             if self.pipeline_interval <= 0:
-                self.print(invalid("Invalid pipeline interval"))
+                self.logger.error("Invalid pipeline interval")
                 return False
 
             # Validate max pipeline history
             if self.max_pipeline_history <= 0:
-                self.print(invalid("Invalid max pipeline history"))
+                self.logger.error("Invalid max pipeline history")
                 return False
 
             # Validate that at least one pipeline type is enabled
@@ -169,14 +170,14 @@ class PipelineOrchestrator:
                     self.pipeline_config.get("enable_pipeline_validation", True),
                 ],
             ):
-                self.print(error("At least one pipeline type must be enabled"))
+                self.logger.error("At least one pipeline type must be enabled")
                 return False
 
             self.logger.info("Configuration validation successful")
             return True
 
-        except Exception:
-            self.print(error("Error validating configuration: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error validating configuration: {e}")
             return False
 
     @handle_errors(
@@ -205,8 +206,8 @@ class PipelineOrchestrator:
 
             self.logger.info("Pipeline modules initialized successfully")
 
-        except Exception:
-            self.print(initialization_error("Error initializing pipeline modules: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error initializing pipeline modules: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -226,10 +227,8 @@ class PipelineOrchestrator:
 
             self.logger.info("Pipeline execution module initialized")
 
-        except Exception:
-            self.print(
-                initialization_error("Error initializing pipeline execution: {e}"),
-            )
+        except Exception as e:
+            self.logger.exception(f"Error initializing pipeline execution: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -249,10 +248,8 @@ class PipelineOrchestrator:
 
             self.logger.info("Pipeline monitoring module initialized")
 
-        except Exception:
-            self.print(
-                initialization_error("Error initializing pipeline monitoring: {e}"),
-            )
+        except Exception as e:
+            self.logger.exception(f"Error initializing pipeline monitoring: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -272,10 +269,8 @@ class PipelineOrchestrator:
 
             self.logger.info("Pipeline optimization module initialized")
 
-        except Exception:
-            self.print(
-                initialization_error("Error initializing pipeline optimization: {e}"),
-            )
+        except Exception as e:
+            self.logger.exception(f"Error initializing pipeline optimization: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -295,8 +290,8 @@ class PipelineOrchestrator:
 
             self.logger.info("Pipeline validation module initialized")
 
-        except Exception:
-            self.print(validation_error("Error initializing pipeline validation: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error initializing pipeline validation: {e}")
 
     @handle_specific_errors(
         error_handlers={
@@ -359,8 +354,8 @@ class PipelineOrchestrator:
             self.logger.info("✅ Pipeline execution completed successfully")
             return True
 
-        except Exception:
-            self.print(error("Error executing pipeline: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error executing pipeline: {e}")
             self.is_orchestrating = False
             return False
 
@@ -384,24 +379,22 @@ class PipelineOrchestrator:
             required_fields = ["pipeline_type", "pipeline_steps", "timestamp"]
             for field in required_fields:
                 if field not in pipeline_input:
-                    self.print(
-                        missing("Missing required pipeline input field: {field}"),
-                    )
+                    self.logger.error(f"Missing required pipeline input field: {field}")
                     return False
 
             # Validate data types
             if not isinstance(pipeline_input["pipeline_type"], str):
-                self.print(invalid("Invalid pipeline type"))
+                self.logger.error("Invalid pipeline type")
                 return False
 
             if not isinstance(pipeline_input["pipeline_steps"], list):
-                self.print(invalid("Invalid pipeline steps format"))
+                self.logger.error("Invalid pipeline steps format")
                 return False
 
             return True
 
-        except Exception:
-            self.print(error("Error validating pipeline inputs: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error validating pipeline inputs: {e}")
             return False
 
     @handle_errors(
@@ -450,8 +443,8 @@ class PipelineOrchestrator:
             self.logger.info("Pipeline execution completed")
             return results
 
-        except Exception:
-            self.print(execution_error("Error performing pipeline execution: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing pipeline execution: {e}")
             return {}
 
     @handle_errors(
@@ -502,8 +495,8 @@ class PipelineOrchestrator:
             self.logger.info("Pipeline monitoring completed")
             return results
 
-        except Exception:
-            self.print(error("Error performing pipeline monitoring: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing pipeline monitoring: {e}")
             return {}
 
     @handle_errors(
@@ -566,8 +559,8 @@ class PipelineOrchestrator:
             self.logger.info("Pipeline optimization completed")
             return results
 
-        except Exception:
-            self.print(error("Error performing pipeline optimization: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing pipeline optimization: {e}")
             return {}
 
     @handle_errors(
@@ -618,8 +611,8 @@ class PipelineOrchestrator:
             self.logger.info("Pipeline validation completed")
             return results
 
-        except Exception:
-            self.print(validation_error("Error performing pipeline validation: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing pipeline validation: {e}")
             return {}
 
     # Pipeline execution methods
@@ -633,8 +626,8 @@ class PipelineOrchestrator:
                 "execution_time": 120.5,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(execution_error("Error performing step execution: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing step execution: {e}")
             return {}
 
     def _perform_step_coordination(
@@ -650,8 +643,8 @@ class PipelineOrchestrator:
                 "dependencies_resolved": True,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing step coordination: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing step coordination: {e}")
             return {}
 
     def _perform_step_scheduling(
@@ -667,8 +660,8 @@ class PipelineOrchestrator:
                 "scheduled_steps": 5,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing step scheduling: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing step scheduling: {e}")
             return {}
 
     def _perform_step_monitoring(
@@ -684,8 +677,8 @@ class PipelineOrchestrator:
                 "monitoring_metrics": "performance",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing step monitoring: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing step monitoring: {e}")
             return {}
 
     # Pipeline monitoring methods
@@ -702,8 +695,8 @@ class PipelineOrchestrator:
                 "monitoring_interval": 60,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing performance monitoring: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing performance monitoring: {e}")
             return {}
 
     def _perform_health_monitoring(
@@ -719,8 +712,8 @@ class PipelineOrchestrator:
                 "health_score": 0.95,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing health monitoring: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing health monitoring: {e}")
             return {}
 
     def _perform_error_monitoring(
@@ -736,8 +729,8 @@ class PipelineOrchestrator:
                 "error_rate": 0.0,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing error monitoring: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing error monitoring: {e}")
             return {}
 
     def _perform_resource_monitoring(
@@ -753,8 +746,8 @@ class PipelineOrchestrator:
                 "memory_usage": 0.45,
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing resource monitoring: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing resource monitoring: {e}")
             return {}
 
     # Pipeline optimization methods
@@ -771,8 +764,8 @@ class PipelineOrchestrator:
                 "optimization_method": "algorithmic",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing performance optimization: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing performance optimization: {e}")
             return {}
 
     def _perform_resource_optimization(
@@ -788,8 +781,8 @@ class PipelineOrchestrator:
                 "optimization_method": "resource_pooling",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing resource optimization: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing resource optimization: {e}")
             return {}
 
     def _perform_scheduling_optimization(
@@ -805,8 +798,8 @@ class PipelineOrchestrator:
                 "optimization_method": "dynamic_scheduling",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing scheduling optimization: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing scheduling optimization: {e}")
             return {}
 
     def _perform_throughput_optimization(
@@ -822,8 +815,8 @@ class PipelineOrchestrator:
                 "optimization_method": "parallel_processing",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(error("Error performing throughput optimization: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing throughput optimization: {e}")
             return {}
 
     # Pipeline validation methods
@@ -840,8 +833,8 @@ class PipelineOrchestrator:
                 "validation_method": "schema_validation",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(validation_error("Error performing input validation: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing input validation: {e}")
             return {}
 
     def _perform_output_validation(
@@ -857,8 +850,8 @@ class PipelineOrchestrator:
                 "validation_method": "quality_check",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(validation_error("Error performing output validation: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing output validation: {e}")
             return {}
 
     def _perform_step_validation(
@@ -874,8 +867,8 @@ class PipelineOrchestrator:
                 "validation_method": "unit_testing",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(validation_error("Error performing step validation: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error performing step validation: {e}")
             return {}
 
     def _perform_pipeline_validation_core(
@@ -891,10 +884,8 @@ class PipelineOrchestrator:
                 "validation_method": "integration_testing",
                 "training_time": datetime.now().isoformat(),
             }
-        except Exception:
-            self.print(
-                validation_error("Error performing pipeline validation core: {e}"),
-            )
+        except Exception as e:
+            self.logger.exception(f"Error performing pipeline validation core: {e}")
             return {}
 
     @handle_errors(
@@ -917,8 +908,8 @@ class PipelineOrchestrator:
 
             self.logger.info("Pipeline results stored successfully")
 
-        except Exception:
-            self.print(error("Error storing pipeline results: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error storing pipeline results: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -927,7 +918,7 @@ class PipelineOrchestrator:
     )
     def get_pipeline_results(
         self,
-        pipeline_type: str | None = None,
+        pipeline_type: str | None,
     ) -> dict[str, Any]:
         """Get pipeline results.
 
@@ -943,8 +934,8 @@ class PipelineOrchestrator:
                 return self.pipeline_results.get(pipeline_type, {})
             return self.pipeline_results.copy()
 
-        except Exception:
-            self.print(error("Error getting pipeline results: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error getting pipeline results: {e}")
             return {}
 
     @handle_errors(
@@ -952,7 +943,7 @@ class PipelineOrchestrator:
         default_return=None,
         context="pipeline history getting",
     )
-    def get_pipeline_history(self, limit: int | None = None) -> list[dict[str, Any]]:
+    def get_pipeline_history(self, limit: int | None) -> list[dict[str, Any]]:
         """Get pipeline history.
 
         Args:
@@ -970,8 +961,8 @@ class PipelineOrchestrator:
 
             return history
 
-        except Exception:
-            self.print(error("Error getting pipeline history: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error getting pipeline history: {e}")
             return []
 
     def get_pipeline_status(self) -> dict[str, Any]:
@@ -1019,8 +1010,8 @@ class PipelineOrchestrator:
 
             self.logger.info("✅ Pipeline Orchestrator stopped successfully")
 
-        except Exception:
-            self.print(error("Error stopping pipeline orchestrator: {e}"))
+        except Exception as e:
+            self.logger.exception(f"Error stopping pipeline orchestrator: {e}")
 
 
 # Global pipeline orchestrator instance
@@ -1033,7 +1024,7 @@ pipeline_orchestrator: PipelineOrchestrator | None = None
     context="pipeline orchestrator setup",
 )
 async def setup_pipeline_orchestrator(
-    config: dict[str, Any] | None = None,
+    config: dict[str, Any] | None,
 ) -> PipelineOrchestrator | None:
     """Setup global pipeline orchestrator.
 
@@ -1068,5 +1059,5 @@ async def setup_pipeline_orchestrator(
             return pipeline_orchestrator
         return None
 
-    except Exception:
+    except Exception as e:
         return None

@@ -24,22 +24,19 @@ class ABTestingStep:
     async def initialize(self) -> None:
         """Initialize the A/B testing step."""
         try:
-            self.logger.info("🚀 Initializing A/B Testing Step...")
-            self.logger.info("✅ A/B Testing Step initialized successfully")
+        self.logger.info("🚀 Initializing A/B Testing Step...")
+        self.logger.info("✅ A/B Testing Step initialized successfully")
 
         except Exception as e:
-            self.logger.exception(
+        self.logger.exception(
                 f"{initialization_error('Error initializing A/B Testing Step: {e}')}".format(
-                    e=e,
+                    e=e
                 ),
             )
             raise
 
     async def execute(
-        self,
-        training_input: dict[str, Any],
-        pipeline_state: dict[str, Any],
-    ) -> dict[str, Any]:
+        self, training_input: dict[str, Any], pipeline_state: dict[str, Any], ) -> dict[str, Any]:
         """Execute A/B testing.
 
         Args:
@@ -51,25 +48,25 @@ class ABTestingStep:
 
         """
         try:
-            self.logger.info("🔄 Executing A/B Testing...")
+        self.logger.info("🔄 Executing A/B Testing...")
 
-            # Extract parameters
-            symbol = training_input.get("symbol", "ETHUSDT")
-            exchange = training_input.get("exchange", "BINANCE")
-            data_dir = training_input.get("data_dir", "data/training")
+        # Extract parameters
+            symbol, training_input.get("symbol", "ETHUSDT")
+            exchange, training_input.get("exchange", "BINANCE")
+            data_dir, training_input.get("data_dir", "data/training")
 
-            # Execute A/B testing (self-contained placeholder implementation)
-            # Generate deterministic, validator-compatible outputs
+        # Execute A/B testing (self-contained placeholder implementation)
+        # Generate deterministic, validator-compatible outputs
             test_duration_days = 30
 
-            # Load A/B testing results
+        # Load A/B testing results
             ab_results_file = f"{data_dir}/{exchange}_{symbol}_ab_testing_results.json"
 
-            if os.path.exists(ab_results_file):
-                with open(ab_results_file) as f:
+        if os.path.exists(ab_results_file):
+        with open(ab_results_file) as f:
                     ab_results = json.load(f)
             else:
-                # Create placeholder results if file doesn't exist
+        # Create placeholder results if file doesn't exist
                 ab_results = {
                     "symbol": symbol,
                     "exchange": exchange,
@@ -86,17 +83,17 @@ class ABTestingStep:
                     "significance_level": 0.05,
                     "winner": "variant_b",
                 }
-            try:
+        try:
                 winner = (
                     ab_results.get("winner") if isinstance(ab_results, dict) else None
                 )
-                self.logger.info(
-                    f"A/B testing results prepared: winner={winner}",
+        self.logger.info(
+                    f"A/B testing results prepared: winner={winner}"
                 )
-            except Exception:
+        except Exception:
                 pass
 
-            # Also produce validator-expected performance and metadata files
+        # Also produce validator-expected performance and metadata files
             performance = {
                 "group_a_performance": {
                     "name": "Current Model",
@@ -144,46 +141,46 @@ class ABTestingStep:
                 "randomization_quality": 0.92,
             }
 
-            # Save A/B testing results
+        # Save A/B testing results
             testing_dir = f"{data_dir}/ab_testing_results"
             os.makedirs(testing_dir, exist_ok=True)
 
-            # Persist the core results file expected by validator
-            with open(ab_results_file, "w") as f:
+        # Persist the core results file expected by validator
+        with open(ab_results_file, "w") as f:
                 json.dump(ab_results, f, indent=2)
 
             testing_file = f"{testing_dir}/{exchange}_{symbol}_ab_testing.pkl"
-            with open(testing_file, "wb") as f:
+        with open(testing_file, "wb") as f:
                 pickle.dump(ab_results, f)
 
-            # Save testing summary
+        # Save testing summary
             summary_file = f"{data_dir}/{exchange}_{symbol}_ab_testing_summary.json"
-            with open(summary_file, "w") as f:
+        with open(summary_file, "w") as f:
                 json.dump(ab_results, f, indent=2)
 
-            # Save validator-expected files
+        # Save validator-expected files
             performance_file = (
                 f"{data_dir}/{exchange}_{symbol}_ab_testing_performance.json"
             )
-            with open(performance_file, "w") as f:
+        with open(performance_file, "w") as f:
                 json.dump(performance, f, indent=2)
 
             metadata_file = f"{data_dir}/{exchange}_{symbol}_ab_testing_metadata.json"
-            with open(metadata_file, "w") as f:
+        with open(metadata_file, "w") as f:
                 json.dump(metadata, f, indent=2)
 
-            self.logger.info(
+        self.logger.info(
                 f"✅ A/B testing completed. Results saved to {testing_dir}",
             )
 
-            # Update pipeline state
+        # Update pipeline state
             pipeline_state["ab_testing"] = {
                 "status": "SUCCESS",
                 "winner": ab_results.get("winner"),
                 "p_value": ab_results.get("p_value"),
             }
 
-            return {
+        return {
                 "ab_testing": pipeline_state["ab_testing"],
                 "testing_file": testing_file,
                 "duration": 0.0,  # Will be calculated in actual implementation
@@ -191,10 +188,10 @@ class ABTestingStep:
             }
 
         except Exception as e:
-            self.logger.exception(
-                f"{error('❌ Error in A/B Testing: {e}')}".format(e=e),
+        self.logger.exception(
+                f"{error('❌ Error in A/B Testing: {e}')}".format(e=e)
             )
-            return {"status": "FAILED", "error": str(e), "duration": 0.0}
+        return {"status": "FAILED", "error": str(e), "duration": 0.0}
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
@@ -229,7 +226,7 @@ from src.utils.training_pipeline_decorators import (
     min_memory_gb=4.0,
     min_disk_gb=3.0,
     required_packages=["pandas", "numpy", "sklearn", "scipy"],
-    data_quality_checks={
+    data_quality_checks={,
         "min_rows": 1000,
         "required_columns": ["timestamp", "features", "targets"],
     },
@@ -277,13 +274,8 @@ from src.utils.training_pipeline_decorators import (
     data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     validation_score_requirements={"ab_test_score": 0.6},
 )
-async def run_step(
-    symbol: str,
-    exchange: str = "BINANCE",
-    data_dir: str = "data/training",
-    force_rerun: bool = False,
-    **kwargs,
-) -> bool:
+async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data/training", force_rerun: bool = False
+    **kwargs, ) -> bool:
     """Run the A/B testing step.
 
     Args:
@@ -293,7 +285,7 @@ async def run_step(
         **kwargs: Additional parameters
 
     Returns:
-        bool: True if successful, False otherwise
+        bool: True if successful = False otherwise
 
     """
     try:
@@ -312,7 +304,7 @@ async def run_step(
         }
 
         pipeline_state = {}
-        result = await step.execute(training_input, pipeline_state)
+        result, await step.execute(training_input, pipeline_state)
 
         return result.get("status") == "SUCCESS"
 

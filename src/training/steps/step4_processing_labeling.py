@@ -37,6 +37,7 @@ from src.utils.centralized_decorators import (
     validate_step_output,
     validate_step_prerequisites,
     with_tracing_span,
+    comprehensive_data_validation,
 )
 from src.utils.logger import system_logger as _logger
 
@@ -84,6 +85,98 @@ async def _build_sr_levels(price_df: pd.DataFrame) -> dict[str, Any]:
         _logger.warning(f"⚠️ Failed to build SR levels: {e}")
         return {"support_levels": [], "resistance_levels": []}
 
+
+@with_tracing_span("step4._ensure_data_quality_for_labeling")
+@comprehensive_data_validation
+@handle_errors(exceptions=(Exception,), default_return=False)
+async def _ensure_data_quality_for_labeling(symbol: str, exchange: str, timeframe: str, data_dir: str) -> bool:
+    """Ensure data quality for step4 labeling using enhanced quality manager."""
+    try:
+        from .step1.enhanced_data_quality_manager import EnhancedDataQualityManager
+        
+        _logger.info("🔍 Ensuring data quality for step4 labeling...")
+        
+        manager = EnhancedDataQualityManager(data_dir)
+        data_results = await manager.get_data_for_step3_step4(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe
+        )
+        
+        if data_results.get("success", False):
+            _logger.info("✅ Data quality check passed for step4 labeling")
+            return True
+        else:
+            _logger.error("❌ Data quality check failed for step4 labeling")
+            error = data_results.get("error", "Unknown error")
+            _logger.error(f"   Error: {error}")
+            
+            # Try to fix missing data using step1/step1_5 components
+            _logger.info("🔄 Attempting to fix missing data for step4...")
+            fix_results = await _fix_missing_data_for_step4(symbol, exchange, timeframe, data_dir)
+            
+            if fix_results.get("success", False):
+                _logger.info("✅ Successfully fixed missing data for step4")
+                return True
+            else:
+                _logger.error("❌ Failed to fix missing data for step4")
+                return False
+                
+    except Exception as e:
+        _logger.exception(f"❌ Error ensuring data quality for step4: {e}")
+        return False
+
+@with_tracing_span("step4._fix_missing_data_for_step4")
+async def _fix_missing_data_for_step4(symbol: str, exchange: str, timeframe: str, data_dir: str) -> dict[str, Any]:
+    """Fix missing data for step4 using step1 and step1_5 components."""
+    try:
+        _logger.info("🔄 Fixing missing data for step4 using step1/step1_5 components...")
+        
+        # Try step1 data collection
+        step1_success = False
+        try:
+            from .step1_data_collection import run_step as run_step1
+            step1_success = await run_step1(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                data_dir=data_dir,
+                force_rerun=True
+            )
+            if step1_success:
+                _logger.info("✅ Step1 data collection completed for step4")
+            else:
+                _logger.warning("⚠️ Step1 data collection failed for step4")
+        except Exception as e:
+            _logger.warning(f"⚠️ Could not run step1 for step4: {e}")
+        
+        # Try step1_5 data conversion
+        step1_5_success = False
+        try:
+            from .step1_5_data_converter import run_step as run_step1_5
+            step1_5_success = await run_step1_5(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                data_dir=data_dir,
+                force_rerun=True
+            )
+            if step1_5_success:
+                _logger.info("✅ Step1_5 data conversion completed for step4")
+            else:
+                _logger.warning("⚠️ Step1_5 data conversion failed for step4")
+        except Exception as e:
+            _logger.warning(f"⚠️ Could not run step1_5 for step4: {e}")
+        
+        return {
+            "success": step1_success and step1_5_success,
+            "step1_success": step1_success,
+            "step1_5_success": step1_5_success
+        }
+        
+    except Exception as e:
+        _logger.exception(f"❌ Error fixing missing data for step4: {e}")
+        return {"success": False, "error": str(e)}
 
 @with_tracing_span("step4._persist_sr_levels", log_args=False)
 @handle_errors(exceptions=(Exception,), default_return=None)

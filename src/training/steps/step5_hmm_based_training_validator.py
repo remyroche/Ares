@@ -4,13 +4,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import pickle
 import time
 from pathlib import Path
-from typing import Any, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -146,15 +145,16 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
                 },
             )
 
-            # In blank mode, allow continuation when all artifact and metric checks passed
-            # Outcome favorability often depends on pipeline state flags that may be omitted
-            # in quick/blank runs; since prior validations succeeded, treat as non-blocking.
+            # In blank mode, allow continuation when all artifact and metric
+            # checks passed. Outcome favorability often depends on pipeline
+            # state flags omitted in quick/blank runs; treat as non-blocking.
             blank_mode = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
             if blank_mode:
                 self.logger.warning(
                     (
-                        "⚠️ BLANK MODE: Allowing Step 5 validation to pass despite unfavorable outcome. "
-                        "This is expected in blank runs (reduced artifacts/flags); safe to continue."
+                        "⚠️ BLANK MODE: Allowing Step 5 validation to pass despite "
+                        "unfavorable outcome. This is expected in blank runs "
+                        "(reduced artifacts/flags); safe to continue."
                     ),
                     extra={
                         "step_name": self.step_name,
@@ -165,7 +165,10 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
                         "status": status_value,
                         "blank_mode": True,
                         "expected_in_blank_mode": True,
-                        "guidance": "No action required for blank mode; run full mode for strict validation.",
+                        "guidance": (
+                            "No action required for blank mode; run full mode for"
+                            " strict validation."
+                        ),
                     },
                 )
                 return True
@@ -176,7 +179,8 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
                     "❗ Full mode validation failed for Step 5. Actions: "
                     "1) Ensure step_result.success or status=='SUCCESS'. "
                     "2) Check missing artifacts and training history/metrics files. "
-                    "3) Review accuracy/loss thresholds and any 'error' fields in step_result."
+                    "3) Review accuracy/loss thresholds and any 'error' fields in "
+                    "step_result."
                 ),
                 extra={
                     "step_name": self.step_name,
@@ -240,7 +244,9 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
                     "model_files",
                 )
                 # Track per-file validation
-                self.validation_results[f"exists::{Path(file_path).name}"] = file_metrics
+                self.validation_results[
+                    f"exists::{Path(file_path).name}"
+                ] = file_metrics
                 if not file_passed:
                     missing_files.append(file_path)
 
@@ -402,9 +408,12 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
             ):
                 train_acc = float(training_history["train_accuracy"])
                 val_acc = float(training_history["val_accuracy"])
-                if train_acc - val_acc > 0.1:  # Overfitting if train > val by > 10%
+                if train_acc - val_acc > 0.1:
                     self.logger.warning(
-                        f"⚠️ Potential HMM overfitting: train_acc={train_acc:.3f}, val_acc={val_acc:.3f}"
+                        (
+                            "⚠️ Potential HMM overfitting: "
+                            f"train_acc={train_acc:.3f}, val_acc={val_acc:.3f}"
+                        ),
                     )
 
             # Check for training time
@@ -489,7 +498,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
                         pass
 
             # Validate existence of a concrete model artifact
-            # Prefer a model pickle if present, otherwise validate cluster parquet artifact
+            # Prefer a model pickle if present, otherwise validate parquet artifact
             model_pkl = (
                 f"{data_dir}/hmm_models/{exchange}_{symbol}_hmm_model.pkl"
             )
@@ -509,7 +518,9 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
                     has_fit = callable(getattr(model, "fit", None))
 
                     if not has_predict:
-                        self.logger.error(missing("❌ HMM model missing predict method"))
+                        self.logger.error(
+                            missing("❌ HMM model missing predict method"),
+                        )
                         return False
                     if not has_fit:
                         self.logger.warning(missing("⚠️ HMM model missing fit method"))
@@ -521,7 +532,10 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
                             non_zero_features = int(np.sum(np.array(importances) > 0))
                             if non_zero_features < 5:
                                 self.logger.warning(
-                                    f"⚠️ Few non-zero HMM feature importances: {non_zero_features}",
+                                    (
+                                        "⚠️ Few non-zero HMM feature importances: "
+                                        f"{non_zero_features}"
+                                    ),
                                 )
                         except Exception:  # pragma: no cover - defensive
                             pass
@@ -529,7 +543,8 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
                     self.logger.exception(error(f"❌ Error loading HMM model: {e}"))
                     return False
             else:
-                # Fall back to validating the existence and non-emptiness of parquet artifact
+                # Fall back to validating existence and non-emptiness of
+                # parquet artifact
                 if not os.path.exists(clusters_parquet):
                     self.logger.error(
                         missing(
@@ -542,12 +557,14 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
                     if file_size <= 0:
                         self.logger.error(
                             missing(
-                                f"❌ HMM clusters artifact is empty: {clusters_parquet}",
+                                "❌ HMM clusters artifact is empty: "
+                                f"{clusters_parquet}",
                             ),
                         )
                         return False
                 except Exception:  # pragma: no cover - defensive
-                    # If file size can't be determined, still proceed as existence is validated
+                    # If file size can't be determined, proceed as existence is
+                    # validated
                     pass
 
             self.logger.info("✅ HMM model quality validation passed")
@@ -580,7 +597,8 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
             Tuple[bool, Dict[str, Any]]: (passed, metrics)
         """
         try:
-            # For loss metrics, lower is better; for accuracy-like metrics, higher is better
+            # For loss metrics, lower is better; for accuracy-like metrics,
+            # higher is better
             if is_loss:
                 passed = metric_value <= threshold
                 comparison = "≤"

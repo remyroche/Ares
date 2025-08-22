@@ -66,7 +66,7 @@ class HMMBasedTrainingStep:
         self.sr_outcome_model_trained = False
 
         # Model architecture mapping from config
-        hmm_lm_config, config.get("HMM_LM", {})
+        hmm_lm_config = config.get("HMM_LM", {})
         specialist_config = hmm_lm_config.get("specialist_models", {})
 
         self.model_architectures = {}
@@ -496,7 +496,7 @@ class HMMBasedTrainingStep:
                 for tf in timeframes:
                     try:
                         df = hmm_data.get(tf)
-                        if not isinstance(df, _pd.DataFrame) or df.empty:
+                        if not isinstance(df, pd.DataFrame) or df.empty:
                             continue
                         if "composite_cluster_id" not in df.columns:
                             continue
@@ -3981,7 +3981,7 @@ class TCNTrainer:
         self, all_features: list, feature_scores: dict, ) -> list:
         """Select features by category ensuring minimum per category."""
         try:
-        # Define feature categories
+            # Define feature categories
             feature_categories = {
                 "technical_indicators": [
                     "rsi",
@@ -4053,54 +4053,50 @@ class TCNTrainer:
                 ],
             }
 
-            selected_features = []
-            category_counts = {}
+            selected_features: list[str] = []
+            category_counts: dict[str, int] = {}
 
-        # Group features by category
-            feature_categories_groups = {}
-        for feature in all_features:
-                category, self._get_feature_category(feature, feature_categories)
-        if category not in feature_categories_groups:
+            # Group features by category
+            feature_categories_groups: dict[str, list[str]] = {}
+            for feature in all_features:
+                category = self._get_feature_category(feature, feature_categories)
+                if category not in feature_categories_groups:
                     feature_categories_groups[category] = []
                 feature_categories_groups[category].append(feature)
 
-        # Select features from each category
-        for category, features in feature_categories_groups.items():
-        if category not in category_counts:
+            # Select features from each category
+            for category, features in feature_categories_groups.items():
+                if category not in category_counts:
                     category_counts[category] = 0
 
-        # Get scores for features in this category
-                category_scores = []
-        for feature in features:
-        if feature in feature_scores:
-                        score, feature_scores[feature].get("combined_score", 0.0)
-                        category_scores.append((feature, score))
+                # Get scores for features in this category
+                category_scores: list[tuple[str, float]] = []
+                for feature in features:
+                    if feature in feature_scores:
+                        score = feature_scores[feature].get("combined_score", 0.0)
+                        category_scores.append((feature, float(score)))
 
-        # Sort by score and select top features
+                # Sort by score and select top features
                 category_scores.sort(key=lambda x: x[1], reverse=True)
 
-        # Select minimum number of features per category (15)
-                min_select, min(15, len(category_scores))
-                max_select, min(30, len(category_scores))
-
-        # Select features
-                num_to_select, max(min_select, min(max_select, len(category_scores)))
-                selected_category_features = [
-                    f[0] for f in category_scores[:num_to_select]
-                ]
+                # Select between 15 and 30 where available
+                min_select = min(15, len(category_scores))
+                max_select = min(30, len(category_scores))
+                num_to_select = max(min_select, min(max_select, len(category_scores)))
+                selected_category_features = [f for f, _ in category_scores[:num_to_select]]
 
                 selected_features.extend(selected_category_features)
                 category_counts[category] = len(selected_category_features)
 
-        self.logger.info(
+                self.logger.info(
                     f"   {category}: {len(selected_category_features)} features selected",
                 )
 
-        return selected_features
+            return selected_features
 
         except Exception as e:
-        self.logger.exception(f"❌ Error selecting features by category: {e}")
-        return all_features
+            self.logger.exception(f"❌ Error selecting features by category: {e}")
+            return all_features
 
     def _get_feature_category(self, feature: str, feature_categories: dict) -> str:
         """Determine the category of a feature based on its name."""
@@ -4117,30 +4113,28 @@ class TCNTrainer:
         self, X: pd.DataFrame, y: pd.Series, selected_features: list, max_features: int, ) -> list:
         """Final feature selection and validation."""
         try:
-        if len(selected_features) <= max_features:
-        return selected_features
+            if len(selected_features) <= max_features:
+                return selected_features
 
-        # If we have too many features, select the best ones
-            feature_scores = []
-        for feature in selected_features:
-        if feature in X.columns:
-        # Use variance as a simple score if no other scores available
-                    score, X[feature].var() if feature in X.columns else 0.0
+            # If we have too many features, select the best ones using simple variance as a proxy
+            feature_scores: list[tuple[str, float]] = []
+            for feature in selected_features:
+                if feature in X.columns:
+                    score = float(X[feature].var()) if feature in X.columns else 0.0
                     feature_scores.append((feature, score))
 
-        # Sort by score and select top features
+            # Sort by score and select top features
             feature_scores.sort(key=lambda x: x[1], reverse=True)
-        return [f[0] for f in feature_scores[:max_features]]
-
+            return [f for f, _ in feature_scores[:max_features]]
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in final selection: {e}")
-        return selected_features[:max_features]
+            self.logger.exception(f"❌ Error in final selection: {e}")
+            return selected_features[:max_features]
 
     async def _log_category_breakdown(self, final_features: list) -> None:
         """Log the breakdown of selected features by category."""
         try:
-        self.logger.info("📊 Final feature selection breakdown:")
+            self.logger.info("📊 Final feature selection breakdown:")
             category_counts = {}
 
             feature_categories = {
@@ -4214,22 +4208,23 @@ class TCNTrainer:
                 ],
             }
 
-        for feature in final_features:
+            for feature in final_features:
                 category, self._get_feature_category(feature, feature_categories)
                 category_counts[category] = category_counts.get(category, 0) + 1
 
-        for category, count in sorted(category_counts.items()):
-        self.logger.info(f"   {category}: {count} features")
+            for category, count in sorted(category_counts.items()):
+                self.logger.info(f"   {category}: {count} features")
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Error logging category breakdown: {e}")
+            self.logger.warning(f"⚠️ Error logging category breakdown: {e}")
 
 
 class TransformerTrainer:
     """Trainer for Transformer model."""
 
     def __init__(
-        self, model: nn.Module, learning_rate: float, 0.0001, batch_size: int, 32, ) -> None:,
+        self, model: nn.Module, learning_rate: float = 0.0001, batch_size: int = 32,
+    ) -> None:
         self.model = model
         self.optimizer = optim.Adam(model.parameters(), lr=learning_rate)
         self.criterion = nn.CrossEntropyLoss()
@@ -4242,59 +4237,60 @@ class TransformerTrainer:
     ) -> dict[str, list[float]]:
         """Train the Transformer model."""
         # Convert to tensors
-        X_train = torch.FloatTensor(X_train).to(self.device),
-        y_train = torch.LongTensor(y_train).to(self.device),
-        X_test = torch.FloatTensor(X_test).to(self.device),
-        y_test = torch.LongTensor(y_test).to(self.device),
+        X_train = torch.FloatTensor(X_train).to(self.device)
+        y_train = torch.LongTensor(y_train).to(self.device)
+        X_test = torch.FloatTensor(X_test).to(self.device)
+        y_test = torch.LongTensor(y_test).to(self.device)
 
         # Create data loaders
-        train_dataset, TensorDataset(X_train, y_train)
-        train_loader, DataLoader(
+        train_dataset = TensorDataset(X_train, y_train)
+        train_loader = DataLoader(
             train_dataset, batch_size=self.batch_size, shuffle=True
         )
 
-        history = {"train_loss": [], "test_loss": [], "train_acc": [], "test_acc": []},
+        history = {"train_loss": [], "test_loss": [], "train_acc": [], "test_acc": []}
 
         for epoch in range(epochs):
-        # Training
-        self.model.train()
-            train_loss = 0,
-            train_correct = 0,
-            train_total = 0,
+            # Training
+            self.model.train()
+            train_loss = 0.0
+            train_correct = 0
+            train_total = 0
 
-        for batch_X, batch_y in train_loader:
-        self.optimizer.zero_grad()
-                outputs = self.model(batch_X),
-                loss, self.criterion(outputs, batch_y)
+            for batch_X, batch_y in train_loader:
+                self.optimizer.zero_grad()
+                outputs = self.model(batch_X)
+                loss = self.criterion(outputs, batch_y)
                 loss.backward()
-        self.optimizer.step()
+                self.optimizer.step()
 
                 train_loss += loss.item()
-                _, predicted, torch.max(outputs.data, 1)
+                _, predicted = torch.max(outputs.data, 1)
                 train_total += batch_y.size(0)
-                train_correct += (predicted == batch_y).sum().item()
+                train_correct += int((predicted == batch_y).sum().item())
 
-        # Evaluation
-        self.model.eval()
-        with torch.no_grad():
-                test_outputs = self.model(X_test),
-                test_loss, self.criterion(test_outputs, y_test).item()
-                _, test_predicted, torch.max(test_outputs.data, 1)
-                test_correct = (test_predicted == y_test).sum().item(),
-                test_total = y_test.size(0),
+            # Evaluation
+            self.model.eval()
+            with torch.no_grad():
+                test_outputs = self.model(X_test)
+                test_loss = float(self.criterion(test_outputs, y_test).item())
+                _, predicted = torch.max(test_outputs.data, 1)
+                test_correct = (predicted == y_test).sum().item()
+                test_total = y_test.size(0)
 
-        # Record metrics
-            train_loss_avg = train_loss / len(train_loader),
-            train_acc = train_correct / train_total,
-            test_acc = test_correct / test_total,
+            # Record metrics
+            train_loss_avg = train_loss / len(train_loader)
+            train_acc = train_correct / train_total
+            test_acc = test_correct / test_total
 
             history["train_loss"].append(train_loss_avg)
             history["test_loss"].append(test_loss)
             history["train_acc"].append(train_acc)
             history["test_acc"].append(test_acc)
 
-        if epoch % 30 == 0:
-    pass  # TODO: Add proper implementation
+            if epoch % 30 == 0:
+                pass  # TODO: Add proper implementation
+
         return history
 
     async def _train_sr_outcome_model(
@@ -4303,39 +4299,39 @@ class TransformerTrainer:
         Trains specifically on data near S/R levels using the pruning logic from step5.
         """
         try:
-        self.logger.info("🔄 Training S/R outcome model...")
+            self.logger.info("🔄 Training S/R outcome model...")
 
-        # Initialize S/R outcome trainer if not already done
-        if self.sr_outcome_trainer is None:
+            # Initialize S/R outcome trainer if not already done
+            if self.sr_outcome_trainer is None:
                 from src.training.steps.sr_outcome_model_trainer import (
                     SROutcomeModelTrainer,
                 )
 
-        self.sr_outcome_trainer = SROutcomeModelTrainer(self.config)
-        await self.sr_outcome_trainer.initialize()
+            self.sr_outcome_trainer = SROutcomeModelTrainer(self.config)
+            await self.sr_outcome_trainer.initialize()
 
-        # Prepare S/R-specific training data
-            sr_training_data = await self._prepare_sr_training_data(training_data),
-        if not sr_training_data:
-        self.logger.warning("No S/R training data available")
-        return False
+            # Prepare S/R-specific training data
+            sr_training_data = await self._prepare_sr_training_data(training_data)
+            if not sr_training_data:
+                self.logger.warning("No S/R training data available")
+                return False
 
-        # Train the S/R outcome model
+            # Train the S/R outcome model
             training_success, await self.sr_outcome_trainer.train_model(
                 sr_training_data,
             )
 
-        if training_success:
-        self.sr_outcome_model_trained = True
-        self.logger.info("✅ S/R outcome model training completed successfully")
+            if training_success:
+                self.sr_outcome_model_trained = True
+                self.logger.info("✅ S/R outcome model training completed successfully")
             else:
-        self.logger.error("❌ S/R outcome model training failed")
+                self.logger.error("❌ S/R outcome model training failed")
 
-        return training_success
+            return training_success
 
         except Exception as e:
-        self.logger.exception(f"Error training S/R outcome model: {e}")
-        return False
+            self.logger.exception(f"Error training S/R outcome model: {e}")
+            return False
 
     async def _prepare_sr_training_data(
         self, training_data: dict[str, pd.DataFrame], ) -> dict[str, pd.DataFrame] | None:
@@ -4343,50 +4339,50 @@ class TransformerTrainer:
         Uses all available features from step4 and filters for data near S/R levels.
         """
         try:
-        self.logger.info("🔄 Preparing S/R-specific training data...")
+            self.logger.info("🔄 Preparing S/R-specific training data...")
 
             sr_training_data = {}
 
-        for timeframe, data in training_data.items():
-        if data.empty:
+            for timeframe, data in training_data.items():
+                if data.empty:
                     continue
 
-        self.logger.info(
+                self.logger.info(
                     f"Processing {timeframe} data for S/R training: {len(data)} samples",
                 )
 
-        # Get all available features from step4 (comprehensive feature set)
-                all_features, self._get_all_available_features(data, timeframe)
+                # Get all available features from step4 (comprehensive feature set)
+                all_features = self._get_all_available_features(data, timeframe)
 
-        # Filter for data near S/R levels
+                # Filter for data near S/R levels
                 sr_filtered_data, await self._filter_sr_proximity_data(
                     all_features = timeframe,
                 )
 
-        if not sr_filtered_data.empty:
+                if not sr_filtered_data.empty:
                     sr_training_data[timeframe] = sr_filtered_data
-        self.logger.info(
+                    self.logger.info(
                         f"✅ {timeframe}: {len(sr_filtered_data)} S/R samples",
                     )
                 else:
-        self.logger.warning(f"⚠️ {timeframe}: No S/R proximity data found")
+                    self.logger.warning(f"⚠️ {timeframe}: No S/R proximity data found")
 
-        if not sr_training_data:
-        self.logger.warning(
+            if not sr_training_data:
+                self.logger.warning(
                     "No S/R training data available across all timeframes",
                 )
-        return None
+                return None
 
             total_samples = sum(len(data) for data in sr_training_data.values())
-        self.logger.info(
+            self.logger.info(
                 f"✅ Prepared S/R training data: {total_samples} total samples",
             )
 
-        return sr_training_data
+            return sr_training_data
 
         except Exception as e:
-        self.logger.exception(f"Error preparing S/R training data: {e}")
-        return None
+            self.logger.exception(f"Error preparing S/R training data: {e}")
+            return None
 
     def _get_all_available_features(
         self, data: pd.DataFrame, timeframe: str, ) -> pd.DataFrame:
@@ -4394,85 +4390,84 @@ class TransformerTrainer:
         Uses the same feature engineering logic as the main HMM training.
         """
         try:
-        # Start with base data
+            # Start with base data
             features_df = data.copy()
 
-        # Add all HMM-derived features (from step4)
-        if hasattr(self, "hmm_features"):
-        # Ensure HMM features are present
-        for feature in self.hmm_features:
-        if feature not in features_df.columns:
+            # Add all HMM-derived features (from step4)
+            if hasattr(self, "hmm_features"):
+                # Ensure HMM features are present
+                for feature in self.hmm_features:
+                    if feature not in features_df.columns:
                         features_df[feature] = 0.0  # Default value if missing
 
-        # Add all technical indicators and market features
-        if hasattr(self, "all_features"):
-        # Ensure all features are present
-        for feature in self.all_features:
-        if feature not in features_df.columns:
+            # Add all technical indicators and market features
+            if hasattr(self, "all_features"):
+                # Ensure all features are present
+                for feature in self.all_features:
+                    if feature not in features_df.columns:
                         features_df[feature] = 0.0  # Default value if missing
 
-        # Add timeframe-specific features
+            # Add timeframe-specific features
             features_df["timeframe"] = timeframe
 
-        # Add price-based features
+            # Add price-based features
             features_df["price_change_1m"] = features_df["close"].pct_change()
             features_df["price_change_5m"] = features_df["close"].pct_change(5)
             features_df["price_change_15m"] = features_df["close"].pct_change(15)
             features_df["price_volatility"] = features_df["close"].rolling(20).std()
 
-        # Add volume-based features
+            # Add volume-based features
             features_df["volume_ratio"] = (
                 features_df["volume"] / features_df["volume"].rolling(20).mean()
             )
             features_df["volume_momentum"] = features_df["volume"].pct_change()
             features_df["volume_volatility"] = features_df["volume"].rolling(10).std()
 
-        # Add technical indicators
+            # Add technical indicators
             features_df["rsi"] = self._calculate_rsi(features_df["close"])
             features_df["macd"] = self._calculate_macd(features_df["close"])
             features_df["bb_position"] = self._calculate_bb_position(
                 features_df["close"],
             )
 
-        # Add market context features
+            # Add market context features
             features_df["market_trend"] = self._calculate_market_trend(features_df)
             features_df["momentum_strength"] = self._calculate_momentum_strength(
                 features_df,
             )
 
-        # Fill NaN values
-        return features_df.fillna(method="ffill").fillna(0)
-
+            # Fill NaN values
+            return features_df.fillna(method="ffill").fillna(0)
 
         except Exception as e:
-        self.logger.exception(f"Error getting all available features: {e}")
-        return data
+            self.logger.exception(f"Error getting all available features: {e}")
+            return data
 
     async def _filter_sr_proximity_data(
         self, data: pd.DataFrame, timeframe: str, ) -> pd.DataFrame:
         """Filter data for samples near S/R levels using the SRBreakoutPredictor."""
         try:
-        if data.empty:
-        return pd.DataFrame()
+            if data.empty:
+                return pd.DataFrame()
 
-        # Sample data for efficiency (process every 5th row for large datasets)
-            sample_interval, max(
+            # Sample data for efficiency (process every 5th row for large datasets)
+            sample_interval = max(
                 1, len(data) // 2000,
             )  # Sample up to 2000 points per timeframe
             sample_data = data.iloc[::sample_interval].copy()
 
             sr_proximity_samples = []
 
-        for idx, row in sample_data.iterrows():
-        try:
+            for idx, row in sample_data.iterrows():
+                try:
                     current_price = row["close"]
 
-        # Create market data slice for S/R analysis
+                    # Create market data slice for S/R analysis
                     market_slice = data.loc[:idx].tail(100)
-        if len(market_slice) < 20:
+                    if len(market_slice) < 20:
                         continue
 
-        # Get S/R context and check proximity
+                    # Get S/R context and check proximity
                     sr_context, await self.sr_predictor.get_sr_context(
                         market_slice = current_price,
                     )
@@ -4480,11 +4475,11 @@ class TransformerTrainer:
                         current_price = sr_context,
                     )
 
-        if is_near_sr:
-        # Add S/R context features to the sample
+                    if is_near_sr:
+                        # Add S/R context features to the sample
                         sample = row.copy()
 
-        # Add S/R-specific features
+                        # Add S/R-specific features
                         nearest_support, sr_context.get(
                             "nearest_support", current_price,
                         )
@@ -4509,44 +4504,43 @@ class TransformerTrainer:
 
                         sr_proximity_samples.append(sample)
 
-        except Exception as e:
-        self.logger.debug(f"Error processing S/R sample {idx}: {e}")
+                except Exception as e:
+                    self.logger.debug(f"Error processing S/R sample {idx}: {e}")
                     continue
 
-        if not sr_proximity_samples:
-        return pd.DataFrame()
+            if not sr_proximity_samples:
+                return pd.DataFrame()
 
-        # Convert to DataFrame
+            # Convert to DataFrame
             sr_filtered_df = pd.DataFrame(sr_proximity_samples)
 
-        # Apply feature pruning logic from step5 (remove redundant/irrelevant features)
-        return self._apply_feature_pruning(sr_filtered_df)
-
+            # Apply feature pruning logic from step5 (remove redundant/irrelevant features)
+            return self._apply_feature_pruning(sr_filtered_df)
 
         except Exception as e:
-        self.logger.exception(f"Error filtering S/R proximity data: {e}")
-        return pd.DataFrame()
+            self.logger.exception(f"Error filtering S/R proximity data: {e}")
+            return pd.DataFrame()
 
     def _apply_feature_pruning(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply feature pruning logic from step5 to remove redundant/irrelevant features."""
         try:
-        # Remove highly correlated features (VIF filtering)
-        # This uses the same logic as in step5_hmm_based_training.py
+            # Remove highly correlated features (VIF filtering)
+            # This uses the same logic as in step5_hmm_based_training.py
 
-        # Remove features with too many NaN values
+            # Remove features with too many NaN values
             nan_threshold = 0.5,
             nan_counts = data.isnull().sum() / len(data),
             data = data.loc[:, nan_counts < nan_threshold],
 
-        # Remove constant features
+            # Remove constant features
             constant_features = []
-        for col in data.columns:
-        if data[col].nunique() <= 1:
+            for col in data.columns:
+                if data[col].nunique() <= 1:
                     constant_features.append(col)
             data, data.drop(columns=constant_features)
 
-        # Remove highly correlated features (simplified version)
-        # In practice, this would use VIF analysis from step5
+            # Remove highly correlated features (simplified version)
+            # In practice, this would use VIF analysis from step5
             correlation_threshold = 0.95,
             corr_matrix = data.corr().abs(),
             upper_tri, corr_matrix.where(
@@ -4554,20 +4548,20 @@ class TransformerTrainer:
             )
             high_corr_features = [
                 column
-        for column in upper_tri.columns
-        if any(upper_tri[column] > correlation_threshold)
+                for column in upper_tri.columns
+                if any(upper_tri[column] > correlation_threshold)
             ]
             data, data.drop(columns=high_corr_features)
 
-        self.logger.info(
+            self.logger.info(
                 f"Feature pruning: removed {len(constant_features) + len(high_corr_features)} redundant features",
             )
 
-        return data
+            return data
 
         except Exception as e:
-        self.logger.exception(f"Error applying feature pruning: {e}")
-        return data
+            self.logger.exception(f"Error applying feature pruning: {e}")
+            return data
 
     async def run_step(
         self, symbol: str = "ETHUSDT", data_dir: str = "data/training", method_a_mixture_of_experts: dict | None = None
@@ -4586,7 +4580,7 @@ class TransformerTrainer:
         try:
             from src.utils.logger import system_logger
 
-        # Create configuration
+            # Create configuration
             config = {
                 "symbol": symbol,
                 "data_dir": data_dir,
@@ -4595,9 +4589,9 @@ class TransformerTrainer:
                 "method_a_mixture_of_experts": method_a_mixture_of_experts or {},
             }
 
-        # Create and run the training step
-            training_step = HMMBasedTrainingStep(config),
-        await training_step.initialize()
+            # Create and run the training step
+            training_step = HMMBasedTrainingStep(config)
+            await training_step.initialize()
 
             training_input = {
                 "symbol": symbol,
@@ -4610,17 +4604,17 @@ class TransformerTrainer:
 
             result, await training_step.execute(training_input, pipeline_state)
 
-        if result.get("status") == "SUCCESS":
+            if result.get("status") == "SUCCESS":
                 system_logger.info("✅ HMM-based training step completed successfully")
-        return True
+            return True
             system_logger.error(
                 f"❌ HMM-based training step failed: {result.get('error', 'Unknown error')}",
             )
-        return False
+            return False
 
         except Exception as e:
             system_logger.error(f"❌ Error in HMM-based training step: {e}")
-        return False
+            return False
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting

@@ -20,6 +20,18 @@ except ImportError:
     # Fallback if constants module is not available
     DEFAULT_LOOKBACK_DAYS = 1095
 
+# Import comprehensive file validation
+try:
+    from src.utils.comprehensive_file_validation import (
+        ComprehensiveFileValidator,
+        validate_step1_file,
+        FileValidationResult
+    )
+except ImportError:
+    ComprehensiveFileValidator = None
+    validate_step1_file = None
+    FileValidationResult = None
+
 # Handle imports with fallback - this must be done before any other imports
 CONFIG = None
 handle_errors = None
@@ -227,6 +239,67 @@ class DataCollectionStep:
         # Add fallback implementation here if needed
         return True
 
+    async def _run_comprehensive_validation(
+        self, 
+        symbol: str, 
+        exchange: str, 
+        timeframe: str, 
+        data_dir: str, 
+        logger: Any
+    ) -> bool:
+        """Run comprehensive file format validation for step 1."""
+        try:
+            if not validate_step1_file:
+                logger.warning("Comprehensive file validation not available")
+                return True
+            
+            # Define expected files for step 1
+            expected_files = [
+                f"{data_dir}/klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet",
+                f"{data_dir}/aggtrades_{exchange}_{symbol}_consolidated.parquet",
+            ]
+            
+            validation_results = []
+            all_valid = True
+            
+            for file_path in expected_files:
+                if Path(file_path).exists():
+                    logger.info(f"🔍 Validating file: {file_path}")
+                    
+                    # Validate file format
+                    validation_result = validate_step1_file(file_path)
+                    validation_results.append(validation_result)
+                    
+                    if validation_result.is_valid:
+                        logger.info(f"✅ File validation passed: {file_path}")
+                        logger.info(f"   📊 Shape: {validation_result.summary.get('shape', 'N/A')}")
+                        logger.info(f"   📁 File type: {validation_result.file_type}")
+                        logger.info(f"   🗂️ Columns: {validation_result.summary.get('column_count', 'N/A')}")
+                    else:
+                        logger.warning(f"⚠️ File validation issues found: {file_path}")
+                        all_valid = False
+                        
+                        # Log detailed issues
+                        for issue in validation_result.issues:
+                            logger.warning(f"   - {issue.severity.value.upper()}: {issue.description}")
+                            if issue.details:
+                                logger.warning(f"     Details: {issue.details}")
+                else:
+                    logger.warning(f"⚠️ Expected file not found: {file_path}")
+                    all_valid = False
+            
+            # Log validation summary
+            if validation_results:
+                total_files = len(validation_results)
+                valid_files = sum(1 for r in validation_results if r.is_valid)
+                logger.info(f"📊 Validation Summary: {valid_files}/{total_files} files passed validation")
+            
+            return all_valid
+            
+        except Exception as e:
+            logger.exception(f"❌ Error during comprehensive validation: {e}")
+            return False
+
 
 @handle_errors(
     exceptions=(Exception,),
@@ -328,7 +401,21 @@ async def run_step(symbol: str, exchange: str, timeframe: str = "1m", data_dir: 
 
         if result.get("data_collection_completed", False):
             logger.info("✅ Step 1: Data Collection completed successfully")
-            return True
+            
+            # Run comprehensive file format validation
+            if validate_step1_file:
+                logger.info("🔍 Running comprehensive file format validation...")
+                validation_success = await step._run_comprehensive_validation(symbol, exchange, timeframe, data_dir, logger)
+                
+                if validation_success:
+                    logger.info("✅ Comprehensive file format validation passed")
+                    return True
+                else:
+                    logger.warning("⚠️ Comprehensive file format validation found issues")
+                    return True  # Still return True as data collection succeeded
+            else:
+                logger.info("⚠️ Comprehensive file validation not available, skipping validation")
+                return True
         else:
             logger.error("❌ Step 1: Data Collection failed")
         return False

@@ -39,6 +39,18 @@ from src.utils.centralized_decorators import (
     with_tracing_span,
     comprehensive_data_validation,
 )
+
+# Import comprehensive file validation
+try:
+    from src.utils.comprehensive_file_validation import (
+        ComprehensiveFileValidator,
+        validate_step4_file,
+        FileValidationResult
+    )
+except ImportError:
+    ComprehensiveFileValidator = None
+    validate_step4_file = None
+    FileValidationResult = None
 from src.utils.logger import system_logger as _logger
 
 
@@ -506,10 +518,83 @@ async def run_step(
         except Exception as e:
             _logger.warning(f"⚠️ Label reliability persistence skipped: {e}")
 
+        # Run comprehensive file format validation
+        if validate_step4_file:
+            _logger.info("🔍 Running comprehensive file format validation...")
+            validation_success = await _run_comprehensive_validation(symbol, actual_exchange, data_dir, _logger)
+            
+            if validation_success:
+                _logger.info("✅ Comprehensive file format validation passed")
+            else:
+                _logger.warning("⚠️ Comprehensive file format validation found issues")
+        else:
+            _logger.info("⚠️ Comprehensive file validation not available, skipping validation")
+
         return True
 
     except Exception as e:
         _logger.exception(f"🚨 Step 4 processing/labeling/FE failed: {e}")
+        return False
+
+
+async def _run_comprehensive_validation(
+    symbol: str, 
+    exchange: str, 
+    data_dir: str, 
+    logger: Any
+) -> bool:
+    """Run comprehensive file format validation for step 4."""
+    try:
+        if not validate_step4_file:
+            logger.warning("Comprehensive file validation not available")
+            return True
+        
+        # Define expected files for step 4
+        expected_files = [
+            f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet",
+            f"{data_dir}/{exchange}_{symbol}_labeled_validation.parquet",
+            f"{data_dir}/{exchange}_{symbol}_labeled_test.parquet",
+        ]
+        
+        validation_results = []
+        all_valid = True
+        
+        for file_path in expected_files:
+            if Path(file_path).exists():
+                logger.info(f"🔍 Validating file: {file_path}")
+                
+                # Validate file format
+                validation_result = validate_step4_file(file_path)
+                validation_results.append(validation_result)
+                
+                if validation_result.is_valid:
+                    logger.info(f"✅ File validation passed: {file_path}")
+                    logger.info(f"   📊 Shape: {validation_result.summary.get('shape', 'N/A')}")
+                    logger.info(f"   📁 File type: {validation_result.file_type}")
+                    logger.info(f"   🗂️ Columns: {validation_result.summary.get('column_count', 'N/A')}")
+                else:
+                    logger.warning(f"⚠️ File validation issues found: {file_path}")
+                    all_valid = False
+                    
+                    # Log detailed issues
+                    for issue in validation_result.issues:
+                        logger.warning(f"   - {issue.severity.value.upper()}: {issue.description}")
+                        if issue.details:
+                            logger.warning(f"     Details: {issue.details}")
+            else:
+                logger.warning(f"⚠️ Expected file not found: {file_path}")
+                all_valid = False
+        
+        # Log validation summary
+        if validation_results:
+            total_files = len(validation_results)
+            valid_files = sum(1 for r in validation_results if r.is_valid)
+            logger.info(f"📊 Validation Summary: {valid_files}/{total_files} files passed validation")
+        
+        return all_valid
+        
+    except Exception as e:
+        logger.exception(f"❌ Error during comprehensive validation: {e}")
         return False
 
 

@@ -78,6 +78,18 @@ except ImportError:
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# Import comprehensive file validation
+try:
+    from src.utils.comprehensive_file_validation import (
+        ComprehensiveFileValidator,
+        validate_step1_5_file,
+        FileValidationResult
+    )
+except ImportError:
+    ComprehensiveFileValidator = None
+    validate_step1_5_file = None
+    FileValidationResult = None
+
 # Handle imports with fallback
 CONFIG = None
 system_logger = None
@@ -2529,27 +2541,99 @@ async def run_step(symbol: str, exchange: str, timeframe: str = "1m", data_dir: 
         await converter.initialize()
 
         # Execute conversion
-        success, await converter.execute(
-            symbol=symbol
-            exchange=exchange
-            timeframe=timeframe
-            data_dir=data_dir
+        success = await converter.execute(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+            data_dir=data_dir,
             force_rerun=force_rerun
         )
 
         if success:
-        # Log success information
-            unified_path, converter.get_unified_data_path(symbol, exchange, timeframe)
-            config_path, converter.get_unified_config_path(symbol, exchange, timeframe)
+            # Log success information
+            unified_path = converter.get_unified_data_path(symbol, exchange, timeframe)
+            config_path = converter.get_unified_config_path(symbol, exchange, timeframe)
 
             system_logger.info("✅ Step 1.5 completed successfully")
             system_logger.info(f"📁 Unified dataset: {unified_path}")
             system_logger.info(f"📁 Configuration: {config_path}")
+            
+            # Run comprehensive file format validation
+            if validate_step1_5_file:
+                system_logger.info("🔍 Running comprehensive file format validation...")
+                validation_success = await _run_comprehensive_validation(symbol, exchange, timeframe, data_dir)
+                
+                if validation_success:
+                    system_logger.info("✅ Comprehensive file format validation passed")
+                else:
+                    system_logger.warning("⚠️ Comprehensive file format validation found issues")
+            else:
+                system_logger.info("⚠️ Comprehensive file validation not available, skipping validation")
 
         return success
 
     except Exception as e:
         system_logger.exception(f"❌ Step 1.5 failed: {e}")
+        return False
+
+
+async def _run_comprehensive_validation(
+    symbol: str, 
+    exchange: str, 
+    timeframe: str, 
+    data_dir: str
+) -> bool:
+    """Run comprehensive file format validation for step 1.5."""
+    try:
+        if not validate_step1_5_file:
+            system_logger.warning("Comprehensive file validation not available")
+            return True
+        
+        # Define expected files for step 1.5
+        expected_files = [
+            f"{data_dir}/unified_{exchange}_{symbol}_{timeframe}.parquet",
+            f"{data_dir}/unified_{exchange}_{symbol}_{timeframe}_config.json",
+        ]
+        
+        validation_results = []
+        all_valid = True
+        
+        for file_path in expected_files:
+            if Path(file_path).exists():
+                system_logger.info(f"🔍 Validating file: {file_path}")
+                
+                # Validate file format
+                validation_result = validate_step1_5_file(file_path)
+                validation_results.append(validation_result)
+                
+                if validation_result.is_valid:
+                    system_logger.info(f"✅ File validation passed: {file_path}")
+                    system_logger.info(f"   📊 Shape: {validation_result.summary.get('shape', 'N/A')}")
+                    system_logger.info(f"   📁 File type: {validation_result.file_type}")
+                    system_logger.info(f"   🗂️ Columns: {validation_result.summary.get('column_count', 'N/A')}")
+                else:
+                    system_logger.warning(f"⚠️ File validation issues found: {file_path}")
+                    all_valid = False
+                    
+                    # Log detailed issues
+                    for issue in validation_result.issues:
+                        system_logger.warning(f"   - {issue.severity.value.upper()}: {issue.description}")
+                        if issue.details:
+                            system_logger.warning(f"     Details: {issue.details}")
+            else:
+                system_logger.warning(f"⚠️ Expected file not found: {file_path}")
+                all_valid = False
+        
+        # Log validation summary
+        if validation_results:
+            total_files = len(validation_results)
+            valid_files = sum(1 for r in validation_results if r.is_valid)
+            system_logger.info(f"📊 Validation Summary: {valid_files}/{total_files} files passed validation")
+        
+        return all_valid
+        
+    except Exception as e:
+        system_logger.exception(f"❌ Error during comprehensive validation: {e}")
         return False
 
 
@@ -2563,24 +2647,25 @@ if __name__ == "__main__":
             symbol = sys.argv[1]
             exchange = sys.argv[2]
             timeframe = sys.argv[3]
-            data_dir, sys.argv[4] if len(sys.argv) > 4 else "data_cache"
-            force_rerun, len(sys.argv) > 5 and sys.argv[5].lower() == "true"
+            data_dir = sys.argv[4] if len(sys.argv) > 4 else "data_cache"
+            force_rerun = len(sys.argv) > 5 and sys.argv[5].lower() == "true"
         else:
+            print("Usage: python step1_5_data_converter.py <symbol> <exchange> <timeframe> [data_dir] [force_rerun]")
+            print("Example: python step1_5_data_converter.py ETHUSDT BINANCE 1m data_cache true")
             return
 
-
-        success, await run_step(
-            symbol=symbol
-            exchange=exchange
-            timeframe=timeframe
-            data_dir=data_dir
+        success = await run_step(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+            data_dir=data_dir,
             force_rerun=force_rerun
         )
 
         if success:
-            pass
+            print("✅ Step 1.5: Data Converter completed successfully")
         else:
-            pass
+            print("❌ Step 1.5: Data Converter failed")
 
         # Clean up memory to prevent segmentation fault
         import gc

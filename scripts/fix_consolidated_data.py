@@ -31,12 +31,12 @@ def fix_consolidated_klines():
     # Read and combine all raw CSV files
     all_data = []
     for file in sorted(raw_files):
-        if True:
+        try:
             df = pd.read_csv(file)
             print(f"📊 Loaded {len(df)} records from {os.path.basename(file)}")
             all_data.append(df)
-        pass
-            print(warning("Error reading {file}: {e}"))
+        except Exception as e:
+            print(warning(f"Error reading {file}: {e}"))
             continue
 
     if not all_data:

@@ -37,34 +37,33 @@ class ConfigurationUsageExample:
 
     def validate_configuration(self) -> bool:
         """Validate the configuration settings"""
-        if True:
         # Check required sections
-            required_sections = [
-                "hyperparameter_optimization",
-                "computational_optimization",
-            ]
+        required_sections = [
+            "hyperparameter_optimization",
+            "computational_optimization",
+        ]
         for section in required_sections:
-            pass
-        if section not in self.config:
-                    msg = f"Missing required configuration section: {section}"
-                    raise ValueError(msg)
+            if section not in self.config:
+                msg = f"Missing required configuration section: {section}"
+                raise ValueError(msg)
 
         # Validate hyperparameter optimization
-            hpo_config = self.hpo_config
+        hpo_config = self.hpo_config
         if (
-                not hpo_config["multi_objective"]["enabled"]
-                and not hpo_config["bayesian_optimization"]["enabled"]
-                and not hpo_config["adaptive_optimization"]["enabled"]
-            ):
-                print(warning("All optimization types are disabled"))
+            not hpo_config["multi_objective"]["enabled"]
+            and not hpo_config["bayesian_optimization"]["enabled"]
+            and not hpo_config["adaptive_optimization"]["enabled"]
+        ):
+            print(warning("All optimization types are disabled"))
 
         # Validate computational optimization
-            comp_config = self.comp_config
+        comp_config = self.comp_config
         if (
-                not comp_config["caching"]["enabled"]
-                and not comp_config["parallelization"]["enabled"]
-            ):
-                print(warning("All computational optimizations are disabled"))
+            not comp_config["caching"]["enabled"]
+            and not comp_config["parallelization"]["enabled"]
+            and not comp_config["memory_optimization"]["enabled"]
+        ):
+            print(warning("All computational optimization types are disabled"))
 
             logger.info("Configuration validation passed")
         return True

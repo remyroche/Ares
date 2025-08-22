@@ -547,7 +547,7 @@ class PriceActionAnalyzer:
 
         return optimal_params
 
-    def generate_recommendations(self, optimal_params: dict, display_df: pd.DataFrame, None) -> dict:
+    def generate_recommendations(self, optimal_params: dict, display_df: pd.DataFrame) -> dict:
         """
         Generate trading recommendations based on analysis results.
 
@@ -612,7 +612,7 @@ class PriceActionAnalyzer:
 
         return recommendations
 
-    def save_results(self, display_df: pd.DataFrame, score_df: pd.DataFrame, optimal_params: dict, recommendations: dict, df_resampled: pd.DataFrame, None) -> None:
+    def save_results(self, display_df: pd.DataFrame, score_df: pd.DataFrame, optimal_params: dict, recommendations: dict, df_resampled: pd.DataFrame) -> None:
         """
         Save analysis results to CSV files with enhanced logging.
 

@@ -33,7 +33,7 @@ def detect_price_corruption(df: pd.DataFrame) -> bool:
     median_price = df["close"].median()
     return bool(median_price < 100 or median_price > 10000)
 
-def fix_corrupted_prices(df: pd.DataFrame, target_median: float, 3000.0) -> pd.DataFrame:
+def fix_corrupted_prices(df: pd.DataFrame, target_median: float = 3000.0) -> pd.DataFrame:
     """Fix corrupted prices by scaling them to a reasonable range."""
     if df.empty:
         return df
@@ -63,15 +63,14 @@ def fix_corrupted_prices(df: pd.DataFrame, target_median: float, 3000.0) -> pd.D
 
     return df
 
-def create_pickle_from_csv(csv_path: str, output_path: str, lookback_days: int, 730) -> bool:
+def create_pickle_from_csv(csv_path: str, output_path: str, lookback_days: int = 730) -> bool:
     """Create a pickle file from a consolidated CSV file."""
-    if True:
-        print(f"\nProcessing: {csv_path}")
+    print(f"\nProcessing: {csv_path}")
 
-        # Load CSV file
-        df = pd.read_csv(csv_path)
-        print(f"  Loaded {len(df)} rows")
-        print(f"  Columns: {list(df.columns)}")
+    # Load CSV file
+    df = pd.read_csv(csv_path)
+    print(f"  Loaded {len(df)} rows")
+    print(f"  Columns: {list(df.columns)}")
 
         # Check if we have timestamp column
         if "timestamp" in df.columns:

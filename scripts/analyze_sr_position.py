@@ -251,82 +251,22 @@ class SRPositionAnalyzer:
 
 async def load_price_data(symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
     """Load price data for analysis."""
-    if True:
-        pass
-    pass
-pass
-    pass
-    pass
-pass
-    pass
-    pass
-pass
-    pass
-        # Try multiple data formats and locations
-        possible_paths = [
-            Path(f"data/{exchange.lower()}/{symbol.lower()}_{timeframe}.parquet"),
-            Path(f"data/{symbol}_{timeframe}.csv"),
-            Path(f"data/{symbol}_{timeframe}.parquet"),
-            Path(f"data/{exchange}_{symbol}_labeled_regimes.csv"),
-        ]
+    # Try multiple data formats and locations
+    possible_paths = [
+        Path(f"data/{exchange.lower()}/{symbol.lower()}_{timeframe}.parquet"),
+        Path(f"data/{symbol}_{timeframe}.csv"),
+        Path(f"data/{symbol}_{timeframe}.parquet"),
+        Path(f"data/{exchange}_{symbol}_labeled_regimes.csv"),
+    ]
 
-        for data_path in possible_paths:
-            pass
-        if data_path.exists():
-            pass
-        if data_path.suffix == ".parquet":
-                    price_data = pd.read_parquet(data_path)
-                elif data_path.suffix == ".csv":
-                    price_data = pd.read_csv(data_path)
-        # Try to set timestamp as index if it exists
-        if "timestamp" in price_data.columns:
-                        price_data["timestamp"] = pd.to_datetime(
-                            price_data["timestamp"]
-                        )
-                        price_data = price_data.set_index("timestamp")
-                    elif "time" in price_data.columns:
-                        price_data["time"] = pd.to_datetime(price_data["time"])
-                        price_data = price_data.set_index("time")
-                    elif "date" in price_data.columns:
-                        price_data["date"] = pd.to_datetime(price_data["date"])
-                        price_data = price_data.set_index("date")
-                    elif "open_time" in price_data.columns:
-                        price_data["open_time"] = pd.to_datetime(
-                            price_data["open_time"]
-                        )
-                        price_data = price_data.set_index("open_time")
-                    else:
-                        pass
-        # If no timestamp column, create one from the first column that looks like a date
-        for col in price_data.columns:
-            pass
-        if True:
-            pass
-    pass
-pass
-    pass
-    pass
-pass
-    pass
-    pass
-pass
-    pass
-                                pd.to_datetime(price_data[col].iloc[0])
-                                price_data[col] = pd.to_datetime(price_data[col])
-                                price_data = price_data.set_index(col)
-                                pass
-        pass
-                                continue
+    for path in possible_paths:
+        if path.exists():
+            if path.suffix == ".csv":
+                return pd.read_csv(path)
+            if path.suffix == ".parquet":
+                return pd.read_parquet(path)
 
-                system_logger.info(f"✅ Loaded price data from {data_path}")
-        return price_data
-
-        system_logger.warning(f"⚠️ No price data found in any of the expected locations")
-        return None
-
-    pass
-        system_logger.exception(f"❌ Error loading price data: {e}")
-        return None
+    return None
 
 
 async def main():
@@ -345,69 +285,55 @@ async def main():
 
     args = parser.parse_args()
 
-    if True:
-        pass
-    pass
-pass
-    pass
-    pass
-pass
-    pass
-    pass
-pass
-    pass
-        system_logger.info(
-            f"🚀 Starting SR Position Analysis for {args.symbol} on {args.exchange}"
-        )
+    system_logger.info(
+        f"🚀 Starting SR Position Analysis for {args.symbol} on {args.exchange}"
+    )
 
-        # Load price data
-        price_data = await load_price_data(args.symbol, args.exchange, args.timeframe)
-        if price_data is None:
-            system_logger.error("❌ Failed to load price data")
-            return
+    # Load price data
+    price_data = await load_price_data(args.symbol, args.exchange, args.timeframe)
+    if price_data is None:
+        system_logger.error("❌ Failed to load price data")
+        return
 
-        # Initialize analyzer
-        config = {
-            "symbol": args.symbol, "exchange": args.exchange,
-            "timeframe": args.timeframe
-        }
+    # Initialize analyzer
+    config = {
+        "symbol": args.symbol, "exchange": args.exchange,
+        "timeframe": args.timeframe
+    }
 
-        analyzer = SRPositionAnalyzer(config)
-        if not await analyzer.initialize():
-            system_logger.error("❌ Failed to initialize analyzer")
-            return
+    analyzer = SRPositionAnalyzer(config)
+    if not await analyzer.initialize():
+        system_logger.error("❌ Failed to initialize analyzer")
+        return
 
-        # Generate SR levels
-        sr_levels = analyzer.feature_engine._generate_sr_levels(price_data)
-        if not sr_levels:
-            system_logger.error("❌ Failed to generate SR levels")
-            return
+    # Generate SR levels
+    sr_levels = analyzer.feature_engine._generate_sr_levels(price_data)
+    if not sr_levels:
+        system_logger.error("❌ Failed to generate SR levels")
+        return
 
-        # Perform analysis
-        analysis = analyzer.analyze_sr_position(price_data, sr_levels)
+    # Perform analysis
+    analysis = analyzer.analyze_sr_position(price_data, sr_levels)
 
-        # Print report
-        analyzer.print_analysis_report(analysis)
+    # Print report
+    analyzer.print_analysis_report(analysis)
 
-        # Save detailed results if requested
-        if args.output:
-            output_path = Path(args.output)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
+    # Save detailed results if requested
+    if args.output:
+        output_path = Path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Save position series to CSV
-        if "position_series" in analysis:
-                position_df = pd.DataFrame(
-                    {
-                        "timestamp": analysis["position_series"].index, "sr_position": analysis["position_series"].values,
-                    }
-                )
-                position_df.to_csv(output_path, index=False)
-                system_logger.info(f"✅ Saved detailed results to {output_path}")
+    # Save position series to CSV
+    if "position_series" in analysis:
+            position_df = pd.DataFrame(
+                {
+                    "timestamp": analysis["position_series"].index, "sr_position": analysis["position_series"].values,
+                }
+            )
+            position_df.to_csv(output_path, index=False)
+            system_logger.info(f"✅ Saved detailed results to {output_path}")
 
-        system_logger.info("✅ SR Position Analysis completed successfully")
-
-    pass
-        system_logger.exception(f"❌ Error in main function: {e}")
+    system_logger.info("✅ SR Position Analysis completed successfully")
 
 
 if __name__ == "__main__":

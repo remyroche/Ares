@@ -113,7 +113,7 @@ async def run_efficiency_demo():
         # Demonstrate segmentation
         logger.info("📊 Data segmentation demo:")
         segments = training_manager.efficiency_optimizer.segment_data_by_time(
-            test_data = segment_days=30,
+            segment_days=30,
         )
         logger.info(f"  Created {len(segments)} segments")
 

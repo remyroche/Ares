@@ -8,7 +8,7 @@ Uses ML confidence scores, liquidation risk model, and market health analysis.
 from datetime import datetime
 from src.utils.logger import system_logger
 import contextlib
-from typing import Any
+from typing import Any, Optional, Dict, List
 
 from src.config_optuna import get_parameter_value
 from src.utils.error_handler import handle_errors, handle_specific_errors
@@ -20,8 +20,8 @@ class LeverageSizer:
     to set leverage between 10x and 100x.
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
-        self.config: dict[str, Any] = config
+    def __init__(self, config: Dict[str, Any]) -> None:
+        self.config: Dict[str, Any] = config
         self.logger = system_logger.getChild("LeverageSizer")
         # Backward-compatibility shim for legacy self.print calls
         if not hasattr(self, "print"):
@@ -33,7 +33,7 @@ class LeverageSizer:
             self.print = _shim_print  # type: ignore[attr-defined]
 
         # Load configuration
-        self.leverage_config: dict[str, Any] = self.config.get("leverage_sizing", {})
+        self.leverage_config: Dict[str, Any] = self.config.get("leverage_sizing", {})
         self.min_leverage: float = get_parameter_value(
             "leverage_sizing_parameters.min_leverage",
             10.0,
@@ -56,7 +56,7 @@ class LeverageSizer:
         self.liquidation_weight: float = self.leverage_config.get("liquidation_weight", 0.4)
 
         self.is_initialized: bool = False
-        self.leverage_sizing_history: list[dict[str, Any]] = []
+        self.leverage_sizing_history: List[Dict[str, Any]] = []
 
     @handle_specific_errors(
         error_handlers={
@@ -118,14 +118,14 @@ class LeverageSizer:
     )
     async def calculate_leverage(
         self,
-        ml_predictions: dict[str, Any],
+        ml_predictions: Dict[str, Any],
         current_price: float = 0.0,
         account_balance: float = 1000.0,
         analyst_confidence: float = 0.5,
         tactician_confidence: float = 0.5,
-        market_health_analysis: dict[str, Any] | None = None,
-        strategist_risk_parameters: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+        market_health_analysis: Optional[Dict[str, Any]] = None,
+        strategist_risk_parameters: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """
         Calculate leverage using ML confidence scores and liquidation risk model.
 
@@ -209,8 +209,8 @@ class LeverageSizer:
 
     def _calculate_ml_leverage(
         self,
-        price_target_confidences: dict[str, float],
-        adversarial_confidences: dict[str, float],
+        price_target_confidences: Dict[str, float],
+        adversarial_confidences: Dict[str, float],
     ) -> float:
         """Calculate leverage based on ML confidence scores."""
         try:
@@ -266,7 +266,7 @@ class LeverageSizer:
         self,
         current_price: float,
         account_balance: float,
-        market_health_analysis: dict[str, Any] | None,
+        market_health_analysis: Optional[Dict[str, Any]],
     ) -> float:
         """Calculate safe leverage to avoid liquidation."""
         try:
@@ -323,8 +323,8 @@ class LeverageSizer:
         self,
         base_leverage: float,
         *,
-        market_health_analysis: dict[str, Any] | None,
-        strategist_risk_parameters: dict[str, Any] | None,
+        market_health_analysis: Optional[Dict[str, Any]],
+        strategist_risk_parameters: Optional[Dict[str, Any]],
         analyst_confidence: float,
         tactician_confidence: float,
     ) -> float:
@@ -363,8 +363,8 @@ class LeverageSizer:
         final_leverage: float,
         ml_leverage: float,
         liquidation_leverage: float,
-        price_target_confidences: dict[str, float],
-        adversarial_confidences: dict[str, float],
+        price_target_confidences: Dict[str, float],
+        adversarial_confidences: Dict[str, float],
     ) -> str:
         """Generate reason for leverage sizing decision."""
         try:
@@ -398,8 +398,8 @@ class LeverageSizer:
 
     def get_leverage_sizing_history(
         self,
-        limit: int | None = None,
-    ) -> list[dict[str, Any]]:
+        limit: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
         """Get leverage sizing history."""
         if limit:
             return self.leverage_sizing_history[-limit:]
@@ -441,8 +441,8 @@ class LeverageSizer:
     context="leverage sizer setup",
 )
 async def setup_leverage_sizer(
-    config: dict[str, Any] | None = None,
-) -> LeverageSizer | None:
+    config: Optional[Dict[str, Any]] = None,
+) -> Optional[LeverageSizer]:
     """
     Setup and return a configured LeverageSizer instance.
 

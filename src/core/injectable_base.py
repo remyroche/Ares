@@ -10,7 +10,7 @@ to participate in the dependency injection system.
 import sys
 from abc import ABC
 from src.utils.logger import system_logger
-from typing import Any
+from typing import Any, Optional
 from src.interfaces.base_interfaces import (
     IEventBus,
     IExchangeClient,
@@ -25,7 +25,7 @@ class InjectableBase(ABC):
     Provides common dependency injection functionality and configuration support.
     """
 
-    def __init__(self, config: dict[str, Any] | None = None):
+    def __init__(self, config: Optional[dict[str, Any]] = None):
         self.config = config or {}
         self.logger = system_logger.getChild(self.__class__.__name__)
         self._initialized = False
@@ -75,10 +75,10 @@ class TradingComponentBase(InjectableBase):
 
     def __init__(
         self,
-        config: dict[str, Any] | None = None,
-        exchange_client: IExchangeClient | None = None,
-        state_manager: IStateManager | None = None,
-        event_bus: IEventBus | None = None,
+        config: Optional[dict[str, Any]] = None,
+        exchange_client: Optional[IExchangeClient] = None,
+        state_manager: Optional[IStateManager] = None,
+        event_bus: Optional[IEventBus] = None,
     ):
         super().__init__(config)
 

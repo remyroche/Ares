@@ -7,7 +7,7 @@ Uses ML confidence scores and Kelly criterion for position sizing.
 
 from datetime import datetime
 from src.utils.logger import system_logger
-from typing import Any
+from typing import Any, Optional, Dict, List
 import contextlib
 
 from src.config_optuna import get_parameter_value
@@ -23,8 +23,8 @@ class PositionSizer:
     for position sizing decisions.
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
-        self.config: dict[str, Any] = config
+    def __init__(self, config: Dict[str, Any]) -> None:
+        self.config: Dict[str, Any] = config
         self.logger = system_logger.getChild("PositionSizer")
         # Backward-compatibility shim for legacy self.print calls
         if not hasattr(self, "print"):
@@ -37,7 +37,7 @@ class PositionSizer:
 
         # Load configuration
 
-        self.sizing_config: dict[str, Any] = self.config.get("position_sizing", {})
+        self.sizing_config: Dict[str, Any] = self.config.get("position_sizing", {})
         self.kelly_multiplier: float = get_parameter_value(
             "position_sizing_parameters.kelly_multiplier",
             0.25,
@@ -60,7 +60,7 @@ class PositionSizer:
         self.kelly_weight: float = self.sizing_config.get("kelly_weight", 0.3)
 
         self.is_initialized: bool = False
-        self.position_sizing_history: list[dict[str, Any]] = []
+        self.position_sizing_history: List[Dict[str, Any]] = []
 
     @handle_specific_errors(
         error_handlers={
@@ -141,14 +141,14 @@ class PositionSizer:
     )
     async def calculate_position_size(
         self,
-        ml_predictions: dict[str, Any],
+        ml_predictions: Dict[str, Any],
         current_price: float = 0.0,
         account_balance: float = 1000.0,
         analyst_confidence: float = 0.5,
         tactician_confidence: float = 0.5,
-        market_health_analysis: dict[str, Any] | None = None,
-        strategist_risk_parameters: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+        market_health_analysis: Optional[Dict[str, Any]] = None,
+        strategist_risk_parameters: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """
         Calculate position size using ML confidence scores and Kelly criterion.
 
@@ -237,8 +237,8 @@ class PositionSizer:
 
     def _calculate_kelly_position_size(
         self,
-        price_target_confidences: dict[str, float],
-        adversarial_confidences: dict[str, float],
+        price_target_confidences: Dict[str, float],
+        adversarial_confidences: Dict[str, float],
     ) -> float:
         """Calculate position size using Kelly criterion based on ML confidence scores."""
         try:
@@ -305,8 +305,8 @@ class PositionSizer:
 
     def _calculate_ml_position_size(
         self,
-        price_target_confidences: dict[str, float],
-        adversarial_confidences: dict[str, float],
+        price_target_confidences: Dict[str, float],
+        adversarial_confidences: Dict[str, float],
     ) -> float:
         """Calculate position size based on ML confidence scores."""
         try:
@@ -387,8 +387,8 @@ class PositionSizer:
         self,
         base_size: float,
         *,
-        market_health_analysis: dict[str, Any] | None,
-        strategist_risk_parameters: dict[str, Any] | None,
+        market_health_analysis: Optional[Dict[str, Any]],
+        strategist_risk_parameters: Optional[Dict[str, Any]],
         analyst_confidence: float,
         tactician_confidence: float,
     ) -> float:
@@ -459,8 +459,8 @@ class PositionSizer:
         final_position_size: float,
         kelly_position_size: float,
         ml_position_size: float,
-        price_target_confidences: dict[str, float],
-        adversarial_confidences: dict[str, float],
+        price_target_confidences: Dict[str, float],
+        adversarial_confidences: Dict[str, float],
     ) -> str:
         """Generate reason for position sizing decision."""
         try:
@@ -562,8 +562,8 @@ class PositionSizer:
 
     def get_position_sizing_history(
         self,
-        limit: int | None = None,
-    ) -> list[dict[str, Any]]:
+        limit: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
         """Get position sizing history."""
         if limit:
             return self.position_sizing_history[-limit:]
@@ -605,8 +605,8 @@ class PositionSizer:
     context="position sizer setup",
 )
 async def setup_position_sizer(
-    config: dict[str, Any] | None = None,
-) -> PositionSizer | None:
+    config: Optional[Dict[str, Any]] = None,
+) -> Optional[PositionSizer]:
     """
     Setup position sizer.
 

@@ -10,6 +10,7 @@ from sklearn.ensemble import RandomForestClassifier
 import lightgbm as lgb  # type: ignore
 import xgboost as xgb  # type: ignore
 from sklearn.linear_model import SGDClassifier
+import pandas as pd
 
 # Model identifiers used by builder
 # Values map timeframe categories to a model key and default params
@@ -276,7 +277,6 @@ def build_model(model_key: str, params: dict[str, Any]):
                 alpha=float(params.get("alpha", 1e-4)),
                 max_iter=int(params.get("max_iter", 1000)),
                 random_state=42,
-                n_jobs=-1,
             )
         if key == "sgd_elastic_net":
 
@@ -287,7 +287,6 @@ def build_model(model_key: str, params: dict[str, Any]):
                 l1_ratio=float(params.get("l1_ratio", 0.5)),
                 max_iter=int(params.get("max_iter", 1000)),
                 random_state=42,
-                n_jobs=-1,
             )
         if key == "logistic_regression":
 

@@ -2,22 +2,22 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Dict, List, Tuple
 
 
 def _require_keys(
-    d: dict[str, Any],
-    keys: list[str],
+    d: Dict[str, Any],
+    keys: List[str],
     ctx: str,
-    errors: list[str],
+    errors: List[str],
 ) -> None:
     for k in keys:
         if k not in d:
             errors.append(f"Missing key '{k}' in {ctx}")
 
 
-def validate_system_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
-    errors: list[str] = []
+def validate_system_config(config: Dict[str, Any]) -> Tuple[bool, List[str]]:
+    errors: List[str] = []
     if not isinstance(config, dict):
         return False, ["System config must be a dict"]
 
@@ -53,8 +53,8 @@ def validate_system_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
     return len(errors) == 0, errors
 
 
-def validate_trading_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
-    errors: list[str] = []
+def validate_trading_config(config: Dict[str, Any]) -> Tuple[bool, List[str]]:
+    errors: List[str] = []
     if not isinstance(config, dict):
         return False, ["Trading config must be a dict"]
 
@@ -74,8 +74,8 @@ def validate_trading_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
     return len(errors) == 0, errors
 
 
-def validate_training_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
-    errors: list[str] = []
+def validate_training_config(config: Dict[str, Any]) -> Tuple[bool, List[str]]:
+    errors: List[str] = []
     if not isinstance(config, dict):
         return False, ["Training config must be a dict"]
 
@@ -91,9 +91,9 @@ def validate_training_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
     return len(errors) == 0, errors
 
 
-def validate_complete_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
+def validate_complete_config(config: Dict[str, Any]) -> Tuple[bool, List[str]]:
     """Validate the combined top-level config structure and sections."""
-    errors: list[str] = []
+    errors: List[str] = []
 
     if not isinstance(config, dict):
         return False, ["Top-level config must be a dict"]

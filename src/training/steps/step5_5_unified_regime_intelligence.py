@@ -237,54 +237,55 @@ class UnifiedRegimeIntelligenceStep:
         # Initialize enhanced LM optimizer
         self.enhanced_lm_optimizer = None
         if ENHANCED_OPTIMIZER_AVAILABLE:
-        try:
-        self.enhanced_lm_optimizer = EnhancedLMOptimizer(config)
-        # Note: initialize() will be called later in an async context
-        self.logger.info("✅ Enhanced LM optimizer created for step6_5")
-        except Exception as e:
-        self.logger.warning(f"⚠️ Failed to create enhanced LM optimizer: {e}")
+            try:
+                self.enhanced_lm_optimizer = EnhancedLMOptimizer(config)
+                # Note: initialize() will be called later in an async context
+                self.logger.info("✅ Enhanced LM optimizer created for step6_5")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to create enhanced LM optimizer: {e}")
 
         # Device selection
         self.device_str = self._safe_get_device()
         if self.device_str == "cuda":
-        self.device = torch.device("cuda")
+            self.device = torch.device("cuda")
         elif self.device_str == "mps":
-        self.device = torch.device("mps")
+            self.device = torch.device("mps")
         else:
-        self.device = torch.device("cpu")
+            self.device = torch.device("cpu")
         self.logger.info(f"Using device: {self.device_str.upper()} for PyTorch operations.")
 
     def _safe_get_device(self) -> str:
         """Safely determine best device: prefer CUDA, then MPS with timeout, else CPU."""
         try:
-        if torch.cuda.is_available():
-        return "cuda"
-        # MPS check can occasionally hang; guard with timeout
+            if torch.cuda.is_available():
+                return "cuda"
+            # MPS check can occasionally hang; guard with timeout
             import queue
             import threading
 
-            result_queue = queue.Queue()
+            result_queue: "queue.Queue[tuple[str | None, Exception | None]]" = queue.Queue()
 
             def check_mps() -> None:
-        try:
+                try:
                     is_available = torch.backends.mps.is_available()
                     result_queue.put(("mps" if is_available else "cpu", None))
-        except Exception as ex:
+                except Exception as ex:
                     result_queue.put(("cpu", ex))
 
-            thread, threading.Thread(target=check_mps, daemon=True)
+            thread = threading.Thread(target=check_mps, daemon=True)
             thread.start()
-        try: device = err, result_queue.get(timeout=10)
-        if err:
-        self.logger.error(failed(f"MPS check failed: {err}, using CPU"))
-        return "cpu"
-        return device
-        except queue.Empty:
-        self.logger.exception(timeout("MPS availability check timed out, using CPU"))
-        return "cpu"
+            try:
+                device, err = result_queue.get(timeout=10)
+                if err:
+                    self.logger.error(failed(f"MPS check failed: {err}, using CPU"))
+                    return "cpu"
+                return device or "cpu"
+            except queue.Empty:
+                self.logger.exception(timeout("MPS availability check timed out, using CPU"))
+                return "cpu"
         except Exception as ex:
-        self.logger.exception(error(f"Error checking device availability: {ex}, using CPU"))
-        return "cpu"
+            self.logger.exception(error(f"Error checking device availability: {ex}, using CPU"))
+            return "cpu"
 
     @handle_errors(
         exceptions=(Exception,),
@@ -294,33 +295,33 @@ class UnifiedRegimeIntelligenceStep:
     async def initialize(self) -> bool:
         """Initialize the unified regime intelligence step."""
         try:
-        self.logger.info("🚀 Initializing Unified Regime Intelligence Step...")
+            self.logger.info("🚀 Initializing Unified Regime Intelligence Step...")
 
-        # Initialize model
-        self.model = MultiTimeframeHMMEncoder(self.config)
+            # Initialize model
+            self.model = MultiTimeframeHMMEncoder(self.config)
 
-        # Initialize label encoders
-        self.label_encoders["regime"] = LabelEncoder()
-        self.label_encoders["transition"] = LabelEncoder()
-        self.label_encoders["tpsl"] = LabelEncoder()
+            # Initialize label encoders
+            self.label_encoders["regime"] = LabelEncoder()
+            self.label_encoders["transition"] = LabelEncoder()
+            self.label_encoders["tpsl"] = LabelEncoder()
 
-        # Initialize SRBreakoutPredictor
-            sr_init_success = await self.sr_predictor.initialize(),
-        if not sr_init_success:
-        self.logger.warning(
+            # Initialize SRBreakoutPredictor
+            sr_init_success = await self.sr_predictor.initialize()
+            if not sr_init_success:
+                self.logger.warning(
                     "⚠️ Failed to initialize SRBreakoutPredictor, continuing without S/R analysis",
                 )
 
-        self.logger.info(
+            self.logger.info(
                 "✅ Unified Regime Intelligence Step initialized successfully",
             )
-        return True
+            return True
 
         except Exception as e:
-        self.logger.exception(
+            self.logger.exception(
                 f"🚨 Failed to initialize Unified Regime Intelligence Step: {e}",
             )
-        return False
+            return False
 
     @handle_errors(
         exceptions=(Exception,),

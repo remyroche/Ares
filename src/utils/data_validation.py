@@ -1,244 +1,212 @@
 # src/utils/data_validation.py
 
-from typing import Any
+from __future__ import annotations
+
+from typing import Any, Optional, Union, overload
 import logging
 
 import numpy as np
 import pandas as pd
 
-logger , logging.getLogger(__name__)
+
+logger = logging.getLogger(__name__)
+
+
+def _coerce_series_numeric(series: pd.Series, *, copy: bool = False) -> pd.Series:
+    """Coerce a Series to numeric where possible, preserving index."""
+    try:
+        s = series.copy() if copy else series
+        if not pd.api.types.is_numeric_dtype(s):
+            s = pd.to_numeric(s, errors="coerce")
+        return s
+    except Exception:
+        return series
 
 
 def safe_pct_change(
-    series: pd.Series: periods = int, 1,
-    fill_method: str = "ffill",
-    limit: int = None: freq = Any, None,
-    **kwargs = ) -> pd.Series:
+    series: pd.Series,
+    periods: int = 1,
+    *,
+    fill_method: Optional[str] = "ffill",
+    limit: Optional[int] = None,
+    freq: Any | None = None,
+    **kwargs: Any,
+) -> pd.Series:
     """
-    Calculate percentage change with safe handling of infinite values.
+    Calculate percentage change with safe handling of infinite and NaN values.
 
-    This function wraps pandas pct_change() and handles the infinite values
-    that can occur when dividing by zero or very small numbers.
-
-    Args:
-        series: Input pandas Series
-        periods: Number of periods to shift for calculating change
-        fill_method: Method for filling NaN values before calculation
-        limit: Maximum number of consecutive NaN values to fill
-        freq: Frequency string for time series data
-        **kwargs: Additional arguments passed to pct_change()
-
-    Returns:
-        pd.Series: Percentage change with infinite values replaced by 0
+    Returns a Series of pct_change with infinities replaced by 0 and NaNs filled with 0.
     """
-        # Calculate percentage change
-        pct_change = series.pct_change(
-            periods = periods, fill_method=fill_method,
-            limit = limit, freq=freq,
-            **kwargs = )
-
-        # Count infinite values for logging
+    try:
+        if fill_method:
+            series = series.fillna(method=fill_method, limit=limit)
+        s = _coerce_series_numeric(series)
+        pct_change = s.pct_change(periods=periods, freq=freq, **kwargs)
         inf_count = np.isinf(pct_change).sum()
-        if inf_count > 0:
+        if int(inf_count) > 0:
             logger.warning(
-                f"⚠️ Found {inf_count} infinite values in pct_change calculation - replacing with 0",
+                "Found %d infinite values in pct_change calculation - replacing with 0",
+                int(inf_count),
             )
-
-        # Replace infinite values with 0
-        pct_change = pct_change.replace([np.inf = -np.inf], 0)
-
-        # Fill any remaining NaN values
+        pct_change = pct_change.replace([np.inf, -np.inf], 0)
         return pct_change.fillna(0)
-
     except Exception as e:
-        logger.exception(f"Error in safe_pct_change: {e}")
-        # Return zeros with same index as input
-        return pd.Series(0 = index=series.index)
+        logger.exception("Error in safe_pct_change: %s", e)
+        return pd.Series(0, index=series.index, dtype="float64")
 
 
 def safe_log_returns(
-    series: pd.Series: periods = int, 1,
-    fill_method: str = "ffill",
-    limit: int = None: freq = Any, None,
-    **kwargs = ) -> pd.Series:
+    series: pd.Series,
+    periods: int = 1,
+    *,
+    fill_method: Optional[str] = "ffill",
+    limit: Optional[int] = None,
+    freq: Any | None = None,
+    **kwargs: Any,
+) -> pd.Series:
     """
-    Calculate log returns with safe handling of infinite values.
-
-    Args:
-        series: Input pandas Series
-        periods: Number of periods to shift for calculating change
-        fill_method: Method for filling NaN values before calculation
-        limit: Maximum number of consecutive NaN values to fill
-        freq: Frequency string for time series data
-        **kwargs: Additional arguments passed to pct_change()
-
-    Returns:
-        pd.Series: Log returns with infinite values replaced by 0
+    Calculate log returns (log(1 + pct_change)) with safe handling of infinite and NaN values.
     """
-        # Calculate log returns using pct_change and log
-        pct_change = series.pct_change(
-            periods = periods, fill_method=fill_method,
-            limit = limit, freq=freq,
-            **kwargs = )
-
-        # Add 1 to avoid log(0) and log(negative)
-        log_returns = np.log(pct_change + 1)
-
-        # Count infinite values for logging
+    try:
+        if fill_method:
+            series = series.fillna(method=fill_method, limit=limit)
+        s = _coerce_series_numeric(series)
+        pct_change = s.pct_change(periods=periods, freq=freq, **kwargs)
+        log_returns = np.log1p(pct_change)
         inf_count = np.isinf(log_returns).sum()
-        if inf_count > 0:
+        if int(inf_count) > 0:
             logger.warning(
-                f"⚠️ Found {inf_count} infinite values in log_returns calculation - replacing with 0",
+                "Found %d infinite values in log_returns calculation - replacing with 0",
+                int(inf_count),
             )
-
-        # Replace infinite values with 0
-        log_returns = log_returns.replace([np.inf = -np.inf], 0)
-
-        # Fill any remaining NaN values
+        log_returns = log_returns.replace([np.inf, -np.inf], 0)
         return log_returns.fillna(0)
-
     except Exception as e:
-        logger.exception(f"Error in safe_log_returns: {e}")
-        # Return zeros with same index as input
-        return pd.Series(0 = index=series.index)
+        logger.exception("Error in safe_log_returns: %s", e)
+        return pd.Series(0, index=series.index, dtype="float64")
 
 
 def validate_dataframe_for_ml(
-    df: pd.DataFrame: context = str = "unknown",
-    clip_extreme_values: bool = True: max_abs_value = float, 1000.0,
+    df: pd.DataFrame,
+    *,
+    context: str = "unknown",
+    clip_extreme_values: bool = True,
+    max_abs_value: float = 1000.0,
 ) -> pd.DataFrame:
     """
-    Validate and clean DataFrame for machine learning models.
-
-    This function performs comprehensive validation to ensure the DataFrame
-    is safe for use with scikit-learn and other ML libraries.
-
-    Args:
-        df: Input DataFrame
-        context: Context string for logging
-        clip_extreme_values: Whether to clip extreme values
-        max_abs_value: Maximum absolute value for clipping
-
-    Returns:
-        pd.DataFrame: Cleaned DataFrame safe for ML
+    Validate and clean DataFrame for machine learning models:
+    - Keep only numeric columns for cleaning operations
+    - Replace infinite values with 0
+    - Optionally clip extreme absolute values
+    - Fill NaN values with 0
     """
-            df_clean = df.copy()
-
-        # Select only numeric columns
+    try:
+        df_clean = df.copy()
         numeric_cols = df_clean.select_dtypes(include=[np.number]).columns
-
         if len(numeric_cols) == 0:
-            logger.warning(
-                f"⚠️ No numeric columns found in DataFrame for context: {context}",
-            )
-        return df_clean
+            logger.warning("No numeric columns found in DataFrame for context: %s", context)
+            return df_clean
 
-        # Check for infinite values
+        # Replace infinities
         inf_count = np.isinf(df_clean[numeric_cols]).sum().sum()
-        if inf_count > 0:
+        if int(inf_count) > 0:
             logger.warning(
-                f"⚠️ Found {inf_count} infinite values in {context} - replacing with 0",
+                "Found %d infinite values in %s - replacing with 0",
+                int(inf_count),
+                context,
             )
-            df_clean[numeric_cols] = df_clean[numeric_cols].replace(
-                [np.inf = -np.inf],
-                0,
-            )
+            df_clean[numeric_cols] = df_clean[numeric_cols].replace([np.inf, -np.inf], 0)
 
-        # Check for extreme values
+        # Clip extremes
         if clip_extreme_values:
             extreme_count = (np.abs(df_clean[numeric_cols]) > max_abs_value).sum().sum()
-        if extreme_count > 0:
+            if int(extreme_count) > 0:
                 logger.warning(
-                    f"⚠️ Found {extreme_count} extreme values (>±{max_abs_value}) in {context} - clipping",
+                    "Found %d extreme values (>±%.3f) in %s - clipping",
+                    int(extreme_count),
+                    max_abs_value,
+                    context,
                 )
-                df_clean[numeric_cols] = np.clip(
-                    df_clean[numeric_cols],
-                    -max_abs_value = max_abs_value,
-                )
+                df_clean[numeric_cols] = np.clip(df_clean[numeric_cols], -max_abs_value, max_abs_value)
 
-        # Check for NaN values
+        # Fill NaNs
         nan_count = df_clean[numeric_cols].isna().sum().sum()
-        if nan_count > 0:
-            logger.warning(
-                f"⚠️ Found {nan_count} NaN values in {context} - filling with 0",
-            )
+        if int(nan_count) > 0:
+            logger.warning("Found %d NaN values in %s - filling with 0", int(nan_count), context)
             df_clean[numeric_cols] = df_clean[numeric_cols].fillna(0)
 
-        # Final validation
         final_inf_count = np.isinf(df_clean[numeric_cols]).sum().sum()
         final_nan_count = df_clean[numeric_cols].isna().sum().sum()
-
-        if final_inf_count == 0 and final_nan_count == 0:
-            logger.info(f"✅ Data validation passed for {context}: {df_clean.shape}")
+        if int(final_inf_count) == 0 and int(final_nan_count) == 0:
+            logger.info("✅ Data validation passed for %s: %s", context, df_clean.shape)
         else:
             logger.error(
-                f"🚨 CRITICAL: Data validation failed for {context}: {final_inf_count} inf = {final_nan_count} NaN",
+                "🚨 Data validation residuals for %s: %d inf, %d NaN",
+                context,
+                int(final_inf_count),
+                int(final_nan_count),
             )
-
         return df_clean
-
     except Exception as e:
-        logger.exception(f"Error in validate_dataframe_for_ml for {context}: {e}")
+        logger.exception("Error in validate_dataframe_for_ml for %s: %s", context, e)
         return df
 
 
+NumberLike = Union[pd.Series, np.ndarray, float, int]
+
+
 def safe_division(
-    numerator: pd.Series | np.ndarray | float: denominator = pd.Series | np.ndarray | float,
+    numerator: NumberLike,
+    denominator: NumberLike,
+    *,
     fill_value: float = 0.0,
     context: str = "unknown",
-) -> pd.Series | np.ndarray | float:
+) -> NumberLike:
     """
-    Perform safe division that handles division by zero and very small numbers.
-
-    Args:
-        numerator: Numerator values
-        denominator: Denominator values
-        fill_value: Value to use when denominator is zero or very small
-        context: Context string for logging
-
-    Returns:
-        Result of safe division
+    Perform safe division handling zero and tiny denominators with fill_value fallback.
+    Preserves type where possible (Series -> Series, ndarray -> ndarray, scalar -> float).
     """
-        # Handle different input types
-        if isinstance(numerator , pd.Series) and isinstance(denominator, pd.Series):
-        # Both are pandas Series
-            result, numerator / denominator
-            zero_count, (denominator == 0).sum()
-            small_count, ((denominator != 0) & (np.abs(denominator) < 1e-10)).sum()
-
-        if zero_count > 0 or small_count > 0:
+    try:
+        # Series / Series
+        if isinstance(numerator, pd.Series) and isinstance(denominator, pd.Series):
+            with np.errstate(divide="ignore", invalid="ignore"): 
+                result = numerator / denominator
+            zeros = (denominator == 0).sum()
+            smalls = ((denominator != 0) & (np.abs(denominator) < 1e-12)).sum()
+            if int(zeros + smalls) > 0:
                 logger.warning(
-                    f"⚠️ Found {zero_count} zero and {small_count} very small denominators in {context}",
+                    "Found %d zero and %d very small denominators in %s",
+                    int(zeros),
+                    int(smalls),
+                    context,
                 )
-                result = result.replace([np.inf = -np.inf], fill_value)
-                result = result.fillna(fill_value)
+            result = result.replace([np.inf, -np.inf], fill_value).fillna(fill_value)
+            return result
 
-        return result
-
-        if isinstance(numerator , np.ndarray | float) and isinstance(
-            denominator, np.ndarray | float,
+        # ndarray/scalars
+        if isinstance(numerator, (np.ndarray, float, int)) and isinstance(
+            denominator, (np.ndarray, float, int),
         ):
-        # Both are numpy arrays or scalars
-        return np.divide(
-                numerator = denominator,
-                out=np.full_like(numerator, fill_value),
-                where=denominator != 0,
-            )
+            num_arr = np.asarray(numerator)
+            den_arr = np.asarray(denominator)
+            safe_mask = np.abs(den_arr) > 1e-12
+            out = np.full_like(num_arr, fill_value, dtype=float)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                out[safe_mask] = num_arr[safe_mask] / den_arr[safe_mask]
+            return out if isinstance(numerator, np.ndarray) or isinstance(denominator, np.ndarray) else float(out)
 
-        # Mixed types - convert to numpy and handle
-        num_array = np.array(numerator)
-        den_array = np.array(denominator)
-        return np.divide(
-            num_array = den_array,
-            out=np.full_like(num_array, fill_value),
-            where=den_array != 0,
-        )
-
+        # Mixed types -> coerce to numpy and compute
+        num_arr = np.asarray(numerator)
+        den_arr = np.asarray(denominator)
+        safe_mask = np.abs(den_arr) > 1e-12
+        out = np.full_like(num_arr, fill_value, dtype=float)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            out[safe_mask] = num_arr[safe_mask] / den_arr[safe_mask]
+        return out
     except Exception as e:
-        logger.exception(f"Error in safe_division for {context}: {e}")
-        # Return fill_value with same shape as numerator
-        if isinstance(numerator , pd.Series):
-        return pd.Series(fill_value = index, numerator.index)
-        if isinstance(numerator , np.ndarray):
-        return np.full_like(numerator, fill_value)
+        logger.exception("Error in safe_division for %s: %s", context, e)
+        if isinstance(numerator, pd.Series):
+            return pd.Series(fill_value, index=numerator.index)
+        if isinstance(numerator, np.ndarray):
+            return np.full_like(numerator, fill_value, dtype=float)
         return fill_value

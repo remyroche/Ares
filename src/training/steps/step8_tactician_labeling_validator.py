@@ -6,7 +6,7 @@ import os
 import pickle
 import sys
 from pathlib import Path
-from typing import Any, Tuple
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -22,8 +22,8 @@ from src.utils.warning_symbols import (
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.config import CONFIG
-from src.utils.base_validator import BaseValidator
+from src.config import CONFIG  # noqa: E402
+from src.utils.base_validator import BaseValidator  # noqa: E402
 
 
 class Step8TacticianLabelingValidator(BaseValidator):
@@ -33,7 +33,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         super().__init__("step8_tactician_labeling", config)
 
     async def validate(
-        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
+        self, training_input: dict[str, Any], pipeline_state: dict[str, Any],
     ) -> bool:
         """Validate the tactician labeling step.
 
@@ -43,6 +43,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
         Returns:
             bool: True if validation passed, False otherwise
+
         """
         self.logger.info("🔍 Validating tactician labeling step...")
 
@@ -116,7 +117,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         return True
 
     def _validate_labeling_files_existence(
-        self, symbol: str, exchange: str, data_dir: str
+        self, symbol: str, exchange: str, data_dir: str,
     ) -> bool:
         """Validate that tactician labeling files exist.
 
@@ -127,6 +128,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
         Returns:
             bool: True if files exist
+
         """
         try:
             # Expected tactician labeling file patterns
@@ -159,7 +161,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
             return False
 
     def _validate_signal_quality(
-        self, symbol: str, exchange: str, data_dir: str
+        self, symbol: str, exchange: str, data_dir: str,
     ) -> bool:
         """Validate the quality of generated trading signals.
 
@@ -170,6 +172,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
         Returns:
             bool: True if signal quality is acceptable
+
         """
         try:
             # Load tactician signals (prefer Parquet)
@@ -190,7 +193,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                         pdm = ParquetDatasetManager(logger=self.logger)
                         part_base = os.path.join(data_dir, "parquet", "labeled")
                         if os.path.isdir(part_base):
-                            filters: list[Tuple[str, str, Any]] = [
+                            filters: list[tuple[str, str, Any]] = [
                                 ("exchange", "==", exchange),
                                 ("symbol", "==", symbol),
                             ]
@@ -226,13 +229,13 @@ class Step8TacticianLabelingValidator(BaseValidator):
                                 )
                             with contextlib.suppress(Exception):
                                 log_dataframe_overview(
-                                    self.logger, signals_data, name="signals_data"
+                                    self.logger, signals_data, name="signals_data",
                                 )
                     except Exception:
                         from src.utils.logger import log_io_operation
 
                         with log_io_operation(
-                            self.logger, "read_parquet", signals_parquet
+                            self.logger, "read_parquet", signals_parquet,
                         ):
                             signals_data = pd.read_parquet(signals_parquet)
                 else:
@@ -328,7 +331,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
             return False
 
     def _validate_labeling_consistency(
-        self, symbol: str, exchange: str, data_dir: str
+        self, symbol: str, exchange: str, data_dir: str,
     ) -> bool:
         """Validate consistency of tactician labeling.
 
@@ -339,6 +342,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
         Returns:
             bool: True if labeling is consistent
+
         """
         try:
             # Load tactician labels (prefer Parquet)
@@ -386,17 +390,17 @@ class Step8TacticianLabelingValidator(BaseValidator):
                                 columns=True,
                             ):
                                 labels_data = pd.read_parquet(
-                                    labels_parquet, columns=["timestamp", "label"]
+                                    labels_parquet, columns=["timestamp", "label"],
                                 )
                             with contextlib.suppress(Exception):
                                 log_dataframe_overview(
-                                    self.logger, labels_data, name="labels_data"
+                                    self.logger, labels_data, name="labels_data",
                                 )
                     except Exception:
                         from src.utils.logger import log_io_operation
 
                         with log_io_operation(
-                            self.logger, "read_parquet", labels_parquet
+                            self.logger, "read_parquet", labels_parquet,
                         ):
                             labels_data = pd.read_parquet(labels_parquet)
                 else:
@@ -446,7 +450,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                             from src.utils.logger import log_io_operation
 
                             with log_io_operation(
-                                self.logger, "read_parquet", signals_parquet
+                                self.logger, "read_parquet", signals_parquet,
                             ):
                                 signals_data = pd.read_parquet(signals_parquet)
                     else:
@@ -522,7 +526,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
             return False
 
     def _validate_signal_distribution(
-        self, symbol: str, exchange: str, data_dir: str
+        self, symbol: str, exchange: str, data_dir: str,
     ) -> bool:
         """Validate the distribution of trading signals.
 
@@ -533,6 +537,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
         Returns:
             bool: True if signal distribution is acceptable
+
         """
         try:
             # Load tactician labeling metadata
@@ -645,7 +650,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
 
 async def run_validator(
-    training_input: dict[str, Any], pipeline_state: dict[str, Any]
+    training_input: dict[str, Any], pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
     """Run the step8_tactician_labeling validator.
 
@@ -655,6 +660,7 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
+
     """
     validator = Step8TacticianLabelingValidator(CONFIG)
     validation_passed = await validator.validate(training_input, pipeline_state)

@@ -73,102 +73,107 @@ class MultiTimeframeHMMEncoder(nn.Module):
         self.dropout = config.get("dropout", 0.1)
 
         # Per-timeframe HMM state embeddings
+        per_tf_dim = max(1, self.d_model // max(1, len(self.timeframes)))
         self.hmm_embeddings = nn.ModuleDict(
             {
-                tf: nn.Embedding(
-        self.hmm_states_per_tf = self.d_model // len(self.timeframes)
-                )
-        for tf in self.timeframes
+                tf: nn.Embedding(num_embeddings=self.hmm_states_per_tf, embedding_dim=per_tf_dim)
+                for tf in self.timeframes
             },
         )
 
         # Multi-head attention for cross-timeframe analysis
         self.cross_timeframe_attention = nn.MultiheadAttention(
-            embed_dim=self.d_model
-            num_heads=self.nhead
-            dropout=self.dropout
-            batch_first=True
+            embed_dim=self.d_model,
+            num_heads=self.nhead,
+            dropout=self.dropout,
+            batch_first=True,
         )
 
         # Transformer layers for temporal modeling
-        encoder_layer, nn.TransformerEncoderLayer(
-            d_model=self.d_model
-            nhead=self.nhead
-            dim_feedforward=self.d_model * 4
-            dropout=self.dropout
-            batch_first=True
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=self.d_model,
+            nhead=self.nhead,
+            dim_feedforward=self.d_model * 4,
+            dropout=self.dropout,
+            batch_first=True,
         )
         self.transformer = nn.TransformerEncoder(
             encoder_layer, num_layers=self.num_layers
         )
 
         # Output projections - will be dynamically set based on actual data
-        self.num_regimes = None  # Will be determined from data
-        self.regime_classifier = (
-            None  # Will be initialized after determining num_regimes
-        )
-        self.intensity_predictor = (
-            None  # Will be initialized after determining num_regimes
-        )
+        self.num_regimes: int | None = None  # Will be determined from data
+        self.regime_classifier: nn.Linear | None = None  # Will be initialized later
+        self.intensity_predictor: nn.Linear | None = None  # Will be initialized later
         self.transition_predictor = nn.Linear(self.d_model, 2)  # transition probability
         self.tpsl_predictor = nn.Linear(
-        self.d_model = 2
+            self.d_model, 2
         )  # TPSL-based direction (long/short only)
         self.confidence_predictor = nn.Linear(self.d_model, 1)  # confidence score
         # Persisted feature projection (initialized lazily to match input feature dimension)
         self.feature_projection: nn.Linear | None = None
 
     def forward(
-        self = hmm_states: dict[str, torch.Tensor], features: torch.Tensor, ) -> dict[str, torch.Tensor]:
+        self, hmm_states: dict[str, torch.Tensor], features: torch.Tensor
+    ) -> dict[str, torch.Tensor]:
         """Forward pass through the unified regime intelligence model.
 
         Args:
             hmm_states: Dict of HMM state sequences per timeframe
             features: Additional market features
 
-        Returns: Dict containing regime classification = transition predictions, and S/R detection
+        Returns: Dict containing regime classification, transition predictions, and S/R detection
 
         """
         batch_size = features.size(0)
         seq_len = features.size(1)
 
         # Encode HMM states for each timeframe
-        tf_embeddings = []
+        tf_embeddings: list[torch.Tensor] = []
         for tf in self.timeframes:
-        if tf in hmm_states:
+            if tf in hmm_states:
                 tf_embed = self.hmm_embeddings[tf](hmm_states[tf])
+                # If per-timeframe dim is smaller, pad to d_model across concatenation later
                 tf_embeddings.append(tf_embed)
 
         # Concatenate timeframe embeddings
         if tf_embeddings:
-            hmm_encoded, torch.cat(tf_embeddings, dim=-1)
-        else: hmm_encoded = torch.zeros(
+            hmm_cat = torch.cat(tf_embeddings, dim=-1)
+            # Project concatenated embeddings to d_model if needed
+            if hmm_cat.size(-1) != self.d_model:
+                hmm_encoded = nn.Linear(hmm_cat.size(-1), self.d_model).to(hmm_cat.device)(hmm_cat)
+            else:
+                hmm_encoded = hmm_cat
+        else:
+            hmm_encoded = torch.zeros(
                 batch_size, seq_len, self.d_model, device=features.device
             )
 
         # Combine with market features (lazy-init projection to avoid recreating each forward)
         if (
-        self.feature_projection is None
+            self.feature_projection is None
             or getattr(self.feature_projection, "in_features", None) != features.size(-1)
         ):
-        self.feature_projection = nn.Linear(features.size(-1), self.d_model).to(features.device)
+            self.feature_projection = nn.Linear(features.size(-1), self.d_model).to(features.device)
         feature_encoded = self.feature_projection(features)
 
         # Combine HMM and feature encodings
         combined = hmm_encoded + feature_encoded
 
         # Apply cross-timeframe attention
-        attended, _, self.cross_timeframe_attention(combined, combined, combined)
+        attended, _ = self.cross_timeframe_attention(combined, combined, combined)
 
         # Apply transformer layers
         transformed = self.transformer(attended)
 
         # Global average pooling for classification
-        pooled, torch.mean(transformed, dim=1)
+        pooled = torch.mean(transformed, dim=1)
 
         # Generate outputs
-        regime_logits = self.regime_classifier(pooled)
-        intensity_logits, self.intensity_predictor(pooled)  # Raw intensity scores
+        regime_logits = self.regime_classifier(pooled) if self.regime_classifier is not None else torch.zeros((batch_size, 1), device=pooled.device)
+        intensity_logits = (
+            self.intensity_predictor(pooled) if self.intensity_predictor is not None else torch.zeros((batch_size, 1), device=pooled.device)
+        )
         transition_logits = self.transition_predictor(pooled)
         tpsl_logits = self.tpsl_predictor(pooled)
         confidence_logits = self.confidence_predictor(pooled)
@@ -2003,7 +2008,12 @@ from src.utils.training_pipeline_decorators import (
     model_performance_thresholds={"accuracy": 0.55},
     data_quality_metrics={"completeness": 0.85},
 )
-async def run_step(symbol: str, exchange: str = "BINANCE", timeframe: str = "1m", training_config: dict[str, Any] | None, None, force_rerun: bool = False
+async def run_step(
+    symbol: str,
+    exchange: str = "BINANCE",
+    timeframe: str = "1m",
+    training_config: dict[str, Any] | None = None,
+    force_rerun: bool = False,
 ) -> bool:
     """Run the unified regime intelligence step.
 

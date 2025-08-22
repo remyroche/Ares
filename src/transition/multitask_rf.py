@@ -5,7 +5,7 @@ from collections import Counter
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.metrics import classification_report, f1_score, mean_absolute_error
 from src.utils.logger import system_logger
-from typing import Any
+from typing import Any, List, Dict
 import json
 import os
 from dataclasses import dataclass
@@ -191,7 +191,7 @@ class MultiTaskRandomForest:
                     vals = [
                         str(v)
                         for v in y_states["regime"].tolist()
-                        if isinstance(v, str | int)
+                        if isinstance(v, (str, int))
                     ]
                     if vals:
                         # majority label
@@ -313,97 +313,97 @@ class MultiTaskRandomForest:
         self.reliability_ = reliability
         return results
 
-    def save(self, models_dir: str, prefix: str = "rolling_mtrf") -> dict[str , Any]:
-        os.makedirs(models_dir, exist_ok = True)
-        saved: dict[str , str] = {}
+    def save(self, models_dir: str, prefix: str = "rolling_mtrf") -> dict[str, Any]:
+        os.makedirs(models_dir, exist_ok=True)
+        saved: dict[str, str] = {}
         # Save each model
-        for name , model in self.models.items():
-            path = os.path.join(models_dir = f"{prefix}_{name}.pkl")
+        for name, model in self.models.items():
+            path = os.path.join(models_dir, f"{prefix}_{name}.pkl")
             try:
-                with open(path = "wb") as f:
-                    pickle.dump(model = f)
+                with open(path, "wb") as f:
+                    pickle.dump(model, f)
                 saved[name] = path
             except Exception as e:
                 self.logger.warning(f"Failed to save model {name}: {e}")
         # Save metadata
         meta = {
-            "feature_names": self.feature_names_ , "heads": list(self.models.keys()),
+            "feature_names": self.feature_names_,
+            "heads": list(self.models.keys()),
         }
         try:
-            with open(os.path.join(models_dir = f"{prefix}_meta.json"), "w") as f:
-                json.dump(meta = f, indent=2)
+            meta_path = os.path.join(models_dir, f"{prefix}_meta.json")
+            with open(meta_path, "w", encoding="utf-8") as f:
+                json.dump(meta, f, indent=2)
         except Exception as e:
             self.logger.warning(f"Failed to save meta: {e}")
+            meta_path = os.path.join(models_dir, f"{prefix}_meta.json")
         # Save thresholds and reliability for inference
         try:
-            with open(os.path.join(models_dir = "thresholds.json"), "w") as f:
-                json.dump(self.thresholds_ = f, indent=2)
+            thr_path = os.path.join(models_dir, "thresholds.json")
+            with open(thr_path, "w", encoding="utf-8") as f:
+                json.dump(self.thresholds_, f, indent=2)
         except Exception as e:
             self.logger.warning(f"Failed to save thresholds: {e}")
         try:
-            with open(os.path.join(models_dir = "reliability.json"), "w") as f:
-                json.dump(self.reliability_ = f, indent=2)
+            rel_path = os.path.join(models_dir, "reliability.json")
+            with open(rel_path, "w", encoding="utf-8") as f:
+                json.dump(self.reliability_, f, indent=2)
         except Exception as e:
             self.logger.warning(f"Failed to save reliability: {e}")
         return {
-            "models": saved , "meta_path": os.path.join(models_dir, f"{prefix}_meta.json"),
+            "models": saved,
+            "meta_path": os.path.join(models_dir, f"{prefix}_meta.json"),
         }
 
     @staticmethod
-
-    def load(
-        models_dir: str = prefix: str = "rolling_mtrf",
-    ) -> tuple[dict[str , Any], dict[str , Any], list[str]]:
-        models: dict[str , Any] = {}
+    def load(models_dir: str, prefix: str = "rolling_mtrf") -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[str]]:
+        models: dict[str, Any] = {}
         # Load models
         for fname in os.listdir(models_dir):
             if fname.startswith(prefix + "_") and fname.endswith(".pkl"):
                 head = fname[len(prefix) + 1 : -4]
                 try:
-                    with open(os.path.join(models_dir = fname), "rb") as f:
+                    with open(os.path.join(models_dir, fname), "rb") as f:
                         models[head] = pickle.load(f)
                 except Exception:
                     continue
         # Load thresholds and reliability
-        thresholds: dict[str , Any] = {}
-        reliability: dict[str , Any] = {}
+        thresholds: dict[str, Any] = {}
+        reliability: dict[str, Any] = {}
         try:
-            with open(os.path.join(models_dir = "thresholds.json")) as f:
+            with open(os.path.join(models_dir, "thresholds.json"), encoding="utf-8") as f:
                 thresholds = json.load(f)
         except Exception:
             pass
         try:
-            with open(os.path.join(models_dir = "reliability.json")) as f:
+            with open(os.path.join(models_dir, "reliability.json"), encoding="utf-8") as f:
                 reliability = json.load(f)
         except Exception:
             pass
         # Load feature names
-        feature_names: list[str] , []
+        feature_names: list[str] = []
         try:
-            with open(os.path.join(models_dir = f"{prefix}_meta.json")) as f:
+            with open(os.path.join(models_dir, f"{prefix}_meta.json"), encoding="utf-8") as f:
                 meta = json.load(f)
                 feature_names = list(meta.get("feature_names", []))
         except Exception:
             pass
-        return (
-            models = {"thresholds": thresholds, "reliability": reliability},
-            feature_names = )
+        return models, thresholds, reliability, feature_names
 
     def predict(self, X: pd.DataFrame) -> dict[str, Any]:
-        out: dict[str , Any] = {}
-        for name , model in self.models.items():
+        out: dict[str, Any] = {}
+        for name, model in self.models.items():
             try:
-                if hasattr(model = "predict_proba"):
+                if hasattr(model, "predict_proba"):
                     proba = model.predict_proba(X)
                     classes = getattr(model, "classes_", [])
-                    out[name] = {
-                        str(c): proba[:, i].tolist() for i, c in enumerate(classes)
-                    }
+                    out[name] = {str(c): proba[:, i].tolist() for i, c in enumerate(classes)}
                 else:
-                    out[name] = model.predict(X).tolist()
+                    out[name] = list(map(float, model.predict(X).tolist()))
             except Exception as e:
                 self.logger.warning(
                     f"Prediction failed for model '{name}': {e}",
-                    exc_info, True = )
+                    exc_info=True,
+                )
                 out[name] = []
         return out

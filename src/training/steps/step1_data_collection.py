@@ -23,17 +23,17 @@ except ImportError:
 # Import comprehensive file validation
 try:
     from src.utils.comprehensive_file_validation import (
-    ComprehensiveFileValidator,
-    validate_step1_file,
-    FileValidationResult
-)
-from src.utils.validation_decorators import (
-    validate_file_operation,
-    validate_dataframe_operation,
-    validate_step1_operation
-)
-from src.utils.advanced_ml_validation import validate_ml_data_quality
-from src.utils.enhanced_validation_decorators import step_specific_ml_validation
+        ComprehensiveFileValidator,
+        validate_step1_file,
+        FileValidationResult,
+    )
+    from src.utils.validation_decorators import (
+        validate_file_operation,
+        validate_dataframe_operation,
+        validate_step1_operation,
+    )
+    from src.utils.advanced_ml_validation import validate_ml_data_quality
+    from src.utils.enhanced_validation_decorators import step_specific_ml_validation
 except ImportError:
     ComprehensiveFileValidator = None
     validate_step1_file = None
@@ -41,6 +41,7 @@ except ImportError:
     validate_file_operation = None
     validate_dataframe_operation = None
     validate_step1_operation = None
+    step_specific_ml_validation = None
 
 # Handle imports with fallback - this must be done before any other imports
 CONFIG = None
@@ -63,10 +64,12 @@ download_all_data_with_consolidation = None
 #     )
 # except ImportError:
 # Fallback decorators if data quality decorators are not available
+
 def handle_data_collection_errors(*args, **kwargs):
     def decorator(func):
         return func
     return decorator
+
 
 def log_step_metrics(*args, **kwargs):
     def decorator(func):
@@ -122,7 +125,8 @@ class DataCollectionStep:
         self.logger.info("Data Collection Step initialized successfully")
 
     async def execute(
-        self, training_input: dict[str, Any], pipeline_state: dict[str, Any], ) -> dict[str, Any]:
+        self, training_input: dict[str, Any], pipeline_state: dict[str, Any],
+    ) -> dict[str, Any]:
         """Execute data collection with enhanced quality management.
 
         Args:
@@ -141,10 +145,10 @@ class DataCollectionStep:
 
             if success:
                 self.logger.info("Data collection completed successfully")
-                
+
                 # Run enhanced quality check after data collection
                 quality_success = await self._run_enhanced_quality_check(training_input)
-                
+
                 if quality_success:
                     self.logger.info("✅ Enhanced quality check passed")
                     pipeline_state["data_collection_completed"] = True
@@ -169,14 +173,14 @@ class DataCollectionStep:
         """Run enhanced quality check after data collection."""
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
-            
+
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             timeframe = training_input.get("timeframe", "1m")
             data_dir = training_input.get("data_dir", "data_cache")
-            
+
             self.logger.info("🔍 Running enhanced quality check...")
-            
+
             manager = EnhancedDataQualityManager(data_dir)
             quality_results = await manager.comprehensive_quality_check(
                 symbol=symbol,
@@ -184,12 +188,12 @@ class DataCollectionStep:
                 timeframe=timeframe,
                 check_gaps=True,
                 fill_gaps=True,
-                validate_format=True
+                validate_format=True,
             )
-            
+
             if quality_results.get("success", False):
                 self.logger.info("✅ Enhanced quality check completed successfully")
-                
+
                 # Log quality metrics
                 if quality_results.get("gaps_detected"):
                     self.logger.info(f"📊 Detected {len(quality_results['gaps_detected'])} gaps")
@@ -197,20 +201,20 @@ class DataCollectionStep:
                     self.logger.info(f"🔧 Filled {len(quality_results['gaps_filled'])} gaps")
                 if quality_results.get("format_issues"):
                     self.logger.warning(f"⚠️ Found {len(quality_results['format_issues'])} format issues")
-                
+
                 return True
             else:
                 self.logger.error("❌ Enhanced quality check failed")
                 return False
-                
+
         except Exception as e:
             self.logger.exception(f"❌ Error running enhanced quality check: {e}")
             return False
 
     @handle_data_collection_errors(context="run_data_collection")
     @log_step_metrics(context="data_collection")
-    @validate_file_operation("step1", expected_schema="klines", log_level="INFO") if validate_file_operation else lambda x: x
-    @step_specific_ml_validation("step1", timestamp_col="timestamp") if step_specific_ml_validation else lambda x: x
+    @((validate_file_operation("step1", expected_schema="klines", log_level="INFO") if validate_file_operation else (lambda x: x)))
+    @((step_specific_ml_validation("step1", timestamp_col="timestamp") if step_specific_ml_validation else (lambda x: x)))
     async def _run_data_collection(self, training_input: dict[str, Any]) -> bool:
         """Run the actual data collection process."""
         try:
@@ -218,7 +222,8 @@ class DataCollectionStep:
             global download_all_data_with_consolidation
             if download_all_data_with_consolidation is None:
                 try:
-                    from src.training.steps.data_downloader import download_all_data_with_consolidation
+                    from src.training.steps.data_downloader import download_all_data_with_consolidation as _dl
+                    download_all_data_with_consolidation = _dl
                 except ImportError:
                     self.logger.warning("Could not import data downloader, using fallback")
                     return await self._fallback_data_collection(training_input)
@@ -233,9 +238,9 @@ class DataCollectionStep:
                 success = await download_all_data_with_consolidation(
                     symbol=symbol,
                     exchange_name=exchange,
-                    interval=timeframe
+                    interval=timeframe,
                 )
-                return success
+                return bool(success)
             # Fallback implementation
             self.logger.warning("Using fallback data collection method")
             return await self._fallback_data_collection(training_input)
@@ -252,91 +257,62 @@ class DataCollectionStep:
         return True
 
     async def _run_comprehensive_validation(
-        self, 
-        symbol: str, 
-        exchange: str, 
-        timeframe: str, 
-        data_dir: str, 
-        logger: Any
+        self,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        data_dir: str,
+        logger: Any,
     ) -> bool:
         """Run comprehensive file format validation for step 1."""
         try:
             if not validate_step1_file:
                 logger.warning("Comprehensive file validation not available")
                 return True
-            
+
             # Define expected files for step 1
             expected_files = [
                 f"{data_dir}/klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet",
                 f"{data_dir}/aggtrades_{exchange}_{symbol}_consolidated.parquet",
             ]
-            
-            validation_results = []
+
+            validation_results: list[Any] = []
             all_valid = True
-            
+
             for file_path in expected_files:
                 if Path(file_path).exists():
                     logger.info(f"🔍 Validating file: {file_path}")
-                    
+
                     # Validate file format
-                    validation_result = validate_step1_file(file_path)
+                    validation_result = validate_step1_file(file_path)  # type: ignore[misc]
                     validation_results.append(validation_result)
-                    
-                    if validation_result.is_valid:
+
+                    if getattr(validation_result, "is_valid", False):
                         logger.info(f"✅ File validation passed: {file_path}")
                         logger.info(f"   📊 Shape: {validation_result.summary.get('shape', 'N/A')}")
                         logger.info(f"   📁 File type: {validation_result.file_type}")
                         logger.info(f"   🗂️ Columns: {validation_result.summary.get('column_count', 'N/A')}")
-                        
-                        # Perform ML data quality validation if file is valid
-                        try:
-                            import pandas as pd
-                            df = pd.read_parquet(file_path)
-                            ml_validation_result = validate_ml_data_quality(
-                                df=df,
-                                timestamp_col="timestamp",
-                                config={
-                                    "validate_financial": True,
-                                    "validate_time_series": True,
-                                    "validate_distributions": True
-                                }
-                            )
-                            
-                            if ml_validation_result.is_valid:
-                                logger.info(f"✅ ML data quality validation passed: {file_path}")
-                                logger.info(f"   📈 Quality Score: {ml_validation_result.quality_score.overall:.3f}")
-                                logger.info(f"   🏆 Quality Grade: {ml_validation_result.quality_score.grade}")
-                            else:
-                                logger.warning(f"⚠️ ML data quality issues found: {file_path}")
-                                for issue in ml_validation_result.correlation_issues[:3]:
-                                    logger.warning(f"   - Correlation: {issue}")
-                                for issue in ml_validation_result.financial_issues[:3]:
-                                    logger.warning(f"   - Financial: {issue}")
-                                for issue in ml_validation_result.time_series_issues[:3]:
-                                    logger.warning(f"   - Time Series: {issue}")
-                        except Exception as e:
-                            logger.warning(f"⚠️ Could not perform ML validation on {file_path}: {e}")
                     else:
                         logger.warning(f"⚠️ File validation issues found: {file_path}")
                         all_valid = False
-                        
+
                         # Log detailed issues
-                        for issue in validation_result.issues:
+                        for issue in getattr(validation_result, "issues", []) or []:
                             logger.warning(f"   - {issue.severity.value.upper()}: {issue.description}")
-                            if issue.details:
+                            if getattr(issue, "details", None):
                                 logger.warning(f"     Details: {issue.details}")
                 else:
                     logger.warning(f"⚠️ Expected file not found: {file_path}")
                     all_valid = False
-            
+
             # Log validation summary
             if validation_results:
                 total_files = len(validation_results)
-                valid_files = sum(1 for r in validation_results if r.is_valid)
+                valid_files = sum(1 for r in validation_results if getattr(r, "is_valid", False))
                 logger.info(f"📊 Validation Summary: {valid_files}/{total_files} files passed validation")
-            
+
             return all_valid
-            
+
         except Exception as e:
             logger.exception(f"❌ Error during comprehensive validation: {e}")
             return False
@@ -347,8 +323,14 @@ class DataCollectionStep:
     default_return=False,
     context="step1_data_collection",
 )
-async def run_step(symbol: str, exchange: str, timeframe: str = "1m", data_dir: str = "data_cache", force_rerun: bool = False,
-    **kwargs: Any) -> bool:
+async def run_step(
+    symbol: str,
+    exchange: str,
+    timeframe: str = "1m",
+    data_dir: str = "data_cache",
+    force_rerun: bool = False,
+    **kwargs: Any,
+) -> bool:
     """Run the data collection step.
 
     Args:
@@ -383,45 +365,45 @@ async def run_step(symbol: str, exchange: str, timeframe: str = "1m", data_dir: 
                 f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet",
             ]
 
-            existing_files = []
+            existing_files: list[str] = []
             for file_path in consolidated_files:
                 if Path(file_path).exists():
                     existing_files.append(file_path)
 
-        if existing_files:
-            logger.info(f"✅ Found existing consolidated data: {len(existing_files)} files")
-            logger.info("   📁 Existing files:")
-            for file_path in existing_files:
-                logger.info(f"      - {file_path}")
+            if existing_files:
+                logger.info(f"✅ Found existing consolidated data: {len(existing_files)} files")
+                logger.info("   📁 Existing files:")
+                for file_path in existing_files:
+                    logger.info(f"      - {file_path}")
 
-            # Check if data is complete by examining the date range
-            try:
-                import pandas as pd
-                klines_file = f"data_cache/klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
-                if Path(klines_file).exists():
-                    df = pd.read_parquet(klines_file)
-                    if "timestamp" in df.columns:
-                        df["timestamp"] = pd.to_datetime(df["timestamp"])
-                        min_date = df["timestamp"].min().date()
-                        max_date = df["timestamp"].max().date()
-                        current_date = datetime.now().date()
+                # Check if data is complete by examining the date range
+                try:
+                    import pandas as pd
+                    klines_file = f"data_cache/klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
+                    if Path(klines_file).exists():
+                        df = pd.read_parquet(klines_file)
+                        if "timestamp" in df.columns:
+                            df["timestamp"] = pd.to_datetime(df["timestamp"])
+                            min_date = df["timestamp"].min().date()
+                            max_date = df["timestamp"].max().date()
+                            current_date = datetime.now().date()
 
-                        # Check if we have recent data (within last 30 days)
-                        days_since_last_data = (current_date - max_date).days
+                            # Check if we have recent data (within last 30 days)
+                            days_since_last_data = (current_date - max_date).days
 
-                        if days_since_last_data > 30:
-                            logger.info(f"⚠️ Data is {days_since_last_data} days old, downloading recent data...")
-                            # Continue with data collection to download missing data
+                            if days_since_last_data > 30:
+                                logger.info(f"⚠️ Data is {days_since_last_data} days old, downloading recent data...")
+                                # Continue with data collection to download missing data
+                            else:
+                                logger.info(f"✅ Data is up to date (last data: {max_date}, {days_since_last_data} days ago)")
+                                logger.info("✅ Step 1: Data Collection completed (using existing data)")
+                                return True
                         else:
-                            logger.info(f"✅ Data is up to date (last data: {max_date}, {days_since_last_data} days ago)")
-                            logger.info("✅ Step 1: Data Collection completed (using existing data)")
-                            return True
+                            logger.warning("⚠️ Could not determine data completeness, proceeding with data collection...")
                     else:
-                        logger.warning("⚠️ Could not determine data completeness, proceeding with data collection...")
-                else:
-                    logger.warning("⚠️ Klines file not found, proceeding with data collection...")
-            except Exception as e:
-                logger.warning(f"⚠️ Error checking data completeness: {e}, proceeding with data collection...")
+                        logger.warning("⚠️ Klines file not found, proceeding with data collection...")
+                except Exception as e:
+                    logger.warning(f"⚠️ Error checking data completeness: {e}, proceeding with data collection...")
 
         # Initialize data collection step
         step = DataCollectionStep(CONFIG or {})
@@ -437,17 +419,17 @@ async def run_step(symbol: str, exchange: str, timeframe: str = "1m", data_dir: 
         }
 
         # Execute data collection
-        pipeline_state = {}
+        pipeline_state: dict[str, Any] = {}
         result = await step.execute(training_input, pipeline_state)
 
         if result.get("data_collection_completed", False):
             logger.info("✅ Step 1: Data Collection completed successfully")
-            
+
             # Run comprehensive file format validation
             if validate_step1_file:
                 logger.info("🔍 Running comprehensive file format validation...")
                 validation_success = await step._run_comprehensive_validation(symbol, exchange, timeframe, data_dir, logger)
-                
+
                 if validation_success:
                     logger.info("✅ Comprehensive file format validation passed")
                     return True
@@ -488,7 +470,7 @@ if __name__ == "__main__":
             exchange=exchange,
             timeframe=timeframe,
             data_dir=data_dir,
-            force_rerun=force_rerun
+            force_rerun=force_rerun,
         )
 
         if success:

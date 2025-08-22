@@ -21,17 +21,17 @@ from src.training.optimized_feature_selection_manager import (
 # Import comprehensive file validation
 try:
     from src.utils.comprehensive_file_validation import (
-    ComprehensiveFileValidator,
-    validate_step2_file,
-    FileValidationResult
-)
-from src.utils.validation_decorators import (
-    validate_file_operation,
-    validate_dataframe_operation,
-    validate_step2_operation
-)
-from src.utils.advanced_ml_validation import validate_ml_data_quality
-from src.utils.enhanced_validation_decorators import step_specific_ml_validation
+        ComprehensiveFileValidator,
+        validate_step2_file,
+        FileValidationResult,
+    )
+    from src.utils.validation_decorators import (
+        validate_file_operation,
+        validate_dataframe_operation,
+        validate_step2_operation,
+    )
+    from src.utils.advanced_ml_validation import validate_ml_data_quality
+    from src.utils.enhanced_validation_decorators import step_specific_ml_validation
 except ImportError:
     ComprehensiveFileValidator = None
     validate_step2_file = None
@@ -39,6 +39,7 @@ except ImportError:
     validate_file_operation = None
     validate_dataframe_operation = None
     validate_step2_operation = None
+    step_specific_ml_validation = None  # ensure symbol exists
 
 # Import the auto-fix decorator for data quality issues
 from src.training.steps.raw_data_quality_checker import auto_fix_data_quality_issues
@@ -284,9 +285,9 @@ def _check_feature_artifacts_exist(symbol: str, exchange: str, data_dir: str) ->
 )
 def _load_feature_artifacts(symbol: str, exchange: str, data_dir: str) -> dict[str, pd.DataFrame]:
     """Load existing feature artifacts."""
-    paths, _get_feature_artifact_paths(symbol, exchange, data_dir)
+    paths = _get_feature_artifact_paths(symbol, exchange, data_dir)
 
-    artifacts = {}
+    artifacts: dict[str, pd.DataFrame] = {}
     for split in ["train", "validation", "test"]:
         artifacts[split] = pd.read_parquet(paths[split])
 
@@ -334,9 +335,16 @@ def _load_feature_artifacts(symbol: str, exchange: str, data_dir: str) -> dict[s
     expected_exception=Exception,
     monitor_interval=20.0,
 )
-def _save_feature_artifacts(symbol: str, exchange: str, data_dir: str, features: dict[str, pd.DataFrame], feature_config: dict[str, Any], artifact_hash: str, ) -> None:
+def _save_feature_artifacts(
+    symbol: str,
+    exchange: str,
+    data_dir: str,
+    features: dict[str, pd.DataFrame],
+    feature_config: dict[str, Any],
+    artifact_hash: str,
+) -> None:
     """Save feature artifacts with metadata."""
-    paths, _get_feature_artifact_paths(symbol, exchange, data_dir)
+    paths = _get_feature_artifact_paths(symbol, exchange, data_dir)
 
     # Save feature DataFrames
     for split, df in features.items():
@@ -413,8 +421,15 @@ def _save_feature_artifacts(symbol: str, exchange: str, data_dir: str, features:
     validation_score_requirements={"feature_quality": 0.7},
 )
 @auto_fix_data_quality_issues
-@step_specific_ml_validation("step2", timestamp_col="timestamp") if step_specific_ml_validation else lambda x: x
-async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data/training", timeframe: str = "1m", force_rerun: bool = False, **kwargs: Any) -> bool:
+@((step_specific_ml_validation("step2", timestamp_col="timestamp") if step_specific_ml_validation else (lambda x: x)))
+async def run_step(
+    symbol: str,
+    exchange: str = "BINANCE",
+    data_dir: str = "data/training",
+    timeframe: str = "1m",
+    force_rerun: bool = False,
+    **kwargs: Any,
+) -> bool:
     """Step 2: Engineering the features (post-labeling).
     Loads labeled parquet from Step 1 and produces robust feature parquet artifacts for train/val/test.
     Also writes pickle copies with timestamps and a feature hash for Step 3 compatibility.
@@ -469,7 +484,7 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
                 exchange=exchange,
                 timeframe=timeframe,
                 data_dir="data_cache",  # step1_5 data is in data_cache
-                columns=["timestamp", "open", "high", "low", "close", "volume", "exchange", "symbol", "timeframe"]
+                columns=["timestamp", "open", "high", "low", "close", "volume", "exchange", "symbol", "timeframe"],
             )
 
             if unified_data is None or unified_data.empty:
@@ -541,18 +556,17 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
 
         # SR levels loader with append-and-reuse semantics (prefers Step 2 persisted levels)
         @with_tracing_span("Step3._load_or_build_sr_levels", log_args=False)
-        async def _load_or_build_sr_levels(price_df: pd.DataFrame, split_name: str
-        ) -> dict[str, Any]:
+        async def _load_or_build_sr_levels(price_df: pd.DataFrame, split_name: str) -> dict[str, Any]:
             try:
-                data_dir = data_dir_ref
+                data_dir_local = data_dir
                 exchange_local = exchange
                 symbol_local = symbol
-                import os
+                import os as _os
 
                 sr_path = (
-                    f"{data_dir}/{exchange_local}_{symbol_local}_sr_levels.parquet"
+                    f"{data_dir_local}/{exchange_local}_{symbol_local}_sr_levels.parquet"
                 )
-                if os.path.exists(sr_path):
+                if _os.path.exists(sr_path):
                     sr_df = pd.read_parquet(sr_path)
                     # Retain only recent enough levels and compute age decay; keep full history for training alignment
                     sr_df["timestamp"] = pd.to_datetime(
@@ -560,13 +574,13 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
                     )
                     sr_df = sr_df.dropna(subset=["timestamp"]).sort_values("timestamp")
                     # Align to the split end timestamp; strengths can be decayed by age (optional)
-                    pd.to_datetime(price_df.index.max())
+                    _ = pd.to_datetime(price_df.index.max())
                     # Build levels list with decayed strength based on age in minutes
-                    supports = []
-                    resistances = []
+                    supports: list[dict[str, float]] = []
+                    resistances: list[dict[str, float]] = []
                     for _, row in sr_df.iterrows():
-                        price = float(row.get("price", np.nan))
-                        if not np.isfinite(price):
+                        _price = float(row.get("price", np.nan))
+                        if not np.isfinite(_price):
                             continue
                         base_strength = float(row.get("strength", 0.2))
                         age_min = float(row.get("age", 0.0))
@@ -582,13 +596,11 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
                         else:
                             decayed = base_strength
                         lvl = {
-                            "price": price,
+                            "price": _price,
                             "strength": float(np.clip(decayed, 0.0, 1.0)),
                         }
                         if (
-                            str(row.get("level_type", "support"))
-                            .lower()
-                            .startswith("support")
+                            str(row.get("level_type", "support")).lower().startswith("support")
                         ):
                             supports.append(lvl)
                         else:
@@ -613,8 +625,8 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
                 support_prices = np.percentile(lt.values, [5, 15, 30]).tolist()
                 resistance_prices = np.percentile(ht.values, [70, 85, 95]).tolist()
 
-                def _mk_levels(vals, strength=0.2):
-                    out = []
+                def _mk_levels(vals, strength: float = 0.2) -> list[dict[str, float]]:
+                    out: list[dict[str, float]] = []
                     seen: set[float] = set()
                     for v in vals:
                         r = round(float(v), 8)
@@ -632,8 +644,7 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
                 return {"support_levels": [], "resistance_levels": []}
 
         @with_tracing_span("Step2._generate_comprehensive_sr_features", log_args=False)
-        async def _generate_comprehensive_sr_features(price_df: pd.DataFrame, sr_levels: dict[str, Any]
-        ) -> dict[str, pd.Series]:
+        async def _generate_comprehensive_sr_features(price_df: pd.DataFrame, sr_levels: dict[str, Any]) -> dict[str, pd.Series]:
             """Generate comprehensive SR features using the SRBreakoutPredictor.
 
             This function adds the following comprehensive SR features:
@@ -647,31 +658,33 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
             - delta_sr_score
             - isolation_score
             """
-        try:
-            # Initialize SR breakout predictor
-            sr_predictor = await setup_sr_breakout_predictor(config)
-            if not sr_predictor:
-                logger.warning("⚠️ Failed to initialize SR breakout predictor, using basic features")
+            try:
+                # Initialize SR breakout predictor
+                config = {"symbol": symbol, "exchange": exchange, "timeframe": timeframe}
+                sr_predictor = await setup_sr_breakout_predictor(config)
+                if not sr_predictor:
+                    logger.warning("⚠️ Failed to initialize SR breakout predictor, using basic features")
+                    return {}
+
+                # Generate comprehensive SR features
+                comprehensive_features = sr_predictor.calculate_comprehensive_sr_features(
+                    price_df=price_df,
+                    sr_levels=sr_levels,
+                )
+
+                if comprehensive_features:
+                    logger.info(f"✅ Generated {len(comprehensive_features)} comprehensive SR features")
+                    # Log feature names for debugging
+                    feature_names = list(comprehensive_features.keys())
+                    logger.info(f"🔍 Comprehensive SR features: {feature_names}")
+                else:
+                    logger.warning("⚠️ No comprehensive SR features generated")
+
+                return comprehensive_features
+
+            except Exception as e:
+                logger.exception(f"❌ Error generating comprehensive SR features: {e}")
                 return {}
-
-            # Generate comprehensive SR features
-            comprehensive_features = sr_predictor.calculate_comprehensive_sr_features(
-                price_df=sr_levels,
-            )
-
-            if comprehensive_features:
-                logger.info(f"✅ Generated {len(comprehensive_features)} comprehensive SR features")
-                # Log feature names for debugging
-                feature_names = list(comprehensive_features.keys())
-                logger.info(f"🔍 Comprehensive SR features: {feature_names}")
-            else:
-                logger.warning("⚠️ No comprehensive SR features generated")
-
-            return comprehensive_features
-
-        except Exception as e:
-            logger.exception(f"❌ Error generating comprehensive SR features: {e}")
-            return {}
 
         price_tr, vol_tr = _extract_inputs(labeled["train"])
         price_vl, vol_vl = _extract_inputs(labeled["validation"])
@@ -681,9 +694,9 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
         # Get configuration from kwargs or use defaults
         feature_config = kwargs.get("feature_config", {})
         if not feature_config:
-        # Default configuration with difference and acceleration features enabled
-        # NOTE: Advanced features have been re-enabled after fixing indentation issues
-        # in vectorized_advanced_feature_engineering.py. All analyzers should now work properly.
+            # Default configuration with difference and acceleration features enabled
+            # NOTE: Advanced features have been re-enabled after fixing indentation issues
+            # in vectorized_advanced_feature_engineering.py. All analyzers should now work properly.
             feature_config = {
                 "vectorized_advanced_features": {
                     "enable_difference_acceleration_features": True,
@@ -723,7 +736,7 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
         comprehensive_sr_vl = await _generate_comprehensive_sr_features(price_vl, sr_vl)
         comprehensive_sr_te = await _generate_comprehensive_sr_features(price_te, sr_te)
 
-        def _merge_features(target_feats, new_feats) -> None:
+        def _merge_features(target_feats: dict[str, pd.Series], new_feats: dict[str, pd.Series]) -> None:
             if not new_feats:
                 return
             for feature_name, feature_series in new_feats.items():
@@ -744,8 +757,7 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
 
         # 4b) Optionally augment with Autoencoder features
         @with_tracing_span("Step3._augment_with_autoencoder", log_args=False)
-        def _augment_with_autoencoder(features_df: pd.DataFrame, split: str
-        ) -> pd.DataFrame:
+        def _augment_with_autoencoder(features_df: pd.DataFrame, split: str) -> pd.DataFrame:
             try:
                 from src.analyst.autoencoder_feature_generator import (
                     AutoencoderFeatureGenerator,
@@ -781,7 +793,7 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
                 return features_df
 
         # Temporarily disable autoencoder features to avoid validation issues
-        if bool(kwargs.get("enable_autoencoder_features", False)):  # Changed from True to False
+        if bool(kwargs.get("enable_autoencoder_features", False)):
             X_tr = _augment_with_autoencoder(X_tr, "train")
             X_vl = _augment_with_autoencoder(X_vl, "validation")
             X_te = _augment_with_autoencoder(X_te, "test")
@@ -833,7 +845,7 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
             df = df.replace([np.inf, -np.inf], np.nan)
 
             # Check for constant features more intelligently
-            low_var_cols = []
+            low_var_cols: list[str] = []
             for col in df.columns:
                 series = df[col]
                 if pd.api.types.is_numeric_dtype(series.dtype):
@@ -867,8 +879,7 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
 
         # 6) Cluster-based correlation pruning with cap (|rho| >= threshold)
         @with_tracing_span("Step3._cluster_corr_prune", log_args=False)
-        def _cluster_corr_prune(train_df: pd.DataFrame, thr: float = 0.95, max_to_drop: int | None = None
-        ) -> list[str]:
+        def _cluster_corr_prune(train_df: pd.DataFrame, thr: float = 0.95, max_to_drop: int | None = None) -> list[str]:
             if train_df.empty:
                 return []
             numeric_df = train_df.select_dtypes(include=[np.number]).copy()
@@ -879,7 +890,7 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
             corr = numeric_df.corr().abs()
 
             # Build adjacency based on threshold
-            neighbors = {c: set() for c in cols}
+            neighbors: dict[str, set[str]] = {c: set() for c in cols}
             for i in range(len(cols)):
                 for j in range(i + 1, len(cols)):
                     if corr.iloc[i, j] >= thr:
@@ -888,13 +899,13 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
                         neighbors[cj].add(ci)
 
             # Find connected components (clusters)
-            visited = set()
+            visited: set[str] = set()
             clusters: list[list[str]] = []
             for c in cols:
                 if c in visited:
                     continue
                 stack = [c]
-                cluster = []
+                cluster: list[str] = []
                 while stack:
                     node = stack.pop()
                     if node in visited:
@@ -1035,9 +1046,9 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
             logger.info("🔍 VIF Analysis: Using full dataset rows for VIF (no downsampling)")
 
             vif_thr = float(kwargs.get("vif_threshold", 20.0))  # Increased to 20.0 for financial data (more permissive)
-            int(kwargs.get("max_vif_iterations", 5))  # Reduced from 10 to 5
+            _ = int(kwargs.get("max_vif_iterations", 5))  # Reduced from 10 to 5 (not used in current one-shot)
             num_cols = list(Xv.select_dtypes(include=[np.number]).columns)
-            removed_features = []
+            removed_features: list[str] = []
             # Read thresholds from config if available
             try:
                 from src.utils.config_loader import ConfigLoader
@@ -1091,7 +1102,7 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
 
                 # Near-duplicates via very high correlation (|corr|>=0.9999): keep lexicographically first
                 corr_abs = Xn_base.corr().abs()
-                to_remove = set()
+                to_remove: set[str] = set()
                 cols_sorted = sorted(num_cols)
                 for i, ci in enumerate(cols_sorted):
                     if ci in to_remove:
@@ -1108,8 +1119,8 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
 
                 # Perfect correlation pairs (|corr|==1.0) – keep lexicographically first
                 corr_abs2 = Xn_base.corr().abs()
-                perfect_pairs = []
-                removal_pc = set()
+                perfect_pairs: list[tuple[str, str]] = []
+                removal_pc: set[str] = set()
                 cols_sorted2 = sorted(Xn_base.columns)
                 for i, ci in enumerate(cols_sorted2):
                     if ci in removal_pc:
@@ -1166,14 +1177,6 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
                         logger.warning(f"🚨   - Min/Max: {feat_data.min()}/{feat_data.max()}")
                         logger.warning(f"🚨   - NaN count: {feat_data.isna().sum()}")
 
-                        # Check if it's all NaN filled with same value
-                        if feat_data.nunique() == 1:
-                            unique_val = feat_data.iloc[0]
-                            if pd.isna(unique_val) or unique_val == 0:
-                                logger.warning(f"🚨   - LIKELY CAUSE: All NaN values filled with {unique_val}")
-                            else:
-                                logger.warning(f"🚨   - LIKELY CAUSE: All values are {unique_val} (calculation bug)")
-
                     # TEMPORARILY KEEP constant features to debug the issue
                     logger.warning(f"🚨 TEMPORARILY KEEPING constant features for debugging: {zero_var_features}")
                     # Xn = Xn.drop(columns=zero_var_features)
@@ -1193,71 +1196,71 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
                     # Skip VIF analysis if not enough features
                     vif_vals = pd.Series(np.ones(len(num_cols)), index=num_cols)
                     max_vif = 1.0
-
-                # Now standardize the cleaned data
-                std = Xn.std(ddof=0)
-                std = std.replace(0.0, 1.0)
-                Xn = (Xn - Xn.mean()) / std
-
-                # Cheap VIF via shrinkage inverse with timeout protection
-                import signal
-
-                def timeout_handler(signum, frame) -> Never:
-                    msg = "VIF calculation timed out"
-                    raise TimeoutError(msg)
-
-                try:
-                    # Set timeout for VIF calculation (30 seconds)
-                    signal.signal(signal.SIGALRM, timeout_handler)
-                    signal.alarm(30)
-
-                    try:
-                        from sklearn.covariance import LedoitWolf
-                        lw = LedoitWolf().fit(Xn.values)
-                        cov = lw.covariance_
-                        std_vec = np.sqrt(np.diag(cov))
-                        std_vec[std_vec == 0.0] = 1.0
-                        R = cov / np.outer(std_vec, std_vec)
-                    except Exception:
-                        logger.info("🔍 VIF Analysis: LedoitWolf failed, using correlation matrix")
-                        R = Xn.corr().values
-
-                    try:
-                        R_inv = np.linalg.pinv(R)
-                        vif_vals = pd.Series(np.diag(R_inv), index=num_cols)
-                    except Exception as _e:
-                        logger.warning(f"⚠️ VIF Analysis: pseudo-inverse failed, fallback to diag ones: {_e}")
-                        vif_vals = pd.Series(np.ones(len(num_cols)), index=num_cols)
-
-                    # Cancel timeout
-                    signal.alarm(0)
-
-                except TimeoutError:
-                    logger.warning("⚠️ VIF Analysis: Calculation timed out, skipping VIF filtering")
-                    vif_vals = pd.Series(np.ones(len(num_cols)), index=num_cols)
-                except Exception as e:
-                    logger.warning(f"⚠️ VIF Analysis: Unexpected error, skipping VIF filtering: {e}")
-                    vif_vals = pd.Series(np.ones(len(num_cols)), index=num_cols)
-                max_vif = float(vif_vals.max()) if not vif_vals.empty else 0.0
-
-                logger.info(f"🔍 VIF Analysis: Max VIF: {max_vif:.2f}, Threshold: {vif_thr}")
-                logger.info(f"🔍 VIF Analysis: VIF range: {vif_vals.min():.2f} to {vif_vals.max():.2f}")
-                logger.info(f"🔍 VIF Analysis: Features with VIF > {vif_thr}: {(vif_vals > vif_thr).sum()}")
-
-                # One-shot prune: drop up to K highest VIF offenders
-                K = int(kwargs.get("max_vif_drop", 5))
-                if (vif_vals > vif_thr).any() and K > 0:
-                    offenders = vif_vals[vif_vals > vif_thr].sort_values(ascending=False)
-                    drops = list(offenders.head(K).index)
-                    # Respect overall cap
-                    cap_left = max(0, vif_allowed - len(removed_features))
-                    if len(drops) > cap_left:
-                        drops = drops[:cap_left]
-                    removed_features.extend(drops)
-                    num_cols = [c for c in num_cols if c not in drops]
-                    logger.info(f"📊 VIF prune (one-shot): dropping up to {K} high-VIF cols: {drops}")
                 else:
-                    logger.warning("⚠️ VIF Analysis: keeping all features (no offenders or K=0)")
+                    # Now standardize the cleaned data
+                    std = Xn.std(ddof=0)
+                    std = std.replace(0.0, 1.0)
+                    Xn = (Xn - Xn.mean()) / std
+
+                    # Cheap VIF via shrinkage inverse with timeout protection
+                    import signal
+
+                    def timeout_handler(signum, frame) -> Never:
+                        msg = "VIF calculation timed out"
+                        raise TimeoutError(msg)
+
+                    try:
+                        # Set timeout for VIF calculation (30 seconds)
+                        signal.signal(signal.SIGALRM, timeout_handler)
+                        signal.alarm(30)
+
+                        try:
+                            from sklearn.covariance import LedoitWolf
+                            lw = LedoitWolf().fit(Xn.values)
+                            cov = lw.covariance_
+                            std_vec = np.sqrt(np.diag(cov))
+                            std_vec[std_vec == 0.0] = 1.0
+                            R = cov / np.outer(std_vec, std_vec)
+                        except Exception:
+                            logger.info("🔍 VIF Analysis: LedoitWolf failed, using correlation matrix")
+                            R = Xn.corr().values
+
+                        try:
+                            R_inv = np.linalg.pinv(R)
+                            vif_vals = pd.Series(np.diag(R_inv), index=num_cols)
+                        except Exception as _e:
+                            logger.warning(f"⚠️ VIF Analysis: pseudo-inverse failed, fallback to diag ones: {_e}")
+                            vif_vals = pd.Series(np.ones(len(num_cols)), index=num_cols)
+
+                        # Cancel timeout
+                        signal.alarm(0)
+
+                    except TimeoutError:
+                        logger.warning("⚠️ VIF Analysis: Calculation timed out, skipping VIF filtering")
+                        vif_vals = pd.Series(np.ones(len(num_cols)), index=num_cols)
+                    except Exception as e:
+                        logger.warning(f"⚠️ VIF Analysis: Unexpected error, skipping VIF filtering: {e}")
+                        vif_vals = pd.Series(np.ones(len(num_cols)), index=num_cols)
+                    max_vif = float(vif_vals.max()) if not vif_vals.empty else 0.0
+
+                    logger.info(f"🔍 VIF Analysis: Max VIF: {max_vif:.2f}, Threshold: {vif_thr}")
+                    logger.info(f"🔍 VIF Analysis: VIF range: {vif_vals.min():.2f} to {vif_vals.max():.2f}")
+                    logger.info(f"🔍 VIF Analysis: Features with VIF > {vif_thr}: {(vif_vals > vif_thr).sum()}")
+
+                    # One-shot prune: drop up to K highest VIF offenders
+                    K = int(kwargs.get("max_vif_drop", 5))
+                    if (vif_vals > vif_thr).any() and K > 0:
+                        offenders = vif_vals[vif_vals > vif_thr].sort_values(ascending=False)
+                        drops = list(offenders.head(K).index)
+                        # Respect overall cap
+                        cap_left = max(0, vif_allowed - len(removed_features))
+                        if len(drops) > cap_left:
+                            drops = drops[:cap_left]
+                        removed_features.extend(drops)
+                        num_cols = [c for c in num_cols if c not in drops]
+                        logger.info(f"📊 VIF prune (one-shot): dropping up to {K} high-VIF cols: {drops}")
+                    else:
+                        logger.warning("⚠️ VIF Analysis: keeping all features (no offenders or K=0)")
 
                 # Apply final VIF-selected set
                 if num_cols:
@@ -1280,7 +1283,7 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
                         # Show some examples of kept features
                         kept_features_sample = num_cols[:10] if len(num_cols) > 10 else num_cols
                         logger.info(f"📊 VIF REMOVAL SUMMARY - Sample of kept features: {kept_features_sample}")
-            else:  # Safety check: if VIF removed all features = keep original features
+            else:  # Safety check: if VIF removed all features – keep original features
                 logger.warning("⚠️ VIF removed all features, keeping original feature set")
                 num_cols = list(X_tr.select_dtypes(include=[np.number]).columns)
                 if num_cols:
@@ -1296,8 +1299,7 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
         mem_mgr = MemoryEfficientDataManager()
 
         @with_tracing_span("Step3._attach_timestamp", log_args=False)
-        def _attach_timestamp(df_features: pd.DataFrame, labeled_df: pd.DataFrame
-        ) -> pd.DataFrame:
+        def _attach_timestamp(df_features: pd.DataFrame, labeled_df: pd.DataFrame) -> pd.DataFrame:
             try:
                 if (
                     "timestamp" in labeled_df.columns
@@ -1370,7 +1372,7 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
                 os.makedirs(regime_data_dir, exist_ok=True)
 
                 # Split each dataset by composite_cluster_id
-                regime_splits = {}
+                regime_splits: dict[str, Any] = {}
                 for split_name, features_df in [
                     ("train", X_tr),
                     ("validation", X_vl),
@@ -1450,7 +1452,7 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
                         os.makedirs(gating_dir, exist_ok=True)
 
                         # Create gating matrix from composite_cluster_id probabilities
-                        gating_data = []
+                        gating_data: list[pd.DataFrame] = []
                         for split_name, features_df in [
                             ("train", X_tr),
                             ("validation", X_vl),
@@ -1491,175 +1493,175 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
         # Execute regime splitting
         await _hmm_composite_regime_splitting()
 
-    # NEW: also persist pickle copies with timestamps for Step 5 compatibility
-    try:
-        import pickle
+        # NEW: also persist pickle copies with timestamps for Step 5 compatibility
+        try:
+            import pickle
 
-        for split_name, X in [("train", X_tr), ("validation", X_vl), ("test", X_te)]:
-            X_pick = X.copy()
-            X_pick["timestamp"] = X_pick.index
-            X_pick = X_pick.reset_index(drop=True)
-            pkl_path = f"{data_dir}/{exchange}_{symbol}_features_{split_name}.pkl"
-            with open(pkl_path, "wb") as f:
-                pickle.dump(X_pick, f)
-            logger.info(
-                f"✅ Wrote pickle features {split_name}: {pkl_path} rows={len(X_pick)} cols={X_pick.shape[1]}"
-            )
+            for split_name, X in [("train", X_tr), ("validation", X_vl), ("test", X_te)]:
+                X_pick = X.copy()
+                X_pick["timestamp"] = X_pick.index
+                X_pick = X_pick.reset_index(drop=True)
+                pkl_path = f"{data_dir}/{exchange}_{symbol}_features_{split_name}.pkl"
+                with open(pkl_path, "wb") as f:
+                    pickle.dump(X_pick, f)
+                logger.info(
+                    f"✅ Wrote pickle features {split_name}: {pkl_path} rows={len(X_pick)} cols={X_pick.shape[1]}"
+                )
 
-        # Write a simple feature hash to ensure downstream consistency
-        import hashlib
+            # Write a simple feature hash to ensure downstream consistency
+            import hashlib as _hashlib
 
-        def _hash_cols(cols: list[str]) -> str:
-            s = ",".join(cols)
-            return hashlib.sha256(s.encode("utf-8")).hexdigest()[:16]
+            def _hash_cols(cols: list[str]) -> str:
+                s = ",".join(cols)
+                return _hashlib.sha256(s.encode("utf-8")).hexdigest()[:16]
 
-        hash_info = {
-            "train_hash": _hash_cols(feature_lists["train"]),
-            "validation_hash": _hash_cols(feature_lists["validation"]),
-            "test_hash": _hash_cols(feature_lists["test"]),
-            "generated_at": datetime.now(UTC).isoformat(),
-        }
-        with open(f"{data_dir}/{exchange}_{symbol}_feature_hash.json", "w") as f:
-            json.dump(hash_info, f, indent=2)
-    except Exception as e:
-        logger.warning(f"⚠️ Pickle compatibility write skipped: {e}")
+            hash_info = {
+                "train_hash": _hash_cols(feature_lists["train"]),
+                "validation_hash": _hash_cols(feature_lists["validation"]),
+                "test_hash": _hash_cols(feature_lists["test"]),
+                "generated_at": datetime.now(UTC).isoformat(),
+            }
+            with open(f"{data_dir}/{exchange}_{symbol}_feature_hash.json", "w") as f:
+                json.dump(hash_info, f, indent=2)
+        except Exception as e:
+            logger.warning(f"⚠️ Pickle compatibility write skipped: {e}")
 
-    # Apply optimized feature selection to reduce features to target count
-    try:
-        # Initialize optimized feature selection manager
-        optimized_feature_selection = OptimizedFeatureSelectionManager(config)
+        # Apply optimized feature selection to reduce features to target count
+        try:
+            # Initialize optimized feature selection manager
+            optimized_feature_selection = OptimizedFeatureSelectionManager({})
 
-        # Perform feature selection ONLY on the training data using the real target
-        # Get the actual target labels from the labeled data
-        if "target" not in labeled["train"].columns:
-            logger.warning("⚠️ Target column 'target' not found in training data, skipping feature selection")
-        else:
-            train_target = labeled["train"]["target"].reindex(X_tr.index)
+            # Perform feature selection ONLY on the training data using the real target
+            # Get the actual target labels from the labeled data
+            if "target" not in labeled["train"].columns:
+                logger.warning("⚠️ Target column 'target' not found in training data, skipping feature selection")
+            else:
+                train_target = labeled["train"]["target"].reindex(X_tr.index)
 
-            logger.info("🚀 Applying optimized feature selection on the training set...")
-            X_tr, selection_metadata = optimized_feature_selection.select_features_optimized(
-                X_tr, train_target, model_type="general", step_name="step2"
-            )
+                logger.info("🚀 Applying optimized feature selection on the training set...")
+                X_tr, selection_metadata = optimized_feature_selection.select_features_optimized(
+                    X_tr, train_target, model_type="general", step_name="step2"
+                )
 
-            selected_features = list(X_tr.columns)
-            logger.info(f"✅ Optimized feature selection completed: {len(selected_features)} features selected from training data.")
+                selected_features = list(X_tr.columns)
+                logger.info(f"✅ Optimized feature selection completed: {len(selected_features)} features selected from training data.")
 
-            # Log performance metrics
-            if "performance_metrics" in selection_metadata:
-                perf_metrics = selection_metadata["performance_metrics"]
-                logger.info("📊 Performance metrics:")
-                logger.info(f"   - VIF calculation time: {perf_metrics.get('vif_calculation_time', 0):.2f}s")
-                logger.info(f"   - SHAP calculation time: {perf_metrics.get('shap_calculation_time', 0):.2f}s")
-                logger.info(f"   - Correlation analysis time: {perf_metrics.get('correlation_analysis_time', 0):.2f}s")
-                logger.info(f"   - Total selection time: {selection_metadata.get('total_time', 0):.2f}s")
+                # Log performance metrics
+                if "performance_metrics" in selection_metadata:
+                    perf_metrics = selection_metadata["performance_metrics"]
+                    logger.info("📊 Performance metrics:")
+                    logger.info(f"   - VIF calculation time: {perf_metrics.get('vif_calculation_time', 0):.2f}s")
+                    logger.info(f"   - SHAP calculation time: {perf_metrics.get('shap_calculation_time', 0):.2f}s")
+                    logger.info(f"   - Correlation analysis time: {perf_metrics.get('correlation_analysis_time', 0):.2f}s")
+                    logger.info(f"   - Total selection time: {selection_metadata.get('total_time', 0):.2f}s")
 
-            # Log feature category distribution
-            if "feature_categories" in selection_metadata:
-                category_dist = selection_metadata["feature_categories"]
-                logger.info("📊 Feature category distribution:")
-                for category, features in category_dist.items():
-                    if features:
-                        logger.info(f"   - {category}: {len(features)} features")
+                # Log feature category distribution
+                if "feature_categories" in selection_metadata:
+                    category_dist = selection_metadata["feature_categories"]
+                    logger.info("📊 Feature category distribution:")
+                    for category, features in category_dist.items():
+                        if features:
+                            logger.info(f"   - {category}: {len(features)} features")
 
-            # Apply the same feature selection to validation and test sets
-            X_vl = X_vl[selected_features]
-            X_te = X_te[selected_features]
-            logger.info("✅ Applied selected features to validation and test sets.")
+                # Apply the same feature selection to validation and test sets
+                X_vl = X_vl[selected_features]
+                X_te = X_te[selected_features]
+                logger.info("✅ Applied selected features to validation and test sets.")
 
-            # Save selection metadata
-            optimized_feature_selection.save_selection_metadata(selection_metadata, symbol, exchange, data_dir)
+                # Save selection metadata
+                optimized_feature_selection.save_selection_metadata(selection_metadata, symbol, exchange, data_dir)
 
-    except Exception as e:
-        logger.warning(f"⚠️ Optimized feature selection failed, using original features: {e}")
+        except Exception as e:
+            logger.warning(f"⚠️ Optimized feature selection failed, using original features: {e}")
 
-    # Save feature artifacts for persistence
-    try:
-        features_dict = {
-            "train": X_tr,
-            "validation": X_vl,
-            "test": X_te,
-        }
-
-        # Get feature configuration from kwargs
-        feature_config = kwargs.get("feature_config", {})
-        if not feature_config:
-            feature_config = {
-                "vectorized_advanced_features": {
-                    "enable_difference_acceleration_features": True,
-                    "enable_volatility_modeling": True,
-                    "enable_correlation_analysis": True,
-                    "enable_momentum_analysis": True,
-                    "enable_liquidity_analysis": True,
-                    "enable_candlestick_patterns": True,
-                    "enable_sr_distance": True,
-                    "enable_wavelet_transforms": True,
-                    "enable_multi_timeframe": True,
-                    "enable_meta_labeling": False,
-                    "enable_explicit_meta_labels": False,
-                },
+        # Save feature artifacts for persistence
+        try:
+            features_dict = {
+                "train": X_tr,
+                "validation": X_vl,
+                "test": X_te,
             }
 
-        # Add symbol and exchange to the feature config for data quality decorator
-        feature_config["symbol"] = symbol
-        feature_config["exchange"] = exchange
+            # Get feature configuration from kwargs
+            feature_config = kwargs.get("feature_config", {})
+            if not feature_config:
+                feature_config = {
+                    "vectorized_advanced_features": {
+                        "enable_difference_acceleration_features": True,
+                        "enable_volatility_modeling": True,
+                        "enable_correlation_analysis": True,
+                        "enable_momentum_analysis": True,
+                        "enable_liquidity_analysis": True,
+                        "enable_candlestick_patterns": True,
+                        "enable_sr_distance": True,
+                        "enable_wavelet_transforms": True,
+                        "enable_multi_timeframe": True,
+                        "enable_meta_labeling": False,
+                        "enable_explicit_meta_labels": False,
+                    },
+                }
 
-        _save_feature_artifacts(symbol, exchange, data_dir, features_dict, feature_config, artifact_hash)
-        logger.info("💾 Feature artifacts saved for future reuse")
+            # Add symbol and exchange to the feature config for data quality decorator
+            feature_config["symbol"] = symbol
+            feature_config["exchange"] = exchange
 
-    except Exception as e:
-        logger.warning(f"⚠️ Failed to save feature artifacts: {e}")
+            _save_feature_artifacts(symbol, exchange, data_dir, features_dict, feature_config, artifact_hash)
+            logger.info("💾 Feature artifacts saved for future reuse")
 
-    logger.info("✅ Step 2: Feature engineering completed successfully")
-    
-    # Run comprehensive file format validation
-    if validate_step2_file:
-        logger.info("🔍 Running comprehensive file format validation...")
-        validation_success = await _run_comprehensive_validation(symbol, exchange, data_dir, logger)
-        
-        if validation_success:
-            logger.info("✅ Comprehensive file format validation passed")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to save feature artifacts: {e}")
+
+        logger.info("✅ Step 2: Feature engineering completed successfully")
+
+        # Run comprehensive file format validation
+        if validate_step2_file:
+            logger.info("🔍 Running comprehensive file format validation...")
+            validation_success = await _run_comprehensive_validation(symbol, exchange, data_dir, logger)
+
+            if validation_success:
+                logger.info("✅ Comprehensive file format validation passed")
+            else:
+                logger.warning("⚠️ Comprehensive file format validation found issues")
         else:
-            logger.warning("⚠️ Comprehensive file format validation found issues")
-    else:
-        logger.info("⚠️ Comprehensive file validation not available, skipping validation")
-    
-    return True
-except Exception as e:
-    logger.exception(f"🚨 Step 2 feature engineering failed: {e}")
-    return False
+            logger.info("⚠️ Comprehensive file validation not available, skipping validation")
+
+        return True
+    except Exception as e:
+        logger.exception(f"🚨 Step 2 feature engineering failed: {e}")
+        return False
 
 
 async def _run_comprehensive_validation(
-    symbol: str, 
-    exchange: str, 
-    data_dir: str, 
-    logger: Any
+    symbol: str,
+    exchange: str,
+    data_dir: str,
+    logger: Any,
 ) -> bool:
     """Run comprehensive file format validation for step 2."""
     try:
         if not validate_step2_file:
             logger.warning("Comprehensive file validation not available")
             return True
-        
+
         # Define expected files for step 2
         expected_files = [
             f"{data_dir}/features_{exchange}_{symbol}_train.parquet",
             f"{data_dir}/features_{exchange}_{symbol}_validation.parquet",
             f"{data_dir}/features_{exchange}_{symbol}_test.parquet",
         ]
-        
-        validation_results = []
+
+        validation_results: list[Any] = []
         all_valid = True
-        
+
         for file_path in expected_files:
-            if Path(file_path).exists():
+            if os.path.exists(file_path):
                 logger.info(f"🔍 Validating file: {file_path}")
-                
+
                 # Validate file format
-                validation_result = validate_step2_file(file_path)
+                validation_result = validate_step2_file(file_path)  # type: ignore[misc]
                 validation_results.append(validation_result)
-                
-                if validation_result.is_valid:
+
+                if getattr(validation_result, "is_valid", False):
                     logger.info(f"✅ File validation passed: {file_path}")
                     logger.info(f"   📊 Shape: {validation_result.summary.get('shape', 'N/A')}")
                     logger.info(f"   📁 File type: {validation_result.file_type}")
@@ -1667,31 +1669,30 @@ async def _run_comprehensive_validation(
                 else:
                     logger.warning(f"⚠️ File validation issues found: {file_path}")
                     all_valid = False
-                    
+
                     # Log detailed issues
-                    for issue in validation_result.issues:
+                    for issue in getattr(validation_result, "issues", []) or []:
                         logger.warning(f"   - {issue.severity.value.upper()}: {issue.description}")
-                        if issue.details:
+                        if getattr(issue, "details", None):
                             logger.warning(f"     Details: {issue.details}")
             else:
                 logger.warning(f"⚠️ Expected file not found: {file_path}")
                 all_valid = False
-        
+
         # Log validation summary
         if validation_results:
             total_files = len(validation_results)
-            valid_files = sum(1 for r in validation_results if r.is_valid)
+            valid_files = sum(1 for r in validation_results if getattr(r, "is_valid", False))
             logger.info(f"📊 Validation Summary: {valid_files}/{total_files} files passed validation")
-        
+
         return all_valid
-        
+
     except Exception as e:
         logger.exception(f"❌ Error during comprehensive validation: {e}")
         return False
 
 
 if __name__ == "__main__":
-    pass  # TODO: Add proper implementation
     async def _test() -> None:
         await run_step("ETHUSDT")
 

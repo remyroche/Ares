@@ -28,7 +28,6 @@ class PositionSizer:
         self.logger = system_logger.getChild("PositionSizer")
         # Backward-compatibility shim for legacy self.print calls
         if not hasattr(self, "print"):
-    pass  # TODO: Add proper implementation
             def _shim_print(message: str) -> None:
                 with contextlib.suppress(Exception):
                     self.logger.error(str(message))
@@ -148,7 +147,7 @@ class PositionSizer:
         tactician_confidence: float = 0.5,
         market_health_analysis: dict[str, Any] | None = None,
         strategist_risk_parameters: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | None:
         """
         Calculate position size using ML confidence scores and Kelly criterion.
 

@@ -6,10 +6,12 @@ This script provides guidance and templates for updating the training steps
 to use the new unified Parquet partitioned data format.
 """
 
-from typing import Any
+from __future__ import annotations
+
+from typing import Any, Dict, List
 
 # List of all training steps that need to be updated
-TRAINING_STEPS = [
+TRAINING_STEPS: List[str] = [
     "step2_market_regime_classification",
     "step3_regime_data_splitting",
     "step4_analyst_labeling_feature_engineering",
@@ -31,7 +33,7 @@ TRAINING_STEPS = [
 def get_unified_data_loader_import() -> str:
     """Get the import statement for the unified data loader."""
     return (
-        """from src.training.steps.unified_data_loader import get_unified_data_loader"""
+        "from src.training.steps.unified_data_loader import get_unified_data_loader"
     )
 
 
@@ -61,15 +63,16 @@ def get_unified_data_loading_code(
         data_loader = get_unified_data_loader(self.config)
 
         # Load unified data
-        historical_data, await data_loader.load_unified_data(
-            symbol={symbol_var}
-            exchange={exchange_var}
-            timeframe={timeframe_var}
-            lookback_days={lookback_days}
+        historical_data = await data_loader.load_unified_data(
+            symbol={symbol_var},
+            exchange={exchange_var},
+            timeframe={timeframe_var},
+            lookback_days={lookback_days},
+            data_dir={data_dir_var},
         )
 
         if historical_data is None or historical_data.empty:
-        self.logger.error("❌ No data found - check symbol and exchange configuration")
+            self.logger.error("❌ No data found - check symbol and exchange configuration")
             raise ValueError(f"No data found for {{symbol}} on {{exchange}}")
 
         # Log data information
@@ -83,12 +86,12 @@ def get_unified_data_loading_code(
         required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
         missing_columns = [col for col in required_columns if col not in historical_data.columns]
         if missing_columns:
-        self.logger.error(f"❌ Missing required columns: {{missing_columns}}")
+            self.logger.error(f"❌ Missing required columns: {{missing_columns}}")
             raise ValueError(f"Missing required columns: {{missing_columns}}")
-"""
+    """
 
 
-def get_step_specific_guidance(step_name: str) -> dict[str, Any]:
+def get_step_specific_guidance(step_name: str) -> Dict[str, Any]:
     """Get step-specific guidance for updating."""
     from src.config.constants import (
         BLANK_TRAINING_LOOKBACK_DAYS,
@@ -96,7 +99,7 @@ def get_step_specific_guidance(step_name: str) -> dict[str, Any]:
 
     # High complexity areas that need special attention
 
-    guidance = {
+    guidance: Dict[str, Any] = {
         "step2_market_regime_classification": {
             "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1h",  # Regime classification typically uses 1h
@@ -188,14 +191,12 @@ def generate_step_update_template(step_name: str) -> str:
 # Template for updating {step_name}.py
 
 ## 1. Add import at the top of the file:
-    pass
 {get_unified_data_loader_import()}
 
 ## 2. Replace existing data loading code with:
-    pass
 {get_unified_data_loading_code(
     lookback_days=guidance['lookback_days'],
-    timeframe_var=f'"{guidance["timeframe"]}"',
+    timeframe_var=f'\"{guidance["timeframe"]}\"',
 )}
 
 ## 3. Step-specific considerations:
@@ -207,10 +208,10 @@ def generate_step_update_template(step_name: str) -> str:
 # - If the step needs tactician predictions, load them from step10 results
 
 ## 5. Example of loading additional data:
-# regime_file_path, f"{guidance['data_dir']}/{guidance['exchange']}_{guidance['symbol']}_regime_classification.json"
+# regime_file_path = f"{{data_dir}}/{{exchange}}_{{symbol}}_regime_classification.json"
 # if os.path.exists(regime_file_path):
 #     with open(regime_file_path, 'r') as f:
-#         regime_data, json.load(f)
+#         regime_data = json.load(f)
 #     # Process regime data as needed
 """
 
@@ -218,28 +219,30 @@ def generate_step_update_template(step_name: str) -> str:
 
 def main() -> None:
     """Main function to generate update guidance."""
-    for _i, step in enumerate(TRAINING_STEPS, 1):
-    pass  # TODO: Add proper implementation
-    for step in TRAINING_STEPS:
-        get_step_specific_guidance(step)
+    high_complexity_areas = {
+        "step1_data_collection": "❌ HIGH COMPLEXITY - consolidate_files (D-23), run_step (C-18)",
+        "step4_main_model_training": "❌ HIGH COMPLEXITY - run_step (C-13)",
+        "step5_multi_stage_hpo": "⚠️  MEDIUM COMPLEXITY - run_step (B-9)",
+        "step7_monte_carlo_validation": "⚠️  MEDIUM COMPLEXITY - run_step (B-7)",
+        "step6_walk_forward_validation": "⚠️  MEDIUM COMPLEXITY - run_step (B-6)",
+        "step9_save_results": "⚠️  MEDIUM COMPLEXITY - run_step (B-6)",
+        "step3_coarse_optimization": "⚠️  MEDIUM COMPLEXITY - run_step (B-6)",
+        "step2_preliminary_optimization": "✅ LOW COMPLEXITY - run_step (A-5)",
+        "step8_ab_testing_setup": "✅ LOW COMPLEXITY - run_step (A-2)",
+    }
 
-        # Check for complexity warnings
-        high_complexity_areas = {
-            "step1_data_collection": "❌ HIGH COMPLEXITY - consolidate_files (D-23), run_step (C-18)",
-            "step4_main_model_training": "❌ HIGH COMPLEXITY - run_step (C-13)",
-            "step5_multi_stage_hpo": "⚠️  MEDIUM COMPLEXITY - run_step (B-9)",
-            "step7_monte_carlo_validation": "⚠️  MEDIUM COMPLEXITY - run_step (B-7)",
-            "step6_walk_forward_validation": "⚠️  MEDIUM COMPLEXITY - run_step (B-6)",
-            "step9_save_results": "⚠️  MEDIUM COMPLEXITY - run_step (B-6)",
-            "step3_coarse_optimization": "⚠️  MEDIUM COMPLEXITY - run_step (B-6)",
-            "step2_preliminary_optimization": "✅ LOW COMPLEXITY - run_step (A-5)",
-            "step8_ab_testing_setup": "✅ LOW COMPLEXITY - run_step (A-2)",
-        }
+    for i, step in enumerate(TRAINING_STEPS, 1):
+        _ = i  # preserved for clarity; index may be used later
+        guidance = get_step_specific_guidance(step)
+        _ = guidance  # ensure call side effects are preserved if any
 
         if step in high_complexity_areas:
-    pass  # TODO: Add proper implementation
-        # Generate template
-        generate_step_update_template(step)
+            # Here we would log or highlight complexity areas for the developer
+            pass
+
+        # Generate template (could be written to disk or printed)
+        template = generate_step_update_template(step)
+        print(template)
 
 
 if __name__ == "__main__":

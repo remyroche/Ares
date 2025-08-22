@@ -4,7 +4,6 @@ Database Migration Script for Ares Trading Bot
 
 This script manages database migrations between backtesting and trading computers.
 It allows you to:
-    pass
 1. Export database from backtesting computer for trading
 2. Import database on trading computer from backtesting
 3. Validate migration files
@@ -19,27 +18,31 @@ Usage:
     python scripts/database_migration.py cleanup [db_path]
 """
 
-import hashlib
-from pathlib import Path
-from src.database.migration_utils import DatabaseMigrationUtils
-from src.utils.logger import setup_logging, system_logger
-import asyncio
-import os
-import sys
+from __future__ import annotations
 
-from src.database.sqlite_manager import SQLiteManager
-from src.utils.warning_symbols import warning, failed
+import asyncio
+import hashlib
+import os
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+import sys
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-async def export_database(db_path: str = "data/ares_local_db.sqlite"):
-    """Export database for trading computer."""
-    # logger, system_logger.getChild("MigrationScript")  # Unused variable removed
+from src.database.migration_utils import DatabaseMigrationUtils  # noqa: E402
+from src.database.sqlite_manager import SQLiteManager  # noqa: E402
+from src.utils.logger import setup_logging, system_logger  # noqa: E402
+from src.utils.warning_symbols import failed, warning  # noqa: E402
 
-    if True:
-    pass  # TODO: Add proper implementation
+
+async def export_database(db_path: str = "data/ares_local_db.sqlite") -> None:
+    """Export database for trading computer."""
+    logger = system_logger.getChild("MigrationScript")
+    db_manager: Optional[SQLiteManager] = None
+
+    try:
         # Initialize database manager
         db_manager = SQLiteManager(db_path)
         await db_manager.initialize()
@@ -55,31 +58,35 @@ async def export_database(db_path: str = "data/ares_local_db.sqlite"):
             print(f"📁 Export file: {export_path}")
             print(f"📊 File size: {os.path.getsize(export_path) / 1024 / 1024:.2f} MB")
 
-        # Calculate checksum
-
-        with open(export_path = "rb") as f:
+            # Calculate checksum
+            with open(export_path, "rb") as f:
                 checksum = hashlib.md5(f.read()).hexdigest()
             print(f"🔍 Checksum: {checksum}")
             print("\n📋 Next steps:")
             print("   1. Copy the export file to your trading computer")
             print(
-                f"   2. Run: python scripts/database_migration.py import {export_path}",
+                f"   2. Run: python scripts/database_migration.py import {export_path}"
             )
         else:
             print(failed("Database export failed!"))
 
-        await db_manager.close()
+    except Exception as exc:  # pragma: no cover - defensive CLI wrapper
+        logger.error("Export failed: %s", exc, exc_info=True)
+        print(failed(f"Export failed: {exc}"))
+    finally:
+        if db_manager is not None:
+            try:
+                await db_manager.close()
+            except Exception:  # pragma: no cover - best-effort close
+                logger.warning("Error closing DB manager after export")
 
-    pass
-        system_print(failed("Export failed: {e}"), exc_info=True)
-        print(failed("Export failed: {e}"))
 
-async def import_database(import_path: str, db_path: str = "data/ares_local_db.sqlite"):
+async def import_database(import_path: str, db_path: str = "data/ares_local_db.sqlite") -> None:
     """Import database on trading computer."""
-    # logger, system_logger.getChild("MigrationScript")  # Unused variable removed
+    logger = system_logger.getChild("MigrationScript")
+    db_manager: Optional[SQLiteManager] = None
 
-    if True:
-    pass  # TODO: Add proper implementation
+    try:
         # Validate the import file first
         db_manager = SQLiteManager(db_path)
         await db_manager.initialize()
@@ -90,8 +97,8 @@ async def import_database(import_path: str, db_path: str = "data/ares_local_db.s
         if not validation_result["valid"]:
             print(failed("Import file validation failed!"))
             print("Errors:")
-        for error in validation_result["errors"]:
-                print(f"   - {error}")
+            for error_msg in validation_result["errors"]:
+                print(f"   - {error_msg}")
             return
 
         print("✅ Import file validation passed!")
@@ -107,19 +114,24 @@ async def import_database(import_path: str, db_path: str = "data/ares_local_db.s
         else:
             print(failed("Database import failed!"))
 
-        await db_manager.close()
+    except Exception as exc:  # pragma: no cover - defensive CLI wrapper
+        logger.error("Import failed: %s", exc, exc_info=True)
+        print(failed(f"Import failed: {exc}"))
+    finally:
+        if db_manager is not None:
+            try:
+                await db_manager.close()
+            except Exception:  # pragma: no cover - best-effort close
+                logger.warning("Error closing DB manager after import")
 
-    pass
-        system_print(failed("Import failed: {e}"), exc_info=True)
-        print(failed("Import failed: {e}"))
 
-async def validate_file(file_path: str):
+async def validate_file(file_path: str) -> None:
     """Validate a migration file."""
-    # logger, system_logger.getChild("MigrationScript")  # Unused variable removed
+    logger = system_logger.getChild("MigrationScript")
+    db_manager: Optional[SQLiteManager] = None
 
-    if True:
-    pass  # TODO: Add proper implementation
-        db_manager = SQLiteManager()
+    try:
+        db_manager = SQLiteManager("data/ares_local_db.sqlite")
         await db_manager.initialize()
 
         migration_utils = DatabaseMigrationUtils(db_manager)
@@ -135,32 +147,37 @@ async def validate_file(file_path: str):
             f"   Database valid: {'✅' if validation_result['database_valid'] else '❌'}",
         )
 
-        if validation_result["checksum"]:
+        if validation_result.get("checksum"):
             print(f"   Checksum: {validation_result['checksum']}")
-        if validation_result["file_size"]:
+        if validation_result.get("file_size"):
             print(
                 f"   File size: {validation_result['file_size'] / 1024 / 1024:.2f} MB",
             )
 
-        if validation_result["errors"]:
+        if validation_result.get("errors"):
             print("\n❌ Errors found:")
-        for error in validation_result["errors"]:
-                print(f"   - {error}")
+            for error_msg in validation_result["errors"]:
+                print(f"   - {error_msg}")
         else:
             print("\n✅ File is valid and ready for import!")
 
-        await db_manager.close()
+    except Exception as exc:  # pragma: no cover - defensive CLI wrapper
+        logger.error("Validation failed: %s", exc, exc_info=True)
+        print(failed(f"Validation failed: {exc}"))
+    finally:
+        if db_manager is not None:
+            try:
+                await db_manager.close()
+            except Exception:  # pragma: no cover
+                logger.warning("Error closing DB manager after validation")
 
-    pass
-        system_print(failed("Validation failed: {e}"), exc_info=True)
-        print(failed("Validation failed: {e}"))
 
-async def create_backup(db_path: str = "data/ares_local_db.sqlite"):
+async def create_backup(db_path: str = "data/ares_local_db.sqlite") -> None:
     """Create a manual backup of the database."""
-    # logger, system_logger.getChild("MigrationScript")  # Unused variable removed
+    logger = system_logger.getChild("MigrationScript")
+    db_manager: Optional[SQLiteManager] = None
 
-    if True:
-    pass  # TODO: Add proper implementation
+    try:
         db_manager = SQLiteManager(db_path)
         await db_manager.initialize()
 
@@ -173,18 +190,23 @@ async def create_backup(db_path: str = "data/ares_local_db.sqlite"):
         else:
             print(failed("Backup creation failed!"))
 
-        await db_manager.close()
+    except Exception as exc:  # pragma: no cover - defensive CLI wrapper
+        logger.error("Backup failed: %s", exc, exc_info=True)
+        print(failed(f"Backup failed: {exc}"))
+    finally:
+        if db_manager is not None:
+            try:
+                await db_manager.close()
+            except Exception:  # pragma: no cover
+                logger.warning("Error closing DB manager after backup")
 
-    pass
-        system_print(failed("Backup failed: {e}"), exc_info=True)
-        print(failed("Backup failed: {e}"))
 
-async def list_migrations(db_path: str = "data/ares_local_db.sqlite"):
+async def list_migrations(db_path: str = "data/ares_local_db.sqlite") -> None:
     """List all available migrations."""
-    # logger, system_logger.getChild("MigrationScript")  # Unused variable removed
+    logger = system_logger.getChild("MigrationScript")
+    db_manager: Optional[SQLiteManager] = None
 
-    if True:
-    pass  # TODO: Add proper implementation
+    try:
         db_manager = SQLiteManager(db_path)
         await db_manager.initialize()
 
@@ -212,18 +234,23 @@ async def list_migrations(db_path: str = "data/ares_local_db.sqlite"):
             print(f"📁 Size: {file_size / 1024 / 1024:.2f} MB")
             print("-" * 80)
 
-        await db_manager.close()
+    except Exception as exc:  # pragma: no cover - defensive CLI wrapper
+        logger.error("Failed to list migrations: %s", exc, exc_info=True)
+        print(failed(f"Failed to list migrations: {exc}"))
+    finally:
+        if db_manager is not None:
+            try:
+                await db_manager.close()
+            except Exception:  # pragma: no cover
+                logger.warning("Error closing DB manager after listing migrations")
 
-    pass
-        system_print(failed("Failed to list migrations: {e}"), exc_info=True)
-        print(failed("Failed to list migrations: {e}"))
 
-async def cleanup_migrations(db_path: str = "data/ares_local_db.sqlite"):
+async def cleanup_migrations(db_path: str = "data/ares_local_db.sqlite") -> None:
     """Clean up old migrations."""
-    # logger, system_logger.getChild("MigrationScript")  # Unused variable removed
+    logger = system_logger.getChild("MigrationScript")
+    db_manager: Optional[SQLiteManager] = None
 
-    if True:
-    pass  # TODO: Add proper implementation
+    try:
         db_manager = SQLiteManager(db_path)
         await db_manager.initialize()
 
@@ -232,13 +259,18 @@ async def cleanup_migrations(db_path: str = "data/ares_local_db.sqlite"):
 
         print("✅ Cleanup completed!")
 
-        await db_manager.close()
+    except Exception as exc:  # pragma: no cover - defensive CLI wrapper
+        logger.error("Cleanup failed: %s", exc, exc_info=True)
+        print(failed(f"Cleanup failed: {exc}"))
+    finally:
+        if db_manager is not None:
+            try:
+                await db_manager.close()
+            except Exception:  # pragma: no cover
+                logger.warning("Error closing DB manager after cleanup")
 
-    pass
-        system_print(failed("Cleanup failed: {e}"), exc_info=True)
-        print(failed("Cleanup failed: {e}"))
 
-def print_usage():
+def print_usage() -> None:
     """Print usage information."""
     print(__doc__)
     print("\nExamples:")
@@ -264,7 +296,8 @@ def print_usage():
     print("  # Clean up old migrations")
     print("  python scripts/database_migration.py cleanup")
 
-async def main():
+
+async def main() -> None:
     """Main function."""
     # Setup logging
     setup_logging()
@@ -309,9 +342,10 @@ async def main():
         await cleanup_migrations(db_path)
 
     else:
-        print(warning("Unknown command: {command}"))
+        print(warning(f"Unknown command: {command}"))
         print_usage()
         sys.exit(1)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

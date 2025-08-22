@@ -21,15 +21,17 @@ from src.training.optimized_feature_selection_manager import (
 # Import comprehensive file validation
 try:
     from src.utils.comprehensive_file_validation import (
-        ComprehensiveFileValidator,
-        validate_step2_file,
-        FileValidationResult
-    )
-    from src.utils.validation_decorators import (
-        validate_file_operation,
-        validate_dataframe_operation,
-        validate_step2_operation
-    )
+    ComprehensiveFileValidator,
+    validate_step2_file,
+    FileValidationResult
+)
+from src.utils.validation_decorators import (
+    validate_file_operation,
+    validate_dataframe_operation,
+    validate_step2_operation
+)
+from src.utils.advanced_ml_validation import validate_ml_data_quality
+from src.utils.enhanced_validation_decorators import step_specific_ml_validation
 except ImportError:
     ComprehensiveFileValidator = None
     validate_step2_file = None
@@ -411,6 +413,7 @@ def _save_feature_artifacts(symbol: str, exchange: str, data_dir: str, features:
     validation_score_requirements={"feature_quality": 0.7},
 )
 @auto_fix_data_quality_issues
+@step_specific_ml_validation("step2", timestamp_col="timestamp") if step_specific_ml_validation else lambda x: x
 async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data/training", timeframe: str = "1m", force_rerun: bool = False, **kwargs: Any) -> bool:
     """Step 2: Engineering the features (post-labeling).
     Loads labeled parquet from Step 1 and produces robust feature parquet artifacts for train/val/test.

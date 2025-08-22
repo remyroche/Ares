@@ -43,15 +43,17 @@ from src.utils.centralized_decorators import (
 # Import comprehensive file validation
 try:
     from src.utils.comprehensive_file_validation import (
-        ComprehensiveFileValidator,
-        validate_step4_file,
-        FileValidationResult
-    )
-    from src.utils.validation_decorators import (
-        validate_file_operation,
-        validate_dataframe_operation,
-        validate_step4_operation
-    )
+    ComprehensiveFileValidator,
+    validate_step4_file,
+    FileValidationResult
+)
+from src.utils.validation_decorators import (
+    validate_file_operation,
+    validate_dataframe_operation,
+    validate_step4_operation
+)
+from src.utils.advanced_ml_validation import validate_ml_data_quality
+from src.utils.enhanced_validation_decorators import step_specific_ml_validation
 except ImportError:
     ComprehensiveFileValidator = None
     validate_step4_file = None
@@ -332,6 +334,7 @@ def _persist_sr_levels(config: dict[str, Any], sr_levels: dict[str, Any], asof_t
 @auto_fix_data_quality_issues
 @handle_errors(exceptions=(Exception,), default_return=False, context="step4_processing_labeling")
 @validate_file_operation("step4", expected_schema="features", log_level="INFO") if validate_file_operation else lambda x: x
+@step_specific_ml_validation("step4", target_col="target", timestamp_col="timestamp") if step_specific_ml_validation else lambda x: x
 async def run_step(
     symbol: str, 
     exchange_name: str = "BINANCE", 

@@ -713,67 +713,67 @@ class VectorizedVolatilityRegimeModel:
                 f"🔍 Returns range: {returns.min():.4f} to {returns.max():.4f}",
             )
 
-        # Rolling volatility measures - OPTIMIZED: Balance between lookahead bias and predictive power
-        for window in [5, 10, 20, 50]:
-            # Use current bar for volatility calculation (standard practice)
-            vol = returns.rolling(window, min_periods=1).std()
-            features[f"volatility_{window}"] = vol
-            # Use percentage change for change features to avoid perfect correlation
-            features[f"volatility_{window}_change"] = vol.pct_change().fillna(0)
+            # Rolling volatility measures - OPTIMIZED: Balance between lookahead bias and predictive power
+            for window in [5, 10, 20, 50]:
+                # Use current bar for volatility calculation (standard practice)
+                vol = returns.rolling(window, min_periods=1).std()
+                features[f"volatility_{window}"] = vol
+                # Use percentage change for change features to avoid perfect correlation
+                features[f"volatility_{window}_change"] = vol.pct_change().fillna(0)
 
-        # GARCH-like volatility clustering - OPTIMIZED: Balance between lookahead bias and predictive power
-            vol_20 = returns.rolling(20, min_periods=1).std()
-            vol_persistence = vol_20.ewm(alpha=0.1).mean()
-            features["volatility_persistence"] = vol_persistence
+            # GARCH-like volatility clustering - OPTIMIZED: Balance between lookahead bias and predictive power
+                vol_20 = returns.rolling(20, min_periods=1).std()
+                vol_persistence = vol_20.ewm(alpha=0.1).mean()
+                features["volatility_persistence"] = vol_persistence
 
-            # Volatility of volatility - OPTIMIZED
-            vol_of_vol = vol_20.rolling(10, min_periods=1).std()
-            features["volatility_of_volatility"] = vol_of_vol
+                # Volatility of volatility - OPTIMIZED
+                vol_of_vol = vol_20.rolling(10, min_periods=1).std()
+                features["volatility_of_volatility"] = vol_of_vol
 
-            # Regime detection using volatility thresholds - OPTIMIZED
-            vol_median = vol_20.rolling(100, min_periods=1).median()
-            high_vol_regime = (vol_20 > vol_median * 1.5).astype(int)
-            low_vol_regime = (vol_20 < vol_median * 0.5).astype(int)
-            features["high_volatility_regime"] = high_vol_regime
-            features["low_volatility_regime"] = low_vol_regime
+                # Regime detection using volatility thresholds - OPTIMIZED
+                vol_median = vol_20.rolling(100, min_periods=1).median()
+                high_vol_regime = (vol_20 > vol_median * 1.5).astype(int)
+                low_vol_regime = (vol_20 < vol_median * 0.5).astype(int)
+                features["high_volatility_regime"] = high_vol_regime
+                features["low_volatility_regime"] = low_vol_regime
 
-            # Additional volatility features
-            # Volatility ratio (short-term vs long-term)
-            vol_5 = returns.rolling(5, min_periods=1).std()
-            vol_10 = returns.rolling(10, min_periods=1).std()
-            vol_50 = returns.rolling(50, min_periods=1).std()
-            features["volatility_ratio_5_20"] = vol_5 / (vol_20 + 1e-8)
-            features["volatility_ratio_10_50"] = vol_10 / (vol_50 + 1e-8)
+                # Additional volatility features
+                # Volatility ratio (short-term vs long-term)
+                vol_5 = returns.rolling(5, min_periods=1).std()
+                vol_10 = returns.rolling(10, min_periods=1).std()
+                vol_50 = returns.rolling(50, min_periods=1).std()
+                features["volatility_ratio_5_20"] = vol_5 / (vol_20 + 1e-8)
+                features["volatility_ratio_10_50"] = vol_10 / (vol_50 + 1e-8)
 
-            # Volatility momentum
-            features["volatility_momentum_5"] = vol_5.pct_change().fillna(0)
-            features["volatility_momentum_20"] = vol_20.pct_change().fillna(0)
+                # Volatility momentum
+                features["volatility_momentum_5"] = vol_5.pct_change().fillna(0)
+                features["volatility_momentum_20"] = vol_20.pct_change().fillna(0)
 
-            # Volatility regime strength
-            features["volatility_regime_strength"] = (vol_20 - vol_median) / (vol_median + 1e-8)
+                # Volatility regime strength
+                features["volatility_regime_strength"] = (vol_20 - vol_median) / (vol_median + 1e-8)
 
-            # Volatility clustering (GARCH-like)
-            vol_squared = returns ** 2
-            features["volatility_clustering"] = vol_squared.rolling(10).mean()
+                # Volatility clustering (GARCH-like)
+                vol_squared = returns ** 2
+                features["volatility_clustering"] = vol_squared.rolling(10).mean()
 
-            # Volatility asymmetry (up vs down volatility)
-            up_returns = returns.where(returns > 0, 0)
-            down_returns = returns.where(returns < 0, 0)
-            up_vol = up_returns.rolling(20).std()
-            down_vol = down_returns.rolling(20).std()
-            features["volatility_asymmetry"] = up_vol / (down_vol + 1e-8)
+                # Volatility asymmetry (up vs down volatility)
+                up_returns = returns.where(returns > 0, 0)
+                down_returns = returns.where(returns < 0, 0)
+                up_vol = up_returns.rolling(20).std()
+                down_vol = down_returns.rolling(20).std()
+                features["volatility_asymmetry"] = up_vol / (down_vol + 1e-8)
 
-        # Debug: Check feature values - only show features with >0.1% NaN values
-        for name, feature in features.items():
-            if isinstance(feature, pd.Series):
-                non_nan_count = feature.notna().sum()
-                nan_percentage = (len(feature) - non_nan_count) / len(feature)
-                if nan_percentage > 0.001:  # 0.1% = 0.001
-                    self.logger.info(
-                        f"🔍 Feature {name}: {non_nan_count}/{len(feature)} non-NaN values ({nan_percentage:.3%} NaN)",
-                    )
+            # Debug: Check feature values - only show features with >0.1% NaN values
+            for name, feature in features.items():
+                if isinstance(feature, pd.Series):
+                    non_nan_count = feature.notna().sum()
+                    nan_percentage = (len(feature) - non_nan_count) / len(feature)
+                    if nan_percentage > 0.001:  # 0.1% = 0.001
+                        self.logger.info(
+                            f"🔍 Feature {name}: {non_nan_count}/{len(feature)} non-NaN values ({nan_percentage:.3%} NaN)",
+                        )
 
-        return features
+            return features
 
         except Exception as e:
             self.logger.exception(f"❌ Error in volatility modeling: {e}")

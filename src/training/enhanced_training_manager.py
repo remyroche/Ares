@@ -538,7 +538,7 @@ class EnhancedTrainingManager:
         self.enhanced_training_config.get("enable_computational_optimization", True)
         )
         # Lazily set by create_computational_optimization_manager; type hint kept loose to avoid import cycle
-        self.computational_optimization_manager, None
+        self.computational_optimization_manager = None
         self.optimization_statistics: dict[str, Any] = {}
 
         # Optimization component configuration (ported)
@@ -1471,20 +1471,18 @@ class EnhancedTrainingManager:
     @ensure_data_integrity(
         check_schema=True,
         check_constraints=True,
-        validate_relationships=True,
-        enable_checksums=True
+        validate_relationships=True
     )
     @monitor_step_execution(
-        track_memory=True,
-        track_performance=True,
-        track_resources=True,
-        alert_thresholds={"max_execution_time": 3600, "max_memory_delta": 1024**3}
+        enable_timing=True,
+        enable_memory_monitoring=True,
+        enable_progress_tracking=True
     )
     @secure_step_execution(
-        validate_inputs=True,
-        sanitize_outputs=True,
-        check_permissions=True,
-        audit_operations=True
+        error_handling=True,
+        rollback_on_failure=True,
+        data_validation=True,
+        resource_cleanup=True
     )
     async def _execute_comprehensive_pipeline(
         self,
@@ -3200,10 +3198,6 @@ class EnhancedTrainingManager:
 
     @validate_pipeline_step(
         step_name="step1_5_data_converter",
-        required_artifacts=[
-            "data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet",
-            "data_cache/klines_{exchange}_{symbol}_1m_consolidated.parquet"
-        ],
         validation_level="WARNING",
         enable_rollback=True,
         max_retries=3
@@ -3211,20 +3205,18 @@ class EnhancedTrainingManager:
     @ensure_data_integrity(
         check_schema=True,
         check_constraints=True,
-        validate_relationships=True,
-        enable_checksums=True
+        validate_relationships=True
     )
     @monitor_step_execution(
-        track_memory=True,
-        track_performance=True,
-        track_resources=True,
-        alert_thresholds={"max_execution_time": 300, "max_memory_delta": 512**3}
+        enable_timing=True,
+        enable_memory_monitoring=True,
+        enable_progress_tracking=True
     )
     @secure_step_execution(
-        validate_inputs=True,
-        sanitize_outputs=True,
-        check_permissions=True,
-        audit_operations=True
+        error_handling=True,
+        rollback_on_failure=True,
+        data_validation=True,
+        resource_cleanup=True
     )
     async def _execute_step1_5_with_qa(
         self,
@@ -3257,10 +3249,6 @@ class EnhancedTrainingManager:
 
     @validate_pipeline_step(
         step_name="step2_feature_engineering",
-        required_artifacts=[
-            "data_cache/unified/{exchange}/{symbol}/{timeframe}/exchange={exchange}/symbol={symbol}/timeframe={timeframe}/year=*",
-            "data_cache/unified/{exchange}_{symbol}_{timeframe}_config.json"
-        ],
         validation_level="WARNING",
         enable_rollback=True,
         max_retries=3
@@ -3268,20 +3256,18 @@ class EnhancedTrainingManager:
     @ensure_data_integrity(
         check_schema=True,
         check_constraints=True,
-        validate_relationships=True,
-        enable_checksums=True
+        validate_relationships=True
     )
     @monitor_step_execution(
-        track_memory=True,
-        track_performance=True,
-        track_resources=True,
-        alert_thresholds={"max_execution_time": 600, "max_memory_delta": 1024**3}
+        enable_timing=True,
+        enable_memory_monitoring=True,
+        enable_progress_tracking=True
     )
     @secure_step_execution(
-        validate_inputs=True,
-        sanitize_outputs=True,
-        check_permissions=True,
-        audit_operations=True
+        error_handling=True,
+        rollback_on_failure=True,
+        data_validation=True,
+        resource_cleanup=True
     )
     async def _execute_step2_with_qa(
         self,

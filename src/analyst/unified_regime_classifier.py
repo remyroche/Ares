@@ -18,6 +18,11 @@ from src.utils.error_handler import (
 from src.utils.warning_symbols import (
     warning,
 )
+from src.utils.centralized_decorators_simple import (
+    comprehensive_data_validation,
+    validate_data_quality,
+    with_tracing_span,
+)
 
 
 class UnifiedRegimeClassifier:
@@ -920,6 +925,8 @@ class UnifiedRegimeClassifier:
 
         return analyzed_levels
 
+    @validate_data_quality(validation_level="WARNING")
+    @with_tracing_span("location_classification")
     def _classify_location(self, features_df: pd.DataFrame) -> list[str]:
         """
         Classifies location using a multi-layered context of short-term Dynamic Pivots (tactical)
@@ -1579,6 +1586,8 @@ class UnifiedRegimeClassifier:
             self.logger.error(f"❌ Error loading models: {e}")
             return False
 
+    @comprehensive_data_validation
+    @with_tracing_span("regime_classification")
     async def classify_regimes(self, historical_klines: pd.DataFrame) -> dict[str, Any]:
         """
         Classify regimes for historical data (for training purposes).

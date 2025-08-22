@@ -22,6 +22,11 @@ from src.utils.warning_symbols import (
     failed,
     initialization_error,
 )
+from src.utils.centralized_decorators_simple import (
+    comprehensive_data_validation,
+    validate_data_quality,
+    with_tracing_span,
+)
 
 if TYPE_CHECKING:
     from src.analyst.liquidation_risk_model import LiquidationRiskModel
@@ -548,6 +553,8 @@ class Analyst:
         self.logger.info("Technical analysis completed successfully")
         return technical_results
 
+    @validate_data_quality(validation_level="WARNING")
+    @with_tracing_span("price_analysis")
     def _perform_price_analysis(self, analysis_input: dict[str, Any]) -> dict[str, Any]:
         """Perform price analysis."""
         try:
@@ -572,6 +579,8 @@ class Analyst:
             self.print(error("Error performing price analysis: {e}"))
             return {}
 
+    @validate_data_quality(validation_level="WARNING")
+    @with_tracing_span("volume_analysis")
     def _perform_volume_analysis(
         self,
         analysis_input: dict[str, Any],
@@ -598,6 +607,8 @@ class Analyst:
             self.print(error("Error performing volume analysis: {e}"))
             return {}
 
+    @validate_data_quality(validation_level="WARNING")
+    @with_tracing_span("indicator_analysis")
     def _perform_indicator_analysis(
         self,
         analysis_input: dict[str, Any],
@@ -629,6 +640,8 @@ class Analyst:
             self.print(error("Error performing indicator analysis: {e}"))
             return {}
 
+    @validate_data_quality(validation_level="WARNING")
+    @with_tracing_span("pattern_analysis")
     def _perform_pattern_analysis(
         self,
         analysis_input: dict[str, Any],
@@ -645,6 +658,8 @@ class Analyst:
             self.print(error("Error performing pattern analysis: {e}"))
             return {}
 
+    @validate_data_quality(validation_level="WARNING")
+    @with_tracing_span("volatility_analysis")
     def _perform_volatility_analysis(
         self,
         analysis_input: dict[str, Any],
@@ -669,6 +684,8 @@ class Analyst:
             self.print(error("Error performing volatility analysis: {e}"))
             return {}
 
+    @validate_data_quality(validation_level="WARNING")
+    @with_tracing_span("correlation_analysis")
     def _perform_correlation_analysis(
         self,
         analysis_input: dict[str, Any],
@@ -685,6 +702,8 @@ class Analyst:
             self.print(error("Error performing correlation analysis: {e}"))
             return {}
 
+    @validate_data_quality(validation_level="WARNING")
+    @with_tracing_span("drawdown_analysis")
     def _perform_drawdown_analysis(
         self,
         analysis_input: dict[str, Any],
@@ -707,6 +726,8 @@ class Analyst:
             self.print(error("Error performing drawdown analysis: {e}"))
             return {}
 
+    @validate_data_quality(validation_level="WARNING")
+    @with_tracing_span("risk_scoring")
     def _perform_risk_scoring(self, analysis_input: dict[str, Any]) -> dict[str, Any]:
         """Perform risk scoring."""
         try:

@@ -59,7 +59,7 @@ class HMMRegimeAnalyzer:
 
         return {"meta": meta, "intensity": intensity_df, "clusters": cluster_df}
 
-    def generate_detailed_regime_summary(self, meta: dict[str ,  Any], cluster_df: pd.DataFrame | None, ) -> str:
+    def generate_detailed_regime_summary(self, meta: dict[str, Any], cluster_df: pd.DataFrame | None, ) -> str:
         """Generate a detailed regime summary in the requested format."""
         summary = []
 
@@ -350,7 +350,7 @@ class HMMRegimeAnalyzer:
 
         return "\n".join(summary)
 
-    def _generate_state_interpretation(self, state_combination: str, meta: dict[str ,  Any], ) -> str:
+    def _generate_state_interpretation(self, state_combination: str, meta: dict[str, Any], ) -> str:
         """Generate human-readable interpretation of a state combination."""
         state_names, meta.get("state_names", {})
         interpretation_parts = []
@@ -408,7 +408,7 @@ class HMMRegimeAnalyzer:
             print(f"❌ Error generating detailed summary: {e}")
         return ""
 
-    def _enhance_summary_with_visualizations(self, summary: str, exchange: str, symbol: str, timeframe: str, data: dict[str ,  Any], ) -> str:
+    def _enhance_summary_with_visualizations(self, summary: str, exchange: str, symbol: str, timeframe: str, data: dict[str, Any], ) -> str:
         """Enhance the summary with visualizations and additional content."""
         enhanced_parts = [summary]
 
@@ -858,7 +858,7 @@ class HMMRegimeAnalyzer:
 
         return analysis
 
-    def _generate_similarity_analysis(self, cluster_df: pd.DataFrame, meta: dict[str ,  Any], ) -> list[str]:
+    def _generate_similarity_analysis(self, cluster_df: pd.DataFrame, meta: dict[str, Any], ) -> list[str]:
         """Generate cross-regime similarity analysis."""
         analysis = []
 
@@ -959,7 +959,7 @@ class HMMRegimeAnalyzer:
 
         return analysis
 
-    def _generate_temporal_analysis(self, cluster_df: pd.DataFrame, meta: dict[str ,  Any], ) -> list[str]:
+    def _generate_temporal_analysis(self, cluster_df: pd.DataFrame, meta: dict[str, Any], ) -> list[str]:
         """Generate temporal analysis of regime stability and predictability."""
         analysis = []
 
@@ -1116,7 +1116,7 @@ class HMMRegimeAnalyzer:
 
         return analysis
 
-    def _generate_feature_importance_analysis(self, meta: dict[str ,  Any]) -> list[str]:
+    def _generate_feature_importance_analysis(self, meta: dict[str, Any]) -> list[str]:
         """Generate feature importance analysis for regime changes."""
         analysis = []
 
@@ -1215,7 +1215,7 @@ class HMMRegimeAnalyzer:
 
         return analysis
 
-    def _generate_predictive_power_assessment(self, cluster_df: pd.DataFrame, meta: dict[str ,  Any], ) -> list[str]:
+    def _generate_predictive_power_assessment(self, cluster_df: pd.DataFrame, meta: dict[str, Any], ) -> list[str]:
         """Generate predictive power assessment for regime forecasting."""
         analysis = []
 
@@ -1381,7 +1381,7 @@ class HMMRegimeAnalyzer:
 
         return analysis
 
-    def print_regime_summary(self, meta: dict[str ,  Any], cluster_df: pd.DataFrame | None =) -> None:
+    def print_regime_summary(self, meta: dict[str, Any], cluster_df: pd.DataFrame | None =) -> None:
         """Print a comprehensive summary of all regimes."""
         print("🔍 HMM REGIME ANALYSIS SUMMARY")
         print("=" * 60)
@@ -1572,7 +1572,7 @@ class HMMRegimeAnalyzer:
 
         return pd.DataFrame(transitions)
 
-    def plot_regime_intensities(self, intensity_df: pd.DataFrame, meta: dict[str ,  Any], top_n: int, 5, save_path: str | None =) -> None:
+    def plot_regime_intensities(self, intensity_df: pd.DataFrame, meta: dict[str, Any], top_n: int, 5, save_path: str | None =) -> None:
         """Plot regime intensity scores over time."""
         if intensity_df is None:
             print("⚠️ No intensity data available for plotting")
@@ -1651,7 +1651,7 @@ class HMMRegimeAnalyzer:
         else:
             plt.show()
 
-    def plot_regime_distribution(self, cluster_df: pd.DataFrame, meta: dict[str ,  Any], save_path: str | None =) -> None:
+    def plot_regime_distribution(self, cluster_df: pd.DataFrame, meta: dict[str, Any], save_path: str | None =) -> None:
         """Plot distribution of regimes."""
         if cluster_df is None or "composite_cluster_id" not in cluster_df.columns:
             print("⚠️ No cluster data available for plotting")
@@ -1812,7 +1812,7 @@ pass
 
         print(f"✅ Analysis complete! Reports saved to: {output_path}")
 
-    def _generate_market_condition_analysis(self, cluster_df: pd.DataFrame, meta: dict[str ,  Any], ) -> list[str]:
+    def _generate_market_condition_analysis(self, cluster_df: pd.DataFrame, meta: dict[str, Any], ) -> list[str]:
         """Generate market condition analysis for comparative analysis."""
         analysis = []
 
@@ -1898,7 +1898,7 @@ pass
 
         return analysis
 
-    def _generate_advanced_visualizations(self, cluster_df: pd.DataFrame, meta: dict[str ,  Any], exchange: str, symbol: str, timeframe: str, output_path: Path, ) -> None:
+    def _generate_advanced_visualizations(self, cluster_df: pd.DataFrame, meta: dict[str, Any], exchange: str, symbol: str, timeframe: str, output_path: Path, ) -> None:
         """Generate advanced visualizations for the regime analysis."""
         if True:
             pass
@@ -2091,7 +2091,7 @@ pass
         pass
             print(f"⚠️ Error creating persistence timeline: {e}")
 
-    def _create_feature_importance_radar(self, meta: dict[str ,  Any], exchange: str, symbol: str, timeframe: str, output_path: Path, ) -> None:
+    def _create_feature_importance_radar(self, meta: dict[str, Any], exchange: str, symbol: str, timeframe: str, output_path: Path, ) -> None:
         """Create a radar chart showing feature importance."""
         if True:
             pass
@@ -2153,7 +2153,7 @@ pass
         pass
             print(f"⚠️ Error creating feature importance radar: {e}")
 
-    def _create_correlation_network(self, cluster_df: pd.DataFrame, meta: dict[str ,  Any], exchange: str, symbol: str, timeframe: str, output_path: Path, ) -> None:
+    def _create_correlation_network(self, cluster_df: pd.DataFrame, meta: dict[str, Any], exchange: str, symbol: str, timeframe: str, output_path: Path, ) -> None:
         """Create a network diagram showing regime correlations."""
         if True:
             pass

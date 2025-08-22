@@ -23,9 +23,9 @@ sys.path.insert(0, str(project_root))
 
 from src.training.multi_timeframe_training_manager import MultiTimeframeTrainingManager
 
-async def run_multi_timeframe_training(symbol: str, timeframes: list[str], lookback_days: int, 730, enable_ensemble: bool, True, parallel: bool, True, ):
+async def run_multi_timeframe_training(, symbol: str, timeframes: list[str], lookback_days: int = 730, enable_ensemble: bool = True, parallel: bool = True, ) -> None:
     """Run multi-timeframe training."""
-    logger, system_logger.getChild("MultiTimeframeTrainingRunner")
+    logger = system_logger.getChild("MultiTimeframeTrainingRunner")
 
     logger.info("🚀 Starting Multi-Timeframe Training")
     logger.info(f"Symbol: {symbol}")

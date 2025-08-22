@@ -272,7 +272,7 @@ class FeatureDiagnosticRunner:
             "features_with_high_nan": nan_percentages[nan_percentages > 10].to_dict(),
         }
 
-    def _generate_recommendations(self, results: dict[str ,  Any]) -> list[str]:
+    def _generate_recommendations(self, results: dict[str, Any]) -> list[str]:
         """Generate recommendations based on analysis results."""
         recommendations = []
 
@@ -334,7 +334,7 @@ class FeatureDiagnosticRunner:
 
         return recommendations
 
-    def generate_report(self, results: dict[str ,  Any]) -> str:
+    def generate_report(self, results: dict[str, Any]) -> str:
         """Generate a comprehensive diagnostic report."""
         report = []
         report.append("=" * 80)

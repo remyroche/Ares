@@ -249,7 +249,7 @@ class RegimeCalculationInvestigator:
 
         return analysis
 
-    def _generate_recommendations(self, results: dict[str ,  Any]) -> list[str]:
+    def _generate_recommendations(self, results: dict[str, Any]) -> list[str]:
         """Generate recommendations based on findings."""
         recommendations = []
 
@@ -385,7 +385,7 @@ pass
 ''',
         }
 
-    def generate_report(self, results: dict[str ,  Any]) -> str:
+    def generate_report(self, results: dict[str, Any]) -> str:
         """Generate a comprehensive investigation report."""
         report = []
         report.append("=" * 80)

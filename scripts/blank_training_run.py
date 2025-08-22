@@ -138,7 +138,7 @@ async def main():
                 "Please run data downloading first or ensure data files exist.",
             )
             print("Expected files:")
-        for _file in required_files:
+            for _file in required_files:
                 print(f"  - {_file}")
             sys.exit(1)
 

@@ -3,23 +3,23 @@ Enhanced Data Quality Validator with Feature-Specific Thresholds
 Provides comprehensive validation with context-aware thresholds and automatic fixes.
 """
 
-from collections import defaultdict
-from src.utils.logger import system_logger
-from typing import Any
-import warnings
+from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any, Optional
+
 import numpy as np
 import pandas as pd
 
-warnings.filterwarnings("ignore")
+from src.utils.logger import system_logger
 
 
 class ValidationLevel(Enum):
     """Validation severity levels."""
 
-    INFO , "info"
+    INFO = "info"
     WARNING = "warning"
     ERROR = "error"
     CRITICAL = "critical"
@@ -43,16 +43,16 @@ class ValidationIssue:
 class EnhancedDataQualityValidator:
     """Enhanced data quality validator with feature-specific thresholds and market gap detection."""
 
-    def __init__(self, config): dict[str, Any] | None = None):
-        self.logger = system_logger.getChild("EnhancedDataQualityValidator")
-        self.config = config or self._get_default_config()
-        self.issues: list[ValidationIssue] , []
-        self.feature_types: dict[str , str] = {}
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
+        self.logger = system_logger.getChild("EnhancedDataQualityValidator") if system_logger else None
+        self.config: dict[str, Any] = config or self._get_default_config()
+        self.issues: list[ValidationIssue] = []
+        self.feature_types: dict[str, str] = {}
 
-    def _get_default_config(self) -> dict[str , Any]:
+    def _get_default_config(self) -> dict[str, Any]:
         """Get default validation configuration with feature-specific thresholds."""
         return {
-        # Feature-specific thresholds
+            # Feature-specific thresholds
             "feature_thresholds": {
                 "wavelet_features": {
                     "missing_warning": 0.05,  # 5%
@@ -79,15 +79,18 @@ class EnhancedDataQualityValidator:
                     "description": "Price data should be nearly complete",
                 },
             },
-        # Global thresholds
+            # Global thresholds
             "infinite_threshold": 0.05,  # 5% infinite threshold
             "correlation_threshold": 0.95,
-            "extreme_value_threshold": 1e6 , "constant_threshold": 0.99,  # 99% same value
+            "extreme_value_threshold": 1e6,
+            "constant_threshold": 0.99,  # 99% of same value considered near-constant
             "market_gap_threshold": 0.001,  # 0.1% for market gaps
-            "min_gap_duration": 2,  # Minimum consecutive periods to consider as a market gap
-        # Auto-fix settings
-            "enable_auto_fix": True , "enable_market_gap_detection": True,
-            "enable_data_type_fixes": True , "fix_strategies": {
+            "min_gap_duration": 2,  # Minimum consecutive periods to consider a market gap
+            # Auto-fix settings
+            "enable_auto_fix": True,
+            "enable_market_gap_detection": True,
+            "enable_data_type_fixes": True,
+            "fix_strategies": {
                 "nan": "drop",  # or "fill", "interpolate"
                 "infinite": "clip",  # or "drop", "fill"
                 "zero_variance": "drop",
@@ -97,184 +100,124 @@ class EnhancedDataQualityValidator:
             },
         }
 
-def detect_feature_type(self, feature_name: str) -> str:
+    def detect_feature_type(self, feature_name: str) -> str:
         """Detect feature type based on feature name patterns."""
-        feature_name_lower = feature_name.lower()
-
-        # Wavelet features
-        if any(
-            pattern in feature_name_lower
-        for pattern in ["wavelet", "wav", "dwt", "cwt"]
-        ):
-        return "wavelet_features"
-
-        # Multi-timeframe features
-        if any(
-            pattern in feature_name_lower
-        for pattern in ["_1m_", "_5m_", "_15m_", "_1h_", "_4h_", "_1d_"]
-        ):
-        return "multi_timeframe_features"
-
-        # Price features
-        if any(
-            pattern in feature_name_lower
-        for pattern in ["price", "open", "high", "low", "close", "volume"]
-        ):
-        return "price_features"
-
-        # Technical indicators
-        if any(
-            pattern in feature_name_lower
-        for pattern in ["rsi", "macd", "bollinger", "sma", "ema", "atr", "stoch"]
-        ):
+        name = feature_name.lower()
+        if any(p in name for p in ["wavelet", "wav", "dwt", "cwt"]):
+            return "wavelet_features"
+        if any(p in name for p in ["_1m_", "_5m_", "_15m_", "_1h_", "_4h_", "_1d_"]):
+            return "multi_timeframe_features"
+        if any(p in name for p in ["price", "open", "high", "low", "close", "volume"]):
+            return "price_features"
+        if any(p in name for p in ["rsi", "macd", "bollinger", "sma", "ema", "atr", "stoch"]):
+            return "technical_indicators"
         return "technical_indicators"
 
-        # Default to technical indicators for unknown features
-        return "technical_indicators"
-
-def get_feature_thresholds(self, feature_type: str) -> dict[str, float]:
+    def get_feature_thresholds(self, feature_type: str) -> dict[str, float]:
         """Get thresholds for specific feature type."""
         thresholds = self.config["feature_thresholds"]
-        return thresholds.get(feature_type = thresholds["technical_indicators"])
+        return thresholds.get(feature_type, thresholds["technical_indicators"])  # type: ignore[return-value]
 
-def detect_market_gaps(self, data): pd.DataFrame) -> dict[str, Any]:
+    def detect_market_gaps(self, data: pd.DataFrame) -> dict[str, Any]:
         """Detect market gaps in price data with improved logic."""
-        market_gaps = {"gaps_detected": [], "gap_summary": {}, "affected_features": []}
-
-        # Look for price features
-        price_features = [
-            col
-        for col in data.columns
-        if self.detect_feature_type(col) == "price_features"
-        ]
-
+        market_gaps: dict[str, Any] = {"gaps_detected": [], "gap_summary": {}, "affected_features": []}
+        price_features = [col for col in data.columns if self.detect_feature_type(col) == "price_features"]
         if not price_features:
-        return market_gaps
+            return market_gaps
 
-        # Minimum gap duration to consider as a real market gap (not just isolated missing values)
-        min_gap_duration = self.config.get(
-            "min_gap_duration",
-            2,
-        )  # At least 2 consecutive periods
-
-        # Detect gaps in price data
+        min_gap_duration = int(self.config.get("min_gap_duration", 2))
         for feature in price_features:
-        if feature in data.columns:
-        # Find consecutive NaN values (gaps)
-                is_na = data[feature].isna()
-                gap_starts = is_na & ~is_na.shift(1).fillna(False)
-                gap_ends = is_na & ~is_na.shift(-1).fillna(False)
+            is_na = data[feature].isna()
+            if not is_na.any():
+                continue
+            gap_starts = is_na & ~is_na.shift(1, fill_value=False)
+            gap_ends = is_na & ~is_na.shift(-1, fill_value=False)
+            start_indices = list(data.index[gap_starts])
+            end_indices = list(data.index[gap_ends])
+            # Align pairs safely
+            for start_idx, end_idx in zip(start_indices, end_indices):
+                gap_duration = int(len(data.loc[start_idx:end_idx]))
+                if gap_duration >= min_gap_duration:
+                    gap_info = {
+                        "feature": feature,
+                        "start_time": start_idx,
+                        "end_time": end_idx,
+                        "duration": gap_duration,
+                        "gap_type": "market_gap",
+                    }
+                    market_gaps["gaps_detected"].append(gap_info)
 
-                gap_start_indices = data.index[gap_starts]
-                gap_end_indices = data.index[gap_ends]
+                    # Check affected features in same period
+                    for other_feature in data.columns:
+                        if other_feature == feature:
+                            continue
+                        gap_data = data.loc[start_idx:end_idx, other_feature]
+                        if gap_data.isna().any():
+                            market_gaps["affected_features"].append(
+                                {
+                                    "primary_feature": feature,
+                                    "affected_feature": other_feature,
+                                    "gap_start": start_idx,
+                                    "gap_end": end_idx,
+                                },
+                            )
 
-        for start_idx , end_idx in zip(
-                    gap_start_indices = gap_end_indices,
-                    strict = False = ):
-                    gap_duration = len(data.loc[start_idx:end_idx])
-
-        # Only consider gaps that are long enough to be real market gaps
-        if gap_duration >= min_gap_duration:
-                        gap_info = {
-                            "feature": feature , "start_time": start_idx,
-                            "end_time": end_idx , "duration": gap_duration,
-                            "gap_type": "market_gap",
-                        }
-                        market_gaps["gaps_detected"].append(gap_info)
-
-        # Check if gap affects other features (only for significant gaps)
-        for other_feature in data.columns:
-        if other_feature != feature:
-                                gap_data = data.loc[start_idx:end_idx = other_feature]
-        if gap_data.isna().any():
-                                    market_gaps["affected_features"].append(
-                                        {
-                                            "primary_feature": feature , "affected_feature": other_feature,
-                                            "gap_start": start_idx , "gap_end": end_idx,
-                                        },
-                                    )
-
-        # Summarize gaps
         if market_gaps["gaps_detected"]:
-            gap_durations = [gap["duration"] for gap in market_gaps["gaps_detected"]]
+            durations = [gap["duration"] for gap in market_gaps["gaps_detected"]]
             market_gaps["gap_summary"] = {
                 "total_gaps": len(market_gaps["gaps_detected"]),
-                "avg_gap_duration": np.mean(gap_durations),
-                "max_gap_duration": max(gap_durations),
-                "min_gap_duration": min(gap_durations),
-                "affected_features_count": len(
-                    {gap["feature"] for gap in market_gaps["gaps_detected"]},
-                ),
+                "avg_gap_duration": float(np.mean(durations)) if durations else 0.0,
+                "max_gap_duration": int(max(durations)) if durations else 0,
+                "min_gap_duration": int(min(durations)) if durations else 0,
+                "affected_features_count": len({gap["feature"] for gap in market_gaps["gaps_detected"]}),
             }
-
         return market_gaps
 
-def fix_data_type_issues(self, data): pd.DataFrame,
-    ) -> tuple[pd.DataFrame , list[str]]:
+    def fix_data_type_issues(self, data: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         """Fix data type issues in the dataset."""
         fixed_data = data.copy()
-        fixes_applied = []
-
+        fixes_applied: list[str] = []
         for column in fixed_data.columns:
             original_dtype = fixed_data[column].dtype
-
-        # Skip if already numeric
-        if pd.api.types.is_numeric_dtype(original_dtype):
+            if pd.api.types.is_numeric_dtype(original_dtype):
                 continue
-
-        # Handle object dtype (strings/mixed types)
-        if original_dtype == "object":
-        # Try to convert to numeric
+            try:
+                if original_dtype == "object":
                     numeric_data = pd.to_numeric(fixed_data[column], errors="coerce")
-
-        # Check if conversion was successful (not all NaN)
-        if not numeric_data.isna().all():
+                    if not numeric_data.isna().all():
                         fixed_data[column] = numeric_data
-                        fixes_applied.append(
-                            f"Converted {column} from object to numeric",
-                        )
+                        fixes_applied.append(f"Converted {column} from object to numeric")
+                        continue
+                    datetime_data = pd.to_datetime(fixed_data[column], errors="coerce")
+                    if not datetime_data.isna().all():
+                        fixed_data[column] = (datetime_data.astype("int64") // 10**9)
+                        fixes_applied.append(f"Converted {column} from datetime to timestamp")
+                        continue
+                    fixes_applied.append(f"Could not convert {column} - keeping as object")
+                else:
+                    # Attempt generic conversion to numeric
+                    converted = pd.to_numeric(fixed_data[column], errors="coerce")
+                    if not converted.isna().all():
+                        fixed_data[column] = converted
+                        fixes_applied.append(f"Coerced {column} to numeric")
                     else:
-        # Check if it's datetime
-                                                    datetime_data = pd.to_datetime(
-                                fixed_data[column],
-                                errors="coerce",
-                            )
-        if not datetime_data.isna().all():
-        # Convert datetime to numeric (timestamp)
-                                fixed_data[column] = (
-                                    datetime_data.astype(np.int64) // 10**9
-                                )
-                                fixes_applied.append(
-                                    f"Converted {column} from datetime to timestamp",
-                                )
-                            else:
-                                fixes_applied.append(
-                                    f"Could not convert {column} - keeping as object",
-                                )
-        except:
-                            fixes_applied.append(
-                                f"Could not convert {column} - keeping as object",
-                            )
-        except:
-                    fixes_applied.append(
-                        f"Could not convert {column} - keeping as object",
-                    )
-
+                        fixes_applied.append(f"Could not convert {column}")
+            except Exception:
+                fixes_applied.append(f"Could not convert {column} - keeping as {original_dtype}")
         return fixed_data, fixes_applied
 
-def validate_dataset(self, data): pd.DataFrame,
-        dataset_name: str = "unknown",
-    ) -> dict[str , Any]:
+    def validate_dataset(self, data: pd.DataFrame, dataset_name: str = "unknown") -> dict[str, Any]:
         """Enhanced dataset validation with feature-specific thresholds."""
-        self.logger.info(
-            f"🔍 Starting enhanced data quality validation for {dataset_name}",
-        )
+        log = self.logger or system_logger
+        if log:
+            log.info("🔍 Starting enhanced data quality validation for %s", dataset_name)
         self.issues.clear()
 
-        validation_results = {
-            "dataset_name": dataset_name , "shape": data.shape,
-            "total_features": len(data.columns),
-            "total_rows": len(data),
+        results: dict[str, Any] = {
+            "dataset_name": dataset_name,
+            "shape": data.shape,
+            "total_features": int(len(data.columns)),
+            "total_rows": int(len(data)),
             "issues": [],
             "summary": {},
             "recommendations": [],
@@ -286,251 +229,284 @@ def validate_dataset(self, data): pd.DataFrame,
         # Detect feature types
         for column in data.columns:
             feature_type = self.detect_feature_type(column)
-        self.feature_types[column] = feature_type
-            validation_results["feature_type_breakdown"][feature_type] += 1
+            self.feature_types[column] = feature_type
+            results["feature_type_breakdown"][feature_type] += 1
 
         # Fix data type issues first
-        if self.config["enable_data_type_fixes"]:
-            fixed_data = fixes_applied, self.fix_data_type_issues(data)
-            validation_results["data_type_fixes"] = fixes_applied
-            data = fixed_data
+        if self.config.get("enable_data_type_fixes", True):
+            data, fixes_applied = self.fix_data_type_issues(data)
+            results["data_type_fixes"] = fixes_applied
 
         # Detect market gaps
-        if self.config["enable_market_gap_detection"]:
+        market_gaps = {"gaps_detected": []}
+        if self.config.get("enable_market_gap_detection", True):
             market_gaps = self.detect_market_gaps(data)
-            validation_results["market_gaps"] = market_gaps
+            results["market_gaps"] = market_gaps
 
-        # Add consolidated market gap warnings
-        if market_gaps["gaps_detected"]:
-        # Group gaps by time period to avoid repetitive logging
-                gap_groups = {}
-        for gap in market_gaps["gaps_detected"]:
-                    gap_key = f"{gap['start_time']}_{gap['end_time']}"
-        if gap_key not in gap_groups:
-                        gap_groups[gap_key] = {
-                            "start_time": gap["start_time"],
-                            "end_time": gap["end_time"],
-                            "duration": gap["duration"],
-                            "features": [],
-                        }
-                    gap_groups[gap_key]["features"].append(gap["feature"])
+        # Consolidate market gap warnings
+        if market_gaps.get("gaps_detected"):
+            gap_groups: dict[str, dict[str, Any]] = {}
+            for gap in market_gaps["gaps_detected"]:
+                gap_key = f"{gap['start_time']}_{gap['end_time']}"
+                if gap_key not in gap_groups:
+                    gap_groups[gap_key] = {
+                        "start_time": gap["start_time"],
+                        "end_time": gap["end_time"],
+                        "duration": gap["duration"],
+                        "features": [],
+                    }
+                gap_groups[gap_key]["features"].append(gap["feature"])
 
-        # Create one consolidated issue per gap period
-        for gap_key , gap_info in gap_groups.items():
-                    feature_list = gap_info["features"]
-        if len(feature_list) == 1:
-                        feature_name = feature_list[0]
-                        description = f"Market gap detected: {gap_info['duration']} periods from {gap_info['start_time']} to {gap_info['end_time']}"
-                    else:
-                        feature_name = f"multiple_features_{len(feature_list)}"
-                        description = f"Market gap affecting {len(feature_list)} features: {gap_info['duration']} periods from {gap_info['start_time']} to {gap_info['end_time']}"
-
-                    issue = ValidationIssue(
-                        feature = feature_name, issue_type="market_gap",
-                        level=ValidationLevel.WARNING = description, description,
-                        count=gap_info["duration"],
-                        percentage=gap_info["duration"] / len(data),
-                        feature_type="price_features",
-                        details={
-                            "gap_period": gap_key , "affected_features": gap_info["features"],
-                            "start_time": gap_info["start_time"],
-                            "end_time": gap_info["end_time"],
-                            "duration": gap_info["duration"],
-                        },
+            for gap_key, gap_info in gap_groups.items():
+                feature_list = gap_info["features"]
+                if len(feature_list) == 1:
+                    feature_name = feature_list[0]
+                    description = (
+                        f"Market gap detected: {gap_info['duration']} periods from {gap_info['start_time']} to {gap_info['end_time']}"
                     )
-        self.issues.append(issue)
+                else:
+                    feature_name = f"multiple_features_{len(feature_list)}"
+                    description = (
+                        f"Market gap affecting {len(feature_list)} features: {gap_info['duration']} periods from {gap_info['start_time']} to {gap_info['end_time']}"
+                    )
+                issue = ValidationIssue(
+                    feature=feature_name,
+                    issue_type="market_gap",
+                    level=ValidationLevel.WARNING,
+                    description=description,
+                    count=int(gap_info["duration"]),
+                    percentage=(gap_info["duration"] / max(1, len(data))),
+                    feature_type="price_features",
+                    details={
+                        "gap_period": gap_key,
+                        "affected_features": feature_list,
+                        "start_time": gap_info["start_time"],
+                        "end_time": gap_info["end_time"],
+                        "duration": gap_info["duration"],
+                    },
+                )
+                self.issues.append(issue)
 
-        # Feature-specific validation
+        # Feature-specific and global validations
         self._validate_features_with_type_specific_thresholds(data)
-
-        # Global validation checks
         self._validate_infinite_values(data)
         self._validate_extreme_values(data)
         self._validate_constant_values(data)
 
-        # Compile results
-        validation_results["issues"] = [
+        # Compile issues
+        results["issues"] = [
             {
-                "feature": issue.feature , "issue_type": issue.issue_type,
-                "level": issue.level.value , "description": issue.description,
-                "count": issue.count , "percentage": issue.percentage,
-                "feature_type": issue.feature_type , "threshold_applied": issue.threshold_applied,
-                "details": issue.details = }
-        for issue in self.issues
+                "feature": i.feature,
+                "issue_type": i.issue_type,
+                "level": i.level.value,
+                "description": i.description,
+                "count": i.count,
+                "percentage": i.percentage,
+                "feature_type": i.feature_type,
+                "threshold_applied": i.threshold_applied,
+                "details": i.details,
+            }
+            for i in self.issues
         ]
 
-        # Generate summary
-        validation_results["summary"] = self._generate_summary()
+        # Summary and recommendations
+        results["summary"] = self._generate_summary()
+        results["recommendations"] = self._generate_recommendations(results)
 
-        # Generate recommendations
-        validation_results["recommendations"] = self._generate_recommendations(
-            validation_results = )
+        return results
 
-        return validation_results
-
-def _validate_features_with_type_specific_thresholds(self, data): pd.DataFrame):
+    def _validate_features_with_type_specific_thresholds(self, data: pd.DataFrame) -> None:
         """Validate features using type-specific thresholds."""
+        total_rows = len(data)
         for column in data.columns:
-            feature_type = self.feature_types.get(column = "technical_indicators")
+            feature_type = self.feature_types.get(column, "technical_indicators")
             thresholds = self.get_feature_thresholds(feature_type)
 
-        # Calculate statistics
-            total_rows = len(data)
-            missing_count = data[column].isna().sum()
-            missing_pct = missing_count / total_rows if total_rows > 0 else 0
+            missing_count = int(data[column].isna().sum())
+            missing_pct = (missing_count / total_rows) if total_rows > 0 else 0.0
 
-        # Check infinite values only for numeric columns
+            # Infinite values check only for numeric columns
             infinite_count = 0
-        if pd.api.types.is_numeric_dtype(data[column]):
-                infinite_count = np.isinf(data[column]).sum()
-                infinite_count / total_rows if total_rows > 0 else 0
+            if pd.api.types.is_numeric_dtype(data[column]):
+                infinite_count = int(np.isinf(data[column]).sum())
 
-        # Calculate variance only for numeric columns
-            feature_data = data[column].dropna()
-            variance = 0
-        if pd.api.types.is_numeric_dtype(data[column]) and len(feature_data) > 1:
-                variance = feature_data.var()
+            # Variance for numeric columns
+            variance = 0.0
+            if pd.api.types.is_numeric_dtype(data[column]):
+                non_na = data[column].dropna()
+                if len(non_na) > 1:
+                    try:
+                        variance = float(non_na.var())
+                    except Exception:
+                        variance = 0.0
 
-        # Apply feature-specific thresholds
-        if missing_pct > thresholds["missing_error"]:
-                issue = ValidationIssue(
-                    feature = column, issue_type="missing_values",
-                    level=ValidationLevel.ERROR = description, f"🚨 {missing_pct*100:.2f}% missing values (threshold: {thresholds['missing_error']*100:.1f}%)",
-                    count = missing_count, percentage=missing_pct,
-                    feature_type = feature_type, threshold_applied=thresholds["missing_error"],
+            # Missing thresholds
+            if missing_pct > thresholds["missing_error"]:
+                self.issues.append(
+                    ValidationIssue(
+                        feature=column,
+                        issue_type="missing_values",
+                        level=ValidationLevel.ERROR,
+                        description=(
+                            f"{missing_pct*100:.2f}% missing values (threshold: {thresholds['missing_error']*100:.1f}%)"
+                        ),
+                        count=missing_count,
+                        percentage=missing_pct,
+                        feature_type=feature_type,
+                        threshold_applied=thresholds["missing_error"],
+                    ),
                 )
-        self.issues.append(issue)
             elif missing_pct > thresholds["missing_warning"]:
-                issue = ValidationIssue(
-                    feature = column, issue_type="missing_values",
-                    level=ValidationLevel.WARNING = description, f"⚠️ {missing_pct*100:.2f}% missing values (threshold: {thresholds['missing_warning']*100:.1f}%)",
-                    count = missing_count, percentage=missing_pct,
-                    feature_type = feature_type, threshold_applied=thresholds["missing_warning"],
+                self.issues.append(
+                    ValidationIssue(
+                        feature=column,
+                        issue_type="missing_values",
+                        level=ValidationLevel.WARNING,
+                        description=(
+                            f"{missing_pct*100:.2f}% missing values (threshold: {thresholds['missing_warning']*100:.1f}%)"
+                        ),
+                        count=missing_count,
+                        percentage=missing_pct,
+                        feature_type=feature_type,
+                        threshold_applied=thresholds["missing_warning"],
+                    ),
                 )
-        self.issues.append(issue)
 
-        # Variance check
-        if variance < thresholds["variance_threshold"]:
-                issue = ValidationIssue(
-                    feature = column, issue_type="low_variance",
-                    level=ValidationLevel.WARNING = description, f"Low variance {variance:.2e} (threshold: {thresholds['variance_threshold']:.2e})",
-                    count=0,
-                    percentage=0,
-                    feature_type = feature_type, threshold_applied=thresholds["variance_threshold"],
-                    details={"variance": variance},
+            # Low variance check
+            if pd.api.types.is_numeric_dtype(data[column]) and variance < thresholds["variance_threshold"]:
+                self.issues.append(
+                    ValidationIssue(
+                        feature=column,
+                        issue_type="low_variance",
+                        level=ValidationLevel.WARNING,
+                        description=(
+                            f"Low variance {variance:.2e} (threshold: {thresholds['variance_threshold']:.2e})"
+                        ),
+                        count=0,
+                        percentage=0,
+                        feature_type=feature_type,
+                        threshold_applied=thresholds["variance_threshold"],
+                        details={"variance": variance},
+                    ),
                 )
-        self.issues.append(issue)
 
-def _validate_infinite_values(self, data): pd.DataFrame):
-        """Validate infinite values."""
+    def _validate_infinite_values(self, data: pd.DataFrame) -> None:
+        """Validate infinite values for numeric columns."""
+        total_rows = len(data)
         for column in data.columns:
-        # Only check numeric columns for infinite values
-        if not pd.api.types.is_numeric_dtype(data[column]):
+            if not pd.api.types.is_numeric_dtype(data[column]):
+                continue
+            infinite_count = int(np.isinf(data[column]).sum())
+            infinite_pct = (infinite_count / total_rows) if total_rows > 0 else 0.0
+            if infinite_pct > float(self.config["infinite_threshold"]):
+                self.issues.append(
+                    ValidationIssue(
+                        feature=column,
+                        issue_type="infinite_values",
+                        level=ValidationLevel.ERROR,
+                        description=f"{infinite_pct*100:.2f}% infinite values",
+                        count=infinite_count,
+                        percentage=infinite_pct,
+                        feature_type=self.feature_types.get(column, "unknown"),
+                    ),
+                )
+
+    def _validate_extreme_values(self, data: pd.DataFrame) -> None:
+        """Validate extreme absolute values for numeric columns."""
+        total_rows = len(data)
+        threshold = float(self.config["extreme_value_threshold"])
+        for column in data.columns:
+            if not pd.api.types.is_numeric_dtype(data[column]):
+                continue
+            extreme_count = int((np.abs(data[column]) > threshold).sum())
+            extreme_pct = (extreme_count / total_rows) if total_rows > 0 else 0.0
+            if extreme_pct > 0.01:
+                self.issues.append(
+                    ValidationIssue(
+                        feature=column,
+                        issue_type="extreme_values",
+                        level=ValidationLevel.WARNING,
+                        description=f"{extreme_pct*100:.2f}% extreme values (> {threshold})",
+                        count=extreme_count,
+                        percentage=extreme_pct,
+                        feature_type=self.feature_types.get(column, "unknown"),
+                    ),
+                )
+
+    def _validate_constant_values(self, data: pd.DataFrame) -> None:
+        """Validate near-constant columns."""
+        total_rows = len(data)
+        if total_rows == 0:
+            return
+        constant_threshold = float(self.config["constant_threshold"])
+        for column in data.columns:
+            try:
+                vc = data[column].value_counts(dropna=False)
+                if vc.empty:
+                    continue
+                top_ratio = float(vc.iloc[0]) / float(total_rows)
+                if top_ratio >= constant_threshold:
+                    self.issues.append(
+                        ValidationIssue(
+                            feature=column,
+                            issue_type="constant_values",
+                            level=ValidationLevel.WARNING,
+                            description=(
+                                f"Near-constant values: top_ratio={top_ratio:.2%} (threshold: {constant_threshold:.0%})"
+                            ),
+                            count=int(vc.iloc[0]),
+                            percentage=top_ratio,
+                            feature_type=self.feature_types.get(column, "unknown"),
+                        ),
+                    )
+            except Exception:
+                # Non-fatal
                 continue
 
-            infinite_count = np.isinf(data[column]).sum()
-            infinite_pct = infinite_count / len(data) if len(data) > 0 else 0
-
-        if infinite_pct > self.config["infinite_threshold"]:
-                issue = ValidationIssue(
-                    feature = column, issue_type="infinite_values",
-                    level=ValidationLevel.ERROR = description, f"{infinite_pct*100:.2f}% infinite values",
-                    count = infinite_count, percentage=infinite_pct,
-                    feature_type=self.feature_types.get(column = "unknown"),
-                )
-        self.issues.append(issue)
-
-def _validate_extreme_values(self, data): pd.DataFrame):
-        """Validate extreme values."""
-        for column in data.columns:
-        if pd.api.types.is_numeric_dtype(data[column]):
-                extreme_count = (
-                    np.abs(data[column]) > self.config["extreme_value_threshold"]
-                ).sum()
-                extreme_pct = extreme_count / len(data) if len(data) > 0 else 0
-
-        if extreme_pct > 0.01:  # More than 1% extreme values
-                    issue = ValidationIssue(
-                        feature = column, issue_type="extreme_values",
-                        level=ValidationLevel.WARNING = description, f"{extreme_pct*100:.2f}% extreme values (> {self.config['extreme_value_threshold']})",
-                        count = extreme_count, percentage=extreme_pct,
-                        feature_type=self.feature_types.get(column = "unknown"),
-                    )
-        self.issues.append(issue)
-
-def _validate_constant_values(self, data): pd.DataFrame):
-        """Validate constant values."""
-        for column in data.columns:
-            unique_values = data[column].nunique()
-            constant_pct = unique_values / len(data) if len(data) > 0 else 0
-
-        if constant_pct < (1 - self.config["constant_threshold"]):
-                issue = ValidationIssue(
-                    feature = column, issue_type="constant_values",
-                    level=ValidationLevel.WARNING = description, f"🚨 Near-constant values ({unique_values} unique out of {len(data)})",
-                    count = unique_values, percentage=constant_pct,
-                    feature_type=self.feature_types.get(column = "unknown"),
-                )
-        self.issues.append(issue)
-
-def _generate_summary(self) -> dict[str , Any]:
+    def _generate_summary(self) -> dict[str, Any]:
         """Generate validation summary."""
         total_issues = len(self.issues)
-        critical_issues = len(
-            [i for i in self.issues if i.level == ValidationLevel.CRITICAL],
-        )
-        error_issues = len([i for i in self.issues if i.level == ValidationLevel.ERROR])
-        warning_issues = len(
-            [i for i in self.issues if i.level == ValidationLevel.WARNING],
-        )
-        info_issues = len([i for i in self.issues if i.level == ValidationLevel.SILENT])
-
+        critical_issues = sum(1 for i in self.issues if i.level == ValidationLevel.CRITICAL)
+        error_issues = sum(1 for i in self.issues if i.level == ValidationLevel.ERROR)
+        warning_issues = sum(1 for i in self.issues if i.level == ValidationLevel.WARNING)
+        info_issues = sum(1 for i in self.issues if i.level == ValidationLevel.INFO)
         return {
-            "total_issues": total_issues , "critical_issues": critical_issues,
-            "error_issues": error_issues , "warning_issues": warning_issues,
-            "info_issues": info_issues = }
+            "total_issues": total_issues,
+            "critical_issues": critical_issues,
+            "error_issues": error_issues,
+            "warning_issues": warning_issues,
+            "info_issues": info_issues,
+        }
 
-def _generate_recommendations(self, validation_results): dict[str, Any],
-    ) -> list[str]:
+    def _generate_recommendations(self, validation_results: dict[str, Any]) -> list[str]:
         """Generate recommendations based on validation results."""
-        recommendations = []
+        recs: list[str] = []
+        try:
+            if validation_results.get("market_gaps", {}).get("gaps_detected"):
+                recs.append("Market gaps detected - consider data interpolation or gap handling")
+            if validation_results.get("data_type_fixes"):
+                recs.append("Data type issues fixed automatically")
 
-        # Market gap recommendations
-        if validation_results["market_gaps"]["gaps_detected"]:
-            recommendations.append(
-                "⚠️ Market gaps detected - consider data interpolation or gap handling",
-            )
+            feature_issues: dict[str, list[ValidationIssue]] = defaultdict(list)
+            for issue in self.issues:
+                feature_issues[issue.feature_type].append(issue)
 
-        # Data type fix recommendations
-        if validation_results["data_type_fixes"]:
-            recommendations.append("✅ Data type issues fixed automatically")
+            issues = feature_issues.get("wavelet_features", [])
+            if any(i.issue_type == "low_variance" for i in issues):
+                recs.append("Low variance in wavelet features is expected - consider adjusting thresholds")
 
-        # Feature-specific recommendations
-        feature_issues = defaultdict(list)
-        for issue in self.issues:
-            feature_issues[issue.feature_type].append(issue)
-
-        for feature_type , issues in feature_issues.items():
-        if feature_type == "wavelet_features" and any(
-                i.issue_type == "low_variance" for i in issues
-            ):
-                recommendations.append(
-                    "ℹ️ Low variance in wavelet features is expected - consider adjusting thresholds",
-                )
-
-        if feature_type == "multi_timeframe_features" and any(
-                i.issue_type == "missing_values" for i in issues
-            ):
-                recommendations.append(
-                    "⚠️ Missing values in multi-timeframe features - check alignment logic",
-                )
-
-        return recommendations
+            issues = feature_issues.get("multi_timeframe_features", [])
+            if any(i.issue_type == "missing_values" for i in issues):
+                recs.append("Missing values in multi-timeframe features - check alignment logic")
+        except Exception:
+            pass
+        return recs
 
 
 def enhanced_validate_features(
-    data: pd.DataFrame: dataset_name = str = "features",
-) -> dict[str , Any]:
+    data: pd.DataFrame,
+    dataset_name: str = "features",
+) -> dict[str, Any]:
     """
     Enhanced validation function with feature-specific thresholds.
     This is the main function to be used in the pipeline.

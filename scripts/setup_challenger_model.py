@@ -12,126 +12,137 @@ Usage:
 """
 
 from pathlib import Path
+from typing import Optional
 from src.utils.logger import setup_logging, system_logger
 import argparse
 import sys
 
-        from src.config import CONFIG
-from src.utils.state_manager import StateManager
-from src.utils.warning_symbols import (import, mlflow)
-# Add the project root to the Python path)
+# Ensure project root on path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-    error = missing,
-)
+from src.config import CONFIG  # noqa: E402
+from src.utils.state_manager import StateManager  # noqa: E402
+from src.utils.warning_symbols import error, missing  # noqa: E402
 
-def setup_challenger_model(run_id: str):
-    """Set up a challenger model run ID."""
-    setup_logging()
-    logger, system_logger.getChild("SetupChallengerModel")
+try:
+	import mlflow  # type: ignore
+except Exception as e:  # noqa: BLE001
+	mlflow = None  # type: ignore
+	system_logger.warning(f"MLflow not available: {e}")
 
-    if True:
-    pass  # TODO: Add proper implementation
-        # Initialize state manager
-        state_manager = StateManager()
 
-        # Verify the run ID exists in MLflow
-        client = mlflow.tracking.MlflowClient()
-        if True:
-    pass  # TODO: Add proper implementation
-            run = client.get_run(run_id)
-            logger.info(f"Found MLflow run: {run_id}")
-            logger.info(f"Run name: {run.data.tags.get('mlflow.runName', 'N/A')}")
-            logger.info(f"Status: {run.info.status}")
-        pass
-            print(error("Could not find MLflow run {run_id}: {e}"))
-        return False
+def setup_challenger_model(run_id: str) -> bool:
+	"""Set up a challenger model run ID."""
+	setup_logging()
+	logger = system_logger.getChild("SetupChallengerModel")
 
-        # Set the challenger model run ID
-        state_manager.set_state("challenger_model_run_id", run_id)
-        logger.info(f"✅ Challenger model run ID set to: {run_id}")
+	try:
+		# Initialize state manager (with default config)
+		state_manager = StateManager({})
 
-        return True
+		# Verify the run ID exists in MLflow
+		if mlflow is None:
+			print(error("MLflow is not installed or not available"))
+			return False
 
-    pass
-        print(error("Error setting up challenger model: {e}"))
-        return False
+		client = mlflow.tracking.MlflowClient()
+		try:
+			run = client.get_run(run_id)
+		except Exception as e:  # noqa: BLE001
+			print(error(f"Could not find MLflow run {run_id}: {e}"))
+			return False
 
-def list_available_models():
-    """List available models from MLflow."""
-    setup_logging()
-    logger, system_logger.getChild("ListModels")
+		logger.info(f"Found MLflow run: {run_id}")
+		logger.info(f"Run name: {run.data.tags.get('mlflow.runName', 'N/A')}")
+		logger.info(f"Status: {run.info.status}")
 
-    if True:
-    pass  # TODO: Add proper implementation
-        client = mlflow.tracking.MlflowClient()
+		# Set the challenger model run ID
+		state_manager.set_state("challenger_model_run_id", run_id)
+		logger.info(f"✅ Challenger model run ID set to: {run_id}")
 
-        # Get the experiment name from config
+		return True
+	except Exception as e:  # noqa: BLE001
+		print(error(f"Error setting up challenger model: {e}"))
+		return False
 
-        experiment_name = CONFIG.get("MLFLOW_EXPERIMENT_NAME", "ares_trading")
 
-        # Find the experiment
-        experiment = client.get_experiment_by_name(experiment_name)
-        if not experiment:
-            print(missing("Experiment '{experiment_name}' not found"))
-        return False
+def list_available_models() -> bool:
+	"""List available models from MLflow."""
+	setup_logging()
+	logger = system_logger.getChild("ListModels")
 
-        # Search for runs
-        runs = client.search_runs(
-            experiment_ids=[experiment.experiment_id],
-            order_by=["start_time DESC"],
-            max_results=20,
-        )
+	try:
+		if mlflow is None:
+			print(error("MLflow is not installed or not available"))
+			return False
 
-        logger.info(f"Available models in experiment '{experiment_name}':")
-        logger.info("=" * 80)
+		client = mlflow.tracking.MlflowClient()
 
-        for run in runs:
-            run_id = run.info.run_id
-            run_name = run.data.tags.get("mlflow.runName", "N/A")
-            status = run.data.tags.get("model_status", "unknown")
-            accuracy = run.data.metrics.get("accuracy", 0.0)
-            timestamp = run.info.start_time
+		# Get the experiment name from config
+		experiment_name = CONFIG.get("MLFLOW_EXPERIMENT_NAME", "ares_trading")
 
-            logger.info(f"Run ID: {run_id}")
-            logger.info(f"Name: {run_name}")
-            logger.info(f"Status: {status}")
-            logger.info(f"Accuracy: {accuracy:.4f}")
-            logger.info(f"Timestamp: {timestamp}")
-            logger.info("-" * 40)
+		# Find the experiment
+		experiment = client.get_experiment_by_name(experiment_name)
+		if not experiment:
+			print(missing(f"Experiment '{experiment_name}' not found"))
+			return False
 
-        return True
+		# Search for runs
+		runs = client.search_runs(
+			experiment_ids=[experiment.experiment_id],
+			order_by=["start_time DESC"],
+			max_results=20,
+		)
 
-    pass
-        print(error("Error listing models: {e}"))
-        return False
+		logger.info(f"Available models in experiment '{experiment_name}':")
+		logger.info("=" * 80)
 
-def clear_challenger_model():
-    """Clear the challenger model run ID."""
-    setup_logging()
-    logger, system_logger.getChild("ClearChallengerModel")
+		for run in runs:
+			run_id = run.info.run_id
+			run_name = run.data.tags.get("mlflow.runName", "N/A")
+			status = run.data.tags.get("model_status", run.info.status)
+			accuracy = run.data.metrics.get("accuracy", 0.0)
+			timestamp = run.info.start_time
 
-    if True:
-    pass  # TODO: Add proper implementation
-        # Initialize state manager
-        state_manager = StateManager()
+			logger.info(f"Run ID: {run_id}")
+			logger.info(f"Name: {run_name}")
+			logger.info(f"Status: {status}")
+			logger.info(f"Accuracy: {float(accuracy):.4f}")
+			logger.info(f"Timestamp: {timestamp}")
+			logger.info("-" * 40)
 
-        # Clear the challenger model run ID
-        state_manager.set_state("challenger_model_run_id", None)
-        logger.info("✅ Challenger model run ID cleared")
+		return True
+	except Exception as e:  # noqa: BLE001
+		print(error(f"Error listing models: {e}"))
+		return False
 
-        return True
 
-    pass
-        print(error("Error clearing challenger model: {e}"))
-        return False
+def clear_challenger_model() -> bool:
+	"""Clear the challenger model run ID."""
+	setup_logging()
+	logger = system_logger.getChild("ClearChallengerModel")
 
-def main():
-    """Main entry point."""
-    parser, argparse.ArgumentParser(
-        description="Setup Challenger Model Utility",
-        formatter_class=argparse.RawDescriptionHelpFormatter, epilog = """
+	try:
+		# Initialize state manager
+		state_manager = StateManager({})
+
+		# Clear the challenger model run ID
+		state_manager.set_state("challenger_model_run_id", None)
+		logger.info("✅ Challenger model run ID cleared")
+
+		return True
+	except Exception as e:  # noqa: BLE001
+		print(error(f"Error clearing challenger model: {e}"))
+		return False
+
+
+def build_parser() -> argparse.ArgumentParser:
+	"""Create and configure the argparse parser."""
+	parser = argparse.ArgumentParser(
+		description="Setup Challenger Model Utility",
+		formatter_class=argparse.RawDescriptionHelpFormatter,
+		epilog="""
 Examples:
   # Set up a challenger model
   python scripts/setup_challenger_model.py --run-id abc123def456
@@ -141,35 +152,41 @@ Examples:
 
   # Clear challenger model
   python scripts/setup_challenger_model.py --clear
-        """,
-    )
+		""",
+	)
+	parser.add_argument("--run-id", help="MLflow run ID for the challenger model")
+	parser.add_argument(
+		"--list-models",
+		action="store_true",
+		help="List available models from MLflow",
+	)
+	parser.add_argument(
+		"--clear",
+		action="store_true",
+		help="Clear the challenger model run ID",
+	)
+	return parser
 
-    parser.add_argument("--run-id", help="MLflow run ID for the challenger model")
-    parser.add_argument(
-        "--list-models",
-        action="store_true",
-        help="List available models from MLflow",
-    )
-    parser.add_argument(
-        "--clear",
-        action="store_true",
-        help="Clear the challenger model run ID",
-    )
 
-    args, parser.parse_args()
+def main() -> None:
+	"""Main entry point."""
+	parser = build_parser()
+	args = parser.parse_args()
 
-    if args.list_models:
-        success = list_available_models()
-    elif args.clear:
-        success = clear_challenger_model()
-    elif args.run_id:
-        success = setup_challenger_model(args.run_id)
-    else:
-        parser.print_help()
-        sys.exit(1)
+	success: Optional[bool] = None
+	if args.list_models:
+		success = list_available_models()
+	elif args.clear:
+		success = clear_challenger_model()
+	elif args.run_id:
+		success = setup_challenger_model(args.run_id)
+	else:
+		parser.print_help()
+		sys.exit(1)
 
-    if not success:
-        sys.exit(1)
+	if not success:
+		sys.exit(1)
+
 
 if __name__ == "__main__":
-    main()
+	main()

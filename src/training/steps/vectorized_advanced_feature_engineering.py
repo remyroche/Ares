@@ -2576,14 +2576,14 @@ class VectorizedAdvancedFeatureEngineering:
                     order_flow_data,
                 )
             )
-        self.logger.info(f"🔍 Generated {len(microstructure_features)} microstructure features")
-        if microstructure_features:
-        self.logger.info(f"🔍 Microstructure feature names: {list(microstructure_features.keys())}")
+                    self.logger.info(f"🔍 Generated {len(microstructure_features)} microstructure features")
+            if microstructure_features:
+                self.logger.info(f"🔍 Microstructure feature names: {list(microstructure_features.keys())}")
 
-        # Filter out any coroutine features before updating
-            filtered_microstructure_features, filter_coroutines(microstructure_features, "microstructure")
+            # Filter out any coroutine features before updating
+            filtered_microstructure_features = filter_coroutines(microstructure_features, "microstructure")
             features.update(filtered_microstructure_features)
-        self.logger.info(f"🔍 Total features after microstructure: {len(features)}")
+            self.logger.info(f"🔍 Total features after microstructure: {len(features)}")
 
         # Context dynamics for raw contextual signals (avoid using raw magnitudes as features)
         self.logger.info("🔍 Generating context dynamics features...")

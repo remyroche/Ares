@@ -6,7 +6,7 @@ import json
 import os
 import warnings
 from datetime import datetime
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, Tuple
 
 import numpy as np
 import pandas as pd

@@ -19,8 +19,8 @@ from src.utils.warning_symbols import (
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.config import CONFIG
-from src.utils.base_validator import BaseValidator
+from src.config import CONFIG  # noqa: E402
+from src.utils.base_validator import BaseValidator  # noqa: E402
 
 
 class Step9TacticianSpecialistTrainingValidator(BaseValidator):

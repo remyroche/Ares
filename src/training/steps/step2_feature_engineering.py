@@ -45,6 +45,7 @@ except ImportError:
 from src.training.steps.raw_data_quality_checker import auto_fix_data_quality_issues
 from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
 from src.utils.logger import system_logger
+from src.utils.error_handler import handle_errors
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
@@ -57,6 +58,7 @@ from src.utils.training_pipeline_decorators import (
     secure_data_processing,
     validate_step_output,
     validate_step_prerequisites,
+    monitor_feature_engineering,
 )
 
 
@@ -398,6 +400,7 @@ def _save_feature_artifacts(
 @memory_efficient(
     chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=25,
 )
+@monitor_feature_engineering()
 @debug_training_step(
     log_intermediate_results=True,
     save_debug_artifacts=True,
@@ -420,7 +423,9 @@ def _save_feature_artifacts(
     data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     validation_score_requirements={"feature_quality": 0.7},
 )
+@monitor_feature_engineering()
 @auto_fix_data_quality_issues
+@handle_errors(exceptions=(Exception,), default_return=False, context="step2_feature_engineering")
 @((step_specific_ml_validation("step2", timestamp_col="timestamp") if step_specific_ml_validation else (lambda x: x)))
 async def run_step(
     symbol: str,

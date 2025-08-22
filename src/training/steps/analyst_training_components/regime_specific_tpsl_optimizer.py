@@ -20,7 +20,7 @@ import optuna
 import pandas as pd
 
 # Add the project root to the Python path
-project_root, Path(__file__).parent.parent
+project_root = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(project_root))
 
 # MetaLabelingSystem removed - using only HMM market regimes
@@ -205,14 +205,11 @@ class RegimeSpecificTPSLOptimizer:
 
     @handle_specific_errors(
         error_handlers={
-            ValueError: (
-                False,
-                "Invalid regime-specific TP/SL optimization configuration",
-            ),
-            AttributeError: (False = "Missing required optimization parameters")
+            ValueError: (False, "Invalid regime-specific TP/SL optimization configuration"),
+            AttributeError: (False, "Missing required optimization parameters"),
         },
-        default_return=False
-        context="regime-specific TP/SL optimizer initialization"
+        default_return=False,
+        context="regime-specific TP/SL optimizer initialization",
     )
     async def initialize(self) -> bool:
         """Initialize the regime-specific TP/SL optimizer.
@@ -295,9 +292,9 @@ class RegimeSpecificTPSLOptimizer:
             self.print(failed("Failed to save optimization results: {e}"))
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError)
-        default_return=None
-        context="regime identification"
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="regime identification",
     )
     async def identify_current_regime(
         self, current_data: pd.DataFrame, ) -> tuple[str, float, dict[str, Any]]:
@@ -320,10 +317,10 @@ class RegimeSpecificTPSLOptimizer:
                 return "SIDEWAYS_RANGE", 0.5, {"method": "default"}
 
             # Use the same frame for price and volume; expect OHLCV input
-            labels, await self.meta_labeling_system.generate_analyst_labels(
-                price_data=current_data
-                volume_data=current_data
-                timeframe=self.analysis_timeframe
+            labels = await self.meta_labeling_system.generate_analyst_labels(
+                price_data=current_data,
+                volume_data=current_data,
+                timeframe=self.analysis_timeframe,
             )
 
             # Build intensity map for candidate labels
@@ -336,18 +333,18 @@ class RegimeSpecificTPSLOptimizer:
                 )
 
             # Choose the dominant label by intensity, breaking ties by active flag
-            best_label, max(
+            best_label = max(
                 self.candidate_labels,
-                key=lambda k: (intensities.get(k, 0.0), actives.get(k, 0))
-                default="SIDEWAYS_RANGE"
+                key=lambda k: (intensities.get(k, 0.0), actives.get(k, 0)),
+                default="SIDEWAYS_RANGE",
             )
-            confidence, float(intensities.get(best_label, 0.0))
+            confidence = float(intensities.get(best_label, 0.0))
 
             # Log and return with compact info
-            top3, sorted(
+            top3 = sorted(
                 ((k, intensities.get(k, 0.0)) for k in self.candidate_labels),
-                key=lambda x: x[1]
-                reverse=True
+                key=lambda x: x[1],
+                reverse=True,
             )[:3]
             self.logger.info(
                 {
@@ -374,9 +371,9 @@ class RegimeSpecificTPSLOptimizer:
             return "SIDEWAYS_RANGE", 0.5, {"method": "fallback", "error": str(e)}
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError)
-        default_return=None
-        context="regime-specific TP/SL optimization"
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="regime-specific TP/SL optimization",
     )
     async def optimize_tpsl_for_regime(
         self, regime: str, historical_data: pd.DataFrame, current_data: pd.DataFrame, ) -> dict[str, Any]:
@@ -395,15 +392,15 @@ class RegimeSpecificTPSLOptimizer:
             self.logger.info(f"🎯 Optimizing TP/SL for regime: {regime}")
 
             # Get base parameters for this regime
-            base_params, self.regime_parameters.get(
+            base_params = self.regime_parameters.get(
                 regime,
                 self.regime_parameters["SIDEWAYS_RANGE"],
             )
 
             # Create optimization study
-            study, optuna.create_study(
-                direction="maximize"
-                study_name=f"tpsl_optimization_{regime}"
+            study = optuna.create_study(
+                direction="maximize",
+                study_name=f"tpsl_optimization_{regime}",
             )
 
             # Define objective function
@@ -438,7 +435,7 @@ class RegimeSpecificTPSLOptimizer:
             self.logger.info(f"✅ Optimized TP/SL for {regime}: {best_params}")
             return optimized_params
 
-        except Exception:
+        except Exception as e:
             self.print(error(f"Error optimizing TP/SL for regime {regime}: {e}"))
             return self.regime_parameters.get(
                 regime,
@@ -461,12 +458,12 @@ class RegimeSpecificTPSLOptimizer:
         """
         try:
             # Suggest parameters within reasonable bounds
-            target_pct, trial.suggest_float(
+            target_pct = trial.suggest_float(
                 "target_pct",
                 base_params["target_pct"] * 0.5,
                 base_params["target_pct"] * 1.5,
             )
-            stop_pct, trial.suggest_float(
+            stop_pct = trial.suggest_float(
                 "stop_pct",
                 base_params["stop_pct"] * 0.5,
                 base_params["stop_pct"] * 1.5,
@@ -477,7 +474,7 @@ class RegimeSpecificTPSLOptimizer:
                 return -1.0
 
             # Run simplified backtest
-            trades, self._simulate_trades(
+            trades = self._simulate_trades(
                 historical_data,
                 target_pct,
                 stop_pct,
@@ -505,7 +502,7 @@ class RegimeSpecificTPSLOptimizer:
 
             return score
 
-        except Exception:
+        except Exception as e:
             self.print(error(f"Error in parameter evaluation: {e}"))
             return -1.0
 
@@ -570,9 +567,9 @@ class RegimeSpecificTPSLOptimizer:
         return trades
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError)
-        default_return=None
-        context="regime-specific TP/SL prediction"
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="regime-specific TP/SL prediction",
     )
     async def get_optimized_tpsl(
         self, current_data: pd.DataFrame, historical_data: pd.DataFrame, force_optimization: bool = False
@@ -590,7 +587,7 @@ class RegimeSpecificTPSLOptimizer:
         """
         try:
             # Identify current regime via meta-labels
-            regime, confidence, regime_info, await self.identify_current_regime(
+            regime, confidence, regime_info = await self.identify_current_regime(
                 current_data,
             )
 
@@ -606,7 +603,7 @@ class RegimeSpecificTPSLOptimizer:
                 }
 
             # Optimize for current regime
-            optimized_params, await self.optimize_tpsl_for_regime(
+            optimized_params = await self.optimize_tpsl_for_regime(
                 regime,
                 historical_data,
                 current_data,

@@ -25,7 +25,6 @@ class LeverageSizer:
         self.logger = system_logger.getChild("LeverageSizer")
         # Backward-compatibility shim for legacy self.print calls
         if not hasattr(self, "print"):
-    pass  # TODO: Add proper implementation
             def _shim_print(message: str) -> None:
                 with contextlib.suppress(Exception):
                     self.logger.error(str(message))
@@ -113,7 +112,7 @@ class LeverageSizer:
             ValueError: (None, "Invalid input data for leverage sizing"),
             AttributeError: (None, "Sizer not properly initialized"),
         },
-        default_return=None,
+        default_return={},
         context="leverage sizing calculation",
     )
     async def calculate_leverage(

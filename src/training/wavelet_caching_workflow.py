@@ -17,8 +17,7 @@ from src.training.steps.backtesting_with_cached_features import (
 )
 from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomputer
 from src.utils.data_optimizer import ohlcv_columns
-from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.logger import system_logger
+from src.utils.error_handler import handle_errors
 
 
 @handle_errors(
@@ -29,9 +28,10 @@ from src.utils.logger import system_logger
 async def load_config(config_path: str) -> dict:
     """Load configuration from YAML file."""
     try:
-        with open(config_path) as f:
+        with Path(config_path).open() as f:
             return yaml.safe_load(f)
-    except Exception:
+    except Exception as e:
+        # Return empty config on failure
         return {}
 
 
@@ -48,23 +48,23 @@ async def create_sample_data():
         n_points = len(dates)
 
         # Generate realistic price data
-        np.random.seed(42)
+        rng = np.random.default_rng(42)
         base_price = 1000
-        returns = np.random.normal(0, 0.001, n_points)
+        returns = rng.normal(0, 0.001, n_points)
         prices = base_price * np.exp(np.cumsum(returns))
 
         # Add some volatility clustering
-        volatility = np.random.gamma(2, 0.001, n_points)
-        prices = prices * (1 + np.random.normal(0, volatility))
+        volatility = rng.gamma(2, 0.001, n_points)
+        prices = prices * (1 + rng.normal(0, volatility))
 
         # Create OHLCV data
         data = pd.DataFrame(
             {
-                "open": prices * (1 + np.random.normal(0, 0.0005, n_points)),
-                "high": prices * (1 + np.abs(np.random.normal(0, 0.001, n_points))),
-                "low": prices * (1 - np.abs(np.random.normal(0, 0.001, n_points))),
+                "open": prices * (1 + rng.normal(0, 0.0005, n_points)),
+                "high": prices * (1 + np.abs(rng.normal(0, 0.001, n_points))),
+                "low": prices * (1 - np.abs(rng.normal(0, 0.001, n_points))),
                 "close": prices,
-                "volume": np.random.uniform(1000, 10000, n_points),
+                "volume": rng.uniform(1000, 10000, n_points),
             },
             index=dates,
         )
@@ -75,7 +75,7 @@ async def create_sample_data():
 
         return data
 
-    except Exception:
+    except Exception as e:
         return pd.DataFrame()
 
 
@@ -113,17 +113,13 @@ async def step1_precompute_features(config: dict) -> bool | None:
             end_date="2024-12-31",
         )
 
-        processing_time = time.time() - start_time
-
         if success:
-
             # Print cache statistics
             precomputer.get_precomputation_stats()
-
             return True
         return False
 
-    except Exception:
+    except Exception as e:
         return False
 
 
@@ -165,10 +161,7 @@ async def step2_run_backtests(config: dict) -> bool | None:
         # Run backtests
         results = await backtester.run_multiple_backtests(backtest_configs)
 
-        time.time() - start_time
-
         if results:
-
             # Print results
             for _i, result in enumerate(results):
                 result.get("strategy_results", {})
@@ -179,7 +172,7 @@ async def step2_run_backtests(config: dict) -> bool | None:
             return True
         return False
 
-    except Exception:
+    except Exception as e:
         return False
 
 
@@ -214,16 +207,12 @@ async def step3_performance_comparison(config: dict) -> bool | None:
         await backtester_no_cache.run_backtest(price_data)
         no_cache_time = time.time() - start_time
 
-        # Print comparison
-
-        if cached_time < no_cache_time:
-            pass
-        else:
-            pass
+        # Print comparison (placeholder to avoid unused vars)
+        _ = (cached_time, no_cache_time)
 
         return True
 
-    except Exception:
+    except Exception as e:
         return False
 
 
@@ -244,7 +233,7 @@ async def step4_cache_management(config: dict) -> bool | None:
 
         return True
 
-    except Exception:
+    except Exception as e:
         return False
 
 

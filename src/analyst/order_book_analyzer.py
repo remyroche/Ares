@@ -2,6 +2,11 @@ from src.utils.logger import system_logger
 from typing import Any
 import numpy as np
 import pandas as pd
+from src.utils.centralized_decorators_simple import (
+    comprehensive_data_validation,
+    validate_data_quality,
+    with_tracing_span,
+)
 
 
 class OrderBookAnalyzer:
@@ -16,6 +21,8 @@ class OrderBookAnalyzer:
         self.config = config or {}
         self.logger = system_logger.getChild("OrderBookAnalyzer")
 
+    @validate_data_quality(validation_level="WARNING")
+    @with_tracing_span("wall_identification")
     def identify_walls(
         self,
         book_df: pd.DataFrame,
@@ -40,6 +47,8 @@ class OrderBookAnalyzer:
             self.logger.warning(f"identify_walls failed: {e}")
             return pd.DataFrame(columns=["price", "size"])  # empty
 
+    @validate_data_quality(validation_level="WARNING")
+    @with_tracing_span("wall_features_computation")
     def compute_wall_features(
         self,
         mid_price: float,

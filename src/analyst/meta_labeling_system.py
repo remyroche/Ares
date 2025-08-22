@@ -1,20 +1,25 @@
 # src/analyst/meta_labeling_system.py
 
-"""
-Meta-Labeling System for Path-Dependent Trading Signals
-Implements comprehensive pattern detection for analyst and tactician models.
-"""
-
+import os
+from datetime import datetime
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from src.utils.error_handler import handle_errors
+from src.config import CONFIG
+from src.utils.error_handler import (
+    handle_errors,
+)
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
-    initialization_error,
+    warning,
+)
+from src.utils.centralized_decorators_simple import (
+    comprehensive_data_validation,
+    validate_data_quality,
+    with_tracing_span,
 )
 
 
@@ -701,6 +706,8 @@ class MetaLabelingSystem:
             self.print(error("Error calculating order imbalance: {e}"))
             return 0
 
+    @validate_data_quality(validation_level="WARNING")
+    @with_tracing_span("price_extremes_prediction")
     def _predict_price_extremes(
         self,
         data: pd.DataFrame,
@@ -733,6 +740,8 @@ class MetaLabelingSystem:
                 "price_extreme_confidence": 0,
             }
 
+    @validate_data_quality(validation_level="WARNING")
+    @with_tracing_span("order_returns_prediction")
     def _predict_order_returns(
         self,
         data: pd.DataFrame,
@@ -759,6 +768,8 @@ class MetaLabelingSystem:
             self.print(error("Error predicting order returns: {e}"))
             return {"LIMIT_ORDER_RETURN": 0.001, "limit_order_confidence": 0}
 
+    @validate_data_quality(validation_level="WARNING")
+    @with_tracing_span("entry_signals_detection")
     def _detect_entry_signals(
         self,
         data: pd.DataFrame,
@@ -820,6 +831,8 @@ class MetaLabelingSystem:
                 "AGGRESSIVE_TAKER_SPIKE": 0,
             }
 
+    @validate_data_quality(validation_level="WARNING")
+    @with_tracing_span("adverse_excursion_prediction")
     def _predict_adverse_excursion(
         self,
         data: pd.DataFrame,

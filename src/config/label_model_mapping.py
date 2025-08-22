@@ -1,15 +1,20 @@
 # src/config/label_model_mapping.py
 
 from __future__ import annotations
+
 from typing import Any
+
+import lightgbm as lgb  # type: ignore[import-untyped]
 import numpy as np
-from hmmlearn.hmm import GaussianHMM  # type: ignore
-from sklearn.linear_model import LogisticRegression
-from catboost import CatBoostClassifier  # type: ignore
+import pandas as pd
+import xgboost as xgb  # type: ignore[import-untyped]
+from catboost import CatBoostClassifier  # type: ignore[import-untyped]
+from hmmlearn.hmm import GaussianHMM  # type: ignore[import-untyped]
 from sklearn.ensemble import RandomForestClassifier
-import lightgbm as lgb  # type: ignore
-import xgboost as xgb  # type: ignore
-from sklearn.linear_model import SGDClassifier
+from sklearn.linear_model import LogisticRegression, SGDClassifier
+
+# Constants
+DEFAULT_PROBA_THRESHOLD = 0.5
 
 # Model identifiers used by builder
 # Values map timeframe categories to a model key and default params
@@ -190,6 +195,7 @@ LABEL_GROUPS: dict[str, dict[str, Any]] = {
 LOW_TF = {"1m", "5m"}
 HIGH_TF = {"15m", "30m"}
 
+
 def _tf_band(timeframe: str) -> str:
     tf = timeframe.strip().lower()
     if tf in ("1m", "5m"):
@@ -198,6 +204,7 @@ def _tf_band(timeframe: str) -> str:
         return "high"
     # default to high for unknown intraday
     return "high"
+
 
 def get_model_choice_for_label(
     label: str, timeframe: str,
@@ -214,136 +221,143 @@ def get_model_choice_for_label(
     key, params = cfg.get(band, cfg.get("high"))
     return key, dict(params or {})
 
-def build_model(model_key: str, params: dict[str, Any]):
+
+def build_model(model_key: str, params: dict[str, Any]) -> Any:
     """Instantiate a model from a key and params. Returns a fitted-ready estimator.
 
     Supported keys: 'xgboost', 'lightgbm', 'catboost', 'random_forest',
     'sgd_hinge', 'sgd_elastic_net', 'logistic_regression', 'hmm_gaussian'.
-    For hmm_gaussian, we return a lightweight wrapper with fit/predict_proba interface if possible,
-    else fall back to LightGBM.
+    For hmm_gaussian, we return a lightweight wrapper with fit/predict_proba
+    interface if possible, else fall back to LightGBM.
     """
     key = model_key.lower()
     try:
-        if key == "xgboost":
-    pass  # TODO: Add proper implementation
-            return xgb.XGBClassifier(
-                n_estimators=params.get("n_estimators", 400),
-                max_depth=params.get("max_depth", 5),
-                learning_rate=params.get("eta", params.get("learning_rate", 0.1)),
-                subsample=params.get("subsample", 0.8),
-                colsample_bytree=params.get("colsample_bytree", 0.8),
+        mapping: dict[str, Any] = {
+            "xgboost": xgb.XGBClassifier(
+                n_estimators=int(params.get("n_estimators", 400)),
+                max_depth=int(params.get("max_depth", 5)),
+                learning_rate=float(
+                    params.get(
+                        "eta",
+                        params.get("learning_rate", 0.1),
+                    ),
+                ),
+                subsample=float(params.get("subsample", 0.8)),
+                colsample_bytree=float(params.get("colsample_bytree", 0.8)),
                 random_state=42,
                 n_jobs=-1,
-                tree_method=params.get("tree_method", "hist"),
+                tree_method=str(params.get("tree_method", "hist")),
                 verbosity=0,
-            )
-        if key == "lightgbm":
-    pass  # TODO: Add proper implementation
-            return lgb.LGBMClassifier(
-                n_estimators=params.get("n_estimators", 400),
-                learning_rate=params.get("learning_rate", 0.05),
-                max_depth=params.get("max_depth", -1),
-                num_leaves=params.get("num_leaves", 64),
-                feature_fraction=params.get("feature_fraction", 0.8),
-                subsample=params.get("subsample", 0.8),
-                colsample_bytree=params.get("colsample_bytree", 0.8),
+            ),
+            "lightgbm": lgb.LGBMClassifier(
+                n_estimators=int(params.get("n_estimators", 400)),
+                learning_rate=float(params.get("learning_rate", 0.05)),
+                max_depth=int(params.get("max_depth", -1)),
+                num_leaves=int(params.get("num_leaves", 64)),
+                feature_fraction=float(params.get("feature_fraction", 0.8)),
+                subsample=float(params.get("subsample", 0.8)),
+                colsample_bytree=float(params.get("colsample_bytree", 0.8)),
                 random_state=42,
                 n_jobs=-1,
                 verbose=-1,
-            )
-        if key == "catboost":
-    pass  # TODO: Add proper implementation
-            return CatBoostClassifier(
-                iterations=params.get("iterations", 500),
-                learning_rate=params.get("learning_rate", params.get("lr", 0.05)),
-                depth=params.get("depth", 8),
-                l2_leaf_reg=params.get("l2_leaf_reg", 3),
+            ),
+            "catboost": CatBoostClassifier(
+                iterations=int(params.get("iterations", 500)),
+                learning_rate=float(
+                    params.get("learning_rate", params.get("lr", 0.05)),
+                ),
+                depth=int(params.get("depth", 8)),
+                l2_leaf_reg=float(params.get("l2_leaf_reg", 3)),
                 random_seed=42,
                 verbose=False,
-            )
-        if key == "random_forest":
-    pass  # TODO: Add proper implementation
-            return RandomForestClassifier(
-                n_estimators=params.get("n_estimators", 300),
-                max_depth=params.get("max_depth", 12),
+            ),
+            "random_forest": RandomForestClassifier(
+                n_estimators=int(params.get("n_estimators", 300)),
+                max_depth=int(params.get("max_depth", 12)),
                 random_state=42,
                 n_jobs=-1,
-            )
-        if key == "sgd_hinge":
-    pass  # TODO: Add proper implementation
-            return SGDClassifier(
+            ),
+            "sgd_hinge": SGDClassifier(
                 loss="hinge",
                 alpha=float(params.get("alpha", 1e-4)),
                 max_iter=int(params.get("max_iter", 1000)),
                 random_state=42,
-                n_jobs=-1,
-            )
-        if key == "sgd_elastic_net":
-    pass  # TODO: Add proper implementation
-            return SGDClassifier(
+            ),
+            "sgd_elastic_net": SGDClassifier(
                 loss="log_loss",
                 penalty="elasticnet",
                 alpha=float(params.get("alpha", 0.0001)),
                 l1_ratio=float(params.get("l1_ratio", 0.5)),
                 max_iter=int(params.get("max_iter", 1000)),
                 random_state=42,
-                n_jobs=-1,
-            )
-        if key == "logistic_regression":
-    pass  # TODO: Add proper implementation
-            return LogisticRegression(
+            ),
+            "logistic_regression": LogisticRegression(
                 C=float(params.get("C", 1.0)),
                 penalty=str(params.get("penalty", "l2")),
-                solver="liblinear" if params.get("penalty", "l2") == "l2" else "saga",
+                solver=(
+                    "liblinear" if params.get("penalty", "l2") == "l2" else "saga"
+                ),
                 max_iter=1000,
                 random_state=42,
-            )
+            ),
+        }
+
         if key == "hmm_gaussian":
             try:
                 class HMMWrapper:
-    pass  # TODO: Add proper implementation
                     def __init__(self, n_states: int = 4):
                         self.hmm = GaussianHMM(
-                            n_components=n_states, covariance_type="diag",
+                            n_components=n_states,
+                            covariance_type="diag",
                             random_state=42,
                         )
-                        self.decoder = LogisticRegression(max_iter=500, random_state=42)
+                        self.decoder = LogisticRegression(
+                            max_iter=500,
+                            random_state=42,
+                        )
                         self._fitted = False
 
-                    def fit(self, X, y):
-                        # Unsupervised fit for HMM = then supervised mapping to y
-                        if isinstance(X, (pd.DataFrame, pd.Series)):
-                            X_arr = X.to_numpy()
+                    def fit(self, x: Any, y: Any) -> HMMWrapper:
+                        if isinstance(x, pd.DataFrame | pd.Series):
+                            x_arr = x.to_numpy()
                         else:
-                            X_arr = np.asarray(X)
-                        self.hmm.fit(X_arr)
-                        states = self.hmm.predict(X_arr)
+                            x_arr = np.asarray(x)
+                        self.hmm.fit(x_arr)
+                        states = self.hmm.predict(x_arr)
                         self.decoder.fit(states.reshape(-1, 1), y)
                         self._fitted = True
                         return self
 
-                    def predict_proba(self, X):
-                        X_arr = X.values if hasattr(X, "values") else X
-                        states = self.hmm.predict(X_arr)
+                    def predict_proba(self, x: Any) -> np.ndarray:
+                        x_arr = x.values if hasattr(x, "values") else np.asarray(x)
+                        states = self.hmm.predict(x_arr)
                         return self.decoder.predict_proba(states.reshape(-1, 1))
 
-                    def predict(self, X):
-                        proba = self.predict_proba(X)
-                        return (proba[:, -1] > 0.5).astype(int)
+                    def predict(self, x: Any) -> np.ndarray:
+                        proba = self.predict_proba(x)
+                        return (proba[:, -1] > DEFAULT_PROBA_THRESHOLD).astype(int)
 
                 return HMMWrapper(n_states=int(params.get("n_states", 4)))
-            except Exception:
-                # Fallback to LightGBM if hmmlearn unavailable
-                return build_model("lightgbm", {"num_leaves": 64})
-    except Exception:
-        # Fallback default
+            except Exception:  # noqa: BLE001 - optional dependency fallback
+                return mapping["lightgbm"]
 
+        return mapping.get(
+            key,
+            RandomForestClassifier(
+                n_estimators=200,
+                max_depth=10,
+                random_state=42,
+                n_jobs=-1,
+            ),
+        )
+    except Exception:  # noqa: BLE001 - safe factory fallback
         return RandomForestClassifier(
             n_estimators=200,
             max_depth=10,
             random_state=42,
             n_jobs=-1,
         )
+
 
 def select_model_for_label_timeframe(label: str, timeframe: str):
     key, params = get_model_choice_for_label(label, timeframe)

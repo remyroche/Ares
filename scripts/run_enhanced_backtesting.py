@@ -25,7 +25,7 @@ from src.utils.warning_symbols import failed
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-async def run_enhanced_backtesting(symbol: str, lookback_days: int = 730):
+async def run_enhanced_backtesting(symbol: str, lookback_days: int = 730) -> bool:
     """Run enhanced backtesting with efficiency optimizations."""
     logger = system_logger.getChild("EnhancedBacktesting")
 
@@ -34,18 +34,19 @@ async def run_enhanced_backtesting(symbol: str, lookback_days: int = 730):
     logger.info(f"Lookback days: {lookback_days}")
 
     # Initialize database
-    db_manager, SQLiteManager()
+    db_manager = SQLiteManager()
     await db_manager.initialize()
 
     # Initialize enhanced training manager
-    training_manager, EnhancedTrainingManager(db_manager)
+    training_manager = EnhancedTrainingManager(db_manager)
 
     # Step 1: Run enhanced training (backtesting phase)
     logger.info("📊 Step 1: Running enhanced training for backtesting...")
-    session_id, await training_manager.run_full_training(
-        symbol, exchange_name="BINANCE",
+    session_id = await training_manager.run_full_training(
+        symbol=symbol,
+        exchange_name="BINANCE",
         timeframe="1h",
-        lookback_days_override=lookback_days
+        lookback_days_override=lookback_days,
     )
 
     if not session_id:
@@ -67,16 +68,16 @@ async def run_enhanced_backtesting(symbol: str, lookback_days: int = 730):
     logger.info("✅ Enhanced backtesting completed successfully!")
     return True
 
-async def run_paper_trading_simulation(symbol: str, training_manager):
+async def run_paper_trading_simulation(symbol: str, training_manager: EnhancedTrainingManager) -> bool:
     """Run paper trading simulation with trained models."""
-    logger, system_logger.getChild("PaperTradingSimulation")
+    logger = system_logger.getChild("PaperTradingSimulation")
 
     logger.info("🔄 Starting paper trading simulation...")
 
     # This would integrate with your existing paper trading system
     # For now, creating a placeholder implementation
 
-    if True:
+    try:
         # Simulate paper trading with the trained models
         logger.info("📊 Loading trained models for paper trading...")
 
@@ -92,30 +93,33 @@ async def run_paper_trading_simulation(symbol: str, training_manager):
 
         logger.info("✅ Paper trading simulation completed")
         return True
-
-    pass
-        print(failed("❌ Paper trading simulation failed: {e}"))
+    except Exception as e:  # noqa: BLE001
+        print(failed(f"❌ Paper trading simulation failed: {e}"))
         return False
 
-async def generate_comprehensive_report(symbol: str, session_id: str, training_manager):
+async def generate_comprehensive_report(symbol: str, session_id: str, training_manager: EnhancedTrainingManager) -> None:
     """Generate comprehensive backtesting and paper trading report."""
-    logger, system_logger.getChild("ComprehensiveReport")
+    logger = system_logger.getChild("ComprehensiveReport")
 
     logger.info("📋 Generating comprehensive report...")
 
     # Get efficiency statistics
-    efficiency_stats, training_manager.get_efficiency_stats()
+    efficiency_stats = training_manager.get_efficiency_stats()
 
     # Generate report content
     report = {
-        "symbol": symbol, "session_id": session_id,
+        "symbol": symbol,
+        "session_id": session_id,
         "timestamp": datetime.now().isoformat(),
-        "efficiency_stats": efficiency_stats, "backtesting_results": {"status": "completed", "session_id": session_id},
+        "efficiency_stats": efficiency_stats,
+        "backtesting_results": {"status": "completed", "session_id": session_id},
         "paper_trading_results": {"status": "completed"},
     }
 
     # Save report
-    report_file, f"reports/enhanced_backtesting_{symbol}_{session_id}.json"
+    reports_dir = Path("reports")
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    report_file = reports_dir / f"enhanced_backtesting_{symbol}_{session_id}.json"
 
     with open(report_file, "w") as f:
         json.dump(report, f, indent=2)
@@ -123,74 +127,41 @@ async def generate_comprehensive_report(symbol: str, session_id: str, training_m
     logger.info(f"📄 Report saved to: {report_file}")
     logger.info("✅ Comprehensive report generated")
 
-async def run_backtesting_only(symbol: str, lookback_days: int, 730):
+async def run_backtesting_only(symbol: str, lookback_days: int = 730) -> bool:
     """Run backtesting only (without paper trading)."""
-    logger, system_logger.getChild("BacktestingOnly")
+    logger = system_logger.getChild("BacktestingOnly")
 
     logger.info("🔬 Running backtesting only...")
 
     # Initialize components
-    db_manager, SQLiteManager()
+    db_manager = SQLiteManager()
     await db_manager.initialize()
 
-    training_manager, EnhancedTrainingManager(db_manager)
+    training_manager = EnhancedTrainingManager(db_manager)
 
     # Run enhanced training (which includes backtesting)
-    session_id, await training_manager.run_full_training(
-        symbol, exchange_name="BINANCE",
+    session_id = await training_manager.run_full_training(
+        symbol=symbol,
+        exchange_name="BINANCE",
         timeframe="1h",
-        lookback_days_override=lookback_days
+        lookback_days_override=lookback_days,
     )
 
-    if session_id:
-        logger.info("✅ Backtesting completed successfully!")
-        return True
-    print(failed("❌ Backtesting failed!"))
-    return False
+    return bool(session_id)
 
-def main():
-    """Main function with command line interface."""
-    parser, argparse.ArgumentParser(
-        description="Enhanced Backtesting with Paper Trading",
-        formatter_class=argparse.RawDescriptionHelpFormatter, epilog = """
-Examples:
-  # Full enhanced backtesting with paper trading
-  python scripts/run_enhanced_backtesting.py --symbol ETHUSDT --lookback 730
+async def main() -> int:
+    parser = argparse.ArgumentParser(description="Run enhanced backtesting")
+    parser.add_argument("symbol", help="Trading symbol (e.g., BTCUSDT)")
+    parser.add_argument("--lookback-days", type=int, default=730)
+    parser.add_argument("--mode", choices=["full", "backtest-only"], default="full")
+    args = parser.parse_args()
 
-  # Backtesting only (no paper trading)
-  python scripts/run_enhanced_backtesting.py --symbol ETHUSDT --backtesting-only
-
-  # Quick test with limited data
-  python scripts/run_enhanced_backtesting.py --symbol ETHUSDT --lookback 90
-        """,
-    )
-
-    parser.add_argument("--symbol", default="ETHUSDT", help="Trading symbol")
-    parser.add_argument(
-        "--lookback",
-        type=int,
-        default=730,
-        help="Lookback days (default: 730, 2 years)",
-    )
-    parser.add_argument(
-        "--backtesting-only",
-        action="store_true",
-        help="Run backtesting only (no paper trading)",
-    )
-
-    args, parser.parse_args()
-
-    # Update configuration
-    CONFIG["trading_symbol"] = args.symbol
-    CONFIG["MODEL_TRAINING"]["data_retention_days"] = args.lookback
-
-    # Run appropriate function
-    if args.backtesting_only:
-        success = asyncio.run(run_backtesting_only(args.symbol, args.lookback))
+    if args.mode == "full":
+        ok = await run_enhanced_backtesting(args.symbol, args.lookback_days)
     else:
-        success = asyncio.run(run_enhanced_backtesting(args.symbol, args.lookback))
+        ok = await run_backtesting_only(args.symbol, args.lookback_days)
 
-    sys.exit(0 if success else 1)
+    return 0 if ok else 1
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(asyncio.run(main()))

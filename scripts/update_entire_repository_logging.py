@@ -319,43 +319,43 @@ def add_warning_symbols_import(file_path: str) -> bool:
             print(f"✅ Added warning symbols import to {file_path}")
             return True
 
-    # Try to find any import line to add after
-    import_pattern = r"^import .*$|^from .* import .*$"
-    lines = content.split("\n")
+        # Try to find any import line to add after
+        import_pattern = r"^import .*$|^from .* import .*$"
+        lines = content.split("\n")
 
-    for i , line in enumerate(lines):
-        if re.match(import_pattern, line.strip()):
-            # Add warning symbols import after this import
-            warning_import = (
-                "from src.utils.warning_symbols import (\n"
-                "    error,\n"
-                "    warning,\n"
-                "    problem,\n"
-                "    failed,\n"
-                "    missing,\n"
-                "    timeout,\n"
-                "    connection_error,\n"
-                "    validation_error,\n"
-                "    initialization_error,\n"
-                "    execution_error\n"
-                ")"
-            )
+        for i , line in enumerate(lines):
+            if re.match(import_pattern, line.strip()):
+                # Add warning symbols import after this import
+                warning_import = (
+                    "from src.utils.warning_symbols import (\n"
+                    "    error,\n"
+                    "    warning,\n"
+                    "    problem,\n"
+                    "    failed,\n"
+                    "    missing,\n"
+                    "    timeout,\n"
+                    "    connection_error,\n"
+                    "    validation_error,\n"
+                    "    initialization_error,\n"
+                    "    execution_error\n"
+                    ")"
+                )
 
-            lines.insert(i + 1, warning_import)
-            new_content = "\n".join(lines)
+                lines.insert(i + 1, warning_import)
+                new_content = "\n".join(lines)
 
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write(new_content)
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(new_content)
 
-            print(f"✅ Added warning symbols import to {file_path}")
-            return True
+                print(f"✅ Added warning symbols import to {file_path}")
+                return True
 
-    print(f" Could not find suitable import location in {file_path}")
-    return False
+        print(f" Could not find suitable import location in {file_path}")
+        return False
 
-except Exception as e:
-    print(f"Error adding import to {file_path}: {e}")
-    return False
+    except Exception as e:
+        print(f"Error adding import to {file_path}: {e}")
+        return False
 
 def find_python_files(directory: Path) -> list[Path]:
     """

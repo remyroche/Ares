@@ -160,46 +160,47 @@ async def main():
         if True:
             print("🔄 Starting training pipeline stages...")
 
-        # Stage 1: Setup training environment
+            # Stage 1: Setup training environment
             logger.info("🔧 Stage 1: Setting up training environment...")
             print("🔧 Stage 1: Setting up training environment...")
             setup_success = await training_manager._setup_training_environment(
                 args.symbol,
                 "1m",
             )
-        if not setup_success:
+            if not setup_success:
                 msg = "Stage 1 (Setup) failed"
                 raise Exception(msg)
             logger.info("✅ Stage 1 completed successfully")
             print("✅ Stage 1 completed successfully")
 
-        # Use existing data file instead of collecting new data
+            # Use existing data file instead of collecting new data
             csv_data_file = f"data_cache/klines_{args.exchange}_{args.symbol}_1m_consolidated_fixed.csv"
             logger.info(f"📁 Using existing CSV data file: {csv_data_file}")
             print(f"📁 Using existing CSV data file: {csv_data_file}")
 
-        # Use the existing CSV formatting script to ensure proper data format
+            # Use the existing CSV formatting script to ensure proper data format
             logger.info(
                 "🔄 Using CSV formatting script to ensure proper data format...",
             )
             print("🔄 Using CSV formatting script to ensure proper data format...")
 
-        # Import and run the CSV formatting script
+            # Import and run the CSV formatting script
             auto_reformat_aggtrades_files_for_exchange = AggTradesDataFormatter(
-                args.exchange = args.symbol
+                args.exchange,
+                args.symbol,
             )
 
-        # Run the CSV formatting to ensure data files for this exchange/symbol are in correct format
+            # Run the CSV formatting to ensure data files for this exchange/symbol are in correct format
             logger.info("📋 Running CSV format validation and conversion...")
             print("📋 Running CSV format validation and conversion...")
             auto_reformat_aggtrades_files_for_exchange.reformat_aggtrades_files()
 
-        # Create the required pickle file from existing CSV data
+            # Create the required pickle file from existing CSV data
             logger.info("🔄 Creating pickle file from existing CSV data...")
             print("🔄 Creating pickle file from existing CSV data...")
 
-        # Read the CSV data (now properly formatted)
-        if not os.path.exists(csv_data_file):
+            # Read the CSV data (now properly formatted)
+            if not os.path.exists(csv_data_file):
                 msg = f"CSV data file not found: {csv_data_file}"
                 raise Exception(msg)
 
@@ -211,16 +212,18 @@ async def main():
                 f"📊 Loaded CSV data: {len(klines_df)} rows = {len(klines_df.columns)} columns",
             )
 
+            # Additional pipeline steps continue here with consistent indentation
+
         # Add quality validation checks
             logger.info("🔍 Running data quality validation...")
             print("🔍 Running data quality validation...")
 
             validation_config = TrainingValidationConfig()
-            validate_data_format = validate_data_quality, validation_config.validate_data(
+            validate_data_format = validation_config.validate_data(
                 klines_df
             )
 
-        # Load additional data for validation
+            # Load additional data for validation
             agg_trades_file = (
                 f"data_cache/aggtrades_{args.exchange}_{args.symbol}_consolidated.csv"
             )
@@ -230,8 +233,8 @@ async def main():
 
             validation_data = {"klines": klines_df}
 
-        # Load aggregated trades if available
-        if os.path.exists(agg_trades_file):
+            # Load aggregated trades if available
+            if os.path.exists(agg_trades_file):
                 agg_trades_df = pd.read_csv(agg_trades_file)
                 validation_data["agg_trades"] = agg_trades_df
                 logger.info(f"📊 Loaded agg trades: {len(agg_trades_df)} rows")
@@ -240,16 +243,16 @@ async def main():
                     "⚠️  Aggregated trades file not found, skipping validation",
                 )
 
-        # Load futures data if available
-        if os.path.exists(futures_file):
+            # Load futures data if available
+            if os.path.exists(futures_file):
                 futures_df = pd.read_csv(futures_file)
                 validation_data["futures"] = futures_df
                 logger.info(f"📊 Loaded futures: {len(futures_df)} rows")
             else:
                 print("⚠️  Futures file not found, skipping validation")
 
-        # Validate data format
-            format_valid = format_errors, validate_data_format(validation_data)
+            # Validate data format
+            format_valid = validate_data_format(validation_data)
         if not format_valid:
                 print(f"❌ Data format validation failed: {format_errors}")
                 print(f"Data format validation failed: {format_errors}")
@@ -259,7 +262,7 @@ async def main():
             print("✅ Data format validation passed")
 
         # Validate data quality
-            quality_valid = quality_errors, validate_data_quality(validation_data)
+            quality_valid = validate_data_quality(validation_data)
         if not quality_valid:
                 print(f"❌ Data quality validation failed: {quality_errors}")
                 print(f"Data quality validation failed: {quality_errors}")

@@ -1,0 +1,107 @@
+# Surrogate Optimization Configuration
+surrogate_optimization:
+  # Core settings
+  enable_surrogate_models: true
+  default_surrogate_model_type: "gaussian_process"
+  enable_surrogate_models_multi: true
+  
+  # Optimization parameters
+  default_expensive_trials: 20
+  default_update_frequency: 5
+  default_expensive_evaluation_ratio: 0.3
+  
+  # Model-specific configurations
+  models:
+    gaussian_process:
+      kernel_type: "rbf_constant_white"
+      alpha: 1e-6
+      n_restarts_optimizer: 10
+      random_state: 42
+      
+    random_forest:
+      n_estimators: 100
+      max_depth: 10
+      min_samples_split: 5
+      min_samples_leaf: 2
+      random_state: 42
+      n_jobs: -1
+      
+    xgboost:
+      n_estimators: 100
+      max_depth: 6
+      learning_rate: 0.1
+      subsample: 0.8
+      colsample_bytree: 0.8
+      random_state: 42
+      n_jobs: -1
+      
+    neural_network:
+      hidden_layer_sizes: [100, 50, 25]
+      activation: "relu"
+      solver: "adam"
+      alpha: 0.001
+      learning_rate: "adaptive"
+      max_iter: 1000
+      random_state: 42
+  
+  # Acquisition functions
+  acquisition_functions:
+    expected_improvement:
+      default_weight: 1.0
+      exploration_weight: 0.1
+      
+    upper_confidence_bound:
+      default_weight: 1.0
+      beta: 2.0
+      
+    probability_improvement:
+      default_weight: 1.0
+      conservative_weight: 0.5
+  
+  # Adaptive sampling
+  adaptive_sampling:
+    enable_adaptive_sampling: true
+    initial_exploration_balance: 0.5
+    min_exploration_balance: 0.2
+    max_exploration_balance: 0.8
+    adaptation_rate: 0.05
+    plateau_threshold: 0.001
+  
+  # Multi-objective optimization
+  multi_objective:
+    default_weights:
+      performance: 0.6
+      risk: 0.3
+      cost: 0.1
+    enable_pareto_optimization: true
+    pareto_frontier_size: 10
+  
+  # Performance monitoring
+  monitoring:
+    enable_performance_tracking: true
+    track_surrogate_accuracy: true
+    track_convergence: true
+    track_uncertainty: true
+    performance_log_interval: 10
+  
+  # Memory management
+  memory_management:
+    enable_memory_management: true
+    max_memory_usage_mb: 8000
+    cleanup_frequency: 50
+    enable_garbage_collection: true
+  
+  # Visualization
+  visualization:
+    enable_auto_visualization: true
+    save_plots: true
+    plot_dpi: 300
+    plot_format: "png"
+    auto_close_plots: true
+  
+  # Logging
+  logging:
+    log_level: "INFO"
+    enable_detailed_logging: false
+    log_optimization_history: true
+    log_surrogate_statistics: true

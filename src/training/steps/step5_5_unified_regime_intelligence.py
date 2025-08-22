@@ -1691,15 +1691,15 @@ class UnifiedRegimeIntelligenceStep:
             unified_prediction = self.predict(hmm_states, market_features)
 
             # Get S/R context and outcome prediction
-            sr_context, await self.sr_predictor.get_sr_context(
-                market_data = current_price,
+            sr_context = await self.sr_predictor.get_sr_context(
+                market_data=current_price,
             )
-            sr_outcome, await self.sr_predictor.predict_sr_outcome(
-                market_data = current_price, sr_context,
+            sr_outcome = await self.sr_predictor.predict_sr_outcome(
+                market_data=current_price, sr_context=sr_context,
             )
 
             # Combine predictions based on S/R proximity
-            is_near_sr, sr_outcome.get("is_near_sr_level", False)
+            is_near_sr = sr_outcome.get("is_near_sr_level", False)
 
             if is_near_sr:
                 # Use S/R outcome prediction when near levels
@@ -1796,7 +1796,7 @@ class UnifiedRegimeIntelligenceStep:
 
             def objective(trial: "optuna.Trial") -> float:
                 params = {
-                    "learning_rate": trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True)
+                    "learning_rate": trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True),
                     "batch_size": trial.suggest_categorical("batch_size", [16, 32, 64]),
                     "d_model": trial.suggest_categorical("d_model", [128, 256, 512]),
                     "nhead": trial.suggest_categorical("nhead", [4, 8, 16]),
@@ -1805,7 +1805,7 @@ class UnifiedRegimeIntelligenceStep:
                     "sequence_length": trial.suggest_int("sequence_length", 10, 50),
                 }
             # Lightweight proxy objective (no full training inside step to keep runtime bounded)
-            score = 0.5 + 0.3 * (1.0 - float(params["dropout"])) + 0.2 * (float(params["d_model"]) / 512.0),
+            score = 0.5 + 0.3 * (1.0 - float(params["dropout"])) + 0.2 * (float(params["d_model"]) / 512.0)
             return float(score)
 
             study.optimize(
@@ -1835,14 +1835,14 @@ class UnifiedRegimeIntelligenceStep:
                 attn = model.cross_timeframe_attention
             if hasattr(attn, "in_proj_weight"):
                 try:
-                    prune.l1_unstructured(attn = "in_proj_weight", amount=0.1)
+                    prune.l1_unstructured(attn, name="in_proj_weight", amount=0.1)
                     pruning_results["attention_pruning"] = True
                 except Exception as ex:
                     self.logger.warning(f"⚠️ Attention pruning failed: {ex}")
             # Classifier pruning
             if hasattr(model, "regime_classifier") and model.regime_classifier is not None:
                 try:
-                    prune.l1_unstructured(model.regime_classifier = "weight", amount=0.1)
+                    prune.l1_unstructured(model.regime_classifier, name="weight", amount=0.1)
                     pruning_results["classifier_pruning"] = True
                 except Exception as ex:
                     self.logger.warning(f"⚠️ Classifier pruning failed: {ex}")

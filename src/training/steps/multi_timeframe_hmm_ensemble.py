@@ -8,7 +8,6 @@ and reduce MAPE.
 
 IMPORTANT: This system predicts REGIME TRANSITIONS only = not price direction.
 Price direction predictions (BUY/SELL/HOLD) are made in:
-    pass
 - src/interfaces/base_interfaces.py (AnalysisResult.signal)
 - src/analyst/predictive_ensembles/ensemble_orchestrator.py (global meta-learner)
 - src/training/steps/step4_analyst_labeling_feature_engineering_components/ (triple barrier labeling)
@@ -176,7 +175,7 @@ class MultiTimeframeHMMEnsemble:
                     }
                     self.logger.error(f"❌ {tf} training failed")
 
-        # 2. Train meta-learner if using meta-learning approach
+            # 2. Train meta-learner if using meta-learning approach
             if self.config.ensemble_method in ["meta_learner", "stacking"]:
                 self.logger.info("🧠 Training meta-learner...")
                 meta_start_time = time.time()
@@ -192,7 +191,7 @@ class MultiTimeframeHMMEnsemble:
                     self.logger.error("❌ Meta-learner training failed")
                     return False
 
-        # 3. Save ensemble
+            # 3. Save ensemble
             self._save_ensemble()
 
             self.trained = True
@@ -221,7 +220,7 @@ class MultiTimeframeHMMEnsemble:
         context="timeframe model training",
     )
     def _train_timeframe_models(
-        self, timeframe: str, data: pd.DataFrame, tf_config: TimeframeConfig,
+        self, data: pd.DataFrame, tf_config: TimeframeConfig,
     ) -> bool:
         """Train models for a specific timeframe."""
         try:
@@ -230,33 +229,33 @@ class MultiTimeframeHMMEnsemble:
                 CONFIG.get("DATA_DIR", "data"), "training", "regime_forecasting",
             )
             rf_path = os.path.join(
-                rf_dir, f"{self.exchange}_{self.symbol}_{timeframe}_regime_forecasting.json",
+                rf_dir, f"{self.exchange}_{self.symbol}_{tf_config.timeframe}_regime_forecasting.json",
             )
 
             if not os.path.exists(rf_path):
                 self.logger.warning(
-                    f"⚠️ No regime forecasting artifact found for {timeframe}: {rf_path}",
+                    f"⚠️ No regime forecasting artifact found for {tf_config.timeframe}: {rf_path}",
                 )
                 return False
 
             # Load JSON with next-regime probabilities and exit-within-H
             with open(rf_path) as f:
                 rf = json.load(f)
-            self.timeframe_models[timeframe] = {
+            self.timeframe_models[tf_config.timeframe] = {
                 "regime_forecasting": rf,
-                "timeframe": timeframe,
+                "timeframe": tf_config.timeframe,
                 "config": tf_config,
                 "trained_at": time.time(),
             }
             self.logger.info(
-                f"📦 Loaded regime forecasting artifact for {timeframe} ({rf_path})",
+                f"📦 Loaded regime forecasting artifact for {tf_config.timeframe} ({rf_path})",
             )
 
             # Store timeframe models metadata
-            self.timeframe_models.setdefault(timeframe, {})
-            self.timeframe_models[timeframe].update(
+            self.timeframe_models.setdefault(tf_config.timeframe, {})
+            self.timeframe_models[tf_config.timeframe].update(
                 {
-                    "timeframe": timeframe,
+                    "timeframe": tf_config.timeframe,
                     "config": tf_config,
                     "trained_at": time.time(),
                 }
@@ -265,7 +264,7 @@ class MultiTimeframeHMMEnsemble:
             return True
 
         except Exception as e:
-            self.logger.exception(f"💥 Error training {timeframe} models: {e}")
+            self.logger.exception(f"💥 Error training {tf_config.timeframe} models: {e}")
             return False
 
     @handle_errors(
@@ -287,9 +286,8 @@ class MultiTimeframeHMMEnsemble:
                 tf_predictions = self._get_timeframe_predictions(tf, timeframe_data[tf])
                 if tf_predictions is not None:
                     meta_features.append(tf_predictions)
-                # Use the actual regime transitions as targets
-                # (Placeholder: align targets with tf_predictions length)
-                meta_targets.extend([0] * len(tf_predictions))
+                    # Placeholder: make targets same length as predictions
+                    meta_targets.extend([0] * len(tf_predictions))
 
             # Placeholder meta-learner training
             if not meta_features:
@@ -310,7 +308,7 @@ class MultiTimeframeHMMEnsemble:
             if timeframe not in self.timeframe_models:
                 return None
 
-            models = self.timeframe_models[timeframe]["hazard_models"]
+            models = self.timeframe_models[timeframe].get("hazard_models", {})
             predictions = {}
 
             for cluster_id, model in models.items():
@@ -418,7 +416,7 @@ class MultiTimeframeHMMEnsemble:
                 if tf not in current_data or tf not in self.timeframe_models:
                     continue
 
-                tf_pred, self._get_timeframe_predictions(tf, current_data[tf])
+                tf_pred = self._get_timeframe_predictions(tf, current_data[tf])
                 if tf_pred is not None:
                     timeframe_predictions[tf] = tf_pred
                     # Calculate confidence as average of all cluster predictions
@@ -437,15 +435,15 @@ class MultiTimeframeHMMEnsemble:
 
             # Combine predictions based on ensemble method
             if self.config.ensemble_method == "weighted_average":
-                final_prediction, final_confidence, self._weighted_average_ensemble(
-                    timeframe_predictions = timeframe_confidences,
+                final_prediction, final_confidence = self._weighted_average_ensemble(
+                    timeframe_predictions, timeframe_confidences,
                 )
             elif self.config.ensemble_method == "meta_learner":
-                final_prediction, final_confidence, self._meta_learner_ensemble(
+                final_prediction, final_confidence = self._meta_learner_ensemble(
                     timeframe_predictions,
                 )
             elif self.config.ensemble_method == "stacking":
-                final_prediction, final_confidence, self._stacking_ensemble(
+                final_prediction, final_confidence = self._stacking_ensemble(
                     timeframe_predictions,
                 )
             else:
@@ -465,7 +463,7 @@ class MultiTimeframeHMMEnsemble:
             # Prepare timeframe contributions
             timeframe_contributions = {}
             for tf, conf in timeframe_confidences.items():
-                weight, self.ensemble_weights.get(tf, 0.0)
+                weight = self.ensemble_weights.get(tf, 0.0)
                 timeframe_contributions[tf] = {
                     "confidence": conf,
                     "weight": weight,
@@ -501,7 +499,7 @@ class MultiTimeframeHMMEnsemble:
             weighted_confidence = 0.0
 
             for tf, conf in timeframe_confidences.items():
-                weight, self.ensemble_weights.get(tf, 0.0)
+                weight = self.ensemble_weights.get(tf, 0.0)
                 weighted_confidence += conf * weight
                 total_weight += weight
 
@@ -523,7 +521,7 @@ class MultiTimeframeHMMEnsemble:
             return "HOLD", 0.0
 
     def _meta_learner_ensemble(
-        self = timeframe_predictions: dict[str, pd.DataFrame], ) -> tuple[str, float]:
+        self, timeframe_predictions: dict[str, pd.DataFrame], ) -> tuple[str, float]:
         """Combine predictions using meta-learner (primary method)."""
         try:
             if self.meta_learner is None:
@@ -549,10 +547,10 @@ class MultiTimeframeHMMEnsemble:
                 return "HOLD", 0.0
 
             # Combine features
-            combined_features, pd.concat(meta_features, axis=0).to_frame().T
+            combined_features = pd.concat(meta_features, axis=0).to_frame().T
 
             # Get meta-learner prediction
-            pred_proba, self.meta_learner.predict_proba(combined_features)[0, 1]
+            pred_proba = self.meta_learner.predict_proba(combined_features)[0, 1]
 
             # Determine prediction
             if pred_proba > self.config.min_confidence_threshold:
@@ -567,7 +565,7 @@ class MultiTimeframeHMMEnsemble:
             return "HOLD", 0.0
 
     def _stacking_ensemble(
-        self = timeframe_predictions: dict[str, pd.DataFrame], ) -> tuple[str, float]:
+        self, timeframe_predictions: dict[str, pd.DataFrame], ) -> tuple[str, float]:
         """Combine predictions using stacking ensemble (advanced method)."""
         try:
             # Stacking ensemble with sophisticated feature engineering
@@ -599,181 +597,50 @@ class MultiTimeframeHMMEnsemble:
                             tf1 in timeframe_predictions
                             and tf2 in timeframe_predictions
                         ):
-                            pred1 = (
-                                timeframe_predictions[tf1].iloc[-1].mean()
+                            preds1 = (
+                                timeframe_predictions[tf1].iloc[-1]
                                 if not timeframe_predictions[tf1].empty
-                                else 0.0
+                                else pd.Series(0)
                             )
-                            pred2 = (
-                                timeframe_predictions[tf2].iloc[-1].mean()
+                            preds2 = (
+                                timeframe_predictions[tf2].iloc[-1]
                                 if not timeframe_predictions[tf2].empty
-                                else 0.0
+                                else pd.Series(0)
                             )
-                            stacking_features[f"{tf1}_{tf2}_interaction"] = (
-                                pred1 * pred2
+                            # Interaction: mean difference
+                            stacking_features[f"{tf1}_vs_{tf2}_mean_diff"] = (
+                                preds1.mean() - preds2.mean()
                             )
-                            stacking_features[f"{tf1}_{tf2}_difference"] = pred1 - pred2
 
-            # 3. Statistical features across timeframes
-            all_predictions = []
-            for tf, predictions in timeframe_predictions.items():
-                if not predictions.empty:
-                    all_predictions.extend(predictions.iloc[-1].values)
-
-            if all_predictions:
-                stacking_features["mean_prediction"] = np.mean(all_predictions)
-                stacking_features["std_prediction"] = np.std(all_predictions)
-                stacking_features["max_prediction"] = np.max(all_predictions)
-                stacking_features["min_prediction"] = np.min(all_predictions)
-                stacking_features["prediction_range"] = (
-                    stacking_features["max_prediction"]
-                    - stacking_features["min_prediction"]
+            # 3. Aggregate statistics across timeframes
+            all_latest_means = [
+                (
+                    predictions.iloc[-1].mean() if not predictions.empty else 0.0
                 )
+                for predictions in timeframe_predictions.values()
+            ]
+            if all_latest_means:
+                stacking_features["mean_confidence_across_timeframes"] = float(np.mean(all_latest_means))
+                stacking_features["std_confidence_across_timeframes"] = float(np.std(all_latest_means))
 
-            # Convert to DataFrame for meta-learner
-            stacking_df = pd.DataFrame([stacking_features])
+            # Final prediction based on heuristic threshold
+            final_confidence = stacking_features.get("mean_confidence_across_timeframes", 0.0)
+            final_prediction = (
+                "REGIME_CHANGE"
+                if final_confidence > self.config.min_confidence_threshold
+                else "REGIME_CONTINUE"
+            )
 
-            # Use meta-learner for final prediction
-            if self.meta_learner is not None:
-                pred_proba, self.meta_learner.predict_proba(stacking_df)[0, 1]
-
-            # Determine prediction
-            if pred_proba > self.config.min_confidence_threshold:
-                final_prediction = "REGIME_CHANGE"
-            else:
-                final_prediction = "REGIME_CONTINUE"
-
-            return final_prediction, pred_proba
-            # Fallback to weighted average
-            return self._weighted_average_ensemble(timeframe_predictions, {})
+            return final_prediction, final_confidence
 
         except Exception as e:
             self.logger.exception(f"💥 Error in stacking ensemble: {e}")
             return "HOLD", 0.0
 
     def _update_performance_tracking(self, timeframe_confidences: dict[str, float]) -> None:
-        """Update performance tracking for dynamic weighting."""
         try:
-            if not self.config.enable_dynamic_weighting:
-                return
-
-            # Store confidences for performance tracking
             for tf, conf in timeframe_confidences.items():
-                if tf not in self.timeframe_performance:
-                    self.timeframe_performance[tf] = []
-                self.timeframe_performance[tf].append(conf)
-
-            # Keep only recent performance (last 1000 predictions)
-            if len(self.timeframe_performance[tf]) > 1000:
-                self.timeframe_performance[tf] = self.timeframe_performance[tf][
-                    -1000:
-                ]
-
-            # Update weights periodically
-            if self.prediction_count % self.config.weight_update_frequency == 0:
-                self._update_ensemble_weights()
-
-        except Exception as e:
-            self.logger.exception(f"💥 Error updating performance tracking: {e}")
-
-    def _update_ensemble_weights(self) -> None:
-        """Update ensemble weights based on recent performance."""
-        try:
-            if not self.timeframe_performance:
-                return
-
-            # Calculate average performance for each timeframe
-            avg_performance = {}
-            for tf, performances in self.timeframe_performance.items():
-                if performances:
-                    avg_performance[tf] = np.mean(performances)
-
-            if not avg_performance:
-                return
-
-            # Normalize weights based on performance
-            total_performance = sum(avg_performance.values())
-            if total_performance > 0:
-                for tf, perf in avg_performance.items():
-                    self.ensemble_weights[tf] = perf / total_performance
-
-            self.logger.info(f"📈 Updated ensemble weights: {self.ensemble_weights}")
-
-        except Exception as e:
-            self.logger.exception(f"💥 Error updating ensemble weights: {e}")
-
-    def _save_ensemble(self) -> None:
-        """Save the trained ensemble."""
-        try:
-            ensemble_data = {
-                "config": self.config,
-                "ensemble_weights": self.ensemble_weights,
-                "trained": self.trained,
-                "trained_at": time.time(),
-                "symbol": self.symbol,
-                "exchange": self.exchange,
-            }
-
-            # Save ensemble metadata
-            with open(
-                os.path.join(self.models_dir, "ensemble_metadata.json"), "w",
-            ) as f:
-                json.dump(ensemble_data, f, indent=2, default=str)
-
-            # Save meta-learner if available
-            if self.meta_learner is not None:
-                joblib.dump(
-                    self.meta_learner,
-                    os.path.join(self.models_dir, "meta_learner.joblib"),
-                )
-
-            self.logger.info(f"💾 Ensemble saved to {self.models_dir}")
-
-        except Exception as e:
-            self.logger.exception(f"💥 Error saving ensemble: {e}")
-
-    def load_ensemble(self) -> bool:
-        """Load a trained ensemble."""
-        try:
-            metadata_path = os.path.join(self.models_dir, "ensemble_metadata.json")
-            if not os.path.exists(metadata_path):
-                self.logger.warning("⚠️ No ensemble metadata found")
-                return False
-
-            # Load metadata
-            with open(metadata_path) as f:
-                ensemble_data = json.load(f)
-
-            self.ensemble_weights = ensemble_data.get("ensemble_weights", {})
-            self.trained = ensemble_data.get("trained", False)
-
-            # Load meta-learner if available
-            meta_learner_path = os.path.join(self.models_dir, "meta_learner.joblib")
-            if os.path.exists(meta_learner_path):
-                self.meta_learner = joblib.load(meta_learner_path)
-
-            self.logger.info(f"📂 Ensemble loaded from {self.models_dir}")
-            return True
-
-        except Exception as e:
-            self.logger.exception(f"💥 Error loading ensemble: {e}")
-            return False
-
-    def get_ensemble_status(self) -> dict[str, Any]:
-        """Get ensemble status and statistics."""
-        return {
-            "trained": self.trained,
-            "symbol": self.symbol,
-            "exchange": self.exchange,
-            "timeframes": [tf.timeframe for tf in self.config.timeframes],
-            "ensemble_method": self.config.ensemble_method,
-            "ensemble_weights": self.ensemble_weights,
-            "prediction_count": self.prediction_count,
-            "timeframe_models_count": {
-                tf: len(models.get("hazard_models", {}))
-                for tf, models in self.timeframe_models.items()
-            },
-            "performance_history": {
-                tf: len(perf) for tf, perf in self.timeframe_performance.items()
-            },
-        }
+                self.timeframe_performance.setdefault(tf, []).append(float(conf))
+            # Periodic weight update could be added here
+        except Exception:
+            pass

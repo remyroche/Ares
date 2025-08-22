@@ -23,17 +23,17 @@ except ImportError:
 # Import comprehensive file validation
 try:
     from src.utils.comprehensive_file_validation import (
-    ComprehensiveFileValidator,
-    validate_step1_file,
-    FileValidationResult
-)
-from src.utils.validation_decorators import (
-    validate_file_operation,
-    validate_dataframe_operation,
-    validate_step1_operation
-)
-from src.utils.advanced_ml_validation import validate_ml_data_quality
-from src.utils.enhanced_validation_decorators import step_specific_ml_validation
+        ComprehensiveFileValidator,
+        validate_step1_file,
+        FileValidationResult,
+    )
+    from src.utils.validation_decorators import (
+        validate_file_operation,
+        validate_dataframe_operation,
+        validate_step1_operation,
+    )
+    from src.utils.advanced_ml_validation import validate_ml_data_quality
+    from src.utils.enhanced_validation_decorators import step_specific_ml_validation
 except ImportError:
     ComprehensiveFileValidator = None
     validate_step1_file = None
@@ -41,6 +41,8 @@ except ImportError:
     validate_file_operation = None
     validate_dataframe_operation = None
     validate_step1_operation = None
+    validate_ml_data_quality = lambda *args, **kwargs: None  # type: ignore
+    step_specific_ml_validation = None
 
 # Handle imports with fallback - this must be done before any other imports
 CONFIG = None
@@ -209,8 +211,8 @@ class DataCollectionStep:
 
     @handle_data_collection_errors(context="run_data_collection")
     @log_step_metrics(context="data_collection")
-    @validate_file_operation("step1", expected_schema="klines", log_level="INFO") if validate_file_operation else lambda x: x
-    @step_specific_ml_validation("step1", timestamp_col="timestamp") if step_specific_ml_validation else lambda x: x
+    @validate_file_operation("step1", expected_schema="klines", log_level="INFO") if validate_file_operation else (lambda x: x)
+    @step_specific_ml_validation("step1", timestamp_col="timestamp") if step_specific_ml_validation else (lambda x: x)
     async def _run_data_collection(self, training_input: dict[str, Any]) -> bool:
         """Run the actual data collection process."""
         try:
@@ -302,18 +304,15 @@ class DataCollectionStep:
                                 }
                             )
                             
-                            if ml_validation_result.is_valid:
+                            if ml_validation_result and getattr(ml_validation_result, "is_valid", False):
                                 logger.info(f"✅ ML data quality validation passed: {file_path}")
-                                logger.info(f"   📈 Quality Score: {ml_validation_result.quality_score.overall:.3f}")
-                                logger.info(f"   🏆 Quality Grade: {ml_validation_result.quality_score.grade}")
+                                score = getattr(ml_validation_result, "quality_score", None)
+                                if score is not None and hasattr(score, "overall"):
+                                    logger.info(f"   📈 Quality Score: {score.overall:.3f}")
+                                    if hasattr(score, "grade"):
+                                        logger.info(f"   🏆 Quality Grade: {score.grade}")
                             else:
                                 logger.warning(f"⚠️ ML data quality issues found: {file_path}")
-                                for issue in ml_validation_result.correlation_issues[:3]:
-                                    logger.warning(f"   - Correlation: {issue}")
-                                for issue in ml_validation_result.financial_issues[:3]:
-                                    logger.warning(f"   - Financial: {issue}")
-                                for issue in ml_validation_result.time_series_issues[:3]:
-                                    logger.warning(f"   - Time Series: {issue}")
                         except Exception as e:
                             logger.warning(f"⚠️ Could not perform ML validation on {file_path}: {e}")
                     else:
@@ -388,40 +387,40 @@ async def run_step(symbol: str, exchange: str, timeframe: str = "1m", data_dir: 
                 if Path(file_path).exists():
                     existing_files.append(file_path)
 
-        if existing_files:
-            logger.info(f"✅ Found existing consolidated data: {len(existing_files)} files")
-            logger.info("   📁 Existing files:")
-            for file_path in existing_files:
-                logger.info(f"      - {file_path}")
+            if existing_files:
+                logger.info(f"✅ Found existing consolidated data: {len(existing_files)} files")
+                logger.info("   📁 Existing files:")
+                for file_path in existing_files:
+                    logger.info(f"      - {file_path}")
 
-            # Check if data is complete by examining the date range
-            try:
-                import pandas as pd
-                klines_file = f"data_cache/klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
-                if Path(klines_file).exists():
-                    df = pd.read_parquet(klines_file)
-                    if "timestamp" in df.columns:
-                        df["timestamp"] = pd.to_datetime(df["timestamp"])
-                        min_date = df["timestamp"].min().date()
-                        max_date = df["timestamp"].max().date()
-                        current_date = datetime.now().date()
+                # Check if data is complete by examining the date range
+                try:
+                    import pandas as pd
+                    klines_file = f"data_cache/klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
+                    if Path(klines_file).exists():
+                        df = pd.read_parquet(klines_file)
+                        if "timestamp" in df.columns:
+                            df["timestamp"] = pd.to_datetime(df["timestamp"])
+                            min_date = df["timestamp"].min().date()
+                            max_date = df["timestamp"].max().date()
+                            current_date = datetime.now().date()
 
-                        # Check if we have recent data (within last 30 days)
-                        days_since_last_data = (current_date - max_date).days
+                            # Check if we have recent data (within last 30 days)
+                            days_since_last_data = (current_date - max_date).days
 
-                        if days_since_last_data > 30:
-                            logger.info(f"⚠️ Data is {days_since_last_data} days old, downloading recent data...")
-                            # Continue with data collection to download missing data
+                            if days_since_last_data > 30:
+                                logger.info(f"⚠️ Data is {days_since_last_data} days old, downloading recent data...")
+                                # Continue with data collection to download missing data
+                            else:
+                                logger.info(f"✅ Data is up to date (last data: {max_date}, {days_since_last_data} days ago)")
+                                logger.info("✅ Step 1: Data Collection completed (using existing data)")
+                                return True
                         else:
-                            logger.info(f"✅ Data is up to date (last data: {max_date}, {days_since_last_data} days ago)")
-                            logger.info("✅ Step 1: Data Collection completed (using existing data)")
-                            return True
+                            logger.warning("⚠️ Could not determine data completeness, proceeding with data collection...")
                     else:
-                        logger.warning("⚠️ Could not determine data completeness, proceeding with data collection...")
-                else:
-                    logger.warning("⚠️ Klines file not found, proceeding with data collection...")
-            except Exception as e:
-                logger.warning(f"⚠️ Error checking data completeness: {e}, proceeding with data collection...")
+                        logger.warning("⚠️ Klines file not found, proceeding with data collection...")
+                except Exception as e:
+                    logger.warning(f"⚠️ Error checking data completeness: {e}, proceeding with data collection...")
 
         # Initialize data collection step
         step = DataCollectionStep(CONFIG or {})
@@ -459,7 +458,7 @@ async def run_step(symbol: str, exchange: str, timeframe: str = "1m", data_dir: 
                 return True
         else:
             logger.error("❌ Step 1: Data Collection failed")
-        return False
+            return False
 
     except Exception as e:
         logger.exception(f"❌ Step 1: Data Collection failed: {e}")

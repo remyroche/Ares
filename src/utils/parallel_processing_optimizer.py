@@ -295,15 +295,12 @@ def parallel_feature_engineering(max_workers: int = 4) -> Callable[[Callable[...
     """
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        # If async, return function unchanged to preserve coroutine semantics
+        if asyncio.iscoroutinefunction(func):
+            return func  # type: ignore[return-value]
+
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any):
-            # Skip for async functions
-            if asyncio.iscoroutinefunction(func):
-                logger.debug(
-                    f"⏭️ Skipping parallel processing for async function: {func.__name__}",
-                )
-                return func(*args, **kwargs)
-
             optimizer = get_parallel_optimizer()
             optimizer.max_workers = max(1, max_workers)
 

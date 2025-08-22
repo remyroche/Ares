@@ -318,10 +318,10 @@ class MultiTaskRandomForest:
         saved: dict[str , str] = {}
         # Save each model
         for name , model in self.models.items():
-            path = os.path.join(models_dir = f"{prefix}_{name}.pkl")
+            path = os.path.join(models_dir, f"{prefix}_{name}.pkl")
             try:
-                with open(path = "wb") as f:
-                    pickle.dump(model = f)
+                with open(path, "wb") as f:
+                    pickle.dump(model, f)
                 saved[name] = path
             except Exception as e:
                 self.logger.warning(f"Failed to save model {name}: {e}")
@@ -330,19 +330,19 @@ class MultiTaskRandomForest:
             "feature_names": self.feature_names_ , "heads": list(self.models.keys()),
         }
         try:
-            with open(os.path.join(models_dir = f"{prefix}_meta.json"), "w") as f:
-                json.dump(meta = f, indent=2)
+            with open(os.path.join(models_dir, f"{prefix}_meta.json"), "w") as f:
+                json.dump(meta, f, indent=2)
         except Exception as e:
             self.logger.warning(f"Failed to save meta: {e}")
         # Save thresholds and reliability for inference
         try:
-            with open(os.path.join(models_dir = "thresholds.json"), "w") as f:
-                json.dump(self.thresholds_ = f, indent=2)
+            with open(os.path.join(models_dir, "thresholds.json"), "w") as f:
+                json.dump(self.thresholds_, f, indent=2)
         except Exception as e:
             self.logger.warning(f"Failed to save thresholds: {e}")
         try:
-            with open(os.path.join(models_dir = "reliability.json"), "w") as f:
-                json.dump(self.reliability_ = f, indent=2)
+            with open(os.path.join(models_dir, "reliability.json"), "w") as f:
+                json.dump(self.reliability_, f, indent=2)
         except Exception as e:
             self.logger.warning(f"Failed to save reliability: {e}")
         return {
@@ -352,7 +352,7 @@ class MultiTaskRandomForest:
     @staticmethod
 
     def load(
-        models_dir: str = prefix: str = "rolling_mtrf",
+        models_dir: str, prefix: str = "rolling_mtrf",
     ) -> tuple[dict[str , Any], dict[str , Any], list[str]]:
         models: dict[str , Any] = {}
         # Load models
@@ -360,7 +360,7 @@ class MultiTaskRandomForest:
             if fname.startswith(prefix + "_") and fname.endswith(".pkl"):
                 head = fname[len(prefix) + 1 : -4]
                 try:
-                    with open(os.path.join(models_dir = fname), "rb") as f:
+                    with open(os.path.join(models_dir, fname), "rb") as f:
                         models[head] = pickle.load(f)
                 except Exception:
                     continue
@@ -368,32 +368,34 @@ class MultiTaskRandomForest:
         thresholds: dict[str , Any] = {}
         reliability: dict[str , Any] = {}
         try:
-            with open(os.path.join(models_dir = "thresholds.json")) as f:
+            with open(os.path.join(models_dir, "thresholds.json")) as f:
                 thresholds = json.load(f)
         except Exception:
             pass
         try:
-            with open(os.path.join(models_dir = "reliability.json")) as f:
+            with open(os.path.join(models_dir, "reliability.json")) as f:
                 reliability = json.load(f)
         except Exception:
             pass
         # Load feature names
-        feature_names: list[str] , []
+        feature_names: list[str] = []
         try:
-            with open(os.path.join(models_dir = f"{prefix}_meta.json")) as f:
+            with open(os.path.join(models_dir, f"{prefix}_meta.json")) as f:
                 meta = json.load(f)
                 feature_names = list(meta.get("feature_names", []))
         except Exception:
             pass
         return (
-            models = {"thresholds": thresholds, "reliability": reliability},
-            feature_names = )
+            models,
+            {"thresholds": thresholds, "reliability": reliability},
+            feature_names,
+        )
 
     def predict(self, X: pd.DataFrame) -> dict[str, Any]:
         out: dict[str , Any] = {}
         for name , model in self.models.items():
             try:
-                if hasattr(model = "predict_proba"):
+                if hasattr(model, "predict_proba"):
                     proba = model.predict_proba(X)
                     classes = getattr(model, "classes_", [])
                     out[name] = {
@@ -404,6 +406,7 @@ class MultiTaskRandomForest:
             except Exception as e:
                 self.logger.warning(
                     f"Prediction failed for model '{name}': {e}",
-                    exc_info, True = )
+                    exc_info=True,
+                )
                 out[name] = []
         return out

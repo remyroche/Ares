@@ -389,9 +389,9 @@ def validate_system_resources() -> tuple[bool, list[str]]:
     memory = psutil.virtual_memory()
 
     # Check if we're in blank training mode by looking at environment or config
-    import os
+    import os as _os
 
-    blank_mode = os.getenv("BLANK_TRAINING_MODE", "0") == "1"
+    blank_mode = _os.getenv("BLANK_TRAINING_MODE", "0") == "1"
 
     # Debug logging
 
@@ -540,7 +540,11 @@ def get_progression_rules(step_name: str) -> dict[str, Any]:
     return STEP_PROGRESSION_RULES.get(step_name, {})
 
 
-def can_proceed_to_step(current_step: str, next_step: str, step_status: dict[str, Any], ) -> tuple[bool, str]:
+def can_proceed_to_step(
+    current_step: str,
+    next_step: str,
+    step_status: dict[str, Any],
+) -> tuple[bool, str]:
     """Check if we can proceed to the next step based on current step status."""
     current_rules = get_progression_rules(current_step)
     next_rules = get_progression_rules(next_step)

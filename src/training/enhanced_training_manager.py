@@ -601,7 +601,7 @@ class EnhancedTrainingManager:
         self._load_optimization_config()
 
         # Initialize the underlying optimized training manager for advanced operations
-        self.optimized_manager, EnhancedTrainingManagerOptimized(config)
+        self.optimized_manager = EnhancedTrainingManagerOptimized(config)
 
         # Logging verbosity
         self.verbosity: str = self.enhanced_training_config.get(
@@ -613,8 +613,8 @@ class EnhancedTrainingManager:
         self.label_expert_calibrators: dict[str, Any] = {}
         self.label_reliability: dict[str, float] = {}
         self.activation_thresholds: dict[str, float] = {}
-        self.artifacts_dir: Path, Path(
-        self.enhanced_training_config.get(
+        self.artifacts_dir: Path = Path(
+            self.enhanced_training_config.get(
                 "artifacts_dir", "artifacts/meta_labeling",
             ),
         )
@@ -623,8 +623,8 @@ class EnhancedTrainingManager:
         env_force = (
             os.getenv("FORCE_RERUN", "0") == "1" or os.getenv("FORCE", "0") == "1"
         )
-        self.force_rerun: bool, bool(
-        self.enhanced_training_config.get("force_rerun", env_force),
+        self.force_rerun: bool = bool(
+            self.enhanced_training_config.get("force_rerun", env_force),
         )
 
         self.logger.info("Loaded optimization configuration")
@@ -693,19 +693,19 @@ class EnhancedTrainingManager:
                 "n_trials": self.n_trials,
             }
 
-        # Namespaced checkpoint path
-            symbol, checkpoint_data.get("symbol") or "unknown"
-            exchange, checkpoint_data.get("exchange") or "unknown"
-            timeframe, checkpoint_data.get("timeframe") or "unknown"
-            ns_dir, self.checkpoint_dir / exchange / symbol / timeframe
+            # Namespaced checkpoint path
+            symbol = checkpoint_data.get("symbol") or "unknown"
+            exchange = checkpoint_data.get("exchange") or "unknown"
+            timeframe = checkpoint_data.get("timeframe") or "unknown"
+            ns_dir = self.checkpoint_dir / exchange / symbol / timeframe
             ns_dir.mkdir(parents=True, exist_ok=True)
-            target_file, ns_dir / "training_progress.json"
+            target_file = ns_dir / "training_progress.json"
             _safe_json_write(target_file, checkpoint_data)
 
-        self.logger.info(f"💾 Checkpoint saved: {step_name} -> {target_file}")
+            self.logger.info(f"💾 Checkpoint saved: {step_name} -> {target_file}")
 
-        except Exception as e:
-        self.logger.warning(f"Failed to save checkpoint: {e}")
+        except Exception as e:  # noqa: BLE001
+            self.logger.warning(f"Failed to save checkpoint: {e}")
 
     def _load_checkpoint(self) -> dict[str, Any] | None:
         """Load training progress checkpoint.
@@ -1043,7 +1043,7 @@ class EnhancedTrainingManager:
             self.logger.warning(f"Memory optimization failed: {e}")
 
     def _get_progress_percentage(
-        self, completed_steps: int, total_steps: int, 16,
+        self, completed_steps: int, total_steps: int,
     ) -> float:
         """Calculate progress percentage.
 
@@ -1058,7 +1058,7 @@ class EnhancedTrainingManager:
         return (completed_steps / total_steps) * 100
 
     def _log_progress(
-        self, current_step: int, total_steps: int, 16, elapsed_time: float, 0,
+        self, current_step: int, total_steps: int, elapsed_time: float,
     ) -> None:
         """Log progress with estimated completion time.
 
@@ -1088,7 +1088,7 @@ class EnhancedTrainingManager:
             )
 
     def _log_step_completion(
-        self, step_name: str, step_start: float, step_times: dict, success: bool, True,
+        self, step_name: str, step_start: float, step_times: dict[str, float], success: bool,
     ) -> None:
         """Log step completion with timing and memory usage.
 
@@ -1337,37 +1337,37 @@ class EnhancedTrainingManager:
                 # Store training history
                 await self._store_enhanced_training_history(enhanced_training_input)
 
-            self.logger.info("=" * 80)
-            self.logger.info(
-                "🎉 COMPREHENSIVE 16-STEP ENHANCED TRAINING PIPELINE COMPLETED SUCCESSFULLY",
-            )
-            self.logger.info("=" * 80)
-            self.logger.info(
-                f"📅 Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            )
-            self.logger.info(
-                f"🎯 Symbol: {enhanced_training_input.get('symbol', 'N/A')}",
-            )
-            self.logger.info(
-                f"🏢 Exchange: {enhanced_training_input.get('exchange', 'N/A')}",
-            )
-            self.logger.info("📋 Completed Steps:")
-            self.logger.info("   1. Data Collection")
-            self.logger.info("   2. Feature Engineering")
-            self.logger.info("   3. HMM Regime Discovery")
-            self.logger.info("   4. Processing & Labeling")
-            self.logger.info("   5. Regime Data Splitting")
-            self.logger.info("   6. HMM-Based Training")
-            self.logger.info("   6.5. Unified Regime Intelligence")
-            self.logger.info("   7. Analyst Enhancement")
-            self.logger.info("   8. Tactician Labeling")
-            self.logger.info("   9. Tactician Specialist Training")
-            self.logger.info("   10. Confidence Calibration")
-            self.logger.info("   11. Final Parameters Optimization")
-            self.logger.info("   12. Walk Forward Validation")
-            self.logger.info("   13. Monte Carlo Validation")
-            self.logger.info("   14. A/B Testing")
-            self.logger.info("   15. Saving Results")
+                self.logger.info("=" * 80)
+                self.logger.info(
+                    "🎉 COMPREHENSIVE 16-STEP ENHANCED TRAINING PIPELINE COMPLETED SUCCESSFULLY",
+                )
+                self.logger.info("=" * 80)
+                self.logger.info(
+                    f"📅 Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                )
+                self.logger.info(
+                    f"🎯 Symbol: {enhanced_training_input.get('symbol', 'N/A')}",
+                )
+                self.logger.info(
+                    f"🏢 Exchange: {enhanced_training_input.get('exchange', 'N/A')}",
+                )
+                self.logger.info("📋 Completed Steps:")
+                self.logger.info("   1. Data Collection")
+                self.logger.info("   2. Feature Engineering")
+                self.logger.info("   3. HMM Regime Discovery")
+                self.logger.info("   4. Processing & Labeling")
+                self.logger.info("   5. Regime Data Splitting")
+                self.logger.info("   6. HMM-Based Training")
+                self.logger.info("   6.5. Unified Regime Intelligence")
+                self.logger.info("   7. Analyst Enhancement")
+                self.logger.info("   8. Tactician Labeling")
+                self.logger.info("   9. Tactician Specialist Training")
+                self.logger.info("   10. Confidence Calibration")
+                self.logger.info("   11. Final Parameters Optimization")
+                self.logger.info("   12. Walk Forward Validation")
+                self.logger.info("   13. Monte Carlo Validation")
+                self.logger.info("   14. A/B Testing")
+                self.logger.info("   15. Saving Results")
             else:
                 self.logger.error("❌ Enhanced training pipeline failed")
 
@@ -3382,7 +3382,7 @@ class EnhancedTrainingManager:
     )
     def get_enhanced_training_results(
         self,
-        enhanced_training_type: str | None, None,
+        enhanced_training_type: str | None,
     ) -> dict[str, Any]:
         """Get enhanced training results.
 
@@ -3409,7 +3409,7 @@ class EnhancedTrainingManager:
     )
     def get_enhanced_training_history(
         self,
-        limit: int | None, None,
+        limit: int | None,
     ) -> list[dict[str, Any]]:
         """Get enhanced training history.
 
@@ -4276,7 +4276,7 @@ class EnhancedTrainingManager:
     context="enhanced training manager setup",
 )
 async def setup_enhanced_training_manager(
-    config: dict[str, Any] | None, None,
+    config: dict[str, Any] | None,
 ) -> EnhancedTrainingManager | None:
     """Setup and return a configured EnhancedTrainingManager instance.
 

@@ -3678,258 +3678,254 @@ class TCNTrainer:
                 mutual_info_regression,
             )
 
-        # Determine if classification or regression
-        if y.dtype in ["object", "category"] or len(y.unique()) < 10:
-        # Classification
-                mi_scores, mutual_info_classif(X, y, random_state=42)
+            # Determine if classification or regression
+            if y.dtype in ["object", "category"] or len(y.unique()) < 10:
+                # Classification
+                mi_scores = mutual_info_classif(X, y, random_state=42)
             else:
-        # Regression
-                mi_scores, mutual_info_regression(X, y, random_state=42)
+                # Regression
+                mi_scores = mutual_info_regression(X, y, random_state=42)
 
-        return mi_scores
+            return mi_scores
 
-        except Exception as e:
-        self.logger.exception(f"❌ Mutual information calculation failed: {e}")
-        # Return uniform scores as fallback
-        return np.ones(len(X.columns))
+        except Exception as e:  # noqa: BLE001
+            self.logger.exception(f"❌ Mutual information calculation failed: {e}")
+            # Return uniform scores as fallback
+            return np.ones(len(X.columns))
 
     async def _remove_collinear_features(
-        self = X: pd.DataFrame, threshold: float, 0.95, ) -> list:
+        self, X: pd.DataFrame, threshold: float = 0.95, ) -> list[str]:
         """Remove collinear features using correlation analysis and PCA."""
         try:
-        # Calculate correlation matrix
-            corr_matrix = X.corr().abs(),
+            # Calculate correlation matrix
+            corr_matrix = X.corr().abs()
 
-        # Find highly correlated features
-            upper_tri, corr_matrix.where(
+            # Find highly correlated features
+            upper_tri = corr_matrix.where(
                 np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
             )
             high_corr_features = [
                 column
-        for column in upper_tri.columns
-        if any(upper_tri[column] > threshold)
+                for column in upper_tri.columns
+                if any(upper_tri[column] > threshold)
             ]
 
-        # Remove highly correlated features
+            # Remove highly correlated features
             low_corr_features = [
                 col for col in X.columns if col not in high_corr_features
             ]
 
-        # If too many features removed, use PCA for dimensionality reduction
-        if len(low_corr_features) < len(X.columns) * 0.5:
-        self.logger.info("   🔧 Too many collinear features, applying PCA...")
-        return await self._apply_pca_dimensionality_reduction(
+            # If too many features removed, use PCA for dimensionality reduction
+            if len(low_corr_features) < len(X.columns) * 0.5:
+                self.logger.info("   🔧 Too many collinear features, applying PCA...")
+                return await self._apply_pca_dimensionality_reduction(
                     X, target_variance=0.95
                 )
 
-        return low_corr_features
+            return low_corr_features
 
-        except Exception as e:
-        self.logger.exception(f"❌ Collinearity removal failed: {e}")
-        return list(X.columns)
+        except Exception as e:  # noqa: BLE001
+            self.logger.exception(f"❌ Collinearity removal failed: {e}")
+            return list(X.columns)
 
     async def _apply_pca_dimensionality_reduction(
-        self = X: pd.DataFrame, target_variance: float, 0.95, ) -> list:
+        self, X: pd.DataFrame, target_variance: float = 0.95, ) -> list[str]:
         """Apply PCA for dimensionality reduction while preserving variance."""
         try:
             from sklearn.decomposition import PCA
             from sklearn.preprocessing import StandardScaler
 
-        # Standardize features
-            scaler = StandardScaler(),
-            X_scaled = scaler.fit_transform(X),
+            # Standardize features
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
 
-        # Apply PCA
-            pca, PCA(n_components=target_variance)
+            # Apply PCA
+            pca = PCA(n_components=target_variance)
             pca.fit(X_scaled)
 
-        # Get number of components needed
-            n_components = pca.n_components_,
+            # Get number of components needed
+            n_components = int(pca.n_components_)
 
-        # Select top features based on PCA loadings
-            loadings = np.abs(pca.components_),
-            feature_importance, np.sum(loadings, axis=0)
+            # Select top features based on PCA loadings
+            loadings = np.abs(pca.components_)
+            feature_importance = np.sum(loadings, axis=0)
 
-        # Select top features
-            top_indices, np.argsort(feature_importance)[-n_components:]
-            selected_features = [X.columns[i] for i in top_indices],
+            # Select top features
+            top_indices = np.argsort(feature_importance)[-n_components:]
+            selected_features = [X.columns[i] for i in top_indices]
 
-        self.logger.info(
+            self.logger.info(
                 f"   🔧 PCA reduced to {len(selected_features)} features (variance: {target_variance})",
             )
 
-        return selected_features
+            return selected_features
 
-        except Exception as e:
-        self.logger.exception(f"❌ PCA dimensionality reduction failed: {e}")
-        return list(X.columns)
+        except Exception as e:  # noqa: BLE001
+            self.logger.exception(f"❌ PCA dimensionality reduction failed: {e}")
+            return list(X.columns)
 
     async def _select_by_random_forest_importance(
-        self = X: pd.DataFrame, y: pd.Series, max_features: int, ) -> list:
+        self, X: pd.DataFrame, y: pd.Series, max_features: int, ) -> list[str]:
         """Select features based on Random Forest importance scores."""
-        try: from sklearn.ensemble import RandomForestClassifier = RandomForestRegressor
+        try:
+            from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 
-        # Determine if classification or regression
-        if y.dtype in ["object", "category"] or len(y.unique()) < 10:
-                rf, RandomForestClassifier(
+            # Determine if classification or regression
+            if y.dtype in ["object", "category"] or len(y.unique()) < 10:
+                rf = RandomForestClassifier(
                     n_estimators=100, random_state=42, n_jobs=-1,
                 )
-            else: rf = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
+            else:
+                rf = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
 
-        # Fit Random Forest
+            # Fit Random Forest
             rf.fit(X, y)
 
-        # Get feature importance
-            importance_scores = rf.feature_importances_,
-            feature_importance, list(zip(X.columns, importance_scores, strict=False))
-            feature_importance.sort(key=lambda x: x[1], reverse=True)
+            # Get feature importances
+            importances = getattr(rf, "feature_importances_", None)
+            if importances is None:
+                return list(X.columns)[:max_features]
 
-        # Select top features
-        return [
-                feature for feature, score in feature_importance[:max_features]
-            ]
+            # Select top features
+            indices = np.argsort(importances)[::-1][:max_features]
+            selected_features = [X.columns[i] for i in indices]
+            return selected_features
 
-
-        except Exception as e:
-        self.logger.exception(f"❌ Random Forest importance selection failed: {e}")
-        return list(X.columns)
+        except Exception as e:  # noqa: BLE001
+            self.logger.exception(f"❌ Random Forest importance selection failed: {e}")
+            return list(X.columns)[:max_features]
 
     async def _validate_with_shap(
-        self = X: pd.DataFrame, y: pd.Series, max_features: int, ) -> list:
+        self, X: pd.DataFrame, y: pd.Series, max_features: int, ) -> list[str]:
         """Validate feature selection using SHAP values."""
         try:
-        # Use LightGBM for SHAP analysis (faster than Random Forest for SHAP)
+            # Use LightGBM for SHAP analysis (faster than Random Forest for SHAP)
             import lightgbm as lgb
             import shap
 
-        # Determine if classification or regression
-        if y.dtype in ["object", "category"] or len(y.unique()) < 10:
-                model, lgb.LGBMClassifier(n_estimators=50, random_state=42, verbose=-1)
-            else: model = lgb.LGBMRegressor(n_estimators=50, random_state=42, verbose=-1)
+            # Determine if classification or regression
+            if y.dtype in ["object", "category"] or len(y.unique()) < 10:
+                model = lgb.LGBMClassifier(n_estimators=50, random_state=42, verbose=-1)
+            else:
+                model = lgb.LGBMRegressor(n_estimators=50, random_state=42, verbose=-1)
 
-        # Fit model
+            # Fit model
             model.fit(X, y)
 
-        # Calculate SHAP values (use a subset for speed)
-            sample_size, min(1000, len(X))
-            X_sample, X.sample(n=sample_size, random_state=42)
+            # Calculate SHAP values (use a subset for speed)
+            sample_size = min(1000, len(X))
+            X_sample = X.sample(n=sample_size, random_state=42)
 
-            explainer = shap.TreeExplainer(model),
-            shap_values = explainer.shap_values(X_sample),
+            explainer = shap.TreeExplainer(model)
+            shap_values = explainer.shap_values(X_sample)
 
-        # If classification, use the first class SHAP values
-        if isinstance(shap_values, list):
-                shap_values = shap_values[0],
+            # If classification, use the first class SHAP values
+            if isinstance(shap_values, list):
+                shap_values = shap_values[0]
 
-        # Calculate mean absolute SHAP values per feature
-            mean_shap, np.mean(np.abs(shap_values), axis=0)
-            feature_shap, list(zip(X.columns, mean_shap, strict=False))
+            # Calculate mean absolute SHAP values per feature
+            mean_shap = np.mean(np.abs(shap_values), axis=0)
+            feature_shap = list(zip(X.columns, mean_shap, strict=False))
             feature_shap.sort(key=lambda x: x[1], reverse=True)
 
-        # Select top features based on SHAP importance
-        return [
-                feature for feature, score in feature_shap[:max_features]
-            ]
-
+            # Select top features based on SHAP importance
+            return [feature for feature, score in feature_shap[:max_features]]
 
         except Exception as e:
-        self.logger.warning(f"⚠️ SHAP validation failed: {e}")
-        # Return all features if SHAP fails
-        return list(X.columns)
+            self.logger.exception(f"❌ SHAP validation failed: {e}")
+            # Return all features if SHAP fails
+            return list(X.columns)[:max_features]
 
     async def _pre_filter_features(
-        self = X: pd.DataFrame, feature_columns: list, ) -> list:
+        self, X: pd.DataFrame, feature_columns: list, ) -> list:
         """Pre-filter features based on variance and correlation."""
         try:
-        # Remove low variance features
-            variance = X.var(),
+            # Remove low variance features
+            variance = X.var()
             high_variance_mask = variance > 1e-6  # More permissive threshold,
             high_variance_features = [
                 col
-        for col in feature_columns
-        if col in X.columns and high_variance_mask[col]
+                for col in feature_columns
+                if col in X.columns and high_variance_mask[col]
             ]
 
-        self.logger.info(
+            self.logger.info(
                 f"   Variance filtering: {len(feature_columns)} -> {len(high_variance_features)} features",
             )
 
         # Remove highly correlated features
-        if len(high_variance_features) > 1:
-                X_high_var = X[high_variance_features],
-                corr_matrix = X_high_var.corr().abs(),
-                upper_tri, corr_matrix.where(
+            uncorr_features = high_variance_features
+            if len(high_variance_features) > 1:
+                X_high_var = X[high_variance_features]
+                corr_matrix = X_high_var.corr().abs()
+                upper_tri = corr_matrix.where(
                     np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
                 )
 
-        # Find features to drop
+                # Find features to drop
                 to_drop = [
                     column
-        for column in upper_tri.columns
-        if any(upper_tri[column] > 0.95)
+                    for column in upper_tri.columns
+                    if any(upper_tri[column] > 0.95)
                 ]
                 uncorr_features = [
                     col for col in high_variance_features if col not in to_drop
                 ]
 
-        self.logger.info(
-                    f"   Correlation filtering: {len(high_variance_features)} -> {len(uncorr_features)} features",
-                )
-        return uncorr_features
+            self.logger.info(
+                f"   Correlation filtering: {len(high_variance_features)} -> {len(uncorr_features)} features",
+            )
+            return uncorr_features
 
-        return high_variance_features
+            return high_variance_features
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Error in pre-filtering: {e}")
-        return feature_columns
+            self.logger.warning(f"⚠️ Error in pre-filtering: {e}")
+            return feature_columns
 
     async def _calculate_comprehensive_scores(
-        self = X: pd.DataFrame, y: pd.Series, ) -> dict:
+        self, X: pd.DataFrame, y: pd.Series, ) -> dict:
         """Calculate feature importance scores using multiple methods."""
         try:
             feature_scores = {}
-
-        # Prepare data
+            # Prepare data
             X_clean = X.fillna(0).astype(float)
             y_clean = y.fillna(0).astype(float)
-
-        # Determine task type
-            task_type = ("classification"
-        if y_clean.dtype in ["object", "category"] or len(y_clean.unique()) < 10
+            # Determine task type
+            task_type = (
+                "classification"
+                if y_clean.dtype in ["object", "category"] or len(y_clean.unique()) < 10
                 else "regression"
             )
-
-        # 1. Mutual Information
-        if task_type == "classification":
-                mi_scores, mutual_info_classif(X_clean, y_clean, random_state=42)
-            else: mi_scores = mutual_info_regression(X_clean, y_clean, random_state=42)
-
-        for i, feature in enumerate(X_clean.columns):
-                feature_scores[feature] = {"mutual_info": mi_scores[i]}
-
-        # 2. Random Forest importance
-        if task_type == "classification":
-                rf, RandomForestClassifier(
+            # 1. Mutual Information
+            if task_type == "classification":
+                mi_scores = mutual_info_classif(X_clean, y_clean, random_state=42)
+            else:
+                mi_scores = mutual_info_regression(X_clean, y_clean, random_state=42)
+            for i, feature in enumerate(X_clean.columns):
+                feature_scores[feature] = {"mutual_info": float(mi_scores[i])}
+            # 2. Random Forest importance
+            if task_type == "classification":
+                rf = RandomForestClassifier(
                     n_estimators=100, random_state=42, n_jobs=-1,
                 )
-            else: rf = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
-
+            else:
+                rf = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
             rf.fit(X_clean, y_clean)
-            rf_importance = rf.feature_importances_,
+            rf_importance = rf.feature_importances_
+            for i, feature in enumerate(X_clean.columns):
+                feature_scores[feature]["rf_importance"] = float(rf_importance[i])
 
-        for i, feature in enumerate(X_clean.columns):
-                feature_scores[feature]["rf_importance"] = rf_importance[i]
-
-        # 3. F-statistics
-        if task_type == "classification":
+            # 3. F-statistics
+            if task_type == "classification":
                 f_scores, _, f_classif(X_clean, y_clean)
             else: f_scores = _, f_regression(X_clean, y_clean)
 
-        for i, feature in enumerate(X_clean.columns):
+            for i, feature in enumerate(X_clean.columns):
                 feature_scores[feature]["f_statistic"] = f_scores[i]
 
-        # 4. LightGBM importance
-        if task_type == "classification":
+            # 4. LightGBM importance
+            if task_type == "classification":
                 lgb_model, lgb.LGBMClassifier(
                     n_estimators=100, random_state=42, verbose=-1,
                 )
@@ -3940,55 +3936,49 @@ class TCNTrainer:
             lgb_model.fit(X_clean, y_clean)
             lgb_importance = lgb_model.feature_importances_,
 
-        for i, feature in enumerate(X_clean.columns):
+            for i, feature in enumerate(X_clean.columns):
                 feature_scores[feature]["lgb_importance"] = lgb_importance[i]
 
-        # 5. SHAP importance (for top features)
-        try:
+            # 5. SHAP importance (for top features)
+            try:
                 import shap
 
-                sample_size, min(500, len(X_clean))
-                X_sample, X_clean.sample(n=sample_size, random_state=42)
-                y_clean.sample(n=sample_size, random_state=42)
+                sample_size = min(500, len(X_clean))
+                X_sample = X_clean.sample(n=sample_size, random_state=42)
 
-                explainer = shap.TreeExplainer(lgb_model),
-                shap_values = explainer.shap_values(X_sample),
+                explainer = shap.TreeExplainer(lgb_model)
+                shap_values = explainer.shap_values(X_sample)
 
-        if isinstance(shap_values, list):
-                    shap_values = (shap_values[1]
-        if task_type == "classification"
-                        else shap_values[0]
-                    )
+                if isinstance(shap_values, list):
+                    shap_values = shap_values[1] if task_type == "classification" else shap_values[0]
 
-                mean_shap, np.mean(np.abs(shap_values), axis=0)
+                mean_shap = np.mean(np.abs(shap_values), axis=0)
 
-        for i, feature in enumerate(X_clean.columns):
-                    feature_scores[feature]["shap_importance"] = mean_shap[i]
-        except Exception as e:
-        self.logger.warning(f"⚠️ SHAP calculation failed: {e}")
+                for i, feature in enumerate(X_clean.columns):
+                    feature_scores[feature]["shap_importance"] = float(mean_shap[i])
+            except Exception as e:
+                self.logger.warning(f"⚠️ SHAP calculation failed: {e}")
 
-        # Combine scores
-        for feature, scores in feature_scores.items():
+            # Combine scores
+            for feature, scores in feature_scores.items():
                 normalized_scores = []
-        for score in scores.values():
-        if score is not None and not np.isnan(score):
+                for score in scores.values():
+                    if score is not None and not np.isnan(score):
                         normalized_scores.append(score)
 
-        if normalized_scores:
-                    feature_scores[feature]["combined_score"] = np.mean(
-                        normalized_scores,
-                    )
+                if normalized_scores:
+                    feature_scores[feature]["combined_score"] = float(np.mean(normalized_scores))
                 else:
                     feature_scores[feature]["combined_score"] = 0.0
 
-        return feature_scores
+            return feature_scores
 
         except Exception as e:
-        self.logger.exception(f"❌ Error calculating comprehensive scores: {e}")
-        return {}
+            self.logger.exception(f"❌ Error calculating comprehensive scores: {e}")
+            return {}
 
     async def _select_features_by_category(
-        self = all_features: list, feature_scores: dict, ) -> list:
+        self, all_features: list, feature_scores: dict, ) -> list:
         """Select features by category ensuring minimum per category."""
         try:
         # Define feature categories
@@ -4124,7 +4114,7 @@ class TCNTrainer:
         return "other"
 
     async def _final_feature_selection(
-        self = X: pd.DataFrame, y: pd.Series, selected_features: list, max_features: int, ) -> list:
+        self, X: pd.DataFrame, y: pd.Series, selected_features: list, max_features: int, ) -> list:
         """Final feature selection and validation."""
         try:
         if len(selected_features) <= max_features:
@@ -4239,7 +4229,7 @@ class TransformerTrainer:
     """Trainer for Transformer model."""
 
     def __init__(
-        self = model: nn.Module, learning_rate: float, 0.0001, batch_size: int, 32, ) -> None:,
+        self, model: nn.Module, learning_rate: float, 0.0001, batch_size: int, 32, ) -> None:,
         self.model = model
         self.optimizer = optim.Adam(model.parameters(), lr=learning_rate)
         self.criterion = nn.CrossEntropyLoss()
@@ -4308,7 +4298,7 @@ class TransformerTrainer:
         return history
 
     async def _train_sr_outcome_model(
-        self = training_data: dict[str, pd.DataFrame], ) -> bool:
+        self, training_data: dict[str, pd.DataFrame], ) -> bool:
         """Train S/R outcome model using all available features from step4.
         Trains specifically on data near S/R levels using the pruning logic from step5.
         """
@@ -4348,7 +4338,7 @@ class TransformerTrainer:
         return False
 
     async def _prepare_sr_training_data(
-        self = training_data: dict[str, pd.DataFrame], ) -> dict[str, pd.DataFrame] | None:
+        self, training_data: dict[str, pd.DataFrame], ) -> dict[str, pd.DataFrame] | None:
         """Prepare training data specifically for S/R outcome prediction.
         Uses all available features from step4 and filters for data near S/R levels.
         """
@@ -4399,7 +4389,7 @@ class TransformerTrainer:
         return None
 
     def _get_all_available_features(
-        self = data: pd.DataFrame, timeframe: str, ) -> pd.DataFrame:
+        self, data: pd.DataFrame, timeframe: str, ) -> pd.DataFrame:
         """Get all available features from step4 for comprehensive S/R analysis.
         Uses the same feature engineering logic as the main HMM training.
         """
@@ -4459,7 +4449,7 @@ class TransformerTrainer:
         return data
 
     async def _filter_sr_proximity_data(
-        self = data: pd.DataFrame, timeframe: str, ) -> pd.DataFrame:
+        self, data: pd.DataFrame, timeframe: str, ) -> pd.DataFrame:
         """Filter data for samples near S/R levels using the SRBreakoutPredictor."""
         try:
         if data.empty:

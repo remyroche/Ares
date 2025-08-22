@@ -56,7 +56,6 @@ class DualModelSystem:
         # Backward-compatibility shim for legacy self.print calls
         # to avoid AttributeError during transitional cleanup.
         if not hasattr(self, "print"):
-    pass  # TODO: Add proper implementation
             def _shim_print(message: str) -> None:
                 with contextlib.suppress(Exception):
                     self.logger.error(str(message))
@@ -391,9 +390,9 @@ class DualModelSystem:
                 "✅ ML Confidence Predictor with meta-labeling initialized successfully",
             )
 
-        except Exception:
+        except Exception as e:
             self.print(
-                initialization_error("Error initializing ML Confidence Predictor: {e}"),
+                initialization_error(f"Error initializing ML Confidence Predictor: {e}"),
             )
 
     @handle_errors(
@@ -784,7 +783,7 @@ class DualModelSystem:
             }
 
         except Exception as e:
-            self.print(error("Error getting analyst decision: {e}"))
+            self.print(error(f"Error getting analyst decision: {e}"))
             return {
                 "should_trade": False,
                 "direction": "HOLD",
@@ -861,7 +860,7 @@ class DualModelSystem:
             }
 
         except Exception as e:
-            self.print(error("Error analyzing analyst confidence: {e}"))
+            self.print(error(f"Error analyzing analyst confidence: {e}"))
             return {
                 "should_trade": False,
                 "direction": "HOLD",
@@ -887,8 +886,8 @@ class DualModelSystem:
                 }
 
             # Get predictions with meta-labeling for analyst timeframes
-            analyst_predictions = {}
-            analyst_meta_labels = {}
+            analyst_predictions: dict[str, Any] = {}
+            analyst_meta_labels: dict[str, Any] = {}
 
             for timeframe in self.analyst_timeframes:
                 # Use meta-labeling enhanced predictions
@@ -917,7 +916,7 @@ class DualModelSystem:
             return decision
 
         except Exception as e:
-            self.print(error("Error getting model-based analyst decision: {e}"))
+            self.print(error(f"Error getting model-based analyst decision: {e}"))
             return {
                 "should_trade": False,
                 "direction": "HOLD",
@@ -983,7 +982,7 @@ class DualModelSystem:
             }
 
         except Exception as e:
-            self.print(error("Error getting tactician decision: {e}"))
+            self.print(error(f"Error getting tactician decision: {e}"))
             return {
                 "should_execute": False,
                 "timing_signal": 0.0,
@@ -1038,7 +1037,7 @@ class DualModelSystem:
             }
 
         except Exception as e:
-            self.print(error("Error analyzing tactician confidence: {e}"))
+            self.print(error(f"Error analyzing tactician confidence: {e}"))
             return {
                 "should_execute": False,
                 "timing_signal": 0.0,
@@ -1087,7 +1086,7 @@ class DualModelSystem:
             return decision
 
         except Exception as e:
-            self.print(error("Error getting model-based tactician decision: {e}"))
+            self.print(error(f"Error getting model-based tactician decision: {e}"))
             return {
                 "should_execute": False,
                 "timing_signal": 0.0,
@@ -1129,7 +1128,7 @@ class DualModelSystem:
             }
 
         except Exception as e:
-            self.print(error("Error getting analyst exit decision: {e}"))
+            self.print(error(f"Error getting analyst exit decision: {e}"))
             return {
                 "should_exit": False,
                 "exit_type": "HOLD",
@@ -1231,7 +1230,7 @@ class DualModelSystem:
             }
 
         except Exception as e:
-            self.print(error("Error analyzing analyst exit confidence: {e}"))
+            self.print(error(f"Error analyzing analyst exit confidence: {e}"))
             return {
                 "should_exit": False,
                 "exit_type": "HOLD",
@@ -1273,7 +1272,7 @@ class DualModelSystem:
             }
 
         except Exception as e:
-            self.print(error("Error getting tactician exit decision: {e}"))
+            self.print(error(f"Error getting tactician exit decision: {e}"))
             return {
                 "should_execute": False,
                 "timing_signal": 0.0,
@@ -1337,7 +1336,7 @@ class DualModelSystem:
             }
 
         except Exception as e:
-            self.print(error("Error analyzing tactician exit confidence: {e}"))
+            self.print(error(f"Error analyzing tactician exit confidence: {e}"))
             return {
                 "should_execute": False,
                 "timing_signal": 0.0,
@@ -1537,7 +1536,7 @@ class DualModelSystem:
             return training_result
 
         except Exception as e:
-            self.print(error("Error triggering model training: {e}"))
+            self.print(error(f"Error triggering model training: {e}"))
             return {"success": False, "error": str(e)}
 
     async def _update_system_after_training(
@@ -1568,7 +1567,7 @@ class DualModelSystem:
     def get_training_status(self) -> dict[str, Any]:
         """Get training status for the dual model system."""
         try:
-            training_status = {}
+            training_status: dict[str, Any] = {}
 
             # Get ML confidence predictor training status
             if self.ml_confidence_predictor:
@@ -1591,7 +1590,7 @@ class DualModelSystem:
             return training_status
 
         except Exception as e:
-            self.print(error("Error getting training status: {e}"))
+            self.print(error(f"Error getting training status: {e}"))
             return {"error": str(e)}
 
     async def update_model_performance(

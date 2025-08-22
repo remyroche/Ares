@@ -2050,33 +2050,33 @@ async def run_step(symbol: str, exchange: str = "BINANCE", timeframe: str = "1m"
         logger.info("📋 Phase 1: Loading configuration...")
         try:
             config = training_config or {}
-            uri_config, config.get("UNIFIED_REGIME_INTELLIGENCE", {})
+            uri_config = config.get("UNIFIED_REGIME_INTELLIGENCE", {})
 
-        if not uri_config.get("enabled", True):
+            if not uri_config.get("enabled", True):
                 logger.info(
                     "⏭️ Unified Regime Intelligence disabled; skipping step 5_5.",
                 )
-        return True
+                return True
 
             logger.info(f"✅ Configuration loaded: {len(uri_config)} parameters")
             step_phases["configuration"] = True
         except Exception as e:
             logger.exception(f"❌ Configuration loading failed: {e}")
-        return False
+            return False
 
         # Phase 2: Initialize step
         logger.info("🔧 Phase 2: Initializing Unified Regime Intelligence Step...")
         try:
             step = UnifiedRegimeIntelligenceStep(uri_config)
-        if not await step.initialize():
+            if not await step.initialize():
                 logger.error("❌ Failed to initialize Unified Regime Intelligence Step")
-        return False
+                return False
 
             logger.info("✅ Unified Regime Intelligence Step initialized successfully")
             step_phases["initialization"] = True
         except Exception as e:
             logger.exception(f"❌ Initialization failed: {e}")
-        return False
+            return False
 
         # Phase 3: Load data
         logger.info("📥 Phase 3: Loading training data...")
@@ -2085,33 +2085,33 @@ async def run_step(symbol: str, exchange: str = "BINANCE", timeframe: str = "1m"
                 "combined_features": pd.DataFrame(),  # Would be loaded from previous steps
             }
 
-        # Validate data
-        if data["combined_features"].empty:
+            # Validate data
+            if data["combined_features"].empty:
                 logger.warning("⚠️ No combined features provided, using HMM data only")
 
             logger.info(f"✅ Data loaded: {len(data)} data sources")
             step_phases["data_loading"] = True
         except Exception as e:
             logger.exception(f"❌ Data loading failed: {e}")
-        return False
+            return False
 
         # Phase 4: Train model
         logger.info("🎯 Phase 4: Training Unified Regime Intelligence model...")
         try:
-        if not await step.train(data):
+            if not await step.train(data):
                 logger.error("❌ Failed to train Unified Regime Intelligence model")
-        return False
+                return False
 
             logger.info("✅ Model training completed successfully")
             step_phases["training"] = True
         except Exception as e:
             logger.exception(f"❌ Model training failed: {e}")
-        return False
+            return False
 
         # Phase 5: Validation
         logger.info("🔍 Phase 5: Validating model performance...")
         try:
-        # Add validation logic here
+            # Add validation logic here
             logger.info("✅ Model validation completed")
             step_phases["validation"] = True
         except Exception as e:

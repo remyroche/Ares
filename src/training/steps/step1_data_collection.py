@@ -23,15 +23,17 @@ except ImportError:
 # Import comprehensive file validation
 try:
     from src.utils.comprehensive_file_validation import (
-        ComprehensiveFileValidator,
-        validate_step1_file,
-        FileValidationResult
-    )
-    from src.utils.validation_decorators import (
-        validate_file_operation,
-        validate_dataframe_operation,
-        validate_step1_operation
-    )
+    ComprehensiveFileValidator,
+    validate_step1_file,
+    FileValidationResult
+)
+from src.utils.validation_decorators import (
+    validate_file_operation,
+    validate_dataframe_operation,
+    validate_step1_operation
+)
+from src.utils.advanced_ml_validation import validate_ml_data_quality
+from src.utils.enhanced_validation_decorators import step_specific_ml_validation
 except ImportError:
     ComprehensiveFileValidator = None
     validate_step1_file = None
@@ -208,6 +210,7 @@ class DataCollectionStep:
     @handle_data_collection_errors(context="run_data_collection")
     @log_step_metrics(context="data_collection")
     @validate_file_operation("step1", expected_schema="klines", log_level="INFO") if validate_file_operation else lambda x: x
+    @step_specific_ml_validation("step1", timestamp_col="timestamp") if step_specific_ml_validation else lambda x: x
     async def _run_data_collection(self, training_input: dict[str, Any]) -> bool:
         """Run the actual data collection process."""
         try:
@@ -284,6 +287,35 @@ class DataCollectionStep:
                         logger.info(f"   📊 Shape: {validation_result.summary.get('shape', 'N/A')}")
                         logger.info(f"   📁 File type: {validation_result.file_type}")
                         logger.info(f"   🗂️ Columns: {validation_result.summary.get('column_count', 'N/A')}")
+                        
+                        # Perform ML data quality validation if file is valid
+                        try:
+                            import pandas as pd
+                            df = pd.read_parquet(file_path)
+                            ml_validation_result = validate_ml_data_quality(
+                                df=df,
+                                timestamp_col="timestamp",
+                                config={
+                                    "validate_financial": True,
+                                    "validate_time_series": True,
+                                    "validate_distributions": True
+                                }
+                            )
+                            
+                            if ml_validation_result.is_valid:
+                                logger.info(f"✅ ML data quality validation passed: {file_path}")
+                                logger.info(f"   📈 Quality Score: {ml_validation_result.quality_score.overall:.3f}")
+                                logger.info(f"   🏆 Quality Grade: {ml_validation_result.quality_score.grade}")
+                            else:
+                                logger.warning(f"⚠️ ML data quality issues found: {file_path}")
+                                for issue in ml_validation_result.correlation_issues[:3]:
+                                    logger.warning(f"   - Correlation: {issue}")
+                                for issue in ml_validation_result.financial_issues[:3]:
+                                    logger.warning(f"   - Financial: {issue}")
+                                for issue in ml_validation_result.time_series_issues[:3]:
+                                    logger.warning(f"   - Time Series: {issue}")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Could not perform ML validation on {file_path}: {e}")
                     else:
                         logger.warning(f"⚠️ File validation issues found: {file_path}")
                         all_valid = False

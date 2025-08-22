@@ -31,6 +31,11 @@ logger = system_logger.getChild("Step1Runner")
 
 def main() -> None:
     """Main function to run step1 processes."""
+    start_time = datetime.now()
+    
+    logger.info("🚀 STEP1 LAUNCHER STARTING")
+    logger.info("=" * 80)
+    
     parser = argparse.ArgumentParser(description="Step 1 Data Collection and Validation")
     parser.add_argument("--symbol", default="ETHUSDT", help="Trading symbol")
     parser.add_argument("--exchange", default="BINANCE", help="Exchange name")
@@ -41,6 +46,12 @@ def main() -> None:
                        default="complete", help="Operation mode")
 
     args = parser.parse_args()
+    
+    logger.info(f"🎯 TARGET: {args.exchange}_{args.symbol}")
+    logger.info(f"📅 Date range: {args.start_date} to {args.end_date}")
+    logger.info(f"🔧 Auto-fix: {'Disabled' if args.no_auto_fix else 'Enabled'}")
+    logger.info(f"⚙️  Mode: {args.mode}")
+    logger.info("-" * 60)
 
     # Parse dates
     start_date = None
@@ -68,12 +79,26 @@ def main() -> None:
             print(results["report"])
 
         # Print summary
+        end_time = datetime.now()
+        execution_time = end_time - start_time
+        
+        logger.info("=" * 80)
+        logger.info("📊 STEP1 LAUNCHER SUMMARY")
+        logger.info(f"⏱️  Total execution time: {execution_time}")
+        logger.info(f"🎯 Target: {args.exchange}_{args.symbol}")
+        logger.info(f"⚙️  Mode: {args.mode}")
+        
         if results["success"]:
+            logger.info("✅ STEP1 COMPLETED SUCCESSFULLY!")
             print("✅ Step1 completed successfully!")
         else:
+            logger.error("❌ STEP1 COMPLETED WITH ERRORS!")
             print("❌ Step1 completed with errors:")
             for error in results["errors"]:
+                logger.error(f"  - {error}")
                 print(f"  - {error}")
+        
+        logger.info("=" * 80)
 
     elif args.mode == "gap-detection":
         # Run gap detection only

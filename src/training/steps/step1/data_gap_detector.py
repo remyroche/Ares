@@ -75,12 +75,19 @@ class DataGapDetector:
             Dictionary with missing data information
 
         """
+        detection_start = datetime.now()
+        
         if start_date is None:
             start_date = datetime.now() - timedelta(days=365*2)
+            logger.info(f"📅 No start_date provided, using default: {start_date.date()} (2 years ago)")
         if end_date is None:
             end_date = datetime.now()
+            logger.info(f"📅 No end_date provided, using default: {end_date.date()} (today)")
 
-        logger.info(f"🔍 Detecting missing data for {exchange}_{symbol} from {start_date.date()} to {end_date.date()}")
+        logger.info(f"🔍 DETECTING MISSING DATA FOR {exchange}_{symbol}")
+        logger.info(f"📅 Analysis period: {start_date.date()} to {end_date.date()}")
+        logger.info(f"📁 Data cache path: {self.data_cache_path}")
+        logger.info("-" * 60)
 
         results = {
             "symbol": symbol,
@@ -96,13 +103,49 @@ class DataGapDetector:
         }
 
         # Detect missing aggtrades (daily files)
-        results.update(self._detect_missing_aggtrades(symbol, exchange, start_date, end_date))
+        logger.info("📊 DETECTING MISSING AGGTRADES (DAILY FILES)")
+        aggtrades_results = self._detect_missing_aggtrades(symbol, exchange, start_date, end_date)
+        results.update(aggtrades_results)
+        logger.info(f"📈 Aggtrades: {len(aggtrades_results['existing_aggtrades_days'])} existing, {len(aggtrades_results['missing_aggtrades_days'])} missing")
 
         # Detect missing klines (monthly files)
-        results.update(self._detect_missing_klines(symbol, exchange, start_date, end_date))
+        logger.info("📊 DETECTING MISSING KLINES (MONTHLY FILES)")
+        klines_results = self._detect_missing_klines(symbol, exchange, start_date, end_date)
+        results.update(klines_results)
+        logger.info(f"📈 Klines: {len(klines_results['existing_klines_months'])} existing, {len(klines_results['missing_klines_months'])} missing")
 
         # Detect missing futures (monthly files)
-        results.update(self._detect_missing_futures(symbol, exchange, start_date, end_date))
+        logger.info("📊 DETECTING MISSING FUTURES (MONTHLY FILES)")
+        futures_results = self._detect_missing_futures(symbol, exchange, start_date, end_date)
+        results.update(futures_results)
+        logger.info(f"📈 Futures: {len(futures_results['existing_futures_months'])} existing, {len(futures_results['missing_futures_months'])} missing")
+
+        # Summary
+        total_missing = (
+            len(results["missing_aggtrades_days"]) +
+            len(results["missing_klines_months"]) +
+            len(results["missing_futures_months"])
+        )
+        total_existing = (
+            len(results["existing_aggtrades_days"]) +
+            len(results["existing_klines_months"]) +
+            len(results["existing_futures_months"])
+        )
+        
+        detection_end = datetime.now()
+        detection_time = detection_end - detection_start
+        
+        logger.info("-" * 60)
+        logger.info("📊 MISSING DATA DETECTION SUMMARY")
+        logger.info(f"⏱️  Detection time: {detection_time}")
+        logger.info(f"📈 Total existing files: {total_existing}")
+        logger.info(f"❌ Total missing files: {total_missing}")
+        logger.info(f"📊 Coverage: {total_existing/(total_existing + total_missing)*100:.1f}%" if (total_existing + total_missing) > 0 else "📊 Coverage: N/A")
+        
+        if total_missing > 0:
+            logger.warning(f"⚠️  {total_missing} missing data files detected!")
+        else:
+            logger.info("✅ All expected data files are present!")
 
         return results
 

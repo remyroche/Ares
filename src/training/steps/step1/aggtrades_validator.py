@@ -98,6 +98,10 @@ class AggtradesValidator:
             Dictionary with validation results
 
         """
+        validation_start = datetime.now()
+        logger.info(f"🔍 VALIDATING FILE: {file_path.name}")
+        logger.info(f"📁 Full path: {file_path}")
+        logger.info(f"📊 File size: {file_path.stat().st_size / (1024*1024):.2f} MB")
         logger.info(f"🔍 Validating {file_path.name}")
 
         result = {
@@ -293,10 +297,19 @@ class AggtradesValidator:
             Dictionary with validation results
 
         """
-        logger.info(f"🔍 Validating all aggtrades for {exchange}_{symbol}")
+        validation_start = datetime.now()
+        logger.info(f"🔍 VALIDATING ALL AGGTRADES FOR {exchange}_{symbol}")
+        logger.info(f"🔧 Auto-fix enabled: {auto_fix}")
+        logger.info(f"📁 Data cache path: {self.data_cache_path}")
+        logger.info("-" * 60)
 
         aggtrades_files = self.get_aggtrades_files(symbol, exchange)
-        logger.info(f"📁 Found {len(aggtrades_files)} aggtrades files")
+        logger.info(f"📁 Found {len(aggtrades_files)} aggtrades files to validate")
+
+        # Log file types found
+        csv_files = [f for f in aggtrades_files if f.suffix.lower() == ".csv"]
+        parquet_files = [f for f in aggtrades_files if f.suffix.lower() == ".parquet"]
+        logger.info(f"📊 File types: {len(csv_files)} CSV, {len(parquet_files)} Parquet")
 
         validation_result = {
             "total_files": len(aggtrades_files),
@@ -328,11 +341,27 @@ class AggtradesValidator:
                 validation_result["errors"].append(f"Error processing {file_path.name}: {e}")
                 logger.exception(f"❌ Error processing {file_path.name}: {e}")
 
-        logger.info(
-            f"📊 Validation complete: {validation_result['valid_files']} valid, "
-            f"{validation_result['invalid_files']} invalid, "
-            f"{validation_result['fixed_files']} fixed"
-        )
+        validation_end = datetime.now()
+        validation_time = validation_end - validation_start
+        
+        logger.info("-" * 60)
+        logger.info("📊 AGGTRADES VALIDATION SUMMARY")
+        logger.info(f"⏱️  Validation time: {validation_time}")
+        logger.info(f"📁 Total files processed: {validation_result['total_files']}")
+        logger.info(f"✅ Valid files: {validation_result['valid_files']}")
+        logger.info(f"❌ Invalid files: {validation_result['invalid_files']}")
+        logger.info(f"🔧 Fixed files: {validation_result['fixed_files']}")
+        logger.info(f"📊 Success rate: {validation_result['valid_files']/validation_result['total_files']*100:.1f}%" if validation_result['total_files'] > 0 else "📊 Success rate: N/A")
+        
+        if validation_result['errors']:
+            logger.error("❌ VALIDATION ERRORS:")
+            for i, error in enumerate(validation_result['errors'], 1):
+                logger.error(f"  {i}. {error}")
+        
+        if validation_result['invalid_files'] > 0 and not auto_fix:
+            logger.warning("⚠️  Some files are invalid and auto-fix is disabled!")
+        elif validation_result['invalid_files'] == 0:
+            logger.info("✅ All aggtrades files are valid!")
 
         return validation_result
 

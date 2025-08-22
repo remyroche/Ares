@@ -427,12 +427,20 @@ class DataPreparation:
             Dictionary with resampling results
 
         """
+        resampling_start = datetime.now()
+        
         if timeframes is None:
             timeframes = ["5m", "15m", "30m"]
 
-        logger.info(f"🔄 Resampling {exchange}_{symbol} to timeframes: {timeframes}")
+        logger.info(f"🔄 RESAMPLING {exchange}_{symbol} TO MULTIPLE TIMEFRAMES")
+        logger.info(f"📅 Date range: {start_date} to {end_date}")
+        logger.info(f"⏰ Target timeframes: {timeframes}")
+        logger.info(f"📁 Data cache path: {self.data_cache_path}")
+        logger.info(f"🔧 Create partitions: {create_partitions}")
+        logger.info("-" * 60)
 
         # Load source data
+        logger.info("📊 LOADING SOURCE KLINES DATA")
         source_df = self.load_klines_data(symbol, exchange, start_date, end_date)
 
         if len(source_df) == 0:
@@ -493,7 +501,32 @@ class DataPreparation:
                 results["error"] = str(e)
                 break
 
-        logger.info(f"📊 Resampling complete for {exchange}_{symbol}")
+        resampling_end = datetime.now()
+        resampling_time = resampling_end - resampling_start
+        
+        logger.info("-" * 60)
+        logger.info("📊 RESAMPLING SUMMARY")
+        logger.info(f"⏱️  Total resampling time: {resampling_time}")
+        logger.info(f"📊 Source data rows: {results.get('source_rows', 0)}")
+        logger.info(f"📁 Resampled files created: {len(results.get('resampled_files', {}))}")
+        logger.info(f"📁 Partitioned datasets created: {len(results.get('partitioned_datasets', {}))}")
+        logger.info(f"✅ Success: {results.get('success', False)}")
+        
+        if results.get('resampled_files'):
+            logger.info("📊 RESAMPLED FILES CREATED:")
+            for timeframe, file_path in results['resampled_files'].items():
+                logger.info(f"  • {timeframe}: {file_path}")
+        
+        if results.get('partitioned_datasets'):
+            logger.info("📁 PARTITIONED DATASETS CREATED:")
+            for timeframe, dataset_path in results['partitioned_datasets'].items():
+                logger.info(f"  • {timeframe}: {dataset_path}")
+        
+        if results.get('success'):
+            logger.info("✅ RESAMPLING COMPLETED SUCCESSFULLY!")
+        else:
+            logger.error(f"❌ RESAMPLING FAILED: {results.get('error', 'Unknown error')}")
+        
         return results
 
     @validate_data_quality()

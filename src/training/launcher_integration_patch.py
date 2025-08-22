@@ -7,7 +7,7 @@ This module contains the updated training functions that use the optimized train
 import asyncio
 import os
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable, Optional
 
 from src.config.computational_optimization_config import get_optimization_config
 from src.training.enhanced_training_manager_optimized import (
@@ -28,10 +28,10 @@ class OptimizedAresLauncherMixin:
 
     def __init__(self) -> None:
         # Initialize optimization components
-        self.optimization_enabled = True
-        self.memory_profiler = None
-        self.leak_detector = None
-        self.optimization_factory = None
+        self.optimization_enabled: bool = True
+        self.memory_profiler: Optional[Any] = None
+        self.leak_detector: Optional[Any] = None
+        self.optimization_factory: Optional[OptimizedTrainingFactory] = None
 
     def _setup_optimization_components(self, config: dict[str, Any]) -> None:
         """Setup optimization components if enabled."""
@@ -55,7 +55,7 @@ class OptimizedAresLauncherMixin:
 
             self.logger.info("✅ Optimization components initialized")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             error_msg = f"Failed to setup optimization components: {e}"
             self.logger.exception(error_msg)
             self.print(failed(error_msg))
@@ -87,7 +87,7 @@ class OptimizedAresLauncherMixin:
             default_return=False,
             context="optimized_enhanced_training_pipeline",
         )
-        async def run_optimized_enhanced_training() -> bool | None:
+        async def run_optimized_enhanced_training() -> bool:
             """Execute optimized enhanced training using EnhancedTrainingManagerOptimized."""
             from src.database.sqlite_manager import SQLiteManager
 
@@ -109,7 +109,7 @@ class OptimizedAresLauncherMixin:
                 # Initialize database manager
                 logger.info("📊 STEP 0: Initializing Database Manager...")
 
-                default_config = {
+                default_config: dict[str, Any] = {
                     "database": {
                         "sqlite_path": "data/ares.db",
                         "backup_enabled": True,
@@ -131,12 +131,10 @@ class OptimizedAresLauncherMixin:
                 logger.info("🔧 STEP 1: Setting up optimization configuration...")
 
                 # Get optimization config with custom settings for training mode
-                custom_optimization = {}
-
                 if training_mode == "blank":
                     # More aggressive optimizations for blank mode
-                    custom_optimization = {
-                        "parallelization": {"max_workers": min(os.cpu_count(), 6)},
+                    custom_optimization: dict[str, Any] = {
+                        "parallelization": {"max_workers": min(os.cpu_count() or 1, 6)},
                         "memory_management": {"memory_threshold": 0.75},
                         "early_stopping": {"patience": 5, "min_trials": 10},
                         "caching": {"max_cache_size": 500},
@@ -144,7 +142,7 @@ class OptimizedAresLauncherMixin:
                 else:
                     # Conservative optimizations for full training
                     custom_optimization = {
-                        "parallelization": {"max_workers": min(os.cpu_count(), 8)},
+                        "parallelization": {"max_workers": min(os.cpu_count() or 1, 8)},
                         "memory_management": {"memory_threshold": 0.8},
                         "early_stopping": {"patience": 10, "min_trials": 20},
                         "caching": {"max_cache_size": 1000},
@@ -152,7 +150,7 @@ class OptimizedAresLauncherMixin:
 
                 optimization_config = get_optimization_config(custom_optimization)
 
-                training_config = {
+                training_config: dict[str, Any] = {
                     "enhanced_training_manager": {
                         "enhanced_training_interval": 3600,
                         "max_enhanced_training_history": 100,
@@ -218,16 +216,27 @@ class OptimizedAresLauncherMixin:
 
                 # Check for memory leaks
                 if self.leak_detector:
-                    leak_results = self.leak_detector.check_for_leaks()
-                    if leak_results["leak_detected"]:
-                        for _indicator in leak_results.get("indicators", []):
-    pass  # TODO: Add proper implementation
+                    leak_results: dict[str, Any] = self.leak_detector.check_for_leaks()
+                    if leak_results.get("leak_detected"):
+                        indicators = leak_results.get("indicators", [])
+                        if indicators:
+                            for indicator in indicators:
+                                logger.warning(f"⚠️ Memory leak indicator: {indicator}")
+                        summary = leak_results.get("summary")
+                        if summary:
+                            logger.warning(f"⚠️ Memory leak summary: {summary}")
                     else:
                         logger.info("✅ No memory leaks detected")
 
                 # Get optimization statistics
                 optimization_stats = training_manager.get_optimization_stats()
-                logger.info(f"📊 Optimization Statistics: {optimization_stats}")
+                if isinstance(optimization_stats, dict) and optimization_stats:
+                    for key, value in optimization_stats.items():
+                        if isinstance(value, bool):
+                            status = "✅" if value else "❌"
+                            logger.info(f"📈 {key}: {status}")
+                        else:
+                            logger.info(f"📈 {key}: {value}")
 
                 # Take final memory snapshot
                 if self.memory_profiler:
@@ -249,18 +258,10 @@ class OptimizedAresLauncherMixin:
                     logger.info(f"📊 Training Mode: {training_mode}")
                     logger.info("🔧 WITH OPTIMIZATIONS")
 
-                    # Print optimization summary
-                    if optimization_stats:
-                        for value in optimization_stats.values():
-                            if isinstance(value, bool):
-                                status = "✅" if value else "❌"
-                            else:
-                                pass
-
                     return True
                 return False
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.exception(
                     f"💥 OPTIMIZED ENHANCED TRAINING PIPELINE FAILED: {e!s}",
                 )
@@ -283,17 +284,17 @@ class OptimizedAresLauncherMixin:
                         self.memory_profiler.stop_continuous_monitoring()
                         logger.info("🧹 Memory profiler stopped")
 
-                except Exception:
+                except Exception:  # noqa: BLE001
+                    # Best-effort cleanup
                     pass
 
         # Run the async optimized training
-
         success = asyncio.run(run_optimized_enhanced_training())
 
         if success:
             self.logger.info(f"✅ {mode_display} completed successfully")
             return True
-        self.print(failed("❌ {mode_display} failed"))
+        self.print(failed(f"❌ {mode_display} failed"))
         return False
 
     def run_optimized_enhanced_blank_training(
@@ -301,7 +302,7 @@ class OptimizedAresLauncherMixin:
         symbol: str,
         exchange: str,
         with_gui: bool = False,
-    ):
+    ) -> bool:
         """Run optimized enhanced blank training."""
         return self._run_optimized_unified_training(
             symbol=symbol,
@@ -316,7 +317,7 @@ class OptimizedAresLauncherMixin:
         symbol: str,
         exchange: str,
         with_gui: bool = False,
-    ):
+    ) -> bool:
         """Run optimized enhanced backtesting."""
         return self._run_optimized_unified_training(
             symbol=symbol,
@@ -336,10 +337,10 @@ class OptimizedAresLauncherMixin:
         }
 
 
-def create_optimized_launcher_patch():
+def create_optimized_launcher_patch() -> Callable[[Any], Any]:
     """Create a patch that can be applied to the existing AresLauncher."""
 
-    def patch_launcher(launcher_instance):
+    def patch_launcher(launcher_instance: Any) -> Any:
         """Apply optimization patches to an existing launcher instance."""
         # Add optimization attributes
         launcher_instance.optimization_enabled = True
@@ -382,7 +383,7 @@ def create_optimized_launcher_patch():
 
 
 # Quick integration function for immediate use
-def enable_optimizations_in_launcher():
+def enable_optimizations_in_launcher() -> Optional[Callable[[Any], Any]]:
     """Quick function to enable optimizations in the current launcher.
     This can be called from ares_launcher.py to enable the new features.
     """
@@ -398,5 +399,5 @@ def enable_optimizations_in_launcher():
     try:
         # This would be used in the actual launcher file
         return create_optimized_launcher_patch()
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None

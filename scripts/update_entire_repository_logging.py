@@ -9,12 +9,14 @@ throughout the entire Ares trading bot codebase to make issues more visible.
 from pathlib import Path
 import re
 import sys
+from typing import Tuple, List
 
 from src.utils.warning_symbols import warning
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
+
 
 def get_warning_symbol_function(message: str, log_level: str = "error") -> str:
     """
@@ -56,6 +58,7 @@ def get_warning_symbol_function(message: str, log_level: str = "error") -> str:
     if log_level in ["error", "exception", "critical"]:
         return "error"
     return "warning"
+
 
 def should_skip_file(file_path: str) -> bool:
     """
@@ -180,7 +183,8 @@ def should_skip_file(file_path: str) -> bool:
 
     return False
 
-def update_file_logging_messages(file_path: str) -> tuple[int , int]:
+
+def update_file_logging_messages(file_path: str) -> Tuple[int, int]:
     """
     Update logging messages in a file with warning symbols.
 
@@ -198,45 +202,43 @@ def update_file_logging_messages(file_path: str) -> tuple[int , int]:
         original_content = content
 
         # Patterns to match various logging and print statements
-        patterns = [
-        # print(error("message")))
+        patterns: list[tuple[str, str]] = [
+            # logger.error("message")
             (r'logger\.error\(f?"([^"]*)"', "error"),
-        # print(warning("message")))
+            # logger.warning("message")
             (r'logger\.warning\(f?"([^"]*)"', "warning"),
-        # print(error("message")))
+            # logger.exception("message")
             (r'logger\.exception\(f?"([^"]*)"', "exception"),
-        # print(error("message")))
+            # logger.critical("message")
             (r'logger\.critical\(f?"([^"]*)"', "critical"),
-        # print(warning("message"))) -> print(failed("message"))
+            # print("❌ message") -> print(failed("message"))
             (r'print\(f?"❌ ([^"]*)"', "failed"),
-        # print(warning("message"))) -> print(warning("message"))
+            # print("⚠️ message") -> print(warning("message"))
             (r'print\(f?"⚠️ ([^"]*)"', "warning"),
-        # print(error("message"))) -> print(error("message"))
+            # print("🚨 message") -> print(error("message"))
             (r'print\(f?"🚨 ([^"]*)"', "error"),
-        # print(error("message"))) -> print(critical("message"))
+            # print("💥 message") -> print(critical("message"))
             (r'print\(f?"💥 ([^"]*)"', "critical"),
-        # print(warning("message"))) -> print(problem("message"))
+            # print("🔴 message") -> print(problem("message"))
             (r'print\(f?"🔴 ([^"]*)"', "problem"),
-        # print(warning("message"))) -> print(warning("message"))
+            # print("❗ message") -> print(warning("message"))
             (r'print\(f?"❗ ([^"]*)"', "warning"),
-        # print(warning("message"))) -> print(warning("message"))
+            # print("‼ message") -> print(warning("message"))
             (r'print\(f?"‼ ([^"]*)"', "warning"),
-        # print(error("message"))) -> print(error("message"))
+            # print("⭕ message") -> print(error("message"))
             (r'print\(f?"⭕ ([^"]*)"', "error"),
-        # print(error("message"))) -> print(error("message"))
+            # print("🛑 message") -> print(error("message"))
             (r'print\(f?"🛑 ([^"]*)"', "error"),
-        # print(error("message"))) -> print(critical("message"))
+            # print("💀 message") -> print(critical("message"))
             (r'print\(f?"💀 ([^"]*)"', "critical"),
-        # print(error("message"))) -> print(critical("message"))
+            # print("💣 message") -> print(critical("message"))
             (r'print\(f?"💣 ([^"]*)"', "critical"),
-        # print(warning("message"))) -> print(problem("message"))
+            # print("● message") -> print(problem("message"))
             (r'print\(f?"● ([^"]*)"', "problem"),
-        # print(warning("message"))) -> print(problem("message"))
-            (r'print\(f?"🔴 ([^"]*)"', "problem"),
         ]
 
         for pattern, default_func in patterns:
-        # Find all matches
+            # Find all matches
             matches = list(re.finditer(pattern, content))
             for match in reversed(matches):  # Process in reverse to avoid index issues
                 message = match.group(1)
@@ -268,6 +270,7 @@ def update_file_logging_messages(file_path: str) -> tuple[int , int]:
         print(f"Error updating {file_path}: {e}")
         return 0, 0
 
+
 def add_warning_symbols_import(file_path: str) -> bool:
     """
     Add warning symbols import to a file if it doesn't already have it.
@@ -279,7 +282,7 @@ def add_warning_symbols_import(file_path: str) -> bool:
         True if import was added, False otherwise
     """
     try:
-        with open(file_path, encoding = "utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             content = f.read()
 
         # Check if warning symbols are already imported
@@ -313,50 +316,52 @@ def add_warning_symbols_import(file_path: str) -> bool:
                 match.group(0) + "\n" + warning_import,
             )
 
-            with open(file_path, "w", encoding = "utf-8") as f:
-                f.write(new_content)
-
-            print(f"✅ Added warning symbols import to {file_path}")
-            return True
-
-    # Try to find any import line to add after
-    import_pattern = r"^import .*$|^from .* import .*$"
-    lines = content.split("\n")
-
-    for i , line in enumerate(lines):
-        if re.match(import_pattern, line.strip()):
-            # Add warning symbols import after this import
-            warning_import = (
-                "from src.utils.warning_symbols import (\n"
-                "    error,\n"
-                "    warning,\n"
-                "    problem,\n"
-                "    failed,\n"
-                "    missing,\n"
-                "    timeout,\n"
-                "    connection_error,\n"
-                "    validation_error,\n"
-                "    initialization_error,\n"
-                "    execution_error\n"
-                ")"
-            )
-
-            lines.insert(i + 1, warning_import)
-            new_content = "\n".join(lines)
-
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(new_content)
 
             print(f"✅ Added warning symbols import to {file_path}")
             return True
 
-    print(f" Could not find suitable import location in {file_path}")
-    return False
+        # Try to find any import line to add after
+        import_pattern = r"^import .*$|^from .* import .*$"
+        lines = content.split("\n")
 
-except Exception as e:
-    print(f"Error adding import to {file_path}: {e}")
+        for i, line in enumerate(lines):
+            if re.match(import_pattern, line.strip()):
+                # Add warning symbols import after this import
+                warning_import = (
+                    "from src.utils.warning_symbols import (\n"
+                    "    error,\n"
+                    "    warning,\n"
+                    "    problem,\n"
+                    "    failed,\n"
+                    "    missing,\n"
+                    "    timeout,\n"
+                    "    connection_error,\n"
+                    "    validation_error,\n"
+                    "    initialization_error,\n"
+                    "    execution_error\n"
+                    ")"
+                )
 
-def find_python_files(directory: Path) -> list[Path]:
+                lines.insert(i + 1, warning_import)
+                new_content = "\n".join(lines)
+
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(new_content)
+
+                print(f"✅ Added warning symbols import to {file_path}")
+                return True
+
+        print(f" Could not find suitable import location in {file_path}")
+        return False
+
+    except Exception as e:
+        print(f"Error adding import to {file_path}: {e}")
+        return False
+
+
+def find_python_files(directory: Path) -> List[Path]:
     """
     Recursively find all Python files in a directory.
 
@@ -366,7 +371,7 @@ def find_python_files(directory: Path) -> list[Path]:
     Returns:
         List of Python file paths
     """
-    python_files = []
+    python_files: List[Path] = []
 
     try:
         for item in directory.rglob("*.py"):
@@ -377,7 +382,8 @@ def find_python_files(directory: Path) -> list[Path]:
 
     return python_files
 
-def main():
+
+def main() -> None:
     """Main function to update all Python files in the repository."""
     print("🚀 Starting comprehensive repository logging update...")
     print(f"📁 Project root: {project_root}")
@@ -417,6 +423,7 @@ def main():
         )
 
     print("\n🎉 Repository logging update completed successfully!")
+
 
 if __name__ == "__main__":
     main()

@@ -9,7 +9,6 @@ import asyncio
 import io
 import ssl
 import sys
-import time
 import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -46,7 +45,11 @@ class ComprehensiveGapFiller:
             await self.session.close()
             self.session = None
 
-    def detect_gaps_in_aggtrades_file(self, file_path: Path, min_gap_seconds: int = 5) -> list[dict[str, Any]]:
+    def detect_gaps_in_aggtrades_file(
+        self,
+        file_path: Path,
+        min_gap_seconds: int = 5,
+    ) -> list[dict[str, Any]]:
         """Detect gaps in a single aggtrades file."""
         try:
             # Read the file (Parquet or CSV)
@@ -68,7 +71,9 @@ class ComprehensiveGapFiller:
             df = df.sort_values("timestamp").reset_index(drop=True)
 
             # Calculate time differences
-            df["time_diff"] = pd.to_datetime(df["timestamp"]).diff().dt.total_seconds()
+            df["time_diff"] = (
+                pd.to_datetime(df["timestamp"]).diff().dt.total_seconds()
+            )
 
             # Find gaps larger than threshold
             gaps: list[dict[str, Any]] = []
@@ -76,7 +81,9 @@ class ComprehensiveGapFiller:
 
             for idx, row in gap_rows.iterrows():
                 if idx > 0:
-                    gap_start = pd.to_datetime(df.loc[idx - 1, "timestamp"]).to_pydatetime()
+                    gap_start = pd.to_datetime(
+                        df.loc[idx - 1, "timestamp"]
+                    ).to_pydatetime()
                     gap_end = pd.to_datetime(row["timestamp"]).to_pydatetime()
                     gap_duration = (gap_end - gap_start).total_seconds()
 
@@ -95,7 +102,11 @@ class ComprehensiveGapFiller:
         except Exception:
             return []
 
-    def detect_gaps_in_futures_file(self, file_path: Path, min_gap_hours: int = 1) -> list[dict[str, Any]]:
+    def detect_gaps_in_futures_file(
+        self,
+        file_path: Path,
+        min_gap_hours: int = 1,
+    ) -> list[dict[str, Any]]:
         """Detect gaps in a single futures file."""
         try:
             # Read the file (Parquet or CSV)
@@ -117,17 +128,24 @@ class ComprehensiveGapFiller:
             df = df.sort_values("timestamp").reset_index(drop=True)
 
             # Calculate time differences in hours
-            df["time_diff_hours"] = pd.to_datetime(df["timestamp"]).diff().dt.total_seconds() / 3600
+            df["time_diff_hours"] = (
+                pd.to_datetime(df["timestamp"]).diff().dt.total_seconds() / 3600
+            )
 
-            # Find gaps larger than threshold (futures typically have 8-hour funding intervals)
+            # Find gaps larger than threshold
+            # (futures typically have 8-hour funding intervals)
             gaps: list[dict[str, Any]] = []
             gap_rows = df[df["time_diff_hours"] > min_gap_hours]
 
             for idx, row in gap_rows.iterrows():
                 if idx > 0:
-                    gap_start = pd.to_datetime(df.loc[idx - 1, "timestamp"]).to_pydatetime()
+                    gap_start = pd.to_datetime(
+                        df.loc[idx - 1, "timestamp"]
+                    ).to_pydatetime()
                     gap_end = pd.to_datetime(row["timestamp"]).to_pydatetime()
-                    gap_duration_hours = (gap_end - gap_start).total_seconds() / 3600
+                    gap_duration_hours = (
+                        (gap_end - gap_start).total_seconds() / 3600
+                    )
 
                     gaps.append(
                         {
@@ -144,7 +162,11 @@ class ComprehensiveGapFiller:
         except Exception:
             return []
 
-    def detect_gaps_in_klines_file(self, file_path: Path, min_gap_minutes: int = 2) -> list[dict[str, Any]]:
+    def detect_gaps_in_klines_file(
+        self,
+        file_path: Path,
+        min_gap_minutes: int = 2,
+    ) -> list[dict[str, Any]]:
         """Detect gaps in a single klines file."""
         try:
             # Read the file (Parquet or CSV)
@@ -166,7 +188,9 @@ class ComprehensiveGapFiller:
             df = df.sort_values("timestamp").reset_index(drop=True)
 
             # Calculate time differences in minutes
-            df["time_diff_minutes"] = pd.to_datetime(df["timestamp"]).diff().dt.total_seconds() / 60
+            df["time_diff_minutes"] = (
+                pd.to_datetime(df["timestamp"]).diff().dt.total_seconds() / 60
+            )
 
             # Find gaps larger than threshold
             gaps: list[dict[str, Any]] = []
@@ -174,9 +198,13 @@ class ComprehensiveGapFiller:
 
             for idx, row in gap_rows.iterrows():
                 if idx > 0:
-                    gap_start = pd.to_datetime(df.loc[idx - 1, "timestamp"]).to_pydatetime()
+                    gap_start = pd.to_datetime(
+                        df.loc[idx - 1, "timestamp"]
+                    ).to_pydatetime()
                     gap_end = pd.to_datetime(row["timestamp"]).to_pydatetime()
-                    gap_duration_minutes = (gap_end - gap_start).total_seconds() / 60
+                    gap_duration_minutes = (
+                        (gap_end - gap_start).total_seconds() / 60
+                    )
 
                     gaps.append(
                         {
@@ -238,7 +266,8 @@ class ComprehensiveGapFiller:
 
         try:
             # Placeholder for real exchange client integration
-            # Return empty list to indicate no additional data from regular API in this stub
+            # Return empty list to indicate no additional data from
+            # regular API in this stub
             return []
         except Exception:
             return []
@@ -257,7 +286,10 @@ class ComprehensiveGapFiller:
 
         base_url = "https://data.binance.vision"
         date_str = gap_start.strftime("%Y-%m-%d")
-        path = f"data/futures/{market_segment}/daily/aggTrades/{symbol}/{symbol}-aggTrades-{date_str}.zip"
+        path = (
+            f"data/futures/{market_segment}/daily/aggTrades/{symbol}/"
+            f"{symbol}-aggTrades-{date_str}.zip"
+        )
         url = f"{base_url}/{path}"
 
         try:
@@ -283,9 +315,15 @@ class ComprehensiveGapFiller:
 
             # Assign column names based on Binance schema
             if df.shape[1] >= 7:
-                df.columns = ["a", "p", "q", "f", "l", "T", "m"] + list(
-                    range(7, df.shape[1])
-                )
+                df.columns = [
+                    "a",
+                    "p",
+                    "q",
+                    "f",
+                    "l",
+                    "T",
+                    "m",
+                ] + list(range(7, df.shape[1]))
 
             # Process data types
             for col in ["a", "f", "l", "T"]:
@@ -310,7 +348,9 @@ class ComprehensiveGapFiller:
                 return []
 
             # Convert to list of dicts
-            return df[["a", "p", "q", "f", "l", "T", "m"]].to_dict(orient="records")
+            return df[["a", "p", "q", "f", "l", "T", "m"]].to_dict(
+                orient="records",
+            )
 
         except Exception:
             return []
@@ -325,10 +365,15 @@ class ComprehensiveGapFiller:
         """Fetch futures data using appropriate source based on date."""
         if self._should_use_binance_vision(gap_start):
             return await self._fetch_futures_from_binance_vision(
-                symbol=symbol, gap_start=gap_start, gap_end=gap_end, market_segment=market_segment
+                symbol=symbol,
+                gap_start=gap_start,
+                gap_end=gap_end,
+                market_segment=market_segment,
             )
         return await self._fetch_futures_from_regular_api(
-            symbol=symbol, gap_start=gap_start, gap_end=gap_end,
+            symbol=symbol,
+            gap_start=gap_start,
+            gap_end=gap_end,
         )
 
     async def _fetch_futures_from_regular_api(
@@ -337,7 +382,9 @@ class ComprehensiveGapFiller:
         gap_start: datetime,
         gap_end: datetime,
     ) -> list[dict[str, Any]]:
-        """Download futures funding rate data from regular Binance API for recent data."""
+        """Download futures funding rate data from regular Binance API for
+        recent data.
+        """
         await self._ensure_session()
 
         try:
@@ -353,12 +400,17 @@ class ComprehensiveGapFiller:
         gap_end: datetime,
         market_segment: str = "um",
     ) -> list[dict[str, Any]]:
-        """Download futures funding rate data from Binance Vision for a specific gap period."""
+        """Download futures funding rate data from Binance Vision for a
+        specific gap period.
+        """
         await self._ensure_session()
 
         base_url = "https://data.binance.vision"
         date_str = gap_start.strftime("%Y-%m-%d")
-        path = f"data/futures/{market_segment}/daily/fundingRate/{symbol}/{symbol}-fundingRate-{date_str}.zip"
+        path = (
+            f"data/futures/{market_segment}/daily/fundingRate/{symbol}/"
+            f"{symbol}-fundingRate-{date_str}.zip"
+        )
         url = f"{base_url}/{path}"
 
         try:
@@ -384,7 +436,9 @@ class ComprehensiveGapFiller:
             # Process data types
             df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
             if "fundingRate" in df.columns:
-                df["fundingRate"] = pd.to_numeric(df["fundingRate"], errors="coerce")
+                df["fundingRate"] = pd.to_numeric(
+                    df["fundingRate"], errors="coerce",
+                )
 
             # Filter to gap period
             df = df[(df["timestamp"] >= gap_start) & (df["timestamp"] < gap_end)]
@@ -409,10 +463,17 @@ class ComprehensiveGapFiller:
         """Fetch klines data using appropriate source based on date."""
         if self._should_use_binance_vision(gap_start):
             return await self._fetch_klines_from_binance_vision(
-                symbol=symbol, gap_start=gap_start, gap_end=gap_end, interval=interval, market_segment=market_segment
+                symbol=symbol,
+                gap_start=gap_start,
+                gap_end=gap_end,
+                interval=interval,
+                market_segment=market_segment,
             )
         return await self._fetch_klines_from_regular_api(
-            symbol=symbol, gap_start=gap_start, gap_end=gap_end, interval=interval,
+            symbol=symbol,
+            gap_start=gap_start,
+            gap_end=gap_end,
+            interval=interval,
         )
 
     async def _fetch_klines_from_regular_api(
@@ -444,7 +505,10 @@ class ComprehensiveGapFiller:
 
         base_url = "https://data.binance.vision"
         date_str = gap_start.strftime("%Y-%m-%d")
-        path = f"data/futures/{market_segment}/daily/klines/{symbol}/{interval}/{symbol}-{interval}-{date_str}.zip"
+        path = (
+            f"data/futures/{market_segment}/daily/klines/{symbol}/{interval}/"
+            f"{symbol}-{interval}-{date_str}.zip"
+        )
         url = f"{base_url}/{path}"
 
         try:
@@ -481,7 +545,11 @@ class ComprehensiveGapFiller:
                 return []
 
             # Convert to list of dicts
-            keep_cols = [c for c in ["timestamp", "open", "high", "low", "close", "volume"] if c in df.columns]
+            keep_cols = [
+                c
+                for c in ["timestamp", "open", "high", "low", "close", "volume"]
+                if c in df.columns
+            ]
             return df[keep_cols].to_dict(orient="records")
 
         except Exception:
@@ -513,7 +581,9 @@ class ComprehensiveGapFiller:
             df = df.rename(columns=column_mapping)
 
         # Convert timestamp from milliseconds to datetime
-        if "timestamp" in df.columns and str(df["timestamp"].dtype).startswith(("int", "float")):
+        if "timestamp" in df.columns and str(df["timestamp"].dtype).startswith(
+            ("int", "float"),
+        ):
             df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
 
         # Ensure proper data types
@@ -580,7 +650,10 @@ class ComprehensiveGapFiller:
                     )
                 elif data_type == "klines":
                     missing_data = await self._fetch_klines_data(
-                        symbol=symbol, gap_start=gap_start, gap_end=gap_end, interval="1m"
+                        symbol=symbol,
+                        gap_start=gap_start,
+                        gap_end=gap_end,
+                        interval="1m",
                     )
 
                 if missing_data and len(missing_data) > 0:
@@ -626,7 +699,9 @@ class ComprehensiveGapFiller:
                             timestamp = int(ts_val)
                         elif isinstance(ts_val, str):
                             try:
-                                timestamp = int(pd.to_datetime(ts_val).value // 10**6)
+                                timestamp = int(
+                                    pd.to_datetime(ts_val).value // 10**6,
+                                )
                             except Exception:
                                 timestamp = 0
                         elif isinstance(ts_val, pd.Timestamp):
@@ -666,8 +741,10 @@ class ComprehensiveGapFiller:
                         [df_existing, df_missing], ignore_index=True
                     )
                     if "timestamp" in df_combined.columns:
-                        df_combined = df_combined.sort_values("timestamp").drop_duplicates(
-                            subset=["timestamp"]
+                        df_combined = (
+                            df_combined.sort_values("timestamp").drop_duplicates(
+                                subset=["timestamp"],
+                            )
                         )
 
                     # Save back in the same format
@@ -722,7 +799,11 @@ class ComprehensiveGapFiller:
 
         try:
             # Get all 1m klines files
-            klines_files = list(self.data_cache_path.glob(f"klines_{exchange}_{symbol}_1m_*.parquet"))
+            klines_files = list(
+                self.data_cache_path.glob(
+                    f"klines_{exchange}_{symbol}_1m_*.parquet",
+                ),
+            )
             if not klines_files:
                 results["success"] = False
                 results["errors"].append("No 1m klines files found")
@@ -744,20 +825,27 @@ class ComprehensiveGapFiller:
 
             # Combine all 1m data
             combined_1m = pd.concat(all_1m_data, ignore_index=True)
-            combined_1m = combined_1m.sort_values("timestamp").drop_duplicates(subset=["timestamp"]) if "timestamp" in combined_1m.columns else combined_1m
+            if "timestamp" in combined_1m.columns:
+                combined_1m = combined_1m.sort_values("timestamp").drop_duplicates(
+                    subset=["timestamp"],
+                )
 
             # Regenerate each timeframe
             for timeframe in timeframes:
                 try:
                     # Resample to the target timeframe
-                    resampled_df = self._resample_to_timeframe(combined_1m.copy(), timeframe)
+                    resampled_df = self._resample_to_timeframe(
+                        combined_1m.copy(), timeframe,
+                    )
 
                     if len(resampled_df) == 0:
                         results["failed_timeframes"].append(timeframe)
                         continue
 
                     # Save the resampled data
-                    output_path = self._save_resampled_data(resampled_df, symbol, exchange, timeframe)
+                    output_path = self._save_resampled_data(
+                        resampled_df, symbol, exchange, timeframe,
+                    )
 
                     if output_path:
                         results["regenerated_files"][timeframe] = str(output_path)
@@ -770,7 +858,7 @@ class ComprehensiveGapFiller:
                     results["errors"].append(f"{timeframe}: {e}")
 
             # Summary
-            _ = len(results["regenerated_files"])  # keep for potential future logging
+            _ = len(results["regenerated_files"])  # keep for potential logging
             failed = len(results["failed_timeframes"])
 
             if failed > 0 and failed == len(timeframes):
@@ -817,7 +905,13 @@ class ComprehensiveGapFiller:
 
         return resampled.reset_index()
 
-    def _save_resampled_data(self, df: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Path | None:
+    def _save_resampled_data(
+        self,
+        df: pd.DataFrame,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+    ) -> Path | None:
         """Save resampled data to parquet file."""
         if len(df) == 0:
             return None
@@ -845,9 +939,15 @@ class ComprehensiveGapFiller:
         klines_csv_pattern = f"klines_{exchange}_{symbol}_1m_*.csv"
 
         # Get all files
-        aggtrades_files = list(self.data_cache_path.glob(aggtrades_pattern)) + list(self.data_cache_path.glob(aggtrades_csv_pattern))
-        futures_files = list(self.data_cache_path.glob(futures_pattern)) + list(self.data_cache_path.glob(futures_csv_pattern))
-        klines_files = list(self.data_cache_path.glob(klines_pattern)) + list(self.data_cache_path.glob(klines_csv_pattern))
+        aggtrades_files = list(self.data_cache_path.glob(aggtrades_pattern)) + list(
+            self.data_cache_path.glob(aggtrades_csv_pattern)
+        )
+        futures_files = list(self.data_cache_path.glob(futures_pattern)) + list(
+            self.data_cache_path.glob(futures_csv_pattern)
+        )
+        klines_files = list(self.data_cache_path.glob(klines_pattern)) + list(
+            self.data_cache_path.glob(klines_csv_pattern)
+        )
 
         all_files: list[tuple[Path, str]] = []
 
@@ -903,14 +1003,18 @@ class ComprehensiveGapFiller:
                     else:
                         total_gaps_failed += 1
 
-                # Regenerate timeframe files after each successful gap fill (only for aggtrades)
+                # Regenerate timeframe files after each successful gap fill
+                # (only for aggtrades)
                 if data_type == "aggtrades" and total_gaps_filled > 0:
-                    timeframe_results = await self.regenerate_timeframe_files(symbol, exchange)
+                    timeframe_results = await self.regenerate_timeframe_files(
+                        symbol, exchange,
+                    )
                     if timeframe_results.get("success"):
                         # Count regenerated files as succeeded; no-op otherwise
                         _ = len(timeframe_results.get("regenerated_files", {}))
                     else:
-                        # If regeneration failed, mark as failed timeframe work, not gap filling failure
+                        # If regeneration failed, mark as failed timeframe work,
+                        # not gap filling failure
                         pass
 
                 # Rate limiting between gaps

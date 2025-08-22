@@ -83,7 +83,17 @@ from src.utils.logger import setup_logging
 class OptimizationCache:
     """Simple caches for prepared data and generated features."""
 
-    data_cache: dict[str, Tuple[np.ndarray | None, np.ndarray | None, np.ndarray | None, np.ndarray | None, np.ndarray | None, np.ndarray | None]]
+    data_cache: dict[
+        str,
+        Tuple[
+            np.ndarray | None,
+            np.ndarray | None,
+            np.ndarray | None,
+            np.ndarray | None,
+            np.ndarray | None,
+            np.ndarray | None,
+        ],
+    ]
     feature_cache: dict[str, np.ndarray]
 
     def __init__(self) -> None:
@@ -255,7 +265,9 @@ class VectorizedOptunaOptimizer:
 
             return _RFC(**kwargs)
         except Exception as exc:  # pragma: no cover
-            raise RuntimeError("scikit-learn is required for random_forest model") from exc
+            raise RuntimeError(
+                "scikit-learn is required for random_forest model",
+            ) from exc
 
     # Vectorized hyperparameter spaces
 
@@ -508,7 +520,8 @@ class VectorizedOptunaOptimizer:
     ) -> np.ndarray:
         """Vectorized feature generation using matrix operations."""
         try:
-            # Simple linear combination of columns using the normalized weights as a proxy
+            # Simple linear combination of columns using the normalized weights
+            # as a proxy
             weights = np.array(
                 [
                     params.get("touch_count_weight", 0.2),
@@ -538,6 +551,7 @@ class VectorizedOptunaOptimizer:
     def _jit(self) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         if self.enable_jit and jit is not None:  # pragma: no cover - runtime dependent
             return jit(nopython=True, parallel=True)
+
         # no-op decorator
         def _noop(func: Callable[..., Any]) -> Callable[..., Any]:
             return func
@@ -545,14 +559,23 @@ class VectorizedOptunaOptimizer:
         return _noop
 
     @_jit
-    def _vectorized_signal_calculation(self, strength_scores: np.ndarray, min_confidence: float, high_confidence: float = 0.9) -> np.ndarray:  # type: ignore[misc]
+    def _vectorized_signal_calculation(  # type: ignore[misc]
+        self,
+        strength_scores: np.ndarray,
+        min_confidence: float,
+        high_confidence: float = 0.9,
+    ) -> np.ndarray:
         """JIT-compiled vectorized signal calculation."""
         signals = np.zeros_like(strength_scores)
         # Use plain numpy operations (jit may replace loop when available)
         signals = np.where(strength_scores > high_confidence, 1.0, signals)
         signals = np.where(strength_scores < -high_confidence, -1.0, signals)
-        signals = np.where((strength_scores > min_confidence) & (signals == 0), 0.5, signals)
-        signals = np.where((strength_scores < -min_confidence) & (signals == 0), -0.5, signals)
+        signals = np.where(
+            (strength_scores > min_confidence) & (signals == 0), 0.5, signals,
+        )
+        signals = np.where(
+            (strength_scores < -min_confidence) & (signals == 0), -0.5, signals,
+        )
         return signals
 
     def _vectorized_performance_calculation(
@@ -562,7 +585,9 @@ class VectorizedOptunaOptimizer:
     ) -> dict[str, float]:
         """Vectorized performance calculation."""
         strategy_returns = signals * returns
-        sharpe_ratio = float(np.mean(strategy_returns) / (np.std(strategy_returns) + 1e-8))
+        sharpe_ratio = float(
+            np.mean(strategy_returns) / (np.std(strategy_returns) + 1e-8)
+        )
         win_rate = float(np.mean(strategy_returns > 0))
         positive_returns = float(np.sum(strategy_returns[strategy_returns > 0]))
         negative_returns = float(np.sum(np.abs(strategy_returns[strategy_returns < 0])))
@@ -590,7 +615,7 @@ class VectorizedOptunaOptimizer:
 
         # Prepare batch data
         X_batch = cp.asarray(X) if self.enable_gpu and cp is not None else X
-        y_batch = cp.asarray(y) if self.enable_gpu and cp is not None else y
+        _ = cp.asarray(y) if self.enable_gpu and cp is not None else y
 
         # Batch process trials
         for i, trial in enumerate(trials):
@@ -611,7 +636,8 @@ class VectorizedOptunaOptimizer:
         cv_folds: int = 5,
         early_stopping_patience: int = 15,
         subsample_fraction: float = 0.7,
-        custom_objective: Callable[[optuna.Trial, np.ndarray, np.ndarray], float] | None = None,
+        custom_objective: Callable[[optuna.Trial, np.ndarray, np.ndarray], float]
+        | None = None,
         custom_space: Callable[[optuna.Trial], dict[str, Any]] | None = None,
         batch_size: int = 10,
     ) -> VectorizedOptimizationResult | None:
@@ -656,17 +682,33 @@ class VectorizedOptunaOptimizer:
                 if custom_objective is not None:
                     return float(custom_objective(trial, X_np, y_np))
 
-                params = custom_space(trial) if custom_space is not None else self._get_sr_space(trial)
+                params = (
+                    custom_space(trial)
+                    if custom_space is not None
+                    else self._get_sr_space(trial)
+                )
                 features = self._vectorized_feature_generation(X_np, params)
-                strength_scores = features if isinstance(features, np.ndarray) else np.zeros(len(X_np))
+                strength_scores = (
+                    features
+                    if isinstance(features, np.ndarray)
+                    else np.zeros(len(X_np))
+                )
                 signals = self._vectorized_signal_calculation(
                     strength_scores=strength_scores,
-                    min_confidence=float(params.get("min_sr_confidence", 0.6)),
-                    high_confidence=float(params.get("high_confidence_threshold", 0.8)),
+                    min_confidence=float(
+                        params.get("min_sr_confidence", 0.6),
+                    ),
+                    high_confidence=float(
+                        params.get("high_confidence_threshold", 0.8),
+                    ),
                 )
-                perf = self._vectorized_performance_calculation(signals, y_np.astype(float))
+                perf = self._vectorized_performance_calculation(
+                    signals, y_np.astype(float)
+                )
                 return float(
-                    0.4 * perf["sharpe_ratio"] + 0.3 * perf["win_rate"] + 0.3 * perf["profit_factor"]
+                    0.4 * perf["sharpe_ratio"]
+                    + 0.3 * perf["win_rate"]
+                    + 0.3 * perf["profit_factor"]
                 )
             except optuna.TrialPruned:
                 raise
@@ -765,7 +807,9 @@ class VectorizedOptunaOptimizer:
                 min_confidence=float(params["min_sr_confidence"]),
                 high_confidence=float(params["high_confidence_threshold"]),
             )
-            performance = self._vectorized_performance_calculation(signals, y.astype(float))
+            performance = self._vectorized_performance_calculation(
+                signals, y.astype(float)
+            )
             score = (
                 0.4 * performance["sharpe_ratio"]
                 + 0.3 * performance["win_rate"]
@@ -784,7 +828,9 @@ class VectorizedOptunaOptimizer:
             params = self._get_autoencoder_space(trial)
             # Vectorized autoencoder simulation
             complexity_factor = (
-                params.get("hidden_dim", 64) * params.get("num_layers", 2) / max(1, params.get("latent_dim", 16))
+                params.get("hidden_dim", 64)
+                * params.get("num_layers", 2)
+                / max(1, params.get("latent_dim", 16))
             )
             regularization_factor = (
                 params.get("dropout_rate", 0.2) + params.get("l2_reg", 1e-4) * 1000
@@ -810,7 +856,9 @@ class VectorizedOptunaOptimizer:
             timeout_factor = min(1.0, params.get("order_timeout_seconds", 30) / 60)
             slippage_factor = min(1.0, params.get("slippage_tolerance", 0.001) / 0.002)
             volume_factor = min(1.0, params.get("volume_threshold", 1.5) / 2.0)
-            success_rate = base_success_rate * timeout_factor * slippage_factor * volume_factor
+            success_rate = (
+                base_success_rate * timeout_factor * slippage_factor * volume_factor
+            )
             success_rate += float(np.random.normal(0, 0.05))
             return float(max(0.0, min(1.0, success_rate)))
         except Exception as e:  # pragma: no cover
@@ -846,19 +894,24 @@ class VectorizedOptunaOptimizer:
             try:
                 from sklearn.model_selection import StratifiedKFold, TimeSeriesSplit
             except Exception as exc:  # pragma: no cover
-                raise RuntimeError("scikit-learn is required for ML evaluation") from exc
+                raise RuntimeError(
+                    "scikit-learn is required for ML evaluation",
+                ) from exc
 
             if self.overfitting_prevention["time_series_split"]:
                 cv = TimeSeriesSplit(n_splits=max(2, cv_folds))
                 splits = cv.split(X)
             else:
-                cv = StratifiedKFold(n_splits=max(2, cv_folds), shuffle=True, random_state=42)
+                cv = StratifiedKFold(
+                    n_splits=max(2, cv_folds), shuffle=True, random_state=42,
+                )
                 splits = cv.split(X, y)
 
             scores: list[float] = []
             for train_idx, val_idx in splits:
                 X_train, X_val = X[train_idx], X[val_idx]
                 y_train, y_val = y[train_idx], y[val_idx]
+
                 model.fit(X_train, y_train)
                 score = float(getattr(model, "score")(X_val, y_val))
                 scores.append(score)
@@ -884,7 +937,7 @@ class VectorizedOptunaOptimizer:
             # Clear cache if too large
             if len(self.cache.feature_cache) > self.cache_size:
                 # Remove oldest entries
-                keys_to_remove = list(self.cache.feature_cache.keys())[
+                keys_to_remove = list(self.cache.feature_cache.keys())[  # noqa: E501
                     : len(self.cache.feature_cache) - self.cache_size
                 ]
                 for key in keys_to_remove:
@@ -898,7 +951,7 @@ class VectorizedOptunaOptimizer:
                     pass
 
             # Clear GPU memory if available
-            if self.enable_gpu and cp is not None:  # pragma: no cover - runtime dependent
+            if self.enable_gpu and cp is not None:  # pragma: no cover - runtime
                 try:
                     cp.get_default_memory_pool().free_all_blocks()
                 except Exception:

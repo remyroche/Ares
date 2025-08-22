@@ -1,4 +1,5 @@
-# src/training/steps/step12_final_parameters_optimization/hyperparameter_optimization_config.py
+# src/training/steps/step12_final_parameters_optimization/
+# hyperparameter_optimization_config.py
 
 """Hyperparameter Optimization Configuration.
 
@@ -440,7 +441,8 @@ class RegimeSpecificSearchSpace(SearchSpace):
             EvaluationMetric.SHARPE_RATIO,
             EvaluationMetric.TOTAL_RETURN,
         ]
-        # Meta-label mixture defaults for downstream use (can be tuned via study-specific configs)
+        # Meta-label mixture defaults for downstream use
+        # (can be tuned via study-specific configs)
         self.meta_label_mixture_defaults = {
             "alpha": 1.0,
             "beta": 1.0,
@@ -717,7 +719,8 @@ if __name__ == "__main__":
     print("\nOptimization plan summary:")
     print(
         f" - Total trials: {plan['summary']['total_trials']} | "
-        f"Estimated time (hrs): {plan['optimization_plan']['total_estimated_time_hours']:.1f} | "
+        f"Estimated time (hrs): "
+        f"{plan['optimization_plan']['total_estimated_time_hours']:.1f} | "
         f"Parallel: {plan['optimization_plan']['parallel_execution']}"
     )
 
@@ -725,6 +728,7 @@ if __name__ == "__main__":
     print("\nSearch spaces:")
     for _name, _space in config.search_spaces.items():
         print(
-            f" - {_name}: parameters={len(_space.parameters)} | trials={_space.n_trials} | "
+            f" - {_name}: parameters={len(_space.parameters)} | "
+            f"trials={_space.n_trials} | "
             f"strategy={_space.optimization_strategy.value}"
         )

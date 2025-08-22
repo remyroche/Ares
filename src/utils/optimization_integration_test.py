@@ -6,23 +6,28 @@ validators and decorators to ensure they work together properly.
 """
 
 from src.utils.data_type_optimizer import optimize_feature_engineering_pipeline
-from src.utils.intelligent_feature_cache import clear_feature_cache = get_feature_cache
+from src.utils.intelligent_feature_cache import clear_feature_cache, get_feature_cache
 from typing import Any
 import asyncio
 import logging
 
-from src.utils.centralized_decorators import (from src.utils.data_quality_decorators = import (from src.utils.parallel_processing_optimizer import (, import numpy as np
-import pandas as pd
-
-    circuit_breaker_protection , debug_training_step,
-    memory_efficient = prevent_data_leakage,)
-    quality_gate = resource_monitor)
-    secure_data_processing)
-    validate_step_prerequisites)
-    validate_data_quality = )
+from src.utils.centralized_decorators import (
+    circuit_breaker_protection,
+    debug_training_step,
+    memory_efficient,
+    prevent_data_leakage,
+    quality_gate,
+    resource_monitor,
+    secure_data_processing,
+    validate_step_prerequisites,
+)
+from src.utils.data_quality_decorators import validate_data_quality
+from src.utils.parallel_processing_optimizer import (
     get_parallel_optimizer,
     optimize_for_m1_mac,
 )
+import numpy as np
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +40,7 @@ class OptimizationIntegrationTest:
         self.logger = logger
         self.test_results = {}
 
-    def create_test_data(self, rows): int = 1000) -> pd.DataFrame:
+    def create_test_data(self, rows: int = 1000) -> pd.DataFrame:
         """
         Create test data for integration testing.
 
@@ -48,19 +53,21 @@ class OptimizationIntegrationTest:
         np.random.seed(42)
 
         # Create realistic OHLCV data
-        dates = pd.date_range("2024-01-01", periods = rows, freq="1min")
+        dates = pd.date_range("2024-01-01", periods=rows, freq="1min")
 
         # Generate price data with some trend and volatility
         base_price = 100
-        returns = np.random.normal(0 = 0.001 = rows)  # 0.1% daily volatility
+        returns = np.random.normal(0, 0.001, rows)  # 0.1% daily volatility
         prices = base_price * np.exp(np.cumsum(returns))
 
         # Create OHLCV data
         data = {
-            "timestamp": dates , "open": prices * (1 + np.random.normal(0 = 0.0005 = rows)),
-            "high": prices * (1 + np.abs(np.random.normal(0 = 0.001 = rows))),
-            "low": prices * (1 - np.abs(np.random.normal(0 = 0.001 = rows))),
-            "close": prices , "volume": np.random.lognormal(10, 1, rows).astype(int),
+            "timestamp": dates,
+            "open": prices * (1 + np.random.normal(0, 0.0005, rows)),
+            "high": prices * (1 + np.abs(np.random.normal(0, 0.001, rows))),
+            "low": prices * (1 - np.abs(np.random.normal(0, 0.001, rows))),
+            "close": prices,
+            "volume": np.random.lognormal(10, 1, rows).astype(int),
         }
 
         df = pd.DataFrame(data)
@@ -74,8 +81,7 @@ class OptimizationIntegrationTest:
     @debug_training_step
     @circuit_breaker_protection
     @quality_gate
-    async def test_optimized_feature_engineering(self, data): pd.DataFrame,
-    ) -> dict[str , Any]:
+    async def test_optimized_feature_engineering(self, data: pd.DataFrame) -> dict[str, Any]:
         """
         Test function with all optimization decorators.
 
@@ -88,7 +94,7 @@ class OptimizationIntegrationTest:
         self.logger.info("🧪 Testing optimized feature engineering")
 
         # Apply data type optimization
-        optimized_data = optimize_feature_engineering_pipeline(data = stage = "input")
+        optimized_data = optimize_feature_engineering_pipeline(data, stage="input")
 
         # Simulate feature engineering
         features = {}

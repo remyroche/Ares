@@ -54,7 +54,7 @@ class UnifiedOptunaDemo:
     """
 
     def __init__(self):
-        self.logger, logging.getLogger(__name__)
+        self.logger = logging.getLogger(__name__)
 
         # Configuration for different optimization types
         self.configs = {
@@ -96,12 +96,12 @@ class UnifiedOptunaDemo:
         }
 
         # Initialize optimizer
-        self.optimizer, AdvancedOptunaManager(
+        self.optimizer = AdvancedOptunaManager(
             storage_url="sqlite:///unified_optuna_studies.db",
             study_name_prefix="unified_optimization",
         )
 
-    def prepare_sample_data(self, data_type: str, n_samples: int, 2000) -> tuple[pd.DataFrame, pd.Series]:
+    def prepare_sample_data(self, data_type: str, n_samples: int = 2000) -> tuple[pd.DataFrame, pd.Series]:
         """
         Prepare sample data for different optimization types.
 
@@ -119,7 +119,7 @@ class UnifiedOptunaDemo:
         np.random.seed(42)
 
         if data_type == "price_data":
-        # Create price-like data for S/R optimization
+            # Create price-like data for S/R optimization
             base_price = 100
             X = pd.DataFrame(
                 {
@@ -135,21 +135,21 @@ class UnifiedOptunaDemo:
                 },
             )
 
-        # Create target returns
+            # Create target returns
             y = X["close"].pct_change().shift(-1)
 
         elif data_type == "ml_features":
-        # Create ML features
+            # Create ML features
             X = pd.DataFrame(np.random.randn(n_samples, 30))
             y = pd.Series(np.random.randint(0, 2, n_samples))
 
         elif data_type == "autoencoder_features":
-        # Create features for autoencoder
+            # Create features for autoencoder
             X = pd.DataFrame(np.random.randn(n_samples, 50))
             y = pd.Series(np.random.randn(n_samples))  # Not used for autoencoder
 
         elif data_type == "order_execution":
-        # Create market data for order execution
+            # Create market data for order execution
             X = pd.DataFrame(
                 {
                     "bid": 100 + np.random.randn(n_samples) * 0.1,
@@ -173,7 +173,7 @@ class UnifiedOptunaDemo:
         self.logger.info(f"✅ Prepared {data_type} data: {len(X)} samples")
         return X, y
 
-    def optimize_ml_models(self, X: pd.DataFrame, y: pd.Series, n_trials: int, 50) -> dict[str, OptimizationResult]:
+    def optimize_ml_models(self, X: pd.DataFrame, y: pd.Series, n_trials: int = 50) -> dict[str, OptimizationResult | None]:
         """
         Optimize traditional ML models.
 
@@ -188,15 +188,13 @@ class UnifiedOptunaDemo:
         self.logger.info("🤖 Optimizing traditional ML models...")
 
         models = ["lightgbm", "xgboost", "random_forest", "catboost"]
-        results = {}
+        results: dict[str, OptimizationResult | None] = {}
 
         config = self.configs["ml_models"]
 
         for model_type in models:
-            pass
-        self.logger.info(f"  Optimizing {model_type}...")
-
-        if True:
+            self.logger.info(f"  Optimizing {model_type}...")
+            try:
                 result = self.optimizer.optimize(
                     model_type,
                     X=X,
@@ -207,17 +205,15 @@ class UnifiedOptunaDemo:
                     early_stopping_patience=config["early_stopping_patience"],
                     subsample_fraction=config["subsample_fraction"],
                 )
-
                 results[model_type] = result
-        self.logger.info(f"    ✅ {model_type}: {result.validation_score:.4f}")
-
-        pass
-        self.logger.exception(f"    ❌ {model_type} failed: {e}")
+                self.logger.info(f"    ✅ {model_type}: {result.validation_score:.4f}")
+            except Exception as e:  # noqa: BLE001
+                self.logger.exception(f"    ❌ {model_type} failed: {e}")
                 results[model_type] = None
 
-        return results
+        return results  # type: ignore[return-value]
 
-    def optimize_sr_parameters(self, X: pd.DataFrame, y: pd.Series, n_trials: int, 100) -> OptimizationResult:
+    def optimize_sr_parameters(self, X: pd.DataFrame, y: pd.Series, n_trials: int = 100) -> OptimizationResult | None:
         """
         Optimize S/R parameters with comprehensive overfitting prevention.
 
@@ -231,7 +227,7 @@ class UnifiedOptunaDemo:
         """
         self.logger.info("🎯 Optimizing S/R parameters...")
 
-        if True:
+        try:
             result = self.optimizer.optimize(
                 model_type="sr_parameters",
                 X=X,
@@ -242,17 +238,15 @@ class UnifiedOptunaDemo:
                 early_stopping_patience=20,
                 subsample_fraction=0.7,
             )
-
-        self.logger.info(
+            self.logger.info(
                 f"✅ S/R optimization completed: {result.validation_score:.4f}",
             )
-        return result
+            return result
+        except Exception as e:  # noqa: BLE001
+            self.logger.exception(f"❌ S/R optimization failed: {e}")
+            return None
 
-        pass
-        self.logger.exception(f"❌ S/R optimization failed: {e}")
-        return None
-
-    def optimize_autoencoder(self, X: pd.DataFrame, y: pd.Series, n_trials: int, 75) -> OptimizationResult:
+    def optimize_autoencoder(self, X: pd.DataFrame, y: pd.Series, n_trials: int = 75) -> OptimizationResult | None:
         """
         Optimize autoencoder hyperparameters.
 
@@ -268,7 +262,7 @@ class UnifiedOptunaDemo:
 
         config = self.configs["autoencoder"]
 
-        if True:
+        try:
             result = self.optimizer.optimize(
                 model_type="autoencoder",
                 X=X,
@@ -279,17 +273,15 @@ class UnifiedOptunaDemo:
                 early_stopping_patience=config["early_stopping_patience"],
                 subsample_fraction=config["subsample_fraction"],
             )
-
-        self.logger.info(
+            self.logger.info(
                 f"✅ Autoencoder optimization completed: {result.validation_score:.4f}",
             )
-        return result
+            return result
+        except Exception as e:  # noqa: BLE001
+            self.logger.exception(f"❌ Autoencoder optimization failed: {e}")
+            return None
 
-        pass
-        self.logger.exception(f"❌ Autoencoder optimization failed: {e}")
-        return None
-
-    def optimize_order_execution(self, X: pd.DataFrame, y: pd.Series, n_trials: int, 50) -> OptimizationResult:
+    def optimize_order_execution(self, X: pd.DataFrame, y: pd.Series, n_trials: int = 50) -> OptimizationResult | None:
         """
         Optimize order execution parameters.
 
@@ -305,7 +297,7 @@ class UnifiedOptunaDemo:
 
         config = self.configs["order_execution"]
 
-        if True:
+        try:
             result = self.optimizer.optimize(
                 model_type="order_execution",
                 X=X,
@@ -316,17 +308,15 @@ class UnifiedOptunaDemo:
                 early_stopping_patience=config["early_stopping_patience"],
                 subsample_fraction=config["subsample_fraction"],
             )
-
-        self.logger.info(
+            self.logger.info(
                 f"✅ Order execution optimization completed: {result.validation_score:.4f}",
             )
-        return result
+            return result
+        except Exception as e:  # noqa: BLE001
+            self.logger.exception(f"❌ Order execution optimization failed: {e}")
+            return None
 
-        pass
-        self.logger.exception(f"❌ Order execution optimization failed: {e}")
-        return None
-
-    def custom_optimization_example(self, X: pd.DataFrame, y: pd.Series, n_trials: int, 50) -> OptimizationResult:
+    def custom_optimization_example(self, X: pd.DataFrame, y: pd.Series, n_trials: int = 50) -> OptimizationResult | None:
         """
         Example of custom optimization with user-defined objective.
 
@@ -340,39 +330,34 @@ class UnifiedOptunaDemo:
         """
         self.logger.info("🔧 Running custom optimization example...")
 
-        def custom_objective(trial: optuna.Trial, X: pd.DataFrame, y: pd.Series) -> float:
+        def custom_objective(trial: optuna.Trial, X: pd.DataFrame, y: pd.Series) -> float:  # noqa: N803
             """Custom objective function for demonstration."""
-        if True:
-        # Define custom hyperparameter space
-                learning_rate = trial.suggest_float(
-                    "learning_rate",
-                    0.01,
-                    0.3,
-                    log=True,
-                )
-                n_estimators = trial.suggest_int("n_estimators", 50, 500)
-                max_depth = trial.suggest_int("max_depth", 3, 10)
+            # Define custom hyperparameter space
+            learning_rate = trial.suggest_float(
+                "learning_rate",
+                0.01,
+                0.3,
+                log=True,
+            )
+            n_estimators = trial.suggest_int("n_estimators", 50, 500)
+            max_depth = trial.suggest_int("max_depth", 3, 10)
 
-        # Simulate model training and evaluation
-        # In practice, this would use actual model training
-                base_score = 0.7
-                lr_factor = learning_rate * 2  # Higher learning rate, better score
-                n_est_factor = min(
-                    1.0,
-                    n_estimators / 500,
-                )  # More estimators, better score
-                depth_factor = 1.0 - (max_depth - 5) * 0.1  # Optimal depth around 5
+            # Simulate model training and evaluation
+            # In practice, this would use actual model training
+            base_score = 0.7
+            lr_factor = learning_rate * 2  # Higher learning rate, better score
+            n_est_factor = min(
+                1.0,
+                n_estimators / 500,
+            )  # More estimators, better score
+            depth_factor = 1.0 - (max_depth - 5) * 0.1  # Optimal depth around 5
 
-                score = base_score * lr_factor * n_est_factor * depth_factor
-                score += np.random.normal(0, 0.05)  # Add noise
+            score = base_score * lr_factor * n_est_factor * depth_factor
+            score += np.random.normal(0, 0.05)  # Add noise
 
-        return max(0.0, min(1.0, score))  # Clamp between 0 and 1
+            return max(0.0, min(1.0, score))  # Clamp between 0 and 1
 
-        pass
-        self.logger.warning(f"Custom trial failed: {e}")
-        return 0.0
-
-        if True:
+        try:
             result = self.optimizer.optimize(
                 model_type="custom",
                 X=X,
@@ -384,25 +369,22 @@ class UnifiedOptunaDemo:
                 subsample_fraction=0.7,
                 custom_objective=custom_objective,
             )
-
-        self.logger.info(
+            self.logger.info(
                 f"✅ Custom optimization completed: {result.validation_score:.4f}",
             )
-        return result
+            return result
+        except Exception as e:  # noqa: BLE001
+            self.logger.exception(f"❌ Custom optimization failed: {e}")
+            return None
 
-        pass
-        self.logger.exception(f"❌ Custom optimization failed: {e}")
-        return None
-
-    def print_optimization_summary(self, results: dict[str, OptimizationResult]):
+    def print_optimization_summary(self, results: dict[str, OptimizationResult | None]):
         """Print comprehensive optimization summary."""
         print("\n" + "=" * 80)
         print("🎯 UNIFIED OPTUNA OPTIMIZATION SUMMARY")
         print("=" * 80)
 
         for optimization_type, result in results.items():
-            pass
-        if result is None:
+            if result is None:
                 print(f"\n❌ {optimization_type.upper()}: FAILED")
                 continue
 
@@ -414,72 +396,69 @@ class UnifiedOptunaDemo:
             print(f"   Overfitting Score: {result.overfitting_score:.4f}")
             print(f"   Generalization Gap: {result.generalization_gap:.4f}")
 
-        if result.sr_performance_metrics:
+            if getattr(result, "sr_performance_metrics", None):
                 print("   S/R Performance Metrics:")
-        for metric, value in result.sr_performance_metrics.items():
+                for metric, value in result.sr_performance_metrics.items():
                     print(f"     {metric}: {value:.4f}")
 
-        # Show top parameters
-        if result.best_params:
+            # Show top parameters
+            if getattr(result, "best_params", None):
                 print("   Top Parameters:")
                 sorted_params = sorted(
                     result.best_params.items(),
-                    key=lambda x: x[1] if isinstance(x[1], int | float) else 0,
+                    key=lambda x: x[1] if isinstance(x[1], (int, float)) else 0,
                     reverse=True,
                 )[:5]
-        for param, value in sorted_params:
-                    print(f"     {param}: {value:.4f}")
+                for param, value in sorted_params:
+                    try:
+                        print(f"     {param}: {float(value):.4f}")
+                    except Exception:  # noqa: BLE001
+                        print(f"     {param}: {value}")
 
         print("\n" + "=" * 80)
 
-    def create_visualizations(self, results: dict[str, OptimizationResult], save_dir: str = "optimization_results"):
+    def create_visualizations(self, results: dict[str, OptimizationResult | None], save_dir: str = "optimization_results"):
         """Create visualizations for optimization results."""
-        if True:
-            os.makedirs(save_dir, exist_ok=True)
+        os.makedirs(save_dir, exist_ok=True)
 
-            plots_created = 0
+        plots_created = 0
 
         for optimization_type, result in results.items():
-            pass
-        if result is None:
-                    continue
+            if result is None:
+                continue
 
-        if True:
-        # Load study for visualization
-                    study = optuna.load_study(
-                        study_name=result.study_name, storage=self.optimizer.storage_url,
-                    )
+            try:
+                # Load study for visualization
+                study = optuna.load_study(
+                    study_name=result.study_name, storage=self.optimizer.storage_url,
+                )
 
-        # Optimization history
-                    fig1 = plot_optimization_history(study)
-                    plot_path1 = (
-                        f"{save_dir}/{optimization_type}_optimization_history.html"
-                    )
-                    fig1.write_html(plot_path1)
+                # Optimization history
+                fig1 = plot_optimization_history(study)
+                plot_path1 = (
+                    f"{save_dir}/{optimization_type}_optimization_history.html"
+                )
+                fig1.write_html(plot_path1)
 
-        # Parameter importance
-                    fig2 = plot_param_importances(study)
-                    plot_path2 = (
-                        f"{save_dir}/{optimization_type}_parameter_importance.html"
-                    )
-                    fig2.write_html(plot_path2)
+                # Parameter importance
+                fig2 = plot_param_importances(study)
+                plot_path2 = (
+                    f"{save_dir}/{optimization_type}_parameter_importance.html"
+                )
+                fig2.write_html(plot_path2)
 
-                    plots_created += 2
-        self.logger.info(
-                        f"📊 Created visualizations for {optimization_type}",
-                    )
-
-        pass
-        self.logger.warning(
-                        f"Could not create visualizations for {optimization_type}: {e}",
-                    )
+                plots_created += 2
+                self.logger.info(
+                    f"📊 Created visualizations for {optimization_type}",
+                )
+            except Exception as e:  # noqa: BLE001
+                self.logger.warning(
+                    f"Could not create visualizations for {optimization_type}: {e}",
+                )
 
         self.logger.info(f"📊 Created {plots_created} visualizations in {save_dir}")
 
-        pass
-        self.logger.exception(f"Error creating visualizations: {e}")
-
-    def run_comprehensive_demo(self, optimization_type: str = "all", n_trials: int, 50):
+    def run_comprehensive_demo(self, optimization_type: str = "all", n_trials: int = 50):
         """
         Run comprehensive optimization demo.
 
@@ -489,17 +468,17 @@ class UnifiedOptunaDemo:
         """
         self.logger.info("🚀 Starting Unified Optuna Optimization Demo...")
 
-        results = {}
+        results: dict[str, OptimizationResult | None] = {}
 
         if optimization_type in ["all", "ml_models"]:
-        # ML Models optimization
-            X_ml = y_ml, self.prepare_sample_data("ml_features", 2000)
+            # ML Models optimization
+            X_ml, y_ml = self.prepare_sample_data("ml_features", 2000)
             ml_results = self.optimize_ml_models(X_ml, y_ml, n_trials)
-            results.update(ml_results)
+            results.update({f"ml_{k}": v for k, v in ml_results.items()})
 
         if optimization_type in ["all", "sr_parameters"]:
-        # S/R Parameters optimization
-            X_sr = y_sr, self.prepare_sample_data("price_data", 2000)
+            # S/R Parameters optimization
+            X_sr, y_sr = self.prepare_sample_data("price_data", 2000)
             sr_result = self.optimize_sr_parameters(
                 X_sr,
                 y_sr,
@@ -508,24 +487,25 @@ class UnifiedOptunaDemo:
             results["sr_parameters"] = sr_result
 
         if optimization_type in ["all", "autoencoder"]:
-        # Autoencoder optimization
-            X_ae = y_ae, self.prepare_sample_data("autoencoder_features", 2000)
+            # Autoencoder optimization
+            X_ae, y_ae = self.prepare_sample_data("autoencoder_features", 2000)
             ae_result = self.optimize_autoencoder(X_ae, y_ae, n_trials)
             results["autoencoder"] = ae_result
 
         if optimization_type in ["all", "order_execution"]:
-        # Order execution optimization
-            X_oe = y_oe, self.prepare_sample_data("order_execution", 2000)
+            # Order execution optimization
+            X_oe, y_oe = self.prepare_sample_data("order_execution", 2000)
             oe_result = self.optimize_order_execution(X_oe, y_oe, n_trials)
             results["order_execution"] = oe_result
 
         if optimization_type in ["all", "custom"]:
-        # Custom optimization
-            X_custom = y_custom, self.prepare_sample_data("ml_features", 1000)
+            # Custom optimization
+            X_custom, y_custom = self.prepare_sample_data("ml_features", 1000)
             custom_result = self.custom_optimization_example(
                 X_custom,
                 y_custom,
-                n_trials)
+                n_trials,
+            )
             results["custom"] = custom_result
 
         # Print summary
@@ -539,7 +519,7 @@ class UnifiedOptunaDemo:
 
 async def main():
     """Main function to run the unified optimization demo."""
-    parser, argparse.ArgumentParser(description="Unified Optuna Optimization Demo")
+    parser = argparse.ArgumentParser(description="Unified Optuna Optimization Demo")
     parser.add_argument(
         "--optimization-type",
         default="all",
@@ -565,9 +545,9 @@ async def main():
         help="Output directory for results",
     )
 
-    args, parser.parse_args()
+    args = parser.parse_args()
 
-    if True:
+    try:
         # Initialize demo
         demo = UnifiedOptunaDemo()
 
@@ -592,8 +572,7 @@ async def main():
                 key=lambda x: x.validation_score,
             )
             print(f"🏆 Best validation score: {best_result.validation_score:.4f}")
-
-    pass
+    except Exception as e:  # noqa: BLE001
         print(f"❌ Error during demo: {e}")
         return 1
 

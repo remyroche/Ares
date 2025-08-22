@@ -323,8 +323,8 @@ async def main():
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Save position series to CSV
-    if "position_series" in analysis:
+        # Save position series to CSV
+        if "position_series" in analysis:
             position_df = pd.DataFrame(
                 {
                     "timestamp": analysis["position_series"].index, "sr_position": analysis["position_series"].values,

@@ -159,13 +159,22 @@ class ScanManager:
             print(f"Description: {feature.description}")
             print("-" * 50)
 
-        result = subprocess.run(
-            feature.command.split(),
-            capture_output=True,
-            text=True,
-            timeout=feature.timeout,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                feature.command.split(),
+                capture_output=True,
+                text=True,
+                timeout=feature.timeout,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as e:
+            logger.exception(
+                f"✗ {feature.name} timed out after {feature.timeout} seconds",
+            )
+            return False
+        except Exception as e:  # noqa: BLE001
+            print(failed(f"✗ {feature.name} failed with error: {e}"))
+            return False
 
         if result.stdout:
             print(result.stdout)
@@ -185,161 +194,53 @@ class ScanManager:
         )
         return False
 
-        pass
-        logger.exception(
-            f"✗ {feature.name} timed out after {feature.timeout} seconds",
-        )
-        return False
-        pass
-        print(failed(f"✗ {feature.name} failed with error: {e}"))
-        return False
-
     def run_all_scans(self, verbose: bool = False) -> dict[str, bool]:
         """Run all enabled scans and return results"""
         results = {}
 
-        logger.info("Starting comprehensive code analysis...")
-
-        for scan_type, feature in self.features.items():
+        for key, feature in self.features.items():
             if feature.enabled:
-                results[scan_type] = self.run_scan(scan_type, verbose)
-            else:
-                results[scan_type] = False
-
+                results[feature.name] = self.run_scan(key, verbose=verbose)
         return results
 
-    def enable_feature(self, scan_type: str) -> bool:
-        """Enable a specific feature"""
-        if scan_type in self.features:
-            self.features[scan_type].enabled = True
-            logger.info(f"Enabled feature: {self.features[scan_type].name}")
-            return True
-        print(error(f"Unknown feature: {scan_type}"))
-        return False
 
-    def disable_feature(self, scan_type: str) -> bool:
-        """Disable a specific feature"""
-        if scan_type in self.features:
-            self.features[scan_type].enabled = False
-            logger.info(f"Disabled feature: {self.features[scan_type].name}")
-            return True
-        print(error(f"Unknown feature: {scan_type}"))
-        return False
-
-    def get_feature_info(self, scan_type: str) -> ScanFeature | None:
-        """Get detailed information about a specific feature"""
-        return self.features.get(scan_type)
-
-    def print_summary(self, results: dict[str, bool]) -> None:
-        """Print a summary of scan results"""
-        print("\n=== Scan Results Summary ===")
-
-        successful = sum(1 for success in results.values() if success)
-        total = len(results)
-
-        print(f"Total scans: {total}")
-        print(f"Successful: {successful}")
-        print(f"Failed: {total - successful}")
-
-        if results:
-            print("\nDetailed Results:")
-            for scan_type, success in results.items():
-                feature = self.features[scan_type]
-                status = "✓ PASS" if success else "✗ FAIL"
-                print(f"  {feature.name:<25} {status}")
-
-
-def main():
-    """Main entry point for the scan runner"""
-    parser = argparse.ArgumentParser(
-        description="Run comprehensive code analysis and quality scans",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-    pass
-  python run_scans.py --list                    # List all available features
-  python run_scans.py --all                     # Run all enabled scans
-  python run_scans.py --scan linting            # Run only linting
-  python run_scans.py --scan formatting --verbose  # Run formatting with verbose output
-  python run_scans.py --enable security         # Enable security scanning
-  python run_scans.py --info type_checking      # Get info about type checking
-        """,
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run code quality scans")
+    parser.add_argument(
+        "--scan",
+        choices=[t.value for t in ScanType],
+        default=ScanType.ALL.value,
+        help="Type of scan to run",
     )
-
     parser.add_argument(
         "--list",
         action="store_true",
-        help="List all available scan features",
+        help="List all available scans",
     )
-
-    parser.add_argument("--all", action="store_true", help="Run all enabled scans")
-
-    parser.add_argument("--scan", type=str, help="Run a specific scan type")
-
-    parser.add_argument("--enable", type=str, help="Enable a specific feature")
-
-    parser.add_argument("--disable", type=str, help="Disable a specific feature")
-
-    parser.add_argument(
-        "--info",
-        type=str,
-        help="Get detailed information about a specific feature",
-    )
-
     parser.add_argument(
         "--verbose",
-        "-v",
         action="store_true",
         help="Enable verbose output",
     )
+    return parser.parse_args()
 
-    args = parser.parse_args()
 
-    # Initialize scan manager
+def main() -> int:
+    args = parse_args()
     manager = ScanManager()
 
-    # Handle different command modes
     if args.list:
         manager.list_features()
-        return
+        return 0
 
-    if args.enable:
-        manager.enable_feature(args.enable)
-        return
-
-    if args.disable:
-        manager.disable_feature(args.disable)
-        return
-
-    if args.info:
-        feature = manager.get_feature_info(args.info)
-        if feature:
-            print(f"\n=== Feature Information: {feature.name} ===")
-            print(f"Description: {feature.description}")
-            print(f"Command: {feature.command}")
-            print(f"Enabled: {feature.enabled}")
-            print(f"Timeout: {feature.timeout} seconds")
-            print(f"Ignore Errors: {feature.ignore_errors}")
-        else:
-            print(error(f"Unknown feature: {args.info}"))
-        return
-
-    # Run scans
-    if args.all:
+    if args.scan == ScanType.ALL.value:
         results = manager.run_all_scans(verbose=args.verbose)
-        manager.print_summary(results)
-    elif args.scan:
-        success = manager.run_scan(args.scan, verbose=args.verbose)
-        if success:
-            logger.info(f"Scan '{args.scan}' completed successfully")
-        else:
-            print(failed(f"Scan '{args.scan}' failed"))
-            sys.exit(1)
-    else:
-        # Default behavior: run all scans
-        results = manager.run_all_scans(verbose=args.verbose)
-        manager.print_summary(results)
+        success = all(results.values()) if results else True
+        return 0 if success else 1
+
+    ok = manager.run_scan(args.scan, verbose=args.verbose)
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

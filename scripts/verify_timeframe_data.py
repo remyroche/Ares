@@ -27,10 +27,10 @@ class TimeframeDataVerifier:
     """Verifies data availability for multi-timeframe HMM ensemble."""
 
     def __init__(self, config: dict[str, Any]):
-        self.config, config
+        self.config = config
         self.timeframes = ["5m", "15m", "30m", "1h"]
-        self.data_dir, Path("data")
-        self.models_dir, Path("models")
+        self.data_dir = Path("data")
+        self.models_dir = Path("models")
 
     def verify_data_files(self) -> dict[str, bool]:
         """Verify that data files exist for all timeframes."""
@@ -39,23 +39,25 @@ class TimeframeDataVerifier:
         data_status = {}
 
         for timeframe in self.timeframes:
-        # Check for CSV data files
+            # Check for CSV data files
             csv_file = self.data_dir / f"ETHUSDT_{timeframe}.csv"
             csv_exists = csv_file.exists()
 
-        # Check for parquet data files (if they exist)
+            # Check for parquet data files (if they exist)
             parquet_file = self.data_dir / f"ETHUSDT_{timeframe}.parquet"
             parquet_exists = parquet_file.exists()
 
-        # Check for labeled regime data
+            # Check for labeled regime data
             regime_file = (
-        self.data_dir / f"BINANCE_ETHUSDT_labeled_regimes_{timeframe}.csv"
+                self.data_dir / f"BINANCE_ETHUSDT_labeled_regimes_{timeframe}.csv"
             )
             regime_exists = regime_file.exists()
 
             data_status[timeframe] = {
-                "csv_exists": csv_exists, "parquet_exists": parquet_exists,
-                "regime_exists": regime_exists, "any_data": csv_exists or parquet_exists or regime_exists,
+                "csv_exists": csv_exists,
+                "parquet_exists": parquet_exists,
+                "regime_exists": regime_exists,
+                "any_data": csv_exists or parquet_exists or regime_exists,
             }
 
             logger.info(
@@ -71,21 +73,23 @@ class TimeframeDataVerifier:
         model_status = {}
 
         for timeframe in self.timeframes:
-        # Check for ensemble models
+            # Check for ensemble models
             ensemble_dir = self.models_dir / f"ensemble_{timeframe}"
             ensemble_exists = ensemble_dir.exists() and any(ensemble_dir.iterdir())
 
-        # Check for HMM models
+            # Check for HMM models
             hmm_dir = self.models_dir / f"hmm_{timeframe}"
             hmm_exists = hmm_dir.exists() and any(hmm_dir.iterdir())
 
-        # Check for regime forecasting models
+            # Check for regime forecasting models
             regime_dir = self.models_dir / f"regime_forecasting_{timeframe}"
             regime_exists = regime_dir.exists() and any(regime_dir.iterdir())
 
             model_status[timeframe] = {
-                "ensemble_exists": ensemble_exists, "hmm_exists": hmm_exists,
-                "regime_exists": regime_exists, "any_models": ensemble_exists or hmm_exists or regime_exists,
+                "ensemble_exists": ensemble_exists,
+                "hmm_exists": hmm_exists,
+                "regime_exists": regime_exists,
+                "any_models": ensemble_exists or hmm_exists or regime_exists,
             }
 
             logger.info(
@@ -197,14 +201,15 @@ class TimeframeDataVerifier:
         # Summary
         ready_timeframes = [
             tf
-        for tf, status in report["completeness"].items()
-        if status.get("ready_for_training", False)
+            for tf, status in report["completeness"].items()
+            if status.get("ready_for_training", False)
         ]
 
         report["summary"] = {
             "total_timeframes": len(self.timeframes),
             "ready_timeframes": len(ready_timeframes),
-            "ready_list": ready_timeframes, "all_ready": len(ready_timeframes) == len(self.timeframes),
+            "ready_list": ready_timeframes,
+            "all_ready": len(ready_timeframes) == len(self.timeframes),
         }
 
         return report

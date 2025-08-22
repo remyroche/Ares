@@ -32,7 +32,7 @@ sys.path.insert(0, str(project_root))
 async def main():
     """Main function to run the resumed training pipeline."""
     setup_logging()
-    logger, system_logger.getChild("ResumeTraining")
+    logger = system_logger.getChild("ResumeTraining")
 
     if len(sys.argv) < 2:
         print(error("A symbol argument is required."))
@@ -51,13 +51,15 @@ async def main():
     min_data_points = str(CONFIG["MODEL_TRAINING"]["min_data_points"])
 
     # Run data collection step WITHOUT downloading new data.
-    klines_df = _, await run_data_collection_step(
-        symbol = exchange_name=exchange,
-        min_data_points=min_data_points, data_dir=data_dir,
-        download_new_data=False
+    success = await run_data_collection_step(
+        symbol=symbol,
+        exchange=exchange,
+        min_data_points=min_data_points,
+        data_dir=data_dir,
+        download_new_data=False,
     )
 
-    if klines_df is None:
+    if not success:
         print(failed("Data consolidation step failed. Cannot resume training."))
         sys.exit(1)
 
@@ -65,8 +67,8 @@ async def main():
         "Data consolidation successful. Proceeding with training pipeline from Step 2.",
     )
 
-    db_manager = None
-    if True:
+    db_manager: SQLiteManager | None = None
+    try:
         db_manager = SQLiteManager({})
         await db_manager.initialize()
 
@@ -82,10 +84,9 @@ async def main():
         else:
             print(failed(f"Resumed training pipeline failed for {symbol}."))
             sys.exit(1)
-    pass
+    finally:
         if db_manager:
-            pass
-        await db_manager.close()
+            await db_manager.close()
 
 if __name__ == "__main__":
     asyncio.run(main())

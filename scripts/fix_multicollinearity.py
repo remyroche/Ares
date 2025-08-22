@@ -2,33 +2,37 @@
 """
 Multicollinearity Fix Script
 
-This script provides solutions to fix the critical multicollinearity issues
-identified in the data quality assessment. It addresses the redundant price
-features that are causing extreme VIF scores.
+This script provides solutions to fix critical multicollinearity issues
+identified in the data quality assessment. It outlines configuration changes
+and code edits to reduce VIF and eliminate redundant features.
 
 Usage:
     python scripts/fix_multicollinearity.py
 """
 
+from __future__ import annotations
+
+from typing import Any, Dict, List
+from src.utils.error_handler import handle_errors
+from src.utils.logger import system_logger
+
 
 class MulticollinearityFixer:
-    """
-    Provides solutions to fix multicollinearity issues in the feature engineering pipeline.
-    """
+    """Provides solutions to fix multicollinearity issues in the pipeline."""
 
-    def __init__(self):
-    pass  # TODO: Add proper implementation
-    def generate_feature_engineering_fixes(self):
-        """
-        Generate specific fixes for the feature engineering pipeline to address multicollinearity.
-        """
-        print("🔧 Generating multicollinearity fixes...")
+    def __init__(self) -> None:
+        self.logger = system_logger.getChild("MulticollinearityFixer")
+
+    @handle_errors(default_return={}, context="generate_feature_engineering_fixes")
+    def generate_feature_engineering_fixes(self) -> Dict[str, Any]:
+        """Generate specific fixes for the feature engineering pipeline."""
+        self.logger.info("Generating multicollinearity fixes...")
 
         return {
             "critical_issues": [
-                "🚨 EXTREME VIF detected (> 1,000,000)",
-                "🚨 Multiple redundant price features causing perfect multicollinearity",
-                "🚨 Core price features (open, high, low, close, avg_price) are perfectly correlated",
+                "EXTREME VIF detected (> 1,000,000)",
+                "Multiple redundant price features causing perfect multicollinearity",
+                "Core price features (open, high, low, close, avg_price) are perfectly correlated",
             ],
             "root_cause": [
                 "The feature engineering pipeline is creating multiple price-based features",
@@ -47,40 +51,42 @@ class MulticollinearityFixer:
                 "Add VIF validation checks in the feature engineering pipeline",
             ],
             "configuration_changes": [
-                "Set vif_threshold, 5.0 in feature selection config",
+                "Set vif_threshold to 5.0 in feature selection config",
                 "Enable aggressive feature removal for high VIF features",
                 "Add multicollinearity checks in the data quality pipeline",
             ],
         }
 
-    def generate_configuration_template(self):
-        """
-        Generate a configuration template that addresses multicollinearity issues.
-        """
+    @handle_errors(default_return={}, context="generate_configuration_template")
+    def generate_configuration_template(self) -> Dict[str, Any]:
+        """Generate a configuration template that addresses multicollinearity."""
         return {
             "vectorized_labelling_orchestrator": {
-                "enable_stationary_checks": True, "enable_data_normalization": True,
-                "enable_lookahead_bias_handling": True, "enable_feature_selection": True,
-                "enable_memory_efficient_types": True, "enable_parquet_saving": True,
+                "enable_stationary_checks": True,
+                "enable_data_normalization": True,
+                "enable_lookahead_bias_handling": True,
+                "enable_feature_selection": True,
+                "enable_memory_efficient_types": True,
+                "enable_parquet_saving": True,
                 "profit_take_multiplier": 0.002,
                 "stop_loss_multiplier": 0.001,
                 "time_barrier_minutes": 30,
                 "max_lookahead": 100,
                 "feature_selection": {
-                    "vif_threshold": 5.0,  # Reduced from 10.0
-                    "correlation_threshold": 0.95,  # Reduced from 0.98
-                    "enable_aggressive_vif_removal": True,  # New setting
-                    "max_removal_percentage": 0.5,  # Increased from 0.3
-                    "min_features_to_keep": 5,  # Reduced from 10
-                    "enable_multicollinearity_validation": True,  # New setting
-                    "vif_removal_strategy": "iterative",  # New setting
-                    "max_iterations": 10,  # New setting
+                    "vif_threshold": 5.0,
+                    "correlation_threshold": 0.95,
+                    "enable_aggressive_vif_removal": True,
+                    "max_removal_percentage": 0.5,
+                    "min_features_to_keep": 5,
+                    "enable_multicollinearity_validation": True,
+                    "vif_removal_strategy": "iterative",
+                    "max_iterations": 10,
                 },
             },
             "vectorized_advanced_feature_engineering": {
-                "use_minimal_base_features": True,  # New setting
-                "base_features": ["close", "volume"],  # New setting
-                "exclude_redundant_price_features": True,  # New setting
+                "use_minimal_base_features": True,
+                "base_features": ["close", "volume"],
+                "exclude_redundant_price_features": True,
                 "redundant_features_to_exclude": [
                     "open",
                     "high",
@@ -95,176 +101,143 @@ class MulticollinearityFixer:
                     "min_price_change",
                     "max_price_change",
                 ],
-                "enable_vif_validation": True,  # New setting
-                "max_feature_vif": 10.0,  # New setting
-                "feature_engineering_strategy": "minimal_base",  # New setting
+                "enable_vif_validation": True,
+                "max_feature_vif": 10.0,
+                "feature_engineering_strategy": "minimal_base",
             },
         }
 
-    def generate_code_fixes(self):
-        """
-        Generate specific code fixes for the feature engineering pipeline.
-        """
+    @handle_errors(default_return={}, context="generate_code_fixes")
+    def generate_code_fixes(self) -> Dict[str, List[str]]:
+        """Generate specific code edit suggestions for the pipeline (display only)."""
         return {
             "vectorized_advanced_feature_engineering.py": [
                 "# Add this method to filter out redundant price features",
-                "def _filter_redundant_price_features(self, data: pd.DataFrame) -> pd.DataFrame:",
-                '    """Remove redundant price features that cause multicollinearity."""',
-                "    redundant_features = [",
-                "        'open', 'high', 'low', 'avg_price', 'min_price', 'max_price',",
-                "        'open_price_change', 'high_price_change', 'low_price_change',",
-                "        'avg_price_change', 'min_price_change', 'max_price_change'",
-                "    ]",
-                "    ",
-                "    # Remove redundant features if they exist",
-                "    existing_redundant = [col for col in redundant_features if col in data.columns]",
-                "    if existing_redundant:",
-                "        self.logger.info(f'Removing redundant price features: {existing_redundant}')",
-                "        data, data.drop(columns=existing_redundant)",
-                "    ",
-                "    return data",
-                "",
+                (
+                    "def _filter_redundant_price_features(self, data: pd.DataFrame) -> pd.DataFrame:\n"
+                    "    \"\"\"Remove redundant price features that cause multicollinearity.\"\"\"\n"
+                    "    redundant_features = [\n"
+                    "        'open', 'high', 'low', 'avg_price', 'min_price', 'max_price',\n"
+                    "        'open_price_change', 'high_price_change', 'low_price_change',\n"
+                    "        'avg_price_change', 'min_price_change', 'max_price_change'\n"
+                    "    ]\n"
+                    "    existing_redundant = [c for c in redundant_features if c in data.columns]\n"
+                    "    if existing_redundant:\n"
+                    "        self.logger.info(f'Removing redundant price features: {existing_redundant}')\n"
+                    "        data = data.drop(columns=existing_redundant)\n"
+                    "    return data\n"
+                ),
                 "# Add this method to validate VIF scores",
-                "def _validate_vif_scores(self, data: pd.DataFrame, max_vif: float, 10.0) -> bool:",
-                '    """Validate that all features have acceptable VIF scores."""',
-                "    from sklearn.linear_model import LinearRegression"
-                "    from sklearn.impute import SimpleImputer"
-                "    ",
-                "    # Handle NaN values",
-                "    imputer , SimpleImputer(strategy, 'median')",
-                "    data_imputed, pd.DataFrame(",
-                "        imputer.fit_transform(data),",
-                "        columns=data.columns = ",
-                "        index=data.index",
-                "    )",
-                "    ",
-                "    # Calculate VIF scores",
-                "    vif_scores = {}",
-                "    for col in data_imputed.columns:",
-                "        other_cols = [c for c in data_imputed.columns if c !,  col]",
-                "        if len(other_cols) > 0:",
-                "            X, data_imputed[other_cols]",
-                "            y, data_imputed[col]",
-                "            ",
-                "            reg, LinearRegression()",
-                "            reg.fit(X, y)",
-                "            ",
-                "            y_pred, reg.predict(X)",
-                "            ss_res, np.sum((y - y_pred) ** 2)",
-                "            ss_tot, np.sum((y - np.mean(y)) ** 2)",
-                "            r_squared, 1 - (ss_res / ss_tot) if ss_tot != 0 else 0",
-                "            ",
-                "            vif, 1 / (1 - r_squared) if r_squared != 1 else np.inf",
-                "            vif_scores[col] = vif",
-                "    ",
-                "    # Check for high VIF features",
-                "    high_vif_features = [col for col, vif in vif_scores.items() if vif > max_vif]",
-                "    if high_vif_features:",
-                "        self.logger.warning(f'High VIF features found: {high_vif_features}')",
-                "        for feature in high_vif_features:",
-                "            self.logger.warning(f'  {feature}: VIF={vif_scores[feature]:.2f}')",
-                "        return False",
-                "    ",
-                "    return True",
+                (
+                    "def _validate_vif_scores(self, data: pd.DataFrame, max_vif: float = 10.0) -> bool:\n"
+                    "    \"\"\"Validate that all features have acceptable VIF scores.\"\"\"\n"
+                    "    import numpy as np\n"
+                    "    from sklearn.linear_model import LinearRegression\n"
+                    "    from sklearn.impute import SimpleImputer\n"
+                    "    if data.empty:\n"
+                    "        return True\n"
+                    "    imputer = SimpleImputer(strategy='median')\n"
+                    "    data_imputed = pd.DataFrame(imputer.fit_transform(data), columns=data.columns, index=data.index)\n"
+                    "    vif_scores: dict[str, float] = {}\n"
+                    "    for col in data_imputed.columns:\n"
+                    "        other_cols = [c for c in data_imputed.columns if c != col]\n"
+                    "        if not other_cols:\n"
+                    "            continue\n"
+                    "        X = data_imputed[other_cols]\n"
+                    "        y = data_imputed[col]\n"
+                    "        reg = LinearRegression()\n"
+                    "        reg.fit(X, y)\n"
+                    "        y_pred = reg.predict(X)\n"
+                    "        ss_res = float(np.sum((y - y_pred) ** 2))\n"
+                    "        ss_tot = float(np.sum((y - float(np.mean(y))) ** 2))\n"
+                    "        r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0.0\n"
+                    "        vif = (1.0 / (1.0 - r_squared)) if r_squared < 1.0 else float('inf')\n"
+                    "        vif_scores[col] = float(vif)\n"
+                    "    high_vif = [c for c, v in vif_scores.items() if v > max_vif]\n"
+                    "    if high_vif:\n"
+                    "        self.logger.warning(f'High VIF features: {high_vif}')\n"
+                    "        return False\n"
+                    "    return True\n"
+                ),
             ],
             "vectorized_labelling_orchestrator.py": [
-                "# Add this to the feature selection pipeline",
-                "def _remove_extreme_vif_features(self, data: pd.DataFrame) -> pd.DataFrame:",
-                '    """Remove features with extreme VIF scores (> 1000)."""',
-                "    extreme_vif_threshold, 1000.0",
-                "    ",
-                "    # Calculate VIF scores",
-                "    vif_scores, self._calculate_vif_scores(data)",
-                "    ",
-                "    # Find extreme VIF features",
-                "    extreme_vif_features = [",
-                "        col for col, vif in vif_scores.items()",
-                "        if vif > extreme_vif_threshold",
-                "    ]",
-                "    ",
-                "    if extreme_vif_features:",
-                "        self.logger.warning(f'Removing extreme VIF features: {extreme_vif_features}')",
-                "        data, data.drop(columns=extreme_vif_features)",
-                "    ",
-                "    return data",
+                "# Add this helper to remove extreme VIF features early",
+                (
+                    "def _remove_extreme_vif_features(self, data: pd.DataFrame, threshold: float = 1000.0) -> pd.DataFrame:\n"
+                    "    \"\"\"Remove features with extreme VIF scores (> threshold).\"\"\"\n"
+                    "    vif_scores = self._calculate_vif_scores(data)\n"
+                    "    extreme = [c for c, v in vif_scores.items() if v > threshold]\n"
+                    "    if extreme:\n"
+                    "        self.logger.warning(f'Removing extreme VIF features: {extreme}')\n"
+                    "        data = data.drop(columns=extreme, errors='ignore')\n"
+                    "    return data\n"
+                ),
             ],
         }
 
 
-def main():
+@handle_errors(default_return=False, context="multicollinearity_main")
+def main() -> bool:
     """Main function to generate multicollinearity fixes."""
-    print("🔧 MULTICOLLINEARITY FIX GENERATOR")
+    print("MULTICOLLINEARITY FIX GENERATOR")
     print("=" * 60)
 
-    fixer, MulticollinearityFixer()
+    fixer = MulticollinearityFixer()
 
-    # Generate fixes
-    fixes, fixer.generate_feature_engineering_fixes()
+    fixes = fixer.generate_feature_engineering_fixes()
 
-    # Display critical issues
-    print("\n🚨 CRITICAL ISSUES IDENTIFIED:")
-    for issue in fixes["critical_issues"]:
-        print(f"   {issue}")
+    print("\nCRITICAL ISSUES IDENTIFIED:")
+    for issue in fixes.get("critical_issues", []):
+        print(f"   - {issue}")
 
-    # Display root cause
-    print("\n🔍 ROOT CAUSE:")
-    for cause in fixes["root_cause"]:
-        print(f"   {cause}")
+    print("\nROOT CAUSE:")
+    for cause in fixes.get("root_cause", []):
+        print(f"   - {cause}")
 
-    # Display immediate fixes
-    print("\n⚡ IMMEDIATE FIXES:")
-    for fix in fixes["immediate_fixes"]:
-        print(f"   {fix}")
+    print("\nIMMEDIATE FIXES:")
+    for fix in fixes.get("immediate_fixes", []):
+        print(f"   - {fix}")
 
-    # Display code changes needed
-    print("\n💻 CODE CHANGES REQUIRED:")
-    for change in fixes["code_changes"]:
-        print(f"   {change}")
+    print("\nCODE CHANGES REQUIRED:")
+    for change in fixes.get("code_changes", []):
+        print(f"   - {change}")
 
-    # Display configuration changes
-    print("\n⚙️ CONFIGURATION CHANGES:")
-    for config in fixes["configuration_changes"]:
-        print(f"   {config}")
+    print("\nCONFIGURATION CHANGES:")
+    for config_change in fixes.get("configuration_changes", []):
+        print(f"   - {config_change}")
 
-    # Generate configuration template
-    print("\n📋 RECOMMENDED CONFIGURATION:")
+    print("\nRECOMMENDED CONFIGURATION:")
     config_template = fixer.generate_configuration_template()
-
-    # Print the configuration in a readable format
-    for section , settings in config_template.items():
+    for section, settings in config_template.items():
         print(f"\n   {section}:")
-        for key , value in settings.items():
-    pass  # TODO: Add proper implementation
-        if isinstance(value , dict):
+        for key, value in settings.items():
+            if isinstance(value, dict):
                 print(f"     {key}:")
-        for sub_key , sub_value in value.items():
-                    print(f"       {sub_key}: {sub_value}")
+                for sub_key, sub_value in value.items():
+                    print(f"       - {sub_key}: {sub_value}")
             else:
-                print(f"     {key}: {value}")
+                print(f"     - {key}: {value}")
 
-    # Generate code fixes
-    print("\n🔧 CODE FIXES:")
+    print("\nCODE FIXES:")
     code_fixes = fixer.generate_code_fixes()
-
-    for file_name , fixes in code_fixes.items():
+    for file_name, edits in code_fixes.items():
         print(f"\n   {file_name}:")
-        for fix in fixes:
-            print(f"     {fix}")
+        for edit in edits:
+            print(f"     {edit}")
 
-    # Action plan
-    print("\n🎯 ACTION PLAN:")
-    print("   1. 🚨 IMMEDIATE: Update configuration to use stricter VIF thresholds")
-    print(
-        "   2. 🔧 CODE: Add redundant feature filtering to feature engineering pipeline",
-    )
-    print("   3. 🧪 TEST: Run data quality assessment to validate fixes")
-    print("   4. 📊 MONITOR: Ensure VIF < 10 for all features")
-    print("   5. 🔄 ITERATE: Adjust feature engineering strategy if needed")
+    print("\nACTION PLAN:")
+    print("   1. Update configuration to use stricter VIF thresholds")
+    print("   2. Add redundant feature filtering to feature engineering pipeline")
+    print("   3. Run data quality assessment to validate fixes")
+    print("   4. Ensure VIF < 10 for all features")
+    print("   5. Iterate feature engineering strategy if needed")
 
     print("\n" + "=" * 60)
-    print("✅ Multicollinearity fix generation completed!")
+    print("Multicollinearity fix generation completed!")
     print("=" * 60)
+    return True
 
 
 if __name__ == "__main__":
-    main()
+    success = main()
+    raise SystemExit(0 if success else 1)

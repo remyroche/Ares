@@ -4,6 +4,8 @@ Run Feature Diagnostic Script
 Analyzes actual feature data to investigate the issues mentioned in the logs.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 from src.utils.logger import system_logger
 from typing import Any
@@ -23,15 +25,15 @@ sys.path.append(str(Path(__file__).parent.parent / "src"))
 class FeatureDiagnosticRunner:
     """Runs comprehensive feature diagnostics on actual data."""
 
-    def __init__(self):
-        self.logger, system_logger.getChild("FeatureDiagnosticRunner")
+    def __init__(self) -> None:
+        self.logger = system_logger.getChild("FeatureDiagnosticRunner")
 
     def analyze_feature_issues(self, data: pd.DataFrame) -> dict[str, Any]:
         """Analyze feature issues based on the logs."""
         self.logger.info("🔍 Analyzing feature issues from logs...")
 
         # Define the feature blocks as mentioned in the logs
-        feature_blocks = {
+        feature_blocks: dict[str, list[str]] = {
             "momentum": [
                 "momentum_5",
                 "momentum_10",
@@ -90,7 +92,7 @@ class FeatureDiagnosticRunner:
             ],
         }
 
-        results = {
+        results: dict[str, Any] = {
             "overall_analysis": {},
             "block_analyses": {},
             "correlation_issues": {},
@@ -103,10 +105,11 @@ class FeatureDiagnosticRunner:
         results["overall_analysis"] = self._analyze_overall_data(data)
 
         # Block-specific analysis
-        for block_name , features in feature_blocks.items():
+        for block_name, features in feature_blocks.items():
             results["block_analyses"][block_name] = self._analyze_block(
-                data = data,
-                features = features,
+                data=data,
+                features=features,
+                block_name=block_name,
             )
 
         # Correlation analysis
@@ -125,47 +128,55 @@ class FeatureDiagnosticRunner:
 
     def _analyze_overall_data(self, data: pd.DataFrame) -> dict[str, Any]:
         """Analyze overall data characteristics."""
+        numeric = data.select_dtypes(include=[np.number])
         return {
-            "shape": data.shape , "total_features": len(data.columns),
+            "shape": data.shape,
+            "total_features": len(data.columns),
             "total_rows": len(data),
-            "nan_count": data.isna().sum().sum(),
-            "inf_count": np.isinf(data.select_dtypes(include=[np.number])).sum().sum(),
-            "zero_count": (data == 0).sum().sum(),
+            "nan_count": int(data.isna().sum().sum()),
+            "inf_count": int(np.isinf(numeric).to_numpy().sum()),
+            "zero_count": int((numeric == 0).to_numpy().sum()),
             "dtypes": data.dtypes.value_counts().to_dict(),
         }
 
-    def _analyze_block(self, data: pd.DataFrame, block_name: str, features: list[str], ) -> dict[str, Any]:
+    def _analyze_block(
+        self,
+        data: pd.DataFrame,
+        features: list[str],
+        block_name: str,
+    ) -> dict[str, Any]:
         """Analyze a specific feature block."""
         available_features = [f for f in features if f in data.columns]
         missing_features = [f for f in features if f not in data.columns]
 
         if not available_features:
-    pass  # TODO: Add proper implementation
-        return {
+            return {
                 "error": f"No {block_name} features found in data",
                 "available_features": [],
-                "missing_features": missing_features}
+                "missing_features": missing_features,
+            }
 
         block_data = data[available_features]
 
         # Analyze correlations
         corr_matrix = block_data.corr()
-        high_corr_pairs = []
-        for i in range(len(corr_matrix.columns)):
-    pass  # TODO: Add proper implementation
-        for j in range(i + 1, len(corr_matrix.columns)):
-                corr_val = corr_matrix.iloc[i, j]
-        if abs(corr_val) > 0.95:
+        high_corr_pairs: list[dict[str, Any]] = []
+        columns = list(corr_matrix.columns)
+        for i in range(len(columns)):
+            for j in range(i + 1, len(columns)):
+                corr_val = float(corr_matrix.iloc[i, j])
+                if not np.isnan(corr_val) and abs(corr_val) > 0.95:
                     high_corr_pairs.append(
                         {
-                            "feature1": corr_matrix.columns[i],
-                            "feature2": corr_matrix.columns[j],
-                            "correlation": corr_val = },
+                            "feature1": columns[i],
+                            "feature2": columns[j],
+                            "correlation": corr_val,
+                        }
                     )
 
         # Analyze variance
-        variances = block_data.var()
-        zero_var_features = variances[variances , = 0].index.tolist()
+        variances = block_data.var(numeric_only=True)
+        zero_var_features = variances[variances == 0].index.tolist()
         low_var_features = variances[variances < 1e-6].index.tolist()
 
         # Analyze NaN
@@ -173,84 +184,99 @@ class FeatureDiagnosticRunner:
         nan_features = nan_counts[nan_counts > 0].index.tolist()
 
         return {
-            "available_features": available_features , "missing_features": missing_features,
-            "data_shape": block_data.shape , "high_correlation_pairs": high_corr_pairs,
-            "zero_variance_features": zero_var_features , "low_variance_features": low_var_features,
-            "nan_features": nan_features , "correlation_matrix": corr_matrix.to_dict(),
+            "available_features": available_features,
+            "missing_features": missing_features,
+            "data_shape": block_data.shape,
+            "high_correlation_pairs": high_corr_pairs,
+            "zero_variance_features": zero_var_features,
+            "low_variance_features": low_var_features,
+            "nan_features": nan_features,
+            "correlation_matrix": corr_matrix.to_dict(),
             "variances": variances.to_dict(),
         }
 
-    def _analyze_correlations(self, data: pd.DataFrame, feature_blocks: dict[str = list[str]], ) -> dict[str , Any]:
+    def _analyze_correlations(
+        self,
+        data: pd.DataFrame,
+        feature_blocks: dict[str, list[str]],
+    ) -> dict[str, Any]:
         """Analyze correlation issues across all blocks."""
-        all_features = []
+        all_features: list[str] = []
         for features in feature_blocks.values():
             all_features.extend([f for f in features if f in data.columns])
 
         if len(all_features) < 2:
-    pass  # TODO: Add proper implementation
-        return {"error": "Not enough features for correlation analysis"}
+            return {"error": "Not enough features for correlation analysis"}
 
         corr_data = data[all_features]
         corr_matrix = corr_data.corr()
 
         # Find all high correlations
-        high_corr_pairs = []
-        for i in range(len(corr_matrix.columns)):
-    pass  # TODO: Add proper implementation
-        for j in range(i + 1, len(corr_matrix.columns)):
-                corr_val = corr_matrix.iloc[i, j]
-        if abs(corr_val) > 0.95:
+        high_corr_pairs: list[dict[str, Any]] = []
+        columns = list(corr_matrix.columns)
+        for i in range(len(columns)):
+            for j in range(i + 1, len(columns)):
+                corr_val = float(corr_matrix.iloc[i, j])
+                if not np.isnan(corr_val) and abs(corr_val) > 0.95:
                     high_corr_pairs.append(
                         {
-                            "feature1": corr_matrix.columns[i],
-                            "feature2": corr_matrix.columns[j],
-                            "correlation": corr_val = },
+                            "feature1": columns[i],
+                            "feature2": columns[j],
+                            "correlation": corr_val,
+                        }
                     )
+
+        vals = corr_matrix.values
+        iu = np.triu_indices_from(vals, k=1)
+        upper_vals = vals[iu]
+        mean_corr = float(np.nanmean(upper_vals)) if upper_vals.size else float("nan")
+        max_corr = float(np.nanmax(upper_vals)) if upper_vals.size else float("nan")
 
         return {
             "total_high_corr_pairs": len(high_corr_pairs),
-            "high_correlation_pairs": high_corr_pairs , "mean_correlation": corr_matrix.values[
-                np.triu_indices_from(corr_matrix.values, k, 1)
-            ].mean(),
-            "max_correlation": corr_matrix.values[
-                np.triu_indices_from(corr_matrix.values, k, 1)
-            ].max(),
+            "high_correlation_pairs": high_corr_pairs,
+            "mean_correlation": mean_corr,
+            "max_correlation": max_corr,
         }
 
-    def _analyze_variance_issues(self, data: pd.DataFrame, feature_blocks: dict[str = list[str]], ) -> dict[str , Any]:
+    def _analyze_variance_issues(
+        self,
+        data: pd.DataFrame,
+        feature_blocks: dict[str, list[str]],
+    ) -> dict[str, Any]:
         """Analyze variance issues across all blocks."""
-        all_features = []
+        all_features: list[str] = []
         for features in feature_blocks.values():
             all_features.extend([f for f in features if f in data.columns])
 
         if not all_features:
-    pass  # TODO: Add proper implementation
-        return {"error": "No features found for variance analysis"}
+            return {"error": "No features found for variance analysis"}
 
         var_data = data[all_features]
-        variances = var_data.var()
+        variances = var_data.var(numeric_only=True)
 
         # Test different variance thresholds
         thresholds = [1e-8, 1e-6, 1e-4, 1e-2, 1e-1]
-        threshold_analysis = {}
+        threshold_analysis: dict[float, dict[str, Any]] = {}
 
         for threshold in thresholds:
             low_var_features = variances[variances < threshold].index.tolist()
             threshold_analysis[threshold] = {
                 "features_removed": len(low_var_features),
-                "percentage_removed": len(low_var_features) / len(variances) * 100,
+                "percentage_removed": len(low_var_features) / max(len(variances), 1) * 100,
                 "features": low_var_features[:5],  # First 5 for reference
             }
 
         return {
             "total_features": len(variances),
-            "zero_variance_features": variances[variances , = 0].index.tolist(),
+            "zero_variance_features": variances[variances == 0].index.tolist(),
             "low_variance_features": variances[variances < 1e-6].index.tolist(),
-            "threshold_analysis": threshold_analysis , "variance_statistics": {
-                "mean": variances.mean(),
-                "std": variances.std(),
-                "min": variances.min(),
-                "max": variances.max(),
+            "threshold_analysis": threshold_analysis,
+            "variance_statistics": {
+                "mean": float(variances.mean()),
+                "std": float(variances.std()),
+                "min": float(variances.min()),
+                "max": float(variances.max()),
                 "percentiles": variances.quantile(
                     [0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99],
                 ).to_dict(),
@@ -259,14 +285,13 @@ class FeatureDiagnosticRunner:
 
     def _analyze_nan_issues(self, data: pd.DataFrame) -> dict[str, Any]:
         """Analyze NaN issues in the data."""
-        nan_counts, data.isna().sum()
-        nan_percentages = (nan_counts / len(data)) * 100
-
-        nan_features, nan_counts[nan_counts > 0]
+        nan_counts = data.isna().sum()
+        nan_percentages = (nan_counts / max(len(data), 1)) * 100
+        nan_features = nan_counts[nan_counts > 0]
 
         return {
-            "total_nan_features": len(nan_features),
-            "total_nan_values": nan_counts.sum(),
+            "total_nan_features": int((nan_counts > 0).sum()),
+            "total_nan_values": int(nan_counts.sum()),
             "nan_features": nan_features.to_dict(),
             "nan_percentages": nan_percentages[nan_percentages > 0].to_dict(),
             "features_with_high_nan": nan_percentages[nan_percentages > 10].to_dict(),
@@ -274,7 +299,7 @@ class FeatureDiagnosticRunner:
 
     def _generate_recommendations(self, results: dict[str, Any]) -> list[str]:
         """Generate recommendations based on analysis results."""
-        recommendations = []
+        recommendations: list[str] = []
 
         # Correlation recommendations
         if (
@@ -282,7 +307,7 @@ class FeatureDiagnosticRunner:
             and "total_high_corr_pairs" in results["correlation_issues"]
         ):
             high_corr_count = results["correlation_issues"]["total_high_corr_pairs"]
-        if high_corr_count > 0:
+            if high_corr_count > 0:
                 recommendations.append(
                     f"Found {high_corr_count} feature pairs with correlation > 0.95",
                 )
@@ -299,9 +324,9 @@ class FeatureDiagnosticRunner:
             and "threshold_analysis" in results["variance_issues"]
         ):
             threshold_analysis = results["variance_issues"]["threshold_analysis"]
-        if 1e-6 in threshold_analysis:
+            if 1e-6 in threshold_analysis:
                 pct_removed = threshold_analysis[1e-6]["percentage_removed"]
-        if pct_removed > 50:
+                if pct_removed > 50:
                     recommendations.append(
                         f"Current variance threshold (1e-6) removes {pct_removed:.1f}% of features - too strict",
                     )
@@ -314,7 +339,7 @@ class FeatureDiagnosticRunner:
         # NaN recommendations
         if "nan_issues" in results and "total_nan_features" in results["nan_issues"]:
             nan_count = results["nan_issues"]["total_nan_features"]
-        if nan_count > 0:
+            if nan_count > 0:
                 recommendations.append(f"Found {nan_count} features with NaN values")
                 recommendations.append(
                     "Investigate NaN sources in feature engineering pipeline",
@@ -336,14 +361,14 @@ class FeatureDiagnosticRunner:
 
     def generate_report(self, results: dict[str, Any]) -> str:
         """Generate a comprehensive diagnostic report."""
-        report = []
+        report: list[str] = []
         report.append("=" * 80)
         report.append("FEATURE DIAGNOSTIC REPORT")
         report.append("=" * 80)
         report.append("")
 
         # Overall summary
-        overall, results["overall_analysis"]
+        overall = results["overall_analysis"]
         report.append("📊 OVERALL DATA SUMMARY:")
         report.append("-" * 40)
         report.append(f"Shape: {overall['shape']}")
@@ -357,9 +382,8 @@ class FeatureDiagnosticRunner:
         report.append("🔍 BLOCK-SPECIFIC ANALYSIS:")
         report.append("-" * 40)
 
-        for block_name , block_results in results["block_analyses"].items():
-    pass  # TODO: Add proper implementation
-        if "error" in block_results:
+        for block_name, block_results in results["block_analyses"].items():
+            if "error" in block_results:
                 report.append(f"❌ {block_name.upper()}: {block_results['error']}")
                 continue
 
@@ -383,10 +407,10 @@ class FeatureDiagnosticRunner:
                 f"   - Features with NaN: {len(block_results['nan_features'])}",
             )
 
-        # Show specific examples
-        if block_results["high_correlation_pairs"]:
+            # Show specific examples
+            if block_results["high_correlation_pairs"]:
                 report.append("   - High correlation examples:")
-        for pair in block_results["high_correlation_pairs"][:2]:
+                for pair in block_results["high_correlation_pairs"][:2]:
                     report.append(
                         f"     * {pair['feature1']} ↔ {pair['feature2']}: {pair['correlation']:.3f}",
                     )
@@ -404,8 +428,10 @@ class FeatureDiagnosticRunner:
             report.append(
                 f"Total high correlation pairs: {corr_issues['total_high_corr_pairs']}",
             )
-            report.append(f"Mean correlation: {corr_issues['mean_correlation']:.3f}")
-            report.append(f"Max correlation: {corr_issues['max_correlation']:.3f}")
+            if not np.isnan(corr_issues.get("mean_correlation", float("nan"))):
+                report.append(f"Mean correlation: {corr_issues['mean_correlation']:.3f}")
+            if not np.isnan(corr_issues.get("max_correlation", float("nan"))):
+                report.append(f"Max correlation: {corr_issues['max_correlation']:.3f}")
             report.append("")
 
         # Variance analysis
@@ -417,7 +443,7 @@ class FeatureDiagnosticRunner:
             report.append("📈 VARIANCE ANALYSIS:")
             report.append("-" * 40)
             report.append(f"Total features analyzed: {var_issues['total_features']}")
-        if isinstance(var_issues["zero_variance_features"], list):
+            if isinstance(var_issues["zero_variance_features"], list):
                 report.append(
                     f"Zero variance features: {len(var_issues['zero_variance_features'])}",
                 )
@@ -425,7 +451,7 @@ class FeatureDiagnosticRunner:
                 report.append(
                     f"Zero variance features: {var_issues['zero_variance_features']}",
                 )
-        if isinstance(var_issues["low_variance_features"], list):
+            if isinstance(var_issues["low_variance_features"], list):
                 report.append(
                     f"Low variance features: {len(var_issues['low_variance_features'])}",
                 )
@@ -435,7 +461,7 @@ class FeatureDiagnosticRunner:
                 )
             report.append("")
             report.append("Threshold analysis:")
-        for threshold , analysis in var_issues["threshold_analysis"].items():
+            for threshold, analysis in var_issues["threshold_analysis"].items():
                 report.append(
                     f"   - Threshold {threshold}: {analysis['features_removed']} features removed ({analysis['percentage_removed']:.1f}%)",
                 )
@@ -448,11 +474,9 @@ class FeatureDiagnosticRunner:
             report.append("-" * 40)
             report.append(f"Features with NaN: {nan_issues['total_nan_features']}")
             report.append(f"Total NaN values: {nan_issues['total_nan_values']}")
-        if nan_issues["features_with_high_nan"]:
+            if nan_issues["features_with_high_nan"]:
                 report.append("Features with >10% NaN:")
-        for feature, pct in list(nan_issues["features_with_high_nan"].items())[
-                    :5
-                ]:
+                for feature, pct in list(nan_issues["features_with_high_nan"].items())[:5]:
                     report.append(f"   - {feature}: {pct:.1f}%")
             report.append("")
 
@@ -460,17 +484,17 @@ class FeatureDiagnosticRunner:
         if results["recommendations"]:
             report.append("💡 RECOMMENDATIONS:")
             report.append("-" * 40)
-        for i , rec in enumerate(results["recommendations"], 1):
+            for i, rec in enumerate(results["recommendations"], 1):
                 report.append(f"{i}. {rec}")
 
         return "\n".join(report)
 
 
-def main():
+def main() -> None:
     """Main diagnostic function."""
-    runner, FeatureDiagnosticRunner()
+    runner = FeatureDiagnosticRunner()
 
-    if True:
+    try:
         # Try to find feature data
         possible_paths = [
             "data_cache/features_15m.parquet",
@@ -479,17 +503,17 @@ def main():
             "data/features_15m.csv",
         ]
 
-        data_path = None
+        data_path: str | None = None
         for path in possible_paths:
-    pass  # TODO: Add proper implementation
-        if Path(path).exists():
+            if Path(path).exists():
                 data_path = path
-                pass
+                break
+
         if data_path is None:
             print("❌ No feature data found. Creating sample analysis from logs...")
 
-        # Create a sample analysis based on the logs
-            sample_analysis = {
+            # Create a sample analysis based on the logs
+            sample_analysis: dict[str, Any] = {
                 "overall_analysis": {
                     "shape": (5190, 137),
                     "total_features": 137,
@@ -666,18 +690,20 @@ def main():
             }
 
             results = sample_analysis
-            results["recommendations"] = runner._generate_recommendations(results)
-
+            # Use public API for recommendations generation
+            results["recommendations"] = FeatureDiagnosticRunner()._generate_recommendations(  # noqa: SLF001
+                results,
+            )
         else:
             print(f"📊 Loading feature data from: {data_path}")
             data = (
                 pd.read_parquet(data_path)
-        if data_path.endswith(".parquet")
+                if data_path.endswith(".parquet")
                 else pd.read_csv(data_path)
             )
             print(f"✅ Loaded data with shape: {data.shape}")
 
-        # Run analysis
+            # Run analysis
             results = runner.analyze_feature_issues(data)
 
         # Generate report
@@ -685,11 +711,12 @@ def main():
         print(report)
 
         # Save report
-        with open("feature_diagnostic_report.txt", "w") as f:
+        report_path = Path("feature_diagnostic_report.txt")
+        with report_path.open("w", encoding="utf-8") as f:
             f.write(report)
         print("📄 Report saved to: feature_diagnostic_report.txt")
 
-    pass
+    except Exception as e:  # noqa: BLE001
         print(f"❌ Error during diagnostic: {e}")
         traceback.print_exc()
 

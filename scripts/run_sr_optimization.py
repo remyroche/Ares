@@ -6,7 +6,6 @@ This script demonstrates how to use the enhanced HPO system to optimize
 Support/Resistance parameters with comprehensive overfitting prevention.
 
 Features:
-    pass
 - S/R Strength Score Weight Optimization
 - Level Detection Parameter Tuning
 - Breakout Threshold Optimization
@@ -17,35 +16,45 @@ Features:
 - Comprehensive Performance Metrics
 
 Usage:
-    python3 scripts/run_sr_optimization.py --symbol ETHUSDT --exchange BINANCE --period 365
+    python3 scripts/run_sr_optimization.py --symbol ETHUSDT \
+        --exchange BINANCE --period 365
 """
 
-import os
-import json
-from optuna.visualization import plot_optimization_history, plot_param_importances
-from pathlib import Path
-from src.config_optuna import SROptimizationParameters, validate_sr_optimization_config
-from src.training.steps.step12_final_parameters_optimization.optimized_optuna_optimization import (
-    AdvancedOptunaManager,
-    OptimizationResult,
-)
-from src.utils.logger import setup_logging
-from typing import Any
+from __future__ import annotations
+
 import argparse
 import asyncio
+import json
 import logging
 import sys
 import warnings
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 import optuna
 import pandas as pd
+from optuna.visualization import (
+    plot_optimization_history,
+    plot_param_importances,
+)
 
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
+from src.config_optuna import (  # noqa: E402
+    SROptimizationParameters,
+    validate_sr_optimization_config,
+)
+from src.training.steps.step12_final_parameters_optimization.optimized_optuna_optimization import (  # noqa: E402
+    AdvancedOptunaManager,
+    OptimizationResult,
+)
+from src.utils.logger import setup_logging  # noqa: E402
+
 setup_logging()
 warnings.filterwarnings("ignore")
+
 
 class SROptimizationRunner:
     """
@@ -60,16 +69,15 @@ class SROptimizationRunner:
     """
 
     def __init__(self, config: dict[str, Any]):
-        self.config, config
-        self.logger, logging.getLogger(__name__)
+        self.config = config
+        self.logger = logging.getLogger(__name__)
 
         # S/R optimization configuration
-        self.sr_config, SROptimizationParameters()
+        self.sr_config = SROptimizationParameters()
         if "sr_optimization" in config:
             sr_config_dict = config["sr_optimization"]
-        for key, value in sr_config_dict.items():
-    pass  # TODO: Add proper implementation
-        if hasattr(self.sr_config, key):
+            for key, value in sr_config_dict.items():
+                if hasattr(self.sr_config, key):
                     setattr(self.sr_config, key, value)
 
         # Validate configuration
@@ -81,14 +89,14 @@ class SROptimizationRunner:
         self.optimizer = AdvancedOptunaManager(
             storage_url="sqlite:///sr_optuna_studies.db",
             study_name_prefix="sr_optimization",
-            config=config
+            config=config,
         )
 
         # Results storage
-        self.optimization_results: OptimizationResult | None
-        self.study: optuna.Study | None
+        self.optimization_results: OptimizationResult | None = None
+        self.study: optuna.Study | None = None
 
-    def prepare_sample_data(self, n_samples: int, 2000) -> tuple[pd.DataFrame, pd.Series]:
+    def prepare_sample_data(self, n_samples: int = 2000) -> tuple[pd.DataFrame, pd.Series]:
         """
         Prepare sample price data for S/R optimization.
 
@@ -100,17 +108,21 @@ class SROptimizationRunner:
         """
         self.logger.info(f"Preparing sample data with {n_samples} samples...")
 
-        np.random.seed(42)
+        rng = np.random.default_rng(42)
 
         # Create realistic price data
         base_price = 100
         price_data = pd.DataFrame(
             {
-                "open": base_price + np.cumsum(np.random.randn(n_samples) * 0.1),
-                "high": base_price + np.cumsum(np.random.randn(n_samples) * 0.1) + 0.5,
-                "low": base_price + np.cumsum(np.random.randn(n_samples) * 0.1) - 0.5,
-                "close": base_price + np.cumsum(np.random.randn(n_samples) * 0.1),
-                "volume": np.random.lognormal(10, 1, n_samples),
+                "open": base_price + np.cumsum(rng.standard_normal(n_samples) * 0.1),
+                "high": base_price
+                + np.cumsum(rng.standard_normal(n_samples) * 0.1)
+                + 0.5,
+                "low": base_price
+                + np.cumsum(rng.standard_normal(n_samples) * 0.1)
+                - 0.5,
+                "close": base_price + np.cumsum(rng.standard_normal(n_samples) * 0.1),
+                "volume": rng.lognormal(10, 1, n_samples),
             },
         )
 
@@ -124,15 +136,25 @@ class SROptimizationRunner:
 
         self.logger.info(f"✅ Prepared data: {len(price_data)} samples")
         self.logger.info(
-            f"   Price range: {price_data['close'].min():.2f} - {price_data['close'].max():.2f}",
+            "   Price range: %.2f - %.2f",
+            float(price_data["close"].min()),
+            float(price_data["close"].max()),
         )
         self.logger.info(
-            f"   Returns range: {target_returns.min():.4f} - {target_returns.max():.4f}",
+            "   Returns range: %.4f - %.4f",
+            float(target_returns.min()),
+            float(target_returns.max()),
         )
 
         return price_data, target_returns
 
-    async def run_optimization(self, price_data: pd.DataFrame, target_returns: pd.Series, n_trials: int, 100, study_name: str | None) -> OptimizationResult:
+    async def run_optimization(
+        self,
+        price_data: pd.DataFrame,
+        target_returns: pd.Series,
+        n_trials: int = 100,
+        study_name: str | None = None,
+    ) -> OptimizationResult:
         """
         Run S/R parameter optimization with comprehensive overfitting prevention.
 
@@ -150,27 +172,29 @@ class SROptimizationRunner:
         # Run optimization
         result = self.optimizer.optimize(
             model_type="sr_parameters",
-            X=price_data, y=target_returns,
-            n_trials=n_trials, n_jobs=-1,
-            subsample_fraction=self.sr_config.subsample_fraction
+            X=price_data,
+            y=target_returns,
+            n_trials=n_trials,
+            n_jobs=-1,
+            subsample_fraction=self.sr_config.subsample_fraction,
         )
 
         self.optimization_results = result
 
         # Load study for analysis
-        study_name = study_name or "sr_optimization_sr_parameters"
-        if True:
-    pass  # TODO: Add proper implementation
-        self.study = optuna.load_study(
-                study_name = storage=self.optimizer.storage_url,
+        resolved_study_name = study_name or "sr_optimization_sr_parameters"
+        try:
+            self.study = optuna.load_study(
+                study_name=resolved_study_name,
+                storage=self.optimizer.storage_url,
             )
-        pass
-        self.logger.warning(f"Could not load study for analysis: {e}")
+        except Exception as e:  # noqa: BLE001
+            self.logger.warning("Could not load study for analysis: %s", e)
 
         self.logger.info("✅ S/R optimization completed successfully")
         return result
 
-    def analyze_results(self) -> dict[str , Any]:
+    def analyze_results(self) -> dict[str, Any]:
         """
         Analyze optimization results and generate comprehensive report.
 
@@ -186,14 +210,18 @@ class SROptimizationRunner:
         result = self.optimization_results
 
         # Basic metrics
-        analysis = {
+        analysis: dict[str, Any] = {
             "optimization_summary": {
-                "study_name": result.study_name , "trials_completed": result.n_trials,
-                "optimization_time": result.optimization_time , "best_validation_score": result.validation_score,
-                "overfitting_score": result.overfitting_score , "generalization_gap": result.generalization_gap,
+                "study_name": result.study_name,
+                "trials_completed": result.n_trials,
+                "optimization_time": result.optimization_time,
+                "best_validation_score": result.validation_score,
+                "overfitting_score": result.overfitting_score,
+                "generalization_gap": result.generalization_gap,
             },
             "performance_metrics": result.sr_performance_metrics or {},
-            "best_parameters": result.best_params , "overfitting_assessment": self._assess_overfitting(result),
+            "best_parameters": result.best_params,
+            "overfitting_assessment": self._assess_overfitting(result),
             "parameter_importance": self._analyze_parameter_importance(),
             "recommendations": self._generate_recommendations(result),
         }
@@ -203,17 +231,20 @@ class SROptimizationRunner:
 
     def _assess_overfitting(self, result: OptimizationResult) -> dict[str, Any]:
         """Assess overfitting based on optimization results."""
+        overfit_threshold = 0.1
+        low_severity_threshold = 0.05
+
         overfitting_assessment = {
-            "is_overfitting": result.overfitting_score > 0.1,
+            "is_overfitting": result.overfitting_score > overfit_threshold,
             "overfitting_severity": "low"
-        if result.overfitting_score < 0.05
+            if result.overfitting_score < low_severity_threshold
             else "medium"
-        if result.overfitting_score < 0.1
+            if result.overfitting_score < overfit_threshold
             else "high",
             "generalization_quality": "good"
-        if result.generalization_gap < 0.05
+            if result.generalization_gap < low_severity_threshold
             else "acceptable"
-        if result.generalization_gap < 0.1
+            if result.generalization_gap < overfit_threshold
             else "poor",
             "recommendations": [],
         }
@@ -224,7 +255,7 @@ class SROptimizationRunner:
                 "Consider increasing regularization or reducing model complexity",
             )
 
-        if result.generalization_gap > 0.1:
+        if result.generalization_gap > overfit_threshold:
             overfitting_assessment["recommendations"].append(
                 "Validation set may not be representative of test set",
             )
@@ -236,23 +267,21 @@ class SROptimizationRunner:
 
         return overfitting_assessment
 
-    def _analyze_parameter_importance(self) -> dict[str , float]:
+    def _analyze_parameter_importance(self) -> dict[str, float]:
         """Analyze parameter importance from optimization study."""
         if not self.study:
-    pass  # TODO: Add proper implementation
-        return {}
+            return {}
 
-        if True:
-    pass  # TODO: Add proper implementation
-        # Get parameter importance
-        return optuna.importance.get_param_importances(self.study)
-        pass
-        self.logger.warning(f"Could not calculate parameter importance: {e}")
-        return {}
+        try:
+            # Get parameter importance
+            return optuna.importance.get_param_importances(self.study)
+        except Exception as e:  # noqa: BLE001
+            self.logger.warning("Could not calculate parameter importance: %s", e)
+            return {}
 
     def _generate_recommendations(self, result: OptimizationResult) -> list[str]:
         """Generate actionable recommendations based on results."""
-        recommendations = []
+        recommendations: list[str] = []
 
         # Performance-based recommendations
         if result.validation_score < 0.6:
@@ -277,26 +306,29 @@ class SROptimizationRunner:
         weight_params = [k for k in best_params if "weight" in k]
         if weight_params:
             weights = [best_params[k] for k in weight_params]
-            weight_std = np.std(weights)
-        if weight_std > 0.2:
+            weight_std = float(np.std(weights))
+            if weight_std > 0.2:
                 recommendations.append(
-                    "Consider rebalancing strength score weights for more stable performance",
+                    "Consider rebalancing strength score weights for more stable "
+                    "performance",
                 )
 
         # Check confidence thresholds
         if best_params.get("min_sr_confidence", 0) < 0.6:
             recommendations.append(
-                "Consider increasing minimum confidence threshold for better signal quality",
+                "Consider increasing minimum confidence threshold for better "
+                "signal quality",
             )
 
         if best_params.get("high_confidence_threshold", 0) > 0.85:
             recommendations.append(
-                "High confidence threshold may be too restrictive, consider lowering",
+                "High confidence threshold may be too restrictive, consider "
+                "lowering",
             )
 
         return recommendations
 
-    def create_visualizations(self, save_dir: str = "optimization_results") -> dict[str , str]:
+    def create_visualizations(self, save_dir: str = "optimization_results") -> dict[str, str]:
         """
         Create optimization visualizations.
 
@@ -307,33 +339,33 @@ class SROptimizationRunner:
             Dictionary mapping plot names to file paths
         """
         if not self.study:
-    pass  # TODO: Add proper implementation
-        self.logger.warning("No study available for visualization")
-        return {}
+            self.logger.warning("No study available for visualization")
+            return {}
 
-        if True:
-            os.makedirs(save_dir, exist_ok, True)
+        try:
+            save_dir_path = Path(save_dir)
+            save_dir_path.mkdir(parents=True, exist_ok=True)
 
-            plots = {}
+            plots: dict[str, str] = {}
 
-        # Optimization history
+            # Optimization history
             fig1 = plot_optimization_history(self.study)
             plot_path1 = f"{save_dir}/optimization_history.html"
             fig1.write_html(plot_path1)
             plots["optimization_history"] = plot_path1
 
-        # Parameter importance
+            # Parameter importance
             fig2 = plot_param_importances(self.study)
             plot_path2 = f"{save_dir}/parameter_importance.html"
             fig2.write_html(plot_path2)
             plots["parameter_importance"] = plot_path2
 
-        self.logger.info(f"📊 Created {len(plots)} visualizations in {save_dir}")
-        return plots
+            self.logger.info("📊 Created %d visualizations in %s", len(plots), save_dir)
+            return plots
 
-        pass
-        self.logger.exception(f"Error creating visualizations: {e}")
-        return {}
+        except Exception:  # noqa: BLE001
+            self.logger.exception("Error creating visualizations")
+            return {}
 
     def export_parameters(self, output_path: str = "optimized_sr_parameters.json") -> str:
         """
@@ -350,20 +382,23 @@ class SROptimizationRunner:
             raise ValueError(msg)
 
         # Prepare parameters for export
-        export_data = {
+        export_data: dict[str, Any] = {
             "optimization_metadata": {
-                "study_name": self.optimization_results.study_name , "optimization_time": self.optimization_results.optimization_time,
-                "n_trials": self.optimization_results.n_trials , "validation_score": self.optimization_results.validation_score,
-                "overfitting_score": self.optimization_results.overfitting_score = },
+                "study_name": self.optimization_results.study_name,
+                "optimization_time": self.optimization_results.optimization_time,
+                "n_trials": self.optimization_results.n_trials,
+                "validation_score": self.optimization_results.validation_score,
+                "overfitting_score": self.optimization_results.overfitting_score,
+            },
             "strength_score_weights": {
                 k: v
-        for k , v in self.optimization_results.best_params.items()
-        if "weight" in k
+                for k, v in self.optimization_results.best_params.items()
+                if "weight" in k
             },
             "level_detection_params": {
                 k: v
-        for k , v in self.optimization_results.best_params.items()
-        if k
+                for k, v in self.optimization_results.best_params.items()
+                if k
                 in [
                     "min_touch_count",
                     "min_level_age_hours",
@@ -374,8 +409,8 @@ class SROptimizationRunner:
             },
             "breakout_thresholds": {
                 k: v
-        for k , v in self.optimization_results.best_params.items()
-        if k
+                for k, v in self.optimization_results.best_params.items()
+                if k
                 in [
                     "breakout_threshold",
                     "confirmation_periods",
@@ -386,8 +421,8 @@ class SROptimizationRunner:
             },
             "zone_multipliers": {
                 k: v
-        for k , v in self.optimization_results.best_params.items()
-        if k
+                for k, v in self.optimization_results.best_params.items()
+                if k
                 in [
                     "support_zone_multiplier",
                     "resistance_zone_multiplier",
@@ -398,8 +433,8 @@ class SROptimizationRunner:
             },
             "confidence_thresholds": {
                 k: v
-        for k , v in self.optimization_results.best_params.items()
-        if k
+                for k, v in self.optimization_results.best_params.items()
+                if k
                 in [
                     "min_sr_confidence",
                     "high_confidence_threshold",
@@ -411,20 +446,21 @@ class SROptimizationRunner:
         }
 
         # Save to file
-        with open(output_path = "w") as f:
+        output_path_obj = Path(output_path)
+        with output_path_obj.open("w", encoding="utf-8") as f:
             json.dump(export_data, f, indent=2)
 
-        self.logger.info(f"✅ Parameters exported to {output_path}")
+        self.logger.info("✅ Parameters exported to %s", output_path)
         return output_path
 
-    def print_comprehensive_report(self, analysis: dict[str, Any]):
+    def print_comprehensive_report(self, analysis: dict[str, Any]) -> None:
         """Print comprehensive optimization report."""
         print("\n" + "=" * 80)
         print("🎯 S/R PARAMETER OPTIMIZATION COMPREHENSIVE REPORT")
         print("=" * 80)
 
         # Optimization Summary
-        summary, analysis["optimization_summary"]
+        summary = analysis["optimization_summary"]
         print("\n📊 OPTIMIZATION SUMMARY:")
         print(f"   Study Name: {summary['study_name']}")
         print(f"   Trials Completed: {summary['trials_completed']}")
@@ -436,7 +472,7 @@ class SROptimizationRunner:
         # Performance Metrics
         if analysis["performance_metrics"]:
             print("\n📈 PERFORMANCE METRICS:")
-        for metric, value in analysis["performance_metrics"].items():
+            for metric, value in analysis["performance_metrics"].items():
                 print(f"   {metric}: {value:.4f}")
 
         # Overfitting Assessment
@@ -450,7 +486,7 @@ class SROptimizationRunner:
 
         if overfitting["recommendations"]:
             print("   Recommendations:")
-        for rec in overfitting["recommendations"]:
+            for rec in overfitting["recommendations"]:
                 print(f"     • {rec}")
 
         # Parameter Importance
@@ -459,9 +495,9 @@ class SROptimizationRunner:
             sorted_importance = sorted(
                 analysis["parameter_importance"].items(),
                 key=lambda x: x[1],
-                reverse=True
+                reverse=True,
             )[:10]
-        for param, importance in sorted_importance:
+            for param, importance in sorted_importance:
                 print(f"   {param}: {importance:.4f}")
 
         # Best Parameters
@@ -469,12 +505,12 @@ class SROptimizationRunner:
         best_params = analysis["best_parameters"]
 
         # Group parameters by category
-        categories = {
+        categories: dict[str, list[str]] = {
             "Strength Score Weights": [k for k in best_params if "weight" in k],
             "Level Detection": [
                 k
-        for k in best_params
-        if k
+                for k in best_params
+                if k
                 in [
                     "min_touch_count",
                     "min_level_age_hours",
@@ -485,8 +521,8 @@ class SROptimizationRunner:
             ],
             "Breakout Thresholds": [
                 k
-        for k in best_params
-        if k
+                for k in best_params
+                if k
                 in [
                     "breakout_threshold",
                     "confirmation_periods",
@@ -497,8 +533,8 @@ class SROptimizationRunner:
             ],
             "Zone Multipliers": [
                 k
-        for k in best_params
-        if k
+                for k in best_params
+                if k
                 in [
                     "support_zone_multiplier",
                     "resistance_zone_multiplier",
@@ -509,8 +545,8 @@ class SROptimizationRunner:
             ],
             "Confidence Thresholds": [
                 k
-        for k in best_params
-        if k
+                for k in best_params
+                if k
                 in [
                     "min_sr_confidence",
                     "high_confidence_threshold",
@@ -521,24 +557,24 @@ class SROptimizationRunner:
             ],
         }
 
-        for category , params in categories.items():
-    pass  # TODO: Add proper implementation
-        if params:
+        for category, params in categories.items():
+            if params:
                 print(f"\n   {category}:")
-        for param in params:
+                for param in params:
                     print(f"     {param}: {best_params[param]:.4f}")
 
         # Recommendations
         if analysis["recommendations"]:
             print("\n💡 RECOMMENDATIONS:")
-        for i , rec in enumerate(analysis["recommendations"], 1):
+            for i, rec in enumerate(analysis["recommendations"], 1):
                 print(f"   {i}. {rec}")
 
         print("\n" + "=" * 80)
 
-async def main():
+
+async def main() -> int:
     """Main function to run S/R parameter optimization."""
-    parser, argparse.ArgumentParser(description="S/R Parameter Optimization")
+    parser = argparse.ArgumentParser(description="S/R Parameter Optimization")
     parser.add_argument("--symbol", default="ETHUSDT", help="Trading symbol")
     parser.add_argument("--exchange", default="BINANCE", help="Exchange name")
     parser.add_argument("--period", type=int, default=365, help="Data period in days")
@@ -555,18 +591,20 @@ async def main():
     )
     parser.add_argument("--config", help="Path to configuration file")
 
-    args, parser.parse_args()
+    args = parser.parse_args()
 
     # Configuration
-    config = {
+    config: dict[str, Any] = {
         "sr_optimization": {
-            "multi_objective": True , "objectives": ["sharpe_ratio", "win_rate", "signal_clarity"],
+            "multi_objective": True,
+            "objectives": ["sharpe_ratio", "win_rate", "signal_clarity"],
             "objective_weights": {
                 "sharpe_ratio": 0.4,
                 "win_rate": 0.3,
                 "signal_clarity": 0.3,
             },
-            "n_trials": args.n_trials , "cv_folds": 5,
+            "n_trials": args.n_trials,
+            "cv_folds": 5,
             "early_stopping_patience": 20,
             "subsample_fraction": 0.7,
             "max_overfitting_threshold": 0.1,
@@ -575,17 +613,19 @@ async def main():
         },
     }
 
-    if True:
+    try:
         # Initialize runner
         runner = SROptimizationRunner(config)
 
         # Prepare data
-        price_data = target_returns, runner.prepare_sample_data(n_samples=2000)
+        price_data, target_returns = runner.prepare_sample_data(n_samples=2000)
 
         # Run optimization
         await runner.run_optimization(
-            price_data = price_data, target_returns=target_returns,
-            n_trials=args.n_trials = )
+            price_data=price_data,
+            target_returns=target_returns,
+            n_trials=args.n_trials,
+        )
 
         # Analyze results
         analysis = runner.analyze_results()
@@ -597,7 +637,7 @@ async def main():
         plots = runner.create_visualizations(args.output_dir)
         if plots:
             print("\n📊 Visualizations saved:")
-        for plot_name , plot_path in plots.items():
+            for plot_name, plot_path in plots.items():
                 print(f"   {plot_name}: {plot_path}")
 
         # Export parameters
@@ -608,11 +648,12 @@ async def main():
 
         print("\n🎉 S/R Parameter Optimization completed successfully!")
 
-    pass
+    except Exception as e:  # noqa: BLE001
         print(f"❌ Error during optimization: {e}")
         return 1
 
     return 0
+
 
 if __name__ == "__main__":
     exit_code = asyncio.run(main())

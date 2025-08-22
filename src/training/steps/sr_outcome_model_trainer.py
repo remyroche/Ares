@@ -86,75 +86,70 @@ class SROutcomeModelTrainer:
         self.feature_names = []
 
     @handle_errors(
-        exceptions=(Exception,)
-        default_return=False
-        context="S/R outcome model trainer initialization"
+        exceptions=(Exception,),
+        default_return=False,
+        context="S/R outcome model initialization",
     )
     async def initialize(self) -> bool:
         """Initialize the S/R outcome model trainer."""
         try:
-        self.logger.info("Initializing S/R Outcome Model Trainer...")
+            self.logger.info("Initializing S/R Outcome Model Trainer...")
 
-        # Initialize SR predictor
+            # Initialize SR predictor
             sr_init_success = await self.sr_predictor.initialize()
-        if not sr_init_success:
-        self.logger.warning("Failed to initialize SRBreakoutPredictor")
+            if not sr_init_success:
+                self.logger.warning("Failed to initialize SRBreakoutPredictor")
 
-        # Initialize label encoder
-        self.label_encoder.fit(["breakout", "rebounce", "consolidation"])
+            # Initialize label encoder
+            self.label_encoder.fit(["breakout", "rebounce", "consolidation"])
 
-        self.logger.info("✅ S/R Outcome Model Trainer initialized successfully")
-        return True
+            self.logger.info("✅ S/R Outcome Model Trainer initialized successfully")
+            return True
 
         except Exception as e:
-        self.logger.exception(f"Failed to initialize S/R Outcome Model Trainer: {e}")
-        return False
+            self.logger.exception(f"Failed to initialize S/R Outcome Model Trainer: {e}")
+            return False
 
     @handle_errors(
-        exceptions=(Exception,)
-        default_return=False
-        context="S/R outcome model training"
+        exceptions=(Exception,),
+        default_return=False,
+        context="S/R outcome model training",
     )
     async def train_model(self, training_data: dict[str, pd.DataFrame]) -> bool:
         """Train the S/R outcome prediction model ensemble."""
         try:
-        self.logger.info("🔄 Starting S/R outcome model training...")
+            self.logger.info("🔄 Starting S/R outcome model training...")
 
-        # Prepare training data
+            # Prepare training data
             prepared_data = await self._prepare_training_data(training_data)
-        if prepared_data is None:
-        self.logger.error("Failed to prepare training data")
-        return False
+            if prepared_data is None:
+                self.logger.error("Failed to prepare training data")
+                return False
 
-        # Feature engineering
+            # Feature engineering
             X, y = await self._engineer_features(prepared_data)
-        if X is None or y is None:
-        self.logger.error("Failed to engineer features")
-        return False
+            if X is None or y is None:
+                self.logger.error("Failed to engineer features")
+                return False
 
-        # Train models based on configuration
-        if self.use_ensemble:
-                training_result, await self._train_ensemble_models(X, y)
-        # Train single model based on model_type
+            # Train models based on configuration
+            if self.use_ensemble:
+                training_result = await self._train_ensemble_models(X, y)
+            # Train single model based on model_type
             elif self.model_type == "lightgbm":
-                training_result, await self._train_lightgbm_model(X, y)
+                training_result = await self._train_lightgbm_model(X, y)
             elif self.model_type == "xgboost":
-                training_result, await self._train_xgboost_model(X, y)
-            else: training_result = await self._train_ensemble_models(X, y)
+                training_result = await self._train_xgboost_model(X, y)
+            elif self.model_type == "logistic":
+                training_result = await self._train_logistic_model(X, y)
+            else:
+                self.logger.error(f"Unknown model_type: {self.model_type}")
+                return False
 
-        if not training_result:
-        self.logger.error("Model training failed")
-        return False
-
-        # Save model artifacts
-        await self._save_model_artifacts()
-
-        self.logger.info("✅ S/R outcome model training completed successfully")
-        return True
-
+            return bool(training_result)
         except Exception as e:
-        self.logger.exception(f"Training failed: {e}")
-        return False
+            self.logger.exception(f"Error during model training: {e}")
+            return False
 
     async def _prepare_training_data(
         self = training_data: dict[str, pd.DataFrame], ) -> pd.DataFrame | None:
@@ -662,9 +657,12 @@ class SROutcomeModelTrainer:
         # Cross-validation
                 scores = []
         for train_idx, val_idx in tscv.split(X):
-                    X_train = X_val, X[train_idx], X[val_idx]
-                    y_train = y_val, y[train_idx], y[val_idx]
-                    w_train = _w_val, sample_weights[train_idx], sample_weights[val_idx]
+                    X_train = X[train_idx]
+                    y_train = y[train_idx]
+                    w_train = sample_weights[train_idx]
+                    X_val = X[val_idx]
+                    y_val = y[val_idx]
+                    w_val = sample_weights[val_idx]
 
                     model, lgb.LGBMClassifier(**params, random_state=42)
                     model.fit(X_train, y_train, sample_weight=w_train)
@@ -743,9 +741,12 @@ class SROutcomeModelTrainer:
         # Cross-validation
                 scores = []
         for train_idx, val_idx in tscv.split(X):
-                    X_train = X_val, X[train_idx], X[val_idx]
-                    y_train = y_val, y[train_idx], y[val_idx]
-                    w_train = _w_val, sample_weights[train_idx], sample_weights[val_idx]
+                    X_train = X[train_idx]
+                    y_train = y[train_idx]
+                    w_train = sample_weights[train_idx]
+                    X_val = X[val_idx]
+                    y_val = y[val_idx]
+                    w_val = sample_weights[val_idx]
 
                     model, xgb.XGBClassifier(**params, random_state=42)
                     model.fit(X_train, y_train, sample_weight=w_train)

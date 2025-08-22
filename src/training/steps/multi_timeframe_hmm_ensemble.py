@@ -155,9 +155,7 @@ class MultiTimeframeHMMEnsemble:
                 self.logger.info(f"🔄 Training {tf} timeframe models...")
                 tf_start_time = time.time()
 
-                success = self._train_timeframe_models(
-                    timeframe_data[tf], tf_config,
-                )
+                success = self._train_timeframe_models(timeframe_data[tf], tf_config)
                 tf_training_time = time.time() - tf_start_time
 
                 if success:
@@ -221,7 +219,7 @@ class MultiTimeframeHMMEnsemble:
         context="timeframe model training",
     )
     def _train_timeframe_models(
-        self, timeframe: str, data: pd.DataFrame, tf_config: TimeframeConfig,
+        self, data: pd.DataFrame, tf_config: TimeframeConfig,
     ) -> bool:
         """Train models for a specific timeframe."""
         try:
@@ -230,33 +228,34 @@ class MultiTimeframeHMMEnsemble:
                 CONFIG.get("DATA_DIR", "data"), "training", "regime_forecasting",
             )
             rf_path = os.path.join(
-                rf_dir, f"{self.exchange}_{self.symbol}_{timeframe}_regime_forecasting.json",
+                rf_dir,
+                f"{self.exchange}_{self.symbol}_{tf_config.timeframe}_regime_forecasting.json",
             )
 
             if not os.path.exists(rf_path):
                 self.logger.warning(
-                    f"⚠️ No regime forecasting artifact found for {timeframe}: {rf_path}",
+                    f"⚠️ No regime forecasting artifact found for {tf_config.timeframe}: {rf_path}",
                 )
                 return False
 
             # Load JSON with next-regime probabilities and exit-within-H
             with open(rf_path) as f:
                 rf = json.load(f)
-            self.timeframe_models[timeframe] = {
+            self.timeframe_models[tf_config.timeframe] = {
                 "regime_forecasting": rf,
-                "timeframe": timeframe,
+                "timeframe": tf_config.timeframe,
                 "config": tf_config,
                 "trained_at": time.time(),
             }
             self.logger.info(
-                f"📦 Loaded regime forecasting artifact for {timeframe} ({rf_path})",
+                f"📦 Loaded regime forecasting artifact for {tf_config.timeframe} ({rf_path})",
             )
 
             # Store timeframe models metadata
-            self.timeframe_models.setdefault(timeframe, {})
-            self.timeframe_models[timeframe].update(
+            self.timeframe_models.setdefault(tf_config.timeframe, {})
+            self.timeframe_models[tf_config.timeframe].update(
                 {
-                    "timeframe": timeframe,
+                    "timeframe": tf_config.timeframe,
                     "config": tf_config,
                     "trained_at": time.time(),
                 }
@@ -265,7 +264,9 @@ class MultiTimeframeHMMEnsemble:
             return True
 
         except Exception as e:
-            self.logger.exception(f"💥 Error training {timeframe} models: {e}")
+            self.logger.exception(
+                f"💥 Error training {tf_config.timeframe} models: {e}"
+            )
             return False
 
     @handle_errors(
@@ -437,16 +438,16 @@ class MultiTimeframeHMMEnsemble:
 
             # Combine predictions based on ensemble method
             if self.config.ensemble_method == "weighted_average":
-                final_prediction, final_confidence, self._weighted_average_ensemble(
-                    timeframe_predictions = timeframe_confidences,
+                final_prediction, final_confidence = self._weighted_average_ensemble(
+                    timeframe_predictions, timeframe_confidences
                 )
             elif self.config.ensemble_method == "meta_learner":
-                final_prediction, final_confidence, self._meta_learner_ensemble(
-                    timeframe_predictions,
+                final_prediction, final_confidence = self._meta_learner_ensemble(
+                    timeframe_predictions
                 )
             elif self.config.ensemble_method == "stacking":
-                final_prediction, final_confidence, self._stacking_ensemble(
-                    timeframe_predictions,
+                final_prediction, final_confidence = self._stacking_ensemble(
+                    timeframe_predictions
                 )
             else:
                 self.logger.error(
@@ -465,7 +466,7 @@ class MultiTimeframeHMMEnsemble:
             # Prepare timeframe contributions
             timeframe_contributions = {}
             for tf, conf in timeframe_confidences.items():
-                weight, self.ensemble_weights.get(tf, 0.0)
+                weight = self.ensemble_weights.get(tf, 0.0)
                 timeframe_contributions[tf] = {
                     "confidence": conf,
                     "weight": weight,
@@ -493,7 +494,10 @@ class MultiTimeframeHMMEnsemble:
             }
 
     def _weighted_average_ensemble(
-        self, timeframe_predictions: dict[str, pd.DataFrame], timeframe_confidences: dict[str, float], ) -> tuple[str, float]:
+        self,
+        timeframe_predictions: dict[str, pd.DataFrame],
+        timeframe_confidences: dict[str, float],
+    ) -> tuple[str, float]:
         """Combine predictions using weighted average (fallback method)."""
         try:
             # Calculate weighted average of confidences
@@ -501,7 +505,7 @@ class MultiTimeframeHMMEnsemble:
             weighted_confidence = 0.0
 
             for tf, conf in timeframe_confidences.items():
-                weight, self.ensemble_weights.get(tf, 0.0)
+                weight = self.ensemble_weights.get(tf, 0.0)
                 weighted_confidence += conf * weight
                 total_weight += weight
 
@@ -523,7 +527,8 @@ class MultiTimeframeHMMEnsemble:
             return "HOLD", 0.0
 
     def _meta_learner_ensemble(
-        self = timeframe_predictions: dict[str, pd.DataFrame], ) -> tuple[str, float]:
+        self, timeframe_predictions: dict[str, pd.DataFrame]
+    ) -> tuple[str, float]:
         """Combine predictions using meta-learner (primary method)."""
         try:
             if self.meta_learner is None:
@@ -549,10 +554,10 @@ class MultiTimeframeHMMEnsemble:
                 return "HOLD", 0.0
 
             # Combine features
-            combined_features, pd.concat(meta_features, axis=0).to_frame().T
+            combined_features = pd.concat(meta_features, axis=0).to_frame().T
 
             # Get meta-learner prediction
-            pred_proba, self.meta_learner.predict_proba(combined_features)[0, 1]
+            pred_proba = self.meta_learner.predict_proba(combined_features)[0, 1]
 
             # Determine prediction
             if pred_proba > self.config.min_confidence_threshold:
@@ -567,7 +572,8 @@ class MultiTimeframeHMMEnsemble:
             return "HOLD", 0.0
 
     def _stacking_ensemble(
-        self = timeframe_predictions: dict[str, pd.DataFrame], ) -> tuple[str, float]:
+        self, timeframe_predictions: dict[str, pd.DataFrame]
+    ) -> tuple[str, float]:
         """Combine predictions using stacking ensemble (advanced method)."""
         try:
             # Stacking ensemble with sophisticated feature engineering
@@ -577,7 +583,7 @@ class MultiTimeframeHMMEnsemble:
                 return "HOLD", 0.0
 
             # Create stacking features
-            stacking_features = {}
+            stacking_features: dict[str, float] = {}
 
             # 1. Raw predictions from each timeframe
             for tf, predictions in timeframe_predictions.items():
@@ -587,7 +593,7 @@ class MultiTimeframeHMMEnsemble:
                         predictions.iloc[-1] if len(predictions) > 0 else pd.Series(0)
                     )
                     for col in predictions.columns:
-                        stacking_features[f"{tf}_{col}"] = latest_preds.get(col, 0.0)
+                        stacking_features[f"{tf}_{col}"] = float(latest_preds.get(col, 0.0))
 
             # 2. Cross-timeframe interaction features
             timeframes = list(timeframe_predictions.keys())
@@ -595,10 +601,7 @@ class MultiTimeframeHMMEnsemble:
                 # Create interaction features between timeframes
                 for i, tf1 in enumerate(timeframes):
                     for tf2 in timeframes[i + 1 :]:
-                        if (
-                            tf1 in timeframe_predictions
-                            and tf2 in timeframe_predictions
-                        ):
+                        if tf1 in timeframe_predictions and tf2 in timeframe_predictions:
                             pred1 = (
                                 timeframe_predictions[tf1].iloc[-1].mean()
                                 if not timeframe_predictions[tf1].empty
@@ -609,22 +612,24 @@ class MultiTimeframeHMMEnsemble:
                                 if not timeframe_predictions[tf2].empty
                                 else 0.0
                             )
-                            stacking_features[f"{tf1}_{tf2}_interaction"] = (
+                            stacking_features[f"{tf1}_{tf2}_interaction"] = float(
                                 pred1 * pred2
                             )
-                            stacking_features[f"{tf1}_{tf2}_difference"] = pred1 - pred2
+                            stacking_features[f"{tf1}_{tf2}_difference"] = float(
+                                pred1 - pred2
+                            )
 
             # 3. Statistical features across timeframes
-            all_predictions = []
-            for tf, predictions in timeframe_predictions.items():
+            all_predictions: list[float] = []
+            for _, predictions in timeframe_predictions.items():
                 if not predictions.empty:
-                    all_predictions.extend(predictions.iloc[-1].values)
+                    all_predictions.extend(predictions.iloc[-1].values.tolist())
 
             if all_predictions:
-                stacking_features["mean_prediction"] = np.mean(all_predictions)
-                stacking_features["std_prediction"] = np.std(all_predictions)
-                stacking_features["max_prediction"] = np.max(all_predictions)
-                stacking_features["min_prediction"] = np.min(all_predictions)
+                stacking_features["mean_prediction"] = float(np.mean(all_predictions))
+                stacking_features["std_prediction"] = float(np.std(all_predictions))
+                stacking_features["max_prediction"] = float(np.max(all_predictions))
+                stacking_features["min_prediction"] = float(np.min(all_predictions))
                 stacking_features["prediction_range"] = (
                     stacking_features["max_prediction"]
                     - stacking_features["min_prediction"]
@@ -635,7 +640,10 @@ class MultiTimeframeHMMEnsemble:
 
             # Use meta-learner for final prediction
             if self.meta_learner is not None:
-                pred_proba, self.meta_learner.predict_proba(stacking_df)[0, 1]
+                pred_proba = self.meta_learner.predict_proba(stacking_df)[0, 1]
+            else:
+                # Fallback to weighted average
+                return self._weighted_average_ensemble(timeframe_predictions, {})
 
             # Determine prediction
             if pred_proba > self.config.min_confidence_threshold:
@@ -643,9 +651,7 @@ class MultiTimeframeHMMEnsemble:
             else:
                 final_prediction = "REGIME_CONTINUE"
 
-            return final_prediction, pred_proba
-            # Fallback to weighted average
-            return self._weighted_average_ensemble(timeframe_predictions, {})
+            return final_prediction, float(pred_proba)
 
         except Exception as e:
             self.logger.exception(f"💥 Error in stacking ensemble: {e}")
@@ -664,10 +670,11 @@ class MultiTimeframeHMMEnsemble:
                 self.timeframe_performance[tf].append(conf)
 
             # Keep only recent performance (last 1000 predictions)
-            if len(self.timeframe_performance[tf]) > 1000:
-                self.timeframe_performance[tf] = self.timeframe_performance[tf][
-                    -1000:
-                ]
+            for tf in list(self.timeframe_performance.keys()):
+                if len(self.timeframe_performance[tf]) > 1000:
+                    self.timeframe_performance[tf] = self.timeframe_performance[tf][
+                        -1000:
+                    ]
 
             # Update weights periodically
             if self.prediction_count % self.config.weight_update_frequency == 0:

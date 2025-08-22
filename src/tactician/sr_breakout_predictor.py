@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.data_quality_decorators import validate_data_quality
 
 class SRBreakoutPredictor:
     """
@@ -279,6 +280,14 @@ class SRBreakoutPredictor:
             self.logger.error(f"Failed to initialize components: {e}")
             return False
 
+    @validate_data_quality(
+        required_columns=["open", "high", "low", "close", "volume"],
+        min_rows=50,
+        max_null_ratio=0.1,
+        check_duplicates=True,
+        check_timestamps=True,
+        context="SR breakout prediction input validation"
+    )
     @handle_specific_errors(
         error_handlers={
             ValueError: (None, "Invalid input data for SR breakout prediction"),

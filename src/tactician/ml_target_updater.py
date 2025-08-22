@@ -18,6 +18,7 @@ from src.utils.warning_symbols import (
     failed,
     warning,
 )
+from src.utils.data_quality_decorators import validate_data_quality
 
 class MLTargetUpdater:
     """
@@ -289,6 +290,14 @@ class MLTargetUpdater:
             self.logger.error(failed(f"❌ Error checking if target should be updated: {e}"))
             return False
 
+    @validate_data_quality(
+        required_columns=["open", "high", "low", "close", "volume"],
+        min_rows=20,
+        max_null_ratio=0.1,
+        check_duplicates=True,
+        check_timestamps=True,
+        context="ML target prediction generation"
+    )
     async def _generate_target_prediction(
         self,
         symbol: str,
@@ -364,6 +373,14 @@ class MLTargetUpdater:
             self.logger.error(failed(f"❌ Error validating target: {e}"))
             return False
 
+    @validate_data_quality(
+        required_columns=["timestamp", "open", "high", "low", "close", "volume"],
+        min_rows=1,
+        max_null_ratio=0.0,
+        check_duplicates=False,
+        check_timestamps=True,
+        context="ML target updater market data retrieval"
+    )
     async def _get_market_data(self, symbol: str) -> Optional[pd.DataFrame]:
         """
         Get current market data for a symbol.

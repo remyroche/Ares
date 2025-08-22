@@ -14,6 +14,7 @@ from src.utils.warning_symbols import (
     invalid,
     validation_error,
 )
+from src.utils.data_quality_decorators import validate_data_quality
 
 class MLTargetValidator:
     """
@@ -115,6 +116,14 @@ class MLTargetValidator:
             self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
+    @validate_data_quality(
+        required_columns=None,  # This method validates dict input, not DataFrame
+        min_rows=1,
+        max_null_ratio=0.0,
+        check_duplicates=False,
+        check_timestamps=False,
+        context="ML target validation"
+    )
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
@@ -210,6 +219,14 @@ class MLTargetValidator:
             self._add_to_history(validation_record)
             return False
 
+    @validate_data_quality(
+        required_columns=None,  # This method validates dict input, not DataFrame
+        min_rows=1,
+        max_null_ratio=0.0,
+        check_duplicates=False,
+        check_timestamps=False,
+        context="ML prediction validation"
+    )
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,

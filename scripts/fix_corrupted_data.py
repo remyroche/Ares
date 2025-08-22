@@ -172,7 +172,6 @@ def process_csv_file(csv_path: str, output_dir: str) -> bool:
 def main() -> bool:
     """Main function to fix corrupted data files."""
     setup_logging()
-    logger = system_logger.getChild("FixCorruptedData")
 
     print("🔧 Fixing Corrupted Price Data")
     print("=" * 50)

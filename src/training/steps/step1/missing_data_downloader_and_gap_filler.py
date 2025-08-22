@@ -625,12 +625,18 @@ class MissingDataDownloaderAndGapFiller:
             Dictionary with download results
 
         """
+        download_start = datetime.now()
+        
         if end_date is None:
             end_date = datetime.now()
+            logger.info(f"📅 No end_date provided, using default: {end_date.date()} (today)")
 
         start_date = end_date - timedelta(days=365)  # Last year
 
-        logger.info(f"🚀 Starting comprehensive data download for {exchange}_{symbol}")
+        logger.info(f"🚀 COMPREHENSIVE DATA DOWNLOAD FOR {exchange}_{symbol}")
+        logger.info(f"📅 Download period: {start_date.date()} to {end_date.date()}")
+        logger.info(f"📁 Data cache path: {self.data_cache_path}")
+        logger.info("-" * 60)
 
         results = {
             "success": True,
@@ -667,5 +673,32 @@ class MissingDataDownloaderAndGapFiller:
         if results["errors"]:
             results["success"] = False
 
-        logger.info(f"🎉 Comprehensive download complete for {exchange}_{symbol}")
+        download_end = datetime.now()
+        download_time = download_end - download_start
+        
+        logger.info("-" * 60)
+        logger.info("📊 COMPREHENSIVE DOWNLOAD SUMMARY")
+        logger.info(f"⏱️  Total download time: {download_time}")
+        logger.info(f"🎯 Target: {exchange}_{symbol}")
+        logger.info(f"📅 Period: {start_date.date()} to {end_date.date()}")
+        logger.info(f"✅ Success: {results['success']}")
+        logger.info(f"❌ Errors: {len(results['errors'])}")
+        
+        # Log individual download results
+        for data_type, download_result in results["download_results"].items():
+            if download_result.get("success"):
+                logger.info(f"✅ {data_type.title()}: Downloaded successfully")
+            else:
+                logger.error(f"❌ {data_type.title()}: Download failed")
+        
+        if results["errors"]:
+            logger.error("❌ DOWNLOAD ERRORS:")
+            for i, error in enumerate(results["errors"], 1):
+                logger.error(f"  {i}. {error}")
+        
+        if results["success"]:
+            logger.info("🎉 COMPREHENSIVE DOWNLOAD COMPLETED SUCCESSFULLY!")
+        else:
+            logger.error("❌ COMPREHENSIVE DOWNLOAD COMPLETED WITH ERRORS!")
+        
         return results

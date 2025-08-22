@@ -86,7 +86,11 @@ class Step1Orchestrator:
             Dictionary with step1 collection results
 
         """
+        start_time = datetime.now()
         logger.info(f"🚀 STARTING COMPLETE STEP1 PROCESS FOR {exchange}_{symbol}")
+        logger.info(f"📅 Date Range: {start_date} to {end_date}")
+        logger.info(f"🔧 Auto-fix enabled: {auto_fix}")
+        logger.info(f"📁 Data cache path: {self.data_cache_path}")
         logger.info("=" * 80)
 
         results = {
@@ -274,18 +278,45 @@ class Step1Orchestrator:
             report = self.generate_comprehensive_report(symbol, exchange, results)
             results["report"] = report
 
+            # Calculate execution time
+            end_time = datetime.now()
+            execution_time = end_time - start_time
+            
             logger.info("=" * 80)
+            logger.info("📊 STEP1 EXECUTION SUMMARY")
+            logger.info(f"⏱️  Total execution time: {execution_time}")
+            logger.info(f"📁 Data cache path: {self.data_cache_path}")
+            logger.info(f"🔧 Auto-fix enabled: {auto_fix}")
+            logger.info(f"✅ Success: {results['success']}")
+            logger.info(f"❌ Errors: {len(results['errors'])}")
+            logger.info(f"⚠️  Warnings: {len(results['warnings'])}")
+            logger.info(f"🎯 Step1_5 ready: {results['step1_5_ready']}")
+            
+            if results["errors"]:
+                logger.error("❌ ERRORS ENCOUNTERED:")
+                for i, error in enumerate(results["errors"], 1):
+                    logger.error(f"  {i}. {error}")
+            
+            if results["warnings"]:
+                logger.warning("⚠️  WARNINGS ENCOUNTERED:")
+                for i, warning in enumerate(results["warnings"], 1):
+                    logger.warning(f"  {i}. {warning}")
+            
             if results["success"]:
                 logger.info("🎉 STEP1 PROCESS COMPLETED SUCCESSFULLY!")
+                logger.info(f"📈 Ready for step1_5: {'Yes' if results['step1_5_ready'] else 'No'}")
             else:
                 logger.error("❌ STEP1 PROCESS COMPLETED WITH ERRORS!")
+                logger.error("🔍 Please review the errors above and fix issues before proceeding")
 
             return results
 
         except Exception as e:
-            logger.exception(f"❌ Error in step1 process: {e}")
+            end_time = datetime.now()
+            execution_time = end_time - start_time
+            logger.exception(f"❌ CRITICAL ERROR in step1 process after {execution_time}: {e}")
             results["success"] = False
-            results["errors"].append(str(e))
+            results["errors"].append(f"Critical error: {str(e)}")
             return results
 
     @with_tracing_span("validate_step1_5_readiness")

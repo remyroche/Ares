@@ -930,6 +930,17 @@ class ComprehensiveGapFiller:
         self, symbol: str = "ETHUSDT", exchange: str = "BINANCE"
     ) -> dict[str, Any] | None:
         """Process all gaps in all data types (aggtrades, futures, klines)."""
+        from src.utils.logger import system_logger
+        logger = system_logger.getChild("ComprehensiveGapFiller")
+        
+        gap_filling_start = datetime.now()
+        logger.info(f"🔧 COMPREHENSIVE GAP FILLING FOR {exchange}_{symbol}")
+        logger.info(f"📁 Data cache path: {self.data_cache_path}")
+        logger.info(f"⏱️  Max API calls per gap: {self.max_api_calls_per_gap}")
+        logger.info(f"⏱️  Call delay: {self.call_delay}s")
+        logger.info(f"⏱️  Max consecutive empty: {self.max_consecutive_empty}")
+        logger.info("-" * 60)
+        
         # Find all files for each data type
         aggtrades_pattern = f"aggtrades_{exchange}_{symbol}_*.parquet"
         aggtrades_csv_pattern = f"aggtrades_{exchange}_{symbol}_*.csv"
@@ -949,6 +960,11 @@ class ComprehensiveGapFiller:
             self.data_cache_path.glob(klines_csv_pattern)
         )
 
+        logger.info("📁 FILE DISCOVERY RESULTS:")
+        logger.info(f"  • Aggtrades files: {len(aggtrades_files)}")
+        logger.info(f"  • Futures files: {len(futures_files)}")
+        logger.info(f"  • Klines files: {len(klines_files)}")
+
         all_files: list[tuple[Path, str]] = []
 
         # Add files with types
@@ -960,7 +976,11 @@ class ComprehensiveGapFiller:
             all_files.append((kf, "klines"))
 
         if not all_files:
+            logger.warning("⚠️  No data files found for gap filling!")
             return None
+
+        logger.info(f"📊 Total files to process: {len(all_files)}")
+        logger.info("-" * 60)
 
         total_files_processed = 0
         total_files_with_gaps = 0
@@ -1021,6 +1041,31 @@ class ComprehensiveGapFiller:
                 await asyncio.sleep(0.2)
 
         # Summary
+        gap_filling_end = datetime.now()
+        gap_filling_time = gap_filling_end - gap_filling_start
+        
+        logger.info("-" * 60)
+        logger.info("📊 COMPREHENSIVE GAP FILLING SUMMARY")
+        logger.info(f"⏱️  Total processing time: {gap_filling_time}")
+        logger.info(f"📁 Files processed: {total_files_processed}")
+        logger.info(f"📁 Files with gaps: {total_files_with_gaps}")
+        logger.info(f"❌ Gaps found: {total_gaps_found}")
+        logger.info(f"✅ Gaps filled: {total_gaps_filled}")
+        logger.info(f"❌ Gaps failed: {total_gaps_failed}")
+        logger.info(f"📡 API calls made: {total_api_calls}")
+        logger.info(f"📡 Successful API calls: {total_successful_calls}")
+        
+        if total_gaps_found > 0:
+            success_rate = (total_gaps_filled / total_gaps_found) * 100
+            logger.info(f"📊 Gap filling success rate: {success_rate:.1f}%")
+            
+            if total_gaps_filled > 0:
+                logger.info("✅ GAP FILLING COMPLETED SUCCESSFULLY!")
+            else:
+                logger.warning("⚠️  GAP FILLING COMPLETED WITH NO SUCCESSFUL FILLS!")
+        else:
+            logger.info("✅ NO GAPS FOUND - ALL DATA IS COMPLETE!")
+        
         if total_gaps_found > 0:
             return {
                 "files_processed": total_files_processed,

@@ -19,6 +19,8 @@ import pandas as pd
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+from src.utils.error_handler import handle_errors
+
 
 class ComprehensiveGapFiller:
     """Comprehensive gap filler that handles all data types."""
@@ -513,15 +515,15 @@ class ComprehensiveGapFiller:
                     start_time_ms = int(gap_start.timestamp() * 1000)
                     end_time_ms = int(gap_end.timestamp() * 1000)
 
-                    missing_data, await self._fetch_aggtrades_data(
+                    missing_data = await self._fetch_aggtrades_data(
                         symbol=symbol, gap_start=gap_start, gap_end=gap_end, start_time_ms=start_time_ms, end_time_ms=end_time_ms
                     )
                 elif data_type == "futures":
-                    missing_data, await self._fetch_futures_data(
+                    missing_data = await self._fetch_futures_data(
                         symbol=symbol, gap_start=gap_start, gap_end=gap_end
                     )
                 elif data_type == "klines":
-                    missing_data, await self._fetch_klines_data(
+                    missing_data = await self._fetch_klines_data(
                         symbol=symbol, gap_start=gap_start, gap_end=gap_end, interval="1m"
                     )
 
@@ -769,7 +771,7 @@ class ComprehensiveGapFiller:
 
     async def process_all_data_types(
         self, symbol: str = "ETHUSDT", exchange: str = "BINANCE"
-    ):
+    ) -> dict | None:
         """Process all gaps in all data types (aggtrades, futures, klines)."""
         # Find all files for each data type
         aggtrades_pattern = f"aggtrades_{exchange}_{symbol}_*.parquet"
@@ -872,13 +874,14 @@ class ComprehensiveGapFiller:
 
 
 # Function to integrate with pipeline
+@handle_errors(exceptions=(Exception,), default_return=None, context="comprehensive gap filling pipeline")
 async def run_comprehensive_gap_filling_pipeline(symbol: str = "ETHUSDT", exchange: str = "BINANCE", data_cache_path: str = "data_cache"
 ):
     """Run comprehensive gap filling as part of the training pipeline."""
     gap_filler = ComprehensiveGapFiller(data_cache_path)
 
     try:
-        return await gap_filler.process_all_data_types(symbol = exchange)
+        return await gap_filler.process_all_data_types(symbol=symbol, exchange=exchange)
     finally:
         await gap_filler.close_session()
 

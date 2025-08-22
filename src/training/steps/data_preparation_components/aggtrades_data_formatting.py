@@ -4,9 +4,12 @@ import csv
 import glob
 import os
 import shutil
+from typing import Any, TextIO
+
+from src.utils.error_handler import handle_errors
 
 
-def check_file_format(file_path) -> bool | None:
+def check_file_format(file_path: str) -> bool:
     """Check if a CSV file follows the correct format.
     Returns True if the file is correctly formatted, False otherwise.
     """
@@ -50,7 +53,7 @@ def check_file_format(file_path) -> bool | None:
         return False
 
 
-def detect_file_format(file_path) -> str | None:
+def detect_file_format(file_path: str) -> str:
     """Detect the format of a CSV file and return the format type.
     Returns: 'correct', 'format1', 'format2', 'format3', or 'unknown'.
     """
@@ -112,7 +115,7 @@ class DataFileReformatter:
         except Exception:
             return False
 
-    def _process_format1(self, infile, writer) -> bool:
+    def _process_format1(self, infile: TextIO, writer: Any) -> bool:
         """Process semicolon-delimited format."""
         try:
             # Write header
@@ -143,7 +146,7 @@ class DataFileReformatter:
         except Exception:
             return False
 
-    def _process_format2(self, infile, writer) -> bool:
+    def _process_format2(self, infile: TextIO, writer: Any) -> bool:
         """Process mixed-delimiter format with agg_trade_id."""
         try:
             # Write header
@@ -180,7 +183,7 @@ class DataFileReformatter:
         except Exception:
             return False
 
-    def _process_format3(self, infile, writer) -> bool:
+    def _process_format3(self, infile: TextIO, writer: Any) -> bool:
         """Process format missing agg_trade_id column."""
         try:
             # Write header
@@ -212,6 +215,7 @@ class DataFileReformatter:
             return False
 
 
+@handle_errors(exceptions=(Exception,), default_return=None, context="auto reformat aggtrades files")
 def auto_reformat_aggtrades_files() -> None:
     """Automatically detect and reformat all aggtrades CSV files that don't follow the correct format."""
     # Define paths
@@ -264,7 +268,7 @@ def auto_reformat_aggtrades_files() -> None:
             shutil.copy2(backup_path, file_path)
 
 
-
+@handle_errors(exceptions=(Exception,), default_return=None, context="auto reformat aggtrades files for exchange")
 def auto_reformat_aggtrades_files_for_exchange(exchange: str, symbol: str) -> None:
     """Automatically detect and reformat aggtrades CSV files for a specific exchange and symbol.
     This is a targeted version that only processes files for the specified exchange/symbol.
@@ -315,7 +319,7 @@ def auto_reformat_aggtrades_files_for_exchange(exchange: str, symbol: str) -> No
 
 
 
-def create_dummy_files(input_dir) -> None:
+def create_dummy_files(input_dir: str) -> None:
     """Creates a set of dummy CSV files for demonstration purposes.
     This function simulates the two different formats you provided.
     """
@@ -414,7 +418,7 @@ class CSVNormalizer:
             # Swallow errors for robustness in batch runs
             pass
 
-    def _detect_file_format(self, infile) -> str:
+    def _detect_file_format(self, infile: TextIO) -> str:
         """Detect the format of the CSV file."""
         try:
             header_line = next(infile).strip()
@@ -433,7 +437,7 @@ class CSVNormalizer:
         except StopIteration:
             return "empty"
 
-    def _process_format1_file(self, infile, writer) -> None:
+    def _process_format1_file(self, infile: TextIO, writer: Any) -> None:
         """Process format 1 (semicolon-delimited without trade_id)."""
         for line in infile:
             line = line.strip()
@@ -449,7 +453,7 @@ class CSVNormalizer:
             row.append("")
             writer.writerow(row)
 
-    def _process_format2_file(self, infile, writer) -> None:
+    def _process_format2_file(self, infile: TextIO, writer: Any) -> None:
         """Process format 2 (mixed delimiters with agg_trade_id)."""
         for line in infile:
             line = line.strip()

@@ -25,10 +25,18 @@ try:
         validate_step2_file,
         FileValidationResult
     )
+    from src.utils.validation_decorators import (
+        validate_file_operation,
+        validate_dataframe_operation,
+        validate_step2_operation
+    )
 except ImportError:
     ComprehensiveFileValidator = None
     validate_step2_file = None
     FileValidationResult = None
+    validate_file_operation = None
+    validate_dataframe_operation = None
+    validate_step2_operation = None
 
 # Import the auto-fix decorator for data quality issues
 from src.training.steps.raw_data_quality_checker import auto_fix_data_quality_issues

@@ -27,10 +27,18 @@ try:
         validate_step1_file,
         FileValidationResult
     )
+    from src.utils.validation_decorators import (
+        validate_file_operation,
+        validate_dataframe_operation,
+        validate_step1_operation
+    )
 except ImportError:
     ComprehensiveFileValidator = None
     validate_step1_file = None
     FileValidationResult = None
+    validate_file_operation = None
+    validate_dataframe_operation = None
+    validate_step1_operation = None
 
 # Handle imports with fallback - this must be done before any other imports
 CONFIG = None
@@ -199,6 +207,7 @@ class DataCollectionStep:
 
     @handle_data_collection_errors(context="run_data_collection")
     @log_step_metrics(context="data_collection")
+    @validate_file_operation("step1", expected_schema="klines", log_level="INFO") if validate_file_operation else lambda x: x
     async def _run_data_collection(self, training_input: dict[str, Any]) -> bool:
         """Run the actual data collection process."""
         try:

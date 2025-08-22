@@ -47,10 +47,18 @@ try:
         validate_step4_file,
         FileValidationResult
     )
+    from src.utils.validation_decorators import (
+        validate_file_operation,
+        validate_dataframe_operation,
+        validate_step4_operation
+    )
 except ImportError:
     ComprehensiveFileValidator = None
     validate_step4_file = None
     FileValidationResult = None
+    validate_file_operation = None
+    validate_dataframe_operation = None
+    validate_step4_operation = None
 from src.utils.logger import system_logger as _logger
 
 
@@ -323,6 +331,7 @@ def _persist_sr_levels(config: dict[str, Any], sr_levels: dict[str, Any], asof_t
 )
 @auto_fix_data_quality_issues
 @handle_errors(exceptions=(Exception,), default_return=False, context="step4_processing_labeling")
+@validate_file_operation("step4", expected_schema="features", log_level="INFO") if validate_file_operation else lambda x: x
 async def run_step(
     symbol: str, 
     exchange_name: str = "BINANCE", 

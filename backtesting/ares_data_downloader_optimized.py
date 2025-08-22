@@ -653,7 +653,7 @@ class OptimizedDataDownloader:
                             )
                         # Suffix gap
                         if cov_last_ms < day_end_ms - 1:
-    pass  # TODO: Add proper implementation
+                            pass  # TODO: Add proper implementation
                             gap_start_dt = _dt.fromtimestamp(
                                 (cov_last_ms + 1) / 1000.0,
                                 tz=UTC)

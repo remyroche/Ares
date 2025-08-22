@@ -850,15 +850,15 @@ class VectorizedMomentumAnalyzer:
     async def initialize(self) -> bool:
         """Initialize the momentum analyzer."""
         try:
-        self.logger.info("🚀 Initializing VectorizedMomentumAnalyzer...")
-        self.is_initialized = True
-        self.logger.info("✅ VectorizedMomentumAnalyzer initialized successfully")
-        return True
+            self.logger.info("🚀 Initializing VectorizedMomentumAnalyzer...")
+            self.is_initialized = True
+            self.logger.info("✅ VectorizedMomentumAnalyzer initialized successfully")
+            return True
         except Exception as e:
-        self.logger.exception(
+            self.logger.exception(
                 f"❌ Failed to initialize VectorizedMomentumAnalyzer: {e}",
             )
-        return False
+            return False
 
     @validate_feature_engineering_with_lookahead_bias_detection
     async def analyze_momentum_vectorized(
@@ -1033,20 +1033,20 @@ class VectorizedCandlestickPatternAnalyzer:
     async def initialize(self) -> bool:
         """Initialize the candlestick pattern analyzer."""
         try:
-        self.logger.info("🚀 Initializing VectorizedCandlestickPatternAnalyzer...")
-        self.logger.info(f"🔍 Config keys: {list(self.config.keys()) if self.config else 'None'}")
-        self.is_initialized = True
-        self.logger.info(
+            self.logger.info("🚀 Initializing VectorizedCandlestickPatternAnalyzer...")
+            self.logger.info(f"🔍 Config keys: {list(self.config.keys()) if self.config else 'None'}")
+            self.is_initialized = True
+            self.logger.info(
                 "✅ VectorizedCandlestickPatternAnalyzer initialized successfully",
             )
-        return True
+            return True
         except Exception as e:
-        self.logger.exception(
+            self.logger.exception(
                 f"❌ Failed to initialize VectorizedCandlestickPatternAnalyzer: {e}",
             )
-        self.logger.exception(f"❌ Exception type: {type(e)}")
-        self.logger.exception(f"❌ Exception traceback: {e.__traceback__}")
-        return False
+            self.logger.exception(f"❌ Exception type: {type(e)}")
+            self.logger.exception(f"❌ Exception traceback: {e.__traceback__}")
+            return False
 
     @validate_feature_engineering_with_lookahead_bias_detection
     async def analyze_patterns(self, price_data: pd.DataFrame) -> dict[str, Any]:
@@ -1101,14 +1101,14 @@ class VectorizedCandlestickPatternAnalyzer:
             features["bearish_engulfing"] = bearish_engulfing
 
         # Body to range ratio
-            body_range_ratio, body_size / total_range.replace(0, np.nan)
+            body_range_ratio = body_size / total_range.replace(0, np.nan)
             features["body_range_ratio"] = body_range_ratio.fillna(0)
 
-        return features
+            return features
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in candlestick pattern analysis: {e}")
-        return {}
+            self.logger.exception(f"❌ Error in candlestick pattern analysis: {e}")
+            return {}
 
 
 class VectorizedSRDistanceCalculator:
@@ -1122,21 +1122,22 @@ class VectorizedSRDistanceCalculator:
     async def initialize(self) -> bool:
         """Initialize the S/R distance calculator."""
         try:
-        self.logger.info("🚀 Initializing VectorizedSRDistanceCalculator...")
-        self.is_initialized = True
-        self.logger.info(
+            self.logger.info("🚀 Initializing VectorizedSRDistanceCalculator...")
+            self.is_initialized = True
+            self.logger.info(
                 "✅ VectorizedSRDistanceCalculator initialized successfully",
             )
-        return True
+            return True
         except Exception as e:
-        self.logger.exception(
+            self.logger.exception(
                 f"❌ Failed to initialize VectorizedSRDistanceCalculator: {e}",
             )
-        return False
+            return False
 
     @validate_klines_data_quality
     async def calculate_sr_distances(
-        self = price_data: pd.DataFrame, sr_levels: dict[str, Any] | None, ) -> dict[str, Any]:
+        self, price_data: pd.DataFrame, sr_levels: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Calculate distances to support/resistance levels."""
         try:
             features = {}
@@ -1330,20 +1331,18 @@ class VectorizedWaveletTransformAnalyzer:
             constant_features = []
             variance_threshold = 1e-12  # Very small threshold for true constants
 
-        for key, value in features.items():
-        if isinstance(value, pd.Series):
-        # Check if feature has meaningful variance
+            for key, value in features.items():
+                if isinstance(value, pd.Series):
                     feature_variance = value.var()
-        if feature_variance > variance_threshold:
-                        non_constant_features[key] = value
-                    else:
-                        constant_features.append(key)
+                if feature_variance > variance_threshold:
+                    non_constant_features[key] = value
                 else:
-        # Keep non-series features
+                    constant_features.append(key)
+                else:
                     non_constant_features[key] = value
 
         if constant_features:
-        self.logger.info(f"🗑️ Removed {len(constant_features)} constant features: {constant_features[:5]}... (showing first 5)")
+            self.logger.info(f"🗑️ Removed {len(constant_features)} constant features: {constant_features[:5]}... (showing first 5)")
 
         return non_constant_features
 
@@ -1434,9 +1433,9 @@ class VectorizedAdvancedFeatureEngineering:
             joblib.memory.Memory.bytes, memory_bytes
             joblib.memory.Memory.compress, memory_compress
 
-        self.logger.info(f"✅ Configured joblib memory cache: {memory_location}")
+            self.logger.info(f"✅ Configured joblib memory cache: {memory_location}")
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to configure joblib memory: {e}")
+            self.logger.warning(f"⚠️ Failed to configure joblib memory: {e}")
 
         # Configuration for problematic features
         self.disable_problematic_wavelets = self.feature_config.get(

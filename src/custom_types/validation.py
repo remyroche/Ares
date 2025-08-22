@@ -176,7 +176,7 @@ def validate_critical_path(
     """
 
     def decorator(func: Callable) -> Callable:
-
+    pass  # TODO: Add proper implementation
         def wrapper(*args, **kwargs):
             # Execute function
             result = func(*args, **kwargs)

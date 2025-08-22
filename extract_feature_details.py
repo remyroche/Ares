@@ -18,15 +18,6 @@ def extract_feature_issues_from_logs(log_file_path: str) -> dict[str , Any]:
     with open(log_file_path) as f:
         for line in f:
             try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
                 if line.strip().startswith("{"):
                     log_entry = json.loads(line.strip())
                     message = log_entry.get("message", "")

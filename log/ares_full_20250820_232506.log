@@ -1,0 +1,56 @@
+{"asctime": "2025-08-20 23:25:06,472", "name": "AresGlobal", "levelname": "INFO", "message": "================================================================================", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,473", "name": "AresGlobal", "levelname": "INFO", "message": "\ud83d\udcca SESSION SUMMARY", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,473", "name": "AresGlobal", "levelname": "INFO", "message": "Session started: 2025-08-20 23:25:06", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,473", "name": "AresGlobal", "levelname": "INFO", "message": "This file contains ALL logs for this session", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,473", "name": "AresGlobal", "levelname": "INFO", "message": "================================================================================", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,473", "name": "AresSystem", "levelname": "INFO", "message": "================================================================================", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,474", "name": "AresGlobal", "levelname": "INFO", "message": "[SYSTEM] ================================================================================", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,474", "name": "AresSystem", "levelname": "INFO", "message": "\ud83d\ude80 ARES LAUNCHER STARTED - Mode: INITIALIZATION", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,474", "name": "AresGlobal", "levelname": "INFO", "message": "[SYSTEM] \ud83d\ude80 ARES LAUNCHER STARTED - Mode: INITIALIZATION", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,474", "name": "AresSystem", "levelname": "INFO", "message": "Start time: 2025-08-20 23:25:06", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,474", "name": "AresGlobal", "levelname": "INFO", "message": "[SYSTEM] Start time: 2025-08-20 23:25:06", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,474", "name": "AresSystem", "levelname": "INFO", "message": "Log directory: log", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,474", "name": "AresGlobal", "levelname": "INFO", "message": "[SYSTEM] Log directory: log", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,474", "name": "AresSystem", "levelname": "INFO", "message": "================================================================================", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,474", "name": "AresGlobal", "levelname": "INFO", "message": "[SYSTEM] ================================================================================", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,475", "name": "AresGlobal.AresLauncher", "levelname": "INFO", "message": "================================================================================", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,475", "name": "AresGlobal.AresLauncher", "levelname": "INFO", "message": "\ud83d\ude80 ARES COMPREHENSIVE LAUNCHER", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,475", "name": "AresGlobal.AresLauncher", "levelname": "INFO", "message": "================================================================================", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,475", "name": "AresGlobal.AresLauncher", "levelname": "INFO", "message": "Start time: 2025-08-20 23:25:06", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,475", "name": "AresGlobal.AresLauncher", "levelname": "INFO", "message": "Log directory: log", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,475", "name": "AresGlobal.AresLauncher", "levelname": "INFO", "message": "Log level: INFO", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,475", "name": "AresGlobal.AresLauncher", "levelname": "INFO", "message": "Global log file: ares_global_20250820_232506.log", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,475", "name": "AresGlobal.AresLauncher", "levelname": "INFO", "message": "Full run log: log/ares_full_20250820_232506.log", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,475", "name": "AresGlobal.AresLauncher", "levelname": "INFO", "message": "Trades log: log/ares_trades_20250820_232506.log", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,475", "name": "AresGlobal.AresLauncher", "levelname": "INFO", "message": "Backtest log: log/ares_backtest_20250820_232506.log", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,475", "name": "AresGlobal.AresLauncher", "levelname": "INFO", "message": "================================================================================", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,476", "name": "ares.SignalHandler", "levelname": "INFO", "message": "Shutdown callback registered", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,476", "name": "AresSystem", "levelname": "INFO", "message": "================================================================================", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,476", "name": "AresGlobal", "levelname": "INFO", "message": "[SYSTEM] ================================================================================", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,476", "name": "AresSystem", "levelname": "INFO", "message": "\ud83d\ude80 ARES LAUNCHER STARTED - Mode: blank - Symbol: ETHUSDT - Exchange: BINANCE", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,476", "name": "AresGlobal", "levelname": "INFO", "message": "[SYSTEM] \ud83d\ude80 ARES LAUNCHER STARTED - Mode: blank - Symbol: ETHUSDT - Exchange: BINANCE", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,476", "name": "AresSystem", "levelname": "INFO", "message": "Start time: 2025-08-20 23:25:06", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,476", "name": "AresGlobal", "levelname": "INFO", "message": "[SYSTEM] Start time: 2025-08-20 23:25:06", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,476", "name": "AresSystem", "levelname": "INFO", "message": "Log directory: log", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,476", "name": "AresGlobal", "levelname": "INFO", "message": "[SYSTEM] Log directory: log", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,476", "name": "AresSystem", "levelname": "INFO", "message": "================================================================================", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,476", "name": "AresGlobal", "levelname": "INFO", "message": "[SYSTEM] ================================================================================", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,477", "name": "AresGlobal.AresLauncher", "levelname": "INFO", "message": "\ud83d\ude80 Running enhanced 16-step training pipeline for ETHUSDT on BINANCE", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,477", "name": "AresGlobal.AresLauncher", "levelname": "INFO", "message": "Starting from step: step1_data_collection", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,478", "name": "AresGlobal.AresLauncher", "levelname": "INFO", "message": "\ud83e\uddea BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,478", "name": "AresGlobal.AresLauncher", "levelname": "ERROR", "message": "\u274c Cannot use blank mode with step1_data_collection", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,478", "name": "AresGlobal.AresLauncher", "levelname": "ERROR", "message": "Blank mode is designed for quick testing with limited data", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,479", "name": "AresGlobal.AresLauncher", "levelname": "ERROR", "message": "step1_data_collection processes all available data files", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,479", "name": "AresGlobal.AresLauncher", "levelname": "ERROR", "message": "Use one of the following instead:", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,479", "name": "AresGlobal.AresLauncher", "levelname": "ERROR", "message": "  - python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE (for full data)", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,479", "name": "AresGlobal.AresLauncher", "levelname": "ERROR", "message": "  - python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step2_processing_labeling_feature_engineering (for blank mode)", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,479", "name": "AresSystem", "levelname": "INFO", "message": "================================================================================", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,479", "name": "AresGlobal", "levelname": "INFO", "message": "[SYSTEM] ================================================================================", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,479", "name": "AresSystem", "levelname": "INFO", "message": "\ud83d\uded1 ARES LAUNCHER ENDED - Exit code: 1", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,479", "name": "AresGlobal", "levelname": "INFO", "message": "[SYSTEM] \ud83d\uded1 ARES LAUNCHER ENDED - Exit code: 1", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,479", "name": "AresSystem", "levelname": "INFO", "message": "End time: 2025-08-20 23:25:06", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,480", "name": "AresGlobal", "levelname": "INFO", "message": "[SYSTEM] End time: 2025-08-20 23:25:06", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,480", "name": "AresSystem", "levelname": "INFO", "message": "================================================================================", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,480", "name": "AresGlobal", "levelname": "INFO", "message": "[SYSTEM] ================================================================================", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,480", "name": "AresGlobal.AresLauncher", "levelname": "INFO", "message": "\ud83e\uddf9 Cleaning up processes...", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 23:25:06,480", "name": "AresGlobal.AresLauncher", "levelname": "INFO", "message": "\u2705 Cleanup completed", "correlation_id": "-", "session_id": "-"}

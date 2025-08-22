@@ -21,15 +21,6 @@ def convert_csv_to_parquet():
         return True
 
     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         print(f"📖 Reading CSV: {csv_path}")
         df = pd.read_csv(csv_path)
         print(f"   📊 Loaded {len(df)} rows")
@@ -43,7 +34,7 @@ except Exception as e:
             print("   🔄 Converted datetime strings to millisecond timestamps")
 
         print(f"💾 Writing Parquet: {parquet_path}")
-        df.to_parquet(parquet_path, index = False)
+        df.to_parquet(parquet_path, index=False)
         print("   ✅ Successfully converted to parquet")
 
         # Verify the file

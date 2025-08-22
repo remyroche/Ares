@@ -284,7 +284,7 @@ def main():
 
         # Save report if requested
         if args.output:
-            pass
+    pass  # TODO: Add proper implementation
         with open(args.output, "w") as f:
                 json.dump(report, f, indent=2, default=str)
             logger.info(f"📄 Report saved to {args.output}")

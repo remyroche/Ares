@@ -69,15 +69,6 @@ class SRWeightOptimizationBacktest:
     async def initialize(self) -> bool:
         """Initialize the backtesting framework."""
         try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
             self.logger.info("🚀 Initializing SR Weight Optimization Backtest...")
 
             # Initialize weight optimizer
@@ -111,15 +102,6 @@ except Exception as e:
             Comprehensive backtest results with optimization recommendations
         """
         try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
             self.logger.info(
                 f"🎯 Starting comprehensive backtest for {symbol} on {exchange}",
             )
@@ -160,15 +142,6 @@ except Exception as e:
     def _prepare_backtest_data(self, price_data: pd.DataFrame) -> dict[str, Any]:
         """Prepare data for backtesting."""
         try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
             # Calculate returns
             price_data = price_data.copy()
             price_data["returns"] = price_data["close"].pct_change()
@@ -200,15 +173,6 @@ except Exception as e:
     ) -> dict[str , pd.Series]:
         """Identify different market conditions for period-specific optimization."""
         try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
             # Calculate rolling metrics
             returns = price_data["returns"].dropna()
             rolling_volatility = returns.rolling(window=30).std()
@@ -250,15 +214,6 @@ except Exception as e:
     ) -> dict[str , WeightOptimizationResult]:
         """Run optimization across multiple periods."""
         try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
             period_results = {}
 
             for period_name , period_data in prepared_data["period_data"].items():
@@ -297,15 +252,6 @@ except Exception as e:
     ) -> dict[str , Any]:
         """Analyze results across different periods for robustness."""
         try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
             analysis = {
                 "weight_stability": {},
                 "performance_consistency": {},
@@ -384,15 +330,6 @@ except Exception as e:
     ) -> dict[str , Any]:
         """Generate recommended weights based on cross-period analysis."""
         try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
             recommendations = {
                 "conservative": {},
                 "balanced": {},
@@ -435,8 +372,7 @@ except Exception as e:
 
             # Aggressive weights: best performing period
             best_period = max(
-                period_results.items(),
-                key=lambda x: x[1].optimization_score = )
+                period_results.items(), key=lambda x: x[1].optimization_score = )
             recommendations["aggressive"] = best_period[1].weights.copy()
 
             # Market adaptive weights: conditional based on current market conditions
@@ -471,15 +407,6 @@ except Exception as e:
     ) -> dict[str , Any]:
         """Generate actionable optimization recommendations."""
         try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
             recommendations = {
                 "weight_recommendations": {},
                 "performance_insights": {},
@@ -571,15 +498,6 @@ except Exception as e:
     def _create_summary(self, recommendations: dict[str, Any]) -> dict[str , Any]:
         """Create executive summary of backtest results."""
         try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
             summary = {
                 "optimization_status": "COMPLETED",
                 "key_findings": [],
@@ -647,15 +565,6 @@ except Exception as e:
     ) -> bool:
         """Save backtest results to file."""
         try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
             # Create results directory
             results_dir = "backtest_results"
             os.makedirs(results_dir, exist_ok = True)

@@ -270,8 +270,7 @@ class EfficientFeaturesDatabase:
 
             # Find the most recent database
             latest_db = max(
-                matching_dbs,
-                key=lambda x: x[1].get("last_modified", datetime.min),
+                matching_dbs, key=lambda x: x[1].get("last_modified", datetime.min),
             )
             db_name, metadata = latest_db
 

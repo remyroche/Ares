@@ -383,8 +383,7 @@ def _validate_configuration(self) -> bool:
 
         # Load model based on file extension
         if model_path.endswith(".joblib"):
-    pass
-
+    pass  # TODO: Add proper implementation
                 joblib.load(model_path)
             elif model_path.endswith(".pkl"):
 
@@ -443,8 +442,7 @@ def _validate_configuration(self) -> bool:
 
         # Save model
         if format == "joblib":
-    pass
-
+    pass  # TODO: Add proper implementation
                 joblib.dump(model = model_path)
             elif format == "pickle":
 

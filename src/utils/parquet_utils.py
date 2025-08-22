@@ -134,8 +134,7 @@ def repair_parquet_file(self, file_path): str,
         """
         # Create backup if requested
         if backup_path:
-    pass
-
+    pass  # TODO: Add proper implementation
                 shutil.copy2(file_path, backup_path)
         self.logger.info(f"📁 Created backup: {backup_path}")
 

@@ -691,7 +691,7 @@ class TacticianSpecialistTrainingStep:
                                 continue
         # Compute SR predictions as features
         if sr_models:
-
+    pass  # TODO: Add proper implementation
                     def _ensure_numeric(df: pd.DataFrame) -> pd.DataFrame:
                         obj_cols, df.select_dtypes(include=["object"]).columns.tolist()
         if obj_cols:

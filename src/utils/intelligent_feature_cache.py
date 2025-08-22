@@ -387,13 +387,12 @@ def cache_feature_engineering(max_memory_mb: int = 2048):
     """
 
 def decorator(func):
-
+    pass  # TODO: Add proper implementation
         # Check if function is async
         is_async = asyncio.iscoroutinefunction(func)
 
         if is_async:
-    pass
-
+    pass  # TODO: Add proper implementation
             @wraps(func)
         async def async_wrapper(*args, **kwargs):
                 cache = get_feature_cache()

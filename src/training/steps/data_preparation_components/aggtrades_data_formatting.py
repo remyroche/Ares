@@ -61,9 +61,11 @@ def detect_file_format(file_path) -> str | None:
         # Check for correct format
         if first_line == "timestamp,price,quantity,is_buyer_maker,agg_trade_id":
             return "correct"
+            return "correct"
 
         # Check for format1 (semicolon-delimited)
         if ";" in first_line and "agg_trade_id" not in first_line:
+            return "format1"
             return "format1"
 
         # Check for format2 (mixed-delimiter with agg_trade_id)
@@ -73,8 +75,8 @@ def detect_file_format(file_path) -> str | None:
         # Check for format3 (missing agg_trade_id column)
         if first_line == "timestamp,price,quantity,is_buyer_maker":
             return "format3"
+            return "format3"
 
-        return "unknown"
     except Exception:
         return "unknown"
 

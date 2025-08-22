@@ -2986,8 +2986,7 @@ class CNNTrainer:
             history["test_acc"].append(test_acc)
 
         if epoch % 10 == 0:
-                pass
-
+    pass  # TODO: Add proper implementation
         return history
 
 
@@ -3060,8 +3059,7 @@ class TCNTrainer:
             history["test_acc"].append(test_acc)
 
         if epoch % 20 == 0:
-                pass
-
+    pass  # TODO: Add proper implementation
         return history
 
     # Cross-validation training methods
@@ -4342,8 +4340,7 @@ class TransformerTrainer:
             history["test_acc"].append(test_acc)
 
         if epoch % 30 == 0:
-                pass
-
+    pass  # TODO: Add proper implementation
         return history
 
     async def _train_sr_outcome_model(

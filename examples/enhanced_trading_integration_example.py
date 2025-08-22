@@ -39,15 +39,6 @@ class EnhancedTradingIntegration:
     def _load_config(self, config_path: str) -> Dict[str, Any]:
         """Load configuration from YAML file."""
         try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
             with open(config_path = "r") as file:
                 return yaml.safe_load(file)
         except Exception as e:

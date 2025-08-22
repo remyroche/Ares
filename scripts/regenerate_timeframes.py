@@ -36,7 +36,7 @@ class TimeframeRegenerator:
     def resample_to_timeframe(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         """Resample 1m data to target timeframe."""
         if len(df) == 0:
-            pass
+    pass  # TODO: Add proper implementation
         return pd.DataFrame()
 
         # Ensure timestamp is datetime
@@ -65,7 +65,7 @@ class TimeframeRegenerator:
     def save_resampled_data(self, df: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Path | None:
         """Save resampled data to parquet file."""
         if len(df) == 0:
-            pass
+    pass  # TODO: Add proper implementation
         return None
 
         output_filename = f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
@@ -107,7 +107,7 @@ class TimeframeRegenerator:
         # Load and combine all 1m data
             all_1m_data = []
         for file_path in klines_files:
-            pass
+    pass  # TODO: Add proper implementation
         if True:
                     df = pd.read_parquet(file_path)
                     all_1m_data.append(df)
@@ -130,7 +130,7 @@ class TimeframeRegenerator:
 
         # Regenerate each timeframe
         for timeframe in timeframes:
-            pass
+    pass  # TODO: Add proper implementation
         if True:
                     logger.info(f"🔄 Regenerating {timeframe} timeframe...")
 
@@ -203,18 +203,15 @@ async def main() -> None:
 
     if results["regenerated_files"]:
         for _timeframe, _file_path in results["regenerated_files"].items():
-            pass
-
+    pass  # TODO: Add proper implementation
     if results["failed_timeframes"]:
         for _timeframe in results["failed_timeframes"]:
-            pass
-
+    pass  # TODO: Add proper implementation
     if results["errors"]:
         for _error in results["errors"]:
-            pass
-
+    pass  # TODO: Add proper implementation
     if results["success"]:
-        pass
+    pass  # TODO: Add proper implementation
     else:
         sys.exit(1)
 

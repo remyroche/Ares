@@ -7,7 +7,7 @@ from src.utils.warning_symbols import failed
 from .base_ensemble import BaseEnsemble
 
 class SidewaysRangeEnsemble(BaseEnsemble):
-
+    pass  # TODO: Add proper implementation
     def __init__(self, config: dict, ensemble_name: str = "SidewaysRangeEnsemble"):
         super().__init__(config, ensemble_name)
         self.model_config = {"kmeans_clusters": 4}

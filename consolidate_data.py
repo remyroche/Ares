@@ -47,15 +47,6 @@ def consolidate_klines_data(symbol="ETHUSDT", exchange="BINANCE", timeframe="1m"
 
     for file in files:
         try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
             df = pd.read_csv(file)
             if not df.empty:
                 dataframes.append(df)

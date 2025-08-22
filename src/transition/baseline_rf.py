@@ -25,7 +25,7 @@ class RFConfig:
     enable_shap: bool
 
 class TransitionRandomForest:
-
+    pass  # TODO: Add proper implementation
     def __init__(self, config: dict[str, Any]) -> None:
         self.logger = system_logger.getChild("TransitionRandomForest")
         tm = (config or {}).get("TRANSITION_MODELING", {})

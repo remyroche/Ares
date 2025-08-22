@@ -347,15 +347,6 @@ async def main():
     print("=" * 50)
 
     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         # Run paper trading example
         await example_paper_trading()
 

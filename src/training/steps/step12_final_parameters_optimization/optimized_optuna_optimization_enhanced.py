@@ -575,17 +575,7 @@ class VectorizedOptunaOptimizer:
         initial_memory = self._get_memory_usage()
 
         try:
-            pass
-        except Exception as e:
-            pass
-        try:
-            pass
-        except Exception as e:
-            pass
-        try:
-            pass
-        except Exception as e:
-            pass
+
         # Convert to numpy arrays for vectorized operations
         X_np = X.values if isinstance(X, pd.DataFrame) else np.array(X)
         y_np = y.values if isinstance(y, pd.Series) else np.array(y)
@@ -711,17 +701,7 @@ class VectorizedOptunaOptimizer:
     ) -> float:
         """Vectorized S/R parameter evaluation."""
         try:
-            pass
-        except Exception as e:
-            pass
-        try:
-            pass
-        except Exception as e:
-            pass
-        try:
-            pass
-        except Exception as e:
-            pass
+
         # Get parameters
             params = self._get_sr_space(trial)
 
@@ -755,17 +735,7 @@ class VectorizedOptunaOptimizer:
     ) -> float:
         """Vectorized autoencoder evaluation."""
         try:
-            pass
-        except Exception as e:
-            pass
-        try:
-            pass
-        except Exception as e:
-            pass
-        try:
-            pass
-        except Exception as e:
-            pass
+
             params = self._get_autoencoder_space(trial)
 
         # Vectorized autoencoder simulation
@@ -797,17 +767,6 @@ class VectorizedOptunaOptimizer:
     ) -> float:
         """Vectorized order execution evaluation."""
         try:
-            pass
-        except Exception as e:
-            pass
-        try:
-            pass
-        except Exception as e:
-            pass
-        try:
-            pass
-        except Exception as e:
-            pass
             params = self._get_order_execution_space(trial)
 
         # Vectorized order execution simulation
@@ -860,17 +819,6 @@ class VectorizedOptunaOptimizer:
     def _get_memory_usage(self) -> float:
         """Get current memory usage in MB."""
         try:
-            pass
-        except Exception as e:
-            pass
-        try:
-            pass
-        except Exception as e:
-            pass
-        try:
-            pass
-        except Exception as e:
-            pass
             process = psutil.Process()
         return process.memory_info().rss / 1024 / 1024  # Convert to MB
         except ImportError:
@@ -879,17 +827,6 @@ class VectorizedOptunaOptimizer:
     def _cleanup_memory(self):
         """Clean up memory and cache."""
         try:
-            pass
-        except Exception as e:
-            pass
-        try:
-            pass
-        except Exception as e:
-            pass
-        try:
-            pass
-        except Exception as e:
-            pass
         # Clear cache if too large
         if len(self.cache.feature_cache) > self.cache_size:
         # Remove oldest entries

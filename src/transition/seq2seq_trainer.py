@@ -19,8 +19,7 @@ except Exception:  # pragma: no cover
     pl = None  # type: ignore
 
 if TYPE_CHECKING:
-    pass
-
+    pass  # TODO: Add proper implementation
 # Hint to speed CPU matmul on Apple Accelerate
 with contextlib.suppress(Exception):
     torch.set_float32_matmul_precision("high")
@@ -42,7 +41,7 @@ def _dtw_distance(a: np.ndarray, b: np.ndarray) -> float:
         return float("nan")
 
 class TransitionSeqDataset(Dataset):
-
+    pass  # TODO: Add proper implementation
     def __init__(
         self,
         samples: list[dict[str, Any]],
@@ -87,7 +86,7 @@ class TransitionSeqDataset(Dataset):
         }
 
 class SmallTransformer(pl.LightningModule if pl else nn.Module):
-
+    pass  # TODO: Add proper implementation
     def __init__(
         self,
         hmm_vocab: int,
@@ -244,7 +243,7 @@ class SmallTransformer(pl.LightningModule if pl else nn.Module):
         }
 
 class SmallTCN(SmallTransformer):
-
+    pass  # TODO: Add proper implementation
     def __init__(
         self,
         hmm_vocab: int,

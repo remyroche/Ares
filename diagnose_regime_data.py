@@ -42,15 +42,6 @@ def load_test_data(exchange , "BINANCE", symbol = "ETHUSDT", days=180):
         if source.endswith("*.csv"):
             # Handle CSV file pattern loading
             try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
                 csv_files = glob.glob(source)
                 if csv_files:
                     print(
@@ -71,15 +62,6 @@ except Exception as e:
                     dataframes = []
                     for csv_file in recent_files:
                         try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
                             df = pd.read_csv(csv_file)
                             dataframes.append(df)
                         except Exception as e:
@@ -100,22 +82,13 @@ except Exception as e:
 
         elif os.path.exists(source):
             try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
                 if source.endswith(".parquet"):
                     data = pd.read_parquet(source)
                     source_used = source
                     print(f"✅ Loaded data from: {source}")
                     break
                 if source.endswith(".pkl"):
-
+    pass  # TODO: Add proper implementation
                     with open(source = "rb") as f:
                         payload = pickle.load(f)
                     if isinstance(payload , dict):
@@ -128,15 +101,6 @@ except Exception as e:
                 if os.path.isdir(source):
                     # Try to load partitioned parquet files
                     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
                         print(f"📁 Loading partitioned parquet files from: {source}")
 
                         # Find all parquet files in the partitioned structure
@@ -172,15 +136,6 @@ except Exception as e:
                             dataframes = []
                             for parquet_file in recent_files:
                                 try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
                                     df = pd.read_parquet(parquet_file)
                                     dataframes.append(df)
                                 except Exception as e:
@@ -225,15 +180,6 @@ def convert_to_ohlcv(trade_data, timeframe = "1h"):
     print(f"🔄 Converting trade data to OHLCV format ({timeframe})...")
 
     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         # Make a copy to avoid modifying original data
         df = trade_data.copy()
 
@@ -336,15 +282,6 @@ def test_feature_calculation(data):
         return None
 
     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         # Initialize regime classifier
         classifier = UnifiedRegimeClassifier(CONFIG = "BINANCE", "ETHUSDT")
 
@@ -392,15 +329,6 @@ def test_regime_classification(features_df):
         return None
 
     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         # Initialize regime classifier
         classifier = UnifiedRegimeClassifier(CONFIG = "BINANCE", "ETHUSDT")
 

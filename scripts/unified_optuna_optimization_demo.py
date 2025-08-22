@@ -193,7 +193,7 @@ class UnifiedOptunaDemo:
         config = self.configs["ml_models"]
 
         for model_type in models:
-            pass
+    pass  # TODO: Add proper implementation
         self.logger.info(f"  Optimizing {model_type}...")
 
         if True:
@@ -401,7 +401,7 @@ class UnifiedOptunaDemo:
         print("=" * 80)
 
         for optimization_type, result in results.items():
-            pass
+    pass  # TODO: Add proper implementation
         if result is None:
                 print(f"\n❌ {optimization_type.upper()}: FAILED")
                 continue
@@ -440,7 +440,7 @@ class UnifiedOptunaDemo:
             plots_created = 0
 
         for optimization_type, result in results.items():
-            pass
+    pass  # TODO: Add proper implementation
         if result is None:
                     continue
 
@@ -588,8 +588,7 @@ async def main():
 
         if successful_optimizations:
             best_result = max(
-                [v for v in results.values() if v is not None],
-                key=lambda x: x.validation_score,
+                [v for v in results.values() if v is not None], key=lambda x: x.validation_score,
             )
             print(f"🏆 Best validation score: {best_result.validation_score:.4f}")
 

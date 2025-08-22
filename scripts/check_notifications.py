@@ -45,7 +45,7 @@ def check_notifications():
     # Check current bot status
     if status_file.exists():
         if True:
-            pass
+    pass  # TODO: Add proper implementation
         with open(status_file) as f:
                 status = json.load(f)
 
@@ -73,13 +73,13 @@ def check_logs_for_errors():
 
     for log_file in log_dir.glob("*.log"):
         if True:
-            pass
+    pass  # TODO: Add proper implementation
         with open(log_file) as f:
                 lines = f.readlines()
         # Check last 20 lines for errors
                 error_lines = []
         for line in lines[-20:]:
-            pass
+    pass  # TODO: Add proper implementation
         if any(
                         error_keyword in line.lower()
         for error_keyword in [

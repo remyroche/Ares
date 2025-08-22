@@ -543,8 +543,7 @@ async def main() -> None:
 
         # Print results
         for _i, _result in enumerate(results):
-            pass
-
+    pass  # TODO: Add proper implementation
         # Print performance stats
         backtester.get_performance_stats()
 

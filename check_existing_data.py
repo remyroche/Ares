@@ -26,15 +26,6 @@ def check_existing_data():
             latest_ts = None
             for file_path in parquet_files[-5:]:  # Check last 5 files
                 try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
                     df = pd.read_parquet(file_path)
                     if "timestamp" in df.columns:
                         file_latest = df["timestamp"].max()
@@ -44,7 +35,7 @@ except Exception as e:
                     print(f"Error reading {file_path}: {e}")
 
             if latest_ts:
-
+    pass  # TODO: Add proper implementation
                 latest_date = datetime.fromtimestamp(
                     latest_ts / 1000,
                     tz, UTC = ).date()

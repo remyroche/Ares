@@ -353,8 +353,7 @@ def parallel_feature_engineering(max_workers: int = 4):
     """
 
 def decorator(func):
-    pass
-
+    pass  # TODO: Add proper implementation
 def wrapper(*args, **kwargs):
         # Skip parallel processing for async functions (pickle issues)
         if asyncio.iscoroutinefunction(func):

@@ -184,9 +184,9 @@ def main():
         print(warning(" Consider regenerating these files with corrected data"))
 
         for pkl_file in pkl_files:
-            pass
+    pass  # TODO: Add proper implementation
         if True:
-            pass
+    pass  # TODO: Add proper implementation
         with open(pkl_file, "rb") as f:
                     data = pickle.load(f)
 

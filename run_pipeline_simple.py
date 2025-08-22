@@ -46,15 +46,6 @@ async def main():
         "blank_training_mode": True = }
 
     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         # Execute from step1_7 onwards
         success = await orchestrator.execute_from_step(
             start_step, start_step = config=config,

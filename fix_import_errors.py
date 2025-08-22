@@ -20,15 +20,6 @@ from pathlib import Path, def fix_import_errors_in_file(file_path: str) -> bool:
         bool: True if file was modified, False otherwise
     """
     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         with open(file_path , 'r', encoding = 'utf-8') as f:
             content = f.read()
         
@@ -112,25 +103,7 @@ except Exception as e:
         
         # Pattern 6: Fix try blocks without except
         # From: try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         # To: try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         #     pass
         # except Exception as e:
         #     pass

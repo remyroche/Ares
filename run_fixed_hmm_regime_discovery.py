@@ -32,15 +32,6 @@ async def main():
     logger.info("=" * 80)
 
     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         # Run the HMM regime discovery step with fixed parameters
         success = await run_step(
             symbol="ETHUSDT",
@@ -66,15 +57,6 @@ except Exception as e:
 
 if __name__ == "__main__":
     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         success = asyncio.run(main())
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:

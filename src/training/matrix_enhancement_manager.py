@@ -240,7 +240,7 @@ class MatrixEnhancementManager:
 
             centroids = []
             for i in range(self.config.spectral_n_clusters):
-                mask, cluster_labels = = i
+                mask, cluster_labels = i
                 if np.any(mask):
                     centroid = np.mean(X_scaled[mask], axis=0)
                     centroids.append(centroid)

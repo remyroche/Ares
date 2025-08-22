@@ -330,6 +330,24 @@ class EnhancedTrainingManager:
         self.incremental_trainer: IncrementalTrainer | None = None
         self.streaming_processor: StreamingDataProcessor | None = None
         self.adaptive_sampler: AdaptiveSampler | None = None
+        self.memory_manager: MemoryManager | None = None
+        self.data_manager: MemoryEfficientDataManager | None = None
+
+        # Checkpointing configuration
+        self.checkpoint_dir = Path("checkpoints")
+        self.checkpoint_dir.mkdir(exist_ok=True)
+        # Note: final paths are namespaced per symbol/exchange/timeframe at save-time
+        self.enable_checkpointing = self.enhanced_training_config.get(
+            "enable_checkpointing", True,
+        )
+
+        # Initialize optimized tools from enhanced_training_manager_optimized
+        self.cached_backtester: CachedBacktester | None = None
+        self.progressive_evaluator: ProgressiveEvaluator | None = None
+        self.parallel_backtester: ParallelBacktester | None = None
+        self.incremental_trainer: IncrementalTrainer | None = None
+        self.streaming_processor: StreamingDataProcessor | None = None
+        self.adaptive_sampler: AdaptiveSampler | None = None
         self.memory_manager = MemoryManager()
         self.data_manager = MemoryEfficientDataManager()
 
@@ -341,6 +359,7 @@ class EnhancedTrainingManager:
 
         # Optimization configuration
         self.optimization_config = self.config.get("computational_optimization", {})
+        self._load_optimization_config()
 
         # Initialize the underlying optimized training manager for advanced operations
         self.optimized_manager = EnhancedTrainingManagerOptimized(config)

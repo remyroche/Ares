@@ -39,7 +39,7 @@ class TrainingManager:
         # Training manager state
         self.is_training: bool = False
         self.training_results: dict[str, Any] = {}
-        self.training_history: list[dict[str, Any]] , []
+        self.training_history: list[dict[str, Any]] = []
 
         # Configuration
         self.training_config: dict[str, Any] = self.config.get("training_manager", {})

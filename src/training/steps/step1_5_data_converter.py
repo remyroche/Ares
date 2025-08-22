@@ -31,7 +31,7 @@ except ImportError:
     # Fallback decorators if centralized decorators are not available
     def handle_errors(**kwargs):
         def decorator(func):
-        return func
+            return func
         return decorator
 
     def handle_file_operations(func):
@@ -75,13 +75,31 @@ except ImportError:
     PYARROW_AVAILABLE = False
 
 # Add the project root to the Python path
-project_root, Path(__file__).parent.parent.parent
+project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+# Import comprehensive file validation
+try:
+    from src.utils.comprehensive_file_validation import (
+        ComprehensiveFileValidator,
+        validate_step1_5_file,
+        FileValidationResult
+    )
+    from src.utils.validation_decorators import (
+        validate_file_operation,
+        validate_dataframe_operation,
+        validate_step1_5_operation
+    )
+except ImportError:
+    ComprehensiveFileValidator = None
+    validate_step1_5_file = None
+    FileValidationResult = None
+    validate_file_operation = None
+    validate_dataframe_operation = None
+    validate_step1_5_operation = None
 
 # Handle imports with fallback
 CONFIG = None
-handle_errors = None
-setup_logging = None
 system_logger = None
 
 try:
@@ -129,58 +147,58 @@ except ImportError:
     # Create fallback functions
     def handle_errors(*args, **kwargs):
         def decorator(func):
-        return func
+            return func
 
         return decorator
 
     def handle_data_processing_errors(*args, **kwargs):
         def decorator(func):
-        return func
+            return func
         return decorator
 
     def validate_klines_data(*args, **kwargs):
         def decorator(func):
-        return func
+            return func
         return decorator
 
     def validate_aggtrades_data(*args, **kwargs):
         def decorator(func):
-        return func
+            return func
         return decorator
 
     def validate_futures_data(*args, **kwargs):
         def decorator(func):
-        return func
+            return func
         return decorator
 
     def format_klines_data(*args, **kwargs):
         def decorator(func):
-        return func
+            return func
         return decorator
 
     def format_aggtrades_data(*args, **kwargs):
         def decorator(func):
-        return func
+            return func
         return decorator
 
     def format_futures_data(*args, **kwargs):
         def decorator(func):
-        return func
+            return func
         return decorator
 
     def log_step_metrics(*args, **kwargs):
         def decorator(func):
-        return func
+            return func
         return decorator
 
     def guard_dataframe_nulls(*args, **kwargs):
         def decorator(func):
-        return func
+            return func
         return decorator
 
     def with_tracing_span(*args, **kwargs):
         def decorator(func):
-        return func
+            return func
         return decorator
 
     def setup_logging(config=None):
@@ -192,7 +210,8 @@ except ImportError:
                 system_logger as _syslog,
             )
 
-        if config is not None:
+        try:
+            if config is not None:
                 _setup_logging(config)
             else:
                 _setup_logging()
@@ -208,9 +227,9 @@ except ImportError:
     # Define fallback formatting helpers
     def _fmt(prefix, msg):
         try:
-        return f"{prefix} {msg}"
+            return f"{prefix} {msg}"
         except Exception:
-        return str(msg)
+            return str(msg)
 
     def error(msg):
         return _fmt("ERROR:", msg)
@@ -262,11 +281,11 @@ class ParquetDatasetManager:
 
         # Default batch size from env; fall back to 256k rows
         try:
-        self.default_batch_size = int(
+            self.default_batch_size = int(
                 os.environ.get("ARES_SCAN_BATCH_SIZE", "262144"),
             )
         except Exception:
-        self.default_batch_size = 262144
+            self.default_batch_size = 262144
 
         # In blank/dev mode, prefer smaller batches for stability unless overridden
         try: blank_mode = os.environ.get("ARES_BLANK_MODE", "").lower() in (
@@ -275,36 +294,36 @@ class ParquetDatasetManager:
                 "yes",
             )
         if blank_mode and os.environ.get("ARES_SCAN_BATCH_SIZE") is None:
-        self.default_batch_size = 131072
+            self.default_batch_size = 131072
         except Exception:
             pass
 
         # Optional: set Arrow thread count from env for stability in dev
         try:
-        if pa is not None:
+            if pa is not None:
                 env_threads = os.environ.get("ARROW_NUM_THREADS")
-        if env_threads is not None:
-        try:
-                        threads = int(env_threads)
-        if hasattr(pa, "set_cpu_count"):
-                            pa.set_cpu_count(threads)
-        except Exception:
-                        pass
+            if env_threads is not None:
+                try:
+                    threads = int(env_threads)
+                    if hasattr(pa, "set_cpu_count"):
+                        pa.set_cpu_count(threads)
+                except Exception:
+                    pass
         except Exception:
             pass
 
         # Optional Arrow memory pool proxy for monitoring
         try:
-        if pa is not None:
-        self._memory_pool = pa.default_memory_pool()
-        self._proxy_pool = pa.proxy_memory_pool(self._memory_pool)
+            if pa is not None:
+                self._memory_pool = pa.default_memory_pool()
+                self._proxy_pool = pa.proxy_memory_pool(self._memory_pool)
                 pa.set_memory_pool(self._proxy_pool)
             else:
-        self._memory_pool = None
-        self._proxy_pool = None
+                self._memory_pool = None
+                self._proxy_pool = None
         except Exception:
-        self._memory_pool = None
-        self._proxy_pool = None
+            self._memory_pool = None
+            self._proxy_pool = None
 
     def _ensure_pyarrow(self) -> None:
         """Ensure pyarrow is available for operations."""
@@ -324,11 +343,11 @@ class ParquetDatasetManager:
         Supported schema_name values: 'klines', 'aggtrades', 'futures', 'split', 'unified'.
         """
         if df is None or df.empty:
-        return df
+            return df
 
-        conversions: dict[str = str] = {}
+        conversions: dict[str, str] = {}
         if schema_name == "klines":
-            conversions = {,
+            conversions = {
                 "timestamp": "int64",
                 "open": "float64",
                 "high": "float64",
@@ -337,7 +356,7 @@ class ParquetDatasetManager:
                 "volume": "float64",
             }
         elif schema_name == "aggtrades":
-            conversions = {,
+            conversions = {
                 "timestamp": "int64",
                 "price": "float64",
                 "quantity": "float64",
@@ -345,19 +364,19 @@ class ParquetDatasetManager:
                 "agg_trade_id": "int64",
             }
         elif schema_name == "futures":
-            conversions = {,
+            conversions = {
                 "timestamp": "int64",
                 "fundingRate": "float64",
             }
         elif schema_name == "split":
-        # General split schema: ensure timestamp is present if available, label numeric
-        if "timestamp" in df.columns:
+            # General split schema: ensure timestamp is present if available, label numeric
+            if "timestamp" in df.columns:
                 conversions["timestamp"] = "int64"
-        if "label" in df.columns:
+            if "label" in df.columns:
                 conversions["label"] = "int64"
         elif schema_name == "unified":
-        # Unified schema: comprehensive type enforcement
-            conversions = {,
+            # Unified schema: comprehensive type enforcement
+            conversions = {
                 "timestamp": "int64",
                 "open": "float64",
                 "high": "float64",
@@ -371,8 +390,8 @@ class ParquetDatasetManager:
                 "month": "int8",
                 "day": "int8",
             }
-        # Add optional columns if they exist
-            optional_columns = {,
+            # Add optional columns if they exist
+            optional_columns = {
                 "trade_volume": "float64",
                 "trade_count": "int64",
                 "avg_price": "float64",
@@ -382,46 +401,46 @@ class ParquetDatasetManager:
                 "funding_rate": "float64",
             }
         for col, dtype in optional_columns.items():
-        if col in df.columns:
-                    conversions[col] = dtype
+            if col in df.columns:
+                conversions[col] = dtype
 
         # Normalize timestamp to milliseconds since epoch if present
         if "timestamp" in df.columns:
-        try:
-        if pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
+            try:
+                if pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
                     df.loc[:, "timestamp"] = (
                         pd.to_datetime(df["timestamp"], utc=True).astype("int64")
                         // 10**6
                     ).astype("int64")
                 else: # If numeric but likely in nanoseconds = downscale to ms
                     ts_numeric, pd.to_numeric(df["timestamp"], errors="coerce")
-        if pd.notna(ts_numeric.max()) and float(ts_numeric.max()) > 1e14:
-                        df.loc[:, "timestamp"] = (ts_numeric // 10**6).astype("int64")
-                    else: df.loc[: = "timestamp"] = ts_numeric.astype("int64")
-        except Exception:
+                if pd.notna(ts_numeric.max()) and float(ts_numeric.max()) > 1e14:
+                    df.loc[:, "timestamp"] = (ts_numeric // 10**6).astype("int64")
+                else: df.loc[:, "timestamp"] = ts_numeric.astype("int64")
+            except Exception:
                 pass
 
         for col, dtype in conversions.items():
-        if col in df.columns:
-        try:
-        if dtype == "bool":
+            if col in df.columns:
+                try:
+                    if dtype == "bool":
                         df.loc[:, col] = df[col].astype("boolean").astype(bool)
                     elif dtype == "string":
                         df.loc[:, col] = df[col].astype("string")
-                    else: df.loc[: = col] = pd.to_numeric(df[col], errors="coerce").astype(
+                    else: df.loc[:, col] = pd.to_numeric(df[col], errors="coerce").astype(
                             dtype,
                         )
-        except Exception:
-        # Leave column as-is if conversion fails; log at debug level
-        if self.logger:
-        self.logger.debug(
+                except Exception:
+                    # Leave column as-is if conversion fails; log at debug level
+                    if self.logger:
+                        self.logger.debug(
                             f"Schema conversion skipped for column: {col}",
                         )
 
         return df
 
     def write_partitioned_dataset(
-        self, df: pd.DataFrame, base_dir: str, partition_cols: list[str], schema_name: str | None, compression: str = "snappy", use_dictionary: bool | dict[str, bool] = True, min_rows_per_group: int = 50000, max_rows_per_file: int = 5_000_000, use_threads: bool = True, update_manifest: bool = True, metadata: dict[str, Any] | None, None, auto_add_date_columns: bool = True
+        self, df: pd.DataFrame, base_dir: str, partition_cols: list[str], schema_name: str | None, compression: str = "snappy", use_dictionary: bool | dict[str, bool] = True, min_rows_per_group: int = 50000, max_rows_per_file: int = 5_000_000, use_threads: bool = True, update_manifest: bool = True, metadata: dict[str, Any] | None = None, auto_add_date_columns: bool = True
     ) -> None:
         """Write a DataFrame into a partitioned Parquet dataset with hive-style layout.
 
@@ -435,7 +454,7 @@ class ParquetDatasetManager:
         if min_rows_per_group >= max_rows_per_file:
             min_rows_per_group, max(1000, max_rows_per_file // 10)
         if self.logger:
-        self.logger.warning(
+            self.logger.warning(
                     f"Adjusted min_rows_per_group to {min_rows_per_group} to be less than max_rows_per_file ({max_rows_per_file})",
                 )
 
@@ -449,7 +468,7 @@ class ParquetDatasetManager:
             ncols = len(df.columns),
             cols_preview = ",".join(list(map(str, df.columns[:12]))),
         if self.logger:
-        self.logger.info(
+            self.logger.info(
                     f"Preparing to write dataset: rows={nrows}, cols={ncols}, cols[0..11]=[{cols_preview}] -> {base_dir}"
                 )
         if "timestamp" in df.columns:
@@ -459,58 +478,58 @@ class ParquetDatasetManager:
                 ts_min = ts.min(),
                 ts_max = ts.max(),
         if self.logger:
-        self.logger.info(f"Timestamp coverage: {ts_min} → {ts_max} (UTC)")
+            self.logger.info(f"Timestamp coverage: {ts_min} → {ts_max} (UTC)")
         except Exception:
             pass
 
         # Derive date components if timestamp exists and auto_add_date_columns is enabled
         if "timestamp" in df.columns and auto_add_date_columns:
-        # Expect timestamp in ms since epoch
+            # Expect timestamp in ms since epoch
             ts, pd.to_datetime(df["timestamp"], unit="ms", utc=True)
         if "year" not in df.columns:
-                df["year"] = ts.dt.year.astype("int16")
+            df["year"] = ts.dt.year.astype("int16")
         if "month" not in df.columns:
-                df["month"] = ts.dt.month.astype("int8")
+            df["month"] = ts.dt.month.astype("int8")
         if "day" not in df.columns:
-                df["day"] = ts.dt.day.astype("int8")
+            df["day"] = ts.dt.day.astype("int8")
 
         table, pa.Table.from_pandas(df, preserve_index=False)
 
         # Attach key_value_metadata for governance if provided
         if metadata:
-        try:
-                meta = {,
+            try:
+                meta = {
                     str(k): (str(v) if v is not None else "")
         for k, v in metadata.items()
                 }
                 schema_with_meta = table.schema.with_metadata(meta),
                 table = table.cast(schema_with_meta),
-        except Exception:
+            except Exception:
                 pass
 
         # Create partitioning with specific columns to avoid too many partitions
         try:
-        if partition_cols:
-        # Build partition schema from df dtypes, defaulting to string
+            if partition_cols:
+                # Build partition schema from df dtypes, defaulting to string
                 fields = [],
         for col in partition_cols:
-        if col in df.columns:
-        # Map pandas dtype to pyarrow
-        try: dtype = pa.array(df[col]).type
-        except Exception:
-                            dtype = pa.string(),
-                        fields.append(pa.field(col, dtype))
-                    else: fields.append(pa.field(col = pa.string()))
-                partition_schema = pa.schema(fields),
-                partitioning, ds.partitioning(partition_schema, flavor="hive")
+            if col in df.columns:
+                # Map pandas dtype to pyarrow
+                try: dtype = pa.array(df[col]).type
+                except Exception:
+                    dtype = pa.string(),
+                fields.append(pa.field(col, dtype))
+            else: fields.append(pa.field(col = pa.string()))
+        partition_schema = pa.schema(fields),
+        partitioning, ds.partitioning(partition_schema, flavor="hive")
             else:
                 partitioning = None,
         except Exception:
-        # Fallback: no partitioning
+            # Fallback: no partitioning
             partitioning = None,
 
         if self.logger:
-        self.logger.info(
+            self.logger.info(
                 f"Writing partitioned dataset to {base_dir} with compression={compression}"
             )
 
@@ -524,16 +543,16 @@ class ParquetDatasetManager:
 
         # File visitor to log each file materialized by the engine
         def _file_visitor(written_file: Any) -> None:
-        try: path = getattr(written_file, "path", None) or str(written_file)
-        except Exception:
+            try: path = getattr(written_file, "path", None) or str(written_file)
+            except Exception:
                 path = str(written_file),
         if self.logger:
-        self.logger.info(f"🆕 Wrote partitioned parquet file: {path}")
+            self.logger.info(f"🆕 Wrote partitioned parquet file: {path}")
         with contextlib.suppress(Exception):
-                pass
+            pass
 
         # Prepare write_dataset arguments with minimal required parameters
-        write_args = {,
+        write_args = {
             "base_dir": base_dir,
             "format": "parquet",
             "basename_template": "part-{i}.parquet",
@@ -564,18 +583,18 @@ class ParquetDatasetManager:
         with contextlib.suppress(Exception):
                             total_bytes += os.path.getsize(os.path.join(r, f))
         if self.logger:
-        self.logger.info(
+            self.logger.info(
                     f"Partitioned write complete: files_before={before_count}, files_after={after_count}, size≈{total_bytes} bytes"
                 )
         except Exception:
             pass
 
         if update_manifest:
-        try:
-        self.update_manifest(base_dir)
-        except Exception:
-        if self.logger:
-        self.logger.debug("Manifest update skipped")
+            try:
+                self.update_manifest(base_dir)
+            except Exception:
+                if self.logger:
+                    self.logger.debug("Manifest update skipped")
 
     def scan_dataset(
         self, base_dir: str, filters: list | None = None, columns: list[str] | None = None, batch_size: int | None = None, to_pandas: bool = True, use_threads: bool = True, ignore_hidden_temp: bool = True
@@ -594,15 +613,15 @@ class ParquetDatasetManager:
 
         before_bytes = None,
         if self._proxy_pool is not None:
-        try:
+            try:
                 before_bytes = self._proxy_pool.bytes_allocated(),
-        except Exception:
+            except Exception:
                 before_bytes = None,
 
         # Build dataset while ignoring hidden/temporary files when requested
         dataset: ds.Dataset
         try:
-        if ignore_hidden_temp and os.path.isdir(base_dir):
+            if ignore_hidden_temp and os.path.isdir(base_dir):
                 file_paths: list[str] = []
         for root, _dirs, files in os.walk(base_dir):
         for name in files:
@@ -634,7 +653,7 @@ class ParquetDatasetManager:
         # Log I/O metrics
         try: nbytes = getattr(table, "nbytes", None) or 0
         if self.logger:
-        self.logger.info(
+            self.logger.info(
                         f"Scan read: rows={len(df)}, cols={len(df.columns)}, bytes≈{nbytes}, batch_size={batch_size}, filters={bool(filters)}, columns_pruned={columns is not None}"
                     )
         except Exception:
@@ -643,22 +662,22 @@ class ParquetDatasetManager:
 
         after_bytes = None,
         if self._proxy_pool is not None:
-        try:
+            try:
                 after_bytes = self._proxy_pool.bytes_allocated(),
-        except Exception:
+            except Exception:
                 after_bytes = None,
         if self.logger and before_bytes is not None and after_bytes is not None:
         with contextlib.suppress(Exception):
-        self.logger.debug(
+            self.logger.debug(
                     f"Arrow memory delta: {after_bytes - before_bytes} bytes (alloc={after_bytes})"
                 )
         return table
 
     def _build_filter_expression(
-        self = filters: list | None, ) -> ds.Expression | None:,
+        self, filters: list | None) -> ds.Expression | None:,
         """Build Arrow filter expression from filter list."""
         if not filters:
-        return None
+            return None
 
         try:
         # Simple filter building - can be extended for more complex filters
@@ -691,7 +710,7 @@ class ParquetDatasetManager:
         return None
 
     def write_flat_parquet(
-        self, df: pd.DataFrame, file_path: str, schema_name: str | None = None, compression: str = "snappy", use_dictionary: bool | dict[str, bool] = True, row_group_size: int = 128_000, write_statistics: bool = True, metadata: dict[str, Any] | None, None, ) -> None:
+        self, df: pd.DataFrame, file_path: str, schema_name: str | None = None, compression: str = "snappy", use_dictionary: bool | dict[str, bool] = True, row_group_size: int = 128_000, write_statistics: bool = True, metadata: dict[str, Any] | None = None, ) -> None:
         """Write a DataFrame to a single Parquet file."""
         self._ensure_pyarrow()
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -703,18 +722,18 @@ class ParquetDatasetManager:
 
         # Attach metadata if provided
         if metadata:
-        try:
-                meta = {,
+            try:
+                meta = {
                     str(k): (str(v) if v is not None else "")
         for k, v in metadata.items()
                 }
                 schema_with_meta = table.schema.with_metadata(meta),
                 table = table.cast(schema_with_meta),
-        except Exception:
+            except Exception:
                 pass
 
         if self.logger:
-        self.logger.info(
+            self.logger.info(
                 f"Writing flat parquet: {file_path} (rows={len(df)}, cols={len(df.columns)})"
             )
 
@@ -729,11 +748,11 @@ class ParquetDatasetManager:
     def update_manifest(self, base_dir: str, ts_column: str = "timestamp") -> None:
         """Update manifest file for the dataset."""
         try:
-        if not os.path.exists(base_dir):
+            if not os.path.exists(base_dir):
                 return
 
             manifest_path, os.path.join(base_dir, "_manifest.json")
-            manifest = {,
+            manifest = {
                 "updated_at": datetime.now(UTC).isoformat(),
                 "base_dir": base_dir,
                 "timestamp_column": ts_column,
@@ -776,11 +795,11 @@ class ParquetDatasetManager:
                 json.dump(manifest, f, indent=2, default=str)
 
         if self.logger:
-        self.logger.info(f"Updated manifest: {manifest_path}")
+            self.logger.info(f"Updated manifest: {manifest_path}")
 
         except Exception as e:
-        if self.logger:
-        self.logger.warning(f"Failed to update manifest: {e}")
+            if self.logger:
+                self.logger.warning(f"Failed to update manifest: {e}")
 
     def get_latest_timestamp(
         self, base_dir: str, ts_column: str = "timestamp"
@@ -802,7 +821,7 @@ class ParquetDatasetManager:
         return self.get_latest_timestamp(base_dir)
 
     def cached_projection(
-        self, base_dir: str, filters: list | None, columns: list[str], cache_dir: str, cache_key_prefix: str, compression: str = "snappy", snapshot_version: str | None = None, ttl_seconds: int | None = None, batch_size: int | None = None, arrow_transform: Callable[[pa.Table] = pa.Table] | None, None
+        self, base_dir: str, filters: list | None, columns: list[str], cache_dir: str, cache_key_prefix: str, compression: str = "snappy", snapshot_version: str | None = None, ttl_seconds: int | None = None, batch_size: int | None = None, arrow_transform: Callable[[pa.Table] = pa.Table] | None = None, None
     ) -> pd.DataFrame:
         """Read a projection with caching support."""
         self._ensure_pyarrow()
@@ -848,7 +867,7 @@ class ParquetDatasetManager:
         return df
 
     def materialize_projection(
-        self, base_dir: str, filters: list | None, columns: list[str], output_dir: str, partition_cols: list[str], schema_name: str = "split", compression: str = "snappy", batch_size: int | None = None, metadata: dict[str, Any] | None, None, ) -> str:
+        self, base_dir: str, filters: list | None, columns: list[str], output_dir: str, partition_cols: list[str], schema_name: str = "split", compression: str = "snappy", batch_size: int | None = None, metadata: dict[str, Any] | None = None, ) -> str:
         """Materialize a projection to a new partitioned dataset."""
         df, self.scan_dataset(base_dir, filters, columns, batch_size)
 
@@ -908,7 +927,7 @@ class ParquetDatasetManager:
         return None
 
     def migrate_flat_parquet_dir_to_partitioned(
-        self, src_dir: str, dst_base_dir: str, schema_name: str, static_columns: dict[str, str | int] | None, None, compression: str = "snappy"
+        self, src_dir: str, dst_base_dir: str, schema_name: str, static_columns: dict[str, str | int] | None = None, None, compression: str = "snappy"
     ) -> None:
         """Migrate a directory of flat parquet files to partitioned format."""
         self._ensure_pyarrow()
@@ -1081,12 +1100,12 @@ class UnifiedDataConverter:
         self.logger.error("❌ Failed to set up future infrastructure")
         return False
 
-        # Step 4: Validate unified dataset
-            validation_success, await self._validate_unified_dataset(
+        # Step 4: Run enhanced quality validation
+            validation_success, await self._run_enhanced_quality_validation(
                 symbol = exchange, timeframe,
             )
         if not validation_success:
-        self.logger.error("❌ Unified dataset validation failed")
+        self.logger.error("❌ Enhanced quality validation failed")
         return False
 
         # Step 5: Verify data quality and completeness
@@ -1095,6 +1114,60 @@ class UnifiedDataConverter:
             )
         if not verification_success:
         self.logger.warning("⚠️ Data quality verification found issues")
+
+        self.logger.info("=" * 80)
+        self.logger.info("✅ STEP 1.5 COMPLETED: Unified Data Converter")
+        self.logger.info("=" * 80)
+        return True
+
+    async def _run_enhanced_quality_validation(self, symbol: str, exchange: str, timeframe: str) -> bool:
+        """Run enhanced quality validation using the quality manager."""
+        try:
+            from .enhanced_data_quality_manager import EnhancedDataQualityManager
+            
+            self.logger.info("🔍 Running enhanced quality validation...")
+            
+            manager = EnhancedDataQualityManager(str(self.data_cache_dir))
+            quality_results = await manager.comprehensive_quality_check(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                check_gaps=True,
+                fill_gaps=True,
+                validate_format=True
+            )
+            
+            if quality_results.get("success", False):
+                self.logger.info("✅ Enhanced quality validation passed")
+                
+                # Log detailed quality metrics
+                if quality_results.get("gaps_detected"):
+                    self.logger.info(f"📊 Detected {len(quality_results['gaps_detected'])} gaps")
+                if quality_results.get("gaps_filled"):
+                    self.logger.info(f"🔧 Filled {len(quality_results['gaps_filled'])} gaps")
+                if quality_results.get("format_issues"):
+                    self.logger.warning(f"⚠️ Found {len(quality_results['format_issues'])} format issues")
+                
+                # Check if data is ready for step3/step4
+                if quality_results.get("step3_step4_ready", False):
+                    self.logger.info("✅ Data is ready for step3/step4")
+                else:
+                    self.logger.warning("⚠️ Data may not be ready for step3/step4")
+                    missing = quality_results.get("missing_for_steps", [])
+                    for item in missing:
+                        self.logger.warning(f"   - {item}")
+                
+                return True
+            else:
+                self.logger.error("❌ Enhanced quality validation failed")
+                issues = quality_results.get("issues", [])
+                for issue in issues:
+                    self.logger.error(f"   - {issue}")
+                return False
+                
+        except Exception as e:
+            self.logger.exception(f"❌ Error running enhanced quality validation: {e}")
+            return False
 
         self.logger.info("=" * 80)
         self.logger.info("✅ STEP 1.5 COMPLETED: Unified Data Converter")
@@ -2476,27 +2549,99 @@ async def run_step(symbol: str, exchange: str, timeframe: str = "1m", data_dir: 
         await converter.initialize()
 
         # Execute conversion
-        success, await converter.execute(
-            symbol=symbol
-            exchange=exchange
-            timeframe=timeframe
-            data_dir=data_dir
+        success = await converter.execute(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+            data_dir=data_dir,
             force_rerun=force_rerun
         )
 
         if success:
-        # Log success information
-            unified_path, converter.get_unified_data_path(symbol, exchange, timeframe)
-            config_path, converter.get_unified_config_path(symbol, exchange, timeframe)
+            # Log success information
+            unified_path = converter.get_unified_data_path(symbol, exchange, timeframe)
+            config_path = converter.get_unified_config_path(symbol, exchange, timeframe)
 
             system_logger.info("✅ Step 1.5 completed successfully")
             system_logger.info(f"📁 Unified dataset: {unified_path}")
             system_logger.info(f"📁 Configuration: {config_path}")
+            
+            # Run comprehensive file format validation
+            if validate_step1_5_file:
+                system_logger.info("🔍 Running comprehensive file format validation...")
+                validation_success = await _run_comprehensive_validation(symbol, exchange, timeframe, data_dir)
+                
+                if validation_success:
+                    system_logger.info("✅ Comprehensive file format validation passed")
+                else:
+                    system_logger.warning("⚠️ Comprehensive file format validation found issues")
+            else:
+                system_logger.info("⚠️ Comprehensive file validation not available, skipping validation")
 
         return success
 
     except Exception as e:
         system_logger.exception(f"❌ Step 1.5 failed: {e}")
+        return False
+
+
+async def _run_comprehensive_validation(
+    symbol: str, 
+    exchange: str, 
+    timeframe: str, 
+    data_dir: str
+) -> bool:
+    """Run comprehensive file format validation for step 1.5."""
+    try:
+        if not validate_step1_5_file:
+            system_logger.warning("Comprehensive file validation not available")
+            return True
+        
+        # Define expected files for step 1.5
+        expected_files = [
+            f"{data_dir}/unified_{exchange}_{symbol}_{timeframe}.parquet",
+            f"{data_dir}/unified_{exchange}_{symbol}_{timeframe}_config.json",
+        ]
+        
+        validation_results = []
+        all_valid = True
+        
+        for file_path in expected_files:
+            if Path(file_path).exists():
+                system_logger.info(f"🔍 Validating file: {file_path}")
+                
+                # Validate file format
+                validation_result = validate_step1_5_file(file_path)
+                validation_results.append(validation_result)
+                
+                if validation_result.is_valid:
+                    system_logger.info(f"✅ File validation passed: {file_path}")
+                    system_logger.info(f"   📊 Shape: {validation_result.summary.get('shape', 'N/A')}")
+                    system_logger.info(f"   📁 File type: {validation_result.file_type}")
+                    system_logger.info(f"   🗂️ Columns: {validation_result.summary.get('column_count', 'N/A')}")
+                else:
+                    system_logger.warning(f"⚠️ File validation issues found: {file_path}")
+                    all_valid = False
+                    
+                    # Log detailed issues
+                    for issue in validation_result.issues:
+                        system_logger.warning(f"   - {issue.severity.value.upper()}: {issue.description}")
+                        if issue.details:
+                            system_logger.warning(f"     Details: {issue.details}")
+            else:
+                system_logger.warning(f"⚠️ Expected file not found: {file_path}")
+                all_valid = False
+        
+        # Log validation summary
+        if validation_results:
+            total_files = len(validation_results)
+            valid_files = sum(1 for r in validation_results if r.is_valid)
+            system_logger.info(f"📊 Validation Summary: {valid_files}/{total_files} files passed validation")
+        
+        return all_valid
+        
+    except Exception as e:
+        system_logger.exception(f"❌ Error during comprehensive validation: {e}")
         return False
 
 
@@ -2510,24 +2655,25 @@ if __name__ == "__main__":
             symbol = sys.argv[1]
             exchange = sys.argv[2]
             timeframe = sys.argv[3]
-            data_dir, sys.argv[4] if len(sys.argv) > 4 else "data_cache"
-            force_rerun, len(sys.argv) > 5 and sys.argv[5].lower() == "true"
+            data_dir = sys.argv[4] if len(sys.argv) > 4 else "data_cache"
+            force_rerun = len(sys.argv) > 5 and sys.argv[5].lower() == "true"
         else:
+            print("Usage: python step1_5_data_converter.py <symbol> <exchange> <timeframe> [data_dir] [force_rerun]")
+            print("Example: python step1_5_data_converter.py ETHUSDT BINANCE 1m data_cache true")
             return
 
-
-        success, await run_step(
-            symbol=symbol
-            exchange=exchange
-            timeframe=timeframe
-            data_dir=data_dir
+        success = await run_step(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+            data_dir=data_dir,
             force_rerun=force_rerun
         )
 
         if success:
-            pass
+            print("✅ Step 1.5: Data Converter completed successfully")
         else:
-            pass
+            print("❌ Step 1.5: Data Converter failed")
 
         # Clean up memory to prevent segmentation fault
         import gc

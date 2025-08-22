@@ -18,6 +18,28 @@ from src.training.optimized_feature_selection_manager import (
     OptimizedFeatureSelectionManager,
 )
 
+# Import comprehensive file validation
+try:
+    from src.utils.comprehensive_file_validation import (
+    ComprehensiveFileValidator,
+    validate_step2_file,
+    FileValidationResult
+)
+from src.utils.validation_decorators import (
+    validate_file_operation,
+    validate_dataframe_operation,
+    validate_step2_operation
+)
+from src.utils.advanced_ml_validation import validate_ml_data_quality
+from src.utils.enhanced_validation_decorators import step_specific_ml_validation
+except ImportError:
+    ComprehensiveFileValidator = None
+    validate_step2_file = None
+    FileValidationResult = None
+    validate_file_operation = None
+    validate_dataframe_operation = None
+    validate_step2_operation = None
+
 # Import the auto-fix decorator for data quality issues
 from src.training.steps.raw_data_quality_checker import auto_fix_data_quality_issues
 from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
@@ -391,6 +413,7 @@ def _save_feature_artifacts(symbol: str, exchange: str, data_dir: str, features:
     validation_score_requirements={"feature_quality": 0.7},
 )
 @auto_fix_data_quality_issues
+@step_specific_ml_validation("step2", timestamp_col="timestamp") if step_specific_ml_validation else lambda x: x
 async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data/training", timeframe: str = "1m", force_rerun: bool = False, **kwargs: Any) -> bool:
     """Step 2: Engineering the features (post-labeling).
     Loads labeled parquet from Step 1 and produces robust feature parquet artifacts for train/val/test.
@@ -1587,10 +1610,84 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
         logger.warning(f"⚠️ Failed to save feature artifacts: {e}")
 
     logger.info("✅ Step 2: Feature engineering completed successfully")
+    
+    # Run comprehensive file format validation
+    if validate_step2_file:
+        logger.info("🔍 Running comprehensive file format validation...")
+        validation_success = await _run_comprehensive_validation(symbol, exchange, data_dir, logger)
+        
+        if validation_success:
+            logger.info("✅ Comprehensive file format validation passed")
+        else:
+            logger.warning("⚠️ Comprehensive file format validation found issues")
+    else:
+        logger.info("⚠️ Comprehensive file validation not available, skipping validation")
+    
     return True
 except Exception as e:
     logger.exception(f"🚨 Step 2 feature engineering failed: {e}")
     return False
+
+
+async def _run_comprehensive_validation(
+    symbol: str, 
+    exchange: str, 
+    data_dir: str, 
+    logger: Any
+) -> bool:
+    """Run comprehensive file format validation for step 2."""
+    try:
+        if not validate_step2_file:
+            logger.warning("Comprehensive file validation not available")
+            return True
+        
+        # Define expected files for step 2
+        expected_files = [
+            f"{data_dir}/features_{exchange}_{symbol}_train.parquet",
+            f"{data_dir}/features_{exchange}_{symbol}_validation.parquet",
+            f"{data_dir}/features_{exchange}_{symbol}_test.parquet",
+        ]
+        
+        validation_results = []
+        all_valid = True
+        
+        for file_path in expected_files:
+            if Path(file_path).exists():
+                logger.info(f"🔍 Validating file: {file_path}")
+                
+                # Validate file format
+                validation_result = validate_step2_file(file_path)
+                validation_results.append(validation_result)
+                
+                if validation_result.is_valid:
+                    logger.info(f"✅ File validation passed: {file_path}")
+                    logger.info(f"   📊 Shape: {validation_result.summary.get('shape', 'N/A')}")
+                    logger.info(f"   📁 File type: {validation_result.file_type}")
+                    logger.info(f"   🗂️ Columns: {validation_result.summary.get('column_count', 'N/A')}")
+                else:
+                    logger.warning(f"⚠️ File validation issues found: {file_path}")
+                    all_valid = False
+                    
+                    # Log detailed issues
+                    for issue in validation_result.issues:
+                        logger.warning(f"   - {issue.severity.value.upper()}: {issue.description}")
+                        if issue.details:
+                            logger.warning(f"     Details: {issue.details}")
+            else:
+                logger.warning(f"⚠️ Expected file not found: {file_path}")
+                all_valid = False
+        
+        # Log validation summary
+        if validation_results:
+            total_files = len(validation_results)
+            valid_files = sum(1 for r in validation_results if r.is_valid)
+            logger.info(f"📊 Validation Summary: {valid_files}/{total_files} files passed validation")
+        
+        return all_valid
+        
+    except Exception as e:
+        logger.exception(f"❌ Error during comprehensive validation: {e}")
+        return False
 
 
 if __name__ == "__main__":

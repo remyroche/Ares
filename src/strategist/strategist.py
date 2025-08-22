@@ -1,0 +1,576 @@
+# src/strategist/strategist.py
+
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
+
+import pandas as pd
+
+from src.utils.error_handler import (
+    handle_errors,
+    handle_specific_errors,
+)
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+    invalid,
+    missing,
+)
+
+if TYPE_CHECKING:
+    from src.analyst.analyst import Analyst
+    from src.tactician.tactician import Tactician
+
+
+class Strategist:
+    """
+    Strategist component for trading strategy development.
+    Generates trading strategies based on market analysis and current conditions.
+    Integrates with Analyst and Tactician for comprehensive strategy development.
+    """
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        """
+        Initialize strategist with enhanced type safety.
+
+        Args:
+            config: Configuration dictionary
+        """
+        self.config: dict[str, Any] = config
+        self.logger = system_logger.getChild("Strategist")
+
+        # Strategist state
+        self.is_running: bool = False
+        self.strategy_results: dict[str, Any] = {}
+        self.strategy_history: list[dict[str, Any]] = []
+        self.current_strategy: dict[str, Any] = {}
+
+        # Configuration
+        self.strategist_config: dict[str, Any] = self.config.get("strategist", {})
+        self.strategy_interval: int = self.strategist_config.get("strategy_interval", 1800)
+        self.max_strategy_history: int = self.strategist_config.get("max_strategy_history", 50)
+        self.enable_risk_management: bool = self.strategist_config.get("enable_risk_management", True)
+        self.enable_position_sizing: bool = self.strategist_config.get("enable_position_sizing", True)
+
+        # Strategy parameters
+        self.default_risk_per_trade: float = self.strategist_config.get("default_risk_per_trade", 0.02)
+        self.max_position_size: float = self.strategist_config.get("max_position_size", 0.1)
+        self.min_confidence_threshold: float = self.strategist_config.get("min_confidence_threshold", 0.6)
+
+        # Component references (will be set during initialization)
+        self.analyst: Analyst | None = None
+        self.tactician: Tactician | None = None
+
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Invalid strategist configuration"),
+            AttributeError: (False, "Missing required strategist parameters"),
+            KeyError: (False, "Missing configuration keys"),
+        },
+        default_return=False,
+        context="strategist initialization",
+    )
+    async def initialize(self) -> bool:
+        """
+        Initialize strategist with enhanced error handling.
+
+        Returns:
+            bool: True if initialization successful, False otherwise
+        """
+        try:
+            self.logger.info("Initializing Strategist...")
+
+            # Validate configuration
+            if not self._validate_configuration():
+                self.logger.error(invalid("Invalid configuration for strategist"))
+                return False
+
+            # Initialize strategy components
+            await self._initialize_strategy_components()
+
+            self.logger.info("✅ Strategist initialized successfully")
+            return True
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Strategist initialization failed: {e}"))
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="strategy components initialization",
+    )
+    async def _initialize_strategy_components(self) -> None:
+        """Initialize strategy components."""
+        try:
+            # Initialize risk management
+            if self.enable_risk_management:
+                self.logger.info("Initializing risk management components...")
+
+            # Initialize position sizing
+            if self.enable_position_sizing:
+                self.logger.info("Initializing position sizing components...")
+
+            self.logger.info("✅ Strategy components initialized successfully")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing strategy components: {e}")
+            raise
+
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=False,
+        context="configuration validation",
+    )
+    def _validate_configuration(self) -> bool:
+        """Validate strategist configuration."""
+        try:
+            required_keys = ["strategy_interval", "max_strategy_history"]
+            for key in required_keys:
+                if key not in self.strategist_config:
+                    self.logger.error(missing(f"Missing required configuration key: {key}"))
+                    return False
+
+            # Validate numeric parameters
+            if self.default_risk_per_trade <= 0 or self.default_risk_per_trade > 1:
+                self.logger.error(invalid("Invalid default_risk_per_trade value"))
+                return False
+
+            if self.max_position_size <= 0 or self.max_position_size > 1:
+                self.logger.error(invalid("Invalid max_position_size value"))
+                return False
+
+            if self.min_confidence_threshold < 0 or self.min_confidence_threshold > 1:
+                self.logger.error(invalid("Invalid min_confidence_threshold value"))
+                return False
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error validating configuration: {e}")
+            return False
+
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (None, "Invalid market data for strategy generation"),
+            AttributeError: (None, "Missing required market data fields"),
+            KeyError: (None, "Missing required market data keys"),
+        },
+        default_return=None,
+        context="strategy generation",
+    )
+    async def generate_strategy(
+        self,
+        market_data: pd.DataFrame,
+        current_price: float,
+        analysis_results: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """
+        Generate trading strategy based on market data and analysis results.
+
+        Args:
+            market_data: Market data for analysis
+            current_price: Current asset price
+            analysis_results: Results from market analysis (Step 1)
+
+        Returns:
+            dict[str, Any] | None: Generated strategy or None if failed
+        """
+        try:
+            if not self._validate_market_data(market_data):
+                self.logger.error("Invalid market data for strategy generation")
+                return None
+
+            self.logger.info("🎯 Generating trading strategy...")
+
+            # Extract key market indicators
+            market_indicators = self._extract_market_indicators(market_data, current_price)
+
+            # Generate base strategy
+            base_strategy = await self._generate_base_strategy(market_indicators, current_price)
+
+            # Integrate analysis results if available
+            if analysis_results:
+                base_strategy = await self._integrate_analysis_results(base_strategy, analysis_results)
+
+            # Apply risk management
+            if self.enable_risk_management:
+                base_strategy = await self._apply_risk_management(base_strategy, current_price)
+
+            # Apply position sizing
+            if self.enable_position_sizing:
+                base_strategy = await self._apply_position_sizing(base_strategy, current_price)
+
+            # Store strategy results
+            await self._store_strategy_results(base_strategy)
+
+            self.logger.info("✅ Strategy generation completed successfully")
+            return base_strategy
+
+        except Exception as e:
+            self.logger.error(f"Error generating strategy: {e}")
+            return None
+
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=False,
+        context="market data validation",
+    )
+    def _validate_market_data(self, market_data: pd.DataFrame) -> bool:
+        """Validate market data for strategy generation."""
+        try:
+            if market_data is None or market_data.empty:
+                self.logger.error("Market data is None or empty")
+                return False
+
+            required_columns = ["open", "high", "low", "close", "volume"]
+            missing_columns = [col for col in required_columns if col not in market_data.columns]
+            if missing_columns:
+                self.logger.error(f"Missing required columns: {missing_columns}")
+                return False
+
+            # Check for sufficient data points
+            if len(market_data) < 20:
+                self.logger.error("Insufficient market data points for strategy generation")
+                return False
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error validating market data: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return={},
+        context="market indicators extraction",
+    )
+    def _extract_market_indicators(self, market_data: pd.DataFrame, current_price: float) -> dict[str, Any]:
+        """Extract key market indicators from market data."""
+        try:
+            indicators = {}
+
+            # Price indicators
+            indicators["current_price"] = current_price
+            indicators["price_change"] = (current_price - market_data["close"].iloc[-2]) / market_data["close"].iloc[-2]
+            indicators["price_volatility"] = market_data["close"].pct_change().std()
+
+            # Volume indicators
+            indicators["volume_ma"] = market_data["volume"].rolling(window=20).mean().iloc[-1]
+            indicators["volume_ratio"] = market_data["volume"].iloc[-1] / indicators["volume_ma"]
+
+            # Technical indicators
+            indicators["sma_20"] = market_data["close"].rolling(window=20).mean().iloc[-1]
+            indicators["sma_50"] = market_data["close"].rolling(window=50).mean().iloc[-1]
+            indicators["rsi"] = self._calculate_rsi(market_data["close"])
+
+            # Trend indicators
+            indicators["trend"] = "BULLISH" if indicators["sma_20"] > indicators["sma_50"] else "BEARISH"
+            indicators["momentum"] = "POSITIVE" if indicators["price_change"] > 0 else "NEGATIVE"
+
+            return indicators
+
+        except Exception as e:
+            self.logger.error(f"Error extracting market indicators: {e}")
+            return {}
+
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=0.0,
+        context="RSI calculation",
+    )
+    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> float:
+        """Calculate Relative Strength Index."""
+        try:
+            delta = prices.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs))
+            return rsi.iloc[-1] if not pd.isna(rsi.iloc[-1]) else 50.0
+
+        except Exception as e:
+            self.logger.error(f"Error calculating RSI: {e}")
+            return 50.0
+
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return={},
+        context="base strategy generation",
+    )
+    async def _generate_base_strategy(self, indicators: dict[str, Any], current_price: float) -> dict[str, Any]:
+        """Generate base trading strategy from market indicators."""
+        try:
+            strategy = {
+                "timestamp": datetime.now().isoformat(),
+                "strategy_type": "technical_analysis",
+                "confidence": 0.0,
+                "direction": "HOLD",
+                "entry_price": current_price,
+                "stop_loss": None,
+                "take_profit": None,
+                "position_size": 0.0,
+                "risk_level": "MEDIUM",
+                "indicators": indicators,
+                "reasoning": [],
+            }
+
+            # Determine strategy direction based on indicators
+            confidence_factors = []
+
+            # Trend analysis
+            if indicators["trend"] == "BULLISH":
+                confidence_factors.append(0.3)
+                strategy["reasoning"].append("Bullish trend detected")
+            elif indicators["trend"] == "BEARISH":
+                confidence_factors.append(-0.3)
+                strategy["reasoning"].append("Bearish trend detected")
+
+            # Momentum analysis
+            if indicators["momentum"] == "POSITIVE":
+                confidence_factors.append(0.2)
+                strategy["reasoning"].append("Positive momentum")
+            elif indicators["momentum"] == "NEGATIVE":
+                confidence_factors.append(-0.2)
+                strategy["reasoning"].append("Negative momentum")
+
+            # RSI analysis
+            rsi = indicators["rsi"]
+            if rsi < 30:
+                confidence_factors.append(0.2)
+                strategy["reasoning"].append("Oversold conditions (RSI < 30)")
+            elif rsi > 70:
+                confidence_factors.append(-0.2)
+                strategy["reasoning"].append("Overbought conditions (RSI > 70)")
+
+            # Volume analysis
+            if indicators["volume_ratio"] > 1.5:
+                confidence_factors.append(0.1)
+                strategy["reasoning"].append("High volume confirmation")
+            elif indicators["volume_ratio"] < 0.5:
+                confidence_factors.append(-0.1)
+                strategy["reasoning"].append("Low volume - weak signal")
+
+            # Calculate overall confidence
+            if confidence_factors:
+                strategy["confidence"] = min(max(sum(confidence_factors), -1.0), 1.0)
+                strategy["confidence"] = abs(strategy["confidence"])
+
+            # Determine direction
+            if strategy["confidence"] >= self.min_confidence_threshold:
+                if sum(confidence_factors) > 0:
+                    strategy["direction"] = "LONG"
+                else:
+                    strategy["direction"] = "SHORT"
+            else:
+                strategy["direction"] = "HOLD"
+                strategy["reasoning"].append("Insufficient confidence for trade")
+
+            return strategy
+
+        except Exception as e:
+            self.logger.error(f"Error generating base strategy: {e}")
+            return {}
+
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return={},
+        context="analysis results integration",
+    )
+    async def _integrate_analysis_results(self, strategy: dict[str, Any], analysis_results: dict[str, Any]) -> dict[str, Any]:
+        """Integrate analysis results from Step 1 into strategy."""
+        try:
+            if not analysis_results:
+                return strategy
+
+            # Integrate market health analysis
+            market_health = analysis_results.get("market_health", {})
+            if market_health:
+                health_score = market_health.get("health_score", 0.5)
+                strategy["market_health_score"] = health_score
+                strategy["confidence"] = (strategy["confidence"] + health_score) / 2
+                strategy["reasoning"].append(f"Market health score: {health_score:.3f}")
+
+            # Integrate liquidation risk analysis
+            liquidation_risk = analysis_results.get("liquidation_risk", {})
+            if liquidation_risk:
+                risk_level = liquidation_risk.get("risk_level", "MEDIUM")
+                strategy["liquidation_risk"] = risk_level
+                if risk_level == "HIGH":
+                    strategy["confidence"] *= 0.8  # Reduce confidence for high risk
+                    strategy["reasoning"].append("High liquidation risk - reduced confidence")
+
+            # Integrate trading decision from dual model system
+            trading_decision = analysis_results.get("trading_decision", {})
+            if trading_decision:
+                decision_confidence = trading_decision.get("final_confidence", 0.0)
+                decision_direction = trading_decision.get("direction", "HOLD")
+                
+                # Align strategy with dual model decision
+                if decision_direction != "HOLD":
+                    strategy["dual_model_direction"] = decision_direction
+                    strategy["dual_model_confidence"] = decision_confidence
+                    
+                    # Adjust strategy confidence based on dual model
+                    if decision_direction == strategy["direction"]:
+                        strategy["confidence"] = (strategy["confidence"] + decision_confidence) / 2
+                        strategy["reasoning"].append("Strategy aligned with dual model decision")
+                    else:
+                        strategy["confidence"] *= 0.7  # Reduce confidence for misalignment
+                        strategy["reasoning"].append("Strategy misaligned with dual model - reduced confidence")
+
+            return strategy
+
+        except Exception as e:
+            self.logger.error(f"Error integrating analysis results: {e}")
+            return strategy
+
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return={},
+        context="risk management application",
+    )
+    async def _apply_risk_management(self, strategy: dict[str, Any], current_price: float) -> dict[str, Any]:
+        """Apply risk management to strategy."""
+        try:
+            if strategy["direction"] == "HOLD":
+                return strategy
+
+            # Calculate stop loss and take profit levels
+            volatility = strategy["indicators"]["price_volatility"]
+            
+            if strategy["direction"] == "LONG":
+                # Stop loss: 2x volatility below current price
+                stop_loss_pct = volatility * 2
+                strategy["stop_loss"] = current_price * (1 - stop_loss_pct)
+                strategy["take_profit"] = current_price * (1 + stop_loss_pct * 2)  # 2:1 risk-reward
+            else:  # SHORT
+                # Stop loss: 2x volatility above current price
+                stop_loss_pct = volatility * 2
+                strategy["stop_loss"] = current_price * (1 + stop_loss_pct)
+                strategy["take_profit"] = current_price * (1 - stop_loss_pct * 2)  # 2:1 risk-reward
+
+            # Adjust confidence based on risk-reward ratio
+            risk_reward_ratio = 2.0  # 2:1 risk-reward ratio
+            if risk_reward_ratio >= 2.0:
+                strategy["confidence"] *= 1.1  # Boost confidence for good risk-reward
+                strategy["reasoning"].append(f"Good risk-reward ratio: {risk_reward_ratio:.1f}")
+
+            return strategy
+
+        except Exception as e:
+            self.logger.error(f"Error applying risk management: {e}")
+            return strategy
+
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return={},
+        context="position sizing application",
+    )
+    async def _apply_position_sizing(self, strategy: dict[str, Any], current_price: float) -> dict[str, Any]:
+        """Apply position sizing to strategy."""
+        try:
+            if strategy["direction"] == "HOLD":
+                strategy["position_size"] = 0.0
+                return strategy
+
+            # Calculate position size based on confidence and risk
+            base_position_size = self.default_risk_per_trade
+            confidence_multiplier = strategy["confidence"]
+            
+            # Adjust position size based on confidence
+            position_size = base_position_size * confidence_multiplier
+            
+            # Apply maximum position size limit
+            position_size = min(position_size, self.max_position_size)
+            
+            # Ensure minimum position size
+            if position_size < 0.001:
+                position_size = 0.0
+                strategy["direction"] = "HOLD"
+                strategy["reasoning"].append("Position size too small - switching to HOLD")
+
+            strategy["position_size"] = position_size
+
+            return strategy
+
+        except Exception as e:
+            self.logger.error(f"Error applying position sizing: {e}")
+            return strategy
+
+    @handle_errors(
+        exceptions=(ValueError, TypeError),
+        default_return=None,
+        context="strategy results storage",
+    )
+    async def _store_strategy_results(self, strategy: dict[str, Any]) -> None:
+        """Store strategy results in history."""
+        try:
+            # Store current strategy
+            self.current_strategy = strategy.copy()
+
+            # Add to history
+            self.strategy_history.append(strategy.copy())
+
+            # Limit history size
+            if len(self.strategy_history) > self.max_strategy_history:
+                self.strategy_history = self.strategy_history[-self.max_strategy_history:]
+
+            # Update strategy results
+            self.strategy_results = {
+                "current_strategy": self.current_strategy,
+                "history_count": len(self.strategy_history),
+                "last_updated": datetime.now().isoformat(),
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error storing strategy results: {e}")
+
+    def get_strategy_results(self) -> dict[str, Any]:
+        """
+        Get current strategy results.
+
+        Returns:
+            dict[str, Any]: Current strategy results
+        """
+        return self.strategy_results.copy()
+
+    def get_current_strategy(self) -> dict[str, Any]:
+        """
+        Get current strategy.
+
+        Returns:
+            dict[str, Any]: Current strategy
+        """
+        return self.current_strategy.copy()
+
+    def get_strategy_history(self, limit: int | None = None) -> list[dict[str, Any]]:
+        """
+        Get strategy history.
+
+        Args:
+            limit: Maximum number of history entries to return
+
+        Returns:
+            list[dict[str, Any]]: Strategy history
+        """
+        history = self.strategy_history.copy()
+        if limit:
+            history = history[-limit:]
+        return history
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="strategist stop",
+    )
+    async def stop(self) -> None:
+        """Stop the strategist and cleanup resources."""
+        try:
+            self.logger.info("🛑 Stopping Strategist...")
+            self.is_running = False
+            self.logger.info("✅ Strategist stopped successfully")
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Failed to stop Strategist: {e}"))

@@ -37,7 +37,30 @@ from src.utils.centralized_decorators import (
     validate_step_output,
     validate_step_prerequisites,
     with_tracing_span,
+    comprehensive_data_validation,
 )
+
+# Import comprehensive file validation
+try:
+    from src.utils.comprehensive_file_validation import (
+    ComprehensiveFileValidator,
+    validate_step4_file,
+    FileValidationResult
+)
+from src.utils.validation_decorators import (
+    validate_file_operation,
+    validate_dataframe_operation,
+    validate_step4_operation
+)
+from src.utils.advanced_ml_validation import validate_ml_data_quality
+from src.utils.enhanced_validation_decorators import step_specific_ml_validation
+except ImportError:
+    ComprehensiveFileValidator = None
+    validate_step4_file = None
+    FileValidationResult = None
+    validate_file_operation = None
+    validate_dataframe_operation = None
+    validate_step4_operation = None
 from src.utils.logger import system_logger as _logger
 
 
@@ -84,6 +107,98 @@ async def _build_sr_levels(price_df: pd.DataFrame) -> dict[str, Any]:
         _logger.warning(f"⚠️ Failed to build SR levels: {e}")
         return {"support_levels": [], "resistance_levels": []}
 
+
+@with_tracing_span("step4._ensure_data_quality_for_labeling")
+@comprehensive_data_validation
+@handle_errors(exceptions=(Exception,), default_return=False)
+async def _ensure_data_quality_for_labeling(symbol: str, exchange: str, timeframe: str, data_dir: str) -> bool:
+    """Ensure data quality for step4 labeling using enhanced quality manager."""
+    try:
+        from .step1.enhanced_data_quality_manager import EnhancedDataQualityManager
+        
+        _logger.info("🔍 Ensuring data quality for step4 labeling...")
+        
+        manager = EnhancedDataQualityManager(data_dir)
+        data_results = await manager.get_data_for_step3_step4(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe
+        )
+        
+        if data_results.get("success", False):
+            _logger.info("✅ Data quality check passed for step4 labeling")
+            return True
+        else:
+            _logger.error("❌ Data quality check failed for step4 labeling")
+            error = data_results.get("error", "Unknown error")
+            _logger.error(f"   Error: {error}")
+            
+            # Try to fix missing data using step1/step1_5 components
+            _logger.info("🔄 Attempting to fix missing data for step4...")
+            fix_results = await _fix_missing_data_for_step4(symbol, exchange, timeframe, data_dir)
+            
+            if fix_results.get("success", False):
+                _logger.info("✅ Successfully fixed missing data for step4")
+                return True
+            else:
+                _logger.error("❌ Failed to fix missing data for step4")
+                return False
+                
+    except Exception as e:
+        _logger.exception(f"❌ Error ensuring data quality for step4: {e}")
+        return False
+
+@with_tracing_span("step4._fix_missing_data_for_step4")
+async def _fix_missing_data_for_step4(symbol: str, exchange: str, timeframe: str, data_dir: str) -> dict[str, Any]:
+    """Fix missing data for step4 using step1 and step1_5 components."""
+    try:
+        _logger.info("🔄 Fixing missing data for step4 using step1/step1_5 components...")
+        
+        # Try step1 data collection
+        step1_success = False
+        try:
+            from .step1_data_collection import run_step as run_step1
+            step1_success = await run_step1(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                data_dir=data_dir,
+                force_rerun=True
+            )
+            if step1_success:
+                _logger.info("✅ Step1 data collection completed for step4")
+            else:
+                _logger.warning("⚠️ Step1 data collection failed for step4")
+        except Exception as e:
+            _logger.warning(f"⚠️ Could not run step1 for step4: {e}")
+        
+        # Try step1_5 data conversion
+        step1_5_success = False
+        try:
+            from .step1_5_data_converter import run_step as run_step1_5
+            step1_5_success = await run_step1_5(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                data_dir=data_dir,
+                force_rerun=True
+            )
+            if step1_5_success:
+                _logger.info("✅ Step1_5 data conversion completed for step4")
+            else:
+                _logger.warning("⚠️ Step1_5 data conversion failed for step4")
+        except Exception as e:
+            _logger.warning(f"⚠️ Could not run step1_5 for step4: {e}")
+        
+        return {
+            "success": step1_success and step1_5_success,
+            "step1_success": step1_success,
+            "step1_5_success": step1_5_success
+        }
+        
+    except Exception as e:
+        _logger.exception(f"❌ Error fixing missing data for step4: {e}")
+        return {"success": False, "error": str(e)}
 
 @with_tracing_span("step4._persist_sr_levels", log_args=False)
 @handle_errors(exceptions=(Exception,), default_return=None)
@@ -218,6 +333,8 @@ def _persist_sr_levels(config: dict[str, Any], sr_levels: dict[str, Any], asof_t
 )
 @auto_fix_data_quality_issues
 @handle_errors(exceptions=(Exception,), default_return=False, context="step4_processing_labeling")
+@validate_file_operation("step4", expected_schema="features", log_level="INFO") if validate_file_operation else lambda x: x
+@step_specific_ml_validation("step4", target_col="target", timestamp_col="timestamp") if step_specific_ml_validation else lambda x: x
 async def run_step(
     symbol: str, 
     exchange_name: str = "BINANCE", 
@@ -413,10 +530,83 @@ async def run_step(
         except Exception as e:
             _logger.warning(f"⚠️ Label reliability persistence skipped: {e}")
 
+        # Run comprehensive file format validation
+        if validate_step4_file:
+            _logger.info("🔍 Running comprehensive file format validation...")
+            validation_success = await _run_comprehensive_validation(symbol, actual_exchange, data_dir, _logger)
+            
+            if validation_success:
+                _logger.info("✅ Comprehensive file format validation passed")
+            else:
+                _logger.warning("⚠️ Comprehensive file format validation found issues")
+        else:
+            _logger.info("⚠️ Comprehensive file validation not available, skipping validation")
+
         return True
 
     except Exception as e:
         _logger.exception(f"🚨 Step 4 processing/labeling/FE failed: {e}")
+        return False
+
+
+async def _run_comprehensive_validation(
+    symbol: str, 
+    exchange: str, 
+    data_dir: str, 
+    logger: Any
+) -> bool:
+    """Run comprehensive file format validation for step 4."""
+    try:
+        if not validate_step4_file:
+            logger.warning("Comprehensive file validation not available")
+            return True
+        
+        # Define expected files for step 4
+        expected_files = [
+            f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet",
+            f"{data_dir}/{exchange}_{symbol}_labeled_validation.parquet",
+            f"{data_dir}/{exchange}_{symbol}_labeled_test.parquet",
+        ]
+        
+        validation_results = []
+        all_valid = True
+        
+        for file_path in expected_files:
+            if Path(file_path).exists():
+                logger.info(f"🔍 Validating file: {file_path}")
+                
+                # Validate file format
+                validation_result = validate_step4_file(file_path)
+                validation_results.append(validation_result)
+                
+                if validation_result.is_valid:
+                    logger.info(f"✅ File validation passed: {file_path}")
+                    logger.info(f"   📊 Shape: {validation_result.summary.get('shape', 'N/A')}")
+                    logger.info(f"   📁 File type: {validation_result.file_type}")
+                    logger.info(f"   🗂️ Columns: {validation_result.summary.get('column_count', 'N/A')}")
+                else:
+                    logger.warning(f"⚠️ File validation issues found: {file_path}")
+                    all_valid = False
+                    
+                    # Log detailed issues
+                    for issue in validation_result.issues:
+                        logger.warning(f"   - {issue.severity.value.upper()}: {issue.description}")
+                        if issue.details:
+                            logger.warning(f"     Details: {issue.details}")
+            else:
+                logger.warning(f"⚠️ Expected file not found: {file_path}")
+                all_valid = False
+        
+        # Log validation summary
+        if validation_results:
+            total_files = len(validation_results)
+            valid_files = sum(1 for r in validation_results if r.is_valid)
+            logger.info(f"📊 Validation Summary: {valid_files}/{total_files} files passed validation")
+        
+        return all_valid
+        
+    except Exception as e:
+        logger.exception(f"❌ Error during comprehensive validation: {e}")
         return False
 
 

@@ -20,6 +20,28 @@ except ImportError:
     # Fallback if constants module is not available
     DEFAULT_LOOKBACK_DAYS = 1095
 
+# Import comprehensive file validation
+try:
+    from src.utils.comprehensive_file_validation import (
+    ComprehensiveFileValidator,
+    validate_step1_file,
+    FileValidationResult
+)
+from src.utils.validation_decorators import (
+    validate_file_operation,
+    validate_dataframe_operation,
+    validate_step1_operation
+)
+from src.utils.advanced_ml_validation import validate_ml_data_quality
+from src.utils.enhanced_validation_decorators import step_specific_ml_validation
+except ImportError:
+    ComprehensiveFileValidator = None
+    validate_step1_file = None
+    FileValidationResult = None
+    validate_file_operation = None
+    validate_dataframe_operation = None
+    validate_step1_operation = None
+
 # Handle imports with fallback - this must be done before any other imports
 CONFIG = None
 handle_errors = None
@@ -101,7 +123,7 @@ class DataCollectionStep:
 
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any], ) -> dict[str, Any]:
-        """Execute data collection.
+        """Execute data collection with enhanced quality management.
 
         Args:
             training_input: Training input parameters
@@ -111,7 +133,7 @@ class DataCollectionStep:
             Updated pipeline state
 
         """
-        self.logger.info("Starting data collection...")
+        self.logger.info("Starting enhanced data collection...")
 
         try:
             # Execute the data collection
@@ -119,19 +141,76 @@ class DataCollectionStep:
 
             if success:
                 self.logger.info("Data collection completed successfully")
-                pipeline_state["data_collection_completed"] = True
+                
+                # Run enhanced quality check after data collection
+                quality_success = await self._run_enhanced_quality_check(training_input)
+                
+                if quality_success:
+                    self.logger.info("✅ Enhanced quality check passed")
+                    pipeline_state["data_collection_completed"] = True
+                    pipeline_state["quality_check_passed"] = True
+                else:
+                    self.logger.warning("⚠️ Enhanced quality check found issues")
+                    pipeline_state["data_collection_completed"] = True
+                    pipeline_state["quality_check_passed"] = False
             else:
                 self.logger.error("Data collection failed")
                 pipeline_state["data_collection_completed"] = False
+                pipeline_state["quality_check_passed"] = False
 
         except Exception as e:
             self.logger.exception(f"Error during data collection: {e}")
             pipeline_state["data_collection_completed"] = False
+            pipeline_state["quality_check_passed"] = False
 
         return pipeline_state
 
+    async def _run_enhanced_quality_check(self, training_input: dict[str, Any]) -> bool:
+        """Run enhanced quality check after data collection."""
+        try:
+            from .enhanced_data_quality_manager import EnhancedDataQualityManager
+            
+            symbol = training_input.get("symbol", "ETHUSDT")
+            exchange = training_input.get("exchange", "BINANCE")
+            timeframe = training_input.get("timeframe", "1m")
+            data_dir = training_input.get("data_dir", "data_cache")
+            
+            self.logger.info("🔍 Running enhanced quality check...")
+            
+            manager = EnhancedDataQualityManager(data_dir)
+            quality_results = await manager.comprehensive_quality_check(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                check_gaps=True,
+                fill_gaps=True,
+                validate_format=True
+            )
+            
+            if quality_results.get("success", False):
+                self.logger.info("✅ Enhanced quality check completed successfully")
+                
+                # Log quality metrics
+                if quality_results.get("gaps_detected"):
+                    self.logger.info(f"📊 Detected {len(quality_results['gaps_detected'])} gaps")
+                if quality_results.get("gaps_filled"):
+                    self.logger.info(f"🔧 Filled {len(quality_results['gaps_filled'])} gaps")
+                if quality_results.get("format_issues"):
+                    self.logger.warning(f"⚠️ Found {len(quality_results['format_issues'])} format issues")
+                
+                return True
+            else:
+                self.logger.error("❌ Enhanced quality check failed")
+                return False
+                
+        except Exception as e:
+            self.logger.exception(f"❌ Error running enhanced quality check: {e}")
+            return False
+
     @handle_data_collection_errors(context="run_data_collection")
     @log_step_metrics(context="data_collection")
+    @validate_file_operation("step1", expected_schema="klines", log_level="INFO") if validate_file_operation else lambda x: x
+    @step_specific_ml_validation("step1", timestamp_col="timestamp") if step_specific_ml_validation else lambda x: x
     async def _run_data_collection(self, training_input: dict[str, Any]) -> bool:
         """Run the actual data collection process."""
         try:
@@ -171,6 +250,96 @@ class DataCollectionStep:
         self.logger.info("Running fallback data collection...")
         # Add fallback implementation here if needed
         return True
+
+    async def _run_comprehensive_validation(
+        self, 
+        symbol: str, 
+        exchange: str, 
+        timeframe: str, 
+        data_dir: str, 
+        logger: Any
+    ) -> bool:
+        """Run comprehensive file format validation for step 1."""
+        try:
+            if not validate_step1_file:
+                logger.warning("Comprehensive file validation not available")
+                return True
+            
+            # Define expected files for step 1
+            expected_files = [
+                f"{data_dir}/klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet",
+                f"{data_dir}/aggtrades_{exchange}_{symbol}_consolidated.parquet",
+            ]
+            
+            validation_results = []
+            all_valid = True
+            
+            for file_path in expected_files:
+                if Path(file_path).exists():
+                    logger.info(f"🔍 Validating file: {file_path}")
+                    
+                    # Validate file format
+                    validation_result = validate_step1_file(file_path)
+                    validation_results.append(validation_result)
+                    
+                    if validation_result.is_valid:
+                        logger.info(f"✅ File validation passed: {file_path}")
+                        logger.info(f"   📊 Shape: {validation_result.summary.get('shape', 'N/A')}")
+                        logger.info(f"   📁 File type: {validation_result.file_type}")
+                        logger.info(f"   🗂️ Columns: {validation_result.summary.get('column_count', 'N/A')}")
+                        
+                        # Perform ML data quality validation if file is valid
+                        try:
+                            import pandas as pd
+                            df = pd.read_parquet(file_path)
+                            ml_validation_result = validate_ml_data_quality(
+                                df=df,
+                                timestamp_col="timestamp",
+                                config={
+                                    "validate_financial": True,
+                                    "validate_time_series": True,
+                                    "validate_distributions": True
+                                }
+                            )
+                            
+                            if ml_validation_result.is_valid:
+                                logger.info(f"✅ ML data quality validation passed: {file_path}")
+                                logger.info(f"   📈 Quality Score: {ml_validation_result.quality_score.overall:.3f}")
+                                logger.info(f"   🏆 Quality Grade: {ml_validation_result.quality_score.grade}")
+                            else:
+                                logger.warning(f"⚠️ ML data quality issues found: {file_path}")
+                                for issue in ml_validation_result.correlation_issues[:3]:
+                                    logger.warning(f"   - Correlation: {issue}")
+                                for issue in ml_validation_result.financial_issues[:3]:
+                                    logger.warning(f"   - Financial: {issue}")
+                                for issue in ml_validation_result.time_series_issues[:3]:
+                                    logger.warning(f"   - Time Series: {issue}")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Could not perform ML validation on {file_path}: {e}")
+                    else:
+                        logger.warning(f"⚠️ File validation issues found: {file_path}")
+                        all_valid = False
+                        
+                        # Log detailed issues
+                        for issue in validation_result.issues:
+                            logger.warning(f"   - {issue.severity.value.upper()}: {issue.description}")
+                            if issue.details:
+                                logger.warning(f"     Details: {issue.details}")
+                else:
+                    logger.warning(f"⚠️ Expected file not found: {file_path}")
+                    all_valid = False
+            
+            # Log validation summary
+            if validation_results:
+                total_files = len(validation_results)
+                valid_files = sum(1 for r in validation_results if r.is_valid)
+                logger.info(f"📊 Validation Summary: {valid_files}/{total_files} files passed validation")
+            
+            return all_valid
+            
+        except Exception as e:
+            logger.exception(f"❌ Error during comprehensive validation: {e}")
+            return False
 
 
 @handle_errors(
@@ -273,7 +442,21 @@ async def run_step(symbol: str, exchange: str, timeframe: str = "1m", data_dir: 
 
         if result.get("data_collection_completed", False):
             logger.info("✅ Step 1: Data Collection completed successfully")
-            return True
+            
+            # Run comprehensive file format validation
+            if validate_step1_file:
+                logger.info("🔍 Running comprehensive file format validation...")
+                validation_success = await step._run_comprehensive_validation(symbol, exchange, timeframe, data_dir, logger)
+                
+                if validation_success:
+                    logger.info("✅ Comprehensive file format validation passed")
+                    return True
+                else:
+                    logger.warning("⚠️ Comprehensive file format validation found issues")
+                    return True  # Still return True as data collection succeeded
+            else:
+                logger.info("⚠️ Comprehensive file validation not available, skipping validation")
+                return True
         else:
             logger.error("❌ Step 1: Data Collection failed")
         return False

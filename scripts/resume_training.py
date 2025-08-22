@@ -19,6 +19,7 @@ from src.training.steps.step1_data_collection import run_step as run_data_collec
 from src.utils.logger import setup_logging, system_logger
 import asyncio
 import sys
+from typing import Any
 
 from src.config import CONFIG
 from src.database.sqlite_manager import SQLiteManager
@@ -29,10 +30,11 @@ from src.utils.warning_symbols import error, failed
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-async def main():
+
+async def main() -> None:
     """Main function to run the resumed training pipeline."""
     setup_logging()
-    logger, system_logger.getChild("ResumeTraining")
+    logger = system_logger.getChild("ResumeTraining")
 
     if len(sys.argv) < 2:
         print(error("A symbol argument is required."))
@@ -47,17 +49,19 @@ async def main():
     # Step 1: Consolidate and update data cache before resuming.
     # This ensures the latest data is downloaded and the consolidated .pkl file is ready.
     logger.info("Step 1: Consolidating and updating data cache before resuming...")
-    data_dir = "data/training"
-    min_data_points = str(CONFIG["MODEL_TRAINING"]["min_data_points"])
+    data_dir = "data_cache"
 
-    # Run data collection step WITHOUT downloading new data.
-    klines_df = _, await run_data_collection_step(
-        symbol = exchange_name=exchange,
-        min_data_points=min_data_points, data_dir=data_dir,
-        download_new_data=False
+    # Run data collection step WITHOUT forcing rerun.
+    # step1_data_collection.run_step returns a bool indicating success.
+    step_success = await run_data_collection_step(
+        symbol=symbol,
+        exchange=exchange,
+        timeframe="1m",
+        data_dir=data_dir,
+        force_rerun=False,
     )
 
-    if klines_df is None:
+    if not step_success:
         print(failed("Data consolidation step failed. Cannot resume training."))
         sys.exit(1)
 
@@ -65,9 +69,9 @@ async def main():
         "Data consolidation successful. Proceeding with training pipeline from Step 2.",
     )
 
-    db_manager = None
-    if True:
-        db_manager = SQLiteManager({})
+    db_manager: SQLiteManager | None = None
+    try:
+        db_manager = SQLiteManager(CONFIG)
         await db_manager.initialize()
 
         training_manager = EnhancedTrainingManager(db_manager)
@@ -82,10 +86,10 @@ async def main():
         else:
             print(failed(f"Resumed training pipeline failed for {symbol}."))
             sys.exit(1)
-    pass
+    finally:
         if db_manager:
-    pass  # TODO: Add proper implementation
-        await db_manager.close()
+            await db_manager.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -348,8 +348,8 @@ class SyntaxErrorScanner:
 def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Scan Python files for syntax errors and generate reports.")
     parser.add_argument("--root", type=str, default=".", help="Root directory to scan (default: .)")
-    parser.add_argument("--output", type=str, default="syntax_error_report.txt", help="Path to write text report")
-    parser.add_argument("--json-output", type=str, default="", help="Optional JSON output path for summary + details")
+    parser.add_argument("--output", type=str, default="reports/syntax_error_report.txt", help="Path to write text report")
+    parser.add_argument("--json-output", type=str, default="reports/syntax_error_report.json", help="Optional JSON output path for summary + details")
     parser.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2), help="Number of concurrent jobs")
     parser.add_argument("--timeout", type=float, default=10.0, help="Per-file compile timeout in seconds")
     parser.add_argument(

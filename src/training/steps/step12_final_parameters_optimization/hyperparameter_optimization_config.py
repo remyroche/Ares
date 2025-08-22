@@ -595,20 +595,21 @@ class HyperparameterOptimizationConfig:
 
         # Check parameter definitions
         for param_name, param_config in search_space.parameters.items():
-        if "type" not in param_config:
+            if "type" not in param_config:
                 errors.append(f"Parameter {param_name} missing type definition")
+                continue
 
             param_type = param_config.get("type")
-        if param_type == "float":
-        if "min" not in param_config or "max" not in param_config:
+            if param_type == "float":
+                if "min" not in param_config or "max" not in param_config:
                     errors.append(
                         f"Float parameter {param_name} missing min/max values",
                     )
             elif param_type == "int":
-        if "min" not in param_config or "max" not in param_config:
+                if "min" not in param_config or "max" not in param_config:
                     errors.append(f"Int parameter {param_name} missing min/max values")
             elif param_type == "categorical":
-        if "choices" not in param_config:
+                if "choices" not in param_config:
                     errors.append(f"Categorical parameter {param_name} missing choices")
 
         return errors

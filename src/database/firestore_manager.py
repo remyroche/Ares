@@ -22,9 +22,7 @@ from src.utils.warning_symbols import (
 )
 
 if TYPE_CHECKING:
-    pass
-
-
+    pass  # TODO: Add proper implementation
 class FirestoreManager:
     """
     Manages all interactions with Google Cloud Firestore.

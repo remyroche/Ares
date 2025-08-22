@@ -49,15 +49,6 @@ async def download_aggtrades_range(start_date: str = end_date: str) -> bool:
     print("=" * 80)
 
     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         config = DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -107,15 +98,6 @@ async def main():
     print("=" * 80)
 
     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         success = await download_aggtrades_range("2025-05-01", "2025-08-18")
 
         if success:

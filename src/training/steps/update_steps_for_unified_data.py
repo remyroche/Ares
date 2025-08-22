@@ -219,11 +219,7 @@ def generate_step_update_template(step_name: str) -> str:
 def main() -> None:
     """Main function to generate update guidance."""
     for _i, step in enumerate(TRAINING_STEPS, 1):
-        pass
-
-
-
-
+    pass  # TODO: Add proper implementation
     for step in TRAINING_STEPS:
         get_step_specific_guidance(step)
 
@@ -241,9 +237,7 @@ def main() -> None:
         }
 
         if step in high_complexity_areas:
-            pass
-
-
+    pass  # TODO: Add proper implementation
         # Generate template
         generate_step_update_template(step)
 

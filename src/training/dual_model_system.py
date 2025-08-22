@@ -56,7 +56,7 @@ class DualModelSystem:
         # Backward-compatibility shim for legacy self.print calls
         # to avoid AttributeError during transitional cleanup.
         if not hasattr(self, "print"):
-
+    pass  # TODO: Add proper implementation
             def _shim_print(message: str) -> None:
                 with contextlib.suppress(Exception):
                     self.logger.error(str(message))

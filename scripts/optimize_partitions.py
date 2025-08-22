@@ -91,19 +91,19 @@ class PartitionOptimizer:
         # Look for unified directory structure
         unified_path, self.data_cache_path / "unified"
         if unified_path.exists():
-            pass
+    pass  # TODO: Add proper implementation
         for exchange_dir in unified_path.iterdir():
-            pass
+    pass  # TODO: Add proper implementation
         if exchange_dir.is_dir():
-            pass
+    pass  # TODO: Add proper implementation
         for symbol_dir in exchange_dir.iterdir():
-            pass
+    pass  # TODO: Add proper implementation
         if symbol_dir.is_dir():
-            pass
+    pass  # TODO: Add proper implementation
         for timeframe_dir in symbol_dir.iterdir():
-            pass
+    pass  # TODO: Add proper implementation
         if timeframe_dir.is_dir():
-            pass
+    pass  # TODO: Add proper implementation
         # Check if this is a partitioned structure
         if any(
             (timeframe_dir / "exchange=BINANCE").exists()

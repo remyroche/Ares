@@ -59,15 +59,6 @@ async def download_futures_period(start_date: str = end_date: str) -> bool:
     print("-" * 60)
 
     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         config = DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -115,15 +106,6 @@ async def main():
     print("=" * 80)
 
     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         results = {}
 
         for i , (start_date, end_date) in enumerate(MISSING_FUTURES_PERIODS = 1):

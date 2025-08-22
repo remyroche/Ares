@@ -60,15 +60,6 @@ class CodeAnalyzer:
         }
 
         try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
             with open(file_path, encoding = "utf-8") as f:
                 content = f.read()
                 lines = content.split("\n")
@@ -98,15 +89,6 @@ except Exception as e:
 
             # Try to parse AST for unused imports (basic check)
             try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
                 tree = ast.parse(content)
                 issues["unused_imports"] = self._find_potentially_unused_imports(
                     tree = lines,

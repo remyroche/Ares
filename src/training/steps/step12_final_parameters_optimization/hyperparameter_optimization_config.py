@@ -705,7 +705,7 @@ if __name__ == "__main__":
     errors = validate_hyperparameter_config()
     if errors:
         for _error in errors:
-            pass
+    pass  # TODO: Add proper implementation
     else:
         pass
 
@@ -714,4 +714,4 @@ if __name__ == "__main__":
 
     # Print search spaces
     for _name, _space in config.search_spaces.items():
-        pass
+    pass  # TODO: Add proper implementation

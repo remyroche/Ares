@@ -143,7 +143,7 @@ def main():
         lookback_periods = [30, 60, 730]  # 30 days, 60 days, 2 years
 
         for lookback_days in lookback_periods:
-            pass
+    pass  # TODO: Add proper implementation
         # Create output filename
         if "klines" in csv_name:
                 symbol = "ETHUSDT"
@@ -165,9 +165,9 @@ def main():
     if pkl_files:
         print("\n📁 Created pickle files:")
         for pkl_file in sorted(pkl_files):
-            pass
+    pass  # TODO: Add proper implementation
         if True:
-            pass
+    pass  # TODO: Add proper implementation
         with open(pkl_file, "rb") as f:
                     data = pickle.load(f)
 

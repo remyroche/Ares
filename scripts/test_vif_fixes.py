@@ -182,9 +182,9 @@ def test_vif_fixes():
             correlations = []
             feature_list, list(features_dict.values())
         for i in range(len(feature_list)):
-            pass
+    pass  # TODO: Add proper implementation
         for j in range(i + 1, len(feature_list)):
-            pass
+    pass  # TODO: Add proper implementation
         if True:
                         corr = np.corrcoef(
                             feature_list[i].dropna(),
@@ -215,7 +215,7 @@ def test_vif_fixes():
         def calculate_feature_variance(features_dict):
             variances = []
         for feature in features_dict.values():
-            pass
+    pass  # TODO: Add proper implementation
         if True:
                     var = feature.var()
         if not np.isnan(var):

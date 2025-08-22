@@ -831,8 +831,7 @@ class EfficientRegimeTrainer:
         self.scheduler.step()
 
         if epoch % 10 == 0:
-                pass
-
+    pass  # TODO: Add proper implementation
         return history
 
     def _compute_loss(

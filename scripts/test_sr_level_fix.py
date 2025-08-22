@@ -61,7 +61,7 @@ def test_sr_level_fix():
         def _calculate_dynamic_level_counts(price_series, levels, level_type):
             """Calculate dynamic level counts based on price position."""
         if not levels:
-            pass
+    pass  # TODO: Add proper implementation
         # Fallback: create dynamic counts based on price percentiles
         if level_type == "support":
                     percentile_rank = price_series.rank(pct=True)
@@ -77,7 +77,7 @@ def test_sr_level_fix():
             )
 
         for level in levels:
-            pass
+    pass  # TODO: Add proper implementation
         if isinstance(level, dict):
                     level_price = level.get("price", 0)
                     level_strength = level.get("strength", 1.0)

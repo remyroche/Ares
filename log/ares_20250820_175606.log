@@ -1,0 +1,2 @@
+{"asctime": "2025-08-20 17:56:06,570", "levelname": "INFO", "name": "AresTradingSystem", "message": "✅ Enhanced Logger initialization completed successfully", "correlation_id": "-", "session_id": "-", "timestamp": "2025-08-20T15:56:06.570750+00:00"}
+{"asctime": "2025-08-20 17:56:06,635", "levelname": "INFO", "name": "AresTradingSystem.System.EnhancedParquetManager", "message": "Report saved to: enhanced_partition_analysis.txt", "correlation_id": "-", "session_id": "-", "timestamp": "2025-08-20T15:56:06.635950+00:00"}

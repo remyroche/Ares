@@ -31,7 +31,7 @@ class InjectableBase(ABC):
         self._initialized = False
         # Provide a safe print shim so subclasses can call self.print
         if not hasattr(self, "print"):
-
+    pass  # TODO: Add proper implementation
             def _shim_print(message: str) -> None:
                 try:
                     self.logger.error(str(message))

@@ -89,7 +89,7 @@ async def load_data(symbol: str, exchange: str, interval: str = "1m"):
 
 def main():
     """Main function."""
-    parser, argparse.ArgumentParser(description="Simple data loader")
+    parser = argparse.ArgumentParser(description="Simple data loader")
     parser.add_argument(
         "--symbol",
         type=str, required=True,
@@ -107,9 +107,9 @@ def main():
         help="K-line interval (default: 1m)",
     )
 
-    args, parser.parse_args()
+    args = parser.parse_args()
 
-    success, asyncio.run(load_data(args.symbol, args.exchange, args.interval))
+    success = asyncio.run(load_data(args.symbol, args.exchange, args.interval))
 
     if success:
         print("✅ Data loading completed successfully")

@@ -84,7 +84,7 @@ async def main():
             sys.exit(1)
     pass
         if db_manager:
-            pass
+    pass  # TODO: Add proper implementation
         await db_manager.close()
 
 if __name__ == "__main__":

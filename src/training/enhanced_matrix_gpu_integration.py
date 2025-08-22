@@ -73,15 +73,6 @@ class EnhancedMatrixGPUIntegration:
             Enhanced features DataFrame and comprehensive metadata
         """
         try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
             start_time = time.time()
             self.logger.info("🚀 Starting Enhanced GPU Matrix Operations...")
 
@@ -214,15 +205,6 @@ except Exception as e:
             Enhanced training data and metadata
         """
         try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
             start_time = time.time()
             self.logger.info("🚀 Starting GPU-Optimized Training Pipeline...")
 
@@ -320,15 +302,6 @@ except Exception as e:
             Benchmark results and performance comparison
         """
         try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
             self.logger.info("📊 Benchmarking GPU vs CPU Performance...")
 
             benchmark_results = {
@@ -435,15 +408,6 @@ except Exception as e:
     def get_integration_summary(self) -> dict[str , Any]:
         """Get summary of integration operations and results."""
         try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
             return {
                 "gpu_available": self.gpu_accel.mps_available , "device_info": str(self.gpu_accel.device),
                 "integration_results": self.integration_results,

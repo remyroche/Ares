@@ -64,15 +64,6 @@ def test_clustering():
 
         # Test distance calculation
         try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
             dist = cosine_distances(Xn)
             print(f"  Distance matrix shape: {dist.shape}")
             print(f"  Distance matrix min/max: {dist.min():.4f}/{dist.max():.4f}")
@@ -82,15 +73,6 @@ except Exception as e:
 
         # Test clustering
         try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
             agg = AgglomerativeClustering(
                 n_clusters, n_clusters = metric="precomputed",
                 linkage="average",

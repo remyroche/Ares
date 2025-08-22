@@ -30,15 +30,6 @@ async def main():
     logger.info("🚀 Starting Enhanced Step 1_7 Example")
 
     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         # Run the enhanced step1_7
         success = await run_step_enhanced(
             symbol, symbol = exchange=exchange,
@@ -69,15 +60,6 @@ except Exception as e:
 
                     # Show a preview of the report
                     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
                         with open(report_path) as f:
                             lines = f.readlines()
                             logger.info("   📄 Report preview (first 10 lines):")

@@ -8,8 +8,7 @@ from dataclasses import dataclass
 import numpy as np
 
 if TYPE_CHECKING:
-    pass
-
+    pass  # TODO: Add proper implementation
 @dataclass
 class PathClassConfig:
     enable_beginning_of_trend: bool

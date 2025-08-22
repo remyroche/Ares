@@ -80,7 +80,7 @@ class TrainingCLI:
         self.logger.info(f"Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
         if True:
-            pass
+    pass  # TODO: Add proper implementation
         await self.initialize()  # Ensure DB is initialized
         self.logger.info("✅ Database initialization completed")
 
@@ -102,7 +102,7 @@ class TrainingCLI:
             )
 
         if run_id:
-            pass
+    pass  # TODO: Add proper implementation
         self.logger.info(
                     f"✅ Training completed successfully. MLflow Run ID: {run_id}",
                 )
@@ -186,7 +186,7 @@ class TrainingCLI:
         self.logger.info("🔄 Starting model retraining (alias for full training)...")
         print("🔄 Retraining is now an alias for the full training pipeline.")
         if True:
-            pass
+    pass  # TODO: Add proper implementation
         return await self.run_full_training(symbol, exchange_name)
         pass
         self.print(failed("💥 Model retraining failed: {e}"))
@@ -225,7 +225,7 @@ class TrainingCLI:
         )
 
         if not training_success:
-            pass
+    pass  # TODO: Add proper implementation
         self.print(failed("💥 Full training failed. Aborting full test run."))
             return
 
@@ -240,7 +240,7 @@ class TrainingCLI:
         backtest_start_time = time.time()
 
         if True:
-            pass
+    pass  # TODO: Add proper implementation
         # Re-initialize DB connection as it was closed after training_manager.run_full_training
         self.logger.info(
                 "🔧 Re-initializing database connection for backtesting...",
@@ -256,7 +256,7 @@ class TrainingCLI:
             )
 
         if klines_df.empty:
-            pass
+    pass  # TODO: Add proper implementation
         self.logger.error(
                     "💥 Failed to load raw data for backtesting. Aborting.",
                 )
@@ -309,7 +309,7 @@ class TrainingCLI:
             )
 
         if prepared_df.empty:
-            pass
+    pass  # TODO: Add proper implementation
         self.logger.error(
                     "💥 Prepared data for backtesting is empty. Aborting.",
                 )
@@ -416,7 +416,7 @@ class TrainingCLI:
         )
 
         for exchange_name , tokens in supported_tokens.items():
-            pass
+    pass  # TODO: Add proper implementation
         self.logger.info(f"📈 Exchange {exchange_name}: {len(tokens)} tokens")
             print(f"\n📈 {exchange_name}:")
         for token in tokens:

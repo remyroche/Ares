@@ -1,0 +1,14 @@
+{"asctime": "2025-08-20 22:49:19,730", "name": "AresSystem", "levelname": "INFO", "message": "================================================================================", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 22:49:19,731", "name": "AresSystem", "levelname": "INFO", "message": "\ud83d\ude80 ARES LAUNCHER STARTED - Mode: INITIALIZATION", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 22:49:19,731", "name": "AresSystem", "levelname": "INFO", "message": "Start time: 2025-08-20 22:49:19", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 22:49:19,731", "name": "AresSystem", "levelname": "INFO", "message": "Log directory: log", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 22:49:19,732", "name": "AresSystem", "levelname": "INFO", "message": "================================================================================", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 22:49:19,734", "name": "AresSystem", "levelname": "INFO", "message": "================================================================================", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 22:49:19,734", "name": "AresSystem", "levelname": "INFO", "message": "\ud83d\ude80 ARES LAUNCHER STARTED - Mode: blank - Symbol: ETHUSDT - Exchange: BINANCE", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 22:49:19,735", "name": "AresSystem", "levelname": "INFO", "message": "Start time: 2025-08-20 22:49:19", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 22:49:19,735", "name": "AresSystem", "levelname": "INFO", "message": "Log directory: log", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 22:49:19,736", "name": "AresSystem", "levelname": "INFO", "message": "================================================================================", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 22:49:19,976", "name": "AresSystem", "levelname": "INFO", "message": "================================================================================", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 22:49:19,976", "name": "AresSystem", "levelname": "INFO", "message": "\ud83d\uded1 ARES LAUNCHER ENDED - Exit code: 1", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 22:49:19,976", "name": "AresSystem", "levelname": "INFO", "message": "End time: 2025-08-20 22:49:19", "correlation_id": "-", "session_id": "-"}
+{"asctime": "2025-08-20 22:49:19,976", "name": "AresSystem", "levelname": "INFO", "message": "================================================================================", "correlation_id": "-", "session_id": "-"}

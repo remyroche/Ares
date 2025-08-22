@@ -33,15 +33,6 @@ async def run_30m_hmm_step():
     )
 
     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         # Run the enhanced step1_7 with artifact validation
         success = await run_step(
             symbol, symbol = exchange=exchange,
@@ -97,15 +88,6 @@ except Exception as e:
 
 if __name__ == "__main__":
     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         success = asyncio.run(run_30m_hmm_step())
         if success:
             print("✅ 30m HMM step completed successfully")

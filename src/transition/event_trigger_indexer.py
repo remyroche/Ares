@@ -11,8 +11,7 @@ import numpy as np
 import pandas as pd
 
 if TYPE_CHECKING:
-    pass
-
+    pass  # TODO: Add proper implementation
 @dataclass
 class EventConfig:
     pre_window: int

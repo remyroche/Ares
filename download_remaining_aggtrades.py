@@ -53,15 +53,6 @@ async def download_single_day_aggtrades(date_str: str) -> bool:
     print("-" * 60)
 
     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         config = DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -100,15 +91,6 @@ async def download_aggtrades_range(start_date: str = end_date: str) -> bool:
     print("=" * 80)
 
     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         config = DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -161,15 +143,6 @@ async def main():
     print("=" * 80)
 
     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         # Step 1: Download remaining missing days
         print("\n📅 STEP 1: Downloading remaining missing aggtrades days")
         print("=" * 60)

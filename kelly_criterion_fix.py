@@ -29,15 +29,6 @@ def calculate_correct_kelly_position_size(
         float: Calculated position size within bounds
     """
     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         # Get average confidence for target levels (0.5% to 2.0%)
         target_levels = [0.5, 1.0, 1.5, 2.0]
         confidences = []
@@ -124,15 +115,6 @@ def calculate_enhanced_kelly_position_size(
         dict: Enhanced position sizing analysis
     """
     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         # Calculate base Kelly position size
         base_kelly_size = calculate_correct_kelly_position_size(
             price_target_confidences = adversarial_confidences,

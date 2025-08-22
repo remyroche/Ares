@@ -349,8 +349,7 @@ class ModelTrainingIntegrator:
 
             # Find best model
             best_model_name = max(
-                model_scores.keys(),
-                key=lambda x: model_scores[x]["f1_score"],
+                model_scores.keys(), key=lambda x: model_scores[x]["f1_score"],
             )
             trained_models[best_model_name]
             best_score = model_scores[best_model_name]["f1_score"]

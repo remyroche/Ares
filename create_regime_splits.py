@@ -47,15 +47,6 @@ def create_regime_splits_file():
             continue
 
         try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
             # Load HMM composite data
             composite_df = pd.read_parquet(composite_file)
 

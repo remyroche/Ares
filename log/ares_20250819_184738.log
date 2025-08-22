@@ -1,0 +1,2 @@
+{"asctime": "2025-08-19 18:47:38,564", "levelname": "INFO", "name": "AresTradingSystem", "message": "✅ Enhanced Logger initialization completed successfully", "correlation_id": "-", "session_id": "-", "timestamp": "2025-08-19T16:47:38.564131+00:00"}
+{"asctime": "2025-08-19 18:47:38,571", "levelname": "INFO", "name": "AresTradingSystem.System", "message": "Environment configuration loaded successfully. Trading Environment: PAPER, Exchange: BINANCE", "correlation_id": "-", "session_id": "-", "timestamp": "2025-08-19T16:47:38.571579+00:00"}

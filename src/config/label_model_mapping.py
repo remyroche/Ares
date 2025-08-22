@@ -225,7 +225,7 @@ def build_model(model_key: str, params: dict[str, Any]):
     key = model_key.lower()
     try:
         if key == "xgboost":
-
+    pass  # TODO: Add proper implementation
             return xgb.XGBClassifier(
                 n_estimators=params.get("n_estimators", 400),
                 max_depth=params.get("max_depth", 5),
@@ -238,7 +238,7 @@ def build_model(model_key: str, params: dict[str, Any]):
                 verbosity=0,
             )
         if key == "lightgbm":
-
+    pass  # TODO: Add proper implementation
             return lgb.LGBMClassifier(
                 n_estimators=params.get("n_estimators", 400),
                 learning_rate=params.get("learning_rate", 0.05),
@@ -252,7 +252,7 @@ def build_model(model_key: str, params: dict[str, Any]):
                 verbose=-1,
             )
         if key == "catboost":
-
+    pass  # TODO: Add proper implementation
             return CatBoostClassifier(
                 iterations=params.get("iterations", 500),
                 learning_rate=params.get("learning_rate", params.get("lr", 0.05)),
@@ -262,7 +262,7 @@ def build_model(model_key: str, params: dict[str, Any]):
                 verbose=False,
             )
         if key == "random_forest":
-
+    pass  # TODO: Add proper implementation
             return RandomForestClassifier(
                 n_estimators=params.get("n_estimators", 300),
                 max_depth=params.get("max_depth", 12),
@@ -270,7 +270,7 @@ def build_model(model_key: str, params: dict[str, Any]):
                 n_jobs=-1,
             )
         if key == "sgd_hinge":
-
+    pass  # TODO: Add proper implementation
             return SGDClassifier(
                 loss="hinge",
                 alpha=float(params.get("alpha", 1e-4)),
@@ -279,7 +279,7 @@ def build_model(model_key: str, params: dict[str, Any]):
                 n_jobs=-1,
             )
         if key == "sgd_elastic_net":
-
+    pass  # TODO: Add proper implementation
             return SGDClassifier(
                 loss="log_loss",
                 penalty="elasticnet",
@@ -290,7 +290,7 @@ def build_model(model_key: str, params: dict[str, Any]):
                 n_jobs=-1,
             )
         if key == "logistic_regression":
-
+    pass  # TODO: Add proper implementation
             return LogisticRegression(
                 C=float(params.get("C", 1.0)),
                 penalty=str(params.get("penalty", "l2")),
@@ -301,7 +301,7 @@ def build_model(model_key: str, params: dict[str, Any]):
         if key == "hmm_gaussian":
             try:
                 class HMMWrapper:
-
+    pass  # TODO: Add proper implementation
                     def __init__(self, n_states: int = 4):
                         self.hmm = GaussianHMM(
                             n_components=n_states, covariance_type="diag",

@@ -346,15 +346,6 @@ async def main():
     print("=" * 80)
 
     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         # Example 1: Default training (enhanced operations enabled by default)
         await example_default_training()
 

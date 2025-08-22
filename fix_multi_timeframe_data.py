@@ -8,8 +8,9 @@ This script addresses the following issues:
 3. Data alignment issues between different timeframes
 """
 
-from datetime import datetime , timedelta
-from pathlib import Path, import glob
+from datetime import datetime, timedelta
+from pathlib import Path
+import glob
 import logging
 import os
 
@@ -18,7 +19,7 @@ import pandas as pd
 
 # Setup logging
 logging.basicConfig(
-    level , logging.INFO, format, "%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -60,19 +61,10 @@ def fix_timeframe_data():
         return False
 
     # Use the most recent consolidated 1m file
-    latest_1m_file = max(consolidated_1m_files, key = os.path.getctime)
+    latest_1m_file = max(consolidated_1m_files, key=os.path.getctime)
     logger.info(f"📁 Using 1m data from: {latest_1m_file}")
 
     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         # Load the 1m data
         if latest_1m_file.endswith(".parquet"):
             df_1m = pd.read_parquet(latest_1m_file)
@@ -103,15 +95,6 @@ except Exception as e:
             logger.info(f"📝 Creating {timeframe} timeframe data...")
 
             try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
                 # Resample 1m data to target timeframe
                 if timeframe == "5m":
                     df_resampled = (
@@ -203,7 +186,7 @@ except Exception as e:
 
                 # Save to file
                 output_path = f"data_cache/klines_BINANCE_ETHUSDT_{timeframe}_consolidated.parquet"
-                df_resampled.to_parquet(output_path, index = False)
+                df_resampled.to_parquet(output_path, index=False)
 
                 logger.info(f"✅ Created {timeframe} timeframe file: {output_path}")
                 logger.info(f"📊 {timeframe} records: {len(df_resampled)}")
@@ -243,15 +226,6 @@ def validate_timeframe_files():
         files = glob.glob(os.path.join("data_cache", pattern))
         for file_path in files:
             try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
                 df = pd.read_parquet(file_path)
 
                 if "timestamp" not in df.columns:
@@ -322,15 +296,6 @@ def cleanup_corrupted_files():
         files = glob.glob(os.path.join("data_cache", pattern))
         for file_path in files:
             try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
                 df = pd.read_parquet(file_path)
 
                 if "timestamp" in df.columns:

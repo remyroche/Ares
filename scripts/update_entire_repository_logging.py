@@ -355,7 +355,6 @@ def add_warning_symbols_import(file_path: str) -> bool:
 
 except Exception as e:
     print(f"Error adding import to {file_path}: {e}")
-    return False
 
 def find_python_files(directory: Path) -> list[Path]:
     """

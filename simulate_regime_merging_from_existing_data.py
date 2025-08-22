@@ -11,15 +11,6 @@ import pandas as pd
 def load_existing_data():
     """Load the existing HMM regime data"""
     try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
         with open("data/training/BINANCE_ETHUSDT_hmm_composite_meta_1m.json") as f:
             return json.load(f)
     except FileNotFoundError:
@@ -108,15 +99,6 @@ def simulate_merging_with_parameters(
             # Calculate similarity between centroids
             if len(row["centroid"]) > 0 and len(other_row["centroid"]) > 0:
                 try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
                     similarity = cosine_similarity(
                         [row["centroid"]],
                         [other_row["centroid"]],
@@ -186,15 +168,6 @@ def run_parameter_sweep():
                     )
 
                 try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
                     result = simulate_merging_with_parameters(
                         counts = centroids,
                         min_freq = sim_thresh,

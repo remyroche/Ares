@@ -20,7 +20,7 @@ except ImportError:
     # Create a dummy SMOTE class for fallback
     class SMOTE:
         def __init__(self, *args, **kwargs):
-            pass
+    pass  # TODO: Add proper implementation
         def fit_resample(self, X, y):
             return X, y
 

@@ -62,9 +62,7 @@ if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
 if TYPE_CHECKING:
-    pass
-
-
+    pass  # TODO: Add proper implementation
 class AresPipeline:
     """
     Enhanced main pipeline with dependency injection and comprehensive error handling.

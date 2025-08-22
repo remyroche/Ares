@@ -502,33 +502,33 @@ class EnhancedTrainingManager:
             "enhanced_training_manager",
             {},
         )
-        self.enhanced_training_interval: int, self.enhanced_training_config.get(
+        self.enhanced_training_interval: int = self.enhanced_training_config.get(
             "enhanced_training_interval",
             3600,
         )
-        self.max_enhanced_training_history: int, self.enhanced_training_config.get(
+        self.max_enhanced_training_history: int = self.enhanced_training_config.get(
             "max_enhanced_training_history",
             100,
         )
 
         # Training parameters
-        self.enable_model_training: bool, self.enhanced_training_config.get(
+        self.enable_model_training: bool = self.enhanced_training_config.get(
             "enable_model_training", True,
         )
         # Check for BLANK mode from environment variable or config
-        blank_env, os.getenv("BLANK_TRAINING_MODE", "0") == "1"
-        blank_config, self.enhanced_training_config.get("blank_training_mode", False)
-        self.blank_training_mode: bool, blank_env or blank_config
-        self.max_trials: int, self.enhanced_training_config.get("max_trials", 200)
-        self.n_trials: int, self.enhanced_training_config.get("n_trials", 100)
+        blank_env = os.getenv("BLANK_TRAINING_MODE", "0") == "1"
+        blank_config = self.enhanced_training_config.get("blank_training_mode", False)
+        self.blank_training_mode: bool = blank_env or blank_config
+        self.max_trials: int = self.enhanced_training_config.get("max_trials", 200)
+        self.n_trials: int = self.enhanced_training_config.get("n_trials", 100)
         # Set lookback days based on BLANK mode
-        default_lookback, 180 if self.blank_training_mode else 30
-        self.lookback_days: int, self.enhanced_training_config.get(
+        default_lookback = 180 if self.blank_training_mode else 30
+        self.lookback_days: int = self.enhanced_training_config.get(
             "lookback_days", default_lookback,
         )
 
         # Validation parameters
-        self.enable_validators: bool, self.enhanced_training_config.get(
+        self.enable_validators: bool = self.enhanced_training_config.get(
             "enable_validators", True,
         )
         self.validation_results: dict[str, Any] = {}
@@ -542,69 +542,69 @@ class EnhancedTrainingManager:
         self.optimization_statistics: dict[str, Any] = {}
 
         # Optimization component configuration (ported)
-        optimization_root, get_computational_optimization_config().get(
+        optimization_root = get_computational_optimization_config().get(
             "computational_optimization", {},
         )
         self.optimization_config: dict[str, Any] = optimization_root
-        self.enable_caching: bool, optimization_root.get("enable_caching", True)
-        self.enable_parallelization: bool, optimization_root.get(
+        self.enable_caching: bool = optimization_root.get("enable_caching", True)
+        self.enable_parallelization: bool = optimization_root.get(
             "enable_parallelization", True,
         )
-        self.enable_early_stopping: bool, optimization_root.get(
+        self.enable_early_stopping: bool = optimization_root.get(
             "enable_early_stopping", True,
         )
-        self.enable_memory_management: bool, optimization_root.get(
+        self.enable_memory_management: bool = optimization_root.get(
             "enable_memory_management", True,
         )
-        self.max_workers: int | None, optimization_root.get("max_workers")
-        self.chunk_size: int, optimization_root.get("chunk_size", 1000)
-        self.cleanup_frequency: int, optimization_root.get("cleanup_frequency", 100)
-        self.memory_threshold: float, optimization_root.get("memory_threshold", 0.8)
+        self.max_workers: int | None = optimization_root.get("max_workers")
+        self.chunk_size: int = optimization_root.get("chunk_size", 1000)
+        self.cleanup_frequency: int = optimization_root.get("cleanup_frequency", 100)
+        self.memory_threshold: float = optimization_root.get("memory_threshold", 0.8)
 
         # Optimization components (lazy init)
         # Using classes from enhanced_training_manager_optimized
-        self.cached_backtester: CachedBacktester | None, None
-        self.progressive_evaluator: ProgressiveEvaluator | None, None
-        self.parallel_backtester: ParallelBacktester | None, None
-        self.incremental_trainer: IncrementalTrainer | None, None
-        self.streaming_processor: StreamingDataProcessor | None, None
-        self.adaptive_sampler: AdaptiveSampler | None, None
-        self.memory_manager: MemoryManager | None, None
-        self.data_manager: MemoryEfficientDataManager | None, None
+        self.cached_backtester: CachedBacktester | None = None
+        self.progressive_evaluator: ProgressiveEvaluator | None = None
+        self.parallel_backtester: ParallelBacktester | None = None
+        self.incremental_trainer: IncrementalTrainer | None = None
+        self.streaming_processor: StreamingDataProcessor | None = None
+        self.adaptive_sampler: AdaptiveSampler | None = None
+        self.memory_manager: MemoryManager | None = None
+        self.data_manager: MemoryEfficientDataManager | None = None
 
         # Checkpointing configuration
-        self.checkpoint_dir, Path("checkpoints")
+        self.checkpoint_dir = Path("checkpoints")
         self.checkpoint_dir.mkdir(exist_ok=True)
         # Note: final paths are namespaced per symbol/exchange/timeframe at save-time
-        self.enable_checkpointing, self.enhanced_training_config.get(
+        self.enable_checkpointing = self.enhanced_training_config.get(
             "enable_checkpointing", True,
         )
 
         # Initialize optimized tools from enhanced_training_manager_optimized
-        self.cached_backtester: CachedBacktester | None, None
-        self.progressive_evaluator: ProgressiveEvaluator | None, None
-        self.parallel_backtester: ParallelBacktester | None, None
-        self.incremental_trainer: IncrementalTrainer | None, None
-        self.streaming_processor: StreamingDataProcessor | None, None
-        self.adaptive_sampler: AdaptiveSampler | None, None
-        self.memory_manager, MemoryManager()
-        self.data_manager, MemoryEfficientDataManager()
+        self.cached_backtester: CachedBacktester | None = None
+        self.progressive_evaluator: ProgressiveEvaluator | None = None
+        self.parallel_backtester: ParallelBacktester | None = None
+        self.incremental_trainer: IncrementalTrainer | None = None
+        self.streaming_processor: StreamingDataProcessor | None = None
+        self.adaptive_sampler: AdaptiveSampler | None = None
+        self.memory_manager = MemoryManager()
+        self.data_manager = MemoryEfficientDataManager()
 
         # Initialize StepDependencyValidator for step dependency validation
-        self.step_dependency_validator, step_dependency_validator
+        self.step_dependency_validator = step_dependency_validator
 
         # Initialize multi-timeframe training manager
-        self.multi_timeframe_training_manager, MultiTimeframeTrainingManager(config)
+        self.multi_timeframe_training_manager = MultiTimeframeTrainingManager(config)
 
         # Optimization configuration
-        self.optimization_config, self.config.get("computational_optimization", {})
+        self.optimization_config = self.config.get("computational_optimization", {})
         self._load_optimization_config()
 
         # Initialize the underlying optimized training manager for advanced operations
         self.optimized_manager, EnhancedTrainingManagerOptimized(config)
 
         # Logging verbosity
-        self.verbosity: str, self.enhanced_training_config.get(
+        self.verbosity: str = self.enhanced_training_config.get(
             "verbosity", "info",
         )  # "info" or "debug"
 

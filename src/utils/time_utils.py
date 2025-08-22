@@ -32,9 +32,9 @@ def parse_datetime_to_ms(dt_str: str | None) -> int | None:
     for fmt in fmts:
         try:
             dt = datetime.strptime(dt_str, fmt)
-        if dt.tzinfo is None:
+            if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=UTC)
-        return int(dt.timestamp() * 1000)
+            return int(dt.timestamp() * 1000)
         except Exception:
             continue
     try:
@@ -64,11 +64,11 @@ def resolve_time_window_ms(
     def as_int(v: object) -> int | None:
         """Convert value to int or return None."""
         try:
-        if v is None:
-        return None
-        return int(v)
+            if v is None:
+                return None
+            return int(v)
         except Exception:
-        return None
+            return None
 
     t0 = (
         as_int(cfg.get("t0_ms"))

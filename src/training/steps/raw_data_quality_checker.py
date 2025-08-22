@@ -616,51 +616,36 @@ class RawDataQualityChecker:
                 download_all_data_with_consolidation,
             )
 
-        # Determine the timeframe from the data
+            # Determine the timeframe from the data
             timeframe = self._determine_timeframe_from_data(data)
-        self.logger.info(f"🔍 Detected timeframe: {timeframe}")
+            self.logger.info(f"🔍 Detected timeframe: {timeframe}")
 
-        # Download data for each gap period
-        for i, (gap_start, gap_duration) in enumerate(gaps.items():
+            # Download data for each gap period
+            for i, (gap_start, gap_duration) in enumerate(gaps.items()):
                 gap_end = gap_start + gap_duration
 
-        self.logger.info(f"🔧 Downloading gap {i+1}/{len(gaps)}: {gap_start} to {gap_end}")
+                self.logger.info(f"🔧 Downloading gap {i+1}/{len(gaps)}: {gap_start} to {gap_end}")
 
-        try:
-        # Use the unified downloader to download data for this gap period
-                    success, asyncio.run(download_all_data_with_consolidation(
-                        symbol=symbol
-                        exchange_name=exchange
-                        interval=timeframe
-                    ))
-
-        if success:
-        # Load the downloaded data and filter for the gap period
-                        gap_data, self._load_and_filter_downloaded_data(
-                            symbol = exchange, timeframe, gap_start, gap_end,
+                try:
+                    # Use the unified downloader to download data for this gap period
+                    success = asyncio.run(
+                        download_all_data_with_consolidation(
+                            symbol=symbol,
+                            exchange_name=exchange,
+                            interval=timeframe,
                         )
-
-        if gap_data is not None and not gap_data.empty:
-        # Fill the gap in the main dataset
-                            data, self._fill_gap_in_dataset(data, gap_data, gap_start, gap_end)
-        self.logger.info(f"✅ Filled gap with {len(gap_data)} data points")
-                        else:
-        self.logger.warning(f"⚠️ No data found for gap {i+1} after download")
-                    else:
-        self.logger.warning(f"⚠️ Download failed for gap {i+1}")
-
-        except Exception as e:
-        self.logger.exception(f"❌ Error downloading data for gap {i+1}: {e}")
-                    continue
-
-        return data
+                    )
+                    if not success:
+                        self.logger.warning("⚠️ Download returned unsuccessful status")
+                except Exception as e:
+                    self.logger.exception(f"❌ Error during gap download: {e}")
 
         except ImportError:
-        self.logger.warning("⚠️ Data downloader not available, skipping data download")
-        return data
+            self.logger.warning("⚠️ Data downloader not available, skipping data download")
+            return data
         except Exception as e:
-        self.logger.exception(f"❌ Error in data download process: {e}")
-        return data
+            self.logger.exception(f"❌ Error in data download process: {e}")
+            return data
 
     def _determine_timeframe_from_data(self, data: pd.DataFrame) -> str:
         """Determine the timeframe from the data intervals.
@@ -672,12 +657,12 @@ class RawDataQualityChecker:
 
         """
         if len(data) < 2:
-        return "1m"  # Default to 1 minute
+            return "1m"  # Default to 1 minute
 
         # Calculate time differences
         time_diffs = data.index.to_series().diff().dropna()
         if len(time_diffs) == 0:
-        return "1m"
+            return "1m"
 
         # Get the most common interval
         most_common_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
@@ -687,19 +672,19 @@ class RawDataQualityChecker:
 
         # Map to timeframe string
         if interval_seconds <= 60:
-        return "1m"
+            return "1m"
         if interval_seconds <= 300:
-        return "5m"
+            return "5m"
         if interval_seconds <= 900:
-        return "15m"
+            return "15m"
         if interval_seconds <= 1800:
-        return "30m"
+            return "30m"
         if interval_seconds <= 3600:
-        return "1h"
+            return "1h"
         if interval_seconds <= 14400:
-        return "4h"
+            return "4h"
         if interval_seconds <= 86400:
-        return "1d"
+            return "1d"
         return "1d"  # Default to daily
 
     def _load_and_filter_downloaded_data(
@@ -718,7 +703,7 @@ class RawDataQualityChecker:
 
         """
         try:
-        # Look for data files in common locations
+            # Look for data files in common locations
             possible_paths = [
                 f"data_cache/klines_{exchange}_{symbol}_{timeframe}_*.csv",
                 f"data/{symbol}_{timeframe}.csv",
@@ -726,48 +711,42 @@ class RawDataQualityChecker:
                 f"data_cache/{symbol}_{timeframe}.csv",
             ]
 
-        for pattern in possible_paths:
+            for pattern in possible_paths:
                 files = glob.glob(pattern)
-        if files:
-        # Sort files by modification time (newest first)
+                if files:
+                    # Sort files by modification time (newest first)
                     files.sort(key=os.path.getmtime, reverse=True)
 
-        for file_path in files:
-        try:
-        self.logger.info(f"🔍 Loading data from: {file_path}")
+                    for file_path in files:
+                        try:
+                            self.logger.info(f"🔍 Loading data from: {file_path}")
 
-        # Load the data
-        if file_path.endswith(".csv"):
-                                data, pd.read_csv(file_path, index_col=0, parse_dates=True)
+                            # Load the data
+                            if file_path.endswith(".csv"):
+                                data = pd.read_csv(file_path, index_col=0, parse_dates=True)
                             elif file_path.endswith(".parquet"):
                                 data = pd.read_parquet(file_path)
                             else:
                                 continue
 
-        if data.empty:
+                            if data.empty:
                                 continue
 
-        # Filter for the gap period
+                            # Filter for the gap period
                             gap_data = data[
                                 (data.index >= start_time) &
                                 (data.index <= end_time)
                             ]
 
-        if not gap_data.empty:
-        self.logger.info(f"✅ Found {len(gap_data)} records for gap period")
-        return gap_data
-        self.logger.debug(f"⚠️ No data found in {file_path} for gap period")
+                            if not gap_data.empty:
+                                return gap_data
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ Failed loading {file_path}: {e}")
 
+            return None
         except Exception as e:
-        self.logger.debug(f"⚠️ Error loading {file_path}: {e}")
-                            continue
-
-        self.logger.warning(f"⚠️ No data files found for {symbol} {timeframe} on {exchange}")
-        return None
-
-        except Exception as e:
-        self.logger.exception(f"❌ Error loading downloaded data: {e}")
-        return None
+            self.logger.exception(f"❌ Error searching for downloaded data: {e}")
+            return None
 
     def _fill_gap_in_dataset(
         self, main_data: pd.DataFrame, gap_data: pd.DataFrame, gap_start: datetime, gap_end: datetime, ) -> pd.DataFrame:

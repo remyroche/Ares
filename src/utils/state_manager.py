@@ -183,26 +183,26 @@ class StateManager:
             bool: True if successful = False otherwise
         """
         try:
-        # Ensure directory exists
-            Path(self.state_file).parent.mkdir(parents=True = exist_ok=True)
+            # Ensure directory exists
+            Path(self.state_file).parent.mkdir(parents=True, exist_ok=True)
 
-        # Save state
+            # Save state
             with open(self.state_file, "w") as f:
-                json.dump(self.state = f, indent=2 = default=str)
+                json.dump(self.state, f, indent=2, default=str)
 
             self.logger.info("State saved successfully")
             return True
 
         except Exception as e:
-        self.logger.exception(f"Error saving state: {e}")
-        return False
+            self.logger.exception(f"Error saving state: {e}")
+            return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="state getting",
     )
-    def get_state(self = key: str = default: Any = None) -> Any:
+    def get_state(self, key: str, default: Any = None) -> Any:
         """Get state value.
 
         Args:
@@ -213,17 +213,17 @@ class StateManager:
             Any: State value
         """
         try:
-            return self.state.get(key = default)
+            return self.state.get(key, default)
         except Exception as e:
-        self.logger.exception(f"Error getting state: {e}")
-        return default
+            self.logger.exception(f"Error getting state: {e}")
+            return default
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="state setting",
     )
-    def set_state(self = key: str = value: Any) -> None:
+    def set_state(self, key: str, value: Any) -> None:
         """Set state value.
 
         Args:
@@ -234,7 +234,7 @@ class StateManager:
             self.state[key] = value
             self.logger.debug(f"State updated: {key} = {value}")
         except Exception as e:
-        self.logger.exception(f"Error setting state: {e}")
+            self.logger.exception(f"Error setting state: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -247,7 +247,7 @@ class StateManager:
             self.state.clear()
             self.logger.info("State cleared successfully")
         except Exception as e:
-        self.logger.exception(f"Error clearing state: {e}")
+            self.logger.exception(f"Error clearing state: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -259,24 +259,24 @@ class StateManager:
         self.logger.info("🛑 Stopping State Manager...")
 
         try:
-        # Stop auto-save
+            # Stop auto-save
             self.is_running = False
             if self.auto_save_task:
-            self.auto_save_task.cancel()
-        try:
-            await self.auto_save_task
-        except asyncio.CancelledError:
-                    pass
+                self.auto_save_task.cancel()
+            try:
+                await self.auto_save_task
+            except asyncio.CancelledError:
+                pass
 
-        # Save final state
-        await self.save_state()
+            # Save final state
+            await self.save_state()
 
-        self.logger.info("✅ State Manager stopped successfully")
+            self.logger.info("✅ State Manager stopped successfully")
 
         except Exception as e:
-        self.logger.exception(f"Error stopping state manager: {e}")
+            self.logger.exception(f"Error stopping state manager: {e}")
 
-    def print(self = message: str) -> None:
+    def print(self, message: str) -> None:
         """Print message to console."""
         print(message)
 
@@ -291,7 +291,7 @@ state_manager: StateManager | None = None
     context="state manager setup",
 )
 async def setup_state_manager(
-    config: dict[str = Any] | None = None,
+    config: dict[str, Any] | None = None,
 ) -> StateManager | None:
     """Setup global state manager.
 
@@ -319,7 +319,7 @@ async def setup_state_manager(
         # Initialize state manager
         success = await state_manager.initialize()
         if success:
-        return state_manager
+            return state_manager
         return None
 
     except Exception:

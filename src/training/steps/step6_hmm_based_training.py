@@ -264,7 +264,7 @@ class HMMBasedTrainingStep:
     def _get_available_features(self, data: pd.DataFrame) -> list:
         """Get all available features from the dataset, excluding target and metadata columns."""
         try:
-        # Exclude non-feature columns
+            # Exclude non-feature columns
             exclude_columns = [
                 "target",
                 "timeframe",
@@ -272,17 +272,17 @@ class HMMBasedTrainingStep:
                 "sample_weight",
             ]
 
-        # Get all available features
-            available_features = [,
+            # Get all available features
+            available_features = [
                 col for col in data.columns if col not in exclude_columns
             ]
 
-        self.logger.info(f"✅ Found {len(available_features)} available features")
-        return available_features
+            self.logger.info(f"✅ Found {len(available_features)} available features")
+            return available_features
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to get available features: {e}")
-        return []
+            self.logger.exception(f"❌ Failed to get available features: {e}")
+            return []
 
     async def _apply_enhanced_optimization(
         self, features_df: pd.DataFrame, target: pd.Series, timeframe: str, architecture: str, ) -> tuple[pd.DataFrame, dict[str, Any]]:

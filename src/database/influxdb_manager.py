@@ -1,10 +1,19 @@
 # src/database/influxdb_manager.py
 
-from influxdb_client.client.write_api import SYNCHRONOUS
-from src.config import INFLUXDB_BUCKET, INFLUXDB_ORG , INFLUXDB_TOKEN, INFLUXDB_URL
-from src.utils.logger import logger, import influxdb_client
+from typing import Optional
+
 import numpy as np
 import pandas as pd
+import influxdb_client
+from influxdb_client.client.write_api import SYNCHRONOUS
+
+from src.config import (
+    INFLUXDB_BUCKET,
+    INFLUXDB_ORG,
+    INFLUXDB_TOKEN,
+    INFLUXDB_URL,
+)
+from src.utils.logger import logger
 
 
 class InfluxDBManager:
@@ -14,41 +23,51 @@ class InfluxDBManager:
     """
 
     def __init__(
-        self , url, INFLUXDB_URL = token, INFLUXDB_TOKEN, org = INFLUXDB_ORG,
-        bucket, INFLUXDB_BUCKET = ):
+        self,
+        url: str = INFLUXDB_URL,
+        token: str = INFLUXDB_TOKEN,
+        org: str = INFLUXDB_ORG,
+        bucket: str = INFLUXDB_BUCKET,
+    ) -> None:
         """
         Initializes the InfluxDB client.
 
         Args:
-            url (str): The URL of the InfluxDB instance.
-            token (str): The authentication token for InfluxDB.
-            org (str): The organization to use in InfluxDB.
-            bucket (str): The bucket to store data in.
+            url: The URL of the InfluxDB instance.
+            token: The authentication token for InfluxDB.
+            org: The organization to use in InfluxDB.
+            bucket: The bucket to store data in.
         """
         self.url = url
         self.token = token
         self.org = org
         self.bucket = bucket
+
         self.client = influxdb_client.InfluxDBClient(
-            url=self.url, token = self.token,
-            org=self.org = )
+            url=self.url,
+            token=self.token,
+            org=self.org,
+        )
         self.write_api = self.client.write_api(write_options=SYNCHRONOUS)
         self.query_api = self.client.query_api()
         self.logger = logger.getChild("InfluxDBManager")
         self.logger.info("InfluxDBManager initialized with synchronous client.")
 
     def write_kline_data(
-        self = df: pd.DataFrame,
-        measurement_name: str = symbol: str,
-        interval: str = ):
+        self,
+        df: pd.DataFrame,
+        symbol: str,
+        interval: str,
+        measurement_name: str = "kline_data",
+    ) -> None:
         """
         Writes a DataFrame of kline data to InfluxDB.
 
         Args:
-            df (pd.DataFrame): DataFrame containing kline data. Must have a 'timestamp' column.
-            measurement_name (str): The name of the measurement in InfluxDB (e.g., 'kline_data').
-            symbol (str): The trading symbol (e.g., 'BTCUSDT').
-            interval (str): The data interval (e.g., '1h').
+            df: DataFrame containing kline data. Must have a 'timestamp' column.
+            symbol: The trading symbol (e.g., 'BTCUSDT').
+            interval: The data interval (e.g., '1h').
+            measurement_name: The name of the measurement in InfluxDB (default: 'kline_data').
         """
         df_copy = df.copy()
         df_copy["timestamp"] = pd.to_datetime(df_copy["timestamp"], unit="ms")
@@ -64,25 +83,30 @@ class InfluxDBManager:
                 df_copy[col] = pd.to_numeric(df_copy[col], errors="coerce")
 
         self.write_api.write(
-            bucket=self.bucket, record = df_copy,
-            data_frame_measurement_name, measurement_name = data_frame_tag_columns=["symbol", "interval"],
+            bucket=self.bucket,
+            record=df_copy,
+            data_frame_measurement_name=measurement_name,
+            data_frame_tag_columns=["symbol", "interval"],
         )
         self.logger.info(
             f"Successfully wrote {len(df)} rows for {symbol}/{interval} to InfluxDB.",
         )
 
     def query_kline_data(
-        self = symbol: str,
-        interval: str = start_date: str,
-        end_date: str = ) -> pd.DataFrame:
+        self,
+        symbol: str,
+        interval: str,
+        start_date: str,
+        end_date: str,
+    ) -> pd.DataFrame:
         """
         Queries kline data from InfluxDB for a specific symbol and date range.
 
         Args:
-            symbol (str): The trading symbol (e.g., 'BTCUSDT').
-            interval (str): The data interval (e.g., '1h').
-            start_date (str): The start date for the query (e.g., '2020-01-01T00:00:00Z').
-            end_date (str): The end date for the query (e.g., '2023-01-01T00:00:00Z').
+            symbol: The trading symbol (e.g., 'BTCUSDT').
+            interval: The data interval (e.g., '1h').
+            start_date: The start date for the query (e.g., '2020-01-01T00:00:00Z').
+            end_date: The end date for the query (e.g., '2023-01-01T00:00:00Z').
 
         Returns:
             pd.DataFrame: A DataFrame containing the queried kline data.
@@ -94,39 +118,27 @@ class InfluxDBManager:
           |> filter(fn: (r) => r["symbol"] == "{symbol}")
           |> filter(fn: (r) => r["interval"] == "{interval}")
           |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-          |> keep(columns: ["_time", "open", "high", "low", "close", "volume"])
           |> rename(columns: {{_time: "timestamp"}})
         """
-        df = self.query_api.query_data_frame(query, query = org=self.org)
-        if isinstance(df , list):
+        df = self.query_api.query_data_frame(query, org=self.org)
+        if isinstance(df, list):
             if not df:
                 return pd.DataFrame()
-            df = pd.concat(df, ignore_index = True)
+            df = pd.concat(df, ignore_index=True)
 
         if df.empty:
             return pd.DataFrame()
 
-        # Convert timestamp to milliseconds integer = as expected by the rest of the application
+        # Convert timestamp to milliseconds integer as expected by the rest of the application
         if "timestamp" in df.columns:
-            # CRITICAL FIX: Convert to milliseconds correctly
-            # The previous code was dividing by 1,000,000 which gives microseconds
-            # We need to divide by 1,000,000 to get milliseconds from nanoseconds
-            df["timestamp"] = (
-                pd.to_datetime(df["timestamp"]).astype("int64") // 1_000_000
-            )
+            df["timestamp"] = pd.to_datetime(df["timestamp"]).astype("int64") // 1_000_000
 
-            # CRITICAL FIX: Validate that timestamps are reasonable
-            # Check if the conversion resulted in reasonable timestamps (2000 onwards)
+            # Validate that timestamps are reasonable (>= 2000-01-01)
             min_reasonable_ts = 946684800000  # 2000-01-01 in milliseconds
             if df["timestamp"].min() < min_reasonable_ts:
                 self.logger.error(
-                    f"🚨 CRITICAL: InfluxDB timestamp conversion resulted in unreasonable values"
+                    "Min timestamp appears unreasonable; attempting alternate conversion",
                 )
-                self.logger.error(
-                    f"🚨 Min timestamp: {df['timestamp'].min()}, expected minimum: {min_reasonable_ts}"
-                )
-                self.logger.error(f"🚨 This indicates a timestamp conversion error")
-                # Try alternative conversion method
                 df["timestamp"] = (
                     pd.to_datetime(df["timestamp"]).astype(np.int64) // 10**6
                 )
@@ -138,7 +150,7 @@ class InfluxDBManager:
 
         return df
 
-    def close(self):
+    def close(self) -> None:
         """Closes the InfluxDB client."""
         self.client.close()
         self.logger.info("InfluxDB client closed.")

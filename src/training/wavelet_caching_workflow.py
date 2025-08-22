@@ -40,7 +40,7 @@ async def load_config(config_path: str) -> dict:
     default_return=pd.DataFrame(),
     context="sample data creation",
 )
-async def create_sample_data():
+async def create_sample_data() -> pd.DataFrame:
     """Create sample price data for demonstration."""
     try:
         # Create sample OHLCV data
@@ -87,6 +87,7 @@ async def create_sample_data():
 async def step1_precompute_features(config: dict) -> bool | None:
     """Step 1: Pre-compute wavelet features for the entire dataset."""
     try:
+        logger = system_logger.getChild("WaveletWorkflow")
         # Initialize pre-computer
         precomputer = WaveletFeaturePrecomputer(config)
         await precomputer.initialize()
@@ -95,6 +96,7 @@ async def step1_precompute_features(config: dict) -> bool | None:
         sample_data = await create_sample_data()
 
         if sample_data.empty:
+            logger.error("Sample data generation failed")
             return False
 
         # Save sample data
@@ -114,12 +116,12 @@ async def step1_precompute_features(config: dict) -> bool | None:
         )
 
         processing_time = time.time() - start_time
+        logger.info(f"Precomputation finished in {processing_time:.2f}s, success={success}")
 
         if success:
-    pass  # TODO: Add proper implementation
             # Print cache statistics
-            precomputer.get_precomputation_stats()
-
+            stats = precomputer.get_precomputation_stats()
+            logger.info(f"Precomputation stats: {stats}")
             return True
         return False
 
@@ -130,17 +132,18 @@ async def step1_precompute_features(config: dict) -> bool | None:
 async def step2_run_backtests(config: dict) -> bool | None:
     """Step 2: Run backtests using cached features."""
     try:
+        logger = system_logger.getChild("WaveletWorkflow")
         # Initialize backtesting system
         backtester = BacktestingWithCachedFeatures(config)
         await backtester.initialize()
 
         # Load sample data (project OHLCV)
         try:
-            pd.read_parquet(
+            _ = pd.read_parquet(
                 "data/price_data/sample_data.parquet", columns=ohlcv_columns(),
             )
         except Exception:
-            pd.read_parquet("data/price_data/sample_data.parquet")
+            _ = pd.read_parquet("data/price_data/sample_data.parquet")
 
         # Create multiple backtest configurations
         backtest_configs = [
@@ -165,16 +168,16 @@ async def step2_run_backtests(config: dict) -> bool | None:
         # Run backtests
         results = await backtester.run_multiple_backtests(backtest_configs)
 
-        time.time() - start_time
+        _ = time.time() - start_time
 
         if results:
-    pass  # TODO: Add proper implementation
             # Print results
             for _i, result in enumerate(results):
-                result.get("strategy_results", {})
+                logger.info(f"Backtest result summary: {result.get('summary', {})}")
 
             # Print performance statistics
-            backtester.get_performance_stats()
+            perf_stats = backtester.get_performance_stats()
+            logger.info(f"Performance stats: {perf_stats}")
 
             return True
         return False
@@ -186,6 +189,7 @@ async def step2_run_backtests(config: dict) -> bool | None:
 async def step3_performance_comparison(config: dict) -> bool | None:
     """Step 3: Compare performance with and without caching."""
     try:
+        logger = system_logger.getChild("WaveletWorkflow")
         # Load sample data (project OHLCV)
         try:
             price_data = pd.read_parquet(
@@ -205,6 +209,7 @@ async def step3_performance_comparison(config: dict) -> bool | None:
 
         # Test 2: Without caching (should be slower)
         config_no_cache = config.copy()
+        config_no_cache.setdefault("wavelet_cache", {})
         config_no_cache["wavelet_cache"]["cache_enabled"] = False
 
         backtester_no_cache = BacktestingWithCachedFeatures(config_no_cache)
@@ -215,11 +220,14 @@ async def step3_performance_comparison(config: dict) -> bool | None:
         no_cache_time = time.time() - start_time
 
         # Print comparison
+        logger.info(
+            f"Backtest time with cache: {cached_time:.2f}s vs without cache: {no_cache_time:.2f}s",
+        )
 
         if cached_time < no_cache_time:
-    pass  # TODO: Add proper implementation
+            logger.info("Caching provided a speedup as expected.")
         else:
-            pass
+            logger.warning("Caching did not provide expected speedup in this run.")
 
         return True
 
@@ -230,6 +238,7 @@ async def step3_performance_comparison(config: dict) -> bool | None:
 async def step4_cache_management(config: dict) -> bool | None:
     """Step 4: Demonstrate cache management features."""
     try:
+        logger = system_logger.getChild("WaveletWorkflow")
         # Initialize cache management
         from src.training.steps.vectorized_advanced_feature_engineering import (
             WaveletFeatureCache,
@@ -238,9 +247,11 @@ async def step4_cache_management(config: dict) -> bool | None:
         cache = WaveletFeatureCache(config)
 
         # Get cache statistics
-        cache.get_cache_stats()
+        stats = cache.get_cache_stats()
+        logger.info(f"Cache stats: {stats}")
 
         # Demonstrate cache clearing (optional)
+        # cache.clear_cache()  # Uncomment to clear cache
 
         return True
 
@@ -251,6 +262,7 @@ async def step4_cache_management(config: dict) -> bool | None:
 async def main() -> None:
     """Main workflow function."""
     try:
+        logger = system_logger.getChild("WaveletWorkflow")
         # Load configuration
         config_path = "config/wavelet_caching_config.yaml"
         if not Path(config_path).exists():
@@ -281,27 +293,32 @@ async def main() -> None:
         # Step 1: Pre-compute features
         step1_success = await step1_precompute_features(config)
         if not step1_success:
+            logger.error("Step 1 failed. Aborting workflow.")
             return
 
         # Step 2: Run backtests
         step2_success = await step2_run_backtests(config)
         if not step2_success:
+            logger.error("Step 2 failed. Aborting workflow.")
             return
 
         # Step 3: Performance comparison
         step3_success = await step3_performance_comparison(config)
         if not step3_success:
+            logger.error("Step 3 failed. Aborting workflow.")
             return
 
         # Step 4: Cache management
         step4_success = await step4_cache_management(config)
         if not step4_success:
+            logger.error("Step 4 failed.")
             return
 
         # Summary
+        logger.info("Wavelet caching workflow completed successfully.")
 
     except Exception:
-        pass
+        system_logger.getChild("WaveletWorkflow").exception("Workflow failed")
 
 
 if __name__ == "__main__":

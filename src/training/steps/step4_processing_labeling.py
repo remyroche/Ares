@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -43,17 +44,17 @@ from src.utils.centralized_decorators import (
 # Import comprehensive file validation
 try:
     from src.utils.comprehensive_file_validation import (
-    ComprehensiveFileValidator,
-    validate_step4_file,
-    FileValidationResult
-)
-from src.utils.validation_decorators import (
-    validate_file_operation,
-    validate_dataframe_operation,
-    validate_step4_operation
-)
-from src.utils.advanced_ml_validation import validate_ml_data_quality
-from src.utils.enhanced_validation_decorators import step_specific_ml_validation
+        ComprehensiveFileValidator,
+        validate_step4_file,
+        FileValidationResult,
+    )
+    from src.utils.validation_decorators import (
+        validate_file_operation,
+        validate_dataframe_operation,
+        validate_step4_operation,
+    )
+    from src.utils.advanced_ml_validation import validate_ml_data_quality
+    from src.utils.enhanced_validation_decorators import step_specific_ml_validation
 except ImportError:
     ComprehensiveFileValidator = None
     validate_step4_file = None
@@ -61,6 +62,8 @@ except ImportError:
     validate_file_operation = None
     validate_dataframe_operation = None
     validate_step4_operation = None
+    validate_ml_data_quality = None
+    step_specific_ml_validation = None
 from src.utils.logger import system_logger as _logger
 
 
@@ -73,24 +76,24 @@ async def _build_sr_levels(price_df: pd.DataFrame) -> dict[str, Any]:
         lows = price_df["low"].astype(float)
         highs = price_df["high"].astype(float)
         window = min(len(lows), 2000)
-        
+
         if window <= 0:
             return {"support_levels": [], "resistance_levels": []}
-        
+
         lt = lows.tail(window).dropna()
         ht = highs.tail(window).dropna()
-        
+
         if lt.empty or ht.empty:
             return {"support_levels": [], "resistance_levels": []}
-        
+
         # Use robust percentiles as weak baseline levels, attach low strength
         support_prices = np.percentile(lt.values, [5, 15, 30]).tolist()
         resistance_prices = np.percentile(ht.values, [70, 85, 95]).tolist()
 
         # Deduplicate and produce dicts with strength
-        def _mk_levels(vals, strength=0.2):
-            out = []
-            seen = set()
+        def _mk_levels(vals, strength: float = 0.2) -> list[dict[str, float]]:
+            out: list[dict[str, float]] = []
+            seen: set[float] = set()
             for v in vals:
                 r = round(float(v), 8)
                 if r in seen:
@@ -115,16 +118,16 @@ async def _ensure_data_quality_for_labeling(symbol: str, exchange: str, timefram
     """Ensure data quality for step4 labeling using enhanced quality manager."""
     try:
         from .step1.enhanced_data_quality_manager import EnhancedDataQualityManager
-        
+
         _logger.info("🔍 Ensuring data quality for step4 labeling...")
-        
+
         manager = EnhancedDataQualityManager(data_dir)
         data_results = await manager.get_data_for_step3_step4(
             symbol=symbol,
             exchange=exchange,
-            timeframe=timeframe
+            timeframe=timeframe,
         )
-        
+
         if data_results.get("success", False):
             _logger.info("✅ Data quality check passed for step4 labeling")
             return True
@@ -132,28 +135,29 @@ async def _ensure_data_quality_for_labeling(symbol: str, exchange: str, timefram
             _logger.error("❌ Data quality check failed for step4 labeling")
             error = data_results.get("error", "Unknown error")
             _logger.error(f"   Error: {error}")
-            
+
             # Try to fix missing data using step1/step1_5 components
             _logger.info("🔄 Attempting to fix missing data for step4...")
             fix_results = await _fix_missing_data_for_step4(symbol, exchange, timeframe, data_dir)
-            
+
             if fix_results.get("success", False):
                 _logger.info("✅ Successfully fixed missing data for step4")
                 return True
             else:
                 _logger.error("❌ Failed to fix missing data for step4")
                 return False
-                
+
     except Exception as e:
         _logger.exception(f"❌ Error ensuring data quality for step4: {e}")
         return False
+
 
 @with_tracing_span("step4._fix_missing_data_for_step4")
 async def _fix_missing_data_for_step4(symbol: str, exchange: str, timeframe: str, data_dir: str) -> dict[str, Any]:
     """Fix missing data for step4 using step1 and step1_5 components."""
     try:
         _logger.info("🔄 Fixing missing data for step4 using step1/step1_5 components...")
-        
+
         # Try step1 data collection
         step1_success = False
         try:
@@ -163,7 +167,7 @@ async def _fix_missing_data_for_step4(symbol: str, exchange: str, timeframe: str
                 exchange=exchange,
                 timeframe=timeframe,
                 data_dir=data_dir,
-                force_rerun=True
+                force_rerun=True,
             )
             if step1_success:
                 _logger.info("✅ Step1 data collection completed for step4")
@@ -171,7 +175,7 @@ async def _fix_missing_data_for_step4(symbol: str, exchange: str, timeframe: str
                 _logger.warning("⚠️ Step1 data collection failed for step4")
         except Exception as e:
             _logger.warning(f"⚠️ Could not run step1 for step4: {e}")
-        
+
         # Try step1_5 data conversion
         step1_5_success = False
         try:
@@ -181,7 +185,7 @@ async def _fix_missing_data_for_step4(symbol: str, exchange: str, timeframe: str
                 exchange=exchange,
                 timeframe=timeframe,
                 data_dir=data_dir,
-                force_rerun=True
+                force_rerun=True,
             )
             if step1_5_success:
                 _logger.info("✅ Step1_5 data conversion completed for step4")
@@ -189,16 +193,17 @@ async def _fix_missing_data_for_step4(symbol: str, exchange: str, timeframe: str
                 _logger.warning("⚠️ Step1_5 data conversion failed for step4")
         except Exception as e:
             _logger.warning(f"⚠️ Could not run step1_5 for step4: {e}")
-        
+
         return {
             "success": step1_success and step1_5_success,
             "step1_success": step1_success,
-            "step1_5_success": step1_5_success
+            "step1_5_success": step1_5_success,
         }
-        
+
     except Exception as e:
         _logger.exception(f"❌ Error fixing missing data for step4: {e}")
         return {"success": False, "error": str(e)}
+
 
 @with_tracing_span("step4._persist_sr_levels", log_args=False)
 @handle_errors(exceptions=(Exception,), default_return=None)
@@ -213,7 +218,7 @@ def _persist_sr_levels(config: dict[str, Any], sr_levels: dict[str, Any], asof_t
         symbol = config.get("symbol", "SYMB")
         exchange = config.get("exchange", "EXCH")
         path = f"{data_dir}/{exchange}_{symbol}_sr_levels.parquet"
-        
+
         # Build frame from provided sr_levels
         rows: list[dict[str, Any]] = []
         for kind in ("support_levels", "resistance_levels"):
@@ -233,12 +238,12 @@ def _persist_sr_levels(config: dict[str, Any], sr_levels: dict[str, Any], asof_t
                         "age": 0.0,
                     },
                 )
-        
+
         if not rows:
             return
-        
+
         new_df = pd.DataFrame(rows)
-        
+
         # Append or create
         if os.path.exists(path):
             try:
@@ -260,7 +265,7 @@ def _persist_sr_levels(config: dict[str, Any], sr_levels: dict[str, Any], asof_t
                 combined = new_df
         else:
             combined = new_df
-        
+
         # Deduplicate near-identical level prices within a small epsilon per type+timestamp bucket
         try:
             eps = 1e-6
@@ -271,7 +276,7 @@ def _persist_sr_levels(config: dict[str, Any], sr_levels: dict[str, Any], asof_t
             combined = combined.drop(columns=["price_round"], errors="ignore")
         except Exception:
             pass
-        
+
         combined.to_parquet(path, index=False)
         _logger.info(f"💾 Persisted SR levels ({len(new_df)} new) -> {path}")
     except Exception as e:
@@ -333,15 +338,15 @@ def _persist_sr_levels(config: dict[str, Any], sr_levels: dict[str, Any], asof_t
 )
 @auto_fix_data_quality_issues
 @handle_errors(exceptions=(Exception,), default_return=False, context="step4_processing_labeling")
-@validate_file_operation("step4", expected_schema="features", log_level="INFO") if validate_file_operation else lambda x: x
-@step_specific_ml_validation("step4", target_col="target", timestamp_col="timestamp") if step_specific_ml_validation else lambda x: x
+@((validate_file_operation("step4", expected_schema="features", log_level="INFO") if validate_file_operation else (lambda x: x)))
+@((step_specific_ml_validation("step4", target_col="target", timestamp_col="timestamp") if step_specific_ml_validation else (lambda x: x)))
 async def run_step(
-    symbol: str, 
-    exchange_name: str = "BINANCE", 
-    data_dir: str = "data/training", 
-    timeframe: str = "1m", 
-    exchange: str = "BINANCE", 
-    force_rerun: bool = False, 
+    symbol: str,
+    exchange_name: str = "BINANCE",
+    data_dir: str = "data/training",
+    timeframe: str = "1m",
+    exchange: str = "BINANCE",
+    force_rerun: bool = False,
     pipeline_config: dict[str, Any] | None = None,
 ) -> bool:
     """Run Step 4: Processing & Labeling with comprehensive error handling and validation."""
@@ -380,7 +385,7 @@ async def run_step(
             lookback_days=lookback_days,
             use_streaming=True,
         )
-        
+
         if df is None or df.empty:
             msg = f"🚨 No data found for {symbol} on {actual_exchange}"
             raise ValueError(msg)
@@ -459,8 +464,8 @@ async def run_step(
                     pass
 
                 result = await orchestrator.orchestrate_labeling_and_feature_engineering(
-                    price_data=price_data, 
-                    volume_data=volume_data, 
+                    price_data=price_data,
+                    volume_data=volume_data,
                     sr_levels=sr_levels,
                 )
                 final_df: pd.DataFrame | None = None
@@ -534,7 +539,7 @@ async def run_step(
         if validate_step4_file:
             _logger.info("🔍 Running comprehensive file format validation...")
             validation_success = await _run_comprehensive_validation(symbol, actual_exchange, data_dir, _logger)
-            
+
             if validation_success:
                 _logger.info("✅ Comprehensive file format validation passed")
             else:
@@ -550,36 +555,36 @@ async def run_step(
 
 
 async def _run_comprehensive_validation(
-    symbol: str, 
-    exchange: str, 
-    data_dir: str, 
-    logger: Any
+    symbol: str,
+    exchange: str,
+    data_dir: str,
+    logger: Any,
 ) -> bool:
     """Run comprehensive file format validation for step 4."""
     try:
         if not validate_step4_file:
             logger.warning("Comprehensive file validation not available")
             return True
-        
+
         # Define expected files for step 4
         expected_files = [
             f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet",
             f"{data_dir}/{exchange}_{symbol}_labeled_validation.parquet",
             f"{data_dir}/{exchange}_{symbol}_labeled_test.parquet",
         ]
-        
-        validation_results = []
+
+        validation_results: list[Any] = []
         all_valid = True
-        
+
         for file_path in expected_files:
             if Path(file_path).exists():
                 logger.info(f"🔍 Validating file: {file_path}")
-                
+
                 # Validate file format
-                validation_result = validate_step4_file(file_path)
+                validation_result = validate_step4_file(file_path)  # type: ignore[misc]
                 validation_results.append(validation_result)
-                
-                if validation_result.is_valid:
+
+                if getattr(validation_result, "is_valid", False):
                     logger.info(f"✅ File validation passed: {file_path}")
                     logger.info(f"   📊 Shape: {validation_result.summary.get('shape', 'N/A')}")
                     logger.info(f"   📁 File type: {validation_result.file_type}")
@@ -587,24 +592,24 @@ async def _run_comprehensive_validation(
                 else:
                     logger.warning(f"⚠️ File validation issues found: {file_path}")
                     all_valid = False
-                    
+
                     # Log detailed issues
-                    for issue in validation_result.issues:
+                    for issue in getattr(validation_result, "issues", []) or []:
                         logger.warning(f"   - {issue.severity.value.upper()}: {issue.description}")
-                        if issue.details:
+                        if getattr(issue, "details", None):
                             logger.warning(f"     Details: {issue.details}")
             else:
                 logger.warning(f"⚠️ Expected file not found: {file_path}")
                 all_valid = False
-        
+
         # Log validation summary
         if validation_results:
             total_files = len(validation_results)
-            valid_files = sum(1 for r in validation_results if r.is_valid)
+            valid_files = sum(1 for r in validation_results if getattr(r, "is_valid", False))
             logger.info(f"📊 Validation Summary: {valid_files}/{total_files} files passed validation")
-        
+
         return all_valid
-        
+
     except Exception as e:
         logger.exception(f"❌ Error during comprehensive validation: {e}")
         return False

@@ -26,6 +26,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
 import optuna
 import pandas as pd
 from optuna.pruners import HyperbandPruner
@@ -39,6 +40,7 @@ setup_logging()
 
 # Configure Optuna logging
 optuna.logging.set_verbosity(optuna.logging.WARNING)
+
 
 @dataclass
 class SROptimizationResult:
@@ -67,6 +69,7 @@ class SROptimizationResult:
     study_name: str
     best_trial_number: int
 
+
 class SROptunaOptimizer:
     """
     Comprehensive S/R parameter optimizer using Optuna.
@@ -84,7 +87,7 @@ class SROptunaOptimizer:
 
     def __init__(
         self, config: dict[str, Any], storage_url: str = "sqlite:///sr_optuna_studies.db", study_name_prefix: str = "sr_optimization"
-    ):
+    ) -> None:
         """
         Initialize the S/R Optuna optimizer.
 
@@ -111,10 +114,10 @@ class SROptunaOptimizer:
         )
 
         # Optimization parameters
-        self.n_trials = self.sr_config.get("n_trials", 100)
-        self.cv_folds = self.sr_config.get("cv_folds", 5)
-        self.early_stopping_patience = self.sr_config.get("early_stopping_patience", 20)
-        self.subsample_fraction = self.sr_config.get("subsample_fraction", 0.7)
+        self.n_trials = int(self.sr_config.get("n_trials", 100))
+        self.cv_folds = int(self.sr_config.get("cv_folds", 5))
+        self.early_stopping_patience = int(self.sr_config.get("early_stopping_patience", 20))
+        self.subsample_fraction = float(self.sr_config.get("subsample_fraction", 0.7))
 
         # Initialize components
         self.sr_predictor = None
@@ -133,7 +136,8 @@ class SROptunaOptimizer:
 
             # Initialize weight optimizer
             self.weight_optimizer = SRWeightOptimizer(self.config)
-            if not await self.weight_optimizer.initialize():
+            ok = await self.weight_optimizer.initialize()
+            if not ok:
                 self.logger.error("❌ Failed to initialize weight optimizer")
                 return False
 
@@ -231,7 +235,7 @@ class SROptunaOptimizer:
 
     async def optimize_sr_parameters(
         self, price_data: pd.DataFrame, target_returns: pd.Series, study_name: str | None = None
-    ) -> SROptimizationResult:
+    ) -> SROptimizationResult | None:
         """
         Optimize S/R parameters using Optuna.
 
@@ -273,12 +277,9 @@ class SROptunaOptimizer:
                     load_if_exists=True,
                 )
 
-            # Define objective function
-
+            # Define objective function (sync for Optuna)
             def objective(trial: optuna.Trial):
-                return self._evaluate_sr_parameters(
-                    trial, price_data, target_returns
-                )
+                return self._evaluate_sr_parameters(trial, price_data, target_returns)
 
             # Run optimization
             study.optimize(
@@ -286,8 +287,8 @@ class SROptunaOptimizer:
                 n_trials=self.n_trials,
                 callbacks=[
                     optuna.callbacks.EarlyStoppingCallback(
-                        self.early_stopping_patience,
-                        "maximize" if not self.multi_objective else None,
+                        stopping_criteria=self.early_stopping_patience,
+                        direction="maximize" if not self.multi_objective else None,
                     ),
                 ],
             )
@@ -295,10 +296,7 @@ class SROptunaOptimizer:
             optimization_time = time.time() - start_time
 
             # Extract best results
-            if self.multi_objective:
-                best_trial = study.best_trials[0]  # Get first Pareto optimal solution
-            else:
-                best_trial = study.best_trial
+            best_trial = study.best_trials[0] if self.multi_objective else study.best_trial
 
             # Create result object
             result = self._create_optimization_result(
@@ -317,9 +315,9 @@ class SROptunaOptimizer:
             self.logger.exception(f"❌ Error in S/R optimization: {e}")
             return None
 
-    async def _evaluate_sr_parameters(
+    def _evaluate_sr_parameters(
         self, trial: optuna.Trial, price_data: pd.DataFrame, target_returns: pd.Series
-    ) -> float:
+    ) -> float | list[float]:
         """
         Evaluate S/R parameters for a given trial.
 
@@ -356,7 +354,7 @@ class SROptunaOptimizer:
                 price_sample
             )
             if not sr_features:
-                return 0.0
+                return [0.0] * len(self.objectives) if self.multi_objective else 0.0
 
             # Calculate performance metrics
             performance_metrics = self._calculate_performance_metrics(
@@ -376,24 +374,25 @@ class SROptunaOptimizer:
             return self._calculate_optimization_score(performance_metrics)
         except Exception as e:
             self.logger.warning(f"Trial {trial.number} failed: {e}")
-            return 0.0 if not self.multi_objective else [0.0] * len(self.objectives)
+            return [0.0] * len(self.objectives) if self.multi_objective else 0.0
 
     def _calculate_performance_metrics(
-        self, sr_features: dict[str, pd.Series], target_returns: pd.Series, level_params: dict[str, Any], breakout_params: dict[str, float], zone_params: dict[str, float], confidence_params: dict[str, float], ) -> dict[str , float]:
+        self, sr_features: dict[str, pd.Series], target_returns: pd.Series, level_params: dict[str, Any], breakout_params: dict[str, float], zone_params: dict[str, float], confidence_params: dict[str, float],
+    ) -> dict[str, float]:
         """Calculate comprehensive performance metrics."""
         try:
             # Extract key features
             strength_scores = sr_features.get(
                 "strength_score",
-                pd.Series(0.5, index=target_returns.index)
+                pd.Series(0.5, index=target_returns.index),
             )
             sr_proximity = sr_features.get(
                 "sr_proximity_score",
-                pd.Series(0.5, index=target_returns.index)
+                pd.Series(0.5, index=target_returns.index),
             )
             directional_pressure = sr_features.get(
                 "directional_pressure",
-                pd.Series(0.0, index=target_returns.index)
+                pd.Series(0.0, index=target_returns.index),
             )
 
             # Calculate trading signals
@@ -409,17 +408,20 @@ class SROptunaOptimizer:
             max_drawdown = self._calculate_max_drawdown(strategy_returns)
             win_rate = self._calculate_win_rate(strategy_returns)
             profit_factor = self._calculate_profit_factor(strategy_returns)
-            total_return = strategy_returns.sum()
+            total_return = float(strategy_returns.sum())
 
             # Signal quality metrics
             signal_clarity = self._calculate_signal_clarity(signals, target_returns)
             noise_reduction = self._calculate_noise_reduction(sr_features)
 
             return {
-                "sharpe_ratio": sharpe_ratio, "max_drawdown": max_drawdown,
-                "win_rate": win_rate, "profit_factor": profit_factor,
-                "total_return": total_return, "signal_clarity": signal_clarity,
-                "noise_reduction": noise_reduction,
+                "sharpe_ratio": float(sharpe_ratio),
+                "max_drawdown": float(max_drawdown),
+                "win_rate": float(win_rate),
+                "profit_factor": float(profit_factor),
+                "total_return": total_return,
+                "signal_clarity": float(signal_clarity),
+                "noise_reduction": float(noise_reduction),
             }
         except Exception as e:
             self.logger.warning(f"Error calculating performance metrics: {e}")
@@ -434,7 +436,8 @@ class SROptunaOptimizer:
             }
 
     def _calculate_trading_signals(
-        self, strength_scores: pd.Series, sr_proximity: pd.Series, directional_pressure: pd.Series, confidence_params: dict[str, float], ) -> pd.Series:
+        self, strength_scores: pd.Series, sr_proximity: pd.Series, directional_pressure: pd.Series, confidence_params: dict[str, float],
+    ) -> pd.Series:
         """Calculate trading signals based on S/R parameters."""
         try:
             # Combine signals
@@ -492,7 +495,7 @@ class SROptunaOptimizer:
             if metrics["max_drawdown"] < -0.2:
                 score *= 0.5
 
-            return score
+            return float(score)
         except Exception as e:
             self.logger.warning(f"Error calculating optimization score: {e}")
             return 0.0
@@ -501,26 +504,26 @@ class SROptunaOptimizer:
         """Calculate Sharpe ratio."""
         if len(returns) < 2:
             return 0.0
-        return returns.mean() / (returns.std() + 1e-8)
+        return float(returns.mean() / (returns.std() + 1e-8))
 
     def _calculate_max_drawdown(self, returns: pd.Series) -> float:
         """Calculate maximum drawdown."""
         cumulative = (1 + returns).cumprod()
         running_max = cumulative.expanding().max()
         drawdown = (cumulative - running_max) / running_max
-        return drawdown.min()
+        return float(drawdown.min())
 
     def _calculate_win_rate(self, returns: pd.Series) -> float:
         """Calculate win rate."""
         if len(returns) == 0:
             return 0.5
-        return (returns > 0).mean()
+        return float((returns > 0).mean())
 
     def _calculate_profit_factor(self, returns: pd.Series) -> float:
         """Calculate profit factor."""
         positive_returns = returns[returns > 0].sum()
         negative_returns = abs(returns[returns < 0].sum())
-        return positive_returns / (negative_returns + 1e-8)
+        return float(positive_returns / (negative_returns + 1e-8))
 
     def _calculate_signal_clarity(
         self, signals: pd.Series, target_returns: pd.Series | None = None
@@ -528,20 +531,18 @@ class SROptunaOptimizer:
         """Calculate signal clarity (correlation between signals and future returns)."""
         if len(signals) < 2 or target_returns is None or len(target_returns) < 2:
             return 0.0
-        return abs(signals.corr(target_returns))
+        return float(abs(signals.corr(target_returns)))
 
     def _calculate_noise_reduction(self, sr_features: dict[str, pd.Series]) -> float:
         """Calculate noise reduction metric."""
         try:
-            # Calculate feature stability
-            stability_scores = []
+            stability_scores: list[float] = []
             for feature_values in sr_features.values():
                 if len(feature_values) > 1:
-                    # Calculate coefficient of variation (lower is better)
                     cv = feature_values.std() / (abs(feature_values.mean()) + 1e-8)
-                    stability_scores.append(1.0 / (1.0 + cv))
+                    stability_scores.append(float(1.0 / (1.0 + cv)))
 
-            return np.mean(stability_scores) if stability_scores else 0.0
+            return float(np.mean(stability_scores)) if stability_scores else 0.0
         except Exception as e:
             self.logger.warning(f"Error calculating noise reduction: {e}")
             return 0.0
@@ -551,15 +552,12 @@ class SROptunaOptimizer:
     ) -> SROptimizationResult:
         """Create optimization result object."""
         try:
-            # Extract best parameters
             params = best_trial.params
 
-            # Group parameters
             strength_score_weights = {
-                k: v
+                k: float(v)
                 for k, v in params.items()
-                if k
-                in [
+                if k in [
                     "touch_count",
                     "total_volume",
                     "level_age",
@@ -582,7 +580,7 @@ class SROptunaOptimizer:
             }
 
             breakout_thresholds = {
-                k: v
+                k: float(v)
                 for k, v in params.items()
                 if k
                 in [
@@ -595,7 +593,7 @@ class SROptunaOptimizer:
             }
 
             zone_multipliers = {
-                k: v
+                k: float(v)
                 for k, v in params.items()
                 if k
                 in [
@@ -608,7 +606,7 @@ class SROptunaOptimizer:
             }
 
             confidence_thresholds = {
-                k: v
+                k: float(v)
                 for k, v in params.items()
                 if k
                 in [
@@ -620,16 +618,15 @@ class SROptunaOptimizer:
                 ]
             }
 
-            # Extract performance metrics from best trial
             if hasattr(best_trial, "values") and best_trial.values:
                 if self.multi_objective:
-                    sharpe_ratio = best_trial.values[0]
-                    win_rate = best_trial.values[1]
-                    signal_clarity = best_trial.values[2]
+                    sharpe_ratio = float(best_trial.values[0])
+                    win_rate = float(best_trial.values[1])
+                    signal_clarity = float(best_trial.values[2])
                 else:
-                    sharpe_ratio = best_trial.value
-                    win_rate = 0.5  # Default
-                    signal_clarity = 0.5  # Default
+                    sharpe_ratio = float(best_trial.value)
+                    win_rate = 0.5
+                    signal_clarity = 0.5
             else:
                 sharpe_ratio = 0.0
                 win_rate = 0.5
@@ -642,13 +639,13 @@ class SROptunaOptimizer:
                 zone_multipliers=zone_multipliers,
                 confidence_thresholds=confidence_thresholds,
                 sharpe_ratio=sharpe_ratio,
-                max_drawdown=-0.1,  # Default
+                max_drawdown=-0.1,
                 win_rate=win_rate,
-                profit_factor=1.5,  # Default
-                total_return=0.1,  # Default
+                profit_factor=1.5,
+                total_return=0.1,
                 signal_clarity=signal_clarity,
-                noise_reduction=0.7,  # Default
-                optimization_score=(best_trial.value if not self.multi_objective else sum(best_trial.values)),
+                noise_reduction=0.7,
+                optimization_score=(best_trial.value if not self.multi_objective else float(sum(best_trial.values))),
                 n_trials=len(study.trials),
                 optimization_time=optimization_time,
                 study_name=study_name,
@@ -656,7 +653,7 @@ class SROptunaOptimizer:
             )
         except Exception as e:
             self.logger.exception(f"Error creating optimization result: {e}")
-            return None
+            return None  # type: ignore[return-value]
 
     def generate_optimization_report(
         self, result: SROptimizationResult, save_path: str | None = None
@@ -728,7 +725,13 @@ class SROptunaOptimizer:
     ) -> dict[str, str]:
         """Create optimization visualizations."""
         try:
-            plots = {}
+            plots: dict[str, str] = {}
+
+            try:
+                from optuna.visualization import plot_optimization_history, plot_param_importances
+            except Exception:
+                self.logger.warning("Visualization modules not available")
+                return plots
 
             # Optimization history
             fig1 = plot_optimization_history(study)
@@ -750,12 +753,14 @@ class SROptunaOptimizer:
             self.logger.exception(f"Error creating visualizations: {e}")
             return {}
 
-async def setup_sr_optuna_optimizer(config: dict[str, Any]) -> SROptunaOptimizer:
+
+async def setup_sr_optuna_optimizer(config: dict[str, Any]) -> SROptunaOptimizer | None:
     """Setup and initialize S/R Optuna optimizer."""
     optimizer = SROptunaOptimizer(config)
     if await optimizer.initialize():
         return optimizer
     return None
+
 
 if __name__ == "__main__":
     # Example usage
@@ -764,7 +769,8 @@ if __name__ == "__main__":
         # Sample configuration
         config = {
             "sr_optimization": {
-                "multi_objective": True , "objectives": ["sharpe_ratio", "win_rate", "signal_clarity"],
+                "multi_objective": True,
+                "objectives": ["sharpe_ratio", "win_rate", "signal_clarity"],
                 "objective_weights": {
                     "sharpe_ratio": 0.4,
                     "win_rate": 0.3,
@@ -784,7 +790,6 @@ if __name__ == "__main__":
             return
 
         # Create sample data
-        import numpy as np
         np.random.seed(42)
         n_samples = 1000
         price_data = pd.DataFrame(
@@ -803,7 +808,7 @@ if __name__ == "__main__":
         result = await optimizer.optimize_sr_parameters(price_data, target_returns)
 
         if result:
-        # Generate report
+            # Generate report
             report = optimizer.generate_optimization_report(result)
             print(report)
         else:

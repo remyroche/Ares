@@ -39,7 +39,7 @@ class EfficiencyConfig:
 
     # Parallel processing
     enable_parallel_processing: bool = True
-    max_workers: int = None  # Auto-detect
+    max_workers: int | None = None  # Auto-detect
     use_process_pool: bool = True  # Use ProcessPoolExecutor for CPU-intensive tasks
 
     # Early stopping
@@ -66,16 +66,16 @@ class EfficiencyOptimizer:
         self.logger = system_logger.getChild("EfficiencyOptimizer")
 
         # Initialize caches
-        self.parameter_cache = {}
-        self.evaluation_cache = {}
-        self.performance_cache = {}
+        self.parameter_cache: dict[str, list[dict[str, Any]]] = {}
+        self.evaluation_cache: dict[str, dict[str, Any]] = {}
+        self.performance_cache: dict[str, Any] = {}
 
         # Initialize parallel processing
         self.max_workers = config.max_workers or min(mp.cpu_count(), 8)
-        self.executor = None
+        self.executor: ProcessPoolExecutor | ThreadPoolExecutor | None = None
 
         # Performance tracking
-        self.trial_times = []
+        self.trial_times: list[float] = []
         self.cache_hits = 0
         self.cache_misses = 0
 
@@ -88,7 +88,7 @@ class EfficiencyOptimizer:
         default_return=False,
         context="efficiency optimizer initialization",
     )
-    async def initialize(self) -> None:
+    async def initialize(self) -> bool:
         """Initialize the efficiency optimizer."""
         if self.config.enable_parallel_processing:
             if self.config.use_process_pool:
@@ -100,6 +100,7 @@ class EfficiencyOptimizer:
         await self._load_caches()
 
         self.logger.info("✅ Efficiency optimizer initialized successfully")
+        return True
 
     @handle_errors(
         exceptions=(Exception,),
@@ -107,7 +108,7 @@ class EfficiencyOptimizer:
         context="efficiency optimizer trial optimization",
     )
     async def optimize_trial_efficiency(
-        self, objective_function, search_space: dict[str, Any], n_trials: int, timeout_seconds: int = 3600
+        self, objective_function: Any, search_space: dict[str, Any], n_trials: int, timeout_seconds: int = 3600
     ) -> dict[str, Any]:
         """Run efficient hyperparameter optimization.
 
@@ -140,14 +141,14 @@ class EfficiencyOptimizer:
 
             # Batch processing
             batch_size = self.config.batch_size
-            results = []
+            results: list[dict[str, Any]] = []
 
             # Process warm start trials
             if warm_start_params:
                 self.logger.info(f"Processing {n_warm_start} warm start trials")
                 warm_results = await self._process_trials_batch(
                     objective_function,
-                    warm_start_params,
+                    warm_start_params[:n_warm_start],
                     "warm_start",
                 )
                 results.extend(warm_results)
@@ -206,35 +207,35 @@ class EfficiencyOptimizer:
             raise
 
     def _calculate_adaptive_trials(
-        self, base_trials: int, search_space: dict[str, Any], ) -> int:
+        self, base_trials: int, search_space: dict[str, Any],
+    ) -> int:
         """Calculate adaptive number of trials based on search space complexity."""
         try:
-            # Count parameters
-            len(search_space)
-
             # Estimate complexity based on parameter types and ranges
-            complexity_score = 0
+            complexity_score = 0.0
             for param_config in search_space.values():
-                param_type, param_config.get("type", "float")
+                param_type = param_config.get("type", "float")
 
                 if param_type == "float":
-                    min_val, param_config.get("min", 0)
-                    max_val, param_config.get("max", 1)
-                    step, param_config.get("step", 0.01)
-                    complexity_score += (max_val - min_val) / step
+                    min_val = float(param_config.get("min", 0.0))
+                    max_val = float(param_config.get("max", 1.0))
+                    step = float(param_config.get("step", 0.01))
+                    if step <= 0:
+                        step = 0.01
+                    complexity_score += max(1.0, (max_val - min_val) / step)
                 elif param_type == "int":
-                    min_val, param_config.get("min", 0)
-                    max_val, param_config.get("max", 100)
-                    complexity_score += max_val - min_val
+                    min_val = int(param_config.get("min", 0))
+                    max_val = int(param_config.get("max", 100))
+                    complexity_score += max(1, max_val - min_val)
                 elif param_type == "categorical":
-                    choices, param_config.get("choices", [])
-                    complexity_score += len(choices)
+                    choices = param_config.get("choices", [])
+                    complexity_score += max(1, len(choices))
 
             # Adjust trials based on complexity
             if complexity_score < 50:
-                return int(base_trials * 0.7)  # Reduce trials for simple spaces
+                return int(max(1, base_trials * 0.7))  # Reduce trials for simple spaces
             if complexity_score > 200:
-                return int(base_trials * 1.3)  # Increase trials for complex spaces
+                return int(max(1, base_trials * 1.3))  # Increase trials for complex spaces
             return base_trials
 
         except Exception as e:
@@ -242,7 +243,8 @@ class EfficiencyOptimizer:
             return base_trials
 
     async def _get_warm_start_parameters(
-        self, search_space: dict[str, Any], ) -> list[dict[str, Any]]:
+        self, search_space: dict[str, Any],
+    ) -> list[dict[str, Any]]:
         """Get warm start parameters from previous optimizations."""
         try:
             # Load previous results from cache
@@ -254,7 +256,7 @@ class EfficiencyOptimizer:
                 return cached_params[: self.config.warm_start_trials]
 
             # Generate diverse initial parameters
-            warm_start_params = []
+            warm_start_params: list[dict[str, Any]] = []
             for i in range(self.config.warm_start_trials):
                 params = self._generate_diverse_parameters(search_space, i)
                 warm_start_params.append(params)
@@ -269,23 +271,23 @@ class EfficiencyOptimizer:
             return []
 
     def _generate_smart_parameters(
-        self, search_space: dict[str, Any], n_trials: int, previous_results: list[dict[str, Any]], ) -> list[dict[str, Any]]:
+        self, search_space: dict[str, Any], n_trials: int, previous_results: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         """Generate smart parameters based on previous results."""
         try:
-            params_list = []
+            params_list: list[dict[str, Any]] = []
 
             for _i in range(n_trials):
                 if previous_results and self.config.enable_smart_sampling:
                     # Use previous results to guide sampling
                     best_results = sorted(
                         previous_results,
-                        key=lambda x: x.get("value", 0)
+                        key=lambda x: x.get("value", 0),
+                        reverse=True,
                     )[:5]
 
                     # Generate parameters similar to good results
-                    if (
-                        best_results and np.random.random() < 0.7
-                    ):  # 70% chance to use smart sampling
+                    if best_results and np.random.random() < 0.7:  # 70% chance to use smart sampling
                         base_params = best_results[
                             np.random.randint(len(best_results))
                         ]["params"]
@@ -306,32 +308,32 @@ class EfficiencyOptimizer:
             ]
 
     def _generate_random_parameters(
-        self, search_space: dict[str, Any], ) -> dict[str, Any]:
+        self, search_space: dict[str, Any],
+    ) -> dict[str, Any]:
         """Generate random parameters within search space."""
         try:
-            params = {}
+            params: dict[str, Any] = {}
 
             for param_name, param_config in search_space.items():
-                param_type, param_config.get("type", "float")
-
+                param_type = param_config.get("type", "float")
                 if param_type == "float":
-                    min_val, param_config.get("min", 0)
-                    max_val, param_config.get("max", 1)
-                    step, param_config.get("step", 0.01)
-
-                    # Generate value with step consideration
-                    n_steps = int((max_val - min_val) / step)
+                    min_val = float(param_config.get("min", 0))
+                    max_val = float(param_config.get("max", 1))
+                    step = float(param_config.get("step", 0.01))
+                    if step <= 0:
+                        step = 0.01
+                    n_steps = int(max(1, (max_val - min_val) / step))
                     step_index = np.random.randint(0, n_steps + 1)
                     value = min_val + step_index * step
-
                 elif param_type == "int":
-                    min_val, param_config.get("min", 0)
-                    max_val, param_config.get("max", 100)
-                    value = np.random.randint(min_val, max_val + 1)
-
+                    min_val = int(param_config.get("min", 0))
+                    max_val = int(param_config.get("max", 100))
+                    value = int(np.random.randint(min_val, max_val + 1))
                 elif param_type == "categorical":
-                    choices, param_config.get("choices", [])
-                    value = np.random.choice(choices)
+                    choices = param_config.get("choices", [])
+                    value = np.random.choice(choices) if choices else None
+                else:
+                    value = None
 
                 params[param_name] = value
 
@@ -342,46 +344,43 @@ class EfficiencyOptimizer:
             return {}
 
     def _generate_diverse_parameters(
-        self, search_space: dict[str, Any], index: int, ) -> dict[str, Any]:
+        self, search_space: dict[str, Any], index: int,
+    ) -> dict[str, Any]:
         """Generate diverse parameters for warm start."""
         try:
-            params = {}
+            params: dict[str, Any] = {}
 
             for param_name, param_config in search_space.items():
-                param_type, param_config.get("type", "float")
+                param_type = param_config.get("type", "float")
 
                 if param_type == "float":
-                    min_val, param_config.get("min", 0)
-                    max_val, param_config.get("max", 1)
-                    step, param_config.get("step", 0.01)
+                    min_val = float(param_config.get("min", 0))
+                    max_val = float(param_config.get("max", 1))
+                    step = float(param_config.get("step", 0.01))
 
-                    # Use different sampling strategies for diversity
                     if index % 4 == 0:
-                        # Uniform sampling
-                        value = np.random.uniform(min_val, max_val)
+                        value = float(np.random.uniform(min_val, max_val))
                     elif index % 4 == 1:
-                        # Edge sampling
                         value = min_val if index % 2 == 0 else max_val
                     elif index % 4 == 2:
-                        # Center sampling
                         value = (min_val + max_val) / 2
                     else:
-                        # Random step sampling
-                        n_steps = int((max_val - min_val) / step)
+                        n_steps = int(max(1, (max_val - min_val) / step))
                         step_index = np.random.randint(0, n_steps + 1)
                         value = min_val + step_index * step
 
-                    # Ensure value is within bounds
                     value = max(min_val, min(max_val, value))
 
                 elif param_type == "int":
-                    min_val, param_config.get("min", 0)
-                    max_val, param_config.get("max", 100)
-                    value = np.random.randint(min_val, max_val + 1)
+                    min_val = int(param_config.get("min", 0))
+                    max_val = int(param_config.get("max", 100))
+                    value = int(np.random.randint(min_val, max_val + 1))
 
                 elif param_type == "categorical":
-                    choices, param_config.get("choices", [])
-                    value = np.random.choice(choices)
+                    choices = param_config.get("choices", [])
+                    value = np.random.choice(choices) if choices else None
+                else:
+                    value = None
 
                 params[param_name] = value
 
@@ -392,50 +391,48 @@ class EfficiencyOptimizer:
             return {}
 
     def _perturb_parameters(
-        self, base_params: dict[str, Any], search_space: dict[str, Any], ) -> dict[str, Any]:
+        self, base_params: dict[str, Any], search_space: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perturb base parameters to create similar but different parameters."""
         try:
-            perturbed_params = {}
+            perturbed_params: dict[str, Any] = {}
 
             for param_name, base_value in base_params.items():
                 if param_name in search_space:
                     param_config = search_space[param_name]
-                    param_type, param_config.get("type", "float")
+                    param_type = param_config.get("type", "float")
 
                     if param_type == "float":
-                        min_val, param_config.get("min", 0)
-                        max_val, param_config.get("max", 1)
-                        step, param_config.get("step", 0.01)
+                        min_val = float(param_config.get("min", 0))
+                        max_val = float(param_config.get("max", 1))
+                        step = float(param_config.get("step", 0.01))
 
-                        # Add small perturbation
-                        perturbation = np.random.normal(0, step * 2)
-                        perturbed_value = base_value + perturbation
-
-                        # Ensure within bounds and step alignment
+                        perturbation = float(np.random.normal(0, step * 2))
+                        perturbed_value = float(base_value) + perturbation
                         perturbed_value = max(min_val, min(max_val, perturbed_value))
-                        n_steps = int((perturbed_value - min_val) / step)
-                        perturbed_value = min_val + n_steps * step
+                        if step > 0:
+                            n_steps = int(max(1, (perturbed_value - min_val) / step))
+                            perturbed_value = min_val + n_steps * step
+                        value: Any = perturbed_value
 
                     elif param_type == "int":
-                        min_val, param_config.get("min", 0)
-                        max_val, param_config.get("max", 100)
-
-                        # Add small integer perturbation
-                        perturbation = np.random.randint(-2, 3)
-                        perturbed_value = base_value + perturbation
-                        perturbed_value = max(min_val, min(max_val, perturbed_value))
+                        min_val = int(param_config.get("min", 0))
+                        max_val = int(param_config.get("max", 100))
+                        perturbation = int(np.random.randint(-2, 3))
+                        value = max(min_val, min(max_val, int(base_value) + perturbation))
 
                     elif param_type == "categorical":
-                        choices, param_config.get("choices", [])
-                        # 80% chance to keep same value, 20% to change
-                        if np.random.random() < 0.8:
-                            perturbed_value = base_value
+                        choices = param_config.get("choices", [])
+                        if not choices:
+                            value = base_value
+                        elif np.random.random() < 0.8:
+                            value = base_value
                         else:
-                            perturbed_value = np.random.choice(
-                                [c for c in choices if c != base_value]
-                            )
+                            value = np.random.choice([c for c in choices if c != base_value])
+                    else:
+                        value = base_value
 
-                    perturbed_params[param_name] = perturbed_value
+                    perturbed_params[param_name] = value
                 else:
                     perturbed_params[param_name] = base_value
 
@@ -446,7 +443,8 @@ class EfficiencyOptimizer:
             return base_params
 
     async def _process_trials_batch(
-        self, objective_function, params_list: list[dict[str, Any]], batch_name: str, ) -> list[dict[str, Any]]:
+        self, objective_function: Any, params_list: list[dict[str, Any]], batch_name: str,
+    ) -> list[dict[str, Any]]:
         """Process a batch of trials efficiently."""
         try:
             start_time = time.time()
@@ -467,7 +465,7 @@ class EfficiencyOptimizer:
                     futures.append(future)
 
                 # Collect results
-                results = []
+                results: list[dict[str, Any]] = []
                 for future in futures:
                     try:
                         result = future.result(
@@ -499,7 +497,8 @@ class EfficiencyOptimizer:
             return []
 
     def _evaluate_trial(
-        self, objective_function, params: dict[str, Any], trial_index: int, ) -> dict[str, Any]:
+        self, objective_function: Any, params: dict[str, Any], trial_index: int,
+    ) -> dict[str, Any]:
         """Evaluate a single trial with caching."""
         try:
             start_time = time.time()
@@ -508,7 +507,7 @@ class EfficiencyOptimizer:
             cache_key = self._generate_cache_key(params)
             if self.config.enable_caching and cache_key in self.evaluation_cache:
                 self.cache_hits += 1
-                cached_result = self.evaluation_cache[cache_key]
+                cached_result = self.evaluation_cache[cache_key].copy()
                 cached_result["trial_index"] = trial_index
                 cached_result["cached"] = True
                 return cached_result
@@ -533,7 +532,7 @@ class EfficiencyOptimizer:
             result = {
                 "trial_index": trial_index,
                 "params": params,
-                "value": value,
+                "value": float(value) if value is not None else 0.0,
                 "evaluation_time": evaluation_time,
                 "cached": False,
             }
@@ -585,7 +584,7 @@ class EfficiencyOptimizer:
         """Clear old cache entries."""
         try:
             current_time = time.time()
-            keys_to_remove = []
+            keys_to_remove: list[str] = []
 
             for key, result in self.evaluation_cache.items():
                 if "timestamp" in result:
@@ -608,16 +607,16 @@ class EfficiencyOptimizer:
             total_time = time.time() - start_time
 
             if self.trial_times:
-                avg_trial_time = np.mean(self.trial_times)
-                std_trial_time = np.std(self.trial_times)
+                avg_trial_time = float(np.mean(self.trial_times))
+                std_trial_time = float(np.std(self.trial_times))
             else:
-                avg_trial_time = 0
-                std_trial_time = 0
+                avg_trial_time = 0.0
+                std_trial_time = 0.0
 
             cache_hit_rate = (
                 self.cache_hits / (self.cache_hits + self.cache_misses)
                 if (self.cache_hits + self.cache_misses) > 0
-                else 0
+                else 0.0
             )
 
             return {
@@ -645,12 +644,12 @@ class EfficiencyOptimizer:
             total_trial_time = sum(self.trial_times)
             sequential_time = total_trial_time
 
-            # Actual parallel time
-            parallel_time = max(self.trial_times) if self.trial_times else 0
+            # Actual parallel time (approx by max per-batch time)
+            parallel_time = max(self.trial_times) if self.trial_times else 0.0
 
             if parallel_time > 0:
-                efficiency = sequential_time / (parallel_time * self.max_workers)
-                return min(1.0, efficiency)
+                efficiency = sequential_time / (parallel_time * max(1, self.max_workers))
+                return float(min(1.0, efficiency))
             return 0.0
 
         except Exception as e:
@@ -664,7 +663,7 @@ class EfficiencyOptimizer:
 
             process = psutil.Process()
             memory_info = process.memory_info()
-            return memory_info.rss / 1024 / 1024  # Convert to MB
+            return float(memory_info.rss) / 1024 / 1024  # Convert to MB
         except ImportError:
             return 0.0
         except Exception as e:
@@ -737,6 +736,7 @@ class EfficiencyOptimizer:
             self.logger.exception(f"Error during cleanup: {e}")
 
 
+
 def create_efficiency_optimizer(config: EfficiencyConfig) -> EfficiencyOptimizer:
     """Create an efficiency optimizer instance."""
     return EfficiencyOptimizer(config)
@@ -757,9 +757,10 @@ if __name__ == "__main__":
     optimizer = create_efficiency_optimizer(config)
 
     # Test objective function
-    def test_objective(params):
+    def test_objective(params: dict[str, Any]) -> float:
         time.sleep(0.1)  # Simulate computation
-        return sum(params.values()) + np.random.normal(0, 0.1)
+        values = [v for v in params.values() if isinstance(v, (int, float))]
+        return float(sum(values) + np.random.normal(0, 0.1))
 
     # Test search space
     search_space = {
@@ -770,7 +771,7 @@ if __name__ == "__main__":
     }
 
     # Run optimization
-    import asyncio
+    import asyncio as _asyncio
 
     async def test() -> None:
         await optimizer.initialize()
@@ -778,8 +779,8 @@ if __name__ == "__main__":
             test_objective,
             search_space,
             n_trials=50,
-            timeout_seconds=60
+            timeout_seconds=60,
         )
         await optimizer.cleanup()
 
-    asyncio.run(test())
+    _asyncio.run(test())

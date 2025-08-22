@@ -3,66 +3,93 @@
 Enhanced Optuna Optimizer with Advanced Performance Optimizations
 
 This module provides an enhanced version of the Optuna optimizer with:
-    pass
 - Vectorized operations using NumPy and Pandas
-- Matrix operations for batch processing
 - Intelligent caching for repeated computations
-- GPU acceleration where available
+- Optional GPU acceleration (CuPy) where available
+- Optional JIT compilation for critical functions (Numba)
 - Memory optimization and garbage collection
-- Parallel processing optimizations
-- JIT compilation for critical functions
-- Advanced data structures for efficiency
-
-Key Optimizations:
-    pass
-1. Vectorization: Replace loops with vectorized operations
-2. Matrix Operations: Batch process multiple trials
-3. Caching: Cache expensive computations
-4. GPU Acceleration: Use GPU for matrix operations
-5. Memory Management: Optimize memory usage
-6. JIT Compilation: Compile critical functions
-7. Parallel Processing: Optimize parallel execution
-8. Data Structures: Use efficient data structures
+- Batch processing support
+- Comprehensive type hints and robust error-handling decorators
 """
 
-import asyncio
+from __future__ import annotations
+
 import logging
 import time
 import warnings
+from dataclasses import dataclass, field
+from functools import lru_cache
+from typing import Any, Callable, Optional
 
 import numpy as np
 import optuna
 import pandas as pd
-import xgboost as xgb
-from catboost import CatBoostClassifier
-from dataclasses import dataclass
-from functools import lru_cache
-from numba import jit, prange
 from optuna.pruners import HyperbandPruner
 from optuna.samplers import TPESampler
-from scipy import sparse
-from scipy.sparse.linalg import spsolve
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import StratifiedKFold, TimeSeriesSplit
 
+# Optional dependencies
 try:
-    import psutil
-except Exception:
-    psutil = None
-
-try:
-    import cupy as cp  # Optional GPU arrays
-except Exception:
-    cp = None
+    import lightgbm as lgb  # type: ignore
+except Exception:  # pragma: no cover - optional
+    lgb = None  # type: ignore
 
 try:
-    import gc
-except Exception:
-    gc = None
+    import xgboost as xgb  # type: ignore
+except Exception:  # pragma: no cover - optional
+    xgb = None  # type: ignore
 
-from src.config_optuna import SROptimizationParameters, validate_sr_optimization_config
-from src.utils.logger import setup_logging
+try:
+    from catboost import CatBoostClassifier  # type: ignore
+except Exception:  # pragma: no cover - optional
+    CatBoostClassifier = None  # type: ignore
 
+try:
+    from numba import jit, prange  # type: ignore
+    NUMBA_AVAILABLE = True
+except Exception:  # pragma: no cover - optional
+    NUMBA_AVAILABLE = False
+
+try:
+    import cupy as cp  # type: ignore
+    GPU_AVAILABLE = True
+except Exception:  # pragma: no cover - optional
+    cp = None  # type: ignore
+    GPU_AVAILABLE = False
+
+try:
+    import gc  # type: ignore
+except Exception:  # pragma: no cover - optional
+    gc = None  # type: ignore
+
+try:
+    import psutil  # type: ignore
+except Exception:  # pragma: no cover - optional
+    psutil = None  # type: ignore
+
+from src.config_optuna import (
+    SROptimizationParameters,
+    validate_sr_optimization_config,
+)
+from src.utils.error_handler import (
+    handle_errors,
+    handle_data_processing_errors,
+    handle_type_conversions,
+)
+
+
+@dataclass
+class OptimizationCache:
+    """Cache for expensive computations during optimization."""
+
+    feature_cache: dict[str, np.ndarray] = field(default_factory=dict)
+    model_cache: dict[str, Any] = field(default_factory=dict)
+    data_cache: dict[str, tuple[np.ndarray, np.ndarray]] = field(default_factory=dict)
+    parameter_cache: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+
+@dataclass
 class VectorizedOptimizationResult:
     """Enhanced result with vectorized computations."""
 
@@ -76,7 +103,7 @@ class VectorizedOptimizationResult:
     # Vectorized results
     vectorized_scores: np.ndarray
     batch_performance: np.ndarray
-    parameter_sensitivity: np.ndarray
+    parameter_sensitivity: Optional[np.ndarray]
 
     # Performance metrics
     computation_time: float
@@ -89,6 +116,7 @@ class VectorizedOptimizationResult:
     n_trials: int
     study_name: str
 
+
 class VectorizedOptunaOptimizer:
     """
     Enhanced Optuna optimizer with advanced performance optimizations.
@@ -96,41 +124,29 @@ class VectorizedOptunaOptimizer:
     Key Features:
     - Vectorized operations for faster computation
     - Intelligent caching for repeated operations
-    - GPU acceleration for matrix operations
-    - JIT compilation for critical functions
+    - GPU acceleration for matrix operations (optional)
+    - JIT compilation for critical functions (optional)
     - Memory optimization and garbage collection
     - Batch processing for multiple trials
-    - Advanced data structures for efficiency
     """
 
     def __init__(
         self,
         storage_url: str = "sqlite:///vectorized_optuna_studies.db",
         study_name_prefix: str = "vectorized_optimization",
-        config: dict[str, Any] | None = None,
+        config: Optional[dict[str, Any]] = None,
         enable_gpu: bool = True,
         enable_jit: bool = True,
         cache_size: int = 1000,
-    ):
-        """
-        Initialize the vectorized optimizer.
-
-        Args:
-            storage_url: Database URL for study persistence
-            study_name_prefix: Prefix for study names
-            config: Configuration dictionary
-            enable_gpu: Enable GPU acceleration
-            enable_jit: Enable JIT compilation
-            cache_size: Maximum cache size
-        """
+    ) -> None:
         self.storage_url = storage_url
         self.study_name_prefix = study_name_prefix
         self.config = config or {}
         self.logger = logging.getLogger(__name__)
 
         # Performance optimization settings
-        self.enable_gpu = enable_gpu and cp is not None
-        self.enable_jit = enable_jit and jit is not None
+        self.enable_gpu = enable_gpu and GPU_AVAILABLE
+        self.enable_jit = enable_jit and NUMBA_AVAILABLE
         self.cache_size = cache_size
 
         # Initialize cache
@@ -146,13 +162,11 @@ class VectorizedOptunaOptimizer:
 
         # Validate S/R configuration
         if not validate_sr_optimization_config(self.sr_config):
-            self.logger.warning(
-                "Invalid S/R optimization configuration, using defaults",
-            )
+            self.logger.warning("Invalid S/R optimization configuration, using defaults")
             self.sr_config = SROptimizationParameters()
 
         # Overfitting prevention settings
-        self.overfitting_prevention = {
+        self.overfitting_prevention: dict[str, Any] = {
             "max_overfitting_threshold": 0.1,
             "min_validation_score": 0.5,
             "regularization_penalty": 0.1,
@@ -167,7 +181,7 @@ class VectorizedOptunaOptimizer:
         self._model_configs = self._get_model_configurations()
 
         # Performance monitoring
-        self.performance_metrics = {
+        self.performance_metrics: dict[str, Any] = {
             "cache_hits": 0,
             "cache_misses": 0,
             "gpu_operations": 0,
@@ -175,14 +189,11 @@ class VectorizedOptunaOptimizer:
             "memory_usage": [],
         }
 
-        self.logger.info("🚀 Vectorized Optuna Optimizer initialized")
-        self.logger.info(f"   GPU Acceleration: {'✅' if self.enable_gpu else '❌'}")
-        self.logger.info(f"   JIT Compilation: {'✅' if self.enable_jit else '❌'}")
-        self.logger.info(f"   Cache Size: {self.cache_size}")
+        warnings.filterwarnings("ignore")
 
-    def _get_model_configurations(self) -> dict[str , dict[str, Any]]:
+    def _get_model_configurations(self) -> dict[str, dict[str, Any]]:
         """Get model configurations with vectorized support."""
-        return {
+        configs: dict[str, dict[str, Any]] = {
             # Traditional ML Models
             "random_forest": {
                 "model": RandomForestClassifier,
@@ -190,36 +201,50 @@ class VectorizedOptunaOptimizer:
                 "optimization_type": "ml_model",
                 "vectorized": True,
             },
-            "lightgbm": {
+        }
+        if lgb is not None:
+            configs["lightgbm"] = {
                 "model": lgb.LGBMClassifier,
                 "space": self._get_lgbm_space,
                 "optimization_type": "ml_model",
                 "vectorized": True,
-            },
-            "xgboost": {
+            }
+        if xgb is not None:
+            configs["xgboost"] = {
                 "model": xgb.XGBClassifier,
                 "space": self._get_xgb_space,
                 "optimization_type": "ml_model",
                 "vectorized": True,
-            },
-            "catboost": {
+            }
+        if CatBoostClassifier is not None:
+            configs["catboost"] = {
                 "model": CatBoostClassifier,
                 "space": self._get_cb_space,
                 "optimization_type": "ml_model",
                 "vectorized": True,
-            },
-            # Specialized Optimization Types
-            "sr_parameters": {
-                "model": None,
-                "space": self._get_sr_space,
-                "optimization_type": "sr_parameters",
-            },
+            }
+        # Specialized Optimization Types
+        configs["sr_parameters"] = {
+            "model": None,
+            "space": self._get_sr_space,
+            "optimization_type": "sr_parameters",
         }
+        configs["autoencoder"] = {
+            "model": None,
+            "space": self._get_autoencoder_space,
+            "optimization_type": "autoencoder",
+        }
+        configs["order_execution"] = {
+            "model": None,
+            "space": self._get_order_execution_space,
+            "optimization_type": "order_execution",
+        }
+        return configs
 
-    # Vectorized hyperparameter spaces
-
+    # =====================
+    # Hyperparameter spaces
+    # =====================
     def _get_rf_space(self, trial: optuna.Trial) -> dict[str, Any]:
-        """Vectorized RandomForest hyperparameter space."""
         return {
             "n_estimators": trial.suggest_int("n_estimators", 100, 1000, step=50),
             "max_depth": trial.suggest_int("max_depth", 5, 50),
@@ -231,7 +256,6 @@ class VectorizedOptunaOptimizer:
         }
 
     def _get_lgbm_space(self, trial: optuna.Trial) -> dict[str, Any]:
-        """Vectorized LightGBM hyperparameter space."""
         return {
             "n_estimators": trial.suggest_int("n_estimators", 100, 2000, step=100),
             "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
@@ -245,7 +269,6 @@ class VectorizedOptunaOptimizer:
         }
 
     def _get_xgb_space(self, trial: optuna.Trial) -> dict[str, Any]:
-        """Vectorized XGBoost hyperparameter space."""
         return {
             "n_estimators": trial.suggest_int("n_estimators", 100, 2000, step=100),
             "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
@@ -259,7 +282,6 @@ class VectorizedOptunaOptimizer:
         }
 
     def _get_cb_space(self, trial: optuna.Trial) -> dict[str, Any]:
-        """Vectorized CatBoost hyperparameter space."""
         return {
             "iterations": trial.suggest_int("iterations", 200, 2000, step=100),
             "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
@@ -270,212 +292,453 @@ class VectorizedOptunaOptimizer:
         }
 
     def _get_sr_space(self, trial: optuna.Trial) -> dict[str, Any]:
-        """Vectorized S/R parameter space."""
-        # Vectorized weight generation
-        weights, np.array(
+        # Strength score weights that will be normalized to sum to 1.0
+        weights = np.array(
             [
                 trial.suggest_float("touch_count_weight", 0.1, 0.5),
                 trial.suggest_float("total_volume_weight", 0.1, 0.4),
                 trial.suggest_float("level_age_weight", 0.1, 0.4),
                 trial.suggest_float("bounce_rate_weight", 0.1, 0.4),
                 trial.suggest_float("isolation_score_weight", 0.05, 0.3),
-            ],
+            ]
         )
-
-        # Normalize weights to sum to 1.0
-        weights = weights / weights.sum()
-
+        weights = weights / max(1e-9, weights.sum())
         return {
-        # Strength score weights
-            "touch_count_weight": weights[0],
-            "total_volume_weight": weights[1],
-            "level_age_weight": weights[2],
-            "bounce_rate_weight": weights[3],
-            "isolation_score_weight": weights[4],
-        # Level detection parameters
+            # Strength score weights
+            "touch_count_weight": float(weights[0]),
+            "total_volume_weight": float(weights[1]),
+            "level_age_weight": float(weights[2]),
+            "bounce_rate_weight": float(weights[3]),
+            "isolation_score_weight": float(weights[4]),
+            # Level detection parameters
             "min_touch_count": trial.suggest_int("min_touch_count", 2, 10),
             "min_level_age_hours": trial.suggest_int("min_level_age_hours", 1, 48),
             "price_tolerance_pct": trial.suggest_float("price_tolerance_pct", 0.1, 2.0),
             "volume_threshold": trial.suggest_float("volume_threshold", 0.5, 2.0),
             "strength_threshold": trial.suggest_float("strength_threshold", 0.3, 0.8),
-        # Breakout thresholds
+            # Breakout thresholds
             "breakout_threshold": trial.suggest_float("breakout_threshold", 0.6, 0.9),
             "confirmation_periods": trial.suggest_int("confirmation_periods", 1, 5),
             "volume_confirmation": trial.suggest_float("volume_confirmation", 1.2, 3.0),
             "momentum_threshold": trial.suggest_float("momentum_threshold", 0.1, 0.5),
-            "false_breakout_filter": trial.suggest_float(
-                "false_breakout_filter",
-                0.1,
-                0.3,
-            ),
-        # Zone multipliers
-            "support_zone_multiplier": trial.suggest_float(
-                "support_zone_multiplier",
-                0.8,
-                1.5,
-            ),
-            "resistance_zone_multiplier": trial.suggest_float(
-                "resistance_zone_multiplier",
-                0.8,
-                1.5,
-            ),
+            "false_breakout_filter": trial.suggest_float("false_breakout_filter", 0.1, 0.3),
+            # Zone multipliers
+            "support_zone_multiplier": trial.suggest_float("support_zone_multiplier", 0.8, 1.5),
+            "resistance_zone_multiplier": trial.suggest_float("resistance_zone_multiplier", 0.8, 1.5),
             "sr_zone_threshold": trial.suggest_float("sr_zone_threshold", 0.6, 0.9),
-            "zone_expansion_factor": trial.suggest_float(
-                "zone_expansion_factor",
-                1.0,
-                2.0,
-            ),
-            "zone_contraction_factor": trial.suggest_float(
-                "zone_contraction_factor",
-                0.5,
-                1.0,
-            ),
-        # Confidence thresholds
+            "zone_expansion_factor": trial.suggest_float("zone_expansion_factor", 1.0, 2.0),
+            "zone_contraction_factor": trial.suggest_float("zone_contraction_factor", 0.5, 1.0),
+            # Confidence thresholds
             "min_sr_confidence": trial.suggest_float("min_sr_confidence", 0.5, 0.8),
-            "high_confidence_threshold": trial.suggest_float(
-                "high_confidence_threshold",
-                0.7,
-                0.9,
-            ),
-            "confidence_decay_rate": trial.suggest_float(
-                "confidence_decay_rate",
-                0.1,
-                0.5,
-            ),
-            "regime_confidence_boost": trial.suggest_float(
-                "regime_confidence_boost",
-                0.1,
-                0.3,
-            ),
-            "ensemble_confidence_threshold": trial.suggest_float(
-                "ensemble_confidence_threshold",
-                0.6,
-                0.9,
-            ),
+            "high_confidence_threshold": trial.suggest_float("high_confidence_threshold", 0.7, 0.9),
+            "confidence_decay_rate": trial.suggest_float("confidence_decay_rate", 0.1, 0.5),
+            "regime_confidence_boost": trial.suggest_float("regime_confidence_boost", 0.1, 0.3),
+            "ensemble_confidence_threshold": trial.suggest_float("ensemble_confidence_threshold", 0.6, 0.9),
         }
 
     def _get_autoencoder_space(self, trial: optuna.Trial) -> dict[str, Any]:
-        """Vectorized autoencoder hyperparameter space."""
         return {
-        # Architecture parameters
+            # Architecture parameters
             "hidden_dim": trial.suggest_int("hidden_dim", 32, 128, step=16),
             "latent_dim": trial.suggest_int("latent_dim", 8, 32, step=4),
             "num_layers": trial.suggest_int("num_layers", 2, 4),
-        # Training parameters
+            # Training parameters
             "learning_rate": trial.suggest_float("learning_rate", 1e-4, 1e-2, log=True),
             "batch_size": trial.suggest_categorical("batch_size", [16, 32, 64, 128]),
             "epochs": trial.suggest_int("epochs", 50, 200, step=25),
-        # Regularization parameters
+            # Regularization parameters
             "dropout_rate": trial.suggest_float("dropout_rate", 0.1, 0.5),
             "l2_reg": trial.suggest_float("l2_reg", 1e-6, 1e-3, log=True),
-        # Loss function parameters
-            "reconstruction_weight": trial.suggest_float(
-                "reconstruction_weight",
-                0.5,
-                1.0,
-            ),
+            # Loss function parameters
+            "reconstruction_weight": trial.suggest_float("reconstruction_weight", 0.5, 1.0),
             "kl_weight": trial.suggest_float("kl_weight", 0.01, 0.1),
-        # Feature selection parameters
-            "feature_selection_threshold": trial.suggest_float(
-                "feature_selection_threshold",
-                0.01,
-                0.1,
-            ),
+            # Feature selection parameters
+            "feature_selection_threshold": trial.suggest_float("feature_selection_threshold", 0.01, 0.1),
             "max_features": trial.suggest_int("max_features", 50, 200, step=25),
         }
 
     def _get_order_execution_space(self, trial: optuna.Trial) -> dict[str, Any]:
-        """Vectorized order execution hyperparameter space."""
         return {
-        # Execution parameters
+            # Execution parameters
             "max_order_retries": trial.suggest_int("max_order_retries", 2, 5),
-            "order_timeout_seconds": trial.suggest_int(
-                "order_timeout_seconds",
-                15,
-                60,
-                step=5
-            ),
-            "slippage_tolerance": trial.suggest_float(
-                "slippage_tolerance",
-                0.0005,
-                0.002,
-            ),
-        # Volume and momentum thresholds
+            "order_timeout_seconds": trial.suggest_int("order_timeout_seconds", 15, 60, step=5),
+            "slippage_tolerance": trial.suggest_float("slippage_tolerance", 0.0005, 0.002),
+            # Volume and momentum thresholds
             "volume_threshold": trial.suggest_float("volume_threshold", 1.2, 2.0),
             "momentum_threshold": trial.suggest_float("momentum_threshold", 0.01, 0.05),
-        # Execution strategy parameters
-            "immediate_max_slippage": trial.suggest_float(
-                "immediate_max_slippage",
-                0.0005,
-                0.002,
-            ),
-            "immediate_timeout_seconds": trial.suggest_int(
-                "immediate_timeout_seconds",
-                15,
-                45,
-                step=5
-            ),
-        # Batch execution parameters
+            # Execution strategy parameters
+            "immediate_max_slippage": trial.suggest_float("immediate_max_slippage", 0.0005, 0.002),
+            "immediate_timeout_seconds": trial.suggest_int("immediate_timeout_seconds", 15, 45, step=5),
+            # Batch execution parameters
             "batch_size": trial.suggest_float("batch_size", 0.05, 0.2),
             "batch_interval": trial.suggest_int("batch_interval", 3, 10),
-        # TWAP parameters
+            # TWAP parameters
             "twap_duration_minutes": trial.suggest_int("twap_duration_minutes", 5, 20),
             "twap_intervals": trial.suggest_int("twap_intervals", 10, 30, step=5),
-        # VWAP parameters
-            "vwap_volume_threshold": trial.suggest_float(
-                "vwap_volume_threshold",
-                1.2,
-                2.0,
-            ),
-            "vwap_price_deviation": trial.suggest_float(
-                "vwap_price_deviation",
-                0.001,
-                0.005,
-            ),
-        # Risk management parameters
+            # VWAP parameters
+            "vwap_volume_threshold": trial.suggest_float("vwap_volume_threshold", 1.2, 2.0),
+            "vwap_price_deviation": trial.suggest_float("vwap_price_deviation", 0.001, 0.005),
+            # Risk management parameters
             "max_order_size": trial.suggest_float("max_order_size", 0.1, 0.5),
             "max_daily_orders": trial.suggest_int("max_daily_orders", 50, 200, step=25),
             "max_concurrent_orders": trial.suggest_int("max_concurrent_orders", 5, 15),
         }
 
-    # Vectorized computation functions
-    @lru_cache(maxsize=1000)
+    # ============================
+    # Vectorized helper functions
+    # ============================
+    @lru_cache(maxsize=1024)
+    @handle_errors(exceptions=(Exception,), default_return=(None, None, None, None, None, None), context="vectorized_data_preparation")
     def _vectorized_data_preparation(
-        self, data_hash: str,
-    ) -> tuple[np.ndarray | None, np.ndarray | None, np.ndarray | None, np.ndarray | None, np.ndarray | None, np.ndarray | None]:
-        """Vectorized data preparation with caching."""
+        self,
+        data_hash: str,
+    ) -> tuple[
+        Optional[np.ndarray],
+        Optional[np.ndarray],
+        Optional[np.ndarray],
+        Optional[np.ndarray],
+        Optional[np.ndarray],
+        Optional[np.ndarray],
+    ]:
+        # Placeholder: in a full system, this would build and cache preprocessed arrays
         if data_hash in self.cache.data_cache:
             self.performance_metrics["cache_hits"] += 1
-            return self.cache.data_cache[data_hash]
-
+            X, y = self.cache.data_cache[data_hash]
+            return X, y, None, None, None, None
         self.performance_metrics["cache_misses"] += 1
-        # Implementation would be here
         return None, None, None, None, None, None
 
-    def _vectorized_feature_generation(
-        self, X: np.ndarray, params: dict[str, Any],
-    ) -> np.ndarray:
-        """Vectorized feature generation using matrix operations."""
-        try:
-            pass
-        except Exception as e:
-            pass
+    @handle_data_processing_errors(default_return=np.array([]), context="vectorized_feature_generation")
+    def _vectorized_feature_generation(self, X: np.ndarray, params: dict[str, Any]) -> np.ndarray:
         # Convert to GPU if available
         if self.enable_gpu and cp is not None:
-            X = cp.asarray(X)
-        return X
+            X_gpu = cp.asarray(X)
+            self.performance_metrics["gpu_operations"] += 1
+            # Simple pass-through for demo purposes
+            return cp.asnumpy(X_gpu)
+        return np.asarray(X)
 
-    @staticmethod
-    @jit(nopython=True, parallel=True) if jit is not None else lambda x: x
-    def _vectorized_signal_calculation(
-        strength_scores: np.ndarray, min_confidence: float, high_confidence: float = 0.9
-    ) -> np.ndarray:
-        """JIT-compiled vectorized signal calculation."""
+    def _vectorized_signal_calculation(self, strength_scores: np.ndarray, min_confidence: float, high_confidence: float = 0.9) -> np.ndarray:
+        if self.enable_jit and NUMBA_AVAILABLE:
+            return _jit_signal_calc(strength_scores, min_confidence, high_confidence)
+        scores = np.asarray(strength_scores)
+        signals = np.zeros_like(scores)
+        signals[scores > high_confidence] = 1.0
+        signals[scores < -high_confidence] = -1.0
+        mask_wl = (scores > min_confidence) & (scores <= high_confidence)
+        mask_ws = (scores < -min_confidence) & (scores >= -high_confidence)
+        signals[mask_wl] = 0.5
+        signals[mask_ws] = -0.5
+        return signals
+
+    @handle_type_conversions(default_return={})
+    def _vectorized_performance_calculation(self, signals: np.ndarray, returns: np.ndarray) -> dict[str, float]:
+        signals = np.asarray(signals)
+        returns = np.asarray(returns)
+        if signals.ndim != 1:
+            signals = signals.ravel()
+        if returns.ndim != 1:
+            returns = returns.ravel()
+        n = min(signals.shape[0], returns.shape[0])
+        if n == 0:
+            return {"sharpe_ratio": 0.0, "win_rate": 0.0, "profit_factor": 0.0, "max_drawdown": 0.0}
+        strategy_returns = signals[:n] * returns[:n]
+        sharpe_ratio = float(strategy_returns.mean() / (strategy_returns.std() + 1e-8))
+        win_rate = float((strategy_returns > 0).mean())
+        positive_returns = float(strategy_returns[strategy_returns > 0].sum())
+        negative_returns = float(np.abs(strategy_returns[strategy_returns < 0]).sum())
+        profit_factor = positive_returns / (negative_returns + 1e-8)
+        cumulative_returns = np.cumprod(1 + strategy_returns)
+        running_max = np.maximum.accumulate(cumulative_returns)
+        drawdown = (cumulative_returns - running_max) / (running_max + 1e-12)
+        max_drawdown = float(drawdown.min())
+        return {
+            "sharpe_ratio": sharpe_ratio,
+            "win_rate": win_rate,
+            "profit_factor": profit_factor,
+            "max_drawdown": max_drawdown,
+        }
+
+    @handle_errors(exceptions=(Exception,), default_return=np.array([]), context="batch_evaluate_trials")
+    def _batch_evaluate_trials(self, trials: list[optuna.Trial], X: np.ndarray, y: np.ndarray) -> np.ndarray:
+        batch_scores = np.zeros(len(trials))
+        X_batch = cp.asarray(X) if (self.enable_gpu and cp is not None) else X
+        y_batch = cp.asarray(y) if (self.enable_gpu and cp is not None) else y
+        for i, trial in enumerate(trials):
+            params = self._get_sr_space(trial)
+            features = self._vectorized_feature_generation(X_batch if not isinstance(X_batch, np.ndarray) else X_batch, params)
+            if self.enable_gpu and cp is not None and hasattr(features, "get"):
+                features = cp.asnumpy(features)
+            strength_scores = features.mean(axis=1) if features.ndim == 2 else features
+            signals = self._vectorized_signal_calculation(
+                strength_scores=strength_scores,
+                min_confidence=params.get("min_sr_confidence", 0.6),
+                high_confidence=params.get("high_confidence_threshold", 0.8),
+            )
+            perf = self._vectorized_performance_calculation(signals, y_batch if isinstance(y_batch, np.ndarray) else y)
+            batch_scores[i] = float(0.4 * perf["sharpe_ratio"] + 0.3 * perf["win_rate"] + 0.3 * perf["profit_factor"])  # noqa: E501
+        return batch_scores
+
+    # ======================
+    # Public optimization API
+    # ======================
+    def optimize(
+        self,
+        model_type: str,
+        X: pd.DataFrame,
+        y: pd.Series,
+        n_trials: int = 100,
+        n_jobs: int = -1,
+        cv_folds: int = 5,
+        early_stopping_patience: int = 15,
+        subsample_fraction: float = 0.7,
+        custom_objective: Optional[Callable[[optuna.Trial, np.ndarray, np.ndarray], float]] = None,
+        custom_space: Optional[Callable[[optuna.Trial], dict[str, Any]]] = None,
+        batch_size: int = 10,
+    ) -> VectorizedOptimizationResult:
+        start_time = time.time()
+        initial_memory = self._get_memory_usage()
+
+        # Convert to numpy arrays for vectorized operations
+        X_np = X.values if isinstance(X, pd.DataFrame) else np.array(X)
+        y_np = y.values if isinstance(y, pd.Series) else np.array(y)
+
+        # Create study
+        study_name = f"{self.study_name_prefix}_{model_type}"
+        pruner = HyperbandPruner(min_resource=1, max_resource=max(1, n_trials))
+        sampler = TPESampler(seed=42)
+        study = optuna.create_study(
+            storage=self.storage_url,
+            study_name=study_name,
+            direction="maximize",
+            pruner=pruner,
+            sampler=sampler,
+            load_if_exists=True,
+        )
+
+        def objective(trial: optuna.Trial) -> float:
+            # Custom objective takes precedence
+            if custom_objective is not None:
+                return float(custom_objective(trial, X_np, y_np))
+
+            # Dispatch by model_type
+            if model_type == "sr_parameters":
+                return float(self._evaluate_sr_parameters_vectorized(trial, X_np, y_np))
+            if model_type == "autoencoder":
+                return float(self._evaluate_autoencoder_vectorized(trial, X_np, y_np))
+            if model_type == "order_execution":
+                return float(self._evaluate_order_execution_vectorized(trial, X_np, y_np))
+
+            # Traditional ML model optimization
+            if model_type in self._model_configs:
+                return float(
+                    self._evaluate_ml_model_vectorized(
+                        trial=trial,
+                        model_type=model_type,
+                        X=X_np,
+                        y=y_np,
+                        cv_folds=cv_folds,
+                        subsample_fraction=subsample_fraction,
+                    ),
+                )
+
+            raise ValueError(f"Unsupported model_type: {model_type}")
+
+        callbacks: list[Any] = []
+        if early_stopping_patience and early_stopping_patience > 0:
+            callbacks.append(
+                optuna.callbacks.EarlyStoppingCallback(
+                    stopping_criteria=early_stopping_patience,
+                    direction="maximize",
+                ),
+            )
+
+        # Run optimization
+        study.optimize(objective, n_trials=n_trials, n_jobs=n_jobs, callbacks=callbacks)
+
+        # Calculate performance metrics
+        optimization_time = time.time() - start_time
+        final_memory = self._get_memory_usage()
+        memory_usage = max(0.0, final_memory - initial_memory)
+        cache_hit_rate = self.performance_metrics["cache_hits"] / (
+            self.performance_metrics["cache_hits"] + self.performance_metrics["cache_misses"] + 1e-8
+        )
+
+        # Create enhanced result
+        scores = np.array([t.value for t in study.trials if t.value is not None])
+        result = VectorizedOptimizationResult(
+            train_score=0.0,  # Could be calculated via CV/training hooks
+            validation_score=float(study.best_value) if study.best_trial else 0.0,
+            test_score=0.0,
+            overfitting_score=0.0,
+            generalization_gap=0.0,
+            vectorized_scores=scores,
+            batch_performance=scores,
+            parameter_sensitivity=None,
+            computation_time=optimization_time,
+            memory_usage=memory_usage,
+            cache_hit_rate=cache_hit_rate,
+            best_params=study.best_params if study.best_trial else {},
+            optimization_time=optimization_time,
+            n_trials=len(study.trials),
+            study_name=study_name,
+        )
+
+        # Clean up memory
+        self._cleanup_memory()
+
+        return result
+
+    # =========================
+    # Evaluation implementations
+    # =========================
+    @handle_type_conversions(default_return=0.0)
+    def _evaluate_sr_parameters_vectorized(self, trial: optuna.Trial, X: np.ndarray, y: np.ndarray) -> float:
+        params = self._get_sr_space(trial)
+        features = self._vectorized_feature_generation(X, params)
+        strength_scores = features.mean(axis=1) if features.ndim == 2 else features
+        signals = self._vectorized_signal_calculation(
+            strength_scores=strength_scores,
+            min_confidence=params.get("min_sr_confidence", 0.6),
+            high_confidence=params.get("high_confidence_threshold", 0.8),
+        )
+        perf = self._vectorized_performance_calculation(signals, y)
+        score = 0.4 * perf["sharpe_ratio"] + 0.3 * perf["win_rate"] + 0.3 * perf["profit_factor"]
+        return float(max(0.0, score))
+
+    @handle_type_conversions(default_return=float("-inf"))
+    def _evaluate_autoencoder_vectorized(self, trial: optuna.Trial, X: np.ndarray, y: np.ndarray) -> float:
+        params = self._get_autoencoder_space(trial)
+        complexity_factor = (
+            params.get("hidden_dim", 64) * params.get("num_layers", 2) / max(1, params.get("latent_dim", 16))
+        )
+        regularization_factor = params.get("dropout_rate", 0.2) + params.get("l2_reg", 1e-4) * 1000
+        base_loss = 0.1 + float(np.random.normal(0, 0.01))
+        loss = base_loss * (1 + complexity_factor * 0.01) * (1 + regularization_factor * 0.1)
+        return float(-max(0.01, loss))
+
+    @handle_type_conversions(default_return=0.5)
+    def _evaluate_order_execution_vectorized(self, trial: optuna.Trial, X: np.ndarray, y: np.ndarray) -> float:
+        params = self._get_order_execution_space(trial)
+        base_success_rate = 0.8
+        timeout_factor = min(1.0, params.get("order_timeout_seconds", 30) / 60)
+        slippage_factor = min(1.0, params.get("slippage_tolerance", 0.001) / 0.002)
+        volume_factor = min(1.0, params.get("volume_threshold", 1.5) / 2.0)
+        success_rate = base_success_rate * timeout_factor * slippage_factor * volume_factor
+        success_rate += float(np.random.normal(0, 0.05))
+        return float(max(0.0, min(1.0, success_rate)))
+
+    @handle_errors(exceptions=(Exception,), default_return=0.0, context="evaluate_ml_model_vectorized")
+    def _evaluate_ml_model_vectorized(
+        self,
+        trial: optuna.Trial,
+        model_type: str,
+        X: np.ndarray,
+        y: np.ndarray,
+        cv_folds: int,
+        subsample_fraction: float = 1.0,
+    ) -> float:
+        config = self._model_configs[model_type]
+        params = config["space"](trial)
+        model_cls = config["model"]
+        if model_cls is None:
+            return 0.0
+
+        # Subsample if requested
+        if subsample_fraction < 1.0:
+            n = int(X.shape[0] * max(0.1, subsample_fraction))
+            X = X[:n]
+            y = y[:n]
+
+        model = model_cls(**params)
+
+        # Cross-validation
+        if self.overfitting_prevention.get("time_series_split", True):
+            cv = TimeSeriesSplit(n_splits=cv_folds)
+        else:
+            cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=42)
+
+        scores: list[float] = []
+        for train_idx, val_idx in cv.split(X, y):
+            X_train, X_val = X[train_idx], X[val_idx]
+            y_train, y_val = y[train_idx], y[val_idx]
+            model.fit(X_train, y_train)
+            scores.append(float(model.score(X_val, y_val)))
+
+        return float(np.mean(scores)) if scores else 0.0
+
+    # =============
+    # Housekeeping
+    # =============
+    def _get_memory_usage(self) -> float:
+        try:
+            if psutil is None:
+                return 0.0
+            process = psutil.Process()
+            return float(process.memory_info().rss) / 1024 / 1024
+        except Exception:
+            return 0.0
+
+    def _cleanup_memory(self) -> None:
+        # Trim feature cache to cache_size
+        if len(self.cache.feature_cache) > self.cache_size:
+            keys = list(self.cache.feature_cache.keys())
+            keys_to_remove = keys[: max(0, len(keys) - self.cache_size)]
+            for k in keys_to_remove:
+                self.cache.feature_cache.pop(k, None)
+        # Force garbage collection
+        if gc is not None:
+            try:
+                gc.collect()
+            except Exception:
+                pass
+        # Clear GPU memory if available
+        if self.enable_gpu and cp is not None:
+            try:
+                cp.get_default_memory_pool().free_all_blocks()
+            except Exception:
+                pass
+
+    def get_performance_metrics(self) -> dict[str, Any]:
+        hits = self.performance_metrics.get("cache_hits", 0)
+        misses = self.performance_metrics.get("cache_misses", 0)
+        return {
+            "cache_hits": hits,
+            "cache_misses": misses,
+            "cache_hit_rate": hits / (hits + misses + 1e-8),
+            "gpu_operations": self.performance_metrics.get("gpu_operations", 0),
+            "jit_compilations": self.performance_metrics.get("jit_compilations", 0),
+            "memory_usage": self.performance_metrics.get("memory_usage", []),
+            "enable_gpu": self.enable_gpu,
+            "enable_jit": self.enable_jit,
+        }
+
+
+# Convenience factory
+
+def create_vectorized_optimizer(
+    storage_url: str = "sqlite:///vectorized_optuna_studies.db",
+    enable_gpu: bool = True,
+    enable_jit: bool = True,
+    cache_size: int = 1000,
+) -> VectorizedOptunaOptimizer:
+    return VectorizedOptunaOptimizer(
+        storage_url=storage_url,
+        study_name_prefix="vectorized_optimization",
+        config={},
+        enable_gpu=enable_gpu,
+        enable_jit=enable_jit,
+        cache_size=cache_size,
+    )
+
+
+# JIT function lives at module level for numba
+if NUMBA_AVAILABLE:
+    @jit(nopython=True, parallel=True)  # type: ignore[misc]
+    def _jit_signal_calc(strength_scores: np.ndarray, min_confidence: float, high_confidence: float) -> np.ndarray:  # noqa: E501
         signals = np.zeros_like(strength_scores)
-
         for i in prange(len(strength_scores)):
             score = strength_scores[i]
-
             if score > high_confidence:
                 signals[i] = 1.0
             elif score < -high_confidence:
@@ -484,488 +747,15 @@ class VectorizedOptunaOptimizer:
                 signals[i] = 0.5
             elif score < -min_confidence:
                 signals[i] = -0.5
-
         return signals
-
-    def _vectorized_performance_calculation(
-        self, signals: np.ndarray, returns: np.ndarray,
-    ) -> dict[str, float]:
-        """Vectorized performance calculation."""
-        # Vectorized strategy returns
-        strategy_returns = signals * returns
-
-        # Vectorized Sharpe ratio
-        sharpe_ratio = np.mean(strategy_returns) / (np.std(strategy_returns) + 1e-8)
-
-        # Vectorized win rate
-        win_rate = np.mean(strategy_returns > 0)
-
-        # Vectorized profit factor
-        positive_returns = np.sum(strategy_returns[strategy_returns > 0])
-        negative_returns = np.sum(np.abs(strategy_returns[strategy_returns < 0]))
-        profit_factor = positive_returns / (negative_returns + 1e-8)
-
-        # Vectorized maximum drawdown
-        cumulative_returns = np.cumprod(1 + strategy_returns)
-        running_max = np.maximum.accumulate(cumulative_returns)
-        drawdown = (cumulative_returns - running_max) / running_max
-        max_drawdown = np.min(drawdown)
-
-        return {
-            "sharpe_ratio": float(sharpe_ratio),
-            "win_rate": float(win_rate),
-            "profit_factor": float(profit_factor),
-            "max_drawdown": float(max_drawdown),
-        }
-
-    def _batch_evaluate_trials(
-        self, trials: list[optuna.Trial], X: np.ndarray, y: np.ndarray,
-    ) -> np.ndarray:
-        """Batch evaluate multiple trials for efficiency."""
-        batch_size = len(trials)
-        batch_scores = np.zeros(batch_size)
-
-        # Prepare batch data
-        if self.enable_gpu and cp is not None:
-            X_batch = cp.asarray(X)
-            y_batch = cp.asarray(y)
-        else:
-            X_batch = X
-            y_batch = y
-
-        # Batch process trials
-        for i, trial in enumerate(trials):
-            # Get parameters for this trial
-            params = self._get_sr_space(trial)
-            # Vectorized feature generation
-            features = self._vectorized_feature_generation(X_batch, params)
-            # Convert back to CPU if needed
-            if self.enable_gpu and cp is not None and hasattr(features, "get"):
-                features = cp.asnumpy(features)
-
-            # Simple score proxy: mean of features
-            score = float(np.mean(features)) if features is not None else 0.0
-            batch_scores[i] = score
-
-        return batch_scores
-
-    def optimize(
-        self, model_type: str, X: pd.DataFrame, y: pd.Series, n_trials: int = 100, n_jobs: int = -1, cv_folds: int = 5, early_stopping_patience: int = 15, subsample_fraction: float = 0.7, custom_objective: callable | None = None, custom_space: callable | None = None, batch_size: int = 10
-    ) -> VectorizedOptimizationResult:
-        """
-        Optimized optimization with vectorized operations and caching.
-
-        Args:
-            model_type: Type of optimization
-            X: Feature matrix
-            y: Target variable
-            n_trials: Number of trials
-            n_jobs: Number of parallel jobs
-            cv_folds: Cross-validation folds
-            early_stopping_patience: Early stopping patience
-            subsample_fraction: Data subsampling fraction
-            custom_objective: Custom objective function
-            custom_space: Custom parameter space
-            batch_size: Batch size for vectorized operations
-
-        Returns:
-            VectorizedOptimizationResult with enhanced metrics
-        """
-        start_time = time.time()
-        initial_memory = self._get_memory_usage()
-
-        try:
-            pass
-        except Exception as e:
-            pass
-        try:
-            pass
-        except Exception as e:
-            pass
-        try:
-            pass
-        except Exception as e:
-            pass
-        # Convert to numpy arrays for vectorized operations
-        X_np = X.values if isinstance(X, pd.DataFrame) else np.array(X)
-        y_np = y.values if isinstance(y, pd.Series) else np.array(y)
-
-        # Create study
-        study_name = f"{self.study_name_prefix}_{model_type}"
-        study = optuna.create_study(
-            storage=self.storage_url,
-            study_name=study_name,
-            direction="maximize",
-            pruner=HyperbandPruner(min_resource=1, max_resource=n_trials),
-            sampler=TPESampler(seed=42),
-            load_if_exists=True,
-        )
-
-        # Vectorized objective function
-        def vectorized_objective(trial: optuna.Trial) -> float:
-            if custom_objective:
-                return float(custom_objective(trial, X_np, y_np))
-            # Default: simple SR evaluation proxy
-            params = (custom_space(trial) if custom_space else self._get_sr_space(trial))
-            features = self._vectorized_feature_generation(X_np, params)
-            strength_scores = features if isinstance(features, np.ndarray) else np.zeros(len(X_np))
-            signals = self._vectorized_signal_calculation(
-                strength_scores=strength_scores,
-                min_confidence=params.get("min_sr_confidence", 0.6),
-                high_confidence=params.get("high_confidence_threshold", 0.8),
-            )
-            perf = self._vectorized_performance_calculation(signals, y_np)
-            # Composite score
-            return float(
-                0.4 * perf["sharpe_ratio"] + 0.3 * perf["win_rate"] + 0.3 * perf["profit_factor"]
-            )
-
-        # Handle different optimization types
-        if model_type == "sr_parameters":
-            return self._evaluate_sr_parameters_vectorized(
-                trial = X_np,
-                y_np = y_np
-            )
-        if model_type == "autoencoder":
-            return self._evaluate_autoencoder_vectorized(trial, X_np, y_np)
-        if model_type == "order_execution":
-            return self._evaluate_order_execution_vectorized(
-                trial = X_np,
-                y_np = y_np
-            )
-        if model_type == "custom":
-            if custom_objective:
-                return custom_objective(trial, X_np, y_np)
-            msg = "Custom objective function required"
-            raise ValueError(msg)
-
-        # Traditional ML model optimization
-        return self._evaluate_ml_model_vectorized(
-            trial = model_type,
-            X_np = y_np,
-            cv_folds = subsample_fraction,
-        )
-
-        except optuna.TrialPruned:
-            raise
-        except Exception as e:
-            self.logger.warning(f"Trial {trial.number} failed: {e}")
-            return 0.0
-
-        # Run optimization with batch processing
-        study.optimize(
-            vectorized_objective = n_trials, n_trials,
-            n_jobs, n_jobs, callbacks=[
-                optuna.callbacks.EarlyStoppingCallback(
-                    early_stopping_patience = "maximize"
-                ),
-            ],
-        )
-
-        # Calculate performance metrics
-        optimization_time, time.time() - start_time
-        final_memory = self._get_memory_usage()
-        memory_usage = final_memory - initial_memory
-        cache_hit_rate, self.performance_metrics["cache_hits"] / (
-            self.performance_metrics["cache_hits"]
-            + self.performance_metrics["cache_misses"]
-            + 1e-8
-        )
-
-        # Create enhanced result
-        result, VectorizedOptimizationResult(
-            train_score=0.0,  # Would be calculated separately
-            validation_score=study.best_value, test_score=0.0,  # Would be calculated separately
-            overfitting_score=0.0,  # Would be calculated separately
-            generalization_gap=0.0,  # Would be calculated separately
-            vectorized_scores=np.array(
-                [t.value for t in study.trials if t.value is not None],
-            ),
-            batch_performance=np.array(
-                [t.value for t in study.trials if t.value is not None],
-            ),
-            parameter_sensitivity=np.array([1.0]),  # Would be calculated separately
-            computation_time=optimization_time, memory_usage=memory_usage, cache_hit_rate=cache_hit_rate, best_params=study.best_params, optimization_time=optimization_time, n_trials=len(study.trials), study_name=study_name
-        )
-
-        # Clean up memory
-        self._cleanup_memory()
-
-        self.logger.info(
-            f"✅ Vectorized optimization completed in {optimization_time:.2f}s",
-        )
-        self.logger.info(f"   Memory usage: {memory_usage:.2f} MB")
-        self.logger.info(f"   Cache hit rate: {cache_hit_rate:.2%}")
-        self.logger.info(
-            f"   GPU operations: {self.performance_metrics['gpu_operations']}",
-        )
-
-        return result
-
-    except Exception as e:
-        self.logger.exception(f"❌ Error in vectorized optimization: {e}")
-        return None
-
-    def _evaluate_sr_parameters_vectorized(
-        self, trial: optuna.Trial, X: np.ndarray, y: np.ndarray
-    ) -> float:
-        """Vectorized S/R parameter evaluation."""
-        try:
-            pass
-        except Exception as e:
-            pass
-        try:
-            pass
-        except Exception as e:
-            pass
-        try:
-            pass
-        except Exception as e:
-            pass
-        # Get parameters
-            params = self._get_sr_space(trial)
-
-        # Vectorized feature generation
-            strength_scores, self._vectorized_feature_generation(X, params)
-
-        # Vectorized signal calculation
-            signals, self._vectorized_signal_calculation(
-                strength_scores = params["min_sr_confidence"],
-                params["high_confidence_threshold"],
-            )
-
-        # Vectorized performance calculation
-            performance, self._vectorized_performance_calculation(signals, y)
-
-        # Combined score
-            score = (
-                0.4 * performance["sharpe_ratio"]
-                + 0.3 * performance["win_rate"]
-                + 0.3 * performance["profit_factor"]
-            )
-
-        return max(0, score)
-
-    except Exception as e:
-        self.logger.warning(f"Error in vectorized SR evaluation: {e}")
-        return 0.0
-
-    def _evaluate_autoencoder_vectorized(
-        self, trial: optuna.Trial, X: np.ndarray, y: np.ndarray
-    ) -> float:
-        """Vectorized autoencoder evaluation."""
-        try:
-            pass
-        except Exception as e:
-            pass
-        try:
-            pass
-        except Exception as e:
-            pass
-        try:
-            pass
-        except Exception as e:
-            pass
-            params = self._get_autoencoder_space(trial)
-
-        # Vectorized autoencoder simulation
-            complexity_factor = (
-                params.get("hidden_dim", 64)
-                * params.get("num_layers", 2)
-                / params.get("latent_dim", 16)
-            )
-
-            regularization_factor = (
-                params.get("dropout_rate", 0.2) + params.get("l2_reg", 1e-4) * 1000
-            )
-
-            base_loss, 0.1 + np.random.normal(0, 0.01)
-            loss = (
-                base_loss
-                * (1 + complexity_factor * 0.01)
-                * (1 + regularization_factor * 0.1)
-            )
-
-        return -max(0.01, loss)  # Negative for maximization
-
-    except Exception as e:
-        self.logger.warning(f"Error in vectorized autoencoder evaluation: {e}")
-        return float("-inf")
-
-    def _evaluate_order_execution_vectorized(
-        self, trial: optuna.Trial, X: np.ndarray, y: np.ndarray
-    ) -> float:
-        """Vectorized order execution evaluation."""
-        try:
-            pass
-        except Exception as e:
-            pass
-        try:
-            pass
-        except Exception as e:
-            pass
-        try:
-            pass
-        except Exception as e:
-            pass
-            params = self._get_order_execution_space(trial)
-
-        # Vectorized order execution simulation
-        base_success_rate = 0.8
-
-        timeout_factor = min(1.0, params.get("order_timeout_seconds", 30) / 60)
-        slippage_factor = min(1.0, params.get("slippage_tolerance", 0.001) / 0.002)
-        volume_factor = min(1.0, params.get("volume_threshold", 1.5) / 2.0)
-
-        success_rate = (
-            base_success_rate * timeout_factor * slippage_factor * volume_factor
-        )
-        success_rate += np.random.normal(0, 0.05)
-
-        return float(max(0.0, min(1.0, success_rate)))
-
-    except Exception as e:
-        self.logger.warning(f"Error in vectorized order execution evaluation: {e}")
-        return 0.5
-
-    def _evaluate_ml_model_vectorized(
-        self, trial: optuna.Trial, model_type: str, X: np.ndarray, y: np.ndarray, cv_folds: int, subsample_fraction: float = 1.0,
-    ) -> float:
-        """Vectorized ML model evaluation."""
-        config = self._model_configs[model_type]
-        params = config["space"](trial)
-        model = config["model"](**params)
-
-        # Vectorized cross-validation
-        if self.overfitting_prevention["time_series_split"]:
-            cv = TimeSeriesSplit(n_splits=cv_folds)
-        else:
-            cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=42)
-
-        scores = []
-        for train_idx, val_idx in cv.split(X, y):
-            X_train, X_val = X[train_idx], X[val_idx]
-            y_train, y_val = y[train_idx], y[val_idx]
-
-            model.fit(X_train, y_train)
-            score = model.score(X_val, y_val)
-            scores.append(score)
-
-        return float(np.mean(scores))
-
-    except Exception as e:
-        self.logger.warning(f"Error in vectorized ML evaluation: {e}")
-        return 0.0
-
-    def _get_memory_usage(self) -> float:
-        """Get current memory usage in MB."""
-        try:
-            pass
-        except Exception as e:
-            pass
-        try:
-            pass
-        except Exception as e:
-            pass
-        try:
-            pass
-        except Exception as e:
-            pass
-            process = psutil.Process()
-        return process.memory_info().rss / 1024 / 1024  # Convert to MB
-        except ImportError:
-        return 0.0
-
-    def _cleanup_memory(self):
-        """Clean up memory and cache."""
-        try:
-            pass
-        except Exception as e:
-            pass
-        try:
-            pass
-        except Exception as e:
-            pass
-        try:
-            pass
-        except Exception as e:
-            pass
-        # Clear cache if too large
-        if len(self.cache.feature_cache) > self.cache_size:
-        # Remove oldest entries
-                keys_to_remove, list(self.cache.feature_cache.keys())[
-                    : len(self.cache.feature_cache) - self.cache_size
-                ]
-        for key in keys_to_remove:
-                    del self.cache.feature_cache[key]
-
-        # Force garbage collection
-            gc.collect()
-
-        # Clear GPU memory if available
-        if self.enable_gpu:
-                cp.get_default_memory_pool().free_all_blocks()
-
-        except Exception as e:
-        self.logger.warning(f"Error in memory cleanup: {e}")
-
-    def get_performance_metrics(self) -> dict[str , Any]:
-        """Get performance optimization metrics."""
-        return {
-            "cache_hits": self.performance_metrics["cache_hits"],
-            "cache_misses": self.performance_metrics["cache_misses"],
-            "cache_hit_rate": self.performance_metrics["cache_hits"]
-            / (
-            self.performance_metrics["cache_hits"]
-                + self.performance_metrics["cache_misses"]
-                + 1e-8
-            ),
-            "gpu_operations": self.performance_metrics["gpu_operations"],
-            "jit_compilations": self.performance_metrics["jit_compilations"],
-            "memory_usage": self.performance_metrics["memory_usage"],
-            "enable_gpu": self.enable_gpu , "enable_jit": self.enable_jit,
-        }
-
-# Convenience function for easy usage
-
-def create_vectorized_optimizer(storage_url: str = "sqlite:///vectorized_optuna_studies.db", enable_gpu: bool = True, enable_jit: bool = True, cache_size: int = 1000
-) -> VectorizedOptunaOptimizer:
-    """Create a vectorized optimizer with default settings."""
-    return VectorizedOptunaOptimizer(
-        storage_url, storage_url, enable_gpu=enable_gpu
-        enable_jit, enable_jit, cache_size=cache_size
-    )
-
-if __name__ == "__main__":
-    # Example usage
-
-    async def main():
-        # Create vectorized optimizer
-        optimizer, create_vectorized_optimizer(enable_gpu, True, enable_jit=True)
-
-        # Create sample data
-        np.random.seed(42)
-        X, np.random.randn(1000, 10)
-        y, np.random.randint(0, 2, 1000)
-
-        # Run optimization
-        result, optimizer.optimize(
-            model_type="sr_parameters"
-            X, X, y=y
-            n_trials=50
-            batch_size=10
-        )
-
-        if result:
-            print("✅ Optimization completed!")
-            print(f"   Best score: {result.validation_score:.4f}")
-            print(f"   Computation time: {result.computation_time:.2f}s")
-            print(f"   Memory usage: {result.memory_usage:.2f} MB")
-            print(f"   Cache hit rate: {result.cache_hit_rate:.2%}")
-
-        # Get performance metrics
-            metrics = optimizer.get_performance_metrics()
-            print(f"   GPU operations: {metrics['gpu_operations']}")
-            print(f"   JIT compilations: {metrics['jit_compilations']}")
-
-    asyncio.run(main())
+else:
+    def _jit_signal_calc(strength_scores: np.ndarray, min_confidence: float, high_confidence: float) -> np.ndarray:  # type: ignore[misc]
+        scores = np.asarray(strength_scores)
+        signals = np.zeros_like(scores)
+        signals[scores > high_confidence] = 1.0
+        signals[scores < -high_confidence] = -1.0
+        mask_wl = (scores > min_confidence) & (scores <= high_confidence)
+        mask_ws = (scores < -min_confidence) & (scores >= -high_confidence)
+        signals[mask_wl] = 0.5
+        signals[mask_ws] = -0.5
+        return signals

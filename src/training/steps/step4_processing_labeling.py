@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 from typing import Any
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -278,6 +279,83 @@ def _persist_sr_levels(config: dict[str, Any], sr_levels: dict[str, Any], asof_t
         _logger.warning(f"⚠️ Persist SR levels skipped: {e}")
 
 
+# === New input/output validation helpers ===
+
+def _validate_raw_ohlcv_input(df: pd.DataFrame) -> None:
+    """Validate raw OHLCV data presence, formats, and realism.
+
+    Raises ValueError on critical issues.
+    """
+    required = ["open", "high", "low", "close"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(f"Missing required OHLC columns: {missing}")
+
+    # Ensure numeric dtypes
+    for c in required + (["volume"] if "volume" in df.columns else []):
+        try:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+        except Exception:
+            pass
+
+    # Check for NaN/Inf
+    num = df[[c for c in required if c in df.columns]].astype(float)
+    if not np.isfinite(num.to_numpy()).all():
+        raise ValueError("Found NaN/Inf in OHLC values")
+
+    # Realism: high >= low, prices > 0
+    if (num["high"] < num["low"]).any():
+        raise ValueError("Found rows with high < low")
+    if (num[["open", "high", "low", "close"]] <= 0).any().any():
+        raise ValueError("Found non-positive price values")
+
+    # Volume realism if available
+    if "volume" in df.columns:
+        vol = pd.to_numeric(df["volume"], errors="coerce").fillna(0)
+        if (vol < 0).any():
+            raise ValueError("Found negative volume values")
+
+
+def _validate_and_clean_features_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """Validate feature columns for finiteness and non-constant behavior.
+
+    Drops columns that are all NaN/Inf or constant (including all zeros).
+    Returns a cleaned copy.
+    """
+    if df is None or df.empty:
+        return df
+
+    protected = {"open", "high", "low", "close", "volume", "label", "timestamp"}
+    cleaned = df.copy()
+
+    # Identify numeric feature columns (exclude protected)
+    numeric_cols = [
+        c for c in cleaned.columns
+        if c not in protected and np.issubdtype(cleaned[c].dtype, np.number)
+    ]
+
+    dropped: list[str] = []
+    for col in numeric_cols:
+        series = pd.to_numeric(cleaned[col], errors="coerce")
+        # Drop if any non-finite values
+        if not np.isfinite(series.to_numpy()).all():
+            dropped.append(col)
+            cleaned = cleaned.drop(columns=[col])
+            continue
+        # Drop if constant (including all zeros)
+        if series.nunique(dropna=True) <= 1:
+            dropped.append(col)
+            cleaned = cleaned.drop(columns=[col])
+            continue
+
+    if dropped:
+        _logger.warning(
+            f"Removed {len(dropped)} problematic feature column(s) (non-finite or constant): {dropped[:10]}"
+        )
+
+    return cleaned
+
+
 @deterministic_seed(42)
 @idempotent_step(step_key="step4_processing_labeling")
 @artifact_write_lock()
@@ -392,6 +470,9 @@ async def run_step(
             df["timestamp"] = pd.to_datetime(df["timestamp"])  # best-effort cast
         df = df.sort_values("timestamp").reset_index(drop=True)
 
+        # Validate raw OHLCV inputs
+        _validate_raw_ohlcv_input(df)
+
         # 2) Compute triple-barrier labels (binary) while preserving OHLCV
         lbl = OptimizedTripleBarrierLabeling(binary_classification=True)
         labeled = lbl.apply_triple_barrier_labeling_vectorized(
@@ -468,6 +549,9 @@ async def run_step(
                     result.get("data"), pd.DataFrame,
                 ):
                     final_df = result["data"]
+                # Validate and clean features if available
+                if final_df is not None and not final_df.empty:
+                    final_df = _validate_and_clean_features_dataframe(final_df)
                 # Persist meta strengths if available (columns starting with 'sr_')
                 if final_df is not None and not final_df.empty:
                     strength_cols = [

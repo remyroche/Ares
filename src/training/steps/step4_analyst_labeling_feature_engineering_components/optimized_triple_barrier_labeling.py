@@ -82,12 +82,18 @@ class OptimizedTripleBarrierLabeling:
             binary_classification=True is now the default to address label imbalance issues.
             This automatically filters out HOLD samples to create a balanced binary classification.
         """
-        self.profit_take_multiplier = profit_take_multiplier
-        self.stop_loss_multiplier = stop_loss_multiplier
-        self.time_barrier_minutes = time_barrier_minutes
-        self.max_lookahead = max_lookahead
-        self.binary_classification = binary_classification
+        self.profit_take_multiplier = max(0.0, float(profit_take_multiplier))
+        self.stop_loss_multiplier = max(0.0, float(stop_loss_multiplier))
+        self.time_barrier_minutes = max(1, int(time_barrier_minutes))
+        self.max_lookahead = max(1, int(max_lookahead))
+        self.binary_classification = bool(binary_classification)
         self.logger = get_logger("OptimizedTripleBarrierLabeling")
+
+        # Sanity bounds to avoid unrealistic barriers
+        if self.profit_take_multiplier > 0.2 or self.stop_loss_multiplier > 0.2:
+            self.logger.warning(
+                "⚠️ Unusually large barrier multipliers; verify configuration (>{20}%)",
+            )
 
         if self.binary_classification:
             self.logger.info(
@@ -103,6 +109,39 @@ class OptimizedTripleBarrierLabeling:
             self.logger.warning(
                 "   → Consider using binary_classification=True for better results"
             )
+
+    def _validate_raw_inputs(self, data: pd.DataFrame) -> None:
+        """Validate required columns, dtypes, and value realism for labeling."""
+        required = ["close", "high", "low"]
+        missing = [c for c in required if c not in data.columns]
+        if missing:
+            raise ValueError(f"Missing required columns for labeling: {missing}")
+        # Ensure numeric and finite
+        for c in required:
+            data[c] = pd.to_numeric(data[c], errors="coerce")
+        arr = data[required].to_numpy(dtype=float)
+        if not np.isfinite(arr).all():
+            raise ValueError("Non-finite values in OHLC inputs for labeling")
+        if (data["high"] < data["low"]).any():
+            raise ValueError("Found rows with high < low in labeling inputs")
+        if (data[required] <= 0).any().any():
+            raise ValueError("Found non-positive price values in labeling inputs")
+
+    def _validate_output_labels(self, labeled: pd.DataFrame) -> pd.DataFrame:
+        """Ensure labels are finite, within {-1,0,1}, and not all zero."""
+        if labeled is None or labeled.empty:
+            return labeled
+        if "label" not in labeled.columns:
+            return labeled
+        series = pd.to_numeric(labeled["label"], errors="coerce").fillna(0).astype(int)
+        # Clip to valid set {-1, 0, 1}
+        series = series.where(series.isin([-1, 0, 1]), other=0)
+        labeled = labeled.copy()
+        labeled["label"] = series
+        # If all zero and binary mode, keep as-is but warn
+        if (series != 0).sum() == 0:
+            self.logger.warning("⚠️ All labels are 0 (HOLD); check barrier settings or data quality")
+        return labeled
 
     @handle_errors(
         exceptions=(Exception,),
@@ -158,6 +197,9 @@ class OptimizedTripleBarrierLabeling:
             with contextlib.suppress(Exception):
                 self.logger.error(msg)
             raise ValueError(msg)
+
+        # Additional raw input validations
+        self._validate_raw_inputs(data)
 
         labeled_data = data.copy()
         n = len(labeled_data)
@@ -307,6 +349,9 @@ class OptimizedTripleBarrierLabeling:
             " '*_nextbar_agree' is the fraction of signals whose direction matches the immediate next-bar return;"
             " 'overall' aggregates both sides.",
         )
+
+        # Final output sanity check and normalization
+        labeled_data = self._validate_output_labels(labeled_data)
         return labeled_data
 
     @handle_errors(
@@ -399,15 +444,11 @@ if __name__ == "__main__":
             "high": np.random.uniform(105, 115, 1000),
             "low": np.random.uniform(95, 105, 1000),
             "close": np.random.uniform(100, 110, 1000),
-            "volume": np.random.uniform(1000, 10000, 1000),
+            "volume": np.random.uniform(1000, 5000, 1000),
         },
-        index=dates
+        index=dates,
     )
 
-    # Test optimization
     optimizer = OptimizedTripleBarrierLabeling()
-    labeled_data = optimizer.apply_triple_barrier_labeling_vectorized(data)
-
-    # Benchmark
-    results = benchmark_triple_barrier_methods(data)
-    print(f"Benchmark results: {results}")
+    labeled = optimizer.apply_triple_barrier_labeling_vectorized(data)
+    print(labeled.head())

@@ -4,22 +4,30 @@ Run Feature Diagnostic Script
 Analyzes actual feature data to investigate the issues mentioned in the logs.
 """
 
+# ruff: noqa: E501, C901, PLR2004, PLR0912, PLR0915
+
 from __future__ import annotations
 
-from pathlib import Path
-from src.utils.logger import system_logger
-from typing import Any
 import sys
 import traceback
 import warnings
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
 warnings.filterwarnings("ignore")
 
-# Add src to path
+# Add src to path early for local imports
 sys.path.append(str(Path(__file__).parent.parent / "src"))
+from src.utils.logger import system_logger  # noqa: E402
+
+# Analysis thresholds
+HIGH_CORR_THRESHOLD = 0.95
+LOW_VAR_THRESHOLD = 1e-6
+MIN_FEATURES_FOR_CORR = 2
+HIGH_NAN_PERCENT = 10
 
 
 class FeatureDiagnosticRunner:
@@ -165,19 +173,19 @@ class FeatureDiagnosticRunner:
         for i in range(len(columns)):
             for j in range(i + 1, len(columns)):
                 corr_val = float(corr_matrix.iloc[i, j])
-                if not np.isnan(corr_val) and abs(corr_val) > 0.95:
+                if not np.isnan(corr_val) and abs(corr_val) > HIGH_CORR_THRESHOLD:
                     high_corr_pairs.append(
                         {
                             "feature1": columns[i],
                             "feature2": columns[j],
                             "correlation": corr_val,
-                        }
+                        },
                     )
 
         # Analyze variance
         variances = block_data.var(numeric_only=True)
         zero_var_features = variances[variances == 0].index.tolist()
-        low_var_features = variances[variances < 1e-6].index.tolist()
+        low_var_features = variances[variances < LOW_VAR_THRESHOLD].index.tolist()
 
         # Analyze NaN
         nan_counts = block_data.isna().sum()
@@ -205,7 +213,7 @@ class FeatureDiagnosticRunner:
         for features in feature_blocks.values():
             all_features.extend([f for f in features if f in data.columns])
 
-        if len(all_features) < 2:
+        if len(all_features) < MIN_FEATURES_FOR_CORR:
             return {"error": "Not enough features for correlation analysis"}
 
         corr_data = data[all_features]
@@ -217,13 +225,13 @@ class FeatureDiagnosticRunner:
         for i in range(len(columns)):
             for j in range(i + 1, len(columns)):
                 corr_val = float(corr_matrix.iloc[i, j])
-                if not np.isnan(corr_val) and abs(corr_val) > 0.95:
+                if not np.isnan(corr_val) and abs(corr_val) > HIGH_CORR_THRESHOLD:
                     high_corr_pairs.append(
                         {
                             "feature1": columns[i],
                             "feature2": columns[j],
                             "correlation": corr_val,
-                        }
+                        },
                     )
 
         vals = corr_matrix.values
@@ -263,14 +271,16 @@ class FeatureDiagnosticRunner:
             low_var_features = variances[variances < threshold].index.tolist()
             threshold_analysis[threshold] = {
                 "features_removed": len(low_var_features),
-                "percentage_removed": len(low_var_features) / max(len(variances), 1) * 100,
+                "percentage_removed": (
+                    len(low_var_features) / max(len(variances), 1) * 100
+                ),
                 "features": low_var_features[:5],  # First 5 for reference
             }
 
         return {
             "total_features": len(variances),
             "zero_variance_features": variances[variances == 0].index.tolist(),
-            "low_variance_features": variances[variances < 1e-6].index.tolist(),
+            "low_variance_features": variances[variances < LOW_VAR_THRESHOLD].index.tolist(),
             "threshold_analysis": threshold_analysis,
             "variance_statistics": {
                 "mean": float(variances.mean()),
@@ -294,7 +304,7 @@ class FeatureDiagnosticRunner:
             "total_nan_values": int(nan_counts.sum()),
             "nan_features": nan_features.to_dict(),
             "nan_percentages": nan_percentages[nan_percentages > 0].to_dict(),
-            "features_with_high_nan": nan_percentages[nan_percentages > 10].to_dict(),
+            "features_with_high_nan": nan_percentages[nan_percentages > HIGH_NAN_PERCENT].to_dict(),
         }
 
     def _generate_recommendations(self, results: dict[str, Any]) -> list[str]:
@@ -309,7 +319,7 @@ class FeatureDiagnosticRunner:
             high_corr_count = results["correlation_issues"]["total_high_corr_pairs"]
             if high_corr_count > 0:
                 recommendations.append(
-                    f"Found {high_corr_count} feature pairs with correlation > 0.95",
+                    f"Found {high_corr_count} feature pairs with correlation > {HIGH_CORR_THRESHOLD}",
                 )
                 recommendations.append(
                     "Consider reducing correlation threshold from 0.95 to 0.90",
@@ -324,8 +334,8 @@ class FeatureDiagnosticRunner:
             and "threshold_analysis" in results["variance_issues"]
         ):
             threshold_analysis = results["variance_issues"]["threshold_analysis"]
-            if 1e-6 in threshold_analysis:
-                pct_removed = threshold_analysis[1e-6]["percentage_removed"]
+            if LOW_VAR_THRESHOLD in threshold_analysis:
+                pct_removed = threshold_analysis[LOW_VAR_THRESHOLD]["percentage_removed"]
                 if pct_removed > 50:
                     recommendations.append(
                         f"Current variance threshold (1e-6) removes {pct_removed:.1f}% of features - too strict",
@@ -410,10 +420,11 @@ class FeatureDiagnosticRunner:
             # Show specific examples
             if block_results["high_correlation_pairs"]:
                 report.append("   - High correlation examples:")
-                for pair in block_results["high_correlation_pairs"][:2]:
-                    report.append(
-                        f"     * {pair['feature1']} ↔ {pair['feature2']}: {pair['correlation']:.3f}",
-                    )
+                examples = [
+                    f"     * {pair['feature1']} ↔ {pair['feature2']}: {pair['correlation']:.3f}"
+                    for pair in block_results["high_correlation_pairs"][:2]
+                ]
+                report.extend(examples)
 
             report.append("")
 

@@ -4,6 +4,8 @@ Test S/R Level Count Fix
 Verifies that support_levels_count and resistance_levels_count are no longer constant.
 """
 
+# ruff: noqa: I001, C901, PLR0915
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -35,8 +37,12 @@ def test_sr_level_fix() -> bool:
         price_data = pd.DataFrame(
             {
                 "open": base_price + np.cumsum(rng.standard_normal(n_samples) * 0.1),
-                "high": base_price + np.cumsum(rng.standard_normal(n_samples) * 0.1) + 0.5,
-                "low": base_price + np.cumsum(rng.standard_normal(n_samples) * 0.1) - 0.5,
+                "high": base_price
+                + np.cumsum(rng.standard_normal(n_samples) * 0.1)
+                + 0.5,
+                "low": base_price
+                + np.cumsum(rng.standard_normal(n_samples) * 0.1)
+                - 0.5,
                 "close": base_price + np.cumsum(rng.standard_normal(n_samples) * 0.1),
                 "volume": rng.lognormal(10, 1, n_samples),
             },
@@ -182,14 +188,13 @@ def test_sr_level_fix() -> bool:
             f"   Support mean: {results['without_sr_levels']['support_mean']:.3f}",
         )
         print(
-            f"   Resistance counts: {results['without_sr_levels']['resistance_unique']} "
+            "   Resistance counts: "
+            f"{results['without_sr_levels']['resistance_unique']} "
             "unique values",
         )
         print(
-            f"   Resistance range: {results['without_sr_levels']['resistance_range']}",
-        )
-        print(
-            f"   Resistance mean: {results['without_sr_levels']['resistance_mean']:.3f}",
+            "   Resistance mean: "
+            f"{results['without_sr_levels']['resistance_mean']:.3f}",
         )
 
         # Check if fix is working
@@ -216,8 +221,8 @@ def test_sr_level_fix() -> bool:
 
         return bool(support_fixed and resistance_fixed)
 
-    except Exception as e:  # noqa: BLE001
-        logger.exception(f"Error testing S/R level fix: {e}")
+    except Exception:  # noqa: BLE001
+        logger.exception("Error testing S/R level fix")
         return False
 
 

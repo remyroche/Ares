@@ -63,6 +63,15 @@ class ExchangeABTester:
             "ab_test_results",
         )
 
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Invalid exchange A/B test configuration"),
+            AttributeError: (False, "Missing required exchange A/B test parameters"),
+            KeyError: (False, "Missing configuration keys"),
+        },
+        default_return=False,
+        context="exchange A/B test initialization",
+    )
     async def initialize(self) -> bool:
         """Initialize the A/B tester."""
         try:
@@ -78,6 +87,14 @@ class ExchangeABTester:
             self.logger.error(f"❌ Exchange A/B Tester initialization failed: {e}")
             return False
 
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Failed to start exchange A/B test"),
+            RuntimeError: (False, "A/B test already running"),
+        },
+        default_return=False,
+        context="exchange A/B test start",
+    )
     async def start_ab_test(self, test_config: ABTestConfig) -> bool:
         """Start a new A/B test."""
         try:
@@ -116,6 +133,11 @@ class ExchangeABTester:
             self.logger.error(f"Error starting A/B test: {e}")
             return False
 
+    @handle_errors(
+        exceptions=(ValueError, RuntimeError, KeyError),
+        default_return=None,
+        context="prediction processing",
+    )
     async def process_prediction(
         self, exchange: str,
         prediction: float, confidence: float,
@@ -195,6 +217,11 @@ class ExchangeABTester:
                 error_message=str(e),
             )
 
+    @handle_errors(
+        exceptions=(KeyError, ValueError, ZeroDivisionError),
+        default_return=None,
+        context="metrics update",
+    )
     async def _update_metrics(self, exchange: str, result: ExchangeResult) -> None:
         """Update performance metrics for an exchange."""
         try:
@@ -229,6 +256,11 @@ class ExchangeABTester:
         except Exception as e:
             self.logger.error(f"Error updating metrics: {e}")
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="A/B test stop",
+    )
     async def stop_ab_test(self) -> bool:
         """Stop the current A/B test and generate results."""
         try:
@@ -251,6 +283,11 @@ class ExchangeABTester:
             self.logger.error(f"Error stopping A/B test: {e}")
             return False
 
+    @handle_errors(
+        exceptions=(KeyError, ValueError, AttributeError),
+        default_return=None,
+        context="results generation",
+    )
     async def _generate_results(self) -> None:
         """Generate final test results."""
         try:
@@ -304,6 +341,11 @@ class ExchangeABTester:
         except Exception as e:
             self.logger.error(f"Error generating results: {e}")
 
+    @handle_errors(
+        exceptions=(IOError, OSError, AttributeError),
+        default_return=None,
+        context="results saving",
+    )
     async def _save_results(self) -> None:
         """Save test results to file."""
         try:
@@ -333,6 +375,11 @@ class ExchangeABTester:
         except Exception as e:
             self.logger.error(f"Error saving results: {e}")
 
+    @handle_errors(
+        exceptions=(AttributeError,),
+        default_return={},
+        context="test status retrieval",
+    )
     def get_test_status(self) -> dict[str, Any]:
         """Get current test status."""
         try:
@@ -354,6 +401,11 @@ class ExchangeABTester:
             self.logger.error(f"Error getting test status: {e}")
             return {"error": str(e)}
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="A/B tester cleanup",
+    )
     async def cleanup(self) -> None:
         """Cleanup resources."""
         try:
@@ -367,6 +419,11 @@ class ExchangeABTester:
         except Exception as e:
             self.logger.error(f"Error during cleanup: {e}")
 
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=None,
+    context="exchange A/B tester setup",
+)
 async def setup_exchange_ab_tester(
     config: dict[str, Any] = None,
 ) -> ExchangeABTester | None:

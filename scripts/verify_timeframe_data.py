@@ -23,39 +23,42 @@ sys.path.insert(0, str(project_root))
 
 logger = system_logger.getChild("TimeframeDataVerifier")
 
+
 class TimeframeDataVerifier:
     """Verifies data availability for multi-timeframe HMM ensemble."""
 
     def __init__(self, config: dict[str, Any]):
-        self.config, config
+        self.config = config
         self.timeframes = ["5m", "15m", "30m", "1h"]
-        self.data_dir, Path("data")
-        self.models_dir, Path("models")
+        self.data_dir = project_root / "data"
+        self.models_dir = project_root / "models"
 
     def verify_data_files(self) -> dict[str, bool]:
         """Verify that data files exist for all timeframes."""
         logger.info("🔍 Verifying data files for all timeframes...")
 
-        data_status = {}
+        data_status: dict[str, bool] = {}
 
         for timeframe in self.timeframes:
-        # Check for CSV data files
+            # Check for CSV data files
             csv_file = self.data_dir / f"ETHUSDT_{timeframe}.csv"
             csv_exists = csv_file.exists()
 
-        # Check for parquet data files (if they exist)
+            # Check for parquet data files (if they exist)
             parquet_file = self.data_dir / f"ETHUSDT_{timeframe}.parquet"
             parquet_exists = parquet_file.exists()
 
-        # Check for labeled regime data
+            # Check for labeled regime data
             regime_file = (
-        self.data_dir / f"BINANCE_ETHUSDT_labeled_regimes_{timeframe}.csv"
+                self.data_dir / f"BINANCE_ETHUSDT_labeled_regimes_{timeframe}.csv"
             )
             regime_exists = regime_file.exists()
 
             data_status[timeframe] = {
-                "csv_exists": csv_exists, "parquet_exists": parquet_exists,
-                "regime_exists": regime_exists, "any_data": csv_exists or parquet_exists or regime_exists,
+                "csv_exists": csv_exists,
+                "parquet_exists": parquet_exists,
+                "regime_exists": regime_exists,
+                "any_data": csv_exists or parquet_exists or regime_exists,
             }
 
             logger.info(
@@ -68,24 +71,26 @@ class TimeframeDataVerifier:
         """Verify that model files exist for all timeframes."""
         logger.info("🔍 Verifying model files for all timeframes...")
 
-        model_status = {}
+        model_status: dict[str, bool] = {}
 
         for timeframe in self.timeframes:
-        # Check for ensemble models
+            # Check for ensemble models
             ensemble_dir = self.models_dir / f"ensemble_{timeframe}"
             ensemble_exists = ensemble_dir.exists() and any(ensemble_dir.iterdir())
 
-        # Check for HMM models
+            # Check for HMM models
             hmm_dir = self.models_dir / f"hmm_{timeframe}"
             hmm_exists = hmm_dir.exists() and any(hmm_dir.iterdir())
 
-        # Check for regime forecasting models
+            # Check for regime forecasting models
             regime_dir = self.models_dir / f"regime_forecasting_{timeframe}"
             regime_exists = regime_dir.exists() and any(regime_dir.iterdir())
 
             model_status[timeframe] = {
-                "ensemble_exists": ensemble_exists, "hmm_exists": hmm_exists,
-                "regime_exists": regime_exists, "any_models": ensemble_exists or hmm_exists or regime_exists,
+                "ensemble_exists": ensemble_exists,
+                "hmm_exists": hmm_exists,
+                "regime_exists": regime_exists,
+                "any_models": ensemble_exists or hmm_exists or regime_exists,
             }
 
             logger.info(
@@ -98,7 +103,7 @@ class TimeframeDataVerifier:
         """Analyze data quality for each timeframe."""
         logger.info("🔍 Analyzing data quality for each timeframe...")
 
-        quality_metrics = {}
+        quality_metrics: dict[str, dict[str, Any]] = {}
 
         for timeframe in self.timeframes:
             csv_file = self.data_dir / f"ETHUSDT_{timeframe}.csv"
@@ -122,7 +127,7 @@ class TimeframeDataVerifier:
                     logger.info(
                         f"  {timeframe}: {len(df)} rows = {len(df.columns)} cols, {quality_metrics[timeframe]['data_size_mb']:.2f}MB",
                     )
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.exception(f"  {timeframe}: Error reading data - {e}")
                     quality_metrics[timeframe] = {"error": str(e)}
             else:
@@ -135,7 +140,7 @@ class TimeframeDataVerifier:
         """Check if data is complete for training."""
         logger.info("🔍 Checking data completeness for training...")
 
-        completeness = {}
+        completeness: dict[str, bool] = {}
 
         for timeframe in self.timeframes:
             csv_file = self.data_dir / f"ETHUSDT_{timeframe}.csv"
@@ -165,7 +170,7 @@ class TimeframeDataVerifier:
                         "✅" if completeness[timeframe]["ready_for_training"] else "❌"
                     )
                     logger.info(f"  {timeframe}: {status} Ready for training")
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.exception(
                         f"  {timeframe}: Error checking completeness - {e}",
                     )
@@ -176,7 +181,8 @@ class TimeframeDataVerifier:
             else:
                 logger.warning(f"  {timeframe}: No data file found")
                 completeness[timeframe] = {
-                    "ready_for_training": False, "error": "File not found",
+                    "ready_for_training": False,
+                    "error": "File not found",
                 }
 
         return completeness
@@ -185,7 +191,7 @@ class TimeframeDataVerifier:
         """Generate a comprehensive verification report."""
         logger.info("📊 Generating comprehensive verification report...")
 
-        report = {
+        report: dict[str, Any] = {
             "timestamp": datetime.now().isoformat(),
             "timeframes": self.timeframes,
             "data_files": self.verify_data_files(),
@@ -197,14 +203,15 @@ class TimeframeDataVerifier:
         # Summary
         ready_timeframes = [
             tf
-        for tf, status in report["completeness"].items()
-        if status.get("ready_for_training", False)
+            for tf, status in report["completeness"].items()
+            if status.get("ready_for_training", False)
         ]
 
         report["summary"] = {
             "total_timeframes": len(self.timeframes),
             "ready_timeframes": len(ready_timeframes),
-            "ready_list": ready_timeframes, "all_ready": len(ready_timeframes) == len(self.timeframes),
+            "ready_list": ready_timeframes,
+            "all_ready": len(ready_timeframes) == len(self.timeframes),
         }
 
         return report
@@ -219,7 +226,7 @@ class TimeframeDataVerifier:
         print(f"🎯 Target Timeframes: {', '.join(report['timeframes'])}")
 
         # Summary
-        summary, report["summary"]
+        summary = report["summary"]
         print("\n📈 SUMMARY:")
         print(f"   Total Timeframes: {summary['total_timeframes']}")
         print(f"   Ready for Training: {summary['ready_timeframes']}")
@@ -248,15 +255,15 @@ class TimeframeDataVerifier:
                 f"      Models: Ensemble={model_status['ensemble_exists']}, HMM={model_status['hmm_exists']}",
             )
             print(f"      Ready: {completeness.get('ready_for_training', False)}")
-
-        if "error" in completeness:
+            if "error" in completeness:
                 print(f"      Error: {completeness['error']}")
 
         print("\n" + "=" * 80)
 
-def main():
+
+def main() -> bool:
     """Main function to run the verification."""
-    parser, argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         description="Verify timeframe data for multi-timeframe HMM ensemble",
     )
     parser.add_argument("--config", type=str, default="", help="Path to config file")
@@ -267,11 +274,11 @@ def main():
         help="Path to save report JSON",
     )
 
-    args, parser.parse_args()
+    args = parser.parse_args()
 
-    if True:
+    try:
         # Load configuration
-        config = CONFIG if hasattr(CONFIG, "get") else {}
+        config: dict[str, Any] = CONFIG if hasattr(CONFIG, "get") else {}
 
         # Create verifier
         verifier = TimeframeDataVerifier(config)
@@ -284,23 +291,24 @@ def main():
 
         # Save report if requested
         if args.output:
-    pass  # TODO: Add proper implementation
-        with open(args.output, "w") as f:
+            output_path = Path(args.output)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(output_path, "w", encoding="utf-8") as f:
                 json.dump(report, f, indent=2, default=str)
             logger.info(f"📄 Report saved to {args.output}")
 
         # Return success/failure
-        success = report["summary"]["all_ready"]
+        success = bool(report["summary"]["all_ready"])  # ensure bool
         if success:
             logger.info("✅ All timeframes verified and ready for training!")
         else:
             logger.warning("⚠️  Some timeframes need attention before training")
 
         return success
-
-    pass
+    except Exception as e:  # noqa: BLE001
         logger.exception(f"💥 Verification failed: {e}")
         return False
+
 
 if __name__ == "__main__":
     success = main()

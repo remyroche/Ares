@@ -24,25 +24,25 @@ class PartitionOptimizer:
     """Analyzes and optimizes parquet partition structures."""
 
     def __init__(self, data_cache_path: str = "data_cache"):
-        self.data_cache_path, Path(data_cache_path)
-        self.loader, PartitionedDataLoader()
-        self.logger, system_logger.getChild("PartitionOptimizer")
+        self.data_cache_path = Path(data_cache_path)
+        self.loader = PartitionedDataLoader()
+        self.logger = system_logger.getChild("PartitionOptimizer")
 
     def analyze_all_partitions(self) -> Dict[str, Any]:
         """Analyze all partitioned datasets in the data cache."""
-        results = {
+        results: Dict[str, Any] = {
             "analysis_timestamp": datetime.now().isoformat(),
             "datasets": {},
             "summary": {
                 "total_datasets": 0,
-                "total_size_gb": 0,
+                "total_size_gb": 0.0,
                 "total_files": 0,
                 "optimization_opportunities": 0,
             },
         }
 
         # Find all partitioned datasets
-        partitioned_dirs, self._find_partitioned_datasets()
+        partitioned_dirs = self._find_partitioned_datasets()
 
         for dataset_path in partitioned_dirs:
             # Extract dataset info from path
@@ -61,7 +61,8 @@ class PartitionOptimizer:
             dataset_key = f"{dataset_info['exchange']}_{dataset_info['symbol']}_{dataset_info['data_type']}"
             results["datasets"][dataset_key] = {
                 "path": str(dataset_path),
-                "info": dataset_info, "analysis": analysis,
+                "info": dataset_info,
+                "analysis": analysis,
             }
 
             # Update summary
@@ -86,50 +87,45 @@ class PartitionOptimizer:
 
     def _find_partitioned_datasets(self) -> List[Path]:
         """Find all partitioned dataset directories."""
-        partitioned_dirs = []
+        partitioned_dirs: List[Path] = []
 
         # Look for unified directory structure
-        unified_path, self.data_cache_path / "unified"
+        unified_path = self.data_cache_path / "unified"
         if unified_path.exists():
-    pass  # TODO: Add proper implementation
-        for exchange_dir in unified_path.iterdir():
-    pass  # TODO: Add proper implementation
-        if exchange_dir.is_dir():
-    pass  # TODO: Add proper implementation
-        for symbol_dir in exchange_dir.iterdir():
-    pass  # TODO: Add proper implementation
-        if symbol_dir.is_dir():
-    pass  # TODO: Add proper implementation
-        for timeframe_dir in symbol_dir.iterdir():
-    pass  # TODO: Add proper implementation
-        if timeframe_dir.is_dir():
-    pass  # TODO: Add proper implementation
-        # Check if this is a partitioned structure
-        if any(
-            (timeframe_dir / "exchange=BINANCE").exists()
-            for _ in range(1)
-        ):
-            partitioned_dirs.append(timeframe_dir)
+            try:
+                for exchange_dir in unified_path.iterdir():
+                    if exchange_dir.is_dir():
+                        for symbol_dir in exchange_dir.iterdir():
+                            if symbol_dir.is_dir():
+                                for timeframe_dir in symbol_dir.iterdir():
+                                    if timeframe_dir.is_dir():
+                                        # Check if this is a partitioned structure
+                                        if any(
+                                            (timeframe_dir / "exchange=BINANCE").exists()
+                                            for _ in range(1)
+                                        ):
+                                            partitioned_dirs.append(timeframe_dir)
+            except Exception as e:  # noqa: BLE001
+                self.logger.warning(f"Error scanning unified path: {e}")
 
         return partitioned_dirs
 
     def _parse_dataset_path(self, dataset_path: Path) -> Dict[str, str] | None:
         """Parse dataset path to extract exchange, symbol, and data type."""
-        if True:
-            # Expected structure: data_cache/unified/{exchange}/{symbol}/{timeframe}
-            parts = dataset_path.parts
-            if len(parts) >= 4 and parts[-4] == "unified":
-                return {
-                    "exchange": parts[-3],
-                    "symbol": parts[-2],
-                    "timeframe": parts[-1],
-                    "data_type": "klines",  # Default assumption
-                }
+        # Expected structure: data_cache/unified/{exchange}/{symbol}/{timeframe}
+        parts = dataset_path.parts
+        if len(parts) >= 4 and parts[-4] == "unified":
+            return {
+                "exchange": parts[-3],
+                "symbol": parts[-2],
+                "timeframe": parts[-1],
+                "data_type": "klines",  # Default assumption
+            }
         return None
 
     def generate_optimization_report(self, analysis_results: Dict[str, Any], output_file: str | None) -> str:
         """Generate a comprehensive optimization report."""
-        report_lines = []
+        report_lines: List[str] = []
 
         # Header
         report_lines.append("=" * 80)
@@ -139,7 +135,7 @@ class PartitionOptimizer:
         report_lines.append("")
 
         # Summary
-        summary, analysis_results["summary"]
+        summary = analysis_results["summary"]
         report_lines.append("SUMMARY")
         report_lines.append("-" * 40)
         report_lines.append(f"Total Datasets: {summary['total_datasets']}")
@@ -154,11 +150,11 @@ class PartitionOptimizer:
         report_lines.append("DETAILED ANALYSIS")
         report_lines.append("-" * 40)
 
-        for dataset_key , dataset_info in analysis_results["datasets"].items():
+        for dataset_key, dataset_info in analysis_results["datasets"].items():
             report_lines.append(f"\nDataset: {dataset_key}")
             report_lines.append(f"Path: {dataset_info['path']}")
 
-            analysis = dataset_info["analysis"]
+            analysis: Dict[str, Any] = dataset_info["analysis"]
             if "partition_analysis" in analysis:
                 pa = analysis["partition_analysis"]
                 report_lines.append(f"  Total Files: {pa.get('total_files', 0):,}")
@@ -169,12 +165,13 @@ class PartitionOptimizer:
                     f"  Average File Size: {pa.get('avg_file_size', 0) / (1024**2):.1f} MB"
                 )
 
-            if "partition_counts" in pa:
-                report_lines.append("  Partition Distribution:")
-                for partition , values in pa["partition_counts"].items():
-                    report_lines.append(
-                        f"    {partition}: {len(values)} unique values"
-                    )
+                if "partition_counts" in pa:
+                    report_lines.append("  Partition Distribution:")
+                    for partition, values in pa["partition_counts"].items():
+                        unique_count = len(values) if isinstance(values, (list, set, tuple)) else int(values)
+                        report_lines.append(
+                            f"    {partition}: {unique_count} unique values"
+                        )
 
             if "recommendations" in analysis and analysis["recommendations"]:
                 report_lines.append("  Recommendations:")
@@ -188,22 +185,21 @@ class PartitionOptimizer:
         report_lines.append("RECOMMENDED ACTIONS")
         report_lines.append("=" * 80)
 
-        all_recommendations = []
+        all_recommendations: List[Dict[str, Any]] = []
         for dataset_info in analysis_results["datasets"].values():
-            pass
             if "recommendations" in dataset_info["analysis"]:
                 all_recommendations.extend(dataset_info["analysis"]["recommendations"])
 
         if all_recommendations:
             # Group recommendations by type
-            rec_by_type = {}
+            rec_by_type: Dict[str, List[Dict[str, Any]]] = {}
             for rec in all_recommendations:
-                rec_type = rec["type"]
+                rec_type = rec.get("type", "general")
                 if rec_type not in rec_by_type:
                     rec_by_type[rec_type] = []
                 rec_by_type[rec_type].append(rec)
 
-            for rec_type , recs in rec_by_type.items():
+            for rec_type, recs in rec_by_type.items():
                 report_lines.append(f"\n{rec_type.upper()} ISSUES ({len(recs)} found):")
                 for rec in recs:
                     report_lines.append(f"  • {rec['suggestion']}")
@@ -214,23 +210,27 @@ class PartitionOptimizer:
 
         # Save to file if specified
         if output_file:
-            pass
-            with open(output_file = "w") as f:
-                f.write(report)
-            self.logger.info(f"Report saved to: {output_file}")
+            try:
+                output_path = Path(output_file)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(output_path, "w", encoding="utf-8") as f:
+                    f.write(report)
+                self.logger.info(f"Report saved to: {output_file}")
+            except Exception as e:  # noqa: BLE001
+                self.logger.error(f"Failed to save report to {output_file}: {e}")
 
         return report
 
-    def suggest_partition_strategy(self, dataset_info: Dict[str, Any]) -> Dict[str , Any]:
+    def suggest_partition_strategy(self, dataset_info: Dict[str, Any]) -> Dict[str, Any]:
         """Suggest optimal partition strategy for a dataset."""
-        recommendations = {
+        recommendations: Dict[str, Any] = {
             "current_strategy": [],
             "recommended_strategy": [],
             "rationale": [],
         }
 
         # Analyze current partition structure
-        analysis, self.loader.optimize_partition_access(
+        analysis = self.loader.optimize_partition_access(
             str(self.data_cache_path),
             dataset_info["exchange"],
             dataset_info["symbol"],
@@ -243,11 +243,11 @@ class PartitionOptimizer:
             )
             recommendations["current_strategy"] = current_partitions
 
-        # Suggest optimal strategy based on data characteristics
+            # Suggest optimal strategy based on data characteristics
             data_size = analysis["partition_analysis"].get("total_size_bytes", 0)
-            analysis["partition_analysis"].get("total_files", 0)
+            _ = analysis["partition_analysis"].get("total_files", 0)
 
-        if data_size > 10 * 1024**3:  # > 10GB
+            if data_size > 10 * 1024**3:  # > 10GB
                 recommendations["recommended_strategy"] = [
                     "exchange",
                     "symbol",
@@ -283,16 +283,16 @@ class PartitionOptimizer:
 
         # Add hour partitioning for high-frequency data
         if dataset_info.get("timeframe") in ["1m", "5m"]:
-                recommendations["recommended_strategy"].append("hour")
-                recommendations["rationale"].append(
-                    "High-frequency data: Add hourly partitioning for better granularity"
-                )
+            recommendations["recommended_strategy"].append("hour")
+            recommendations["rationale"].append(
+                "High-frequency data: Add hourly partitioning for better granularity"
+            )
 
         return recommendations
 
 
-def main():
-    parser, argparse.ArgumentParser(
+def main() -> None:
+    parser = argparse.ArgumentParser(
         description="Analyze and optimize parquet partition structures"
     )
     parser.add_argument(
@@ -306,9 +306,9 @@ def main():
         help="Action to perform",
     )
 
-    args, parser.parse_args()
+    args = parser.parse_args()
 
-    optimizer, PartitionOptimizer(args.data_cache)
+    optimizer = PartitionOptimizer(args.data_cache)
 
     if args.action == "analyze":
         print("🔍 Analyzing partition structures...")

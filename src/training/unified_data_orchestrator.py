@@ -69,7 +69,6 @@ class UnifiedDataOrchestrator:
         # Enable memory tracking for troubleshooting
         tracemalloc.start()
 
-
         # Initialize components
         self.data_loader = UnifiedDataLoader(config)
 
@@ -88,15 +87,13 @@ class UnifiedDataOrchestrator:
             "enable_auto_repair", True,
         )
 
-
         # Resampling configuration
         self.resampling_config = self.orchestrator_config.get("resampling", {})
         self.default_timeframes = self.resampling_config.get(
             "default_timeframes", ["1m", "5m", "15m", "30m", "1h", "4h", "1d"],
         )
-        self.resampling_cache = {}
+        self.resampling_cache: dict[str, pd.DataFrame] = {}
         self.resampling_cache_size = self.resampling_config.get("cache_size", 100)
-
 
         # Quality validation configuration
         self.quality_config = self.orchestrator_config.get("quality_validation", {})
@@ -104,9 +101,8 @@ class UnifiedDataOrchestrator:
         self.max_missing_ratio = self.quality_config.get("max_missing_ratio", 0.1)
         self.max_duplicate_ratio = self.quality_config.get("max_duplicate_ratio", 0.05)
 
-
         # Statistics
-        self.stats = {
+        self.stats: dict[str, Any] = {
             "total_requests": 0,
             "cache_hits": 0,
             "cache_misses": 0,
@@ -121,7 +117,7 @@ class UnifiedDataOrchestrator:
         # Initialize cache cleanup task
         self._cache_cleanup_task = None
 
-        time.time() - start_time
+        _ = time.time() - start_time
 
     def _get_memory_usage_mb(self) -> float:
         """Get current memory usage in MB."""
@@ -265,7 +261,7 @@ class UnifiedDataOrchestrator:
                     await self._cache_cleanup_task
 
             # Clear caches
-            len(self.resampling_cache)
+            _ = len(self.resampling_cache)
             self.resampling_cache.clear()
 
             self._force_garbage_collection()
@@ -373,7 +369,6 @@ class UnifiedDataOrchestrator:
         start_time = time.time()
         request_id = f"{exchange}_{symbol}_{timeframe}_{int(start_time)}"
 
-
         self._log_memory_usage(f"data_load_start_{request_id}")
         self.stats["total_requests"] += 1
 
@@ -394,17 +389,17 @@ class UnifiedDataOrchestrator:
                     force_reload=False,
                 )
 
-                time.time() - cache_start
+                _ = time.time() - cache_start
 
                 if data is not None and not data.empty:
                     self.stats["cache_hits"] += 1
-                    data.memory_usage(deep=True).sum() / 1024 / 1024
+                    _ = data.memory_usage(deep=True).sum() / 1024 / 1024
                     self.logger.info(f"✅ Data loaded from cache: {data.shape}")
 
                     if validate_quality:
                         validation_start = time.time()
                         data = await self._validate_and_repair_data(data, auto_repair)
-                        time.time() - validation_start
+                        _ = time.time() - validation_start
 
                     total_time = time.time() - start_time
                     self.stats["operation_times"][f"cache_hit_{request_id}"] = (
@@ -426,16 +421,16 @@ class UnifiedDataOrchestrator:
                 lookback_days=lookback_days,
             )
 
-            time.time() - loader_start
+            _ = time.time() - loader_start
 
             if data is not None and not data.empty:
-                data.memory_usage(deep=True).sum() / 1024 / 1024
+                _ = data.memory_usage(deep=True).sum() / 1024 / 1024
                 self.logger.info(f"✅ Data loaded from unified loader: {data.shape}")
 
                 if validate_quality:
                     validation_start = time.time()
                     data = await self._validate_and_repair_data(data, auto_repair)
-                    time.time() - validation_start
+                    _ = time.time() - validation_start
 
                 # Cache the data
                 if self.enable_caching:
@@ -447,7 +442,7 @@ class UnifiedDataOrchestrator:
                         lookback_days=lookback_days,
                         data=data,
                     )
-                    time.time() - cache_start
+                    _ = time.time() - cache_start
 
                 total_time = time.time() - start_time
                 self.stats["operation_times"][f"unified_loader_{request_id}"] = (
@@ -470,16 +465,16 @@ class UnifiedDataOrchestrator:
                 lookback_days=lookback_days,
             )
 
-            time.time() - raw_start
+            _ = time.time() - raw_start
 
             if data is not None and not data.empty:
-                data.memory_usage(deep=True).sum() / 1024 / 1024
+                _ = data.memory_usage(deep=True).sum() / 1024 / 1024
                 self.logger.info(f"✅ Data loaded from raw conversion: {data.shape}")
 
                 if validate_quality:
                     validation_start = time.time()
                     data = await self._validate_and_repair_data(data, auto_repair)
-                    time.time() - validation_start
+                    _ = time.time() - validation_start
 
                 total_time = time.time() - start_time
                 self.stats["operation_times"][f"raw_conversion_{request_id}"] = (
@@ -600,7 +595,6 @@ class UnifiedDataOrchestrator:
         start_time = time.time()
         request_id = f"multi_{exchange}_{symbol}_{int(start_time)}"
 
-
         self._log_memory_usage(f"multi_tf_start_{request_id}")
 
         if timeframes is None:
@@ -627,16 +621,16 @@ class UnifiedDataOrchestrator:
                 auto_repair=auto_repair,
             )
 
-            time.time() - base_start
+            _ = time.time() - base_start
 
             if base_data is None or base_data.empty:
                 self.logger.error(f"❌ Failed to load base data for {base_timeframe}")
                 return {}
 
-            base_data.memory_usage(deep=True).sum() / 1024 / 1024
+            _ = base_data.memory_usage(deep=True).sum() / 1024 / 1024
 
             # Load or resample data for each timeframe
-            result = {}
+            result: dict[str, pd.DataFrame] = {}
             successful_timeframes = 0
 
             for _i, timeframe in enumerate(timeframe_order, 1):
@@ -645,6 +639,7 @@ class UnifiedDataOrchestrator:
                 if timeframe == base_timeframe:
                     result[timeframe] = base_data
                     successful_timeframes += 1
+                    _ = time.time() - tf_start
                     continue
 
                 # Try to load existing data for this timeframe
@@ -660,11 +655,11 @@ class UnifiedDataOrchestrator:
                     auto_repair=auto_repair,
                 )
 
-                time.time() - existing_start
+                _ = time.time() - existing_start
 
                 if existing_data is not None and not existing_data.empty:
                     result[timeframe] = existing_data
-                    (
+                    _ = (
                         existing_data.memory_usage(deep=True).sum() / 1024 / 1024
                     )
                     self.logger.info(
@@ -683,11 +678,11 @@ class UnifiedDataOrchestrator:
                         exchange=exchange,
                     )
 
-                    time.time() - resample_start
+                    _ = time.time() - resample_start
 
                     if resampled_data is not None and not resampled_data.empty:
                         result[timeframe] = resampled_data
-                        (
+                        _ = (
                             resampled_data.memory_usage(deep=True).sum() / 1024 / 1024
                         )
                         self.logger.info(
@@ -705,21 +700,20 @@ class UnifiedDataOrchestrator:
                                 lookback_days=lookback_days,
                                 data=resampled_data,
                             )
-                            time.time() - cache_start
+                            _ = time.time() - cache_start
                     else:
                         self.logger.warning(
                             f"⚠️ Failed to resample data for {timeframe}",
                         )
 
-                time.time() - tf_start
+                _ = time.time() - tf_start
 
             total_time = time.time() - start_time
-            (
+            _ = (
                 sum(df.memory_usage(deep=True).sum() for df in result.values())
                 / 1024
                 / 1024
             )
-
 
             self.stats["operation_times"][f"multi_tf_{request_id}"] = total_time
             self._log_memory_usage(f"multi_tf_end_{request_id}")
@@ -814,7 +808,6 @@ class UnifiedDataOrchestrator:
         start_time = time.time()
         request_id = f"resample_{from_timeframe}_{to_timeframe}_{int(start_time)}"
 
-
         self._log_memory_usage(f"resample_start_{request_id}")
 
         try:
@@ -825,12 +818,12 @@ class UnifiedDataOrchestrator:
             cache_key = self._generate_resampling_cache_key(
                 data, from_timeframe, to_timeframe, symbol, exchange,
             )
-            time.time() - cache_start
+            _ = time.time() - cache_start
 
             # Check cache
             if cache_key in self.resampling_cache:
                 cached_data = self.resampling_cache[cache_key].copy()
-                cached_data.memory_usage(deep=True).sum() / 1024 / 1024
+                _ = cached_data.memory_usage(deep=True).sum() / 1024 / 1024
                 self.logger.info(
                     f"📋 Using cached resampled data for {from_timeframe} -> {to_timeframe}",
                 )
@@ -843,7 +836,6 @@ class UnifiedDataOrchestrator:
 
                 return cached_data
 
-
             # Perform resampling
             resample_start = time.time()
 
@@ -851,10 +843,10 @@ class UnifiedDataOrchestrator:
                 data, from_timeframe, to_timeframe,
             )
 
-            time.time() - resample_start
+            _ = time.time() - resample_start
 
             if resampled_data is not None and not resampled_data.empty:
-                (
+                _ = (
                     resampled_data.memory_usage(deep=True).sum() / 1024 / 1024
                 )
 
@@ -869,7 +861,7 @@ class UnifiedDataOrchestrator:
                     del self.resampling_cache[oldest_key]
                     self.resampling_cache[cache_key] = resampled_data.copy()
 
-                time.time() - cache_start
+                _ = time.time() - cache_start
 
                 total_time = time.time() - start_time
                 self.stats["operation_times"][f"resample_success_{request_id}"] = (
@@ -921,7 +913,7 @@ class UnifiedDataOrchestrator:
                 "1d": "1D",
             }
 
-            timeframe_map.get(from_timeframe, "1min")
+            _ = timeframe_map.get(from_timeframe, "1min")
             to_offset = timeframe_map.get(to_timeframe, "1min")
 
             # Determine resampling direction
@@ -1043,7 +1035,6 @@ class UnifiedDataOrchestrator:
         start_time = time.time()
         request_id = f"validate_{data.shape[0]}_{int(start_time)}"
 
-
         self._log_memory_usage(f"validate_start_{request_id}")
 
         try:
@@ -1064,7 +1055,7 @@ class UnifiedDataOrchestrator:
             missing_start = time.time()
             missing_counts = data.isnull().sum()
             missing_ratio = missing_counts.sum() / (len(data) * len(data.columns))
-            time.time() - missing_start
+            _ = time.time() - missing_start
 
             if missing_ratio > self.max_missing_ratio:
                 self.logger.warning(
@@ -1073,14 +1064,14 @@ class UnifiedDataOrchestrator:
                 if auto_repair:
                     repair_start = time.time()
                     data = self._repair_missing_values(data)
-                    time.time() - repair_start
+                    _ = time.time() - repair_start
                     self.stats["quality_repairs"] += 1
 
             # Check for duplicates
             duplicate_start = time.time()
             duplicate_count = data.duplicated().sum()
             duplicate_ratio = duplicate_count / len(data)
-            time.time() - duplicate_start
+            _ = time.time() - duplicate_start
 
             if duplicate_ratio > self.max_duplicate_ratio:
                 self.logger.warning(
@@ -1089,20 +1080,20 @@ class UnifiedDataOrchestrator:
                 if auto_repair:
                     repair_start = time.time()
                     data = data.drop_duplicates()
-                    time.time() - repair_start
+                    _ = time.time() - repair_start
                     self.stats["quality_repairs"] += 1
 
             # Check for timestamp issues
             if "timestamp" in data.columns:
                 timestamp_start = time.time()
                 data = self._repair_timestamp_issues(data)
-                time.time() - timestamp_start
+                _ = time.time() - timestamp_start
 
             # Check for price anomalies
             if all(col in data.columns for col in ["open", "high", "low", "close"]):
                 price_start = time.time()
                 data = self._repair_price_anomalies(data)
-                time.time() - price_start
+                _ = time.time() - price_start
 
             total_time = time.time() - start_time
 
@@ -1264,7 +1255,6 @@ class UnifiedDataOrchestrator:
         start_time = time.time()
         request_id = f"raw_{exchange}_{symbol}_{timeframe}_{int(start_time)}"
 
-
         self._log_memory_usage(f"raw_data_start_{request_id}")
 
         try:
@@ -1275,7 +1265,7 @@ class UnifiedDataOrchestrator:
             # Look for raw data files
             find_start = time.time()
             raw_data_paths = self._find_raw_data_files(symbol, exchange, timeframe)
-            time.time() - find_start
+            _ = time.time() - find_start
 
             if not raw_data_paths:
                 self.logger.warning(
@@ -1285,14 +1275,14 @@ class UnifiedDataOrchestrator:
 
             # Load and combine raw data
             load_start = time.time()
-            combined_data = []
+            combined_data: list[pd.DataFrame] = []
             successful_files = 0
 
             for _i, file_path in enumerate(raw_data_paths, 1):
                 try:
                     file_start = time.time()
                     raw_data = pd.read_parquet(file_path)
-                    time.time() - file_start
+                    _ = time.time() - file_start
 
                     if not raw_data.empty:
                         combined_data.append(raw_data)
@@ -1300,7 +1290,7 @@ class UnifiedDataOrchestrator:
                 except Exception as e:
                     self.logger.warning(f"⚠️ Failed to load {file_path}: {e}")
 
-            time.time() - load_start
+            _ = time.time() - load_start
 
             if not combined_data:
                 self.logger.error(
@@ -1312,17 +1302,17 @@ class UnifiedDataOrchestrator:
             combine_start = time.time()
             data = pd.concat(combined_data, ignore_index=True)
             data = data.drop_duplicates()
-            time.time() - combine_start
+            _ = time.time() - combine_start
 
             # Convert to unified format
             convert_start = time.time()
             unified_data = self._convert_to_unified_format(
                 data, symbol, exchange, timeframe,
             )
-            time.time() - convert_start
+            _ = time.time() - convert_start
 
             if unified_data is not None and not unified_data.empty:
-                (
+                _ = (
                     unified_data.memory_usage(deep=True).sum() / 1024 / 1024
                 )
                 self.logger.info(
@@ -1362,7 +1352,6 @@ class UnifiedDataOrchestrator:
             files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
 
             return [str(f) for f in files]
-
 
         except Exception as e:
             self.logger.exception(f"❌ Error finding raw data files: {e}")
@@ -1441,7 +1430,6 @@ class UnifiedDataOrchestrator:
                 f"{exchange}_{symbol}_{from_timeframe}_{to_timeframe}_{data_hash}"
             )
 
-
         except Exception:
             # Fallback to simple hash
             return f"{exchange}_{symbol}_{from_timeframe}_{to_timeframe}_{hash(str(data.shape))}"
@@ -1451,12 +1439,10 @@ class UnifiedDataOrchestrator:
         timeframe_minutes = {tf: self._timeframe_to_minutes(tf) for tf in timeframes}
         return sorted(timeframes, key=lambda tf: timeframe_minutes[tf])
 
-
     def _get_base_timeframe(self, timeframes: list[str]) -> str:
         """Get the base timeframe (highest resolution)."""
         sorted_timeframes = self._sort_timeframes_by_resolution(timeframes)
         return sorted_timeframes[0] if sorted_timeframes else "1m"
-
 
     def _timeframe_to_minutes(self, timeframe: str) -> int:
         """Convert timeframe string to minutes."""
@@ -1496,7 +1482,7 @@ class UnifiedDataOrchestrator:
                 if self.enable_memory_optimization:
                     self._force_garbage_collection()
 
-                time.time() - cleanup_start
+                _ = time.time() - cleanup_start
 
             except asyncio.CancelledError:
                 break
@@ -1508,7 +1494,7 @@ class UnifiedDataOrchestrator:
         try:
             gc_start = time.time()
             collected = gc.collect()
-            time.time() - gc_start
+            _ = time.time() - gc_start
 
             self.stats["memory_cleanups"] += 1
             self.logger.debug(f"🧹 Garbage collection: collected {collected} objects")
@@ -1524,8 +1510,6 @@ class UnifiedDataOrchestrator:
             "data_sharing_stats": self.data_sharing_manager.stats,
         }
 
-
-
     def get_cache_info(self) -> dict[str, Any]:
         """Get cache information."""
         return {
@@ -1536,9 +1520,6 @@ class UnifiedDataOrchestrator:
             ),
         }
 
-
-
-
 # Global instance
 _unified_data_orchestrator: UnifiedDataOrchestrator | None = None
 
@@ -1547,11 +1528,10 @@ def get_unified_data_orchestrator(config: dict[str, Any]) -> UnifiedDataOrchestr
     """Get or create the global unified data orchestrator instance."""
     global _unified_data_orchestrator
 
-
     if _unified_data_orchestrator is None:
         _unified_data_orchestrator = UnifiedDataOrchestrator(config)
     else:
-        pass
+        _unified_data_orchestrator.config = config
 
     return _unified_data_orchestrator
 
@@ -1560,16 +1540,15 @@ async def initialize_unified_data_orchestrator(config: dict[str, Any]) -> bool:
     """Initialize the global unified data orchestrator."""
     global _unified_data_orchestrator
 
-
     if _unified_data_orchestrator is None:
         _unified_data_orchestrator = UnifiedDataOrchestrator(config)
 
     success = await _unified_data_orchestrator.initialize()
 
     if success:
-    pass  # TODO: Add proper implementation
+        _unified_data_orchestrator.stats["initialized_at"] = datetime.now()
     else:
-        pass
+        system_logger.getChild("UnifiedDataOrchestrator").error("Initialization failed")
 
     return success
 
@@ -1578,9 +1557,8 @@ async def cleanup_unified_data_orchestrator() -> None:
     """Cleanup the global unified data orchestrator."""
     global _unified_data_orchestrator
 
-
     if _unified_data_orchestrator is not None:
         await _unified_data_orchestrator.cleanup()
         _unified_data_orchestrator = None
     else:
-        pass
+        system_logger.getChild("UnifiedDataOrchestrator").debug("No orchestrator to cleanup")

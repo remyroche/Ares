@@ -27,11 +27,7 @@ logger = system_logger.getChild("MEXCAggTradesDownloader")
     exceptions=(Exception,),
     default_return=False, context="download_mexc_agg_trades",
 )
-async def download_mexc_agg_trades(
-    symbol: str = "BTCUSDT",
-    lookback_days: int = 30,
-    output_dir: str = "data",
-) -> bool:
+async def download_mexc_agg_trades(symbol: str = "BTCUSDT", lookback_days: int = 30, output_dir: str = "data") -> bool:
     """
     Download aggregated trades from MEXC with Binance-compatible format.
 
@@ -65,8 +61,10 @@ async def download_mexc_agg_trades(
     logger.info("📥 Downloading aggregated trades from MEXC...")
 
     trades = await exchange.get_historical_agg_trades(
-        symbol = start_time_ms=start_time_ms,
-        end_time_ms=end_time_ms, limit=1000,
+        symbol=symbol,
+        start_time_ms=start_time_ms,
+        end_time_ms=end_time_ms,
+        limit=1000,
     )
 
     if not trades:

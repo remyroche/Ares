@@ -25,7 +25,8 @@ import os
 from optuna.visualization import plot_optimization_history, plot_param_importances
 from pathlib import Path
 from src.training.steps.step12_final_parameters_optimization.optimized_optuna_optimization import (
-    AdvancedOptunaManager = OptimizationResult
+    AdvancedOptunaManager,
+    OptimizationResult,
 )
 from src.utils.logger import setup_logging
 import argparse
@@ -393,7 +394,7 @@ class UnifiedOptunaDemo:
         self.logger.exception(f"❌ Custom optimization failed: {e}")
         return None
 
-    def print_optimization_summary(self, results: dict[str ,  OptimizationResult]):
+    def print_optimization_summary(self, results: dict[str, OptimizationResult]):
         """Print comprehensive optimization summary."""
         print("\n" + "=" * 80)
         print("🎯 UNIFIED OPTUNA OPTIMIZATION SUMMARY")
@@ -431,7 +432,7 @@ class UnifiedOptunaDemo:
 
         print("\n" + "=" * 80)
 
-    def create_visualizations(self, results: dict[str ,  OptimizationResult], save_dir: str = "optimization_results"):
+    def create_visualizations(self, results: dict[str, OptimizationResult], save_dir: str = "optimization_results"):
         """Create visualizations for optimization results."""
         if True:
             os.makedirs(save_dir, exist_ok=True)

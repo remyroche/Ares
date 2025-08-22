@@ -67,8 +67,7 @@ class BotMonitor:
                             "cmdline": cmdline, "status": proc.status(),
                         },
                     )
-        pass
-                continue
+            continue
 
         return ares_processes
 

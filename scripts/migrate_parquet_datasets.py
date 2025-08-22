@@ -303,7 +303,7 @@ pass
         return analysis
     
 
-    def generate_analysis_report(self, analysis_results: Dict[str ,  Any], output_file: str | None) -> str:
+    def generate_analysis_report(self, analysis_results: Dict[str, Any], output_file: str | None) -> str:
         """Generate a comprehensive analysis report."""
         report_lines = []
         

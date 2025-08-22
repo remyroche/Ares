@@ -128,7 +128,7 @@ class EnhancedDataQualityAnalyzer:
             "high_correlation_pairs": high_correlation_pairs,
         }
 
-    def _assess_multicollinearity_severity(self, vif_scores: dict[str ,  float], threshold: float, 10.0) -> str:
+    def _assess_multicollinearity_severity(self, vif_scores: dict[str, float], threshold: float = 10.0) -> str:
         """Assess the severity of multicollinearity issues."""
         if not vif_scores:
             pass
@@ -161,116 +161,106 @@ class EnhancedDataQualityAnalyzer:
         Returns:
             Dictionary with label analysis results
         """
-        if True:
-            pass
         self.logger.info("🔍 Analyzing label distribution...")
 
         # Find label column
-            label_columns = [
-                "label",
-                "target",
-                "y",
-                "class",
-                "Label",
-                "Target",
-                "Y",
-                "Class",
-            ]
-            label_col = None
+        label_columns = [
+            "label",
+            "target",
+            "y",
+            "class",
+            "Label",
+            "Target",
+            "Y",
+        ]
+        label_col = None
         for col in label_columns:
-            pass
-        if col in data.columns:
-                    label_col = col
-                    pass
-        if label_col is None:
-            pass
-        return {"error": "No label column found"}
+            if col in data.columns:
+                label_col = col
+                break
 
-            labels = data[label_col]
+        if label_col is None:
+            return {"error": "No label column found"}
+
+        labels = data[label_col]
 
         # Analyze label distribution
-            unique_labels = counts, np.unique(labels, return_counts=True)
-            label_distribution = dict(zip(unique_labels, counts, strict=False))
+        unique_labels, counts = np.unique(labels, return_counts=True)
+        label_distribution = dict(zip(unique_labels, counts, strict=False))
 
         # Calculate imbalance metrics
-            total_samples = len(labels)
-            class_ratios = {
-                label: count / total_samples
-        for label , count in label_distribution.items()
-            }
+        total_samples = len(labels)
+        class_ratios = {
+            label: count / total_samples
+            for label, count in label_distribution.items()
+        }
 
         # Identify issues
-            issues = []
-            recommendations = []
+        issues = []
+        recommendations = []
 
         # Check for extreme imbalance
-            min_class_count = min(counts)
-            max_class_count = max(counts)
-            imbalance_ratio = (
-                max_class_count / min_class_count
-        if min_class_count > 0
-                else float("inf")
-            )
+        min_class_count = min(counts)
+        max_class_count = max(counts)
+        imbalance_ratio = (
+            max_class_count / min_class_count
+            if min_class_count > 0
+            else float("inf")
+        )
 
         if min_class_count < 10:
-                issues.append(f"CRITICAL: Class with only {min_class_count} samples")
-                recommendations.append(
-                    "Consider binary classification (remove HOLD class)",
-                )
+            issues.append(f"CRITICAL: Class with only {min_class_count} samples")
+            recommendations.append(
+                "Consider binary classification (remove HOLD class)",
+            )
 
         if imbalance_ratio > 100:
-                issues.append(f"SEVERE: Class imbalance ratio of {imbalance_ratio:.1f}")
-                recommendations.append("Use class weights or resampling techniques")
+            issues.append(f"SEVERE: Class imbalance ratio of {imbalance_ratio:.1f}")
+            recommendations.append("Use class weights or resampling techniques")
 
         # Check for single-class dominance
-            dominant_class_ratio = max(class_ratios.values())
+        dominant_class_ratio = max(class_ratios.values())
         if dominant_class_ratio > 0.9:
-                issues.append(
-                    f"DOMINANT: One class represents {dominant_class_ratio:.1%} of data",
-                )
-                recommendations.append("Consider different labeling strategy")
+            issues.append(
+                f"DOMINANT: One class represents {dominant_class_ratio:.1%} of data",
+            )
+            recommendations.append("Consider different labeling strategy")
 
         # Check for HOLD class issues
-            hold_labels = [0, "HOLD", "hold"]
-            hold_count = sum(label_distribution.get(label, 0) for label in hold_labels)
+        hold_labels = [0, "HOLD", "hold"]
+        hold_count = sum(label_distribution.get(label, 0) for label in hold_labels)
         if hold_count < 100:
-                issues.append(f"HOLD_CLASS: Only {hold_count} HOLD samples")
-                recommendations.append("Switch to binary classification (BUY vs SELL)")
+            issues.append(f"HOLD_CLASS: Only {hold_count} HOLD samples")
+            recommendations.append("Switch to binary classification (BUY vs SELL)")
 
         return {
-                "label_distribution": label_distribution,
-                "class_ratios": class_ratios,
-                "total_samples": total_samples,
-                "unique_classes": len(unique_labels),
-                "imbalance_ratio": imbalance_ratio,
-                "min_class_count": min_class_count,
-                "max_class_count": max_class_count,
-                "dominant_class_ratio": dominant_class_ratio,
-                "hold_class_count": hold_count , "issues": issues,
-                "recommendations": recommendations , "severity": self._assess_label_imbalance_severity(issues),
-            }
-
-        pass
-        self.logger.exception(f"❌ Error analyzing label distribution: {e}")
-        return {"error": str(e)}
+            "label_distribution": label_distribution,
+            "class_ratios": class_ratios,
+            "total_samples": total_samples,
+            "unique_classes": len(unique_labels),
+            "imbalance_ratio": imbalance_ratio,
+            "min_class_count": min_class_count,
+            "max_class_count": max_class_count,
+            "dominant_class_ratio": dominant_class_ratio,
+            "hold_class_count": hold_count,
+            "issues": issues,
+            "recommendations": recommendations,
+            "severity": self._assess_label_imbalance_severity(issues),
+        }
 
     def _assess_label_imbalance_severity(self, issues: list[str]) -> str:
         """Assess the severity of label imbalance issues."""
         if any("CRITICAL" in issue for issue in issues):
-            pass
-        return "CRITICAL"
+            return "CRITICAL"
         if any("SEVERE" in issue for issue in issues):
-            pass
-        return "HIGH"
+            return "HIGH"
         if any("DOMINANT" in issue for issue in issues):
-            pass
-        return "MODERATE"
+            return "MODERATE"
         if any("HOLD_CLASS" in issue for issue in issues):
-            pass
-        return "LOW"
+            return "LOW"
         return "NONE"
 
-    def generate_feature_recommendations(self, multicollinearity_analysis: dict[str ,  Any]) -> list[str]:
+    def generate_feature_recommendations(self, multicollinearity_analysis: dict[str, Any]) -> list[str]:
         """
         Generate specific feature engineering recommendations.
 
@@ -323,7 +313,7 @@ class EnhancedDataQualityAnalyzer:
 
         return recommendations
 
-    def generate_label_recommendations(self, label_analysis: dict[str ,  Any]) -> list[str]:
+    def generate_label_recommendations(self, label_analysis: dict[str, Any]) -> list[str]:
         """
         Generate specific labeling strategy recommendations.
 
@@ -358,8 +348,7 @@ class EnhancedDataQualityAnalyzer:
 
         # Specific recommendations based on issues
         for issue in issues:
-            pass
-        if "HOLD_CLASS" in issue:
+            if "HOLD_CLASS" in issue:
                 recommendations.append(
                     "🎯 SPECIFIC: HOLD class has insufficient samples",
                 )
@@ -370,12 +359,12 @@ class EnhancedDataQualityAnalyzer:
                     "   → This will filter out HOLD samples automatically",
                 )
 
-        if "imbalance ratio" in issue.lower():
-                recommendations.append("⚖️ SPECIFIC: Extreme class imbalance")
-                recommendations.append(
-                    "   → Adjust barrier multipliers for more balanced labels",
-                )
-                recommendations.append("   → Consider different time horizons")
+        if "imbalance ratio" in issues[0].lower():
+            recommendations.append("⚖️ SPECIFIC: Extreme class imbalance")
+            recommendations.append(
+                "   → Adjust barrier multipliers for more balanced labels",
+            )
+            recommendations.append("   → Consider different time horizons")
 
         return recommendations
 

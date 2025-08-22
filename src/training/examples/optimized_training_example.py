@@ -46,7 +46,7 @@ async def main() -> None:
     # 2. Get optimization configuration with custom overrides
     custom_optimization_config = {
         "parallelization": {
-            "max_workers": min(os.cpu_count(), 12),  # Use more workers if available
+            "max_workers": min(os.cpu_count() or 1, 12),  # Use more workers if available
         },
         "memory_management": {
             "memory_threshold": 0.75,  # More aggressive memory management
@@ -62,12 +62,12 @@ async def main() -> None:
     validation_results = validate_optimization_config(optimization_config)
     if not validation_results["valid"]:
         for _error in validation_results["errors"]:
-    pass  # TODO: Add proper implementation
+            logger.error(f"Optimization config error: {_error}")
         return
 
     if validation_results["warnings"]:
         for _warning in validation_results["warnings"]:
-    pass  # TODO: Add proper implementation
+            logger.warning(f"Optimization config warning: {_warning}")
     # 4. Get optimization recommendations
     recommendations = get_optimization_recommendations(base_config)
     logger.info("System-specific optimization recommendations:")
@@ -161,9 +161,9 @@ async def main() -> None:
     leak_results = leak_detector.check_for_leaks()
     if leak_results["leak_detected"]:
         for _indicator in leak_results.get("indicators", []):
-    pass  # TODO: Add proper implementation
+            logger.warning(f"Memory leak indicator: {_indicator}")
         for rec in leak_results.get("recommendations", []):
-    pass  # TODO: Add proper implementation
+            logger.info(f"Leak mitigation recommendation: {rec}")
     else:
         logger.info("No memory leaks detected")
 

@@ -70,33 +70,35 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name, state=None, *args, **kwarg
     """Module-level normalized ctor to avoid creating a closure (picklable)."""
     global _NP_ORIGINAL_BITGEN_CTOR
     name_candidate = bit_generator_name
-    try: if hasattr(name_candidate = "__name__"):
+    try:
+        if hasattr(name_candidate, "__name__"):
             name_candidate = name_candidate.__name__
         elif isinstance(name_candidate, str) and name_candidate.startswith("<class "):
-            name_candidate, name_candidate.split(".")[-1].split("'>")[0]
+            name_candidate = name_candidate.split(".")[-1].split("'>")[0]
     except Exception:
         pass
 
-    effective_state, kwargs.get("state", state)
-    try: return _NP_ORIGINAL_BITGEN_CTOR(name_candidate = effective_state)  # type: ignore[misc]
+    effective_state = kwargs.get("state", state)
+    try:
+        # Prefer calling with (name, state) if supported
+        return _NP_ORIGINAL_BITGEN_CTOR(name_candidate, effective_state)  # type: ignore[misc]
     except (TypeError, ValueError):
         try:
-        return _NP_ORIGINAL_BITGEN_CTOR(name_candidate)  # type: ignore[misc]
+            # Fallback: call with just the name
+            return _NP_ORIGINAL_BITGEN_CTOR(name_candidate)  # type: ignore[misc]
         except Exception:
-        try:
+            try:
                 import numpy as _np
-
-                bitgen_cls, getattr(_np.random, name_candidate, None)
-        if bitgen_cls is None and name_candidate == "MT19937":
-        try:
+                bitgen_cls = getattr(_np.random, name_candidate, None)
+                if bitgen_cls is None and name_candidate == "MT19937":
+                    try:
                         import numpy.random._mt19937 as _mt  # type: ignore[attr-defined]
-
-                        bitgen_cls, getattr(_mt, "MT19937", None)
-        except Exception:
+                        bitgen_cls = getattr(_mt, "MT19937", None)
+                    except Exception:
                         bitgen_cls = None
-        if bitgen_cls is not None:
-        return bitgen_cls()
-        except Exception:
+                if bitgen_cls is not None:
+                    return bitgen_cls()
+            except Exception:
                 pass
             raise
 
@@ -109,13 +111,13 @@ def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
     try:
         import numpy.random._pickle as np_random_pickle  # type: ignore[attr-defined]
 
-        original_ctor, getattr(np_random_pickle, "__bit_generator_ctor", None)
+        original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
         if original_ctor is None:
             _NUMPY_RNG_UNPICKLE_PATCHED = True
             return
 
         _NP_ORIGINAL_BITGEN_CTOR = original_ctor
-        np_random_pickle.__bit_generator_ctor, _normalized_numpy_bitgen_ctor  # type: ignore[attr-defined]
+        np_random_pickle.__bit_generator_ctor = _normalized_numpy_bitgen_ctor  # type: ignore[attr-defined]
         _NUMPY_RNG_UNPICKLE_PATCHED = True
         if logger is not None:
             logger.info("Applied NumPy RNG unpickle compatibility shim")
@@ -180,39 +182,40 @@ class AnalystEnhancementStep:
     def _safe_get_device(self) -> str:
         """Safely determine the best device to use with timeout protection."""
         try:
-        # Use threading with timeout to prevent hanging
+            # Use threading with timeout to prevent hanging
             import queue
             import threading
 
             result_queue = queue.Queue()
 
             def check_mps() -> None:
-        try:
+                try:
                     is_available = torch.backends.mps.is_available()
                     result_queue.put(("mps" if is_available else "cpu", None))
-        except Exception as e:
+                except Exception as e:
                     result_queue.put(("cpu", e))
 
-        # Start the check in a separate thread
-            thread, threading.Thread(target=check_mps)
-            thread.daemon, True
+            # Start the check in a separate thread
+            thread = threading.Thread(target=check_mps)
+            thread.daemon = True
             thread.start()
 
-        # Wait for result with timeout
-        try: device = error, result_queue.get(timeout=10)  # 10 second timeout
-        if error:
-        self.logger.error(failed("MPS check failed: {error}, using CPU"))
-        return "cpu"
-        return device
-        except queue.Empty:
-        self.logger.exception(
+            # Wait for result with timeout
+            try:
+                device, err = result_queue.get(timeout=10)  # 10 second timeout
+                if err:
+                    self.logger.error(failed(f"MPS check failed: {err}, using CPU"))
+                    return "cpu"
+                return device
+            except queue.Empty:
+                self.logger.exception(
                     timeout("MPS availability check timed out, using CPU"),
                 )
-        return "cpu"
+                return "cpu"
 
-        except Exception:
-        self.logger.exception(error("Error checking MPS availability: {e}, using CPU"))
-        return "cpu"
+        except Exception as e:
+            self.logger.exception(error(f"Error checking MPS availability: {e}, using CPU"))
+            return "cpu"
 
     @handle_errors(
         exceptions=(Exception,),
@@ -245,257 +248,260 @@ class AnalystEnhancementStep:
         self.logger.info("🔄 Executing Analyst Enhancement...")
         with contextlib.suppress(Exception):
             pass
-        start_time = datetime.now(),
+        start_time = datetime.now()
 
-        try: data_dir = training_input.get("data_dir", "data/training")
-            models_dir, os.path.join(data_dir, "models")
-        # Use the main data_dir for regime data, not processed_data_dir
-            regime_data_dir = data_dir,
+        try:
+            data_dir = training_input.get("data_dir", "data/training")
+            models_dir = os.path.join(data_dir, "models")
+            # Use the main data_dir for regime data, not processed_data_dir
+            regime_data_dir = data_dir
 
-        self.logger.info(f"📁 Data directory: {data_dir}")
-        self.logger.info(f"📁 Models directory: {models_dir}")
-        self.logger.info(f"📁 Regime data directory: {regime_data_dir}")
+            self.logger.info(f"📁 Data directory: {data_dir}")
+            self.logger.info(f"📁 Models directory: {models_dir}")
+            self.logger.info(f"📁 Regime data directory: {regime_data_dir}")
 
-        self.logger.info("🔄 Loading HMM-based models from previous step...")
-        self.logger.info({"msg": "Load models start", "dir": models_dir})
-        with contextlib.suppress(Exception):
+            self.logger.info("🔄 Loading HMM-based models from previous step...")
+            self.logger.info({"msg": "Load models start", "dir": models_dir})
+            with contextlib.suppress(Exception):
                 pass
-            hmm_models = self._load_models(models_dir),
-        self.logger.info(
+            hmm_models = self._load_models(models_dir)
+            self.logger.info(
                 {"msg": "Load models complete", "count": len(hmm_models or {})},
             )
-        with contextlib.suppress(Exception):
+            with contextlib.suppress(Exception):
                 pass
-        if not hmm_models:
-                msg = f"No HMM-based models found in {models_dir}. Step 5 must complete successfully first.",
+            if not hmm_models:
+                msg = f"No HMM-based models found in {models_dir}. Step 5 must complete successfully first."
                 raise ValueError(msg)
-        if isinstance(hmm_models, dict):
-        try:
-                    timeframes_count = len(hmm_models),
-                    counts_per_timeframe = {,
-                        k: (len(v) if isinstance(v = dict) else "n/a")
-        for k, v in hmm_models.items()
+            if isinstance(hmm_models, dict):
+                try:
+                    timeframes_count = len(hmm_models)
+                    counts_per_timeframe = {
+                        k: (len(v) if isinstance(v, dict) else "n/a")
+                        for k, v in hmm_models.items()
                     }
-        self.logger.info(
+                    self.logger.info(
                         f"Loaded HMM-based models summary: timeframes={timeframes_count}, models_per_timeframe={counts_per_timeframe}"
                     )
-        except Exception:
+                except Exception:
                     pass
 
         # Log performance metrics before enhancement
         try:
-                from src.training.steps.unified_data_loader import UnifiedDataLoader
+            from src.training.steps.unified_data_loader import UnifiedDataLoader
 
-                data_loader = UnifiedDataLoader(self.config),
-                perf_metrics = data_loader.get_performance_metrics(),
-        self.logger.info("📊 Performance before enhancement:")
-        self.logger.info(
-                    f"   Memory Usage: {perf_metrics['memory_usage']['percent']:.1f}%",
-                )
-        self.logger.info(
-                    f"   Cache Size: {perf_metrics['cache_stats']['cache_size']}/{perf_metrics['cache_stats']['max_cache_size']}",
-                )
+            data_loader = UnifiedDataLoader(self.config)
+            perf_metrics = data_loader.get_performance_metrics()
+            self.logger.info("📊 Performance before enhancement:")
+            self.logger.info(
+                f"   Memory Usage: {perf_metrics['memory_usage']['percent']:.1f}%",
+            )
+            self.logger.info(
+                f"   Cache Size: {perf_metrics['cache_stats']['cache_size']}/{perf_metrics['cache_stats']['max_cache_size']}",
+            )
         except Exception as e:
-        self.logger.warning(f"⚠️ Could not get performance metrics: {e}")
+            self.logger.warning(f"⚠️ Could not get performance metrics: {e}")
 
         # Enable parallel processing for model enhancement
-            import asyncio
-            import gc
+        import asyncio
+        import gc
 
         self.logger.info(
-                "🔄 Setting up parallel processing for model enhancement...",
-            )
-            enhanced_models_summary = {},
+            "🔄 Setting up parallel processing for model enhancement...",
+        )
+        enhanced_models_summary = {}
 
         # Process regimes in parallel for better efficiency
         async def enhance_regime_models(regime_name, regime_models):
-        self.logger.info(f"🚀 Starting enhancement for regime: {regime_name}")
-        self.logger.info(
-                    f"📊 Regime {regime_name} has {len(regime_models)} models to enhance",
+            self.logger.info(f"🚀 Starting enhancement for regime: {regime_name}")
+            self.logger.info(
+                f"📊 Regime {regime_name} has {len(regime_models)} models to enhance",
+            )
+            with contextlib.suppress(Exception):
+                pass
+
+            try:
+                self.logger.info(
+                    f"📂 Loading training data for regime: {regime_name}",
                 )
-        with contextlib.suppress(Exception):
-                    pass
-
-        try:
-        self.logger.info(
-                        f"📂 Loading training data for regime: {regime_name}",
-                    )
-                    X_train, y_train, X_val, y_val, self._load_regime_data(
-                        regime_data_dir,
-                        regime_name,
-                    )
-        self.logger.info(
-                        f"✅ Loaded data for regime {regime_name}: train={X_train.shape}, val={X_val.shape}"
-                    )
-        except FileNotFoundError:
-        self.logger.exception(error("⚠️ {e} — skipping regime '{regime_name}'"))
-        return regime_name, {}
-
-        # Memory cleanup before processing
-        self.logger.info(
-                    f"🧹 Performing memory cleanup for regime: {regime_name}",
+                X_train, y_train, X_val, y_val, self._load_regime_data(
+                    regime_data_dir,
+                    regime_name,
                 )
-                gc.collect()
-
-                enhanced_regime_models = {},
-        self.logger.info(
-                    f"🔄 Starting model enhancement loop for regime: {regime_name}",
+                self.logger.info(
+                    f"✅ Loaded data for regime {regime_name}: train={X_train.shape}, val={X_val.shape}"
                 )
-        for i, (model_name, model_data) in enumerate(regime_models.items(), 1):
-        self.logger.info(
-                        f"🔧 Enhancing model {i}/{len(regime_models)}: {model_name} for {regime_name}...",
-                    )
+            except FileNotFoundError:
+                self.logger.exception(error("⚠️ {e} — skipping regime '{regime_name}'"))
+                return regime_name, {}
 
-                    enhanced_model_package, await self._enhance_single_model(
-                        model_data,
-                        model_name,
-                        regime_name,
-                        X_train,
-                        y_train,
-                        X_val,
-                        y_val,
-                    )
-                    enhanced_regime_models[model_name] = enhanced_model_package
-        self.logger.info(
-                        f"✅ Completed enhancement for {model_name} in regime {regime_name}",
-                    )
+            # Memory cleanup before processing
+            self.logger.info(
+                f"🧹 Performing memory cleanup for regime: {regime_name}",
+            )
+            gc.collect()
 
-        # Memory cleanup after each model
-        self.logger.info(f"🧹 Memory cleanup after {model_name}")
-                    gc.collect()
+            enhanced_regime_models = {}
+            self.logger.info(
+                f"🔄 Starting model enhancement loop for regime: {regime_name}",
+            )
+            for i, (model_name, model_data) in enumerate(regime_models.items(), 1):
+                self.logger.info(
+                    f"🔧 Enhancing model {i}/{len(regime_models)}: {model_name} for {regime_name}...",
+                )
 
-        with contextlib.suppress(Exception):
-                    pass
+                enhanced_model_package, await self._enhance_single_model(
+                    model_data,
+                    model_name,
+                    regime_name,
+                    X_train,
+                    y_train,
+                    X_val,
+                    y_val,
+                )
+                enhanced_regime_models[model_name] = enhanced_model_package
+                self.logger.info(
+                    f"✅ Completed enhancement for {model_name} in regime {regime_name}",
+                )
 
-        return regime_name, enhanced_regime_models
+            # Memory cleanup after each model
+            self.logger.info(f"🧹 Memory cleanup after {model_name}")
+            gc.collect()
+
+            with contextlib.suppress(Exception):
+                pass
+
+            return regime_name, enhanced_regime_models
 
         # Create tasks for parallel processing
         self.logger.info(
-                f"🔄 Creating parallel processing tasks for {len(hmm_models)} regimes...",
-            )
-            tasks = [],
+            f"🔄 Creating parallel processing tasks for {len(hmm_models)} regimes...",
+        )
+        tasks = []
         for regime_name, regime_models in hmm_models.items():
-                task, enhance_regime_models(regime_name, regime_models)
-                tasks.append(task)
+            task, enhance_regime_models(regime_name, regime_models)
+            tasks.append(task)
 
         # Execute tasks with limited concurrency to avoid memory issues
-            max_concurrent, min(3, len(tasks))  # Limit to 3 concurrent regimes
+        max_concurrent = min(3, len(tasks))  # Limit to 3 concurrent regimes
         self.logger.info(
-                f"⚡ Processing {len(tasks)} regimes with max {max_concurrent} concurrent tasks",
-            )
+            f"⚡ Processing {len(tasks)} regimes with max {max_concurrent} concurrent tasks",
+        )
 
         for batch_idx, i in enumerate(range(0, len(tasks), max_concurrent), 1):
-                batch = tasks[i : i + max_concurrent],
-        self.logger.info(
-                    f"🔄 Processing batch {batch_idx}: regimes {i+1}-{min(i+max_concurrent, len(tasks))}",
-                )
-                results, await asyncio.gather(*batch, return_exceptions=True)
+            batch = tasks[i : i + max_concurrent]
+            self.logger.info(
+                f"🔄 Processing batch {batch_idx}: regimes {i+1}-{min(i+max_concurrent, len(tasks))}",
+            )
+            results, await asyncio.gather(*batch, return_exceptions=True)
 
         for result in results:
-        if isinstance(result, Exception):
-        self.logger.error(
-                            f"❌ Error in parallel regime processing: {result}",
-                        )
-                    else:
-                        regime_name = enhanced_regime_models, result,
-                        enhanced_models_summary[regime_name] = enhanced_regime_models
-        self.logger.info(
-                            f"✅ Completed batch processing for regime: {regime_name}",
-                        )
+            if isinstance(result, Exception):
+                self.logger.error(
+                    f"❌ Error in parallel regime processing: {result}",
+                )
+            else:
+                regime_name, result = result
+                enhanced_models_summary[regime_name] = result
+                self.logger.info(
+                    f"✅ Completed batch processing for regime: {regime_name}",
+                )
 
         # Memory cleanup between batches
         self.logger.info(f"🧹 Memory cleanup after batch {batch_idx}")
-                gc.collect()
+        gc.collect()
 
         self.logger.info("💾 Saving enhanced models...")
-            enhanced_models_dir, self._save_enhanced_models(
-                enhanced_models_summary,
-                data_dir,
-                training_input,
-            )
+        enhanced_models_dir, self._save_enhanced_models(
+            enhanced_models_summary,
+            data_dir,
+            training_input,
+        )
 
-            duration = (datetime.now() - start_time).total_seconds(),
+        duration = (datetime.now() - start_time).total_seconds()
         self.logger.info(
-                f"✅ Analyst enhancement completed in {duration:.2f}s. Results saved to {enhanced_models_dir}",
-            )
+            f"✅ Analyst enhancement completed in {duration:.2f}s. Results saved to {enhanced_models_dir}",
+        )
         with contextlib.suppress(Exception):
-                pass
+            pass
 
-            pipeline_state["enhanced_hmm_models"] = enhanced_models_summary
+        pipeline_state["enhanced_hmm_models"] = enhanced_models_summary
         return {
-                "status": "SUCCESS",
-                "enhanced_models_dir": enhanced_models_dir,
-                "duration": duration,
-            }
+            "status": "SUCCESS",
+            "enhanced_models_dir": enhanced_models_dir,
+            "duration": duration,
+        }
 
         except Exception as e:
-            duration = (datetime.now() - start_time).total_seconds(),
-        self.logger.error(
+            duration = (datetime.now() - start_time).total_seconds()
+            self.logger.error(
                 f"❌ Error in Analyst Enhancement after {duration:.2f}s: {e}",
                 exc_info=True,
             )
-        return {"status": "FAILED", "error": str(e), "duration": duration}
+            return {"status": "FAILED", "error": str(e), "duration": duration}
 
     def _load_models(self, models_dir: str) -> dict[str, Any]:
         """Loads all analyst models from the specified directory, supporting both traditional and HMM composite regime structures."""
         # Ensure NumPy RNG pickles created under different versions can be loaded
         _enable_numpy_rng_unpickle_compat(self.logger)
-        analyst_models = {},
+        analyst_models = {}
         if not os.path.exists(models_dir):
-        return analyst_models
+            return analyst_models
 
         # Check if we have the new regime-specific structure
-        has_regime_specific_structure = False,
+        has_regime_specific_structure = False
         for item in os.listdir(models_dir):
-            item_path, os.path.join(models_dir, item)
-        if os.path.isdir(item_path):
-        # Check if this looks like a regime-specific directory
-        if any(
+            item_path = os.path.join(models_dir, item)
+            if os.path.isdir(item_path):
+                # Check if this looks like a regime-specific directory
+                if any(
                     regime_file.endswith((".pkl", ".joblib"))
-        for regime_file in os.listdir(item_path)
+                    for regime_file in os.listdir(item_path)
                 ):
-                    has_regime_specific_structure = True,
+                    has_regime_specific_structure = True
                     break
 
         if has_regime_specific_structure:
-        self.logger.info("🔄 Loading models with regime-specific structure")
-        # Load regime-specific models
-        for regime_dir in os.listdir(models_dir):
-                regime_path, os.path.join(models_dir, regime_dir)
-        if os.path.isdir(regime_path):
-                    regime_models = {},
-        for model_file in os.listdir(regime_path):
-        if model_file.endswith((".pkl", ".joblib"):
+            self.logger.info("🔄 Loading models with regime-specific structure")
+            # Load regime-specific models
+            for regime_dir in os.listdir(models_dir):
+                regime_path = os.path.join(models_dir, regime_dir)
+                if os.path.isdir(regime_path):
+                    regime_models = {}
+                    for model_file in os.listdir(regime_path):
+                        if model_file.endswith((".pkl", ".joblib"):
                             model_name, model_file.replace(".pkl", "")
                             model_name, model_name.replace(".joblib", "")
-                            model_path, os.path.join(regime_path, model_file)
-        try:
-        if model_file.endswith(".joblib"):
+                            model_path = os.path.join(regime_path, model_file)
+                            try:
+                                if model_file.endswith(".joblib"):
                                     regime_models[model_name] = joblib.load(model_path)
-                                else: with open(model_path = "rb") as f:
+                                else:
+                                    with open(model_path, "rb") as f:
                                         regime_models[model_name] = pickle.load(f)
-        except (ValueError, TypeError) as e:
-        self.logger.warning(f"Failed to load {model_name}: {e}")
+                            except (ValueError, TypeError) as e:
+                                self.logger.warning(f"Failed to load {model_name}: {e}")
                                 continue
 
-        if regime_models:
+                    if regime_models:
                         analyst_models[regime_dir] = regime_models
-        else:
-        self.logger.info("🔄 Loading models with traditional structure")
-        # Fallback to traditional model loading structure
-        for model_file in os.listdir(models_dir):
-        if model_file.endswith((".pkl", ".joblib"):
-                    model_name, model_file.replace(".pkl", "")
-                    model_name, model_name.replace(".joblib", "")
-                    model_path, os.path.join(models_dir, model_file)
-        try:
-        if model_file.endswith(".joblib"):
-                            analyst_models[model_name] = joblib.load(model_path)
-                        else: with open(model_path = "rb") as f:
-                                analyst_models[model_name] = pickle.load(f)
-        except (ValueError, TypeError) as e:
-        self.logger.warning(f"Failed to load {model_name}: {e}")
-                        continue
+                    else:
+                        self.logger.info("🔄 Loading models with traditional structure")
+                        # Fallback to traditional model loading structure
+                        for model_file in os.listdir(models_dir):
+                            if model_file.endswith((".pkl", ".joblib"):
+                                model_name, model_file.replace(".pkl", "")
+                                model_name, model_name.replace(".joblib", "")
+                                model_path = os.path.join(models_dir, model_file)
+                                try:
+                                    if model_file.endswith(".joblib"):
+                                        analyst_models[model_name] = joblib.load(model_path)
+                                    else:
+                                        with open(model_path, "rb") as f:
+                                            analyst_models[model_name] = pickle.load(f)
+                                except (ValueError, TypeError) as e:
+                                    self.logger.warning(f"Failed to load {model_name}: {e}")
+                                    continue
 
         return analyst_models
 
@@ -503,256 +509,256 @@ class AnalystEnhancementStep:
         self, data_dir: str, timeframe_name: str, ) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
         """Loads training and validation data for a specific timeframe using optimized unified data loader."""
         try:
-        self.logger.info(
+            self.logger.info(
                 f"Loading data for timeframe '{timeframe_name}' using unified data loader...",
             )
 
-            symbol, self.config.get("symbol", "ETHUSDT")
-            exchange, self.config.get("exchange", "BINANCE")
-            timeframe, self.config.get("timeframe", "1m")
+            symbol = self.config.get("symbol", "ETHUSDT")
+            exchange = self.config.get("exchange", "BINANCE")
+            timeframe = self.config.get("timeframe", "1m")
 
         # Try to load from unified data loader first (more efficient)
         try:
-                from src.config.constants import (
-                    BLANK_TRAINING_LOOKBACK_DAYS,
-                )
+            from src.config.constants import (
+                BLANK_TRAINING_LOOKBACK_DAYS,
+            )
 
         # Use lookback_days from config (should be passed from enhanced training manager)
-                config_lookback, self.config.get(
-                    "lookback_days", BLANK_TRAINING_LOOKBACK_DAYS,
-                )
-                data_loader = get_unified_data_loader(self.config),
-                historical_data, await data_loader.load_unified_data(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    lookback_days=config_lookback,
-                    use_streaming=True,  # Enable streaming for large datasets,
-                )
+            config_lookback = self.config.get(
+                "lookback_days", BLANK_TRAINING_LOOKBACK_DAYS,
+            )
+            data_loader = get_unified_data_loader(self.config)
+            historical_data, await data_loader.load_unified_data(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                lookback_days=config_lookback,
+                use_streaming=True,  # Enable streaming for large datasets,
+            )
 
         if historical_data is not None and not historical_data.empty:
         # For HMM-based training, we use all data since models are trained on composite clusters
         # Filter by timeframe if timeframe information is available
-        if "timeframe" in historical_data.columns:
-                        timeframe_data = historical_data[,
-                            historical_data["timeframe"] == timeframe_name
-                        ]
-                    else: # If no timeframe column = use all data (fallback)
-                        timeframe_data = historical_data,
+            if "timeframe" in historical_data.columns:
+                timeframe_data = historical_data[
+                    historical_data["timeframe"] == timeframe_name
+                ]
+            else: # If no timeframe column = use all data (fallback)
+                timeframe_data = historical_data
 
-        if not timeframe_data.empty:
-        self.logger.info(
-                            f"✅ Loaded {len(timeframe_data)} rows for timeframe '{timeframe_name}' using unified data loader",
-                        )
+            if not timeframe_data.empty:
+                self.logger.info(
+                    f"✅ Loaded {len(timeframe_data)} rows for timeframe '{timeframe_name}' using unified data loader",
+                )
 
         # Split into train/validation (80/20)
-                        split_idx = int(len(timeframe_data) * 0.8),
-                        train_data = timeframe_data.iloc[:split_idx],
-                        val_data = timeframe_data.iloc[split_idx:],
+            split_idx = int(len(timeframe_data) * 0.8)
+            train_data = timeframe_data.iloc[:split_idx]
+            val_data = timeframe_data.iloc[split_idx:]
 
         # Extract features and target
-        if "label" in timeframe_data.columns:
-                            X_train, train_data.drop(
-                                ["label", "timestamp"], axis=1, errors="ignore"
-                            )
-                            y_train = train_data["label"],
-                            X_val, val_data.drop(
-                                ["label", "timestamp"], axis=1, errors="ignore"
-                            )
-                            y_val = val_data["label"],
-                        else:
+            if "label" in timeframe_data.columns:
+                X_train, train_data.drop(
+                    ["label", "timestamp"], axis=1, errors="ignore"
+                )
+                y_train = train_data["label"]
+                X_val, val_data.drop(
+                    ["label", "timestamp"], axis=1, errors="ignore"
+                )
+                y_val = val_data["label"]
+            else:
         # Create synthetic target if no label column
-                            X_train, train_data.drop(
-                                ["timestamp"], axis=1, errors="ignore"
-                            )
-                            y_train, pd.Series(
-                                np.random.choice([0, 1], size=len(train_data))
-                            )
-                            X_val, val_data.drop(
-                                ["timestamp"], axis=1, errors="ignore"
-                            )
-                            y_val, pd.Series(
-                                np.random.choice([0, 1], size=len(val_data))
-                            )
+                X_train, train_data.drop(
+                    ["timestamp"], axis=1, errors="ignore"
+                )
+                y_train, pd.Series(
+                    np.random.choice([0, 1], size=len(train_data))
+                )
+                X_val, val_data.drop(
+                    ["timestamp"], axis=1, errors="ignore"
+                )
+                y_val, pd.Series(
+                    np.random.choice([0, 1], size=len(val_data))
+                )
 
         return X_train, y_train, X_val, y_val
 
         except Exception as e:
-        self.logger.warning(
-                    f"⚠️ Unified data loader failed for timeframe '{timeframe_name}': {e}, falling back to pickle files",
-                )
+            self.logger.warning(
+                f"⚠️ Unified data loader failed for timeframe '{timeframe_name}': {e}, falling back to pickle files",
+            )
 
         # Fallback to original pickle file loading for HMM-based data
         # Look for HMM composite data files
-            symbol, self.config.get("symbol", "ETHUSDT")
-            exchange, self.config.get("exchange", "BINANCE")
+            symbol = self.config.get("symbol", "ETHUSDT")
+            exchange = self.config.get("exchange", "BINANCE")
 
         # Try to load HMM composite data
-            hmm_data_path, os.path.join(
+            hmm_data_path = os.path.join(
                 data_dir,
                 f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe_name}.parquet",
             )
 
         if os.path.exists(hmm_data_path):
         # Load HMM composite data
-                hmm_data = pd.read_parquet(hmm_data_path),
+                hmm_data = pd.read_parquet(hmm_data_path)
 
         # Load intensity data if available
-                intensity_path, os.path.join(
-                    data_dir,
-                    f"{exchange}_{symbol}_hmm_composite_intensity_{timeframe_name}.parquet",
-                )
+            intensity_path = os.path.join(
+                data_dir,
+                f"{exchange}_{symbol}_hmm_composite_intensity_{timeframe_name}.parquet",
+            )
 
         if os.path.exists(intensity_path):
-                    intensity_data = pd.read_parquet(intensity_path),
+                    intensity_data = pd.read_parquet(intensity_path)
         # Merge HMM clusters with intensity data
-                    data, hmm_data.merge(intensity_data, on="timestamp", how="inner")
+                    data = hmm_data.merge(intensity_data, on="timestamp", how="inner")
                 else:
-                    data = hmm_data,
+                    data = hmm_data
 
-        self.logger.info(
-                    f"Loaded HMM data shape: {data.shape}, columns: {list(data.columns)}",
-                )
+            self.logger.info(
+                f"Loaded HMM data shape: {data.shape}, columns: {list(data.columns)}",
+            )
 
         # Remove non-numeric columns that XGBoost doesn't accept
-                numeric_columns, data.select_dtypes(include=[np.number]).columns
-                data = data[numeric_columns],
+            numeric_columns = data.select_dtypes(include=[np.number]).columns
+            data = data[numeric_columns]
 
-        self.logger.info(
-                    f"After numeric filtering: {data.shape}, columns: {list(data.columns)}",
-                )
+            self.logger.info(
+                f"After numeric filtering: {data.shape}, columns: {list(data.columns)}",
+            )
 
         # Check for target column with different possible names
-                target_column = None,
-                target_candidates = [,
-                    "composite_cluster_id",  # HMM cluster ID as target
-                    "label",
-                    "target",
-                    "y",
-                    "class",
-                    "signal",
-                    "prediction",
-                ]
+            target_column = None
+            target_candidates = [
+                "composite_cluster_id",  # HMM cluster ID as target
+                "label",
+                "target",
+                "y",
+                "class",
+                "signal",
+                "prediction",
+            ]
 
         for possible_target in target_candidates:
-        if possible_target in data.columns:
-                        target_column = possible_target,
-        self.logger.info(f"Found target column: {target_column}")
-                        break
+            if possible_target in data.columns:
+                target_column = possible_target
+                self.logger.info(f"Found target column: {target_column}")
+                break
 
         if target_column is None:
-        self.logger.warning(
-                        f"No target column found in HMM data. Available columns: {list(data.columns)}",
-                    )
+            self.logger.warning(
+                f"No target column found in HMM data. Available columns: {list(data.columns)}",
+            )
 
         # Try to create a meaningful target from available data
-                    target_created, self._create_target_from_data(data, timeframe_name)
+            target_created, self._create_target_from_data(data, timeframe_name)
 
         if target_created:
-                        target_column = "label",
-        self.logger.info(
-                            "Successfully created target column from available data",
-                        )
-                    else:
-        self.logger.warning(
-                            "Creating dummy target - this may not be suitable for training",
-                        )
-                        data["label"] = np.random.choice([0, 1], size=len(data))
-                        target_column = "label",
+            target_column = "label"
+            self.logger.info(
+                "Successfully created target column from available data",
+            )
+        else:
+            self.logger.warning(
+                "Creating dummy target - this may not be suitable for training",
+            )
+            data["label"] = np.random.choice([0, 1], size=len(data))
+            target_column = "label"
         # Rename target column to 'label' for consistency
-                elif target_column != "label":
-                    data["label"] = data[target_column]
-                    data, data.drop(columns=[target_column])
+            elif target_column != "label":
+                data["label"] = data[target_column]
+                data = data.drop(columns=[target_column])
 
         # Split features and target
-                X, data.drop("label", axis=1)
-                y = data["label"],
+            X, data.drop("label", axis=1)
+            y = data["label"]
 
         # Validate target distribution
-                unique_targets = y.unique(),
+            unique_targets = y.unique()
         # Mode-aware, structured target distribution logging
-                blank_mode = (os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
-                    or bool(CONFIG.get("BLANK_TRAINING_MODE", False))
-                    or bool(CONFIG.get("blank_training_mode", False))
-                )
-                target_dist = dict(y.value_counts()),
-        self.logger.info(
-                    f"Target distribution: {target_dist}",
-                    extra={,
-                        "mode": "blank" if blank_mode else "full",
-                        "target_distribution": target_dist,
-                        "unique_classes": sorted(set(y.unique().tolist())),
-                        "note": (
-                            "BLANK MODE: Skewed or single-class targets can be normal with limited data"
+            blank_mode = (os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
+                or bool(CONFIG.get("BLANK_TRAINING_MODE", False))
+                or bool(CONFIG.get("blank_training_mode", False))
+            )
+            target_dist = dict(y.value_counts())
+            self.logger.info(
+                f"Target distribution: {target_dist}",
+                extra={
+                    "mode": "blank" if blank_mode else "full",
+                    "target_distribution": target_dist,
+                    "unique_classes": sorted(set(y.unique().tolist())),
+                    "note": (
+                        "BLANK MODE: Skewed or single-class targets can be normal with limited data"
         if blank_mode
-                            else "",
-                        ),
-                        "next_steps": (
-                            "Optional in blank mode: consider proxy or median-based target for quick diversity"
+                        else "",
+                    ),
+                    "next_steps": (
+                        "Optional in blank mode: consider proxy or median-based target for quick diversity"
         if blank_mode
-                            else "Review labeling thresholds/event rates if distribution is degenerate",
-                        ),
-                    },
-                )
+                        else "Review labeling thresholds/event rates if distribution is degenerate",
+                    ),
+                },
+            )
 
         if len(unique_targets) <= 1:
         # Emit mode-aware structured warning
-        self.logger.warning(
-                        f"⚠️ Target has only {len(unique_targets)} unique values: {unique_targets}",
-                        extra={,
-                            "mode": "blank" if blank_mode else "full",
-                            "unique_values": unique_targets.tolist()
+            self.logger.warning(
+                f"⚠️ Target has only {len(unique_targets)} unique values: {unique_targets}",
+                extra={
+                    "mode": "blank" if blank_mode else "full",
+                    "unique_values": unique_targets.tolist()
         if hasattr(unique_targets, "tolist")
-                            else list(unique_targets),
-                            "unique_count": len(unique_targets),
-                            "note": (
-                                "BLANK MODE: Often normal with limited data"
+                    else list(unique_targets),
+                    "unique_count": len(unique_targets),
+                    "note": (
+                        "BLANK MODE: Often normal with limited data"
         if blank_mode
-                                else "Consider revisiting labeling thresholds or creating a proxy target"
-                            ),
-                            "next_steps": (
-                                "Optional: use proxy/median-based target or adjust quick-test settings"
+                        else "Consider revisiting labeling thresholds or creating a proxy target"
+                    ),
+                    "next_steps": (
+                        "Optional: use proxy/median-based target or adjust quick-test settings"
         if blank_mode
-                                else "Check label generation, event rates, or use proxy/median-based target",
-                            ),
-                        },
-                    )
+                        else "Check label generation, event rates, or use proxy/median-based target",
+                    ),
+                },
+            )
         # Create a more diverse target if possible
         if len(data.columns) > 1:
         # Use the first numeric column as a proxy target
-                        proxy_column = data.columns[0],
-        if proxy_column != "label":
-                            proxy_values = data[proxy_column],
+            proxy_column = data.columns[0]
+            if proxy_column != "label":
+                proxy_values = data[proxy_column]
         # Create binary target based on median
-                            median_val = proxy_values.median(),
-                            y = (proxy_values > median_val).astype(int),
-        self.logger.info(
-                                f"Created proxy target from {proxy_column} (median: {median_val})",
-                            )
-        self.logger.info(
-                                f"New target distribution: {dict(y.value_counts())}",
-                            )
+                median_val = proxy_values.median()
+                y = (proxy_values > median_val).astype(int)
+            self.logger.info(
+                f"Created proxy target from {proxy_column} (median: {median_val})",
+            )
+            self.logger.info(
+                f"New target distribution: {dict(y.value_counts())}",
+            )
 
         # Split into train and validation
-                train_size = int(0.8 * len(data)),
-                X_train = X[:train_size],
-                y_train = y[:train_size],
-                X_val = X[train_size:],
-                y_val = y[train_size:],
+            train_size = int(0.8 * len(data))
+            X_train = X[:train_size]
+            y_train = y[:train_size]
+            X_val = X[train_size:]
+            y_val = y[train_size:]
 
-        self.logger.info(
-                    f"Data loaded and split: X_train shape {X_train.shape}, X_val shape {X_val.shape}",
-                )
-        self.logger.info(
-                    f"Target classes in training: {y_train.unique()}, in validation: {y_val.unique()}",
-                )
+            self.logger.info(
+                f"Data loaded and split: X_train shape {X_train.shape}, X_val shape {X_val.shape}",
+            )
+            self.logger.info(
+                f"Target classes in training: {y_train.unique()}, in validation: {y_val.unique()}",
+            )
 
-        return X_train, y_train, X_val, y_val
-            msg = f"HMM data file for timeframe '{timeframe_name}' not found: {hmm_data_path}. Step 6 requires HMM data from Step 5.",
+            return X_train, y_train, X_val, y_val
+            msg = f"HMM data file for timeframe '{timeframe_name}' not found: {hmm_data_path}. Step 6 requires HMM data from Step 5."
             raise FileNotFoundError(msg)
 
         except Exception:
-        self.logger.exception(
+            self.logger.exception(
                 error("Error loading HMM data for '{timeframe_name}': {e}"),
             )
             raise
@@ -772,28 +778,28 @@ class AnalystEnhancementStep:
         """
         try:
         # Look for price-related columns that could be used to create targets
-            price_columns = [,
+            price_columns = [
                 col
-        for col in data.columns
-        if any(
+                for col in data.columns
+                if any(
                     price_term in col.lower()
-        for price_term in ["close", "price", "value"]
+                    for price_term in ["close", "price", "value"]
                 )
             ]
 
         if price_columns:
         # Use the first price column to create a target
-                price_col = price_columns[0],
-                price_values = data[price_col],
+                price_col = price_columns[0]
+                price_values = data[price_col]
 
         # Create a simple momentum-based target
         if len(price_values) > 1:
         # Calculate price changes
-                    price_changes = price_values.pct_change().fillna(0),
+                    price_changes = price_values.pct_change().fillna(0)
 
         # Create binary target based on positive/negative momentum
-                    threshold, price_changes.std() * 0.1  # Small threshold
-                    target = (price_changes > threshold).astype(int),
+                    threshold = price_changes.std() * 0.1  # Small threshold
+                    target = (price_changes > threshold).astype(int)
 
         # Ensure we have at least 2 classes
         if target.nunique() >= 2:
@@ -804,16 +810,16 @@ class AnalystEnhancementStep:
         return True
 
         # Look for volume-related columns
-            volume_columns = [col for col in data.columns if "volume" in col.lower()],
+            volume_columns = [col for col in data.columns if "volume" in col.lower()]
 
         if volume_columns:
-                volume_col = volume_columns[0],
-                volume_values = data[volume_col],
+                volume_col = volume_columns[0]
+                volume_values = data[volume_col]
 
         # Create target based on volume spikes
         if len(volume_values) > 1:
-                    volume_median = volume_values.median(),
-                    target = (volume_values > volume_median).astype(int),
+                    volume_median = volume_values.median()
+                    target = (volume_values > volume_median).astype(int)
 
         if target.nunique() >= 2:
                         data["label"] = target
@@ -825,11 +831,11 @@ class AnalystEnhancementStep:
         # Look for any numeric column with good variance
         for col in data.columns:
         if col != "label" and data[col].dtype in ["int64", "float64"]:
-                    values = data[col],
+                    values = data[col]
         if values.nunique() >= 2 and values.std() > 0:
         # Create target based on above/below median
-                        median_val = values.median(),
-                        target = (values > median_val).astype(int),
+                        median_val = values.median()
+                        target = (values > median_val).astype(int)
 
         if target.nunique() >= 2:
                             data["label"] = target
@@ -853,11 +859,11 @@ class AnalystEnhancementStep:
 
         # Support both legacy dict payloads and direct model instances
         if isinstance(model_data, dict):
-            original_accuracy, model_data.get("accuracy", "N/A")
-            initial_model = model_data.get("model"),
+            original_accuracy = model_data.get("accuracy", "N/A")
+            initial_model = model_data.get("model")
         else:
-            original_accuracy = "N/A",
-            initial_model = model_data,
+            original_accuracy = "N/A"
+            initial_model = model_data
         self.logger.info(f"📊 Original model accuracy: {original_accuracy}")
         self.logger.info(
             f"📊 Training data shape: {X_train.shape}, Validation data shape: {X_val.shape}",
@@ -893,17 +899,17 @@ class AnalystEnhancementStep:
             }
 
         # Enforce feature list isolation (exclude metadata/non-features)
-        allow_features = [,
+        allow_features = [
             c
-        for c in X_train.columns
-        if c not in self._METADATA_COLUMNS and c not in self._LABEL_COLUMNS
+            for c in X_train.columns
+            if c not in self._METADATA_COLUMNS and c not in self._LABEL_COLUMNS
         ]
         if len(allow_features) != X_train.shape[1]:
         self.logger.info(
                 f"Feature isolation excluded {X_train.shape[1]-len(allow_features)} non-feature columns",
             )
-        X_train = X_train[allow_features],
-        X_val = X_val[allow_features],
+        X_train = X_train[allow_features]
+        X_val = X_val[allow_features]
 
         # --- HMM-Specific Model Architecture Enhancement ---
         # Different architectures require different enhancement strategies
@@ -1242,13 +1248,13 @@ class AnalystEnhancementStep:
         return RandomForestClassifier(**params, random_state=42, n_jobs=-1)
         if model_name == "lightgbm":
         # Ensure CPU execution to avoid 'Unknown device type mps'
-            safe_params = params.copy(),
+            safe_params = params.copy()
             safe_params.pop("device", None)
             safe_params["device_type"] = "cpu"
         return lgb.LGBMClassifier(**safe_params, random_state=42, n_jobs=-1)
         if model_name == "xgboost":
         # Remove eval_metric and device from params if they exist to avoid duplicate/unsupported parameters
-            xgb_params = params.copy(),
+            xgb_params = params.copy()
         if "eval_metric" in xgb_params:
                 del xgb_params["eval_metric"]
         if "device" in xgb_params:
@@ -1284,19 +1290,19 @@ class AnalystEnhancementStep:
         self.logger.info(f"🚀 Running Optuna HPO with pruning for {model_name}...")
 
         # Track progress
-        trial_count = 0,
+        trial_count = 0
         # Determine blank mode (support both ENV and CONFIG flag)
         try: is_blank_env = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
         except Exception:
-            is_blank_env = False,
+            is_blank_env = False
         try: is_blank_cfg = bool(CONFIG.get("BLANK_TRAINING_MODE", False))
         except Exception:
-            is_blank_cfg = False,
-        blank_mode = is_blank_env or is_blank_cfg,
+            is_blank_cfg = False
+        blank_mode = is_blank_env or is_blank_cfg
 
         default_trials, min(50, self.config.get("n_trials", 50))
         # In BLANK mode, restrict trials aggressively for speed across all models
-        total_trials = 3 if blank_mode else default_trials,
+        total_trials = 3 if blank_mode else default_trials
         self.logger.info(
             {
                 "msg": "HPO trial plan",
@@ -1321,7 +1327,7 @@ class AnalystEnhancementStep:
             )
         with contextlib.suppress(Exception):
                 pass
-            pruning_callback = None,
+            pruning_callback = None
 
         # Validate target data before proceeding
         if y_train.nunique() <= 1:
@@ -1335,16 +1341,16 @@ class AnalystEnhancementStep:
         # Align pruning metric and study direction for LightGBM using logloss (minimize)
         # Determine binary vs multiclass
                 n_classes, len(set(pd.concat([y_train, y_val]).unique()))
-                is_multiclass = n_classes > 2,
-                lgb_objective = "multiclass" if is_multiclass else "binary",
-                lgb_metric = "multi_logloss" if is_multiclass else "binary_logloss",
+                is_multiclass = n_classes > 2
+                lgb_objective = "multiclass" if is_multiclass else "binary"
+                lgb_metric = "multi_logloss" if is_multiclass else "binary_logloss"
 
         # Enable pruning in both blank and full modes
                 pruning_callback, optuna.integration.LightGBMPruningCallback(
                     trial,
                     lgb_metric,
                 )
-                params = {,
+                params = {
                     "objective": lgb_objective,
                     "metric": lgb_metric,
                     "verbosity": -1,
@@ -1373,7 +1379,7 @@ class AnalystEnhancementStep:
                     trial,
                     "validation_0-logloss",
                 )
-                params = {,
+                params = {
                     "objective": "binary:logistic",
                     "eval_metric": "logloss",
                     "verbosity": 0,
@@ -1403,7 +1409,7 @@ class AnalystEnhancementStep:
                 )
             elif model_name == "svm":
         # SVM doesn't support iterative pruning
-                params = {,
+                params = {
                     "C": trial.suggest_float("C", 0.1, 100.0, log=True)
                     "kernel": trial.suggest_categorical(
                         "kernel",
@@ -1427,7 +1433,7 @@ class AnalystEnhancementStep:
                         },
                     )
             elif model_name == "neural_network":
-                params = {,
+                params = {
                     "hidden_layer_sizes": trial.suggest_categorical(
                         "hidden_layer_sizes",
                         [(50,), (100,), (50, 25), (100, 50), (100, 50, 25)],
@@ -1442,7 +1448,7 @@ class AnalystEnhancementStep:
                     "max_iter": trial.suggest_int("max_iter", 200, 1000),
                 }
             else:
-                params = {,
+                params = {
                     "n_estimators": trial.suggest_int("n_estimators", 50, 500),
                     "max_depth": trial.suggest_int("max_depth", 5, 50),
                     "min_samples_split": trial.suggest_int("min_samples_split", 2, 20),
@@ -1454,8 +1460,8 @@ class AnalystEnhancementStep:
         # Train the model with appropriate parameters based on model type
         if model_name == "lightgbm":
         # LightGBM supports callbacks. Train with eval_set so pruning can observe logloss.
-                use_pruning = pruning_callback is not None,
-                fit_kwargs = {"eval_set": [(X_val, y_val)]},
+                use_pruning = pruning_callback is not None
+                fit_kwargs = {"eval_set": [(X_val, y_val)]}
         if use_pruning:
                     fit_kwargs["callbacks"] = [pruning_callback]
         # Suppress LightGBM training output
@@ -1473,7 +1479,7 @@ class AnalystEnhancementStep:
                     )
 
                 def timeout_handler(signum, frame) -> Never:
-                    msg = "LightGBM training timed out",
+                    msg = "LightGBM training timed out"
                     raise TimeoutError(msg)
 
         # Set a timeout of 5 minutes for training
@@ -1486,8 +1492,8 @@ class AnalystEnhancementStep:
 
         try:
         # Redirect stdout to suppress LightGBM output
-                    old_stdout = sys.stdout,
-                    sys.stdout, StringIO()
+                    old_stdout = sys.stdout
+                    sys.stdout = StringIO()
 
         with warnings.catch_warnings():
                         warnings.simplefilter("ignore")
@@ -1495,7 +1501,7 @@ class AnalystEnhancementStep:
 
         finally:
         # Restore stdout
-                    sys.stdout, old_stdout
+                    sys.stdout = old_stdout
                     signal.alarm(0)  # Cancel the alarm
             elif model_name == "xgboost":
         # XGBoost doesn't support callbacks parameter, use eval_set only
@@ -1511,7 +1517,7 @@ class AnalystEnhancementStep:
                     )
                 model.fit(X_train, y_train)
 
-            preds = model.predict(X_val),
+            preds = model.predict(X_val)
             accuracy, accuracy_score(y_val, preds)
         # Return metric aligned with study direction: for LightGBM use logloss (minimize); others use accuracy (maximize)
         if model_name == "svm":
@@ -1540,7 +1546,7 @@ class AnalystEnhancementStep:
         # Ensure labels ordering covers all classes present
                 labels_sorted, sorted(pd.unique(pd.concat([y_train, y_val])))
         # Use predict_proba to compute logloss
-                y_proba = model.predict_proba(X_val),
+                y_proba = model.predict_proba(X_val)
         try: loss = log_loss(y_val, y_proba, labels=labels_sorted)
         except Exception:
         # Fallback: if labels parameter causes issues, omit it
@@ -1549,7 +1555,7 @@ class AnalystEnhancementStep:
         return float(accuracy)
 
         # Align study direction with the objective metric
-        study_direction = "maximize",
+        study_direction = "maximize"
         study, optuna.create_study(
             direction=study_direction,
             pruner=optuna.pruners.MedianPruner(n_warmup_steps=5),
@@ -1557,7 +1563,7 @@ class AnalystEnhancementStep:
 
         # Add progress callback
         def progress_callback(study, trial) -> None:
-            completed_trials = len(study.trials),
+            completed_trials = len(study.trials)
         if completed_trials % 1 == 0:  # Log every trial for better visibility
         self.logger.info(
                     {
@@ -1574,13 +1580,12 @@ class AnalystEnhancementStep:
         try:
             import platform
         except Exception:
-            platform = None,
+            platform = None
         try: is_macos = platform.system() == "Darwin" if platform else False
         except Exception:
-            is_macos = False,
+            is_macos = False
         # Prefer conservative parallelism for SVM and on macOS to avoid thread contention
-        parallel_jobs = (1 if (model_name == "svm" or is_macos) else min(4, os.cpu_count() or 4)
-        )
+        parallel_jobs = (1 if (model_name == "svm" or is_macos) else min(4, os.cpu_count() or 4))
 
         # Visibility around optimize lifecycle
         self.logger.info(
@@ -1652,15 +1657,15 @@ class AnalystEnhancementStep:
             pass
 
         # Enforce feature isolation at selection start
-        feature_names = [,
+        feature_names = [
             c
-        for c in X_val.columns.tolist()
-        if c not in self._METADATA_COLUMNS and c not in self._LABEL_COLUMNS
+            for c in X_val.columns.tolist()
+            if c not in self._METADATA_COLUMNS and c not in self._LABEL_COLUMNS
         ]
         # Align training/validation to explicit feature list
-        X_train = X_train[feature_names],
-        X_val = X_val[feature_names],
-        total_features = len(feature_names),
+        X_train = X_train[feature_names]
+        X_val = X_val[feature_names]
+        total_features = len(feature_names)
 
         # Check 4: Mutual Information warnings (uni-variate predictive power)
         try: self._log_mutual_information_warnings(X_train = y_train)
@@ -1708,11 +1713,11 @@ class AnalystEnhancementStep:
         # Detect blank mode
         try: is_blank_env = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
         except Exception:
-            is_blank_env = False,
+            is_blank_env = False
         try: is_blank_cfg = bool(CONFIG.get("BLANK_TRAINING_MODE", False))
         except Exception:
-            is_blank_cfg = False,
-        blank_mode = is_blank_env or is_blank_cfg,
+            is_blank_cfg = False
+        blank_mode = is_blank_env or is_blank_cfg
         # Compute MI
         mi, mutual_info_classif(
             X.values, y.values, discrete_features=False, random_state=42
@@ -1721,10 +1726,10 @@ class AnalystEnhancementStep:
         if blank_mode:
             low, mi_series[mi_series <= 1e-5]
         else:
-            threshold = mi_series.quantile(0.20),
+            threshold = mi_series.quantile(0.20)
             low, mi_series[mi_series <= threshold]
         if not low.empty:
-            names = low.sort_values().index.tolist(),
+            names = low.sort_values().index.tolist()
         self.logger.warning(
                 f"MI: {len(names)} features show near-zero uni-variate predictive power (<= {('1e-5' if blank_mode else f'{threshold:.4g}')}): {names[:50]}{' ...' if len(names)>50 else ''}"
             )
@@ -1740,19 +1745,19 @@ class AnalystEnhancementStep:
         for col in X.columns:
         try: vals = X[col].astype(float).values
         # Skip constant columns
-                gstd = float(np.nanstd(vals)),
+                gstd = float(np.nanstd(vals))
         if not np.isfinite(gstd) or gstd == 0.0:
                     continue
-                fold_means = [],
+                fold_means = []
         for train_idx, _ in kf.split(vals):
-                    fold_vals = vals[train_idx],
+                    fold_vals = vals[train_idx]
         if fold_vals.size == 0:
                         continue
                     fold_means.append(float(np.nanmean(fold_vals)))
         if len(fold_means) < 2:
                     continue
-                std_of_means = float(np.nanstd(fold_means)),
-                expected_se = gstd / np.sqrt(4),
+                std_of_means = float(np.nanstd(fold_means))
+                expected_se = gstd / np.sqrt(4)
         if std_of_means > 3.0 * expected_se:
                     unstable.append(col)
         except Exception:
@@ -1795,10 +1800,10 @@ class AnalystEnhancementStep:
         )
 
         # Categorize features by tier
-        feature_categories = self._categorize_features_by_tier(feature_names),
+        feature_categories = self._categorize_features_by_tier(feature_names)
 
-        selected_features = [],
-        selection_summary = {,
+        selected_features = []
+        selection_summary = {
             "method": "stable_tiered_selection",
             "total_features": len(feature_names),
             "selected_features": 0,
@@ -1997,7 +2002,7 @@ class AnalystEnhancementStep:
         return []
 
         # Get available features
-        available_features = [f for f in tier_1_features if f in X_val.columns],
+        available_features = [f for f in tier_1_features if f in X_val.columns]
         if not available_features:
         return []
 
@@ -2021,7 +2026,7 @@ class AnalystEnhancementStep:
         if not tier_2_features:
         return []
 
-        available_features = [f for f in tier_2_features if f in X_val.columns],
+        available_features = [f for f in tier_2_features if f in X_val.columns]
         if not available_features:
         return []
 
@@ -2046,7 +2051,7 @@ class AnalystEnhancementStep:
         if not tier_3_features:
         return []
 
-        available_features = [f for f in tier_3_features if f in X_val.columns],
+        available_features = [f for f in tier_3_features if f in X_val.columns]
         if not available_features:
         return []
 
@@ -2071,7 +2076,7 @@ class AnalystEnhancementStep:
         if not tier_4_features:
         return []
 
-        available_features = [f for f in tier_4_features if f in X_val.columns],
+        available_features = [f for f in tier_4_features if f in X_val.columns]
         if not available_features:
         return []
 
@@ -2096,7 +2101,7 @@ class AnalystEnhancementStep:
         if not tier_5_features:
         return []
 
-        available_features = [f for f in tier_5_features if f in X_val.columns],
+        available_features = [f for f in tier_5_features if f in X_val.columns]
         if not available_features:
         return []
 
@@ -2134,8 +2139,8 @@ class AnalystEnhancementStep:
                     len(X_train), size=len(X_train), replace=True
                 )
 
-                X_bootstrap = X_train.iloc[bootstrap_indices][available_features],
-                y_bootstrap = y_train.iloc[bootstrap_indices],
+                X_bootstrap = X_train.iloc[bootstrap_indices][available_features]
+                y_bootstrap = y_train.iloc[bootstrap_indices]
 
         # Perform feature selection on bootstrap sample
                 selected_features_bootstrap = (await self._select_features_single_bootstrap(
@@ -2158,16 +2163,16 @@ class AnalystEnhancementStep:
                 continue
 
         # Calculate selection stability for each feature
-        feature_stability = {,
+        feature_stability = {
             feature: freq / n_bootstrap_samples
-        for feature, freq in feature_selection_freq.items()
+            for feature, freq in feature_selection_freq.items()
         }
 
         # Select features that meet stability threshold
-        stable_features = [,
+        stable_features = [
             feature
-        for feature, stability in feature_stability.items()
-        if stability >= stability_threshold
+            for feature, stability in feature_stability.items()
+            if stability >= stability_threshold
         ]
 
         # Ensure minimum number of features per tier
@@ -2176,7 +2181,7 @@ class AnalystEnhancementStep:
             sorted_features, sorted(
                 feature_stability.items(), key=lambda x: x[1], reverse=True
             )
-            stable_features = [f[0] for f in sorted_features[:min_features_per_tier]],
+            stable_features = [f[0] for f in sorted_features[:min_features_per_tier]]
 
         # Limit to requested count
         if len(stable_features) > count:
@@ -2203,11 +2208,11 @@ class AnalystEnhancementStep:
         # Use model-based importance if available
         if hasattr(model, "feature_importances_"):
         # Tree-based models
-                feature_importance = model.feature_importances_,
+                feature_importance = model.feature_importances_
                 feature_importance_dict, dict(
                     zip(X_bootstrap.columns, feature_importance, strict=False)
                 )
-                tier_importance = {,
+                tier_importance = {
                     f: feature_importance_dict.get(f = 0) for f in available_features
                 }
                 selected_features, sorted(
@@ -2217,28 +2222,28 @@ class AnalystEnhancementStep:
         # Use criteria-based selection for non-tree models
         if selection_criteria == "stability":
         # Select based on feature stability (lower variance for normalized features)
-                feature_variance = X_bootstrap[available_features].var(),
+                feature_variance = X_bootstrap[available_features].var()
         return feature_variance.nsmallest(count).index.tolist()
         if selection_criteria == "significance":
         # Select based on absolute mean (higher values indicate more significant interactions)
-                feature_abs_mean = X_bootstrap[available_features].abs().mean(),
+                feature_abs_mean = X_bootstrap[available_features].abs().mean()
         return feature_abs_mean.nlargest(
                     count,
                 ).index.tolist()
         if selection_criteria == "temporal":
         # Select based on variance (higher variance indicates more temporal information)
-                feature_variance = X_bootstrap[available_features].var(),
+                feature_variance = X_bootstrap[available_features].var()
         return feature_variance.nlargest(count).index.tolist()
         if selection_criteria == "market_logic":
         # Select based on absolute mean (causality features should have meaningful values)
-                feature_abs_mean = X_bootstrap[available_features].abs().mean(),
+                feature_abs_mean = X_bootstrap[available_features].abs().mean()
         return feature_abs_mean.nlargest(count).index.tolist()
         # Default to variance-based selection
-            feature_variance = X_bootstrap[available_features].var(),
+            feature_variance = X_bootstrap[available_features].var()
         return feature_variance.nlargest(count).index.tolist()
         except Exception:
         # Fallback to variance-based selection
-            feature_variance = X_bootstrap[available_features].var(),
+            feature_variance = X_bootstrap[available_features].var()
         return feature_variance.nlargest(count).index.tolist()
 
     async def _apply_stable_final_pruning(
@@ -2284,7 +2289,7 @@ class AnalystEnhancementStep:
 
         # Initialize feature selection frequency counter
         feature_selection_freq, dict.fromkeys(feature_names, 0)
-        shap_values_all = [],
+        shap_values_all = []
 
         # Perform bootstrap sampling and SHAP analysis
         for i in range(n_bootstrap_samples):
@@ -2294,18 +2299,17 @@ class AnalystEnhancementStep:
                     len(X_train), size=len(X_train), replace=True
                 )
 
-                X_bootstrap = X_train.iloc[bootstrap_indices],
-                y_bootstrap = y_train.iloc[bootstrap_indices],
+                X_bootstrap = X_train.iloc[bootstrap_indices]
+                y_bootstrap = y_train.iloc[bootstrap_indices]
 
         # Sample validation set for SHAP analysis with adaptive size
                 sample_idx, np.random.RandomState(42 + i).choice(
                     len(X_val),
-                    size=min(validation_sample_size, len(X_val),
-                    ),  # Adaptive sample size
+                    size=min(validation_sample_size, len(X_val)),  # Adaptive sample size
                     replace=False,
                 )
-                X_val_sample = X_val.iloc[sample_idx],
-                y_val_sample = y_val.iloc[sample_idx],
+                X_val_sample = X_val.iloc[sample_idx]
+                y_val_sample = y_val.iloc[sample_idx]
 
         # Calculate SHAP values for bootstrap sample
                 shap_importance = (await self._calculate_shap_importance_single_bootstrap(
@@ -2334,16 +2338,16 @@ class AnalystEnhancementStep:
                 continue
 
         # Calculate selection stability for each feature
-        feature_stability = {,
+        feature_stability = {
             feature: freq / n_bootstrap_samples
-        for feature, freq in feature_selection_freq.items()
+            for feature, freq in feature_selection_freq.items()
         }
 
         # Select features that meet stability threshold
-        stable_features = [,
+        stable_features = [
             feature
-        for feature, stability in feature_stability.items()
-        if stability >= stability_threshold
+            for feature, stability in feature_stability.items()
+            if stability >= stability_threshold
         ]
 
         # Ensure minimum number of features
@@ -2351,7 +2355,7 @@ class AnalystEnhancementStep:
             sorted_features, sorted(
                 feature_stability.items(), key=lambda x: x[1], reverse=True
             )
-            stable_features = [f[0] for f in sorted_features[:min_features]],
+            stable_features = [f[0] for f in sorted_features[:min_features]]
 
         # Limit to maximum features
         if len(stable_features) > max_features:
@@ -2360,9 +2364,9 @@ class AnalystEnhancementStep:
             )[:max_features]
 
         # Calculate average SHAP importance for selected features
-        feature_shap_avg = {},
+        feature_shap_avg = {}
         for feature in stable_features:
-            shap_values = [shap_val for f, shap_val in shap_values_all if f == feature],
+            shap_values = [shap_val for f, shap_val in shap_values_all if f == feature]
         if shap_values:
                 feature_shap_avg[feature] = np.mean(shap_values)
 
@@ -2395,7 +2399,7 @@ class AnalystEnhancementStep:
         }
 
     def _get_adaptive_shap_sample_size(
-        self = total_samples: int, shap_config: dict, ) -> int:,
+        self, total_samples: int, shap_config: dict, ) -> int:
         """Calculate adaptive sample size for SHAP analysis based on dataset size."""
         # Get configuration parameters
         default_size, shap_config.get("validation_sample_size", 2000)
@@ -2412,10 +2416,10 @@ class AnalystEnhancementStep:
             sample_size, max(min_size, int(total_samples * 0.2))
         elif total_samples <= 50000:
         # Medium dataset: use 10% of data
-            sample_size = int(total_samples * 0.1),
+            sample_size = int(total_samples * 0.1)
         elif total_samples <= 200000:
         # Large dataset: use 5% of data
-            sample_size = int(total_samples * 0.05),
+            sample_size = int(total_samples * 0.05)
         else: # Very large dataset: use 2% of data = but cap at max_size
             sample_size, min(max_size, int(total_samples * 0.02))
 
@@ -2429,19 +2433,19 @@ class AnalystEnhancementStep:
     async def _calculate_shap_importance_single_bootstrap(
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, ) -> dict[str, float] | None:
         """Calculate SHAP importance for a single bootstrap sample."""
-        try: if model_name in ["lightgbm" = "xgboost", "random_forest"]:
+        try: if model_name in ["lightgbm", "xgboost", "random_forest"]:
         # Try TreeExplainer with proper import
         try:
                     from shap.explainers import TreeExplainer
 
-                    explainer = TreeExplainer(model),
-                    shap_values = explainer.shap_values(X_val),
+                    explainer = TreeExplainer(model)
+                    shap_values = explainer.shap_values(X_val)
 
         # Normalize SHAP outputs to a 1D importance vector
         if isinstance(shap_values, list):
-                        shap_array = np.asarray(shap_values),
+                        shap_array = np.asarray(shap_values)
                     else:
-                        shap_array = np.asarray(shap_values),
+                        shap_array = np.asarray(shap_values)
 
         # Handle different SHAP output shapes
         if shap_array.ndim == 2:
@@ -2518,8 +2522,8 @@ class AnalystEnhancementStep:
                     len(X_train), size=len(X_train), replace=True
                 )
 
-                X_bootstrap = X_train.iloc[bootstrap_indices],
-                y_bootstrap = y_train.iloc[bootstrap_indices],
+                X_bootstrap = X_train.iloc[bootstrap_indices]
+                y_bootstrap = y_train.iloc[bootstrap_indices]
 
         # Sample validation set
                 sample_idx, np.random.RandomState(42 + i).choice(
@@ -2527,8 +2531,8 @@ class AnalystEnhancementStep:
                     size=min(500, len(X_val)),
                     replace=False,
                 )
-                X_val_sample = X_val.iloc[sample_idx],
-                y_val_sample = y_val.iloc[sample_idx],
+                X_val_sample = X_val.iloc[sample_idx]
+                y_val_sample = y_val.iloc[sample_idx]
 
         # Perform robust feature selection on bootstrap sample
                 selected_features_bootstrap = (await self._robust_feature_selection_single_bootstrap(
@@ -2553,16 +2557,16 @@ class AnalystEnhancementStep:
                 continue
 
         # Calculate selection stability for each feature
-        feature_stability = {,
+        feature_stability = {
             feature: freq / n_bootstrap_samples
-        for feature, freq in feature_selection_freq.items()
+            for feature, freq in feature_selection_freq.items()
         }
 
         # Select features that meet stability threshold
-        stable_features = [,
+        stable_features = [
             feature
-        for feature, stability in feature_stability.items()
-        if stability >= stability_threshold
+            for feature, stability in feature_stability.items()
+            if stability >= stability_threshold
         ]
 
         # Ensure minimum number of features
@@ -2570,7 +2574,7 @@ class AnalystEnhancementStep:
             sorted_features, sorted(
                 feature_stability.items(), key=lambda x: x[1], reverse=True
             )
-            stable_features = [f[0] for f in sorted_features[:min_features]],
+            stable_features = [f[0] for f in sorted_features[:min_features]]
 
         # Limit to maximum features
         if len(stable_features) > max_features:
@@ -2596,11 +2600,11 @@ class AnalystEnhancementStep:
         """Perform robust feature selection for a single bootstrap sample."""
         try:
         # Try multiple feature selection methods
-            methods = [],
+            methods = []
 
         # Method 1: Variance-based selection
         try:
-                feature_variance = X_val[feature_names].var(),
+                feature_variance = X_val[feature_names].var()
                 variance_features, feature_variance.nlargest(
                     max_features,
                 ).index.tolist()
@@ -2613,7 +2617,7 @@ class AnalystEnhancementStep:
 
                 selector, SelectKBest(score_func=f_classif, k=max_features)
                 selector.fit(X_train[feature_names], y_train)
-                correlation_features = [,
+                correlation_features = [
                     feature_names[i] for i in selector.get_support(indices=True)
                 ]
                 methods.append(correlation_features)
@@ -2627,7 +2631,7 @@ class AnalystEnhancementStep:
                 mi_scores, mutual_info_classif(
                     X_train[feature_names], y_train, random_state=42
                 )
-                mi_features = [,
+                mi_features = [
                     feature_names[i] for i in np.argsort(mi_scores)[-max_features:]
                 ]
                 methods.append(mi_features)
@@ -2635,8 +2639,8 @@ class AnalystEnhancementStep:
                 pass
 
         # Method 4: Model-based importance (if available)
-        try: if hasattr(model = "feature_importances_"):
-                    feature_importance = model.feature_importances_,
+        try: if hasattr(model, "feature_importances_"):
+                    feature_importance = model.feature_importances_
                     feature_importance_dict, dict(
                         zip(X_train.columns, feature_importance, strict=False)
                     )
@@ -2645,7 +2649,7 @@ class AnalystEnhancementStep:
                         key=lambda x: x[1],
                         reverse=True,
                     )[:max_features]
-                    model_features = [,
+                    model_features = [
                         f[0] for f in model_features if f[0] in feature_names
                     ]
                     methods.append(model_features)
@@ -2654,7 +2658,7 @@ class AnalystEnhancementStep:
 
         # Combine methods using voting
         if methods:
-                feature_votes = {},
+                feature_votes = {}
         for method_features in methods:
         for feature in method_features:
                         feature_votes[feature] = feature_votes.get(feature, 0) + 1
@@ -2665,7 +2669,7 @@ class AnalystEnhancementStep:
                 )[:max_features]
         return [f[0] for f in selected_features]
         # Fallback to variance-based selection
-            feature_variance = X_val[feature_names].var(),
+            feature_variance = X_val[feature_names].var()
         return feature_variance.nlargest(max_features).index.tolist()
 
         except Exception:
@@ -2674,7 +2678,7 @@ class AnalystEnhancementStep:
 
     def _categorize_features_by_tier(self, feature_names: list) -> dict:
         """Categorize features into tiers based on naming patterns."""
-        categories = {,
+        categories = {
             "tier_1": [],  # Core features
             "tier_2": [],  # Normalized features
             "tier_3": [],  # Interaction features
@@ -2683,12 +2687,12 @@ class AnalystEnhancementStep:
         }
 
         for feature in feature_names:
-            feature_lower = feature.lower(),
+            feature_lower = feature.lower()
 
         # Tier 1: Core technical and liquidity features
         if any(
                 keyword in feature_lower
-        for keyword in [
+                for keyword in [
                     "rsi",
                     "macd",
                     "bb",
@@ -2712,7 +2716,7 @@ class AnalystEnhancementStep:
         # Tier 2: Normalized features
             elif any(
                 keyword in feature_lower
-        for keyword in [
+                for keyword in [
                     "_z_score",
                     "_change",
                     "_pct_change",
@@ -2735,7 +2739,7 @@ class AnalystEnhancementStep:
         # Tier 5: Causality features
             elif any(
                 keyword in feature_lower
-        for keyword in [
+                for keyword in [
                     "_predicts_",
                     "_causality",
                     "_divergence",
@@ -2754,28 +2758,28 @@ class AnalystEnhancementStep:
     def _save_enhanced_models(
         self, enhanced_models: dict, data_dir: str, training_input: dict, ) -> str:
         """Saves the enhanced models and a JSON summary report."""
-        enhanced_models_dir, os.path.join(data_dir, "enhanced_hmm_models")
+        enhanced_models_dir = os.path.join(data_dir, "enhanced_hmm_models")
         os.makedirs(enhanced_models_dir, exist_ok=True)
 
-        json_summary = {},
+        json_summary = {}
 
         for regime_name, models in enhanced_models.items():
-            regime_models_dir, os.path.join(enhanced_models_dir, regime_name)
+            regime_models_dir = os.path.join(enhanced_models_dir, regime_name)
             os.makedirs(regime_models_dir, exist_ok=True)
             json_summary[regime_name] = {}
 
         for model_name, model_data in models.items():
-                model_file, os.path.join(regime_models_dir, f"{model_name}.joblib")
+                model_file = os.path.join(regime_models_dir, f"{model_name}.joblib")
                 joblib.dump(model_data["model"], model_file)
 
-                summary_data = model_data.copy(),
+                summary_data = model_data.copy()
                 summary_data.pop("model", None)
                 summary_data["model_path"] = model_file
                 json_summary[regime_name][model_name] = summary_data
 
-        symbol, training_input.get("symbol", "ETHUSDT")
-        exchange, training_input.get("exchange", "BINANCE")
-        summary_file, os.path.join(
+        symbol = training_input.get("symbol", "ETHUSDT")
+        exchange = training_input.get("exchange", "BINANCE")
+        summary_file = os.path.join(
             data_dir,
             f"{exchange}_{symbol}_analyst_enhancement_summary.json",
         )
@@ -2809,12 +2813,12 @@ class AnalystEnhancementStep:
         model.to(self.device)
 
         # Convert calibration data to tensors
-        calib_tensor, torch.tensor(calibration_data.values, dtype=torch.float32).to(
+        calib_tensor = torch.tensor(calibration_data.values, dtype=torch.float32).to(
         self.device,
         )
 
         # 1. Collect activations
-        activations = {},
+        activations = {}
 
         def get_activation(name):
             def hook(model, input, output) -> None:
@@ -2822,7 +2826,7 @@ class AnalystEnhancementStep:
 
         return hook
 
-        hooks = [],
+        hooks = []
         for name, module in model.named_modules():
         if isinstance(module, nn.Linear):
                 hooks.append(module.register_forward_hook(get_activation(name)))
@@ -2834,11 +2838,11 @@ class AnalystEnhancementStep:
         # 2. Calculate importance and prune
         for name, module in model.named_modules():
         if isinstance(module, nn.Linear) and name in activations:
-                W = module.weight.data,
-                act_norm = activations[name],
+                W = module.weight.data
+                act_norm = activations[name]
 
         # WANDA Importance Score: |Weight| * ||Activation||
-                importance_scores, torch.abs(W) * act_norm
+                importance_scores = torch.abs(W) * act_norm
 
         # Prune the weights with the lowest importance scores
                 prune.l1_unstructured(
@@ -2850,9 +2854,9 @@ class AnalystEnhancementStep:
         # Make pruning permanent
                 prune.remove(module, "weight")
         try:
-                    total = W.numel(),
-                    nonzero = int(torch.count_nonzero(W).item()),
-                    sparsity_actual, 1.0 - (nonzero / max(1, total))
+                    total = W.numel()
+                    nonzero = int(torch.count_nonzero(W).item())
+                    sparsity_actual = 1.0 - (nonzero / max(1, total))
         self.logger.info(
                         {
                             "msg": "wanda_layer_sparsity",
@@ -2873,22 +2877,22 @@ class AnalystEnhancementStep:
         teacher_model.to(self.device).eval()
 
         # 1. Define a smaller student model
-        input_dim = X_train.shape[1],
-        student_model, nn.Sequential(
+        input_dim = X_train.shape[1]
+        student_model = nn.Sequential(
             nn.Linear(input_dim, 64),  # Smaller hidden layer
             nn.ReLU(),
             nn.Linear(64, 2),
         ).to(self.device)
 
         # 2. Setup training
-        optimizer, optim.Adam(student_model.parameters(), lr=0.001)
+        optimizer = optim.Adam(student_model.parameters(), lr=0.001)
 
         # Prepare data
-        train_dataset, TensorDataset(
-            torch.tensor(X_train.values, dtype=torch.float32)
-            torch.tensor(y_train.values, dtype=torch.long)
+        train_dataset = TensorDataset(
+            torch.tensor(X_train.values, dtype=torch.float32),
+            torch.tensor(y_train.values, dtype=torch.long),
         )
-        train_loader, DataLoader(train_dataset, batch_size=64, shuffle=True)
+        train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
 
         # Distillation parameters
         T = 2.0  # Temperature for softening probabilities,
@@ -2898,24 +2902,24 @@ class AnalystEnhancementStep:
         student_model.train()
         for epoch in range(5):  # A short training for demonstration
         for data, targets in train_loader:
-                data, targets, data.to(self.device), targets.to(self.device)
+                data, targets = data.to(self.device), targets.to(self.device)
 
         # Get teacher's logits (outputs before softmax)
         with torch.no_grad():
-                    teacher_logits = teacher_model(data),
+                    teacher_logits = teacher_model(data)
 
         # Get student's logits
-                student_logits = student_model(data),
+                student_logits = student_model(data)
 
         # Calculate losses
-                loss_hard, F.cross_entropy(student_logits, targets)  # Standard loss
-                loss_soft, nn.KLDivLoss(reduction="batchmean")(
-                    F.log_softmax(student_logits / T, dim=1)
+                loss_hard = F.cross_entropy(student_logits, targets)  # Standard loss
+                loss_soft = nn.KLDivLoss(reduction="batchmean")(
+                    F.log_softmax(student_logits / T, dim=1),
                     F.softmax(teacher_logits / T, dim=1)
                 ) * (T * T)  # Scaling factor
 
         # Combine losses
-                loss, alpha * loss_hard + (1.0 - alpha) * loss_soft
+                loss = alpha * loss_hard + (1.0 - alpha) * loss_soft
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -2943,27 +2947,27 @@ class AnalystEnhancementStep:
             from catboost import CatBoostClassifier
 
             def objective(trial: optuna.Trial) -> float:
-                params = {,
-                    "iterations": trial.suggest_int("iterations", 300, 1500, step=300)
+                params = {
+                    "iterations": trial.suggest_int("iterations", 300, 1500, step=300),
                     "learning_rate": trial.suggest_float(
                         "learning_rate", 0.01, 0.2, log=True
                     ),
                     "depth": trial.suggest_int("depth", 4, 10),
                     "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1.0, 10.0),
                 }
-                model, CatBoostClassifier(random_seed=42, verbose=False, **params)
+                model = CatBoostClassifier(random_seed=42, verbose=False, **params)
         # Subsample for speed
-                frac, min(1.0, 30000 / max(1, len(X_train)))
+                frac = min(1.0, 30000 / max(1, len(X_train)))
         if frac < 1.0:
                     Xs, X_train.sample(frac=frac, random_state=42)
-                    ys = y_train.loc[Xs.index],
+                    ys = y_train.loc[Xs.index]
                 else:
                     Xs = ys, X_train, y_train,
                 model.fit(Xs, ys)
-                pred = model.predict(X_val),
+                pred = model.predict(X_val)
         return float((pred == y_val).mean())
 
-            study, optuna.create_study(direction="maximize")
+            study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials=25)
             best = study.best_params,
         return best, float(study.best_value)
@@ -2972,7 +2976,7 @@ class AnalystEnhancementStep:
         return {}, 0.0
 
     async def _apply_pre_feature_selection(
-        self = data: pd.DataFrame, feature_columns: list, regime_name: str, ) -> list:,
+        self, data: pd.DataFrame, feature_columns: list, regime_name: str, ) -> list:
         """Apply pre-feature selection for large feature sets to reduce dimensionality before training."""
         try:
         self.logger.info(
@@ -2999,9 +3003,9 @@ class AnalystEnhancementStep:
             total_max_features, selection_tiers.get("total_max_features", 240)
 
         # Categorize features by tier
-            feature_categories = self._categorize_features_by_tier(feature_columns),
+            feature_categories = self._categorize_features_by_tier(feature_columns)
 
-            selected_features = [],
+            selected_features = []
 
         # Tier 1: Core features (technical indicators, basic liquidity)
             tier_1_features, self._select_tier_1_features_pre_training(
@@ -3057,7 +3061,7 @@ class AnalystEnhancementStep:
                         .select_dtypes(include=[np.number])
                         .fillna(0)
                     )
-                    y = data.get("label"),
+                    y = data.get("label")
         if y is not None and not X.empty:
                         mi, mutual_info_classif(
                             X.values,
@@ -3065,7 +3069,7 @@ class AnalystEnhancementStep:
                             random_state=42,
                         )
                         keep_idx, np.argsort(mi)[-total_max_features:]
-                        selected_features = [list(X.columns)[i] for i in keep_idx],
+                        selected_features = [list(X.columns)[i] for i in keep_idx]
         self.logger.info(
                             f"   🔧 Aggressive MI pruning: Reduced to {len(selected_features)} features",
                         )
@@ -3088,21 +3092,21 @@ class AnalystEnhancementStep:
         return feature_columns  # Return original features if selection fails
 
     async def _apply_architecture_specific_feature_selection(
-        self = data: pd.DataFrame, feature_columns: list, regime_name: str, ) -> list:,
+        self, data: pd.DataFrame, feature_columns: list, regime_name: str, ) -> list:
         """Apply architecture-specific feature selection for new models."""
         try:
         # Extract timeframe from regime name
-            timeframe, regime_name.replace("hmm_", "")
+            timeframe = regime_name.replace("hmm_", "")
 
         # Architecture-specific feature selection
         if timeframe == "5m":  # TCN
         # TCN works well with temporal features and regime information
-                temporal_features = [,
+                temporal_features = [
                     f
-        for f in feature_columns
-        if any(
+                    for f in feature_columns
+                    if any(
                         keyword in f.lower()
-        for keyword in [
+                        for keyword in [
                             "lag",
                             "change",
                             "momentum",
@@ -3112,20 +3116,20 @@ class AnalystEnhancementStep:
                         ]
                     )
                 ]
-                regime_features = [,
+                regime_features = [
                     f
-        for f in feature_columns
-        if any(
+                    for f in feature_columns
+                    if any(
                         keyword in f.lower()
-        for keyword in ["regime", "cluster", "intensity"]
+                        for keyword in ["regime", "cluster", "intensity"]
                     )
                 ]
-                core_features = [,
+                core_features = [
                     f
-        for f in feature_columns
-        if any(
+                    for f in feature_columns
+                    if any(
                         keyword in f.lower()
-        for keyword in [
+                        for keyword in [
                             "rsi",
                             "macd",
                             "bb",
@@ -3136,19 +3140,19 @@ class AnalystEnhancementStep:
                     )
                 ]
 
-                selected = temporal_features + regime_features + core_features,
+                selected = temporal_features + regime_features + core_features
         # Limit to reasonable size for TCN
         return selected[:200] if len(selected) > 200 else selected
 
         if timeframe == "15m":  # Transformer
         # Transformer can handle more features, focus on diverse feature types
-        return feature_columns[
+            return feature_columns[
                     :300
                 ]  # Limit to 300 features for transformer
 
         if timeframe == "30m":  # LightGBM
         # LightGBM can handle many features, use all available
-        return feature_columns
+            return feature_columns
 
         # Default
         return feature_columns[:200]
@@ -3165,7 +3169,7 @@ class AnalystEnhancementStep:
             from sklearn.ensemble import RandomForestClassifier
 
             def objective(trial: optuna.Trial) -> float:
-                params = {,
+                params = {
                     "n_estimators": trial.suggest_int(
                         "n_estimators", 100, 800, step=100
                     ),
@@ -3174,19 +3178,19 @@ class AnalystEnhancementStep:
                     "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 5),
                     "max_features": trial.suggest_float("max_features", 0.3, 1.0),
                 }
-                model, RandomForestClassifier(random_state=42, n_jobs=-1, **params)
+                model = RandomForestClassifier(random_state=42, n_jobs=-1, **params)
         # Subsample training for speed
-                frac, min(1.0, 30000 / max(1, len(X_train)))
+                frac = min(1.0, 30000 / max(1, len(X_train)))
                 Xs = (X_train.sample(frac=frac, random_state=42)
         if frac < 1.0
                     else X_train
                 )
-                ys = y_train.loc[Xs.index],
+                ys = y_train.loc[Xs.index]
                 model.fit(Xs, ys)
-                pred = model.predict(X_val),
+                pred = model.predict(X_val)
         return float((pred == y_val).mean())
 
-            study, optuna.create_study(direction="maximize")
+            study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials=25)
         return study.best_params, float(study.best_value)
         except Exception as e:
@@ -3201,15 +3205,15 @@ class AnalystEnhancementStep:
             from sklearn.linear_model import LogisticRegression
 
             def objective(trial: optuna.Trial) -> float:
-                penalty, trial.suggest_categorical(
+                penalty = trial.suggest_categorical(
                     "penalty", ["l2", "l1"],
                 )  # elastic net optional
-                C, trial.suggest_float("C", 1e-3, 10.0, log=True)
-                solver = "liblinear" if penalty in ("l1", "l2") else "saga",
-                class_weight, trial.suggest_categorical(
+                C = trial.suggest_float("C", 1e-3, 10.0, log=True)
+                solver = "liblinear" if penalty in ("l1", "l2") else "saga"
+                class_weight = trial.suggest_categorical(
                     "class_weight", [None, "balanced"],
                 )
-                model, LogisticRegression(
+                model = LogisticRegression(
                     C=C,
                     penalty=penalty,
                     solver=solver,
@@ -3218,17 +3222,17 @@ class AnalystEnhancementStep:
                     random_state=42,
                 )
         # Subsample
-                frac, min(1.0, 50000 / max(1, len(X_train)))
+                frac = min(1.0, 50000 / max(1, len(X_train)))
                 Xs = (X_train.sample(frac=frac, random_state=42)
         if frac < 1.0
                     else X_train
                 )
-                ys = y_train.loc[Xs.index],
+                ys = y_train.loc[Xs.index]
                 model.fit(Xs, ys)
-                pred = model.predict(X_val),
+                pred = model.predict(X_val)
         return float((pred == y_val).mean())
 
-            study, optuna.create_study(direction="maximize")
+            study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials=25)
         return study.best_params, float(study.best_value)
         except Exception as e:
@@ -3246,26 +3250,26 @@ class AnalystEnhancementStep:
             from sklearn.svm import LinearSVC
 
             def objective(trial: optuna.Trial) -> float:
-                gamma, trial.suggest_float("gamma", 1e-4, 1.0, log=True)
-                n_components, trial.suggest_int("n_components", 1000, 5000, step=500)
-                C, trial.suggest_float("C", 0.1, 10.0, log=True)
-                pipe, make_pipeline(
+                gamma = trial.suggest_float("gamma", 1e-4, 1.0, log=True)
+                n_components = trial.suggest_int("n_components", 1000, 5000, step=500)
+                C = trial.suggest_float("C", 0.1, 10.0, log=True)
+                pipe = make_pipeline(
                     StandardScaler(),
-                    RBFSampler(gamma=gamma, n_components=n_components, random_state=42)
+                    RBFSampler(gamma=gamma, n_components=n_components, random_state=42),
                     LinearSVC(C=C, tol=1e-3, random_state=42)
                 )
         # Subsample
-                frac, min(1.0, 30000 / max(1, len(X_train)))
+                frac = min(1.0, 30000 / max(1, len(X_train)))
                 Xs = (X_train.sample(frac=frac, random_state=42)
         if frac < 1.0
                     else X_train
                 )
-                ys = y_train.loc[Xs.index],
+                ys = y_train.loc[Xs.index]
                 pipe.fit(Xs, ys)
-                pred = pipe.predict(X_val),
+                pred = pipe.predict(X_val)
         return float((pred == y_val).mean())
 
-            study, optuna.create_study(direction="maximize")
+            study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials=25)
         return study.best_params, float(study.best_value)
         except Exception as e:
@@ -3300,7 +3304,7 @@ class AnalystEnhancementStep:
 
     # Transformer-specific enhancement methods
     async def _optimize_transformer_hyperparameters(
-        self = X_train, y_train, X_val, y_val, ):,
+        self, X_train, y_train, X_val, y_val, ):
         """Optimize Transformer hyperparameters for attention mechanisms."""
         # Placeholder - implement Transformer-specific HPO
         return {"nhead": 8, "num_layers": 4, "d_model": 256}
@@ -3409,7 +3413,7 @@ from src.utils.training_pipeline_decorators import (
     min_memory_gb=8.0,
     min_disk_gb=5.0,
     required_packages=["pandas", "numpy", "sklearn", "lightgbm", "catboost"],
-    data_quality_checks={,
+    data_quality_checks={
         "min_rows": 1000,
         "required_columns": ["timestamp", "features", "targets"],
     },
@@ -3448,7 +3452,7 @@ from src.utils.training_pipeline_decorators import (
 )
 @validate_step_output(
     required_files=["models/{exchange}_{symbol}_analyst_enhanced.pkl"],
-    data_quality_checks={,
+    data_quality_checks={
         "min_rows": 100,
         "required_columns": ["predictions", "probabilities"],
     },

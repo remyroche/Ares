@@ -374,6 +374,45 @@ class ExchangeVolumeAdapter:
             self.print(execution_error(f"Error checking trade execution: {e}"))
             return (False, f"Error: {e}")
 
+    @handle_errors(
+        exceptions=(KeyError, ValueError),
+        default_return=1.0,
+        context="adaptation factor retrieval",
+    )
+    async def get_adaptation_factor(self, exchange: str) -> float:
+        """Get adaptation factor for an exchange based on volume characteristics."""
+        try:
+            exchange_upper = exchange.upper()
+            if exchange_upper not in self.volume_profiles:
+                self.logger.warning(f"No volume profile for exchange: {exchange}")
+                return 1.0
+            
+            profile = self.volume_profiles[exchange_upper]
+            
+            # Base adaptation factor from volume profile
+            base_factor = profile["position_size_multiplier"]
+            
+            # Apply dynamic adjustments if enabled
+            if self.enable_dynamic_adjustment and exchange_upper in self.current_volume_metrics:
+                metrics = self.current_volume_metrics[exchange_upper]
+                
+                # Adjust based on current volume vs average
+                if metrics.get("current_volume") and profile.get("avg_daily_volume"):
+                    volume_ratio = metrics["current_volume"] / profile["avg_daily_volume"]
+                    volume_adjustment = min(1.5, max(0.5, volume_ratio))
+                    base_factor *= volume_adjustment
+                
+                # Adjust based on spread
+                if metrics.get("spread_adjustment"):
+                    spread_factor = 1.0 / (1.0 + metrics["spread_adjustment"])
+                    base_factor *= spread_factor
+            
+            return max(0.1, min(2.0, base_factor))  # Clamp between 0.1 and 2.0
+            
+        except Exception as e:
+            self.logger.error(f"Error getting adaptation factor for {exchange}: {e}")
+            return 1.0
+
     def get_adaptation_summary(self) -> dict[str , Any]:
         """Get summary of current volume adaptations."""
         try:

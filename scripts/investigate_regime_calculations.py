@@ -288,7 +288,7 @@ class RegimeCalculationInvestigator:
         """Generate fixed regime calculation code as reference (strings)."""
         return {
             "trend_regime": (
-                """
+                '''
 import numpy as np
 import pandas as pd
 
@@ -310,10 +310,10 @@ def calculate_trend_regime_fixed(price_data: pd.DataFrame) -> pd.Series:
         trend_bins = pd.cut(trend_strength, bins=5, labels=False, include_lowest=True)
 
     return pd.Series(pd.to_numeric(trend_bins, errors="coerce").fillna(0).astype(int), index=price_data.index)
-                """
+                '''
             ).strip(),
             "volatility_regime": (
-                """
+                '''
 import numpy as np
 import pandas as pd
 
@@ -333,10 +333,10 @@ def calculate_volatility_regime_fixed(price_data: pd.DataFrame) -> pd.Series:
         vol_bins = pd.cut(vol, bins=5, labels=False, include_lowest=True)
 
     return pd.Series(pd.to_numeric(vol_bins, errors="coerce").fillna(0).astype(int), index=price_data.index)
-                """
+                '''
             ).strip(),
             "volume_regime": (
-                """
+                '''
 import numpy as np
 import pandas as pd
 
@@ -358,7 +358,7 @@ def calculate_volume_regime_fixed(volume_data: pd.DataFrame) -> pd.Series:
         volreg_bins = pd.cut(volume_ratio, bins=5, labels=False, include_lowest=True)
 
     return pd.Series(pd.to_numeric(volreg_bins, errors="coerce").fillna(0).astype(int), index=volume_data.index)
-                """
+                '''
             ).strip(),
         }
 

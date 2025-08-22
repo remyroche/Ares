@@ -5,24 +5,29 @@ Enhanced Matrix Operations with M1 GPU Integration.
 Combines advanced matrix operations with Mac M1 GPU acceleration.
 """
 
-                from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LinearRegression
 from src.training.gpu_acceleration_m1 import M1GPUAcceleration
-from src.training.steps.step2_5_enhanced_matrix_operations import (from src.utils.logger import, system_logger
-from typing import Any, import asyncio
+from src.training.steps.step2_5_enhanced_matrix_operations import (
+    EnhancedMatrixOperations,
+)
+from src.utils.logger import system_logger
+from typing import Any
+import asyncio
 import time
 
 from src.utils.error_handler import handle_errors
-from src.utils.training_pipeline_decorators import (import numpy as np
-import pandas as pd)
-# Import enhanced matrix operations)
-    EnhancedMatrixOperations)
-
-# Import security decorators
-    circuit_breaker_protection , debug_training_step,
-    memory_efficient = prevent_data_leakage,
-    quality_gate = resource_monitor,
-    secure_data_processing = validate_step_output,
+from src.utils.training_pipeline_decorators import (
+    circuit_breaker_protection,
+    debug_training_step,
+    memory_efficient,
+    prevent_data_leakage,
+    quality_gate,
+    resource_monitor,
+    secure_data_processing,
+    validate_step_output,
 )
+import numpy as np
+import pandas as pd
 
 class EnhancedMatrixGPUIntegration:
     """
@@ -48,7 +53,7 @@ class EnhancedMatrixGPUIntegration:
         self.performance_metrics = {}
 
     @secure_data_processing(encryption_level="high", data_validation=True)
-    @prevent_data_leakage(validate_inputs, True = sanitize_outputs=True)
+    @prevent_data_leakage(validate_inputs=True, sanitize_outputs=True)
     @resource_monitor(cpu_threshold_percent=85.0, memory_threshold_gb=16.0)
     @memory_efficient(chunk_size=5000, streaming_processing=True)
     @debug_training_step(log_intermediate_results=True, save_debug_artifacts=True)
@@ -58,10 +63,12 @@ class EnhancedMatrixGPUIntegration:
         model_performance_thresholds={},
         data_quality_metrics={"completeness": 0.9},
     )
-    @handle_errors(exceptions=(ValueError = RuntimeError), default_return=None)
+    @handle_errors(exceptions=(ValueError, RuntimeError), default_return=None)
     async def enhanced_gpu_matrix_operations(
-        self = features_df: pd.DataFrame,
-        target: pd.Series, None = ) -> tuple[pd.DataFrame, dict[str , Any]]:
+        self,
+        features_df: pd.DataFrame,
+        target: pd.Series | None = None,
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """
         Apply enhanced matrix operations with GPU acceleration.
 

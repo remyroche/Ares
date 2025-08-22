@@ -210,17 +210,21 @@ except ImportError:
                 system_logger as _syslog,
             )
 
-        try:
-            if config is not None:
-                _setup_logging(config)
-            else:
-                _setup_logging()
-        return _syslog
+            try:
+                if config is not None:
+                    _setup_logging(config)
+                else:
+                    _setup_logging()
+                return _syslog
+            except Exception:
+                import logging
+
+                logging.basicConfig(level=logging.INFO)
+                return logging.getLogger("Step1.5Fallback")
         except Exception:
             import logging
-
             logging.basicConfig(level=logging.INFO)
-        return logging.getLogger("Step1.5Fallback")
+            return logging.getLogger("Step1.5Fallback")
 
     system_logger = setup_logging()
 
@@ -288,13 +292,14 @@ class ParquetDatasetManager:
             self.default_batch_size = 262144
 
         # In blank/dev mode, prefer smaller batches for stability unless overridden
-        try: blank_mode = os.environ.get("ARES_BLANK_MODE", "").lower() in (
+        try:
+            blank_mode = os.environ.get("ARES_BLANK_MODE", "").lower() in (
                 "1",
                 "true",
                 "yes",
             )
-        if blank_mode and os.environ.get("ARES_SCAN_BATCH_SIZE") is None:
-            self.default_batch_size = 131072
+            if blank_mode and os.environ.get("ARES_SCAN_BATCH_SIZE") is None:
+                self.default_batch_size = 131072
         except Exception:
             pass
 
@@ -464,21 +469,21 @@ class ParquetDatasetManager:
 
         # Verbose logging about the dataframe being written
         try:
-            nrows = len(df),
-            ncols = len(df.columns),
-            cols_preview = ",".join(list(map(str, df.columns[:12]))),
-        if self.logger:
-            self.logger.info(
+            nrows = len(df)
+            ncols = len(df.columns)
+            cols_preview = ",".join(list(map(str, df.columns[:12])))
+            if self.logger:
+                self.logger.info(
                     f"Preparing to write dataset: rows={nrows}, cols={ncols}, cols[0..11]=[{cols_preview}] -> {base_dir}"
                 )
-        if "timestamp" in df.columns:
-                ts, pd.to_datetime(
+            if "timestamp" in df.columns:
+                ts = pd.to_datetime(
                     df["timestamp"], unit="ms", utc=True, errors="coerce"
                 )
-                ts_min = ts.min(),
-                ts_max = ts.max(),
-        if self.logger:
-            self.logger.info(f"Timestamp coverage: {ts_min} → {ts_max} (UTC)")
+                ts_min = ts.min()
+                ts_max = ts.max()
+                if self.logger:
+                    self.logger.info(f"Timestamp coverage: {ts_min} → {ts_max} (UTC)")
         except Exception:
             pass
 

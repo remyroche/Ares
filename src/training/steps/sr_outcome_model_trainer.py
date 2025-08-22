@@ -86,18 +86,18 @@ class SROutcomeModelTrainer:
         self.feature_names = []
 
     @handle_errors(
-        exceptions=(Exception,)
-        default_return=False
-        context="S/R outcome model trainer initialization"
+        exceptions=(Exception,),
+        default_return=False,
+        context="S/R outcome model trainer initialization",
     )
     async def initialize(self) -> bool:
         """Initialize the S/R outcome model trainer."""
         try:
-        self.logger.info("Initializing S/R Outcome Model Trainer...")
+            self.logger.info("Initializing S/R Outcome Model Trainer...")
 
-        # Initialize SR predictor
+            # Initialize SR predictor
             sr_init_success = await self.sr_predictor.initialize()
-        if not sr_init_success:
+            if not sr_init_success:
         self.logger.warning("Failed to initialize SRBreakoutPredictor")
 
         # Initialize label encoder

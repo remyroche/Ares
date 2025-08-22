@@ -601,7 +601,7 @@ class EnhancedTrainingManager:
         self._load_optimization_config()
 
         # Initialize the underlying optimized training manager for advanced operations
-        self.optimized_manager, EnhancedTrainingManagerOptimized(config)
+        self.optimized_manager = EnhancedTrainingManagerOptimized(config)
 
         # Logging verbosity
         self.verbosity: str = self.enhanced_training_config.get(
@@ -613,8 +613,8 @@ class EnhancedTrainingManager:
         self.label_expert_calibrators: dict[str, Any] = {}
         self.label_reliability: dict[str, float] = {}
         self.activation_thresholds: dict[str, float] = {}
-        self.artifacts_dir: Path, Path(
-        self.enhanced_training_config.get(
+        self.artifacts_dir: Path = Path(
+            self.enhanced_training_config.get(
                 "artifacts_dir", "artifacts/meta_labeling",
             ),
         )
@@ -623,8 +623,8 @@ class EnhancedTrainingManager:
         env_force = (
             os.getenv("FORCE_RERUN", "0") == "1" or os.getenv("FORCE", "0") == "1"
         )
-        self.force_rerun: bool, bool(
-        self.enhanced_training_config.get("force_rerun", env_force),
+        self.force_rerun: bool = bool(
+            self.enhanced_training_config.get("force_rerun", env_force),
         )
 
         self.logger.info("Loaded optimization configuration")
@@ -633,39 +633,39 @@ class EnhancedTrainingManager:
     def _load_optimization_config(self) -> None:
         """Load optimization configuration from enhanced_training_manager_optimized."""
         # Caching configuration
-        caching_config, self.optimization_config.get("caching", {})
-        self.enable_caching, caching_config.get("enabled", True)
-        self.max_cache_size, caching_config.get("max_cache_size", 1000)
-        self.cache_ttl, caching_config.get("cache_ttl", 3600)
+        caching_config = self.optimization_config.get("caching", {})
+        self.enable_caching = caching_config.get("enabled", True)
+        self.max_cache_size = caching_config.get("max_cache_size", 1000)
+        self.cache_ttl = caching_config.get("cache_ttl", 3600)
 
         # Parallelization configuration
-        parallel_config, self.optimization_config.get("parallelization", {})
-        self.enable_parallelization, parallel_config.get("enabled", True)
-        self.max_workers, parallel_config.get("max_workers", 8)
-        self.chunk_size, parallel_config.get("chunk_size", 1000)
+        parallel_config = self.optimization_config.get("parallelization", {})
+        self.enable_parallelization = parallel_config.get("enabled", True)
+        self.max_workers = parallel_config.get("max_workers", 8)
+        self.chunk_size = parallel_config.get("chunk_size", 1000)
 
         # Early stopping configuration
-        early_stop_config, self.optimization_config.get("early_stopping", {})
-        self.enable_early_stopping, early_stop_config.get("enabled", True)
-        self.patience, early_stop_config.get("patience", 10)
-        self.min_trials, early_stop_config.get("min_trials", 20)
+        early_stop_config = self.optimization_config.get("early_stopping", {})
+        self.enable_early_stopping = early_stop_config.get("enabled", True)
+        self.patience = early_stop_config.get("patience", 10)
+        self.min_trials = early_stop_config.get("min_trials", 20)
 
         # Memory management configuration
-        memory_config, self.optimization_config.get("memory_management", {})
-        self.enable_memory_management, memory_config.get("enabled", True)
-        self.memory_threshold, memory_config.get("memory_threshold", 0.8)
-        self.cleanup_frequency, memory_config.get("cleanup_frequency", 100)
+        memory_config = self.optimization_config.get("memory_management", {})
+        self.enable_memory_management = memory_config.get("enabled", True)
+        self.memory_threshold = memory_config.get("memory_threshold", 0.8)
+        self.cleanup_frequency = memory_config.get("cleanup_frequency", 100)
 
         self.logger.info("Loaded optimization configuration")
 
     @contextmanager
     def _timed_step(self, name: str, step_times: dict):
-        start, time.time()
+        start = time.time()
         try:
             yield
-        self._log_step_completion(name, start, step_times, success=True)
+            self._log_step_completion(name, start, step_times, success=True)
         except Exception:
-        self._log_step_completion(name, start, step_times, success=False)
+            self._log_step_completion(name, start, step_times, success=False)
             raise
 
     def _save_checkpoint(self, step_name: str, pipeline_state: dict[str, Any]) -> None:
@@ -694,18 +694,18 @@ class EnhancedTrainingManager:
             }
 
         # Namespaced checkpoint path
-            symbol, checkpoint_data.get("symbol") or "unknown"
-            exchange, checkpoint_data.get("exchange") or "unknown"
-            timeframe, checkpoint_data.get("timeframe") or "unknown"
-            ns_dir, self.checkpoint_dir / exchange / symbol / timeframe
+            symbol = checkpoint_data.get("symbol") or "unknown"
+            exchange = checkpoint_data.get("exchange") or "unknown"
+            timeframe = checkpoint_data.get("timeframe") or "unknown"
+            ns_dir = self.checkpoint_dir / exchange / symbol / timeframe
             ns_dir.mkdir(parents=True, exist_ok=True)
-            target_file, ns_dir / "training_progress.json"
+            target_file = ns_dir / "training_progress.json"
             _safe_json_write(target_file, checkpoint_data)
 
-        self.logger.info(f"💾 Checkpoint saved: {step_name} -> {target_file}")
+            self.logger.info(f"💾 Checkpoint saved: {step_name} -> {target_file}")
 
         except Exception as e:
-        self.logger.warning(f"Failed to save checkpoint: {e}")
+            self.logger.warning(f"Failed to save checkpoint: {e}")
 
     def _load_checkpoint(self) -> dict[str, Any] | None:
         """Load training progress checkpoint.
@@ -717,62 +717,62 @@ class EnhancedTrainingManager:
         # Attempt to load namespaced checkpoint based on current params
         # Ensure enable_checkpointing is defined
         if not hasattr(self, "enable_checkpointing"):
-        self.enable_checkpointing, getattr(self, "enhanced_training_config", {}).get("enable_checkpointing", True)
+            self.enable_checkpointing = getattr(self, "enhanced_training_config", {}).get("enable_checkpointing", True)
 
         if not self.enable_checkpointing:
-        return None
+            return None
 
         # Ensure checkpoint_dir is defined
         if not hasattr(self, "checkpoint_dir"):
-        self.checkpoint_dir, Path("checkpoints")
-        self.checkpoint_dir.mkdir(exist_ok=True)
+            self.checkpoint_dir = Path("checkpoints")
+            self.checkpoint_dir.mkdir(exist_ok=True)
 
         try:
-            symbol, getattr(self, "current_symbol", "unknown")
-            exchange, getattr(self, "current_exchange", "unknown")
-            timeframe, getattr(self, "current_timeframe", "unknown")
+            symbol = getattr(self, "current_symbol", "unknown")
+            exchange = getattr(self, "current_exchange", "unknown")
+            timeframe = getattr(self, "current_timeframe", "unknown")
             ns_file = (
-        self.checkpoint_dir
+                self.checkpoint_dir
                 / exchange
                 / symbol
                 / timeframe
                 / "training_progress.json"
             )
-        if not ns_file.exists():
-        return None
-        with open(ns_file) as f:
-                checkpoint_data, json.load(f)
-        self.logger.info(
+            if not ns_file.exists():
+                return None
+            with open(ns_file) as f:
+                checkpoint_data = json.load(f)
+            self.logger.info(
                 f"📂 Checkpoint loaded: {checkpoint_data.get('current_step', 'unknown')} from {ns_file}",
             )
-        return checkpoint_data
+            return checkpoint_data
 
         except Exception as e:
-        self.logger.warning(f"Failed to load checkpoint: {e}")
-        return None
+            self.logger.warning(f"Failed to load checkpoint: {e}")
+            return None
 
     def _clear_checkpoint(self) -> None:
         """Clear the checkpoint file."""
         try:
-            symbol, getattr(self, "current_symbol", "unknown")
-            exchange, getattr(self, "current_exchange", "unknown")
-            timeframe, getattr(self, "current_timeframe", "unknown")
+            symbol = getattr(self, "current_symbol", "unknown")
+            exchange = getattr(self, "current_exchange", "unknown")
+            timeframe = getattr(self, "current_timeframe", "unknown")
             ns_file = (
-        self.checkpoint_dir
+                self.checkpoint_dir
                 / exchange
                 / symbol
                 / timeframe
                 / "training_progress.json"
             )
-        if ns_file.exists():
-        # Guard against clearing outside configured checkpoint dir
-        if _is_relative_to(ns_file, self.checkpoint_dir) and not ns_file.is_symlink():
+            if ns_file.exists():
+                # Guard against clearing outside configured checkpoint dir
+                if _is_relative_to(ns_file, self.checkpoint_dir) and not ns_file.is_symlink():
                     ns_file.unlink()
-        self.logger.info(f"🗑️ Checkpoint cleared at {ns_file}")
+                    self.logger.info(f"🗑️ Checkpoint cleared at {ns_file}")
                 else:
-        self.logger.warning(f"Skipped clearing checkpoint due to unsafe path: {ns_file}")
+                    self.logger.warning(f"Skipped clearing checkpoint due to unsafe path: {ns_file}")
         except Exception as e:
-        self.logger.warning(f"Failed to clear checkpoint: {e}")
+            self.logger.warning(f"Failed to clear checkpoint: {e}")
 
     def _heartbeat(self, message: str) -> None:
         """Log a heartbeat message for monitoring training progress.

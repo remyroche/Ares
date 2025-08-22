@@ -59,8 +59,8 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
         self.validation_results["error_absence"] = error_metrics
 
         if not error_passed:
-        self.logger.error(error("❌ HMM-based training step had errors"))
-        return False
+            self.logger.error(error("❌ HMM-based training step had errors"))
+            return False
 
         # 2. Validate model files existence
         model_files_passed, self._validate_model_files_existence(
@@ -69,8 +69,8 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
             data_dir,
         )
         if not model_files_passed:
-        self.logger.error(failed("❌ Model files validation failed"))
-        return False
+            self.logger.error(failed("❌ Model files validation failed"))
+            return False
 
         # 3. Validate model performance
         performance_passed, self._validate_model_performance(
@@ -79,20 +79,20 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
             data_dir,
         )
         if not performance_passed:
-        self.logger.error(failed("❌ Model performance validation failed"))
-        return False
+            self.logger.error(failed("❌ Model performance validation failed"))
+            return False
 
         # 4. Validate training metrics
         metrics_passed, self._validate_training_metrics(symbol, exchange, data_dir)
         if not metrics_passed:
-        self.logger.error(failed("❌ Training metrics validation failed"))
-        return False
+            self.logger.error(failed("❌ Training metrics validation failed"))
+            return False
 
         # 5. Validate model quality
         quality_passed, self._validate_model_quality(symbol, exchange, data_dir)
         if not quality_passed:
-        self.logger.error(failed("❌ Model quality validation failed"))
-        return False
+            self.logger.error(failed("❌ Model quality validation failed"))
+            return False
 
         # 6. Validate outcome favorability
         outcome_passed, outcome_metrics, self.validate_outcome_favorability(
@@ -101,20 +101,20 @@ class Step6HMMBasedTrainingValidator(BaseValidator):
         self.validation_results["outcome_favorability"] = outcome_metrics
 
         if not outcome_passed:
-        # Summarize why outcome is unfavorable and include context
+            # Summarize why outcome is unfavorable and include context
             status_value = step_result.get("status")
             error_value = step_result.get("error")
             reasons = []
-        if not outcome_metrics.get("has_success_indicators"):
+            if not outcome_metrics.get("has_success_indicators"):
                 reasons.append("no success indicator")
-        if outcome_metrics.get("has_error_indicators"):
+            if outcome_metrics.get("has_error_indicators"):
                 reasons.append("error indicator present")
             reasons_text = "; ".join(reasons) if reasons else "unspecified"
 
-        self.logger.warning(
+            self.logger.warning(
                 "⚠️ HMM-based training outcome is not favorable"
                 f" | symbol={symbol} | exchange={exchange} | status={status_value}"
-                f" | reasons={reasons_text}"
+                f" | reasons={reasons_text}",
                 extra={
                     "step_name": self.step_name,
                     "phase": "validation",

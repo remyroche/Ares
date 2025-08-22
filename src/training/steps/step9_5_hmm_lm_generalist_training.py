@@ -130,31 +130,31 @@ class HMMLMGeneralistTrainingStep:
 
         """
         try:
-        self.logger.info("🔄 Executing HMM-LM Generalist Training...")
+            self.logger.info("🔄 Executing HMM-LM Generalist Training...")
 
-        # Extract parameters
-            symbol, training_input.get("symbol", "ETHUSDT")
-            exchange, training_input.get("exchange", "BINANCE")
-            data_dir, training_input.get("data_dir", "data/training")
+            # Extract parameters
+            symbol = training_input.get("symbol", "ETHUSDT")
+            exchange = training_input.get("exchange", "BINANCE")
+            data_dir = training_input.get("data_dir", "data/training")
 
-        # Load HMM data from all timeframes
-            hmm_data, await self._load_multi_timeframe_hmm_data(
-                exchange = symbol, data_dir,
+            # Load HMM data from all timeframes
+            hmm_data = await self._load_multi_timeframe_hmm_data(
+                exchange, symbol, data_dir,
             )
-        if not hmm_data:
-                msg = "Failed to load multi-timeframe HMM data",
+            if not hmm_data:
+                msg = "Failed to load multi-timeframe HMM data"
                 raise ValueError(msg)
 
-        # Create regime change sequences
-            regime_sequences = await self._create_regime_change_sequences(hmm_data),
-        if not regime_sequences:
-                msg = "Failed to create regime change sequences",
+            # Create regime change sequences
+            regime_sequences = await self._create_regime_change_sequences(hmm_data)
+            if not regime_sequences:
+                msg = "Failed to create regime change sequences"
                 raise ValueError(msg)
 
-        # Train HMM-LM model
-            model_result = await self._train_hmm_lm_model(regime_sequences),
-        if not model_result:
-                msg = "Failed to train HMM-LM model",
+            # Train HMM-LM model
+            model_result = await self._train_hmm_lm_model(regime_sequences)
+            if not model_result:
+                msg = "Failed to train HMM-LM model"
                 raise ValueError(msg)
 
         # Save model and metadata

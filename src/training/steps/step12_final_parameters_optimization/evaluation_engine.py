@@ -124,20 +124,20 @@ class AdvancedEvaluationEngine:
 
         """
         try:
-        self.logger.info(f"Evaluating parameters: {list(parameters.keys())}")
+            self.logger.info(f"Evaluating parameters: {list(parameters.keys())}")
 
-        # Simulate trading performance based on parameters
-        # In real implementation, this would use actual backtesting
-            performance_data, self._simulate_trading_performance(
+            # Simulate trading performance based on parameters
+            # In real implementation, this would use actual backtesting
+            performance_data = self._simulate_trading_performance(
                 parameters,
                 calibration_results,
             )
 
-        # Calculate comprehensive metrics
+            # Calculate comprehensive metrics
             metrics = self._calculate_performance_metrics(performance_data)
 
-        # Validate metrics against thresholds
-        self._validate_metrics(metrics)
+            # Validate metrics against thresholds
+            self._validate_metrics(metrics)
 
         return metrics
 

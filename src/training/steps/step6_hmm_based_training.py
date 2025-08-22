@@ -264,7 +264,7 @@ class HMMBasedTrainingStep:
     def _get_available_features(self, data: pd.DataFrame) -> list:
         """Get all available features from the dataset, excluding target and metadata columns."""
         try:
-        # Exclude non-feature columns
+            # Exclude non-feature columns
             exclude_columns = [
                 "target",
                 "timeframe",
@@ -272,17 +272,17 @@ class HMMBasedTrainingStep:
                 "sample_weight",
             ]
 
-        # Get all available features
-            available_features = [,
+            # Get all available features
+            available_features = [
                 col for col in data.columns if col not in exclude_columns
             ]
 
-        self.logger.info(f"✅ Found {len(available_features)} available features")
-        return available_features
+            self.logger.info(f"✅ Found {len(available_features)} available features")
+            return available_features
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to get available features: {e}")
-        return []
+            self.logger.exception(f"❌ Failed to get available features: {e}")
+            return []
 
     async def _apply_enhanced_optimization(
         self, features_df: pd.DataFrame, target: pd.Series, timeframe: str, architecture: str, ) -> tuple[pd.DataFrame, dict[str, Any]]:
@@ -298,16 +298,18 @@ class HMMBasedTrainingStep:
 
         """
         try:
-        # Enhanced LM optimizer is required - no fallbacks
-        if self.enhanced_lm_optimizer is None:
-                msg = "Enhanced LM optimizer is required but not initialized",
+            # Enhanced LM optimizer is required - no fallbacks
+            if self.enhanced_lm_optimizer is None:
+                msg = "Enhanced LM optimizer is required but not initialized"
                 raise RuntimeError(msg)
 
-        # Use enhanced LM optimizer for comprehensive optimization
-        self.logger.info(f"🔄 Applying enhanced LM optimization for {timeframe} {architecture}")
+            # Use enhanced LM optimizer for comprehensive optimization
+            self.logger.info(f"🔄 Applying enhanced LM optimization for {timeframe} {architecture}")
 
-        # Determine model type
-            model_type = "classification" if target.dtype == "object" or len(target.unique()) < 10 else "regression",
+            # Determine model type
+            model_type = (
+                "classification" if target.dtype == "object" or len(target.unique()) < 10 else "regression"
+            )
 
         # Apply comprehensive optimization
             optimization_results, optimized_features, await self.enhanced_lm_optimizer.optimize_lm_model(
@@ -319,19 +321,19 @@ class HMMBasedTrainingStep:
             )
 
         # Use optimized features directly from the optimizer
-        self.logger.info(f"✅ Applied feature selection: {len(features_df.columns)} -> {len(optimized_features.columns)} features")
+            self.logger.info(f"✅ Applied feature selection: {len(features_df.columns)} -> {len(optimized_features.columns)} features")
 
-        self.logger.info(f"✅ Enhanced optimization completed for {timeframe} {architecture}")
-        self.logger.info("📊 Optimization metrics:")
-        self.logger.info(f"   - Feature selection: {optimization_results.get('feature_selection', {}).get('final_features', len(features_df.columns))} features")
-        self.logger.info(f"   - Regularization: {optimization_results.get('regularization', {})}")
-        self.logger.info(f"   - Hyperparameter optimization: {optimization_results.get('hyperparameter_optimization', {})}")
+            self.logger.info(f"✅ Enhanced optimization completed for {timeframe} {architecture}")
+            self.logger.info("📊 Optimization metrics:")
+            self.logger.info(f"   - Feature selection: {optimization_results.get('feature_selection', {}).get('final_features', len(features_df.columns))} features")
+            self.logger.info(f"   - Regularization: {optimization_results.get('regularization', {})}")
+            self.logger.info(f"   - Hyperparameter optimization: {optimization_results.get('hyperparameter_optimization', {})}")
 
-        return optimized_features, optimization_results
+            return optimized_features, optimization_results
 
         except Exception as e:
-        self.logger.exception(f"❌ Enhanced optimization failed for {timeframe} {architecture}: {e}")
-            msg = f"Enhanced optimization failed for {timeframe} {architecture}: {e}",
+            self.logger.exception(f"❌ Enhanced optimization failed for {timeframe} {architecture}: {e}")
+            msg = f"Enhanced optimization failed for {timeframe} {architecture}: {e}"
             raise RuntimeError(msg)
 
     @handle_errors(

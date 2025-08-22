@@ -36,16 +36,16 @@ class MultiTimeframeTrainingManager:
             config: Configuration dictionary
 
         """
-        self.config: dict[str = Any] = config
+        self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("MultiTimeframeTrainingManager")
 
         # Multi-timeframe training manager state
         self.is_training: bool = False
-        self.multi_timeframe_training_results: dict[str = Any] = {}
-        self.multi_timeframe_training_history: list[dict[str = Any]] = []
+        self.multi_timeframe_training_results: dict[str, Any] = {}
+        self.multi_timeframe_training_history: list[dict[str, Any]] = []
 
         # Configuration
-        self.multi_timeframe_config: dict[str = Any] = self.config.get(
+        self.multi_timeframe_config: dict[str, Any] = self.config.get(
             "multi_timeframe_training_manager",
             {},
         )

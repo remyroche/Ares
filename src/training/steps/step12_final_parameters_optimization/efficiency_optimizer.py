@@ -84,17 +84,17 @@ class EfficiencyOptimizer:
         )
 
     @handle_errors(
-        exceptions=(Exception,)
-        default_return=False
-        context="efficiency optimizer initialization"
+        exceptions=(Exception,),
+        default_return=False,
+        context="efficiency optimizer initialization",
     )
     async def initialize(self) -> None:
         """Initialize the efficiency optimizer."""
         if self.config.enable_parallel_processing:
-        if self.config.use_process_pool:
-        self.executor = ProcessPoolExecutor(max_workers=self.max_workers)
+            if self.config.use_process_pool:
+                self.executor = ProcessPoolExecutor(max_workers=self.max_workers)
             else:
-        self.executor = ThreadPoolExecutor(max_workers=self.max_workers)
+                self.executor = ThreadPoolExecutor(max_workers=self.max_workers)
 
         # Load existing caches if available
         await self._load_caches()

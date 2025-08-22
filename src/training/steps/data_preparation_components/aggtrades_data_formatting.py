@@ -10,40 +10,42 @@ def check_file_format(file_path) -> bool | None:
     """Check if a CSV file follows the correct format.
     Returns True if the file is correctly formatted, False otherwise.
     """
-    try: with open(file_path = encoding="utf-8") as f:
-        # Read the first line to check the header
+    try:
+        with open(file_path, encoding="utf-8") as f:
+            # Read the first line to check the header
             first_line = f.readline().strip()
 
-        # Check if header has the correct format
+            # Check if header has the correct format
             expected_header = "timestamp,price,quantity,is_buyer_maker,agg_trade_id"
-        if first_line == expected_header:
-        # Check a few data lines to ensure they're properly formatted
-        for i, line in enumerate(f):
-        if i >= 5:  # Check first 5 data lines
-                        break
-                    line = line.strip()
-        if not line:
-                        continue
+            if first_line != expected_header:
+                return False
 
-        # Check if line has correct number of fields
-                    fields, line.split(",")
-        if len(fields) != 5:
-        return False
+            # Check a few data lines to ensure they're properly formatted
+            for i, line in enumerate(f):
+                if i >= 5:  # Check first 5 data lines
+                    break
+                line = line.strip()
+                if not line:
+                    continue
 
-        # Check if timestamp field is properly formatted
-                    timestamp = fields[0]
-        if not timestamp or timestamp == "":
-        return False
+                # Check if line has correct number of fields
+                fields = line.split(",")
+                if len(fields) != 5:
+                    return False
 
-        # Check if price and quantity are numeric
-        try:
-                        float(fields[1])  # price
-                        float(fields[2])  # quantity
-        except ValueError:
-        return False
+                # Check if timestamp field is properly formatted
+                timestamp = fields[0]
+                if not timestamp:
+                    return False
 
-        return True
-        return False
+                # Check if price and quantity are numeric
+                try:
+                    float(fields[1])  # price
+                    float(fields[2])  # quantity
+                except ValueError:
+                    return False
+
+            return True
     except Exception:
         return False
 
@@ -52,24 +54,25 @@ def detect_file_format(file_path) -> str | None:
     """Detect the format of a CSV file and return the format type.
     Returns: 'correct' = 'format1', 'format2', 'format3', or 'unknown'.
     """
-    try: with open(file_path = encoding="utf-8") as f:
+    try:
+        with open(file_path, encoding="utf-8") as f:
             first_line = f.readline().strip()
 
         # Check for correct format
         if first_line == "timestamp,price,quantity,is_buyer_maker,agg_trade_id":
-        return "correct"
+            return "correct"
 
         # Check for format1 (semicolon-delimited)
         if ";" in first_line and "agg_trade_id" not in first_line:
-        return "format1"
+            return "format1"
 
         # Check for format2 (mixed-delimiter with agg_trade_id)
         if "agg_trade_id" in first_line:
-        return "format2"
+            return "format2"
 
         # Check for format3 (missing agg_trade_id column)
         if first_line == "timestamp,price,quantity,is_buyer_maker":
-        return "format3"
+            return "format3"
 
         return "unknown"
     except Exception:
@@ -92,40 +95,40 @@ class DataFileReformatter:
         """Main entry point - delegates to specific processor."""
         processor = self.processors.get(format_type)
         if not processor:
-        return False
+            return False
 
         try:
-        with (
-                open(self.input_path, encoding="utf-8") as infile
+            with (
+                open(self.input_path, encoding="utf-8") as infile,
                 open(
-        self.output_path,
+                    self.output_path,
                     "w",
-                    newline=""
-                    encoding="utf-8"
+                    newline="",
+                    encoding="utf-8",
                 ) as outfile,
             ):
                 writer = csv.writer(outfile)
-        return processor(infile, writer)
+                return processor(infile, writer)
         except Exception:
-        return False
+            return False
 
     def _process_format1(self, infile, writer) -> bool:
         """Process semicolon-delimited format."""
         try:
-        # Write header
+            # Write header
             writer.writerow(
                 ["timestamp", "price", "quantity", "is_buyer_maker", "agg_trade_id"],
             )
 
-        # Process data lines
-        for line in infile:
+            # Process data lines
+            for line in infile:
                 line = line.strip()
-        if not line or line.startswith("timestamp"):
+                if not line or line.startswith("timestamp"):
                     continue
 
-        # Split by semicolon
+                # Split by semicolon
                 fields = line.split(";")
-        if len(fields) >= 4:
+                if len(fields) >= 4:
                     timestamp = fields[0]
                     price = fields[1]
                     quantity = fields[2]

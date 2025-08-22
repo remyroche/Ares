@@ -274,118 +274,120 @@ class MultiTimeframeHMMEnsemble:
     def _train_meta_learner(self, timeframe_data: dict[str, pd.DataFrame]) -> bool:
         """Train the meta-learner to combine predictions from all timeframes."""
         try:
-        # Collect predictions from all timeframes for meta-learner training
+            # Collect predictions from all timeframes for meta-learner training
             meta_features = []
             meta_targets = []
 
-        for tf_config in self.config.timeframes:
+            for tf_config in self.config.timeframes:
                 tf = tf_config.timeframe
-        if tf not in self.timeframe_models or tf not in timeframe_data:
+                if tf not in self.timeframe_models or tf not in timeframe_data:
                     continue
 
-        # Get predictions from this timeframe's models
-                tf_predictions, self._get_timeframe_predictions(tf, timeframe_data[tf])
-        if tf_predictions is not None:
+                # Get predictions from this timeframe's models
+                tf_predictions = self._get_timeframe_predictions(tf, timeframe_data[tf])
+                if tf_predictions is not None:
                     meta_features.append(tf_predictions)
-        # Use the actual regime transitions as targets
+                    # Use the actual regime transitions as targets
                     meta_targets.append(
-        self._get_regime_transitions(timeframe_data[tf]),
+                        self._get_regime_transitions(timeframe_data[tf]),
                     )
 
-        if not meta_features or len(meta_features) < 2:
-        self.logger.warning("⚠️ Insufficient data for meta-learner training")
-        return False
+            if not meta_features or len(meta_features) < 2:
+                self.logger.warning("⚠️ Insufficient data for meta-learner training")
+                return False
 
-        # Combine features from all timeframes
-            combined_features, pd.concat(meta_features, axis=1)
-            combined_targets, pd.concat(meta_targets, axis=1).mean(
+            # Combine features from all timeframes
+            combined_features = pd.concat(meta_features, axis=1)
+            combined_targets = pd.concat(meta_targets, axis=1).mean(
                 axis=1
             )  # Average across timeframes
 
-        # Prepare meta-learner features
+            # Prepare meta-learner features
             X_meta = combined_features.fillna(0.0)
             y_meta = (combined_targets > 0.5).astype(int)  # Binary classification
 
-        # Train meta-learner
-        if self.config.meta_learner_type == "lgbm":
-        self.meta_learner = LGBMClassifier(
-                    n_estimators=100
-                    learning_rate=0.1
-                    max_depth=6
-                    random_state=42
-                    verbose=-1
+            # Train meta-learner
+            if self.config.meta_learner_type == "lgbm":
+                from lightgbm import LGBMClassifier  # type: ignore
+                self.meta_learner = LGBMClassifier(
+                    n_estimators=100,
+                    learning_rate=0.1,
+                    max_depth=6,
+                    random_state=42,
+                    verbose=-1,
                 )
             elif self.config.meta_learner_type == "random_forest":
-        self.meta_learner = RandomForestClassifier(
+                self.meta_learner = RandomForestClassifier(
                     n_estimators=100, max_depth=10, random_state=42
                 )
             elif self.config.meta_learner_type == "logistic":
-        self.meta_learner = LogisticRegression(random_state=42)
+                self.meta_learner = LogisticRegression(random_state=42)
             else:
-        self.logger.error(
+                self.logger.error(
                     f"❌ Unknown meta-learner type: {self.config.meta_learner_type}",
                 )
-        return False
+                return False
 
-        # Cross-validation for meta-learner
-            skf, StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+            # Cross-validation for meta-learner
+            skf = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
             meta_scores = []
 
-        for train_idx, val_idx in skf.split(X_meta, y_meta):
-                X_train = X_val, X_meta.iloc[train_idx], X_meta.iloc[val_idx]
-                y_train = y_val, y_meta.iloc[train_idx], y_meta.iloc[val_idx]
+            for train_idx, val_idx in skf.split(X_meta, y_meta):
+                X_train, X_val = X_meta.iloc[train_idx], X_meta.iloc[val_idx]
+                y_train, y_val = y_meta.iloc[train_idx], y_meta.iloc[val_idx]
 
-        self.meta_learner.fit(X_train, y_train)
-                y_pred_proba, self.meta_learner.predict_proba(X_val)[:, 1]
-                score, roc_auc_score(y_val, y_pred_proba)
+                self.meta_learner.fit(X_train, y_train)
+                y_pred_proba = self.meta_learner.predict_proba(X_val)[:, 1]
+                score = roc_auc_score(y_val, y_pred_proba)
                 meta_scores.append(score)
 
             avg_score = np.mean(meta_scores)
-        self.logger.info(
+            self.logger.info(
                 f"📊 Meta-learner CV AUC: {avg_score:.3f} ± {np.std(meta_scores):.3f}",
             )
 
-        # Final training on full dataset
-        self.meta_learner.fit(X_meta, y_meta)
+            # Final training on full dataset
+            self.meta_learner.fit(X_meta, y_meta)
 
-        return True
+            return True
 
         except Exception as e:
-        self.logger.exception(f"💥 Error training meta-learner: {e}")
-        return False
+            self.logger.exception(f"💥 Error training meta-learner: {e}")
+            return False
 
     def _get_timeframe_predictions(
-        self = timeframe: str, data: pd.DataFrame, ) -> pd.DataFrame | None:
+        self, timeframe: str, data: pd.DataFrame, ) -> pd.DataFrame | None:
         """Get predictions from a specific timeframe's models."""
         try:
-        if timeframe not in self.timeframe_models:
-        return None
+            if timeframe not in self.timeframe_models:
+                return None
 
             models = self.timeframe_models[timeframe]["hazard_models"]
             predictions = {}
 
-        for cluster_id, model in models.items():
-        # Extract features for this cluster
-                cluster_features, self._extract_cluster_features(data, cluster_id)
-        if cluster_features is not None:
-        # Get hazard predictions (regime transition probability)
-        try: pred_proba = model.predict_proba(cluster_features)[:, 1]
+            for cluster_id, model in models.items():
+                # Extract features for this cluster
+                cluster_features = self._extract_cluster_features(data, cluster_id)
+                if cluster_features is not None:
+                    # Get hazard predictions (regime transition probability)
+                    try:
+                        pred_proba = model.predict_proba(cluster_features)[:, 1]
                         predictions[f"cluster_{cluster_id}_hazard"] = pred_proba
-        except Exception as e:
-        self.logger.warning(
+                    except Exception as e:
+                        self.logger.warning(
                             f"⚠️ Failed to get predictions for cluster {cluster_id}: {e}",
                         )
 
-        if predictions:
-        return pd.DataFrame(predictions, index=data.index)
-        return None
+            if predictions:
+                return pd.DataFrame(predictions, index=data.index)
+            return None
 
         except Exception as e:
-        self.logger.exception(f"💥 Error getting {timeframe} predictions: {e}")
-        return None
+            self.logger.exception(f"💥 Error getting {timeframe} predictions: {e}")
+            return None
 
     def _extract_cluster_features(
-        self = data: pd.DataFrame, cluster_id: str, ) -> pd.DataFrame | None:
+        self, data: pd.DataFrame, cluster_id: str, ) -> pd.DataFrame | None:
         """Extract features for a specific cluster."""
         try:
         # Look for cluster-specific features

@@ -28,26 +28,26 @@ class HMMFeatureEnhancer:
 
         """
         try:
-        self.logger.info("🔄 Enhancing HMM features with derived features...")
+            self.logger.info("🔄 Enhancing HMM features with derived features...")
 
             enhanced_df = features_df.copy()
 
-        # 1. Regime Transition Features
+            # 1. Regime Transition Features
             enhanced_df = self._add_regime_transition_features(enhanced_df)
 
-        # 2. Regime Stability Features
+            # 2. Regime Stability Features
             enhanced_df = self._add_regime_stability_features(enhanced_df)
 
-        # 3. Regime Interaction Features
+            # 3. Regime Interaction Features
             enhanced_df = self._add_regime_interaction_features(enhanced_df)
 
-        # 4. Missing Technical Indicators (from Step 5 requirements)
+            # 4. Missing Technical Indicators (from Step 5 requirements)
             enhanced_df = self._add_missing_technical_indicators(enhanced_df)
 
-        # 5. Regime-Enhanced Features
+            # 5. Regime-Enhanced Features
             enhanced_df = self._add_regime_enhanced_features(enhanced_df)
 
-        self.logger.info(f"✅ Enhanced HMM features: {enhanced_df.shape[1]} total features")
+            self.logger.info(f"✅ Enhanced HMM features: {enhanced_df.shape[1]} total features")
         return enhanced_df
 
         except Exception as e:

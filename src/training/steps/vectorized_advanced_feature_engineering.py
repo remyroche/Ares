@@ -2486,8 +2486,8 @@ class VectorizedAdvancedFeatureEngineering:
                 price_data, volume_data,
             )
 
-        # Track NaN origins in input data
-        self._track_nan_origins(
+                    # Track NaN origins in input data
+            self._track_nan_origins(
                 "feature_engineering_input",
                 {
                     "price_data": price_data,
@@ -2498,79 +2498,79 @@ class VectorizedAdvancedFeatureEngineering:
 
             features = {}
 
-        # Debug: Log input data information before feature generation
-        self.logger.info("🔍 Input data validation before feature generation:")
-        self.logger.info(f"   Price data shape: {price_data.shape if price_data is not None else 'None'}")
-        self.logger.info(f"   Volume data shape: {volume_data.shape if volume_data is not None else 'None'}")
-        self.logger.info(f"   Order flow data shape: {order_flow_data.shape if order_flow_data is not None else 'None'}")
+            # Debug: Log input data information before feature generation
+            self.logger.info("🔍 Input data validation before feature generation:")
+            self.logger.info(f"   Price data shape: {price_data.shape if price_data is not None else 'None'}")
+            self.logger.info(f"   Volume data shape: {volume_data.shape if volume_data is not None else 'None'}")
+            self.logger.info(f"   Order flow data shape: {order_flow_data.shape if order_flow_data is not None else 'None'}")
 
-        if price_data is not None and not price_data.empty:
-        self.logger.info(f"   Price data index: {price_data.index.min()} to {price_data.index.max()}")
-        self.logger.info(f"   Price data columns: {list(price_data.columns)}")
+            if price_data is not None and not price_data.empty:
+                self.logger.info(f"   Price data index: {price_data.index.min()} to {price_data.index.max()}")
+                self.logger.info(f"   Price data columns: {list(price_data.columns)}")
             else:
-        self.logger.error("❌ Price data is empty or None")
+                self.logger.error("❌ Price data is empty or None")
 
-        if volume_data is not None and not volume_data.empty:
-        self.logger.info(f"   Volume data index: {volume_data.index.min()} to {volume_data.index.max()}")
-        self.logger.info(f"   Volume data columns: {list(volume_data.columns)}")
+            if volume_data is not None and not volume_data.empty:
+                self.logger.info(f"   Volume data index: {volume_data.index.min()} to {volume_data.index.max()}")
+                self.logger.info(f"   Volume data columns: {list(volume_data.columns)}")
             else:
-        self.logger.error("❌ Volume data is empty or None")
+                self.logger.error("❌ Volume data is empty or None")
 
-        # Validate input data before proceeding
-        if price_data is None or price_data.empty:
-        self.logger.error("❌ Price data is required and cannot be empty")
-        return {}
+            # Validate input data before proceeding
+            if price_data is None or price_data.empty:
+                self.logger.error("❌ Price data is required and cannot be empty")
+                return {}
 
-        if volume_data is None or volume_data.empty:
-        self.logger.error("❌ Volume data is required and cannot be empty")
-        return {}
+            if volume_data is None or volume_data.empty:
+                self.logger.error("❌ Volume data is required and cannot be empty")
+                return {}
 
-        # Ensure data has datetime index
-        if not isinstance(price_data.index, pd.DatetimeIndex):
-        self.logger.error("❌ Price data must have datetime index")
-        return {}
+            # Ensure data has datetime index
+            if not isinstance(price_data.index, pd.DatetimeIndex):
+                self.logger.error("❌ Price data must have datetime index")
+                return {}
 
-        if not isinstance(volume_data.index, pd.DatetimeIndex):
-        self.logger.error("❌ Volume data must have datetime index")
-        return {}
+            if not isinstance(volume_data.index, pd.DatetimeIndex):
+                self.logger.error("❌ Volume data must have datetime index")
+                return {}
 
-        # Check for minimum data requirements
-        if len(price_data) < 10:
-        self.logger.error(f"❌ Insufficient price data: {len(price_data)} records (minimum: 10)")
-        return {}
+                    # Check for minimum data requirements
+            if len(price_data) < 10:
+                self.logger.error(f"❌ Insufficient price data: {len(price_data)} records (minimum: 10)")
+                return {}
 
-        if len(volume_data) < 10:
-        self.logger.error(f"❌ Insufficient volume data: {len(volume_data)} records (minimum: 10)")
-        return {}
+            if len(volume_data) < 10:
+                self.logger.error(f"❌ Insufficient volume data: {len(volume_data)} records (minimum: 10)")
+                return {}
 
-        self.logger.info("✅ Input data validation passed")
-        self.logger.info("🔍 Starting feature generation pipeline...")
+            self.logger.info("✅ Input data validation passed")
+            self.logger.info("🔍 Starting feature generation pipeline...")
 
-        # Add comprehensive coroutine detection and filtering
+            # Add comprehensive coroutine detection and filtering
             def filter_coroutines(feature_dict: dict, source_name: str) -> dict:
                 """Filter out any coroutine features from a feature dictionary."""
-        if not isinstance(feature_dict, dict):
-        self.logger.warning(f"⚠️ {source_name} is not a dict: {type(feature_dict)}")
-        return {}
+                if not isinstance(feature_dict, dict):
+                    self.logger.warning(f"⚠️ {source_name} is not a dict: {type(feature_dict)}")
+                    return {}
 
                 filtered_features = {}
                 coroutine_count = 0
-        for key, value in feature_dict.items():
-        if hasattr(value, "__await__"):
-        self.logger.warning(f"⚠️ Skipping coroutine feature from {source_name}: {key}")
+                for key, value in feature_dict.items():
+                    if hasattr(value, "__await__"):
+                        self.logger.warning(f"⚠️ Skipping coroutine feature from {source_name}: {key}")
                         coroutine_count += 1
                         continue
                     filtered_features[key] = value
 
-        if coroutine_count > 0:
-        self.logger.info(f"⚠️ Filtered out {coroutine_count} coroutine features from {source_name}")
+                if coroutine_count > 0:
+                    self.logger.info(f"⚠️ Filtered out {coroutine_count} coroutine features from {source_name}")
 
-        return filtered_features
+                return filtered_features
 
-        # Market microstructure features
-        self.logger.info("🔍 Generating microstructure features...")
+            # Market microstructure features
+            self.logger.info("🔍 Generating microstructure features...")
             microstructure_features = (
-        await self._engineer_microstructure_features_vectorized(
+                await self._engineer_microstructure_features_vectorized(
                     price_data,
                     volume_data,
                     order_flow_data,

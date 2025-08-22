@@ -9,6 +9,8 @@ Usage:
     python scripts/validate_fix_simple.py
 """
 
+# ruff: noqa: I001, E501
+
 from __future__ import annotations
 
 from collections.abc import Callable

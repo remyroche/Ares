@@ -6,17 +6,19 @@ This script automatically adds warning symbols to error and warning messages
 throughout the training step files to make issues more visible.
 """
 
+# ruff: noqa: I001, C901, PLR0911, TRY300
+
 from __future__ import annotations
 
-from pathlib import Path
 import re
 import sys
-
-from src.utils.warning_symbols import missing, warning
+from pathlib import Path
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
+
+from src.utils.warning_symbols import missing, warning  # noqa: E402
 
 
 def get_warning_symbol_function(message: str) -> str:

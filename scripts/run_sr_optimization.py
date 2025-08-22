@@ -20,6 +20,8 @@ Usage:
         --exchange BINANCE --period 365
 """
 
+# ruff: noqa: E501, I001, C901, PLR2004
+
 from __future__ import annotations
 
 import argparse
@@ -361,11 +363,11 @@ class SROptimizationRunner:
             plots["parameter_importance"] = plot_path2
 
             self.logger.info("📊 Created %d visualizations in %s", len(plots), save_dir)
-            return plots
-
         except Exception:  # noqa: BLE001
             self.logger.exception("Error creating visualizations")
             return {}
+        else:
+            return plots
 
     def export_parameters(self, output_path: str = "optimized_sr_parameters.json") -> str:
         """

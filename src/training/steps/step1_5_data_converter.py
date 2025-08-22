@@ -209,18 +209,21 @@ except ImportError:
             from src.utils.logger import (
                 system_logger as _syslog,
             )
+        except Exception:
+            import logging
+            logging.basicConfig(level=logging.INFO)
+            return logging.getLogger("Step1.5Fallback")
 
         try:
             if config is not None:
                 _setup_logging(config)
             else:
                 _setup_logging()
-        return _syslog
+            return _syslog
         except Exception:
             import logging
-
             logging.basicConfig(level=logging.INFO)
-        return logging.getLogger("Step1.5Fallback")
+            return logging.getLogger("Step1.5Fallback")
 
     system_logger = setup_logging()
 
@@ -288,13 +291,14 @@ class ParquetDatasetManager:
             self.default_batch_size = 262144
 
         # In blank/dev mode, prefer smaller batches for stability unless overridden
-        try: blank_mode = os.environ.get("ARES_BLANK_MODE", "").lower() in (
+        try:
+            blank_mode = os.environ.get("ARES_BLANK_MODE", "").lower() in (
                 "1",
                 "true",
                 "yes",
             )
-        if blank_mode and os.environ.get("ARES_SCAN_BATCH_SIZE") is None:
-            self.default_batch_size = 131072
+            if blank_mode and os.environ.get("ARES_SCAN_BATCH_SIZE") is None:
+                self.default_batch_size = 131072
         except Exception:
             pass
 
@@ -2519,6 +2523,8 @@ class UnifiedDataConverter:
     default_return=False,
     context="step1_5_data_converter main execution",
 )
+@validate_step1_5_operation if validate_step1_5_operation else (lambda x: x)
+@validate_file_operation("step1_5", expected_schema="klines", log_level="INFO") if validate_file_operation else (lambda x: x)
 async def run_step(symbol: str, exchange: str, timeframe: str = "1m", data_dir: str = "data_cache", force_rerun: bool = False
 ) -> bool:
     """Run the unified data converter step.

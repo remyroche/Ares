@@ -494,6 +494,13 @@ def step_specific_ml_validation(step_name: str, **kwargs):
             "validate_correlations": True,
             "validate_distributions": True
         },
+        "step3": {
+            "target_col": None,
+            "timestamp_col": "timestamp",
+            "min_quality_score": 0.82,
+            "required_grade": "B",
+            "validate_time_series": True
+        },
         "step4": {
             "target_col": "target",
             "timestamp_col": "timestamp",

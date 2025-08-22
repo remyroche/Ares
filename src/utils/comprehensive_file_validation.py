@@ -124,6 +124,12 @@ class ComprehensiveFileValidator:
                 "step2": {
                     "features": r"features_{exchange}_{symbol}_{split}\.parquet"
                 },
+                "step3": {
+                    "hmm_block_states": r"{exchange}_{symbol}_hmm_block_states_{timeframe}\.parquet",
+                    "hmm_composite_clusters": r"{exchange}_{symbol}_hmm_composite_clusters_{timeframe}\.parquet",
+                    "hmm_composite_intensity": r"{exchange}_{symbol}_hmm_composite_intensity_{timeframe}\.parquet",
+                    "hmm_composite_meta": r"{exchange}_{symbol}_hmm_composite_meta_{timeframe}\.json"
+                },
                 "step4": {
                     "labeled": r"{exchange}_{symbol}_labeled_{split}\.parquet"
                 }

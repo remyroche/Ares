@@ -28,6 +28,7 @@ from src.utils.centralized_decorators import (
     with_tracing_span,
 )
 from src.utils.logger import system_logger
+from src.utils.validation_decorators import validate_step3_operation
 
 logger = system_logger.getChild("Step3HMMRegimeDiscovery")
 
@@ -62,6 +63,7 @@ class HMMRegimeDiscoveryStep:
         default_return={"success": False, "regimes": [], "error": "HMM discovery failed"},
         context="hmm_regime_discovery.execute"
     )
+    @validate_step3_operation
     async def execute(
         self, 
         training_input: dict[str, Any], 

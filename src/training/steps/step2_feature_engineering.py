@@ -414,6 +414,8 @@ def _save_feature_artifacts(symbol: str, exchange: str, data_dir: str, features:
 )
 @auto_fix_data_quality_issues
 @step_specific_ml_validation("step2", timestamp_col="timestamp") if step_specific_ml_validation else lambda x: x
+@validate_step2_operation if validate_step2_operation else (lambda x: x)
+@validate_file_operation("step2", expected_schema="features", log_level="INFO") if validate_file_operation else (lambda x: x)
 async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data/training", timeframe: str = "1m", force_rerun: bool = False, **kwargs: Any) -> bool:
     """Step 2: Engineering the features (post-labeling).
     Loads labeled parquet from Step 1 and produces robust feature parquet artifacts for train/val/test.

@@ -210,17 +210,16 @@ except ImportError:
                 system_logger as _syslog,
             )
 
-        try:
             if config is not None:
                 _setup_logging(config)
             else:
                 _setup_logging()
-        return _syslog
+            return _syslog
         except Exception:
             import logging
 
             logging.basicConfig(level=logging.INFO)
-        return logging.getLogger("Step1.5Fallback")
+            return logging.getLogger("Step1.5Fallback")
 
     system_logger = setup_logging()
 
@@ -288,13 +287,14 @@ class ParquetDatasetManager:
             self.default_batch_size = 262144
 
         # In blank/dev mode, prefer smaller batches for stability unless overridden
-        try: blank_mode = os.environ.get("ARES_BLANK_MODE", "").lower() in (
+        try:
+            blank_mode = os.environ.get("ARES_BLANK_MODE", "").lower() in (
                 "1",
                 "true",
                 "yes",
             )
-        if blank_mode and os.environ.get("ARES_SCAN_BATCH_SIZE") is None:
-            self.default_batch_size = 131072
+            if blank_mode and os.environ.get("ARES_SCAN_BATCH_SIZE") is None:
+                self.default_batch_size = 131072
         except Exception:
             pass
 
@@ -302,13 +302,13 @@ class ParquetDatasetManager:
         try:
             if pa is not None:
                 env_threads = os.environ.get("ARROW_NUM_THREADS")
-            if env_threads is not None:
-                try:
-                    threads = int(env_threads)
-                    if hasattr(pa, "set_cpu_count"):
-                        pa.set_cpu_count(threads)
-                except Exception:
-                    pass
+                if env_threads is not None:
+                    try:
+                        threads = int(env_threads)
+                        if hasattr(pa, "set_cpu_count"):
+                            pa.set_cpu_count(threads)
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -452,58 +452,58 @@ class ParquetDatasetManager:
 
         # Ensure min_rows_per_group is less than max_rows_per_file
         if min_rows_per_group >= max_rows_per_file:
-            min_rows_per_group, max(1000, max_rows_per_file // 10)
-        if self.logger:
-            self.logger.warning(
+            min_rows_per_group = max(1000, max_rows_per_file // 10)
+            if self.logger:
+                self.logger.warning(
                     f"Adjusted min_rows_per_group to {min_rows_per_group} to be less than max_rows_per_file ({max_rows_per_file})",
                 )
 
         # Enforce schema if provided; otherwise proceed with inferred schema
         if schema_name:
-            df, self.enforce_schema(df, schema_name)
+            df = self.enforce_schema(df, schema_name)
 
         # Verbose logging about the dataframe being written
         try:
-            nrows = len(df),
-            ncols = len(df.columns),
-            cols_preview = ",".join(list(map(str, df.columns[:12]))),
-        if self.logger:
-            self.logger.info(
+            nrows = len(df)
+            ncols = len(df.columns)
+            cols_preview = ",".join(list(map(str, df.columns[:12])))
+            if self.logger:
+                self.logger.info(
                     f"Preparing to write dataset: rows={nrows}, cols={ncols}, cols[0..11]=[{cols_preview}] -> {base_dir}"
                 )
-        if "timestamp" in df.columns:
-                ts, pd.to_datetime(
+            if "timestamp" in df.columns:
+                ts = pd.to_datetime(
                     df["timestamp"], unit="ms", utc=True, errors="coerce"
                 )
-                ts_min = ts.min(),
-                ts_max = ts.max(),
-        if self.logger:
-            self.logger.info(f"Timestamp coverage: {ts_min} → {ts_max} (UTC)")
+                ts_min = ts.min()
+                ts_max = ts.max()
+                if self.logger:
+                    self.logger.info(f"Timestamp coverage: {ts_min} → {ts_max} (UTC)")
         except Exception:
             pass
 
         # Derive date components if timestamp exists and auto_add_date_columns is enabled
         if "timestamp" in df.columns and auto_add_date_columns:
             # Expect timestamp in ms since epoch
-            ts, pd.to_datetime(df["timestamp"], unit="ms", utc=True)
-        if "year" not in df.columns:
-            df["year"] = ts.dt.year.astype("int16")
-        if "month" not in df.columns:
-            df["month"] = ts.dt.month.astype("int8")
-        if "day" not in df.columns:
-            df["day"] = ts.dt.day.astype("int8")
+            ts = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
+            if "year" not in df.columns:
+                df["year"] = ts.dt.year.astype("int16")
+            if "month" not in df.columns:
+                df["month"] = ts.dt.month.astype("int8")
+            if "day" not in df.columns:
+                df["day"] = ts.dt.day.astype("int8")
 
-        table, pa.Table.from_pandas(df, preserve_index=False)
+        table = pa.Table.from_pandas(df, preserve_index=False)
 
         # Attach key_value_metadata for governance if provided
         if metadata:
             try:
                 meta = {
                     str(k): (str(v) if v is not None else "")
-        for k, v in metadata.items()
+                    for k, v in metadata.items()
                 }
-                schema_with_meta = table.schema.with_metadata(meta),
-                table = table.cast(schema_with_meta),
+                schema_with_meta = table.schema.with_metadata(meta)
+                table = table.cast(schema_with_meta)
             except Exception:
                 pass
 
@@ -511,22 +511,24 @@ class ParquetDatasetManager:
         try:
             if partition_cols:
                 # Build partition schema from df dtypes, defaulting to string
-                fields = [],
-        for col in partition_cols:
-            if col in df.columns:
-                # Map pandas dtype to pyarrow
-                try: dtype = pa.array(df[col]).type
-                except Exception:
-                    dtype = pa.string(),
-                fields.append(pa.field(col, dtype))
-            else: fields.append(pa.field(col = pa.string()))
-        partition_schema = pa.schema(fields),
-        partitioning, ds.partitioning(partition_schema, flavor="hive")
+                fields = []
+                for col in partition_cols:
+                    if col in df.columns:
+                        # Map pandas dtype to pyarrow
+                        try:
+                            dtype = pa.array(df[col]).type
+                        except Exception:
+                            dtype = pa.string()
+                        fields.append(pa.field(col, dtype))
+                    else:
+                        fields.append(pa.field(col, pa.string()))
+                partition_schema = pa.schema(fields)
+                partitioning = ds.partitioning(partition_schema, flavor="hive")
             else:
-                partitioning = None,
+                partitioning = None
         except Exception:
             # Fallback: no partitioning
-            partitioning = None,
+            partitioning = None
 
         if self.logger:
             self.logger.info(
@@ -535,21 +537,22 @@ class ParquetDatasetManager:
 
         # Count existing files before write for delta logging
         try:
-            before_count = 0,
-        for r, _d, files in os.walk(base_dir):
+            before_count = 0
+            for r, _d, files in os.walk(base_dir):
                 before_count += sum(1 for f in files if f.endswith(".parquet"))
         except Exception:
-            before_count = None,
+            before_count = None
 
         # File visitor to log each file materialized by the engine
         def _file_visitor(written_file: Any) -> None:
-            try: path = getattr(written_file, "path", None) or str(written_file)
+            try:
+                path = getattr(written_file, "path", None) or str(written_file)
             except Exception:
-                path = str(written_file),
-        if self.logger:
-            self.logger.info(f"🆕 Wrote partitioned parquet file: {path}")
-        with contextlib.suppress(Exception):
-            pass
+                path = str(written_file)
+            if self.logger:
+                self.logger.info(f"🆕 Wrote partitioned parquet file: {path}")
+            with contextlib.suppress(Exception):
+                pass
 
         # Prepare write_dataset arguments with minimal required parameters
         write_args = {
@@ -561,7 +564,8 @@ class ParquetDatasetManager:
             "max_rows_per_file": max_rows_per_file,
             "min_rows_per_group": min_rows_per_group,
             "max_rows_per_group": min(
-                max_rows_per_file = 1024 * 1024,
+                max_rows_per_file,
+                1024 * 1024,
             ),  # Ensure max_rows_per_group <= max_rows_per_file
         }
 
@@ -574,16 +578,16 @@ class ParquetDatasetManager:
 
         # Delta logging after write
         try:
-            after_count = 0,
-            total_bytes = 0,
-        for r, _d, files in os.walk(base_dir):
-        for f in files:
-        if f.endswith(".parquet"):
+            after_count = 0
+            total_bytes = 0
+            for r, _d, files in os.walk(base_dir):
+                for f in files:
+                    if f.endswith(".parquet"):
                         after_count += 1
-        with contextlib.suppress(Exception):
+                        with contextlib.suppress(Exception):
                             total_bytes += os.path.getsize(os.path.join(r, f))
-        if self.logger:
-            self.logger.info(
+            if self.logger:
+                self.logger.info(
                     f"Partitioned write complete: files_before={before_count}, files_after={after_count}, size≈{total_bytes} bytes"
                 )
         except Exception:
@@ -605,87 +609,91 @@ class ParquetDatasetManager:
         """
         self._ensure_pyarrow()
         if batch_size is None:
-            batch_size = self.default_batch_size,
+            batch_size = self.default_batch_size
 
         # Early column pruning: ensure columns is a list or None
         if columns is not None and len(columns) == 0:
-            columns = None,
+            columns = None
 
-        before_bytes = None,
+        before_bytes = None
         if self._proxy_pool is not None:
             try:
-                before_bytes = self._proxy_pool.bytes_allocated(),
+                before_bytes = self._proxy_pool.bytes_allocated()
             except Exception:
-                before_bytes = None,
+                before_bytes = None
 
         # Build dataset while ignoring hidden/temporary files when requested
         dataset: ds.Dataset
         try:
             if ignore_hidden_temp and os.path.isdir(base_dir):
                 file_paths: list[str] = []
-        for root, _dirs, files in os.walk(base_dir):
-        for name in files:
-        if not name.endswith(".parquet"):
+                for root, _dirs, files in os.walk(base_dir):
+                    for name in files:
+                        if not name.endswith(".parquet"):
                             continue
-        if (
+                        if (
                             name.startswith((".", "_")) or name.endswith((".tmp", ".partial"))
                         ):
                             continue
                         file_paths.append(os.path.join(root, name))
-                dataset = (ds.dataset(file_paths, format="parquet")
-        if file_paths
+                dataset = (
+                    ds.dataset(file_paths, format="parquet") if file_paths
                     else ds.dataset(base_dir, format="parquet")
                 )
-            else: dataset = ds.dataset(base_dir, format="parquet")
+            else:
+                dataset = ds.dataset(base_dir, format="parquet")
         except Exception:
-        # Fallback to direct dataset construction
-            dataset, ds.dataset(base_dir, format="parquet")
+            # Fallback to direct dataset construction
+            dataset = ds.dataset(base_dir, format="parquet")
 
         # Apply filters via dataset.to_table to ensure pushdown; retry once on transient errors
-        expr = self._build_filter_expression(filters),
-        try: table = dataset.to_table(columns=columns, filter=expr)
+        expr = self._build_filter_expression(filters)
+        try:
+            table = dataset.to_table(columns=columns, filter=expr)
         except Exception:
-        # Retry without threading
-            table, dataset.to_table(columns=columns, filter=expr)
+            # Retry without threading
+            table = dataset.to_table(columns=columns, filter=expr)
 
         if to_pandas:
-            df, table.to_pandas(types_mapper=pd.ArrowDtype)
-        # Log I/O metrics
-        try: nbytes = getattr(table, "nbytes", None) or 0
-        if self.logger:
-            self.logger.info(
+            df = table.to_pandas(types_mapper=pd.ArrowDtype)
+            # Log I/O metrics
+            try:
+                nbytes = getattr(table, "nbytes", None) or 0
+                if self.logger:
+                    self.logger.info(
                         f"Scan read: rows={len(df)}, cols={len(df.columns)}, bytes≈{nbytes}, batch_size={batch_size}, filters={bool(filters)}, columns_pruned={columns is not None}"
                     )
-        except Exception:
+            except Exception:
                 pass
-        return df
+            return df
 
-        after_bytes = None,
+        after_bytes = None
         if self._proxy_pool is not None:
             try:
-                after_bytes = self._proxy_pool.bytes_allocated(),
+                after_bytes = self._proxy_pool.bytes_allocated()
             except Exception:
-                after_bytes = None,
+                after_bytes = None
         if self.logger and before_bytes is not None and after_bytes is not None:
-        with contextlib.suppress(Exception):
-            self.logger.debug(
+            with contextlib.suppress(Exception):
+                self.logger.debug(
                     f"Arrow memory delta: {after_bytes - before_bytes} bytes (alloc={after_bytes})"
                 )
         return table
 
     def _build_filter_expression(
-        self, filters: list | None) -> ds.Expression | None:,
+        self, filters: list | None
+    ) -> ds.Expression | None:
         """Build Arrow filter expression from filter list."""
         if not filters:
             return None
 
         try:
-        # Simple filter building - can be extended for more complex filters
-            expressions = [],
-        for filter_item in filters:
-        if isinstance(filter_item, list | tuple) and len(filter_item) == 3:
-                    field = op, value, filter_item,
-        if op == "==":
+            # Simple filter building - can be extended for more complex filters
+            expressions: list[ds.Expression] = []
+            for filter_item in filters:
+                if isinstance(filter_item, (list, tuple)) and len(filter_item) == 3:
+                    field, op, value = filter_item
+                    if op == "==":
                         expressions.append(ds.field(field) == value)
                     elif op == "!=":
                         expressions.append(ds.field(field) != value)
@@ -697,14 +705,11 @@ class ParquetDatasetManager:
                         expressions.append(ds.field(field) < value)
                     elif op == "<=":
                         expressions.append(ds.field(field) <= value)
-        if expressions:
-        return (
-                    expressions[0]
-        if len(expressions) == 1
-                    else expressions[0] & expressions[1]
-        if len(expressions) == 2
-                    else expressions[0] & expressions[1] & expressions[2]
-                )
+            if expressions:
+                expr = expressions[0]
+                for sub in expressions[1:]:
+                    expr = expr & sub
+                return expr
         except Exception:
             pass
         return None
@@ -716,19 +721,19 @@ class ParquetDatasetManager:
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
         if schema_name:
-            df, self.enforce_schema(df, schema_name)
+            df = self.enforce_schema(df, schema_name)
 
-        table, pa.Table.from_pandas(df, preserve_index=False)
+        table = pa.Table.from_pandas(df, preserve_index=False)
 
         # Attach metadata if provided
         if metadata:
             try:
                 meta = {
                     str(k): (str(v) if v is not None else "")
-        for k, v in metadata.items()
+                    for k, v in metadata.items()
                 }
-                schema_with_meta = table.schema.with_metadata(meta),
-                table = table.cast(schema_with_meta),
+                schema_with_meta = table.schema.with_metadata(meta)
+                table = table.cast(schema_with_meta)
             except Exception:
                 pass
 
@@ -751,39 +756,40 @@ class ParquetDatasetManager:
             if not os.path.exists(base_dir):
                 return
 
-            manifest_path, os.path.join(base_dir, "_manifest.json")
+            manifest_path = os.path.join(base_dir, "_manifest.json")
             manifest = {
                 "updated_at": datetime.now(UTC).isoformat(),
                 "base_dir": base_dir,
                 "timestamp_column": ts_column,
             }
 
-        # Count files and get latest timestamp
-            file_count = 0,
-            latest_ts = None,
+            # Count files and get latest timestamp
+            file_count = 0
+            latest_ts = None
 
-        for root, _dirs, files in os.walk(base_dir):
-        for file in files:
-        if file.endswith(".parquet"):
+            for root, _dirs, files in os.walk(base_dir):
+                for file in files:
+                    if file.endswith(".parquet"):
                         file_count += 1
-                        file_path, os.path.join(root, file)
-        try:
-        # Read timestamp from file metadata
-                            parquet_file = pq.ParquetFile(file_path),
-        if ts_column in parquet_file.schema_arrow.names:
-        # Get min/max from statistics if available
-                                stats, parquet_file.metadata.row_group(0).statistics
-        if stats and ts_column in stats:
-                                    col_stats = stats[ts_column],
-        if (
+                        file_path = os.path.join(root, file)
+                        try:
+                            # Read timestamp from file metadata
+                            parquet_file = pq.ParquetFile(file_path)
+                            if ts_column in parquet_file.schema_arrow.names:
+                                # Get min/max from statistics if available
+                                stats = parquet_file.metadata.row_group(0).statistics
+                                if stats and ts_column in stats:
+                                    col_stats = stats[ts_column]
+                                    if (
                                         hasattr(col_stats, "max")
                                         and col_stats.max is not None
                                     ):
-                                        latest_ts = (max(latest_ts, col_stats.max)
-        if latest_ts is not None
+                                        latest_ts = (
+                                            max(latest_ts, col_stats.max)
+                                            if latest_ts is not None
                                             else col_stats.max
                                         )
-        except Exception:
+                        except Exception:
                             pass
 
             manifest["file_count"] = file_count
@@ -791,11 +797,11 @@ class ParquetDatasetManager:
 
             import json
 
-        with open(manifest_path, "w") as f:
+            with open(manifest_path, "w") as f:
                 json.dump(manifest, f, indent=2, default=str)
 
-        if self.logger:
-            self.logger.info(f"Updated manifest: {manifest_path}")
+            if self.logger:
+                self.logger.info(f"Updated manifest: {manifest_path}")
 
         except Exception as e:
             if self.logger:
@@ -805,13 +811,13 @@ class ParquetDatasetManager:
         self, base_dir: str, ts_column: str = "timestamp"
     ) -> int | None:
         """Get the latest timestamp from the dataset."""
-        try: manifest_path = os.path.join(base_dir, "_manifest.json")
-        if os.path.exists(manifest_path):
+        try:
+            manifest_path = os.path.join(base_dir, "_manifest.json")
+            if os.path.exists(manifest_path):
                 import json
-
-        with open(manifest_path) as f:
-                    manifest = json.load(f),
-        return manifest.get("latest_timestamp")
+                with open(manifest_path) as f:
+                    manifest = json.load(f)
+                return manifest.get("latest_timestamp")
         except Exception:
             pass
         return None
@@ -821,7 +827,7 @@ class ParquetDatasetManager:
         return self.get_latest_timestamp(base_dir)
 
     def cached_projection(
-        self, base_dir: str, filters: list | None, columns: list[str], cache_dir: str, cache_key_prefix: str, compression: str = "snappy", snapshot_version: str | None = None, ttl_seconds: int | None = None, batch_size: int | None = None, arrow_transform: Callable[[pa.Table] = pa.Table] | None = None, None
+        self, base_dir: str, filters: list | None, columns: list[str], cache_dir: str, cache_key_prefix: str, compression: str = "snappy", snapshot_version: str | None = None, ttl_seconds: int | None = None, batch_size: int | None = None, arrow_transform: Callable[[pa.Table], pa.Table] | None = None,
     ) -> pd.DataFrame:
         """Read a projection with caching support."""
         self._ensure_pyarrow()
@@ -829,37 +835,39 @@ class ParquetDatasetManager:
         # Generate cache key
         import hashlib
 
-        cache_key = (f"{cache_key_prefix}_{hashlib.md5(str(filters).encode()).hexdigest()[:8]}"
+        cache_key = (
+            f"{cache_key_prefix}_{hashlib.md5(str(filters).encode()).hexdigest()[:8]}"
         )
         if snapshot_version:
             cache_key += f"_{snapshot_version}"
 
-        cache_path, os.path.join(cache_dir, f"{cache_key}.parquet")
+        cache_path = os.path.join(cache_dir, f"{cache_key}.parquet")
 
         # Check if cache is valid
         if os.path.exists(cache_path) and ttl_seconds:
             import time
 
-        if time.time() - os.path.getmtime(cache_path) < ttl_seconds:
-        try:
-        return pd.read_parquet(cache_path)
-        except Exception:
+            if time.time() - os.path.getmtime(cache_path) < ttl_seconds:
+                try:
+                    return pd.read_parquet(cache_path)
+                except Exception:
                     pass
 
         # Read from source
-        df, self.scan_dataset(base_dir, filters, columns, batch_size)
+        df = self.scan_dataset(base_dir, filters, columns, batch_size)
 
         # Apply transform if provided
         if arrow_transform and not df.empty:
-        try:
-                table = pa.Table.from_pandas(df),
-                transformed_table = arrow_transform(table),
-                df, transformed_table.to_pandas(types_mapper=pd.ArrowDtype)
-        except Exception:
+            try:
+                table = pa.Table.from_pandas(df)
+                transformed_table = arrow_transform(table)
+                df = transformed_table.to_pandas(types_mapper=pd.ArrowDtype)
+            except Exception:
                 pass
 
         # Cache the result
-        try: os.makedirs(cache_dir = exist_ok=True)
+        try:
+            os.makedirs(cache_dir, exist_ok=True)
             df.to_parquet(cache_path, compression=compression)
         except Exception:
             pass
@@ -869,10 +877,13 @@ class ParquetDatasetManager:
     def materialize_projection(
         self, base_dir: str, filters: list | None, columns: list[str], output_dir: str, partition_cols: list[str], schema_name: str = "split", compression: str = "snappy", batch_size: int | None = None, metadata: dict[str, Any] | None = None, ) -> str:
         """Materialize a projection to a new partitioned dataset."""
-        df, self.scan_dataset(base_dir, filters, columns, batch_size)
+        df = self.scan_dataset(base_dir, filters, columns, batch_size)
+
+        if isinstance(df, pa.Table):
+            df = df.to_pandas(types_mapper=pd.ArrowDtype)
 
         if df.empty:
-            msg = "No data found for the specified filters",
+            msg = "No data found for the specified filters"
             raise ValueError(msg)
 
         os.makedirs(output_dir, exist_ok=True)
@@ -893,23 +904,25 @@ class ParquetDatasetManager:
     ) -> str | None:
         """Compact a dataset by rewriting with optimized settings."""
         if output_dir is None:
-            output_dir = f"{base_dir}_compacted",
+            output_dir = f"{base_dir}_compacted"
 
         try:
-        # Read all data
-            df = self.scan_dataset(base_dir),
+            # Read all data
+            df = self.scan_dataset(base_dir)
+            if isinstance(df, pa.Table):
+                df = df.to_pandas(types_mapper=pd.ArrowDtype)
 
-        if df.empty:
-        return None
+            if df.empty:
+                return None
 
-        # Determine partitioning from existing structure
-            partition_cols = [],
-        for col in ["exchange", "symbol", "timeframe", "year", "month", "day"]:
-        if col in df.columns:
+            # Determine partitioning from existing structure
+            partition_cols: list[str] = []
+            for col in ["exchange", "symbol", "timeframe", "year", "month", "day"]:
+                if col in df.columns:
                     partition_cols.append(col)
 
-        # Write compacted dataset
-        self.write_partitioned_dataset(
+            # Write compacted dataset
+            self.write_partitioned_dataset(
                 df=df,
                 base_dir=output_dir,
                 partition_cols=partition_cols,
@@ -919,60 +932,60 @@ class ParquetDatasetManager:
                 max_rows_per_file=max_rows_per_file or 5_000_000,
             )
 
-        return output_dir
+            return output_dir
 
         except Exception as e:
-        if self.logger:
-        self.logger.exception(f"Failed to compact dataset: {e}")
-        return None
+            if self.logger:
+                self.logger.exception(f"Failed to compact dataset: {e}")
+            return None
 
     def migrate_flat_parquet_dir_to_partitioned(
-        self, src_dir: str, dst_base_dir: str, schema_name: str, static_columns: dict[str, str | int] | None = None, None, compression: str = "snappy"
+        self, src_dir: str, dst_base_dir: str, schema_name: str, static_columns: dict[str, str | int] | None = None, compression: str = "snappy"
     ) -> None:
         """Migrate a directory of flat parquet files to partitioned format."""
         self._ensure_pyarrow()
 
         if not os.path.exists(src_dir):
-            msg = f"Source directory not found: {src_dir}",
+            msg = f"Source directory not found: {src_dir}"
             raise FileNotFoundError(msg)
 
         # Find all parquet files
-        parquet_files = [],
+        parquet_files: list[str] = []
         for root, _dirs, files in os.walk(src_dir):
-        for file in files:
-        if file.endswith(".parquet"):
+            for file in files:
+                if file.endswith(".parquet"):
                     parquet_files.append(os.path.join(root, file))
 
         if not parquet_files:
-            msg = f"No parquet files found in {src_dir}",
+            msg = f"No parquet files found in {src_dir}"
             raise ValueError(msg)
 
         # Read and combine all files
-        dfs = [],
+        dfs: list[pd.DataFrame] = []
         for file_path in parquet_files:
-        try:
-                df = pd.read_parquet(file_path),
+            try:
+                df = pd.read_parquet(file_path)
                 dfs.append(df)
-        except Exception as e:
-        if self.logger:
-        self.logger.warning(f"Failed to read {file_path}: {e}")
+            except Exception as e:
+                if self.logger:
+                    self.logger.warning(f"Failed to read {file_path}: {e}")
 
         if not dfs:
-            msg = "No valid parquet files could be read",
+            msg = "No valid parquet files could be read"
             raise ValueError(msg)
 
         # Combine all dataframes
-        combined_df, pd.concat(dfs, ignore_index=True)
+        combined_df = pd.concat(dfs, ignore_index=True)
 
         # Add static columns if provided
         if static_columns:
-        for col, value in static_columns.items():
+            for col, value in static_columns.items():
                 combined_df[col] = value
 
         # Determine partitioning columns
-        partition_cols = [],
+        partition_cols: list[str] = []
         for col in ["exchange", "symbol", "timeframe", "year", "month", "day"]:
-        if col in combined_df.columns:
+            if col in combined_df.columns:
                 partition_cols.append(col)
 
         # Write partitioned dataset
@@ -1035,57 +1048,56 @@ class UnifiedDataConverter:
         """
         try:
 
-        # Update data cache directory to use the passed data_dir
-        self.data_cache_dir = data_dir
-        self.unified_dir = os.path.join(self.data_cache_dir, "unified")
-        self.backup_dir = os.path.join(self.data_cache_dir, "backup_pre_unified")
+            # Update data cache directory to use the passed data_dir
+            self.data_cache_dir = data_dir
+            self.unified_dir = os.path.join(self.data_cache_dir, "unified")
+            self.backup_dir = os.path.join(self.data_cache_dir, "backup_pre_unified")
 
-        # Create directories
+            # Create directories
             os.makedirs(self.unified_dir, exist_ok=True)
             os.makedirs(self.backup_dir, exist_ok=True)
 
+            self.logger.info("=" * 80)
+            self.logger.info("🔄 STEP 1.5: Unified Data Converter")
+            self.logger.info("=" * 80)
+            self.logger.info(f"🎯 Symbol: {symbol}")
+            self.logger.info(f"🏢 Exchange: {exchange}")
+            self.logger.info(f"📊 Timeframe: {timeframe}")
+            self.logger.info(f"📁 Data directory: {data_dir}")
 
-        self.logger.info("=" * 80)
-        self.logger.info("🔄 STEP 1.5: Unified Data Converter")
-        self.logger.info("=" * 80)
-        self.logger.info(f"🎯 Symbol: {symbol}")
-        self.logger.info(f"🏢 Exchange: {exchange}")
-        self.logger.info(f"📊 Timeframe: {timeframe}")
-        self.logger.info(f"📁 Data directory: {data_dir}")
-
-        # Check if unified data already exists
-            unified_exists, await self._check_unified_data_exists(
-                symbol = exchange, timeframe,
+            # Check if unified data already exists
+            unified_exists = await self._check_unified_data_exists(
+                symbol, exchange, timeframe,
             )
 
-        if unified_exists:
-        if force_rerun:
-        self.logger.info(
+            if unified_exists:
+                if force_rerun:
+                    self.logger.info(
                         "🔄 Force rerun requested - will reprocess all data",
                     )
-        # Step 1: Backup existing data
-        await self._backup_existing_data(symbol, exchange, timeframe)
+                    # Step 1: Backup existing data
+                    await self._backup_existing_data(symbol, exchange, timeframe)
                 else:
-        self.logger.info(
+                    self.logger.info(
                         "✅ Unified data already exists, checking for incremental updates...",
                     )
-        # Check if we need to process only new data
-                    incremental_success, await self._process_incremental_updates(
-                        symbol = exchange, timeframe,
+                    # Check if we need to process only new data
+                    incremental_success = await self._process_incremental_updates(
+                        symbol, exchange, timeframe,
                     )
-        if incremental_success:
-        self.logger.info("✅ Incremental processing completed")
-        return True
-        self.logger.info("🔄 Full reprocessing required")
-        # Step 1: Backup existing data
-        await self._backup_existing_data(symbol, exchange, timeframe)
+                    if incremental_success:
+                        self.logger.info("✅ Incremental processing completed")
+                        return True
+                    self.logger.info("🔄 Full reprocessing required")
+                    # Step 1: Backup existing data
+                    await self._backup_existing_data(symbol, exchange, timeframe)
             else:
-        self.logger.info(
+                self.logger.info(
                     "🔄 No existing unified data found - performing initial conversion",
                 )
 
-        # Step 2: Convert existing consolidated files
-            conversion_success, await self._convert_existing_data(
+            # Step 2: Convert existing consolidated files
+            conversion_success = await self._convert_existing_data(
                 symbol = exchange, timeframe,
             )
         if not conversion_success:

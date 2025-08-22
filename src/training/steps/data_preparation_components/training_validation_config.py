@@ -182,14 +182,14 @@ class DataValidator:
 
         # Check if data is a dictionary
         if not isinstance(data, dict):
-        self.errors.append("Data must be a dictionary")
-        return False, self.errors
+            self.errors.append("Data must be a dictionary")
+            return False, self.errors
 
         # Check for required keys
         required_keys = ["klines", "agg_trades", "futures"]
         for key in required_keys:
-        if key not in data:
-        self.errors.append(f"Missing required key: {key}")
+            if key not in data:
+                self.errors.append(f"Missing required key: {key}")
 
         # Validate each data type
         self._validate_klines_format(data.get("klines"))
@@ -204,25 +204,25 @@ class DataValidator:
             return
 
         if not isinstance(klines, pd.DataFrame):
-        self.errors.append("klines must be a pandas DataFrame")
+            self.errors.append("klines must be a pandas DataFrame")
             return
 
         # Check for required columns
         required_columns = ["open", "high", "low", "close", "volume"]
         missing_columns = [col for col in required_columns if col not in klines.columns]
         if missing_columns:
-        self.errors.append(f"Missing required columns in klines: {missing_columns}")
+            self.errors.append(f"Missing required columns in klines: {missing_columns}")
 
         # Check for proper data types
         numeric_columns = ["open", "high", "low", "close", "volume"]
         for col in numeric_columns:
-        if col in klines.columns:
-        if not pd.api.types.is_numeric_dtype(klines[col]):
-        self.errors.append(f"Column {col} must be numeric")
+            if col in klines.columns:
+                if not pd.api.types.is_numeric_dtype(klines[col]):
+                    self.errors.append(f"Column {col} must be numeric")
 
         # Check for datetime index
         if not isinstance(klines.index, pd.DatetimeIndex):
-        self.errors.append("klines must have a DatetimeIndex")
+            self.errors.append("klines must have a DatetimeIndex")
 
     def _validate_agg_trades_format(self, agg_trades) -> None:
         """Validate aggregated trades data format."""
@@ -230,7 +230,7 @@ class DataValidator:
             return
 
         if not isinstance(agg_trades, pd.DataFrame):
-        self.errors.append("agg_trades must be a pandas DataFrame")
+            self.errors.append("agg_trades must be a pandas DataFrame")
             return
 
         # Check for required columns
@@ -239,7 +239,7 @@ class DataValidator:
             col for col in required_columns if col not in agg_trades.columns
         ]
         if missing_columns:
-        self.errors.append(
+            self.errors.append(
                 f"Missing required columns in agg_trades: {missing_columns}",
             )
 
@@ -249,24 +249,24 @@ class DataValidator:
             return
 
         if not isinstance(futures, pd.DataFrame):
-        self.errors.append("futures must be a pandas DataFrame")
+            self.errors.append("futures must be a pandas DataFrame")
             return
 
         if "fundingRate" not in futures.columns:
-        self.errors.append("futures must have 'fundingRate' column")
+            self.errors.append("futures must have 'fundingRate' column")
 
     def validate_data_quality(self, data: dict[str, Any]) -> tuple[bool, list[str]]:
         """Validate data quality and integrity."""
         self.errors = []
 
         if "klines" in data and isinstance(data["klines"], pd.DataFrame):
-        self._validate_klines_quality(data["klines"])
+            self._validate_klines_quality(data["klines"])
 
         if "agg_trades" in data and isinstance(data["agg_trades"], pd.DataFrame):
-        self._validate_agg_trades_quality(data["agg_trades"])
+            self._validate_agg_trades_quality(data["agg_trades"])
 
         if "futures" in data and isinstance(data["futures"], pd.DataFrame):
-        self._validate_futures_quality(data["futures"])
+            self._validate_futures_quality(data["futures"])
 
         return len(self.errors) == 0, self.errors
 
@@ -274,42 +274,42 @@ class DataValidator:
         """Validate klines data quality."""
         # Check for infinite values
         for col in ["open", "high", "low", "close", "volume"]:
-        if col in klines.columns:
-        if klines[col].isin([np.inf, -np.inf]).any():
-        self.errors.append(f"Column {col} contains infinite values")
+            if col in klines.columns:
+                if klines[col].isin([np.inf, -np.inf]).any():
+                    self.errors.append(f"Column {col} contains infinite values")
 
         # Check for negative prices
         price_columns = ["open", "high", "low", "close"]
         for col in price_columns:
-        if col in klines.columns and (klines[col] <= 0).any():
-        self.errors.append(f"Column {col} contains non-positive values")
+            if col in klines.columns and (klines[col] <= 0).any():
+                self.errors.append(f"Column {col} contains non-positive values")
 
         # Check for negative volume
         if "volume" in klines.columns and (klines["volume"] < 0).any():
-        self.errors.append("Volume contains negative values")
+            self.errors.append("Volume contains negative values")
 
         # Check for logical inconsistencies
         if all(col in klines.columns for col in ["high", "low"]):
-        if (klines["high"] < klines["low"]).any():
-        self.errors.append("High values are less than low values")
+            if (klines["high"] < klines["low"]).any():
+                self.errors.append("High values are less than low values")
 
     def _validate_agg_trades_quality(self, agg_trades: pd.DataFrame) -> None:
         """Validate aggregated trades data quality."""
         # Check for negative prices
         if "price" in agg_trades.columns and (agg_trades["price"] <= 0).any():
-        self.errors.append("Aggregated trades contain non-positive prices")
+            self.errors.append("Aggregated trades contain non-positive prices")
 
         # Check for negative quantities
         if "quantity" in agg_trades.columns:
-        if (agg_trades["quantity"] < 0).any():
-        self.errors.append("Aggregated trades contain negative quantities")
+            if (agg_trades["quantity"] < 0).any():
+                self.errors.append("Aggregated trades contain negative quantities")
 
     def _validate_futures_quality(self, futures: pd.DataFrame) -> None:
         """Validate futures data quality."""
         # Check for infinite funding rates
         if "fundingRate" in futures.columns:
-        if futures["fundingRate"].isin([np.inf, -np.inf]).any():
-        self.errors.append("Futures contain infinite funding rates")
+            if futures["fundingRate"].isin([np.inf, -np.inf]).any():
+                self.errors.append("Futures contain infinite funding rates")
 
 
 # Create global validator instance
@@ -369,10 +369,11 @@ def validate_file_paths(data_dir: str) -> tuple[bool, list[str]]:
     # Check for required subdirectories
     required_dirs = ["cache", "models", "logs"]
     for subdir in required_dirs:
-        subdir_path, os.path.join(data_dir, subdir)
+        subdir_path = os.path.join(data_dir, subdir)
         if not os.path.exists(subdir_path):
-        try: os.makedirs(subdir_path = exist_ok=True)
-        except Exception as e:
+            try:
+                os.makedirs(subdir_path, exist_ok=True)
+            except Exception as e:
                 errors.append(f"Cannot create required directory {subdir}: {e!s}")
 
     return len(errors) == 0, errors
@@ -388,9 +389,9 @@ def validate_system_resources() -> tuple[bool, list[str]]:
     memory = psutil.virtual_memory()
 
     # Check if we're in blank training mode by looking at environment or config
-    import os
+    import os as _os
 
-    blank_mode, os.getenv("BLANK_TRAINING_MODE", "0") == "1"
+    blank_mode = _os.getenv("BLANK_TRAINING_MODE", "0") == "1"
 
     # Debug logging
 
@@ -487,7 +488,7 @@ def validate_coarse_optimization(data: dict[str, Any]) -> tuple[bool, list[str]]
     production_min_params = 8  # Production mode minimum
 
     # Check if we're in production mode (more than 5 parameters suggests production)
-    is_production_mode, len(data) >= 5
+    is_production_mode = len(data) >= 5
 
     if is_production_mode and len(data) < production_min_params:
         found_params = list(data.keys())
@@ -539,7 +540,11 @@ def get_progression_rules(step_name: str) -> dict[str, Any]:
     return STEP_PROGRESSION_RULES.get(step_name, {})
 
 
-def can_proceed_to_step(current_step: str, next_step: str, step_status: dict[str, Any], ) -> tuple[bool, str]:
+def can_proceed_to_step(
+    current_step: str,
+    next_step: str,
+    step_status: dict[str, Any],
+) -> tuple[bool, str]:
     """Check if we can proceed to the next step based on current step status."""
     current_rules = get_progression_rules(current_step)
     next_rules = get_progression_rules(next_step)
@@ -550,7 +555,7 @@ def can_proceed_to_step(current_step: str, next_step: str, step_status: dict[str
             current_rules.get("failure_action") == "STOP_PIPELINE"
             or current_rules.get("failure_action") == "SKIP_DEPENDENT_STEPS"
         ):
-        return (
+            return (
                 False,
                 f"Cannot proceed to {next_step}: {current_step} failed and is required",
             )

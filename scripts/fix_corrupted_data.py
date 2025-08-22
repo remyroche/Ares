@@ -47,7 +47,7 @@ def detect_price_corruption(df: pd.DataFrame) -> bool:
     # If median is outside this range, data is corrupted
     return bool(median_price < 100 or median_price > 10000)
 
-def fix_corrupted_prices(df: pd.DataFrame, target_median: float, 3000.0) -> pd.DataFrame:
+def fix_corrupted_prices(df: pd.DataFrame, target_median: float = 3000.0) -> pd.DataFrame:
     """
     Fix corrupted prices by scaling them to a reasonable range.
 

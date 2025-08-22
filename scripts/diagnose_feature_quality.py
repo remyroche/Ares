@@ -67,7 +67,7 @@ class FeatureQualityDiagnostic:
 
         # Check for zero variance features
         variances = data.var()
-        zero_var_features = variances[variances , = 0].index.tolist()
+        zero_var_features = variances[variances == 0].index.tolist()
         if zero_var_features:
             issues["zero_variance_features"] = zero_var_features
         self.logger.warning(
@@ -143,7 +143,7 @@ class FeatureQualityDiagnostic:
 
         return suspicious
 
-    def analyze_block_features(self, data: pd.DataFrame, block_name: str =) -> dict[str, Any]:
+    def analyze_block_features(self, data: pd.DataFrame, block_name: str) -> dict[str, Any]:
         """Analyze features for a specific block."""
         self.logger.info(f"🔍 Analyzing {block_name} block features...")
 
@@ -260,7 +260,8 @@ class FeatureQualityDiagnostic:
                         {
                             "feature1": corr_matrix.columns[i],
                             "feature2": corr_matrix.columns[j],
-                            "correlation": corr_val = },
+                            "correlation": corr_val,
+                        },
                     )
 
         return {
@@ -279,7 +280,7 @@ class FeatureQualityDiagnostic:
 
         return {
             "variances": variances.to_dict(),
-            "zero_variance_features": variances[variances , = 0].index.tolist(),
+            "zero_variance_features": variances[variances == 0].index.tolist(),
             "low_variance_features": variances[variances < 1e-6].index.tolist(),
             "high_variance_features": variances[variances > 1].index.tolist(),
             "variance_percentiles": variances.quantile(
@@ -287,7 +288,7 @@ class FeatureQualityDiagnostic:
             ).to_dict(),
         }
 
-    def generate_report(self, issues: dict[str ,  Any], block_analyses: dict[str ,  Any], ) -> str:
+    def generate_report(self, issues: dict[str, Any], block_analyses: dict[str, Any], ) -> str:
         """Generate a comprehensive diagnostic report."""
         report = []
         report.append("=" * 80)
@@ -405,10 +406,10 @@ class FeatureQualityDiagnostic:
         plt.figure(figsize=(12, 10))
         corr_matrix, data.corr()
         sns.heatmap(
-            corr_matrix, annot, False,
+            corr_matrix, annot=False,
             cmap="coolwarm",
             center=0,
-            square, True, linewidths=0.5,
+            square=True, linewidths=0.5,
         )
         plt.title("Feature Correlation Matrix")
         plt.tight_layout()
@@ -422,7 +423,7 @@ class FeatureQualityDiagnostic:
         # Variance distribution
         plt.figure(figsize=(10, 6))
         variances, data.var()
-        plt.hist(variances, bins, 50, alpha=0.7, edgecolor="black")
+        plt.hist(variances, bins=50, alpha=0.7, edgecolor="black")
         plt.xlabel("Feature Variance")
         plt.ylabel("Frequency")
         plt.title("Distribution of Feature Variances")
@@ -439,7 +440,7 @@ class FeatureQualityDiagnostic:
         # NaN pattern heatmap
         plt.figure(figsize=(12, 8))
         nan_matrix, data.isna()
-        sns.heatmap(nan_matrix, cbar, True, cmap="viridis")
+        sns.heatmap(nan_matrix, cbar=True, cmap="viridis")
         plt.title("NaN Pattern Heatmap")
         plt.tight_layout()
         plt.savefig(f"{output_dir}/nan_patterns.png", dpi=300, bbox_inches="tight")

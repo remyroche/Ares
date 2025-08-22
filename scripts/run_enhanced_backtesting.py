@@ -25,9 +25,9 @@ from src.utils.warning_symbols import failed
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-async def run_enhanced_backtesting(symbol: str, lookback_days: int, 730):
+async def run_enhanced_backtesting(symbol: str, lookback_days: int = 730):
     """Run enhanced backtesting with efficiency optimizations."""
-    logger, system_logger.getChild("EnhancedBacktesting")
+    logger = system_logger.getChild("EnhancedBacktesting")
 
     logger.info("🚀 Starting Enhanced Backtesting with Paper Trading")
     logger.info(f"Symbol: {symbol}")

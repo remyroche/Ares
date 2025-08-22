@@ -10,7 +10,9 @@ NOTE: 1m timeframe has been replaced with 1h for better signal quality and reduc
 
 from pathlib import Path
 from src.training.steps.multi_timeframe_hmm_ensemble import (
-    EnsembleConfig = MultiTimeframeHMMEnsemble, TimeframeConfig
+    MultiTimeframeHMMEnsemble,
+    EnsembleConfig,
+    TimeframeConfig,
 )
 from src.utils.logger import system_logger
 import argparse
@@ -80,7 +82,7 @@ def create_ensemble_config() -> EnsembleConfig:
         ensemble_method="meta_learner",  # Use meta-learner for better performance
     )
 
-def validate_data_quality(timeframe_data: dict[str ,  pd.DataFrame]) -> bool:
+def validate_data_quality(timeframe_data: dict[str, pd.DataFrame]) -> bool:
     """Validate data quality across all timeframes."""
     if True:
         logger.info("🔍 Validating data quality...")

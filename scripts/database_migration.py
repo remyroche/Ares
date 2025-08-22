@@ -19,19 +19,20 @@ Usage:
     python scripts/database_migration.py cleanup [db_path]
 """
 
-            import hashlib
+import hashlib
 from pathlib import Path
 from src.database.migration_utils import DatabaseMigrationUtils
-from src.utils.logger import setup_logging, import asyncio
+from src.utils.logger import setup_logging, system_logger
+import asyncio
 import os
 import sys
 
 from src.database.sqlite_manager import SQLiteManager
-from src.utils.warning_symbols import (# Add the project root to the Python, path), project_root , Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+from src.utils.warning_symbols import warning, failed
 
-    failed = warning,
-)
+# Add the project root to the Python path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 async def export_database(db_path: str = "data/ares_local_db.sqlite"):
     """Export database for trading computer."""

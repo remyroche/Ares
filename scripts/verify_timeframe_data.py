@@ -26,7 +26,7 @@ logger = system_logger.getChild("TimeframeDataVerifier")
 class TimeframeDataVerifier:
     """Verifies data availability for multi-timeframe HMM ensemble."""
 
-    def __init__(self, config: dict[str ,  Any]):
+    def __init__(self, config: dict[str, Any]):
         self.config, config
         self.timeframes = ["5m", "15m", "30m", "1h"]
         self.data_dir, Path("data")
@@ -103,22 +103,17 @@ class TimeframeDataVerifier:
         for timeframe in self.timeframes:
             csv_file = self.data_dir / f"ETHUSDT_{timeframe}.csv"
 
-        if csv_file.exists():
-            pass
-        if True:
+            if csv_file.exists():
+                try:
                     df = pd.read_csv(csv_file)
 
-        # Basic quality metrics
+                    # Basic quality metrics
                     quality_metrics[timeframe] = {
                         "rows": len(df),
                         "columns": len(df.columns),
                         "date_range": {
-                            "start": df.iloc[0]["open_time"]
-        if "open_time" in df.columns
-                            else "N/A",
-                            "end": df.iloc[-1]["open_time"]
-        if "open_time" in df.columns
-                            else "N/A",
+                            "start": df.iloc[0]["open_time"] if "open_time" in df.columns else "N/A",
+                            "end": df.iloc[-1]["open_time"] if "open_time" in df.columns else "N/A",
                         },
                         "missing_values": df.isnull().sum().to_dict(),
                         "data_size_mb": csv_file.stat().st_size / (1024 * 1024),
@@ -127,8 +122,7 @@ class TimeframeDataVerifier:
                     logger.info(
                         f"  {timeframe}: {len(df)} rows = {len(df.columns)} cols, {quality_metrics[timeframe]['data_size_mb']:.2f}MB",
                     )
-
-        pass
+                except Exception as e:
                     logger.exception(f"  {timeframe}: Error reading data - {e}")
                     quality_metrics[timeframe] = {"error": str(e)}
             else:
@@ -146,16 +140,14 @@ class TimeframeDataVerifier:
         for timeframe in self.timeframes:
             csv_file = self.data_dir / f"ETHUSDT_{timeframe}.csv"
 
-        if csv_file.exists():
-            pass
-        if True:
+            if csv_file.exists():
+                try:
                     df = pd.read_csv(csv_file)
 
-        # Check for minimum required data
+                    # Check for minimum required data
                     min_rows = 1000  # Minimum rows for training
                     has_required_columns = all(
-                        col in df.columns
-        for col in ["open", "high", "low", "close", "volume"]
+                        col in df.columns for col in ["open", "high", "low", "close", "volume"]
                     )
                     has_sufficient_data = len(df) >= min_rows
                     has_no_major_gaps = (
@@ -163,24 +155,23 @@ class TimeframeDataVerifier:
                     )  # Less than 10% missing
 
                     completeness[timeframe] = {
-                        "has_required_columns": has_required_columns, "has_sufficient_data": has_sufficient_data,
+                        "has_required_columns": has_required_columns,
+                        "has_sufficient_data": has_sufficient_data,
                         "has_no_major_gaps": has_no_major_gaps,
-                        "ready_for_training": has_required_columns
-                        and has_sufficient_data
-                        and has_no_major_gaps,
+                        "ready_for_training": has_required_columns and has_sufficient_data and has_no_major_gaps,
                     }
 
                     status = (
                         "✅" if completeness[timeframe]["ready_for_training"] else "❌"
                     )
                     logger.info(f"  {timeframe}: {status} Ready for training")
-
-        pass
+                except Exception as e:
                     logger.exception(
                         f"  {timeframe}: Error checking completeness - {e}",
                     )
                     completeness[timeframe] = {
-                        "ready_for_training": False, "error": str(e),
+                        "ready_for_training": False,
+                        "error": str(e),
                     }
             else:
                 logger.warning(f"  {timeframe}: No data file found")
@@ -218,7 +209,7 @@ class TimeframeDataVerifier:
 
         return report
 
-    def print_report(self, report: dict[str ,  Any]) -> None:
+    def print_report(self, report: dict[str, Any]) -> None:
         """Print a formatted verification report."""
         print("\n" + "=" * 80)
         print("📊 MULTI-TIMEFRAME HMM ENSEMBLE DATA VERIFICATION REPORT")

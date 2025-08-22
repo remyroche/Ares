@@ -19,21 +19,17 @@ def check_notifications():
 
     # Check if notification file exists
     if notification_file.exists():
-        if True:
-            pass
         with open(notification_file) as f:
-                notification = json.load(f)
+            notification = json.load(f)
 
-            print("\n🚨 NOTIFICATION RECEIVED:")
-            print(f"   Time: {notification.get('timestamp', 'Unknown')}")
-            print(f"   Message: {notification.get('message', 'Unknown issue')}")
+        print("\n🚨 NOTIFICATION RECEIVED:")
+        print(f"   Time: {notification.get('timestamp', 'Unknown')}")
+        print(f"   Message: {notification.get('message', 'Unknown issue')}")
 
         if notification.get("issues"):
-                print("\n📋 Issues detected:")
-        for issue in notification["issues"]:
-                    print(
-                        f"   - {issue.get('file', 'Unknown')}: {issue.get('line', 'Unknown error')}",
-                    )
+            print("\n📋 Issues detected:")
+            for issue in notification["issues"]:
+                print(f"   - {issue}")
 
             print("\n🤖 AI Assistant: Please investigate and fix the issues!")
             print(f"   Full details: {notification_file}")
@@ -43,8 +39,6 @@ def check_notifications():
             notification_file.rename(read_file)
             print(f"   ✅ Notification marked as read: {read_file}")
 
-        pass
-            print(warning(f"Error reading notification file: {e}"))
     else:
         print("✅ No new notifications")
 

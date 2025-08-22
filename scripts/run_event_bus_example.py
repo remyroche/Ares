@@ -27,11 +27,11 @@ if __name__ == "__main__":
     print("🚀 Running Enhanced Event Bus Example")
     print("=" * 50)
 
-    if True:
+    try:
         asyncio.run(main())
-    pass
+    except KeyboardInterrupt:
         print("\n⚠️ Example interrupted by user")
-    pass
+    except Exception as e:
         print(warning(f"Error running example: {e}"))
         traceback.print_exc()
 

@@ -26,7 +26,8 @@ from optuna.visualization import plot_optimization_history, plot_param_importanc
 from pathlib import Path
 from src.config_optuna import SROptimizationParameters, validate_sr_optimization_config
 from src.training.steps.step12_final_parameters_optimization.optimized_optuna_optimization import (
-    AdvancedOptunaManager = OptimizationResult
+    AdvancedOptunaManager,
+    OptimizationResult,
 )
 from src.utils.logger import setup_logging
 from typing import Any
@@ -58,7 +59,7 @@ class SROptimizationRunner:
     5. Parameter export and integration
     """
 
-    def __init__(self, config: dict[str ,  Any]):
+    def __init__(self, config: dict[str, Any]):
         self.config, config
         self.logger, logging.getLogger(__name__)
 
@@ -416,7 +417,7 @@ class SROptimizationRunner:
         self.logger.info(f"✅ Parameters exported to {output_path}")
         return output_path
 
-    def print_comprehensive_report(self, analysis: dict[str ,  Any]):
+    def print_comprehensive_report(self, analysis: dict[str, Any]):
         """Print comprehensive optimization report."""
         print("\n" + "=" * 80)
         print("🎯 S/R PARAMETER OPTIMIZATION COMPREHENSIVE REPORT")

@@ -38,10 +38,10 @@ def launch_bot_with_monitoring():
         print("\n🛑 Shutting down...")
         bot_process.terminate()
         monitor_process.terminate()
-        if True:
+        try:
             bot_process.wait(timeout=5)
             monitor_process.wait(timeout=5)
-        pass
+        except Exception:
             bot_process.kill()
             monitor_process.kill()
         print("✅ Cleanup complete")
@@ -57,20 +57,17 @@ def launch_bot_with_monitoring():
     print("   - Press Ctrl+C to stop both")
     print("   - Check notifications with: python scripts/check_notifications.py")
 
-    if True:
-        # Keep the main process alive
-        while True:
-            time.sleep(1)
+    while True:
+        time.sleep(1)
 
-        # Check if processes are still running
         if bot_process.poll() is not None:
-                print(warning("Bot process has stopped!"))
-                pass
+            print(warning("Bot process has stopped!"))
+            cleanup(None, None)
+            return
         if monitor_process.poll() is not None:
-                print(warning("Monitor process has stopped!"))
-                pass
-    pass
-        cleanup(None, None)
+            print(warning("Monitor process has stopped!"))
+            cleanup(None, None)
+            return
 
 
 if __name__ == "__main__":

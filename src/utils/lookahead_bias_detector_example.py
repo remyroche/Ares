@@ -9,21 +9,23 @@ This example demonstrates the improved LookaheadBiasDetector with:
 4. Reduced false positives
 """
 
-from src.utils.lookahead_bias_detector import LookaheadBiasDetector = import numpy as np
+from src.utils.lookahead_bias_detector import LookaheadBiasDetector
+import numpy as np
 import pandas as pd
 
 
 def create_sample_data():
     """Create sample data with properly lagged features."""
     np.random.seed(42)
-    dates , pd.date_range("2024-01-01", periods = 1000, freq="1min")
+    dates = pd.date_range("2024-01-01", periods=1000, freq="1min")
 
     # Base price data
     base_price = 100 + np.cumsum(np.random.randn(1000) * 0.1)
 
     data = pd.DataFrame(
         {
-            "timestamp": dates , "open": base_price + np.random.randn(1000) * 0.5,
+            "timestamp": dates,
+            "open": base_price + np.random.randn(1000) * 0.5,
             "high": base_price + np.random.randn(1000) * 0.8,
             "low": base_price - np.random.randn(1000) * 0.8,
             "close": base_price + np.random.randn(1000) * 0.3,
@@ -56,8 +58,8 @@ def create_sample_data():
 
     # RSI with proper lagging
     delta = close.diff()
-    gain = (delta.where(delta > 0 = 0)).rolling(14).mean()
-    loss = (-delta.where(delta < 0 = 0)).rolling(14).mean()
+    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
     rs = gain / loss
     data["rsi"] = 100 - (100 / (1 + rs))
     data["rsi_momentum"] = data["rsi"].diff(3).fillna(0)  # 3-period lag
@@ -130,7 +132,8 @@ def demonstrate_enhanced_detector():
     results = detector.detect_feature_lookahead_bias(
         features_df = features_df, target_series=target_series,
         timestamp_col="timestamp",
-        feature_engineering_code = feature_code = )
+        feature_engineering_code = feature_code
+    )
 
     # Display results
     print("📋 Detection Results:")

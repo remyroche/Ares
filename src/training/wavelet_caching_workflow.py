@@ -30,7 +30,7 @@ async def load_config(config_path: str) -> dict:
     try:
         with Path(config_path).open() as f:
             return yaml.safe_load(f)
-    except Exception as e:
+    except Exception:
         # Return empty config on failure
         return {}
 
@@ -75,7 +75,7 @@ async def create_sample_data():
 
         return data
 
-    except Exception as e:
+    except Exception:
         return pd.DataFrame()
 
 
@@ -104,7 +104,7 @@ async def step1_precompute_features(config: dict) -> bool | None:
         sample_data.to_parquet("data/price_data/sample_data.parquet")
 
         # Pre-compute features
-        start_time = time.time()
+        _ = time.time()
 
         success = await precomputer.precompute_dataset(
             data_path="data/price_data/sample_data.parquet",
@@ -119,7 +119,7 @@ async def step1_precompute_features(config: dict) -> bool | None:
             return True
         return False
 
-    except Exception as e:
+    except Exception:
         return False
 
 
@@ -156,7 +156,7 @@ async def step2_run_backtests(config: dict) -> bool | None:
             },
         ]
 
-        start_time = time.time()
+        _ = time.time()
 
         # Run backtests
         results = await backtester.run_multiple_backtests(backtest_configs)
@@ -172,7 +172,7 @@ async def step2_run_backtests(config: dict) -> bool | None:
             return True
         return False
 
-    except Exception as e:
+    except Exception:
         return False
 
 
@@ -212,7 +212,7 @@ async def step3_performance_comparison(config: dict) -> bool | None:
 
         return True
 
-    except Exception as e:
+    except Exception:
         return False
 
 
@@ -233,7 +233,7 @@ async def step4_cache_management(config: dict) -> bool | None:
 
         return True
 
-    except Exception as e:
+    except Exception:
         return False
 
 
@@ -249,14 +249,8 @@ async def main() -> None:
                     "cache_dir": "data/wavelet_cache",
                     "cache_format": "parquet",
                     "compression": "snappy",
-                    "cache_expiry_days": 30,
                 },
-                "wavelet_precompute": {
-                    "enable_batch_processing": True,
-                    "batch_size": 10000,
-                    "enable_progress_tracking": True,
-                },
-                "backtesting_with_cache": {
+                "backtesting": {
                     "enable_feature_caching": True,
                     "enable_performance_monitoring": True,
                 },
@@ -288,9 +282,10 @@ async def main() -> None:
             return
 
         # Summary
+        return
 
     except Exception:
-        pass
+        return
 
 
 if __name__ == "__main__":

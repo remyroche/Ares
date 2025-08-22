@@ -10,7 +10,8 @@ This module provides a centralized, unified approach to all data operations incl
 - Memory-efficient processing
 - Caching and optimization
 
-This serves as the single source of truth for all data operations across the training pipeline.
+This serves as the single source of truth for all data operations
+across the training pipeline.
 Enhanced with comprehensive security and troubleshooting decorators.
 """
 
@@ -124,18 +125,22 @@ class UnifiedDataOrchestrator:
         time.time() - start_time
 
     def _get_memory_usage_mb(self) -> float:
-        """Get current memory usage in MB."""
+        """Get current process memory usage in MB."""
         try:
             process = psutil.Process()
             return process.memory_info().rss / 1024 / 1024
-        except Exception:
+        except (psutil.Error, OSError, RuntimeError):
             return 0.0
 
     def _log_memory_usage(self, context: str) -> None:
         """Log current memory usage with context."""
         memory_mb = self._get_memory_usage_mb()
         self.stats["memory_usage_history"].append(
-            {"timestamp": datetime.now(), "context": context, "memory_mb": memory_mb},
+            {
+                "timestamp": datetime.now(tz=datetime.UTC),
+                "context": context,
+                "memory_mb": memory_mb,
+            },
         )
         self.logger.info(f"Memory usage at {context}: {memory_mb:.2f} MB")
 
@@ -208,11 +213,11 @@ class UnifiedDataOrchestrator:
             self._log_memory_usage("initialize_end")
 
             self.logger.info("✅ Unified Data Orchestrator initialized successfully")
-            return True
+            return True  # noqa: TRY300
 
-        except Exception as e:
+        except Exception:
             init_time = time.time() - start_time
-            self.logger.exception(f"❌ Failed to initialize Unified Data Orchestrator: {e}")
+            self.logger.exception("❌ Failed to initialize Unified Data Orchestrator")
             return False
 
     @validate_step_prerequisites(
@@ -277,9 +282,9 @@ class UnifiedDataOrchestrator:
 
             self.logger.info("🧹 Unified Data Orchestrator cleanup completed")
 
-        except Exception as e:
+        except Exception:
             cleanup_time = time.time() - start_time
-            self.logger.exception(f"❌ Error during cleanup: {e}")
+            self.logger.exception("❌ Error during cleanup")
 
     @validate_step_prerequisites(
         required_directories=["data_cache", "data/training"],
@@ -345,17 +350,18 @@ class UnifiedDataOrchestrator:
     @handle_errors(
         exceptions=(Exception,), default_return=None, context="unified data loading",
     )
-    async def get_unified_data(
+    async def get_unified_data(  # noqa: PLR0913, PLR0915
         self,
         symbol: str,
         exchange: str,
         timeframe: str = "1m",
         lookback_days: int | None = None,
-        force_reload: bool = False,
-        validate_quality: bool = True,
-        auto_repair: bool = True,
+        force_reload: bool = False,  # noqa: FBT001, FBT002
+        validate_quality: bool = True,  # noqa: FBT001, FBT002
+        auto_repair: bool = True,  # noqa: FBT001, FBT002
     ) -> pd.DataFrame | None:
-        """Get unified data with comprehensive fallback strategies and quality validation.
+        """Get unified data with comprehensive fallback strategies and
+        quality validation.
 
         Args:
             symbol: Trading symbol
@@ -495,11 +501,11 @@ class UnifiedDataOrchestrator:
                 f"❌ Failed to load data for {exchange}_{symbol}_{timeframe}",
             )
             self._log_memory_usage(f"data_load_failed_{request_id}")
-            return None
+            return None  # noqa: TRY300
 
-        except Exception as e:
+        except Exception:
             total_time = time.time() - start_time
-            self.logger.exception(f"❌ Error loading unified data: {e}")
+            self.logger.exception("❌ Error loading unified data")
             self._log_memory_usage(f"data_load_exception_{request_id}")
             return None
 
@@ -572,15 +578,15 @@ class UnifiedDataOrchestrator:
         default_return=None,
         context="multi-timeframe data loading",
     )
-    async def get_multi_timeframe_data(
+    async def get_multi_timeframe_data(  # noqa: PLR0913, PLR0915
         self,
         symbol: str,
         exchange: str,
         timeframes: list[str] | None = None,
         lookback_days: int | None = None,
-        force_reload: bool = False,
-        validate_quality: bool = True,
-        auto_repair: bool = True,
+        force_reload: bool = False,  # noqa: FBT001, FBT002
+        validate_quality: bool = True,  # noqa: FBT001, FBT002
+        auto_repair: bool = True,  # noqa: FBT001, FBT002
     ) -> dict[str, pd.DataFrame]:
         """Get data for multiple timeframes with intelligent resampling.
 
@@ -664,12 +670,10 @@ class UnifiedDataOrchestrator:
 
                 if existing_data is not None and not existing_data.empty:
                     result[timeframe] = existing_data
-                    (
-                        existing_data.memory_usage(deep=True).sum() / 1024 / 1024
-                    )
+                    _ = existing_data.memory_usage(deep=True).sum() / 1024 / 1024
                     self.logger.info(
                         f"✅ Loaded existing data for {timeframe}: {existing_data.shape}",
-                    )
+                    )  # noqa: E501
                     successful_timeframes += 1
                 else:
                     # Resample from base data
@@ -687,12 +691,10 @@ class UnifiedDataOrchestrator:
 
                     if resampled_data is not None and not resampled_data.empty:
                         result[timeframe] = resampled_data
-                        (
-                            resampled_data.memory_usage(deep=True).sum() / 1024 / 1024
-                        )
+                        _ = resampled_data.memory_usage(deep=True).sum() / 1024 / 1024
                         self.logger.info(
                             f"✅ Resampled data for {timeframe}: {resampled_data.shape}",
-                        )
+                        )  # noqa: E501
                         successful_timeframes += 1
 
                         # Cache the resampled data
@@ -711,15 +713,14 @@ class UnifiedDataOrchestrator:
                             f"⚠️ Failed to resample data for {timeframe}",
                         )
 
-                time.time() - tf_start
+                _ = time.time() - tf_start
 
             total_time = time.time() - start_time
-            (
+            _ = (
                 sum(df.memory_usage(deep=True).sum() for df in result.values())
                 / 1024
                 / 1024
             )
-
 
             self.stats["operation_times"][f"multi_tf_{request_id}"] = total_time
             self._log_memory_usage(f"multi_tf_end_{request_id}")
@@ -727,11 +728,11 @@ class UnifiedDataOrchestrator:
             self.logger.info(
                 f"✅ Multi-timeframe data loading completed: {len(result)} timeframes",
             )
-            return result
+            return result  # noqa: TRY300
 
-        except Exception as e:
+        except Exception:
             total_time = time.time() - start_time
-            self.logger.exception(f"❌ Error loading multi-timeframe data: {e}")
+            self.logger.exception("❌ Error loading multi-timeframe data")
             self._log_memory_usage(f"multi_tf_exception_{request_id}")
             return {}
 
@@ -830,10 +831,10 @@ class UnifiedDataOrchestrator:
             # Check cache
             if cache_key in self.resampling_cache:
                 cached_data = self.resampling_cache[cache_key].copy()
-                cached_data.memory_usage(deep=True).sum() / 1024 / 1024
+                _ = cached_data.memory_usage(deep=True).sum() / 1024 / 1024
                 self.logger.info(
                     f"📋 Using cached resampled data for {from_timeframe} -> {to_timeframe}",
-                )
+                )  # noqa: E501
 
                 total_time = time.time() - start_time
                 self.stats["operation_times"][f"resample_cache_hit_{request_id}"] = (
@@ -879,7 +880,7 @@ class UnifiedDataOrchestrator:
 
                 self.logger.info(
                     f"✅ Resampled {from_timeframe} -> {to_timeframe}: {resampled_data.shape}",
-                )
+                )  # noqa: E501
                 return resampled_data
 
             total_time = time.time() - start_time
@@ -888,9 +889,9 @@ class UnifiedDataOrchestrator:
 
             return None
 
-        except Exception as e:
+        except Exception:
             total_time = time.time() - start_time
-            self.logger.exception(f"❌ Error resampling data: {e}")
+            self.logger.exception("❌ Error resampling data")
             self._log_memory_usage(f"resample_exception_{request_id}")
             return None
 
@@ -937,8 +938,8 @@ class UnifiedDataOrchestrator:
             )
             return None
 
-        except Exception as e:
-            self.logger.exception(f"❌ Error in resampling operation: {e}")
+        except Exception:
+            self.logger.exception("❌ Error in resampling operation")
             return None
 
     def _upsample_data(
@@ -971,8 +972,8 @@ class UnifiedDataOrchestrator:
 
             return resampled
 
-        except Exception as e:
-            self.logger.exception(f"❌ Error upsampling data: {e}")
+        except Exception:
+            self.logger.exception("❌ Error upsampling data")
             return None
 
     @validate_step_prerequisites(
@@ -1114,7 +1115,7 @@ class UnifiedDataOrchestrator:
 
         except Exception as e:
             total_time = time.time() - start_time
-            self.logger.exception(f"❌ Error validating data: {e}")
+            self.logger.exception("❌ Error validating data")
             self._log_memory_usage(f"validate_exception_{request_id}")
             return data
 
@@ -1134,7 +1135,7 @@ class UnifiedDataOrchestrator:
             return data
 
         except Exception as e:
-            self.logger.exception(f"❌ Error repairing missing values: {e}")
+            self.logger.exception("❌ Error repairing missing values")
             return data
 
     def _repair_timestamp_issues(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -1163,7 +1164,7 @@ class UnifiedDataOrchestrator:
             return data
 
         except Exception as e:
-            self.logger.exception(f"❌ Error repairing timestamp issues: {e}")
+            self.logger.exception("❌ Error repairing timestamp issues")
             return data
 
     def _repair_price_anomalies(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -1192,7 +1193,7 @@ class UnifiedDataOrchestrator:
             return data
 
         except Exception as e:
-            self.logger.exception(f"❌ Error repairing price anomalies: {e}")
+            self.logger.exception("❌ Error repairing price anomalies")
             return data
 
     @validate_step_prerequisites(
@@ -1424,27 +1425,26 @@ class UnifiedDataOrchestrator:
     def _generate_resampling_cache_key(
         self,
         data: pd.DataFrame,
+        exchange: str,
+        symbol: str,
         from_timeframe: str,
         to_timeframe: str,
-        symbol: str,
-        exchange: str,
     ) -> str:
-        """Generate cache key for resampled data."""
+        """Generate a cache key for resampled data."""
         try:
-
             # Create a hashable representation of the data
-            data_hash = hashlib.md5(
+            data_hash = hashlib.sha256(
                 pd.util.hash_pandas_object(data, index=True).values,
             ).hexdigest()
-
             return (
                 f"{exchange}_{symbol}_{from_timeframe}_{to_timeframe}_{data_hash}"
             )
-
-
         except Exception:
             # Fallback to simple hash
-            return f"{exchange}_{symbol}_{from_timeframe}_{to_timeframe}_{hash(str(data.shape))}"
+            return (
+                f"{exchange}_{symbol}_{from_timeframe}_{to_timeframe}_"
+                f"{hash(str(data.shape))}"
+            )  # noqa: E501
 
     def _sort_timeframes_by_resolution(self, timeframes: list[str]) -> list[str]:
         """Sort timeframes by resolution (highest to lowest)."""
@@ -1519,9 +1519,20 @@ class UnifiedDataOrchestrator:
     def get_stats(self) -> dict[str, Any]:
         """Get orchestrator statistics."""
         return {
-            **self.stats,
-            "cache_size": len(self.resampling_cache),
-            "data_sharing_stats": self.data_sharing_manager.stats,
+            "total_requests": self.stats.get("total_requests", 0),
+            "cache_hits": self.stats.get("cache_hits", 0),
+            "cache_misses": self.stats.get("cache_misses", 0),
+            "resampling_operations": self.stats.get("resampling_operations", 0),
+            "quality_repairs": self.stats.get("quality_repairs", 0),
+            "memory_cleanups": self.stats.get("memory_cleanups", 0),
+            "total_data_loaded_gb": self.stats.get("total_data_loaded_gb", 0.0),
+            "operation_times": self.stats.get("operation_times", {}),
+            "memory_usage_history": self.stats.get("memory_usage_history", []),
+            "resampling_cache_size": len(self.resampling_cache),
+            "resampling_cache_limit": self.resampling_cache_size,
+            "data_sharing_cache_keys": list(
+                self.data_sharing_manager._data_cache.keys(),  # noqa: SLF001
+            ),
         }
 
 
@@ -1545,42 +1556,21 @@ _unified_data_orchestrator: UnifiedDataOrchestrator | None = None
 
 def get_unified_data_orchestrator(config: dict[str, Any]) -> UnifiedDataOrchestrator:
     """Get or create the global unified data orchestrator instance."""
-    global _unified_data_orchestrator
-
-
+    global _unified_data_orchestrator  # noqa: PLW0603
     if _unified_data_orchestrator is None:
         _unified_data_orchestrator = UnifiedDataOrchestrator(config)
-    else:
-        pass
-
     return _unified_data_orchestrator
 
 
 async def initialize_unified_data_orchestrator(config: dict[str, Any]) -> bool:
     """Initialize the global unified data orchestrator."""
-    global _unified_data_orchestrator
-
-
-    if _unified_data_orchestrator is None:
-        _unified_data_orchestrator = UnifiedDataOrchestrator(config)
-
-    success = await _unified_data_orchestrator.initialize()
-
-    if success:
-        pass
-    else:
-        pass
-
-    return success
+    global _unified_data_orchestrator  # noqa: PLW0603
+    _unified_data_orchestrator = get_unified_data_orchestrator(config)
+    return await _unified_data_orchestrator.initialize()
 
 
 async def cleanup_unified_data_orchestrator() -> None:
     """Cleanup the global unified data orchestrator."""
-    global _unified_data_orchestrator
-
-
+    global _unified_data_orchestrator  # noqa: PLW0603
     if _unified_data_orchestrator is not None:
         await _unified_data_orchestrator.cleanup()
-        _unified_data_orchestrator = None
-    else:
-        pass

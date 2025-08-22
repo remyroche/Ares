@@ -1098,39 +1098,43 @@ class UnifiedDataConverter:
 
             # Step 2: Convert existing consolidated files
             conversion_success = await self._convert_existing_data(
-                symbol = exchange, timeframe,
+                symbol, exchange, timeframe,
             )
-        if not conversion_success:
-        self.logger.error("❌ Failed to convert existing data")
-        return False
+            if not conversion_success:
+                self.logger.error("❌ Failed to convert existing data")
+                return False
 
-        # Step 3: Set up infrastructure for future data
-            infrastructure_success, await self._setup_future_infrastructure(
-                symbol = exchange, timeframe,
+            # Step 3: Set up infrastructure for future data
+            infrastructure_success = await self._setup_future_infrastructure(
+                symbol, exchange, timeframe,
             )
-        if not infrastructure_success:
-        self.logger.error("❌ Failed to set up future infrastructure")
-        return False
+            if not infrastructure_success:
+                self.logger.error("❌ Failed to set up future infrastructure")
+                return False
 
-        # Step 4: Run enhanced quality validation
-            validation_success, await self._run_enhanced_quality_validation(
-                symbol = exchange, timeframe,
+            # Step 4: Run enhanced quality validation
+            validation_success = await self._run_enhanced_quality_validation(
+                symbol, exchange, timeframe,
             )
-        if not validation_success:
-        self.logger.error("❌ Enhanced quality validation failed")
-        return False
+            if not validation_success:
+                self.logger.error("❌ Enhanced quality validation failed")
+                return False
 
-        # Step 5: Verify data quality and completeness
-            verification_success, await self._verify_unified_data_quality(
-                symbol = exchange, timeframe,
+            # Step 5: Verify data quality and completeness
+            verification_success = await self._verify_unified_data_quality(
+                symbol, exchange, timeframe,
             )
-        if not verification_success:
-        self.logger.warning("⚠️ Data quality verification found issues")
+            if not verification_success:
+                self.logger.warning("⚠️ Data quality verification found issues")
 
-        self.logger.info("=" * 80)
-        self.logger.info("✅ STEP 1.5 COMPLETED: Unified Data Converter")
-        self.logger.info("=" * 80)
-        return True
+            self.logger.info("=" * 80)
+            self.logger.info("✅ STEP 1.5 COMPLETED: Unified Data Converter")
+            self.logger.info("=" * 80)
+            return True
+
+        except Exception as e:
+            self.logger.exception(f"❌ Error during unified data conversion: {e}")
+            return False
 
     async def _run_enhanced_quality_validation(self, symbol: str, exchange: str, timeframe: str) -> bool:
         """Run enhanced quality validation using the quality manager."""
@@ -1181,285 +1185,266 @@ class UnifiedDataConverter:
             self.logger.exception(f"❌ Error running enhanced quality validation: {e}")
             return False
 
-        self.logger.info("=" * 80)
-        self.logger.info("✅ STEP 1.5 COMPLETED: Unified Data Converter")
-        self.logger.info("=" * 80)
-
-        # Clean up memory
-            import gc
-
-            gc.collect()
-
-        return True
-
-        except Exception as e:
-        self.logger.exception(f"❌ Unified data conversion failed: {e}")
-        return False
-        finally:
-        # Ensure cleanup happens even if there's an error
-        try:
-                import gc
-
-                gc.collect()
-        except:
-                pass
 
     async def _check_unified_data_exists(
-        self = symbol: str, exchange: str, timeframe: str, ) -> bool:,
+        self, symbol: str, exchange: str, timeframe: str,
+    ) -> bool:
         """Check if unified data already exists."""
-        try: unified_base = os.path.join(
-        self.unified_dir = exchange.lower(), symbol, timeframe
+        try:
+            unified_base = os.path.join(
+                self.unified_dir, exchange.lower(), symbol, timeframe
             )
-        if os.path.exists(unified_base):
-        # Check if there are any parquet files
-                parquet_files, glob.glob(
+            if os.path.exists(unified_base):
+                # Check if there are any parquet files
+                parquet_files = glob.glob(
                     os.path.join(unified_base, "**/*.parquet"), recursive=True
                 )
-        if parquet_files:
-        self.logger.info(
+                if parquet_files:
+                    self.logger.info(
                         f"✅ Found existing unified data: {len(parquet_files)} files",
                     )
-        return True
-        return False
+                    return True
+            return False
         except Exception as e:
-        self.logger.warning(f"⚠️ Error checking unified data existence: {e}")
-        return False
+            self.logger.warning(f"⚠️ Error checking unified data existence: {e}")
+            return False
 
     async def _process_incremental_updates(
-        self = symbol: str, exchange: str, timeframe: str, ) -> bool:,
+        self, symbol: str, exchange: str, timeframe: str,
+    ) -> bool:
         """Process only new data that hasn't been converted yet."""
         try:
-        self.logger.info("🔍 Checking for incremental updates...")
+            self.logger.info("🔍 Checking for incremental updates...")
 
-        # Get the latest timestamp from existing unified data
-            unified_base, os.path.join(
-        self.unified_dir = exchange.lower(), symbol, timeframe
+            # Get the latest timestamp from existing unified data
+            unified_base = os.path.join(
+                self.unified_dir, exchange.lower(), symbol, timeframe
             )
 
-        # Find all existing dates in unified data
-            unified_dates = set(),
-            parquet_files, glob.glob(
+            # Find all existing dates in unified data
+            unified_dates: set[date] = set()
+            parquet_files = glob.glob(
                 os.path.join(unified_base, "**/*.parquet"), recursive=True
             )
 
-        if not parquet_files:
-        self.logger.info(
+            if not parquet_files:
+                self.logger.info(
                     "⚠️ No existing parquet files found - full reprocessing needed",
                 )
-        return False
+                return False
 
-        # Extract dates from file paths
-        for file_path in parquet_files:
-        try:
-        # Extract date from path like: .../year=2025/month=07/day=15/...
-                    path_parts = file_path.split("/"),
-        for i, part in enumerate(path_parts):
-        if part.startswith("year="):
-                            year, int(part.split("=")[1])
-                            month, int(path_parts[i + 1].split("=")[1])
-                            day, int(path_parts[i + 2].split("=")[1])
+            # Extract dates from file paths
+            for file_path in parquet_files:
+                try:
+                    # Extract date from path like: .../year=2025/month=07/day=15/...
+                    path_parts = file_path.split("/")
+                    for i, part in enumerate(path_parts):
+                        if part.startswith("year="):
+                            year = int(part.split("=")[1])
+                            month = int(path_parts[i + 1].split("=")[1])
+                            day = int(path_parts[i + 2].split("=")[1])
                             unified_dates.add(date(year, month, day))
                             break
-        except Exception as e:
-        self.logger.warning(f"⚠️ Error parsing date from {file_path}: {e}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Error parsing date from {file_path}: {e}")
 
-        if not unified_dates:
-        self.logger.info(
+            if not unified_dates:
+                self.logger.info(
                     "⚠️ Could not determine existing unified dates - full reprocessing needed",
                 )
-        return False
+                return False
 
-        # Get the date range from source klines data
-            klines_data, await self._load_klines_data(symbol, exchange, timeframe)
-        if klines_data is None or klines_data.empty:
-        self.logger.error(
+            # Get the date range from source klines data
+            klines_data = await self._load_klines_data(symbol, exchange, timeframe)
+            if klines_data is None or klines_data.empty:
+                self.logger.error(
                     "❌ No klines data available for incremental processing",
                 )
-        return False
+                return False
 
-        # Convert timestamps to dates
+            # Convert timestamps to dates
             klines_data["date"] = pd.to_datetime(
                 klines_data["timestamp"], unit="ms", utc=True
             ).dt.date
-            klines_dates = set(klines_data["date"].unique()),
+            klines_dates: set[date] = set(klines_data["date"].unique())
 
-        # Find missing dates
-            missing_dates = klines_dates - unified_dates,
-            missing_dates = sorted(missing_dates),
+            # Find missing dates
+            missing_dates = sorted(klines_dates - unified_dates)
 
-        if not missing_dates:
-        self.logger.info(
+            if not missing_dates:
+                self.logger.info(
                     "✅ No missing dates found - unified dataset is complete",
                 )
-        return True
+                return True
 
-        self.logger.info(
+            self.logger.info(
                 f"🔄 Found {len(missing_dates)} missing dates: {missing_dates[:5]}{'...' if len(missing_dates) > 5 else ''}",
             )
 
-        # Process only the missing data
-            success, await self._process_data_incrementally(
+            # Process only the missing data
+            success = await self._process_data_incrementally(
                 klines_data, symbol, exchange, timeframe, start_date=min(missing_dates)
             )
 
-        if success:
-        self.logger.info("✅ Incremental processing completed successfully")
-        return True
-        self.logger.error("❌ Incremental processing failed")
-        return False
+            if success:
+                self.logger.info("✅ Incremental processing completed successfully")
+                return True
+            self.logger.error("❌ Incremental processing failed")
+            return False
 
         except Exception as e:
-        self.logger.exception(f"❌ Error during incremental processing: {e}")
-        return False
+            self.logger.exception(f"❌ Error during incremental processing: {e}")
+            return False
 
     async def _backup_existing_data(
-        self = symbol: str, exchange: str, timeframe: str, ) -> None:,
+        self, symbol: str, exchange: str, timeframe: str,
+    ) -> None:
         """Backup existing consolidated files."""
         try:
-        self.logger.info("📦 Backing up existing consolidated data...")
+            self.logger.info("📦 Backing up existing consolidated data...")
 
-        # Find existing consolidated files
-            patterns = [,
+            # Find existing consolidated files
+            patterns = [
                 f"klines_{exchange}_{symbol}_{timeframe}_consolidated.*",
                 f"aggtrades_{exchange}_{symbol}_consolidated.*",
                 f"futures_{exchange}_{symbol}_consolidated.*",
             ]
 
-            backup_count = 0,
-        for pattern in patterns:
-                files, glob.glob(os.path.join(self.data_cache_dir, pattern))
-        for file_path in files:
-        try:
-                        filename = os.path.basename(file_path),
-                        backup_path, os.path.join(self.backup_dir, filename)
+            backup_count = 0
+            for pattern in patterns:
+                files = glob.glob(os.path.join(self.data_cache_dir, pattern))
+                for file_path in files:
+                    try:
+                        filename = os.path.basename(file_path)
+                        backup_path = os.path.join(self.backup_dir, filename)
 
-        # Only backup if not already backed up
-        if not os.path.exists(backup_path):
+                        # Only backup if not already backed up
+                        if not os.path.exists(backup_path):
                             import shutil
-
                             shutil.copy2(file_path, backup_path)
                             backup_count += 1
-        self.logger.info(f"   📦 Backed up: {filename}")
-        except Exception as e:
-        self.logger.warning(f"   ⚠️ Failed to backup {file_path}: {e}")
+                        self.logger.info(f"   📦 Backed up: {filename}")
+                    except Exception as e:
+                        self.logger.warning(f"   ⚠️ Failed to backup {file_path}: {e}")
 
-        self.logger.info(f"✅ Backup completed: {backup_count} files backed up")
+            self.logger.info(f"✅ Backup completed: {backup_count} files backed up")
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Backup process failed: {e}")
+            self.logger.warning(f"⚠️ Backup process failed: {e}")
 
     async def _convert_existing_data(
-        self = symbol: str, exchange: str, timeframe: str, ) -> bool:,
+        self, symbol: str, exchange: str, timeframe: str,
+    ) -> bool:
         """Convert existing consolidated files to unified format incrementally."""
         try:
-        self.logger.info(
+            self.logger.info(
                 "🔄 Converting existing consolidated data to unified format incrementally...",
             )
 
-        # Load klines data first (this is our base data)
-            klines_data, await self._load_klines_data(symbol, exchange, timeframe)
+            # Load klines data first (this is our base data)
+            klines_data = await self._load_klines_data(symbol, exchange, timeframe)
 
-        if klines_data is None or klines_data.empty:
-        self.logger.error(
+            if klines_data is None or klines_data.empty:
+                self.logger.error(
                     "❌ No klines data found - cannot proceed with conversion",
                 )
-        return False
+                return False
 
-        self.logger.info(f"✅ Loaded {len(klines_data)} klines rows")
+            self.logger.info(f"✅ Loaded {len(klines_data)} klines rows")
 
-        # Process data incrementally by date
-            success, await self._process_data_incrementally(
-                klines_data = symbol, exchange, timeframe,
+            # Process data incrementally by date
+            success = await self._process_data_incrementally(
+                klines_data, symbol, exchange, timeframe,
             )
 
-        if success:
-        self.logger.info("✅ Incremental conversion completed successfully")
-        return True
-        self.logger.error("❌ Incremental conversion failed")
-        return False
+            if success:
+                self.logger.info("✅ Incremental conversion completed successfully")
+                return True
+            self.logger.error("❌ Incremental conversion failed")
+            return False
 
         except Exception as e:
-        self.logger.exception(f"❌ Data conversion failed: {e}")
-        return False
+            self.logger.exception(f"❌ Data conversion failed: {e}")
+            return False
 
     async def _process_data_incrementally(
         self, klines_data: pd.DataFrame, symbol: str, exchange: str, timeframe: str, start_date: date | None = None
     ) -> bool:
         """Process data incrementally by date to avoid memory issues."""
         try:
-        self.logger.info("🔄 Processing data incrementally by date...")
+            self.logger.info("🔄 Processing data incrementally by date...")
 
-        # Ensure timestamp is in the right format
-        if "timestamp" in klines_data.columns:
-                klines_data = klines_data.copy(),
-        # Convert to datetime if it's not already
-        if not pd.api.types.is_datetime64_any_dtype(klines_data["timestamp"]):
+            # Ensure timestamp is in the right format
+            if "timestamp" in klines_data.columns:
+                klines_data = klines_data.copy()
+                # Convert to datetime if it's not already
+                if not pd.api.types.is_datetime64_any_dtype(klines_data["timestamp"]):
                     klines_data["timestamp"] = pd.to_datetime(
                         klines_data["timestamp"], utc=True
                     )
 
-        # Add date columns for partitioning
-            ts = klines_data["timestamp"],
+            # Add date columns for partitioning
+            ts = klines_data["timestamp"]
             klines_data["year"] = ts.dt.year.astype("int16")
             klines_data["month"] = ts.dt.month.astype("int8")
             klines_data["day"] = ts.dt.day.astype("int8")
 
-        # Get date range from actual data timestamps
-            min_date = start_date if start_date else ts.min().date(),
-            max_date = ts.max().date(),
-            total_days = (max_date - min_date).days + 1,
+            # Get date range from actual data timestamps
+            min_date = start_date if start_date else ts.min().date()
+            max_date = ts.max().date()
+            total_days = (max_date - min_date).days + 1
 
-        if start_date:
-        self.logger.info(
+            if start_date:
+                self.logger.info(
                     f"📅 Processing {total_days} days from {min_date} to {max_date} (incremental)",
                 )
             else:
-        self.logger.info(
+                self.logger.info(
                     f"📅 Processing {total_days} days from {min_date} to {max_date}",
                 )
 
-        # Define base directory for unified dataset
-            base_dir, os.path.join(
-        self.unified_dir = exchange.lower(), symbol, timeframe
+            # Define base directory for unified dataset
+            base_dir = os.path.join(
+                self.unified_dir, exchange.lower(), symbol, timeframe
             )
             os.makedirs(base_dir, exist_ok=True)
 
-        # Process each day incrementally
-            processed_days = 0,
-            total_rows_processed = 0,
+            # Process each day incrementally
+            processed_days = 0
+            total_rows_processed = 0
 
-            current_date = min_date,
-        while current_date <= max_date:
-        try:
-        self.logger.info(
+            current_date = min_date
+            while current_date <= max_date:
+                try:
+                    self.logger.info(
                         f"📅 Processing date: {current_date} ({processed_days + 1}/{total_days})",
                     )
 
-        # Filter klines data for current date
-                    date_mask = ((klines_data["year"] == current_date.year)
+                    # Filter klines data for current date
+                    date_mask = (
+                        (klines_data["year"] == current_date.year)
                         & (klines_data["month"] == current_date.month)
                         & (klines_data["day"] == current_date.day)
                     )
-                    daily_klines = klines_data[date_mask].copy(),
+                    daily_klines = klines_data[date_mask].copy()
 
-        if daily_klines.empty:
+                    if daily_klines.empty:
                         current_date += timedelta(days=1)
                         processed_days += 1
                         continue
 
-
-        # Load aggtrades data for this date
-                    daily_aggtrades, await self._load_aggtrades_for_date(
-                        symbol = exchange, current_date,
+                    # Load aggtrades data for this date
+                    daily_aggtrades = await self._load_aggtrades_for_date(
+                        symbol, exchange, current_date,
                     )
 
-        # Load futures data for this date
-                    daily_futures, await self._load_futures_for_date(
-                        symbol = exchange, current_date,
+                    # Load futures data for this date
+                    daily_futures = await self._load_futures_for_date(
+                        symbol, exchange, current_date,
                     )
 
-        # Merge data for this day
-                    daily_unified, await self._merge_daily_data(
+                    # Merge data for this day
+                    daily_unified = await self._merge_daily_data(
                         daily_klines,
                         daily_aggtrades,
                         daily_futures,
@@ -1468,9 +1453,9 @@ class UnifiedDataConverter:
                         timeframe,
                     )
 
-        if daily_unified is not None and not daily_unified.empty:
-        # Write daily partition
-                        success, await self._write_daily_partition(
+                    if daily_unified is not None and not daily_unified.empty:
+                        # Write daily partition
+                        success = await self._write_daily_partition(
                             daily_unified,
                             symbol,
                             exchange,
@@ -1479,14 +1464,14 @@ class UnifiedDataConverter:
                             base_dir,
                         )
 
-        if success:
+                        if success:
                             total_rows_processed += len(daily_unified)
-        self.logger.info(
+                            self.logger.info(
                                 f"   ✅ Processed {len(daily_unified)} kline rows for {current_date}",
                             )
                         else:
-        self.logger.error(
-                                f"   ❌ Failed to write kline     data for {current_date}",
+                            self.logger.error(
+                                f"   ❌ Failed to write kline data for {current_date}",
                             )
                     else:
                         pass
@@ -1494,153 +1479,155 @@ class UnifiedDataConverter:
                     processed_days += 1
                     current_date += timedelta(days=1)
 
-        # Progress update every 10 days
-        if processed_days % 10 == 0:
-                        progress_pct = (processed_days / total_days) * 100,
-        self.logger.info(
+                    # Progress update every 10 days
+                    if processed_days % 10 == 0:
+                        progress_pct = (processed_days / total_days) * 100
+                        self.logger.info(
                             f"📊 Progress: {processed_days}/{total_days} days ({progress_pct:.1f}%) - {total_rows_processed:,} total rows",
                         )
 
-        except Exception as e:
-        self.logger.exception(f"   ❌ Error processing {current_date}: {e}")
+                except Exception as e:
+                    self.logger.exception(f"   ❌ Error processing {current_date}: {e}")
                     current_date += timedelta(days=1)
                     processed_days += 1
                     continue
 
-        self.logger.info(
+            self.logger.info(
                 f"✅ Incremental processing completed: {total_rows_processed:,} total rows across {processed_days} days",
             )
 
-        return True
+            return True
 
         except Exception as e:
-        self.logger.exception(f"❌ Incremental processing failed: {e}")
-        return False
+            self.logger.exception(f"❌ Incremental processing failed: {e}")
+            return False
 
     async def _load_aggtrades_for_date(
-        self = symbol: str, exchange: str, target_date: datetime.date, ) -> pd.DataFrame | None:,
+        self, symbol: str, exchange: str, target_date: date,
+    ) -> pd.DataFrame | None:
         """Load aggtrades data for a specific date."""
         try:
-        # Look for aggtrades data in the parquet directory
-            parquet_dir, os.path.join(
-        self.data_cache_dir = "parquet", f"aggtrades_{exchange}_{symbol}"
+            # Look for aggtrades data in the parquet directory
+            parquet_dir = os.path.join(
+                self.data_cache_dir, "parquet", f"aggtrades_{exchange}_{symbol}"
             )
 
-        if not os.path.exists(parquet_dir):
-        return None
+            if not os.path.exists(parquet_dir):
+                return None
 
-        # Format target date for file matching
-            target_date_str = target_date.strftime("%Y-%m-%d"),
+            # Format target date for file matching
+            target_date_str = target_date.strftime("%Y-%m-%d")
 
-        # Find files for the target date
-            date_files = [],
-        for root, _dirs, files in os.walk(parquet_dir):
-        for file in files:
-        if file.endswith(".parquet") and target_date_str in file:
-                        file_path, os.path.join(root, file)
+            # Find files for the target date
+            date_files: list[str] = []
+            for root, _dirs, files in os.walk(parquet_dir):
+                for file in files:
+                    if file.endswith(".parquet") and target_date_str in file:
+                        file_path = os.path.join(root, file)
                         date_files.append(file_path)
 
-        if not date_files:
-        self.logger.warning(f"⚠️ No aggtrades files found for {target_date_str}")
-        return None
+            if not date_files:
+                self.logger.warning(f"⚠️ No aggtrades files found for {target_date_str}")
+                return None
 
-        # Load and combine files for this date
-            dfs = [],
-        for file_path in date_files:
-        try:
-                    df = pd.read_parquet(file_path),
+            # Load and combine files for this date
+            dfs: list[pd.DataFrame] = []
+            for file_path in date_files:
+                try:
+                    df = pd.read_parquet(file_path)
                     dfs.append(df)
-        except Exception as e:
-        self.logger.warning(f"⚠️ Failed to load {file_path}: {e}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to load {file_path}: {e}")
 
-        if dfs:
-                combined_df, pd.concat(dfs, ignore_index=True)
-        # Remove duplicates and sort
-                combined_df, combined_df.drop_duplicates(
+            if dfs:
+                combined_df = pd.concat(dfs, ignore_index=True)
+                # Remove duplicates and sort
+                combined_df = combined_df.drop_duplicates(
                     subset=["timestamp", "price", "quantity"], keep="first",
                 )
-                combined_df, combined_df.sort_values("timestamp").reset_index(
+                combined_df = combined_df.sort_values("timestamp").reset_index(
                     drop=True,
                 )
-        self.logger.info(
+                self.logger.info(
                     f"✅ Loaded {len(combined_df)} aggtrades rows for {target_date_str}",
                 )
-        return combined_df
+                return combined_df
 
-        return None
+            return None
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to load aggtrades for {target_date}: {e}")
-        return None
+            self.logger.warning(f"⚠️ Failed to load aggtrades for {target_date}: {e}")
+            return None
 
     async def _load_futures_for_date(
-        self = symbol: str, exchange: str, target_date: datetime.date, ) -> pd.DataFrame | None:,
+        self, symbol: str, exchange: str, target_date: date,
+    ) -> pd.DataFrame | None:
         """Load futures data for a specific date."""
         try:
-        # Look for futures data in the parquet directory
-            parquet_dir, os.path.join(
-        self.data_cache_dir = "parquet", f"futures_{exchange}_{symbol}"
+            # Look for futures data in the parquet directory
+            parquet_dir = os.path.join(
+                self.data_cache_dir, "parquet", f"futures_{exchange}_{symbol}"
             )
 
-        if not os.path.exists(parquet_dir):
-        return None
+            if not os.path.exists(parquet_dir):
+                return None
 
-        # Format target date for file matching
-            target_date_str = target_date.strftime("%Y-%m-%d"),
+            # Format target date for file matching
+            target_date_str = target_date.strftime("%Y-%m-%d")
 
-        # Find files for the target date
-            date_files = [],
-        for root, _dirs, files in os.walk(parquet_dir):
-        for file in files:
-        if file.endswith(".parquet") and target_date_str in file:
-                        file_path, os.path.join(root, file)
+            # Find files for the target date
+            date_files: list[str] = []
+            for root, _dirs, files in os.walk(parquet_dir):
+                for file in files:
+                    if file.endswith(".parquet") and target_date_str in file:
+                        file_path = os.path.join(root, file)
                         date_files.append(file_path)
 
-        if not date_files:
-        self.logger.warning(f"⚠️ No futures files found for {target_date_str}")
-        return None
+            if not date_files:
+                self.logger.warning(f"⚠️ No futures files found for {target_date_str}")
+                return None
 
-        # Load and combine files for this date
-            dfs = [],
-        for file_path in date_files:
-        try:
-                    df = pd.read_parquet(file_path),
+            # Load and combine files for this date
+            dfs: list[pd.DataFrame] = []
+            for file_path in date_files:
+                try:
+                    df = pd.read_parquet(file_path)
                     dfs.append(df)
-        except Exception as e:
-        self.logger.warning(f"⚠️ Failed to load {file_path}: {e}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to load {file_path}: {e}")
 
-        if dfs:
-                combined_df, pd.concat(dfs, ignore_index=True)
-                combined_df, combined_df.sort_values("timestamp").reset_index(
+            if dfs:
+                combined_df = pd.concat(dfs, ignore_index=True)
+                combined_df = combined_df.sort_values("timestamp").reset_index(
                     drop=True,
                 )
-        self.logger.info(
+                self.logger.info(
                     f"✅ Loaded {len(combined_df)} futures rows for {target_date_str}",
                 )
-        return combined_df
+                return combined_df
 
-        return None
+            return None
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to load futures for {target_date}: {e}")
-        return None
+            self.logger.warning(f"⚠️ Failed to load futures for {target_date}: {e}")
+            return None
 
     async def _merge_daily_data(
         self, daily_klines: pd.DataFrame, daily_aggtrades: pd.DataFrame | None, daily_futures: pd.DataFrame | None, symbol: str, exchange: str, timeframe: str, ) -> pd.DataFrame | None:
         """Merge daily data into unified format."""
         try:
-        # Start with klines data as the base
-            unified = daily_klines.copy(),
+            # Start with klines data as the base
+            unified = daily_klines.copy()
 
-        # Add metadata columns
+            # Add metadata columns
             unified["exchange"] = exchange.upper()
             unified["symbol"] = symbol
             unified["timeframe"] = timeframe
 
-        # Merge aggtrades data if available
-        if daily_aggtrades is not None and not daily_aggtrades.empty:
-        # Drop existing aggtrades columns if they exist
-                aggtrades_cols = [,
+            # Merge aggtrades data if available
+            if daily_aggtrades is not None and not daily_aggtrades.empty:
+                # Drop existing aggtrades columns if they exist
+                aggtrades_cols = [
                     "trade_volume",
                     "trade_count",
                     "avg_price",
@@ -1648,50 +1635,51 @@ class UnifiedDataConverter:
                     "max_price",
                     "volume_ratio",
                 ]
-                unified, unified.drop(
+                unified = unified.drop(
                     columns=[col for col in aggtrades_cols if col in unified.columns],
                 )
-                unified, await self._merge_daily_aggtrades(unified, daily_aggtrades)
+                unified = await self._merge_daily_aggtrades(unified, daily_aggtrades)
 
-        # Merge futures data if available
-        if daily_futures is not None and not daily_futures.empty:
-                unified, await self._merge_daily_futures(unified, daily_futures)
+            # Merge futures data if available
+            if daily_futures is not None and not daily_futures.empty:
+                unified = await self._merge_daily_futures(unified, daily_futures)
 
-        # Fill missing values
-            unified = await self._fill_missing_values(unified),
+            # Fill missing values
+            unified = await self._fill_missing_values(unified)
 
-        # Sort by timestamp
-        if "timestamp" in unified.columns:
-                unified, unified.sort_values("timestamp").reset_index(drop=True)
+            # Sort by timestamp
+            if "timestamp" in unified.columns:
+                unified = unified.sort_values("timestamp").reset_index(drop=True)
 
-        return unified
+            return unified
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to merge daily data: {e}")
-        return None
+            self.logger.warning(f"⚠️ Failed to merge daily data: {e}")
+            return None
 
     async def _merge_daily_aggtrades(
-        self = unified: pd.DataFrame, aggtrades_data: pd.DataFrame, ) -> pd.DataFrame:,
+        self, unified: pd.DataFrame, aggtrades_data: pd.DataFrame,
+    ) -> pd.DataFrame:
         """Merge daily aggtrades data into unified dataset."""
         try:
-        # Ensure aggtrades timestamp is in the right format
-        if "timestamp" in aggtrades_data.columns:
-                aggtrades_data = aggtrades_data.copy(),
-        if aggtrades_data["timestamp"].dtype == "object":
+            # Ensure aggtrades timestamp is in the right format
+            if "timestamp" in aggtrades_data.columns:
+                aggtrades_data = aggtrades_data.copy()
+                if aggtrades_data["timestamp"].dtype == "object":
                     aggtrades_data["timestamp"] = pd.to_datetime(
                         aggtrades_data["timestamp"], utc=True
                     )
-        # Keep timestamps as-is since they're already in milliseconds
+            # Keep timestamps as-is since they're already in milliseconds
 
-        # Aggregate aggtrades to kline level
-        if (
+            # Aggregate aggtrades to kline level
+            if (
                 "timestamp" in aggtrades_data.columns
                 and "price" in aggtrades_data.columns
                 and "quantity" in aggtrades_data.columns
             ):
-        # Convert aggtrades timestamps to kline boundaries (floor to minute)
-                aggtrades_data = aggtrades_data.copy(),
-        # Convert to datetime, floor to minute, then back to milliseconds
+                # Convert aggtrades timestamps to kline boundaries (floor to minute)
+                aggtrades_data = aggtrades_data.copy()
+                # Convert to datetime, floor to minute, then back to milliseconds
                 aggtrades_data["kline_timestamp"] = pd.to_datetime(
                     aggtrades_data["timestamp"], unit="ms", utc=True
                 )
@@ -1702,8 +1690,9 @@ class UnifiedDataConverter:
                     "kline_timestamp"
                 ].apply(lambda x: int(x.timestamp() * 1000))
 
-        # Group by kline timestamp and aggregate
-                agg_stats = (aggtrades_data.groupby("kline_timestamp")
+                # Group by kline timestamp and aggregate
+                agg_stats = (
+                    aggtrades_data.groupby("kline_timestamp")
                     .agg(
                         {
                             "quantity": ["sum", "count"],
@@ -1713,7 +1702,7 @@ class UnifiedDataConverter:
                     .reset_index()
                 )
 
-        # Flatten column names
+                # Flatten column names
                 agg_stats.columns = [
                     "timestamp",
                     "trade_volume",
@@ -1723,47 +1712,48 @@ class UnifiedDataConverter:
                     "max_price",
                 ]
 
-        # Merge with unified data
-                unified, unified.merge(agg_stats, on="timestamp", how="left")
+                # Merge with unified data
+                unified = unified.merge(agg_stats, on="timestamp", how="left")
 
-        # Fill NaN values in trade columns with 0 (no trades occurred)
-                trade_columns = [,
+                # Fill NaN values in trade columns with 0 (no trades occurred)
+                trade_columns = [
                     "trade_volume",
                     "trade_count",
                     "avg_price",
                     "min_price",
                     "max_price",
                 ]
-        for col in trade_columns:
-        if col in unified.columns:
+                for col in trade_columns:
+                    if col in unified.columns:
                         unified[col] = unified[col].fillna(0)
 
-        # Calculate additional metrics
-        if "trade_volume" in unified.columns and "volume" in unified.columns:
+                # Calculate additional metrics
+                if "trade_volume" in unified.columns and "volume" in unified.columns:
                     unified["volume_ratio"] = (
                         unified["trade_volume"] / unified["volume"]
                     )
-        # Handle division by zero for volume_ratio
+                    # Handle division by zero for volume_ratio
                     unified["volume_ratio"] = unified["volume_ratio"].fillna(0)
 
-        return unified
+            return unified
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to merge daily aggtrades: {e}")
-        return unified
+            self.logger.warning(f"⚠️ Failed to merge daily aggtrades: {e}")
+            return unified
 
     async def _merge_daily_futures(
-        self = unified: pd.DataFrame, futures_data: pd.DataFrame, ) -> pd.DataFrame:,
+        self, unified: pd.DataFrame, futures_data: pd.DataFrame,
+    ) -> pd.DataFrame:
         """Merge daily futures data into unified dataset."""
         try:
-        # Ensure futures timestamp is in the right format
-        if "timestamp" in futures_data.columns:
-                futures_data = futures_data.copy(),
-        if futures_data["timestamp"].dtype == "object":
+            # Ensure futures timestamp is in the right format
+            if "timestamp" in futures_data.columns:
+                futures_data = futures_data.copy()
+                if futures_data["timestamp"].dtype == "object":
                     futures_data["timestamp"] = pd.to_datetime(
                         futures_data["timestamp"], utc=True
                     )
-        if pd.api.types.is_datetime64_any_dtype(futures_data["timestamp"]):
+                if pd.api.types.is_datetime64_any_dtype(futures_data["timestamp"]):
                     futures_data["timestamp"] = (
                         futures_data["timestamp"].astype(np.int64) // 10**6
                     )
@@ -1772,50 +1762,51 @@ class UnifiedDataConverter:
                         np.int64,
                     )
 
-        # Forward fill funding rates
-            funding_rate_col = None,
-        if "fundingRate" in futures_data.columns:
-                funding_rate_col = "fundingRate",
+            # Forward fill funding rates
+            funding_rate_col: str | None = None
+            if "fundingRate" in futures_data.columns:
+                funding_rate_col = "fundingRate"
             elif "funding_rate" in futures_data.columns:
-                funding_rate_col = "funding_rate",
+                funding_rate_col = "funding_rate"
 
-        if "timestamp" in futures_data.columns and funding_rate_col:
-                futures_data = futures_data.sort_values("timestamp"),
-                funding_rates, futures_data.set_index("timestamp")[funding_rate_col]
+            if "timestamp" in futures_data.columns and funding_rate_col:
+                futures_data = futures_data.sort_values("timestamp")
+                funding_rates = futures_data.set_index("timestamp")[funding_rate_col]
                 unified["funding_rate"] = unified["timestamp"].map(funding_rates)
                 unified["funding_rate"] = unified["funding_rate"].ffill()
 
-        return unified
+            return unified
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to merge daily futures: {e}")
-        return unified
+            self.logger.warning(f"⚠️ Failed to merge daily futures: {e}")
+            return unified
 
     async def _write_daily_partition(
-        self, daily_data: pd.DataFrame, symbol: str, exchange: str, timeframe: str, target_date: datetime.date, base_dir: str, ) -> bool:
+        self, daily_data: pd.DataFrame, symbol: str, exchange: str, timeframe: str, target_date: date, base_dir: str,
+    ) -> bool:
         """Write daily partition to unified dataset."""
         try:
-        # Use actual timestamp data to determine the correct partition path
-        if "timestamp" in daily_data.columns and not daily_data.empty:
-        # Convert timestamp to datetime to get the actual date
-                actual_ts, pd.to_datetime(daily_data["timestamp"], unit="ms", utc=True)
-                actual_date = actual_ts.iloc[0].date(),
+            # Use actual timestamp data to determine the correct partition path
+            if "timestamp" in daily_data.columns and not daily_data.empty:
+                # Convert timestamp to datetime to get the actual date
+                actual_ts = pd.to_datetime(daily_data["timestamp"], unit="ms", utc=True)
+                actual_date = actual_ts.iloc[0].date()
 
-        # Use the actual date from the data, not the target_date
-                partition_year = actual_date.year,
-                partition_month = actual_date.month,
-                partition_day = actual_date.day,
+                # Use the actual date from the data, not the target_date
+                partition_year = actual_date.year
+                partition_month = actual_date.month
+                partition_day = actual_date.day
             else:
-        # Fallback to target_date if no timestamp data
-                partition_year = target_date.year,
-                partition_month = target_date.month,
-                partition_day = target_date.day,
+                # Fallback to target_date if no timestamp data
+                partition_year = target_date.year
+                partition_month = target_date.month
+                partition_day = target_date.day
 
-        # Create partition directory structure
-            partition_path, os.path.join(
+            # Create partition directory structure
+            partition_path = os.path.join(
                 base_dir,
-                f"exchange={exchange.upper()}"
-                f"symbol={symbol}"
+                f"exchange={exchange.upper()}",
+                f"symbol={symbol}",
                 f"timeframe={timeframe}"
                 f"year={partition_year}"
                 f"month={partition_month:02d}"
@@ -1824,33 +1815,34 @@ class UnifiedDataConverter:
 
             os.makedirs(partition_path, exist_ok=True)
 
-        # Write parquet file
-            file_path, os.path.join(partition_path, "part-0.parquet")
+            # Write parquet file
+            file_path = os.path.join(partition_path, "part-0.parquet")
             daily_data.to_parquet(file_path, compression="snappy", index=False)
 
-        return True
+            return True
 
         except Exception as e:
-        self.logger.exception(
+            self.logger.exception(
                 f"❌ Failed to write daily partition for {target_date}: {e}",
             )
-        return False
+            return False
 
     async def _setup_future_infrastructure(
-        self = symbol: str, exchange: str, timeframe: str, ) -> bool:,
+        self, symbol: str, exchange: str, timeframe: str,
+    ) -> bool:
         """Set up infrastructure for future data collection."""
         try:
-        self.logger.info(
+            self.logger.info(
                 "🔧 Setting up infrastructure for future data collection...",
             )
 
-        # Create configuration for future data collection
-            future_config = {,
+            # Create configuration for future data collection
+            future_config = {
                 "symbol": symbol,
                 "exchange": exchange,
                 "timeframe": timeframe,
                 "unified_base_dir": os.path.join(
-        self.unified_dir = exchange.lower(), symbol, timeframe
+                    self.unified_dir, exchange.lower(), symbol, timeframe
                 ),
                 "partitioning": [
                     "exchange",
@@ -1866,138 +1858,145 @@ class UnifiedDataConverter:
                 "created_at": datetime.now(UTC).isoformat(),
             }
 
-        # Save configuration
-            config_path, os.path.join(
-        self.unified_dir = f"{exchange.lower()}_{symbol}_{timeframe}_config.json"
+            # Save configuration
+            config_path = os.path.join(
+                self.unified_dir, f"{exchange.lower()}_{symbol}_{timeframe}_config.json"
             )
             import json
 
-        with open(config_path, "w") as f:
+            with open(config_path, "w") as f:
                 json.dump(future_config, f, indent=2)
 
-        self.logger.info(f"✅ Future infrastructure config saved to: {config_path}")
-        return True
+            self.logger.info(f"✅ Future infrastructure config saved to: {config_path}")
+            return True
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to set up future infrastructure: {e}")
-        return False
+            self.logger.exception(f"❌ Failed to set up future infrastructure: {e}")
+            return False
 
     async def _validate_unified_dataset(
-        self = symbol: str, exchange: str, timeframe: str, ) -> bool:,
+        self, symbol: str, exchange: str, timeframe: str,
+    ) -> bool:
         """Validate the unified dataset."""
         try:
-        self.logger.info("🔍 Validating unified dataset...")
+            self.logger.info("🔍 Validating unified dataset...")
 
-        # Use the local ParquetDatasetManager
-        try: pdm = ParquetDatasetManager(logger=self.logger)
-        except Exception as e:
-        self.logger.exception(f"❌ ParquetDatasetManager not available: {e}")
-        return False
+            # Use the local ParquetDatasetManager
+            try:
+                pdm = ParquetDatasetManager(logger=self.logger)
+            except Exception as e:
+                self.logger.exception(f"❌ ParquetDatasetManager not available: {e}")
+                return False
 
-        # Define base directory
-            base_dir, os.path.join(
-        self.unified_dir = exchange.lower(), symbol, timeframe
+            # Define base directory
+            base_dir = os.path.join(
+                self.unified_dir, exchange.lower(), symbol, timeframe
             )
 
-        # Scan the dataset
-        try: sample_data = pdm.scan_dataset(
+            # Scan the dataset
+            try:
+                sample_data = pdm.scan_dataset(
                     base_dir=base_dir,
                     columns=["timestamp", "open", "high", "low", "close", "volume"],
                     batch_size=1000,
                 )
+            except Exception as e:
+                self.logger.exception(f"❌ Failed to scan dataset: {e}")
+                return False
 
-        if sample_data is not None and not sample_data.empty:
-        self.logger.info(
-                        f"✅ Dataset validation successful: {len(sample_data)} sample rows",
+            if sample_data is not None and not sample_data.empty:
+                self.logger.info(
+                    f"✅ Dataset validation successful: {len(sample_data)} sample rows",
+                )
+
+                # Check for required columns
+                required_columns = [
+                    "timestamp",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                ]
+                missing_columns = [
+                    col
+                    for col in required_columns
+                    if col not in sample_data.columns
+                ]
+
+                if missing_columns:
+                    self.logger.error(
+                        f"❌ Missing required columns: {missing_columns}",
                     )
+                    return False
 
-        # Check for required columns
-                    required_columns = [,
-                        "timestamp",
-                        "open",
-                        "high",
-                        "low",
-                        "close",
-                        "volume",
-                    ]
-                    missing_columns = [,
-                        col
-        for col in required_columns
-        if col not in sample_data.columns
-                    ]
+                # Check data quality
+                if sample_data["timestamp"].isna().any():
+                    self.logger.warning("⚠️ Found null timestamps in sample data")
 
-        if missing_columns:
-        self.logger.error(
-                            f"❌ Missing required columns: {missing_columns}",
-                        )
-        return False
+                if sample_data["volume"].isna().any():
+                    self.logger.warning("⚠️ Found null volumes in sample data")
 
-        # Check data quality
-        if sample_data["timestamp"].isna().any():
-        self.logger.warning("⚠️ Found null timestamps in sample data")
+                return True
 
-        if sample_data["volume"].isna().any():
-        self.logger.warning("⚠️ Found null volumes in sample data")
-
-        return True
-        self.logger.error("❌ No data found in unified dataset")
-        return False
+            self.logger.error("❌ No data found in unified dataset")
+            return False
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to scan unified dataset: {e}")
-        return False
+            self.logger.exception(f"❌ Failed to scan unified dataset: {e}")
+            return False
 
         except Exception as e:
-        self.logger.exception(f"❌ Dataset validation failed: {e}")
-        return False
+            self.logger.exception(f"❌ Dataset validation failed: {e}")
+            return False
 
     async def _verify_unified_data_quality(
-        self = symbol: str, exchange: str, timeframe: str, ) -> bool:,
+        self, symbol: str, exchange: str, timeframe: str,
+    ) -> bool:
         """Verify data quality and completeness of the unified dataset."""
         try:
-        self.logger.info("🔍 Verifying unified data quality...")
+            self.logger.info("🔍 Verifying unified data quality...")
 
-        # Get the unified dataset path
-            unified_path, self.get_unified_data_path(symbol, exchange, timeframe)
+            # Get the unified dataset path
+            unified_path = self.get_unified_data_path(symbol, exchange, timeframe)
 
-        if not os.path.exists(unified_path):
-        self.logger.error(
+            if not os.path.exists(unified_path):
+                self.logger.error(
                     f"❌ Unified dataset path does not exist: {unified_path}",
                 )
-        return False
+                return False
 
-        # Check a few sample dates across the dataset
-            test_dates = [,
-                ("2025-01-01", "year=2025/month=01/day=01")
-                ("2025-04-15", "year=2025/month=04/day=15")
-                ("2025-07-15", "year=2025/month=07/day=15")
-                ("2025-08-08", "year=2025/month=08/day=08")
+            # Check a few sample dates across the dataset
+            test_dates = [
+                ("2025-01-01", "year=2025/month=01/day=01"),
+                ("2025-04-15", "year=2025/month=04/day=15"),
+                ("2025-07-15", "year=2025/month=07/day=15"),
+                ("2025-08-08", "year=2025/month=08/day=08"),
             ]
 
-            base_path, os.path.join(
+            base_path = os.path.join(
                 unified_path,
-                f"exchange={exchange.upper()}"
-                f"symbol={symbol}"
-                f"timeframe={timeframe}"
+                f"exchange={exchange.upper()}",
+                f"symbol={symbol}",
+                f"timeframe={timeframe}",
             )
 
-            quality_issues = [],
+            quality_issues: list[str] = []
 
-        for date_str, partition_path in test_dates:
-                file_path, os.path.join(base_path, partition_path, "part-0.parquet")
+            for date_str, partition_path in test_dates:
+                file_path = os.path.join(base_path, partition_path, "part-0.parquet")
 
-        if os.path.exists(file_path):
-        try:
-                        df = pd.read_parquet(file_path),
+                if os.path.exists(file_path):
+                    try:
+                        df = pd.read_parquet(file_path)
 
-        # Check data presence
-                        klines_present, all(
-                            col in df.columns
-        for col in ["open", "high", "low", "close", "volume"]
+                        # Check data presence
+                        klines_present = all(
+                            col in df.columns for col in ["open", "high", "low", "close", "volume"]
                         )
-                        aggtrades_present, all(
+                        aggtrades_present = all(
                             col in df.columns
-        for col in [
+                            for col in [
                                 "trade_volume",
                                 "trade_count",
                                 "avg_price",
@@ -2006,62 +2005,61 @@ class UnifiedDataConverter:
                                 "volume_ratio",
                             ]
                         )
-                        futures_present = "funding_rate" in df.columns,
+                        futures_present = "funding_rate" in df.columns
 
-        # Check data quality
-                        aggtrades_coverage = ((df["trade_volume"] > 0).sum() / len(df) * 100
-        if len(df) > 0
-                            else 0
+                        # Check data quality
+                        aggtrades_coverage = (
+                            (df["trade_volume"] > 0).sum() / len(df) * 100 if len(df) > 0 else 0
                         )
-                        futures_coverage = (df["funding_rate"].notna().sum() / len(df) * 100
-        if len(df) > 0
-                            else 0
+                        futures_coverage = (
+                            df["funding_rate"].notna().sum() / len(df) * 100 if len(df) > 0 else 0
                         )
 
-        if not klines_present:
+                        if not klines_present:
                             quality_issues.append(f"{date_str}: Missing klines data")
-        if not aggtrades_present:
+                        if not aggtrades_present:
                             quality_issues.append(f"{date_str}: Missing aggtrades data")
-        if not futures_present:
+                        if not futures_present:
                             quality_issues.append(f"{date_str}: Missing futures data")
-        if aggtrades_coverage < 80:
+                        if aggtrades_coverage < 80:
                             quality_issues.append(
                                 f"{date_str}: Low aggtrades coverage ({aggtrades_coverage:.1f}%)",
                             )
-        if futures_coverage < 80:
+                        if futures_coverage < 80:
                             quality_issues.append(
                                 f"{date_str}: Low futures coverage ({futures_coverage:.1f}%)",
                             )
 
-        except Exception as e:
+                    except Exception as e:
                         quality_issues.append(f"{date_str}: Error reading file - {e}")
                 else:
                     quality_issues.append(f"{date_str}: File not found")
 
-        # Report quality status
-        if quality_issues:
-        self.logger.warning("⚠️ Data quality issues found:")
-        for issue in quality_issues:
-        self.logger.warning(f"   - {issue}")
-        return False
-        self.logger.info(
+            # Report quality status
+            if quality_issues:
+                self.logger.warning("⚠️ Data quality issues found:")
+                for issue in quality_issues:
+                    self.logger.warning(f"   - {issue}")
+                return False
+            self.logger.info(
                 "✅ Data quality verification passed - all data types present and well-populated",
             )
-        return True
+            return True
 
         except Exception as e:
-        self.logger.exception(f"❌ Data quality verification failed: {e}")
-        return False
+            self.logger.exception(f"❌ Data quality verification failed: {e}")
+            return False
 
     def get_unified_data_path(self, symbol: str, exchange: str, timeframe: str) -> str:
         """Get the path to the unified dataset."""
         return os.path.join(self.unified_dir, exchange.lower(), symbol, timeframe)
 
     def get_unified_config_path(
-        self = symbol: str, exchange: str, timeframe: str, ) -> str:,
+        self, symbol: str, exchange: str, timeframe: str,
+    ) -> str:
         """Get the path to the unified dataset configuration."""
         return os.path.join(
-        self.unified_dir = f"{exchange.lower()}_{symbol}_{timeframe}_config.json"
+            self.unified_dir, f"{exchange.lower()}_{symbol}_{timeframe}_config.json"
         )
 
     @validate_klines_data_quality
@@ -2080,7 +2078,8 @@ class UnifiedDataConverter:
         context="klines data loading",
     )
     async def _load_klines_data(
-        self = symbol: str, exchange: str, timeframe: str, ) -> pd.DataFrame | None:,
+        self, symbol: str, exchange: str, timeframe: str,
+    ) -> pd.DataFrame | None:
         """Load klines data from existing consolidated files or download directly.
 
         This method is secured with decorators for:
@@ -2093,77 +2092,77 @@ class UnifiedDataConverter:
         - Quality gates
         """
         try:
-        # Always check data_cache first (where the data actually is)
-            data_cache_dir = "data_cache",
+            # Always check data_cache first (where the data actually is)
+            data_cache_dir = "data_cache"
 
-        # Try parquet first in data_cache
-            parquet_path, os.path.join(
+            # Try parquet first in data_cache
+            parquet_path = os.path.join(
                 data_cache_dir,
                 f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet",
             )
-        if os.path.exists(parquet_path):
-        self.logger.info(f"📊 Loading klines from parquet: {parquet_path}")
-                df = pd.read_parquet(parquet_path),
-        self.logger.info(f"   ✅ Loaded {len(df)} klines rows")
-        return df
+            if os.path.exists(parquet_path):
+                self.logger.info(f"📊 Loading klines from parquet: {parquet_path}")
+                df = pd.read_parquet(parquet_path)
+                self.logger.info(f"   ✅ Loaded {len(df)} klines rows")
+                return df
 
-        # Try CSV fallback in data_cache
-            csv_path, os.path.join(
+            # Try CSV fallback in data_cache
+            csv_path = os.path.join(
                 data_cache_dir,
                 f"klines_{exchange}_{symbol}_{timeframe}_consolidated.csv",
             )
-        if os.path.exists(csv_path):
-        self.logger.info(f"📊 Loading klines from CSV: {csv_path}")
-                df = pd.read_csv(csv_path),
-        self.logger.info(f"   ✅ Loaded {len(df)} klines rows")
-        return df
+            if os.path.exists(csv_path):
+                self.logger.info(f"📊 Loading klines from CSV: {csv_path}")
+                df = pd.read_csv(csv_path)
+                self.logger.info(f"   ✅ Loaded {len(df)} klines rows")
+                return df
 
-        # Try PKL fallback in data_cache
-            pkl_path, os.path.join(
+            # Try PKL fallback in data_cache
+            pkl_path = os.path.join(
                 data_cache_dir,
                 f"klines_{exchange}_{symbol}_{timeframe}_consolidated_cached_data.pkl",
             )
-        if os.path.exists(pkl_path):
-        self.logger.info(f"📊 Loading klines from PKL: {pkl_path}")
-                df = pd.read_pickle(pkl_path),
-        self.logger.info(f"   ✅ Loaded {len(df)} klines rows")
-        return df
+            if os.path.exists(pkl_path):
+                self.logger.info(f"📊 Loading klines from PKL: {pkl_path}")
+                df = pd.read_pickle(pkl_path)
+                self.logger.info(f"   ✅ Loaded {len(df)} klines rows")
+                return df
 
-        # If not found in data_cache, try the passed data_dir as fallback
-        if self.data_cache_dir != data_cache_dir:
-                parquet_path, os.path.join(
-        self.data_cache_dir,
+            # If not found in data_cache, try the passed data_dir as fallback
+            if self.data_cache_dir != data_cache_dir:
+                parquet_path = os.path.join(
+                    self.data_cache_dir,
                     f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet",
                 )
-        if os.path.exists(parquet_path):
-        self.logger.info(
+                if os.path.exists(parquet_path):
+                    self.logger.info(
                         f"📊 Loading klines from fallback path: {parquet_path}",
                     )
-                    df = pd.read_parquet(parquet_path),
-        self.logger.info(f"   ✅ Loaded {len(df)} klines rows")
-        return df
+                    df = pd.read_parquet(parquet_path)
+                    self.logger.info(f"   ✅ Loaded {len(df)} klines rows")
+                    return df
 
-        # If no klines data found, try to download it directly
-        self.logger.info(
+            # If no klines data found, try to download it directly
+            self.logger.info(
                 "🔄 No klines data found, attempting to download klines directly...",
             )
-            klines_df, await self._download_klines_data(
-                symbol = exchange, timeframe,
+            klines_df = await self._download_klines_data(
+                symbol, exchange, timeframe,
             )
-        if klines_df is not None and not klines_df.empty:
-        self.logger.info(
+            if klines_df is not None and not klines_df.empty:
+                self.logger.info(
                     f"✅ Successfully downloaded klines data: {len(klines_df)} rows",
                 )
-        return klines_df
+                return klines_df
 
-        self.logger.warning(
+            self.logger.warning(
                 f"⚠️ No klines data found for {exchange}_{symbol}_{timeframe}",
             )
-        return None
+            return None
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to load klines data: {e}")
-        return None
+            self.logger.exception(f"❌ Failed to load klines data: {e}")
+            return None
 
     @secure_klines_download_operation
     @validate_klines_data_quality
@@ -2179,7 +2178,8 @@ class UnifiedDataConverter:
         context="klines download operation",
     )
     async def _download_klines_data(
-        self = symbol: str, exchange: str, timeframe: str, ) -> pd.DataFrame | None:,
+        self, symbol: str, exchange: str, timeframe: str,
+    ) -> pd.DataFrame | None:
         """Download klines data directly using the existing step1 download logic.
 
         This method is secured with comprehensive decorators for:
@@ -2193,84 +2193,84 @@ class UnifiedDataConverter:
         - Circuit breaker protection
         """
         try:
-        self.logger.info(
+            self.logger.info(
                 f"🔄 Downloading klines data for {exchange}_{symbol}_{timeframe}",
             )
 
-        # Import the data downloader
-        try:
+            # Import the data downloader
+            try:
                 from src.training.steps.data_downloader import download_all_data_with_consolidation
-        except ImportError:
-        self.logger.error("❌ Could not import data downloader")
-        return None
+            except ImportError:
+                self.logger.error("❌ Could not import data downloader")
+                return None
 
-        # Download klines data
-            success, await download_all_data_with_consolidation(
+            # Download klines data
+            success = await download_all_data_with_consolidation(
                 symbol=symbol,
                 exchange_name=exchange,
                 interval=timeframe,
             )
 
-        if not success:
-        self.logger.error("❌ Failed to download klines data")
-        return None
+            if not success:
+                self.logger.error("❌ Failed to download klines data")
+                return None
 
-        # After successful download, try to load the data again
-        self.logger.info("🔄 Attempting to load downloaded klines data...")
+            # After successful download, try to load the data again
+            self.logger.info("🔄 Attempting to load downloaded klines data...")
 
-        # Check for the downloaded klines files
-            data_cache_dir = "data_cache",
+            # Check for the downloaded klines files
+            data_cache_dir = "data_cache"
 
-        # Look for monthly klines files that were downloaded
-            klines_pattern = f"klines_{exchange}_{symbol}_{timeframe}_*.csv",
-            klines_files, glob.glob(os.path.join(data_cache_dir, klines_pattern))
+            # Look for monthly klines files that were downloaded
+            klines_pattern = f"klines_{exchange}_{symbol}_{timeframe}_*.csv"
+            klines_files = glob.glob(os.path.join(data_cache_dir, klines_pattern))
 
-        if not klines_files:
-        self.logger.warning(f"⚠️ No klines files found after download: {klines_pattern}")
-        return None
+            if not klines_files:
+                self.logger.warning(f"⚠️ No klines files found after download: {klines_pattern}")
+                return None
 
-        self.logger.info(f"📁 Found {len(klines_files)} klines files after download")
+            self.logger.info(f"📁 Found {len(klines_files)} klines files after download")
 
-        # Load and combine all klines files
-            all_klines = [],
-        for file_path in sorted(klines_files):
-        try:
-                    df = pd.read_csv(file_path),
-        if not df.empty:
+            # Load and combine all klines files
+            all_klines: list[pd.DataFrame] = []
+            for file_path in sorted(klines_files):
+                try:
+                    df = pd.read_csv(file_path)
+                    if not df.empty:
                         all_klines.append(df)
-        self.logger.debug(
+                        self.logger.debug(
                             f"📊 Loaded {len(df)} rows from {os.path.basename(file_path)}",
                         )
-        except Exception as e:
-        self.logger.warning(f"⚠️ Failed to load {file_path}: {e}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to load {file_path}: {e}")
                     continue
 
-        if not all_klines:
-        self.logger.error("❌ No valid klines data found after download")
-        return None
+            if not all_klines:
+                self.logger.error("❌ No valid klines data found after download")
+                return None
 
-        # Combine all klines data
-            combined_klines, pd.concat(all_klines, ignore_index=True)
-        self.logger.info(
+            # Combine all klines data
+            combined_klines = pd.concat(all_klines, ignore_index=True)
+            self.logger.info(
                 f"📊 Combined {len(combined_klines)} total klines rows",
             )
 
-        # Remove duplicates and sort by timestamp
-            combined_klines, combined_klines.drop_duplicates().sort_values("timestamp").reset_index(drop=True)
+            # Remove duplicates and sort by timestamp
+            combined_klines = combined_klines.drop_duplicates().sort_values("timestamp").reset_index(drop=True)
 
-        # Save the consolidated klines data for future use
-            output_path, os.path.join(
+            # Save the consolidated klines data for future use
+            output_path = os.path.join(
                 data_cache_dir,
                 f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet",
             )
             combined_klines.to_parquet(output_path, index=False)
-        self.logger.info(f"💾 Saved consolidated klines to: {output_path}")
+            self.logger.info(f"💾 Saved consolidated klines to: {output_path}")
 
-        return combined_klines
+            return combined_klines
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to download klines data: {e}")
-        return None
+            self.logger.exception(f"❌ Failed to download klines data: {e}")
+            return None
 
     @validate_klines_data_quality
     @secure_data_processing
@@ -2284,7 +2284,8 @@ class UnifiedDataConverter:
         context="deprecated aggtrades to klines conversion",
     )
     async def _create_klines_from_aggtrades(
-        self = symbol: str, exchange: str, timeframe: str, ) -> pd.DataFrame | None:,
+        self, symbol: str, exchange: str, timeframe: str,
+    ) -> pd.DataFrame | None:
         """Create klines data from individual aggtrades files.
 
         DEPRECATED: This method should not be used. Use _download_klines_data instead

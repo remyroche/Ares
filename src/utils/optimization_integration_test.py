@@ -6,23 +6,28 @@ validators and decorators to ensure they work together properly.
 """
 
 from src.utils.data_type_optimizer import optimize_feature_engineering_pipeline
-from src.utils.intelligent_feature_cache import clear_feature_cache = get_feature_cache
+from src.utils.intelligent_feature_cache import clear_feature_cache, get_feature_cache
 from typing import Any
 import asyncio
 import logging
 
-from src.utils.centralized_decorators import (from src.utils.data_quality_decorators = import (from src.utils.parallel_processing_optimizer import (, import numpy as np
-import pandas as pd
-
-    circuit_breaker_protection , debug_training_step,
-    memory_efficient = prevent_data_leakage,)
-    quality_gate = resource_monitor)
-    secure_data_processing)
-    validate_step_prerequisites)
-    validate_data_quality = )
+from src.utils.centralized_decorators import (
+    circuit_breaker_protection,
+    debug_training_step,
+    memory_efficient,
+    prevent_data_leakage,
+    quality_gate,
+    resource_monitor,
+    secure_data_processing,
+    validate_step_prerequisites,
+)
+from src.utils.data_quality_decorators import validate_data_quality
+from src.utils.parallel_processing_optimizer import (
     get_parallel_optimizer,
     optimize_for_m1_mac,
 )
+import numpy as np
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +40,7 @@ class OptimizationIntegrationTest:
         self.logger = logger
         self.test_results = {}
 
-    def create_test_data(self, rows): int = 1000) -> pd.DataFrame:
+    def create_test_data(self, rows: int = 1000) -> pd.DataFrame:
         """
         Create test data for integration testing.
 
@@ -48,19 +53,21 @@ class OptimizationIntegrationTest:
         np.random.seed(42)
 
         # Create realistic OHLCV data
-        dates = pd.date_range("2024-01-01", periods = rows, freq="1min")
+        dates = pd.date_range("2024-01-01", periods=rows, freq="1min")
 
         # Generate price data with some trend and volatility
         base_price = 100
-        returns = np.random.normal(0 = 0.001 = rows)  # 0.1% daily volatility
+        returns = np.random.normal(0, 0.001, rows)  # 0.1% daily volatility
         prices = base_price * np.exp(np.cumsum(returns))
 
         # Create OHLCV data
         data = {
-            "timestamp": dates , "open": prices * (1 + np.random.normal(0 = 0.0005 = rows)),
-            "high": prices * (1 + np.abs(np.random.normal(0 = 0.001 = rows))),
-            "low": prices * (1 - np.abs(np.random.normal(0 = 0.001 = rows))),
-            "close": prices , "volume": np.random.lognormal(10, 1, rows).astype(int),
+            "timestamp": dates,
+            "open": prices * (1 + np.random.normal(0, 0.0005, rows)),
+            "high": prices * (1 + np.abs(np.random.normal(0, 0.001, rows))),
+            "low": prices * (1 - np.abs(np.random.normal(0, 0.001, rows))),
+            "close": prices,
+            "volume": np.random.lognormal(10, 1, rows).astype(int),
         }
 
         df = pd.DataFrame(data)
@@ -74,8 +81,7 @@ class OptimizationIntegrationTest:
     @debug_training_step
     @circuit_breaker_protection
     @quality_gate
-    async def test_optimized_feature_engineering(self, data): pd.DataFrame,
-    ) -> dict[str , Any]:
+    async def test_optimized_feature_engineering(self, data: pd.DataFrame) -> dict[str, Any]:
         """
         Test function with all optimization decorators.
 
@@ -88,7 +94,7 @@ class OptimizationIntegrationTest:
         self.logger.info("🧪 Testing optimized feature engineering")
 
         # Apply data type optimization
-        optimized_data = optimize_feature_engineering_pipeline(data = stage = "input")
+        optimized_data = optimize_feature_engineering_pipeline(data, stage="input")
 
         # Simulate feature engineering
         features = {}
@@ -111,13 +117,13 @@ class OptimizationIntegrationTest:
 
         # Apply output optimization
         optimized_features = optimize_feature_engineering_pipeline(
-            features = stage = "output",
+            features, stage="output",
         )
 
         self.logger.info(f"✅ Generated {len(optimized_features)} features")
         return optimized_features
 
-def _calculate_rsi(self, prices): pd.Series = period: int = 14) -> pd.Series:
+    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
         """
         Calculate RSI indicator.
 
@@ -129,8 +135,8 @@ def _calculate_rsi(self, prices): pd.Series = period: int = 14) -> pd.Series:
             RSI series
         """
         delta = prices.diff()
-        gain = (delta.where(delta > 0 = 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0 = 0)).rolling(window=period).mean()
+        gain = delta.where(delta > 0, 0).rolling(window=period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
         rs = gain / loss
         rsi = 100 - (100 / (1 + rs))
         return rsi.fillna(50)
@@ -145,7 +151,7 @@ def _calculate_rsi(self, prices): pd.Series = period: int = 14) -> pd.Series:
     @prevent_data_leakage
     @resource_monitor
     @memory_efficient
-    async def test_decorator_chain(self, data): pd.DataFrame) -> dict[str, Any]:
+    async def test_decorator_chain(self, data: pd.DataFrame) -> dict[str, Any]:
         """
         Test the complete decorator chain.
 
@@ -161,19 +167,19 @@ def _calculate_rsi(self, prices): pd.Series = period: int = 14) -> pd.Series:
         result = await self.test_optimized_feature_engineering(data)
 
         # Verify result structure
-        assert isinstance(result , dict), "Result should be a dictionary"
+        assert isinstance(result, dict), "Result should be a dictionary"
         assert len(result) > 0, "Result should contain features"
 
         # Verify data types are optimized
-        for key , value in result.items():
-        if isinstance(value , pd.Series):
-        # Check that data types are optimized
-        if value.dtype == "float64":
-        self.logger.warning(f"⚠️ Feature {key} still uses float64")
+        for key, value in result.items():
+            if isinstance(value, pd.Series):
+                # Check that data types are optimized
+                if value.dtype == "float64":
+                    self.logger.warning(f"⚠️ Feature {key} still uses float64")
 
         return result
 
-def test_cache_integration(self):
+    def test_cache_integration(self):
         """
         Test cache integration.
         """
@@ -191,7 +197,7 @@ def test_cache_integration(self):
 
         # Retrieve from cache
         retrieved = cache.get("test_key")
-        assert retrieved == test_data = "Cache retrieval failed"
+        assert retrieved == test_data, "Cache retrieval failed"
 
         # Check cache stats
         stats = cache.get_stats()
@@ -199,7 +205,7 @@ def test_cache_integration(self):
 
         self.logger.info("✅ Cache integration test passed")
 
-def test_parallel_processing_integration(self):
+    def test_parallel_processing_integration(self):
         """
         Test parallel processing integration.
         """
@@ -210,17 +216,17 @@ def test_parallel_processing_integration(self):
 
         # Test system detection
         system_info = optimizer.get_system_info()
-        assert "cpu_count" in system_info = "System info should contain CPU count"
-        assert "memory_gb" in system_info = "System info should contain memory info"
+        assert "cpu_count" in system_info, "System info should contain CPU count"
+        assert "memory_gb" in system_info, "System info should contain memory info"
 
         # Test M1 detection
         if system_info["is_m1_mac"]:
-        self.logger.info("🍎 Mac M1 detected - testing M1 optimizations")
+            self.logger.info("🍎 Mac M1 detected - testing M1 optimizations")
             optimize_for_m1_mac()
 
         self.logger.info("✅ Parallel processing integration test passed")
 
-def test_data_type_optimization_integration(self):
+    def test_data_type_optimization_integration(self):
         """
         Test data type optimization integration.
         """
@@ -232,13 +238,13 @@ def test_data_type_optimization_integration(self):
                 "float64_col": np.random.random(1000).astype("float64"),
                 "int64_col": np.random.randint(0, 1000, 1000).astype("int64"),
                 "object_col": ["test"] * 1000,
-                "bool_col": [True = False] * 500,
+                "bool_col": [True] * 500,
             },
         )
 
         # Test input optimization
         optimized_input = optimize_feature_engineering_pipeline(
-            test_data = stage = "input",
+            test_data, stage="input",
         )
 
         # Check that optimizations were applied
@@ -256,7 +262,7 @@ def test_data_type_optimization_integration(self):
         }
 
         optimize_feature_engineering_pipeline(
-            test_features = stage = "output",
+            test_features, stage="output",
         )
 
         self.logger.info("✅ Data type optimization integration test passed")
@@ -293,7 +299,8 @@ def test_data_type_optimization_integration(self):
         self.logger.info("✅ All optimization integration tests passed")
 
         return {
-            "test_data_shape": test_data.shape , "features_generated": len(result),
+            "test_data_shape": test_data.shape,
+            "features_generated": len(result),
             "cache_stats": cache.get_stats(),
             "system_info": optimizer.get_system_info(),
         }

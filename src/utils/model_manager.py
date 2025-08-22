@@ -50,48 +50,33 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name = state, *args, **kwargs): 
 
     effective_state = kwargs.get("state", state)
     try:
-        return _NP_ORIGINAL_BITGEN_CTOR(name_candidate = effective_state)  # type: ignore[misc]
+        return _NP_ORIGINAL_BITGEN_CTOR(name_candidate)  # type: ignore[misc]
     except (TypeError, ValueError):
         return _NP_ORIGINAL_BITGEN_CTOR(name_candidate)  # type: ignore[misc]
     except Exception:  # noqa: BLE001
         bitgen_cls = getattr(np.random, name_candidate, None)
         if bitgen_cls is None and name_candidate == "MT19937":
             bitgen_cls = getattr(np.random, "MT19937", None)
-    except Exception:
-        bitgen_cls = None
-    if bitgen_cls is not None:
-        return bitgen_cls()
-        except Exception:
-                pass
-            raise
+        if bitgen_cls is not None:
+            return bitgen_cls()
+        return None
 
 def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
     """Enable compatibility for unpickling NumPy RNG BitGenerators (idempotent)."""
-    global _NUMPY_RNG_UNPICKLE_PATCHED = _NP_ORIGINAL_BITGEN_CTOR
+    global _NUMPY_RNG_UNPICKLE_PATCHED
+    global _NP_ORIGINAL_BITGEN_CTOR
     if _NUMPY_RNG_UNPICKLE_PATCHED:
         return
-            original_ctor = getattr(np_random_pickle = "__bit_generator_ctor", None)
-        if original_ctor is None:
-            _NUMPY_RNG_UNPICKLE_PATCHED = True
-            return
+    original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
+    if original_ctor is None:
+        _NUMPY_RNG_UNPICKLE_PATCHED = True
+        return
 
-        _NP_ORIGINAL_BITGEN_CTOR = original_ctor
-        np_random_pickle.__bit_generator_ctor = _normalized_numpy_bitgen_ctor  # type: ignore[attr-defined]
-        _NUMPY_RNG_UNPICKLE_PATCHED = True
-        if logger is not None:
-            logger.info("Applied NumPy RNG unpickle compatibility shim (ModelManager)")
-    except Exception as _shim_exc:  # noqa: BLE001
-        _NUMPY_RNG_UNPICKLE_PATCHED = True
-        if logger is not None:
-                            logger.warning(
-                    _warn_symbol(
-                        f"NumPy RNG unpickle shim not applied (ModelManager): {_shim_exc}",
-                    ),
-                )
-        except Exception:
-                logger.warning(
-                    f"NumPy RNG unpickle shim not applied (ModelManager): {_shim_exc}",
-                )
+    _NP_ORIGINAL_BITGEN_CTOR = original_ctor
+    np_random_pickle.__bit_generator_ctor = _normalized_numpy_bitgen_ctor  # type: ignore[attr-defined]
+    _NUMPY_RNG_UNPICKLE_PATCHED = True
+    if logger is not None:
+        logger.info("Applied NumPy RNG unpickle compatibility shim (ModelManager)")
 
 class ModelManager:
     """

@@ -1,0 +1,147 @@
+{
+  "trades": [
+    {
+      "trade_id": "trade_1755854518455",
+      "symbol": "BTCUSDT",
+      "side": "buy",
+      "quantity": 0.1,
+      "price": 45000.0,
+      "timestamp": "2025-08-22 09:21:58.455225",
+      "status": "TradeStatus.CLOSED",
+      "order_type": "market",
+      "ensemble_decision": {
+        "ensemble_id": "ens_1",
+        "ensemble_type": "weighted",
+        "primary_prediction": "buy",
+        "primary_confidence": 0.85,
+        "individual_predictions": [
+          {
+            "model_type": "xgboost",
+            "model_id": "xgb_1",
+            "prediction": "buy",
+            "confidence": 0.8,
+            "probability": {
+              "buy": 0.8,
+              "sell": 0.1,
+              "hold": 0.1
+            },
+            "features_used": [
+              "rsi",
+              "macd"
+            ],
+            "feature_importance": [
+              {
+                "feature_name": "rsi",
+                "importance_score": 0.5,
+                "importance_rank": 1,
+                "model_type": "xgboost",
+                "timeframe": "1h",
+                "regime": "trending"
+              }
+            ],
+            "prediction_time": "2025-08-22 09:21:58.455266",
+            "model_version": "1.0"
+          }
+        ],
+        "ensemble_weights": {
+          "xgboost": 0.7,
+          "lstm": 0.3
+        },
+        "meta_learner_prediction": null,
+        "meta_learner_confidence": null
+      },
+      "regime_analysis": {
+        "regime_type": "trending",
+        "regime_confidence": 0.7,
+        "regime_probabilities": {
+          "trending": 0.7,
+          "range": 0.3
+        },
+        "regime_features": [
+          "rsi",
+          "macd"
+        ],
+        "regime_indicators": {
+          "adx": 25.0
+        },
+        "regime_transition_probability": 0.2,
+        "regime_duration": null
+      },
+      "decision_path": {
+        "decision_steps": [
+          "signal_detected",
+          "risk_checked"
+        ],
+        "decision_reasons": [
+          "rsi_cross",
+          "low_volatility"
+        ],
+        "decision_weights": [
+          0.6,
+          0.4
+        ],
+        "decision_thresholds": {
+          "rsi": 30.0
+        },
+        "decision_metadata": {
+          "note": "test"
+        }
+      },
+      "model_behaviors": [
+        {
+          "model_type": "xgboost",
+          "prediction_consistency": 0.9,
+          "confidence_trend": [
+            0.8,
+            0.82,
+            0.85
+          ],
+          "feature_importance_stability": 0.88,
+          "prediction_drift": 0.05,
+          "model_performance_metrics": {
+            "accuracy": 0.75
+          },
+          "last_retraining": null
+        }
+      ],
+      "market_conditions": {},
+      "risk_metrics": {},
+      "execution_metadata": {},
+      "stop_loss": null,
+      "take_profit": null,
+      "pnl": 100.0,
+      "close_timestamp": null,
+      "close_price": null,
+      "close_reason": null
+    }
+  ],
+  "performance_metrics": {
+    "total_trades": 2,
+    "winning_trades": 1,
+    "losing_trades": 0,
+    "total_pnl": 100.0,
+    "win_rate": 0.5,
+    "avg_win": 0.0,
+    "avg_loss": 0.0,
+    "max_drawdown": 0.0
+  },
+  "model_performance": {
+    "xgboost": [
+      {
+        "timestamp": "2025-08-22 09:21:58.455225",
+        "trade_id": "trade_1755854518455",
+        "prediction_consistency": 0.9,
+        "confidence_trend": [
+          0.8,
+          0.82,
+          0.85
+        ],
+        "feature_importance_stability": 0.88,
+        "prediction_drift": 0.05,
+        "performance_metrics": {
+          "accuracy": 0.75
+        }
+      }
+    ]
+  }
+}

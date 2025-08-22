@@ -152,80 +152,77 @@ class SROutcomeModelTrainer:
             return False
 
     async def _prepare_training_data(
-        self = training_data: dict[str, pd.DataFrame], ) -> pd.DataFrame | None:
+        self, training_data: dict[str, pd.DataFrame]
+    ) -> pd.DataFrame | None:
         """Prepare training data with S/R context and outcome labeling."""
         try:
-        self.logger.info("🔄 Preparing training data...")
+            self.logger.info("🔄 Preparing training data...")
 
-        # Combine data from different timeframes
+            # Combine data from different timeframes
             combined_data = pd.DataFrame()
 
-        for timeframe, data in training_data.items():
-        if data.empty:
+            for timeframe, data in training_data.items():
+                if data.empty:
                     continue
 
-        self.logger.info(f"Processing {timeframe} data: {len(data)} samples")
+                self.logger.info(f"Processing {timeframe} data: {len(data)} samples")
 
-        # Add timeframe identifier
+                # Add timeframe identifier
                 data_copy = data.copy()
                 data_copy["timeframe"] = timeframe
 
-        # Add S/R context and outcome labels
-                labeled_data, await self._label_sr_outcomes(data_copy, timeframe)
-        if labeled_data is not None:
-                    combined_data, pd.concat(
-                        [combined_data, labeled_data], ignore_index=True
-                    )
+                # Add S/R context and outcome labels
+                labeled_data = await self._label_sr_outcomes(data_copy, timeframe)
+                if labeled_data is not None:
+                    combined_data = pd.concat([combined_data, labeled_data], ignore_index=True)
 
-        if combined_data.empty:
-        self.logger.error("No valid training data found")
-        return None
+            if combined_data.empty:
+                self.logger.error("No valid training data found")
+                return None
 
-        self.logger.info(f"✅ Prepared training data: {len(combined_data)} samples")
-        return combined_data
-
+            self.logger.info(f"✅ Prepared training data: {len(combined_data)} samples")
+            return combined_data
         except Exception as e:
-        self.logger.exception(f"Error preparing training data: {e}")
-        return None
+            self.logger.exception(f"Error preparing training data: {e}")
+            return None
 
     async def _label_sr_outcomes(
-        self = data: pd.DataFrame, timeframe: str, ) -> pd.DataFrame | None:
+        self, data: pd.DataFrame, timeframe: str
+    ) -> pd.DataFrame | None:
         """Label S/R outcomes for training data."""
         try:
-        if data.empty:
-        return None
+            if data.empty:
+                return None
 
-        # Sample data for efficiency (process every 10th row for large datasets)
-            sample_interval, max(
-                1, len(data) // 5000,
-            )  # Sample up to 5000 points per timeframe
+            # Sample data for efficiency (process every 10th row for large datasets)
+            sample_interval = max(1, len(data) // 5000)  # Sample up to 5000 points per timeframe
             sample_data = data.iloc[::sample_interval].copy()
 
-            labeled_samples = []
+            labeled_samples: list[dict[str, Any]] = []
 
-        for idx, row in sample_data.iterrows():
-        try:
-        # Get current price and market context
+            for idx, row in sample_data.iterrows():
+                try:
+                    # Get current price and market context
                     current_price = row["close"]
 
-        # Create market data slice for S/R analysis
+                    # Create market data slice for S/R analysis
                     market_slice = data.loc[:idx].tail(100)
-        if len(market_slice) < 20:
+                    if len(market_slice) < 20:
                         continue
 
-        # Get S/R context and outcome prediction
-                    sr_context, await self.sr_predictor.get_sr_context(
-                        market_slice = current_price,
+                    # Get S/R context and outcome prediction
+                    sr_context = await self.sr_predictor.get_sr_context(
+                        market_data=market_slice, current_price=current_price
                     )
-                    sr_outcome, await self.sr_predictor.predict_sr_outcome(
-                        market_slice = current_price, sr_context,
+                    sr_outcome = await self.sr_predictor.predict_sr_outcome(
+                        market_data=market_slice, current_price=current_price, sr_context=sr_context
                     )
 
-        # Check if near S/R level
-                    is_near_sr, sr_outcome.get("is_near_sr_level", False)
+                    # Check if near S/R level
+                    is_near_sr = sr_outcome.get("is_near_sr_level", False)
 
-        if is_near_sr:
-        # Create labeled sample
+                    if is_near_sr:
+                        # Create labeled sample
                         sample = {
                             "timestamp": row.get("timestamp", idx),
                             "timeframe": timeframe,
@@ -237,100 +234,99 @@ class SROutcomeModelTrainer:
                                 "records",
                             ),  # Last 20 bars
                             "features": await self._extract_features(
-                                market_slice = current_price, sr_context,
+                                market_data=market_slice, current_price=current_price, sr_context=sr_context
                             ),
                         }
                         labeled_samples.append(sample)
-
-        except Exception as e:
-        self.logger.debug(f"Error labeling sample {idx}: {e}")
+                except Exception as e:
+                    self.logger.debug(f"Error labeling sample {idx}: {e}")
                     continue
 
-        if not labeled_samples:
-        return None
+            if not labeled_samples:
+                return None
 
-        # Convert to DataFrame
+            # Convert to DataFrame
             labeled_df = pd.DataFrame(labeled_samples)
 
-        # Balance classes
+            # Balance classes
             balanced_df = self._balance_classes(labeled_df)
 
-        self.logger.info(f"✅ Labeled {len(balanced_df)} samples for {timeframe}")
-        return balanced_df
-
+            self.logger.info(f"✅ Labeled {len(balanced_df)} samples for {timeframe}")
+            return balanced_df
         except Exception as e:
-        self.logger.exception(f"Error labeling S/R outcomes: {e}")
-        return None
+            self.logger.exception(f"Error labeling S/R outcomes: {e}")
+            return None
 
     async def _extract_features(
-        self = market_data: pd.DataFrame, current_price: float, sr_context: dict, ) -> dict:
+        self, market_data: pd.DataFrame, current_price: float, sr_context: dict
+    ) -> dict[str, float]:
         """Extract comprehensive features for S/R outcome prediction."""
         try:
-            features = {}
+            features: dict[str, float] = {}
 
-        # Price-based features
+            # Price-based features
             features["price_change_1m"] = (
                 market_data["close"].pct_change().iloc[-1]
-        if len(market_data) > 1
+                if len(market_data) > 1
                 else 0
             )
             features["price_change_5m"] = (
                 market_data["close"].pct_change(5).iloc[-1]
-        if len(market_data) > 5
+                if len(market_data) > 5
                 else 0
             )
             features["price_change_15m"] = (
                 market_data["close"].pct_change(15).iloc[-1]
-        if len(market_data) > 15
+                if len(market_data) > 15
                 else 0
             )
             features["price_volatility"] = (
                 market_data["close"].rolling(20).std().iloc[-1]
-        if len(market_data) >= 20
+                if len(market_data) >= 20
                 else 0
             )
 
-        # Volume-based features
+            # Volume-based features
             features["volume_ratio"] = (
                 (
                     market_data["volume"].iloc[-1]
                     / market_data["volume"].rolling(20).mean().iloc[-1]
                 )
-        if len(market_data) >= 20
+                if len(market_data) >= 20
                 else 1.0
             )
             features["volume_momentum"] = (
                 market_data["volume"].pct_change().iloc[-1]
-        if len(market_data) > 1
+                if len(market_data) > 1
                 else 0
             )
             features["volume_volatility"] = (
                 market_data["volume"].rolling(10).std().iloc[-1]
-        if len(market_data) >= 10
+                if len(market_data) >= 10
                 else 0
             )
 
-        # Technical indicators
+            # Technical indicators
             features["rsi"] = (
-        self._calculate_rsi(market_data["close"]).iloc[-1]
-        if len(market_data) >= 14
+                self._calculate_rsi(market_data["close"]).iloc[-1]
+                if len(market_data) >= 14
                 else 50
             )
             features["macd"] = (
-        self._calculate_macd(market_data["close"]).iloc[-1]
-        if len(market_data) >= 26
+                self._calculate_macd(market_data["close"]).iloc[-1]
+                if len(market_data) >= 26
                 else 0
             )
             features["bb_position"] = (
-        self._calculate_bb_position(market_data["close"]).iloc[-1]
-        if len(market_data) >= 20
+                self._calculate_bb_position(market_data["close"]).iloc[-1]
+                if len(market_data) >= 20
                 else 0.5
             )
 
-        # S/R-specific features
-        if sr_context:
-                nearest_support, sr_context.get("nearest_support", current_price)
-                nearest_resistance, sr_context.get("nearest_resistance", current_price)
+            # S/R-specific features
+            if sr_context:
+                nearest_support = sr_context.get("nearest_support", current_price)
+                nearest_resistance = sr_context.get("nearest_resistance", current_price)
 
                 features["distance_to_support"] = (
                     current_price - nearest_support
@@ -343,9 +339,9 @@ class SROutcomeModelTrainer:
                     "resistance_strength", 0.5,
                 )
 
-        # Pivot level features
-                pivot_levels, sr_context.get("pivot_levels", {})
-        if pivot_levels:
+                # Pivot level features
+                pivot_levels = sr_context.get("pivot_levels", {})
+                if pivot_levels:
                     features["nearest_pivot_strength"] = pivot_levels.get(
                         "nearest_strength", 0.5,
                     )
@@ -354,109 +350,107 @@ class SROutcomeModelTrainer:
                     features["nearest_pivot_strength"] = 0.5
                     features["pivot_touches"] = 0
 
-        # Market context features
+            # Market context features
             features["market_trend"] = self._calculate_market_trend(market_data)
             features["momentum_strength"] = self._calculate_momentum_strength(
                 market_data,
             )
 
-        # Temporal features
-        if self.use_temporal_features:
+            # Temporal features
+            if self.use_temporal_features:
                 features["time_since_sr_touch"] = self._calculate_time_since_sr_touch(
-                    market_data = sr_context,
+                    market_data=market_data, sr_context=sr_context
                 )
                 features["sr_touch_frequency"] = self._calculate_sr_touch_frequency(
-                    market_data = sr_context,
+                    market_data=market_data, sr_context=sr_context
                 )
 
-        # Volatility regime features
-        if self.use_volatility_regime:
+            # Volatility regime features
+            if self.use_volatility_regime:
                 features["volatility_regime"] = self._classify_volatility_regime(
                     market_data,
                 )
                 features["atr_ratio"] = self._calculate_atr_ratio(market_data)
 
-        return features
-
+            return features
         except Exception as e:
-        self.logger.exception(f"Error extracting features: {e}")
-        return {}
+            self.logger.exception(f"Error extracting features: {e}")
+            return {}
 
     def _balance_classes(self, data: pd.DataFrame) -> pd.DataFrame:
         """Balance classes to handle imbalanced S/R outcomes."""
         try:
-        # Count samples per class
+            # Count samples per class
             class_counts = data["outcome"].value_counts()
-            min_count, min(class_counts.min(), self.min_samples_per_class)
+            min_count = min(class_counts.min(), self.min_samples_per_class)
 
             balanced_samples = []
 
-        for outcome in ["breakout", "rebounce", "consolidation"]:
-                outcome_data, data[data["outcome"] == outcome]
+            for outcome in ["breakout", "rebounce", "consolidation"]:
+                outcome_data = data[data["outcome"] == outcome]
 
-        if len(outcome_data) > min_count:
-        # Sample down to min_count
+                if len(outcome_data) > min_count:
+                    # Sample down to min_count
                     balanced_samples.append(
                         outcome_data.sample(n=min_count, random_state=42)
                     )
                 else:
-        # Keep all samples if below min_count
+                    # Keep all samples if below min_count
                     balanced_samples.append(outcome_data)
 
-            balanced_df, pd.concat(balanced_samples, ignore_index=True)
+            balanced_df = pd.concat(balanced_samples, ignore_index=True)
 
-        self.logger.info(
+            self.logger.info(
                 f"Balanced classes: {balanced_df['outcome'].value_counts().to_dict()}",
             )
-        return balanced_df
-
+            return balanced_df
         except Exception as e:
-        self.logger.exception(f"Error balancing classes: {e}")
-        return data
+            self.logger.exception(f"Error balancing classes: {e}")
+            return data
 
     @validate_feature_engineering_with_lookahead_bias_detection
     async def _engineer_features(
-        self = data: pd.DataFrame, ) -> tuple[np.ndarray | None, np.ndarray | None]:
+        self, data: pd.DataFrame
+    ) -> tuple[np.ndarray | None, np.ndarray | None]:
         """Engineer features for model training."""
         try:
-        self.logger.info("🔄 Engineering features...")
+            self.logger.info("🔄 Engineering features...")
 
-        # Extract features from all samples
-            feature_vectors = []
-            labels = []
+            # Extract features from all samples
+            feature_vectors: list[list[float]] = []
+            labels: list[str] = []
 
-        for _, row in data.iterrows():
-                features, row.get("features", {})
-        if features:
-        # Create feature vector
+            for _, row in data.iterrows():
+                features = row.get("features", {})
+                if features:
+                    # Create feature vector
                     feature_vector = self._create_feature_vector(features)
-        if feature_vector is not None:
+                    if feature_vector is not None:
                         feature_vectors.append(feature_vector)
                         labels.append(row["outcome"])
 
-        if not feature_vectors:
-        self.logger.error("No valid feature vectors found")
-        return None, None
+            if not feature_vectors:
+                self.logger.error("No valid feature vectors found")
+                return None, None
 
-        # Convert to numpy arrays
+            # Convert to numpy arrays
             X = np.array(feature_vectors)
             y = np.array(labels)
 
-        # Encode labels
+            # Encode labels
             y_encoded = self.label_encoder.transform(y)
 
-        # Scale features
+            # Scale features
             X_scaled = self.scaler.fit_transform(X)
 
-        # Store feature names
-        self.feature_names = self._get_feature_names()
+            # Store feature names
+            self.feature_names = self._get_feature_names()
 
-        self.logger.info(f"✅ Engineered features: {X_scaled.shape}")
-        return X_scaled, y_encoded
-
+            self.logger.info(f"✅ Engineered features: {X_scaled.shape}")
+            return X_scaled, y_encoded
         except Exception as e:
-        self.logger.exception(f"Error engineering features: {e}")
-        return None, None
+            self.logger.exception(f"Error engineering features: {e}")
+            return None, None
 
     def _create_feature_vector(self, features: dict) -> list[float] | None:
         """Create feature vector from features dictionary."""
@@ -464,14 +458,13 @@ class SROutcomeModelTrainer:
             feature_names = self._get_feature_names()
             feature_vector = []
 
-        for feature_name in feature_names:
+            for feature_name in feature_names:
                 feature_vector.append(features.get(feature_name, 0.0))
 
-        return feature_vector
-
+            return feature_vector
         except Exception as e:
-        self.logger.exception(f"Error creating feature vector: {e}")
-        return None
+            self.logger.exception(f"Error creating feature vector: {e}")
+            return None
 
     def _get_feature_names(self) -> list[str]:
         """Get list of feature names in order."""
@@ -507,124 +500,122 @@ class SROutcomeModelTrainer:
     async def _train_lightgbm_model(self, X: np.ndarray, y: np.ndarray) -> bool:
         """Train LightGBM model with hyperparameter optimization."""
         try:
-        self.logger.info("🔄 Training LightGBM model...")
+            self.logger.info("🔄 Training LightGBM model...")
 
-        # Calculate class weights
-            class_weights, compute_class_weight("balanced", classes=np.unique(y), y=y)
-            weight_dict, dict(zip(np.unique(y), class_weights, strict=False))
+            # Calculate class weights
+            class_weights = compute_class_weight("balanced", classes=np.unique(y), y=y)
+            weight_dict = dict(zip(np.unique(y), class_weights))
 
-        # Create sample weights
+            # Create sample weights
             sample_weights = np.array([weight_dict[label] for label in y])
 
-        # Time-series cross-validation
-            tscv, TimeSeriesSplit(n_splits=5)
+            # Time-series cross-validation
+            tscv = TimeSeriesSplit(n_splits=5)
 
-        # Hyperparameter optimization for LightGBM
-            best_params, await self._optimize_lightgbm_hyperparameters(
-                X = y, sample_weights, tscv,
+            # Hyperparameter optimization for LightGBM
+            best_params = await self._optimize_lightgbm_hyperparameters(
+                X, y, sample_weights, tscv
             )
 
-        # Train final model with best parameters
-            final_model, lgb.LGBMClassifier(**best_params, random_state=42)
+            # Train final model with best parameters
+            final_model = lgb.LGBMClassifier(**best_params, random_state=42)
             final_model.fit(X, y, sample_weight=sample_weights)
 
-        # Store model
-        self.models["lgb"] = final_model
+            # Store model
+            self.models["lgb"] = final_model
 
-        # If not using ensemble, set as primary model
-        if not self.use_ensemble:
-        self.ensemble_model = final_model
+            # If not using ensemble, set as primary model
+            if not self.use_ensemble:
+                self.ensemble_model = final_model
 
-        # Evaluate model
-        await self._evaluate_model(X, y, model_name="LightGBM")
+            # Evaluate model
+            await self._evaluate_model(X, y, model_name="LightGBM")
 
-        self.logger.info("✅ LightGBM model training completed")
-        return True
-
+            self.logger.info("✅ LightGBM model training completed")
+            return True
         except Exception as e:
-        self.logger.exception(f"Error training LightGBM model: {e}")
-        return False
+            self.logger.exception(f"Error training LightGBM model: {e}")
+            return False
 
     async def _train_xgboost_model(self, X: np.ndarray, y: np.ndarray) -> bool:
         """Train XGBoost model with hyperparameter optimization."""
         try:
-        self.logger.info("🔄 Training XGBoost model...")
+            self.logger.info("🔄 Training XGBoost model...")
 
-        # Calculate class weights
-            class_weights, compute_class_weight("balanced", classes=np.unique(y), y=y)
-            weight_dict, dict(zip(np.unique(y), class_weights, strict=False))
+            # Calculate class weights
+            class_weights = compute_class_weight("balanced", classes=np.unique(y), y=y)
+            weight_dict = dict(zip(np.unique(y), class_weights))
 
-        # Create sample weights
+            # Create sample weights
             sample_weights = np.array([weight_dict[label] for label in y])
 
-        # Time-series cross-validation
-            tscv, TimeSeriesSplit(n_splits=5)
+            # Time-series cross-validation
+            tscv = TimeSeriesSplit(n_splits=5)
 
-        # Hyperparameter optimization for XGBoost
-            best_params, await self._optimize_xgboost_hyperparameters(
-                X = y, sample_weights, tscv,
+            # Hyperparameter optimization for XGBoost
+            best_params = await self._optimize_xgboost_hyperparameters(
+                X, y, sample_weights, tscv
             )
 
-        # Train final model with best parameters
-            final_model, xgb.XGBClassifier(**best_params, random_state=42)
+            # Train final model with best parameters
+            final_model = xgb.XGBClassifier(**best_params, random_state=42)
             final_model.fit(X, y, sample_weight=sample_weights)
 
-        # Store model
-        self.models["xgb"] = final_model
+            # Store model
+            self.models["xgb"] = final_model
 
-        # If not using ensemble, set as primary model
-        if not self.use_ensemble:
-        self.ensemble_model = final_model
+            # If not using ensemble, set as primary model
+            if not self.use_ensemble:
+                self.ensemble_model = final_model
 
-        # Evaluate model
-        await self._evaluate_model(X, y, model_name="XGBoost")
+            # Evaluate model
+            await self._evaluate_model(X, y, model_name="XGBoost")
 
-        self.logger.info("✅ XGBoost model training completed")
-        return True
-
+            self.logger.info("✅ XGBoost model training completed")
+            return True
         except Exception as e:
-        self.logger.exception(f"Error training XGBoost model: {e}")
-        return False
+            self.logger.exception(f"Error training XGBoost model: {e}")
+            return False
 
     async def _train_ensemble_models(self, X: np.ndarray, y: np.ndarray) -> bool:
         """Train LightGBM and XGBoost models and create an ensemble."""
         try:
-        self.logger.info("🔄 Training LightGBM and XGBoost ensemble...")
+            self.logger.info("🔄 Training LightGBM and XGBoost ensemble...")
 
-        # Train LightGBM
-            lgb_model_success, await self._train_lightgbm_model(X, y)
-        if not lgb_model_success:
-        self.logger.error("Failed to train LightGBM model for ensemble")
-        return False
+            # Train LightGBM
+            lgb_model_success = await self._train_lightgbm_model(X, y)
+            if not lgb_model_success:
+                self.logger.error("Failed to train LightGBM model for ensemble")
+                return False
 
-        # Train XGBoost
-            xgb_model_success, await self._train_xgboost_model(X, y)
-        if not xgb_model_success:
-        self.logger.error("Failed to train XGBoost model for ensemble")
-        return False
+            # Train XGBoost
+            xgb_model_success = await self._train_xgboost_model(X, y)
+            if not xgb_model_success:
+                self.logger.error("Failed to train XGBoost model for ensemble")
+                return False
 
-        # Create ensemble model
-        self.ensemble_model = VotingClassifier(
-                estimators=[("lgb", self.models["lgb"]), ("xgb", self.models["xgb"])]
-                voting=self.voting_method
-                weights=self.ensemble_weights
+            # Create ensemble model
+            self.ensemble_model = VotingClassifier(
+                estimators=[("lgb", self.models["lgb"]), ("xgb", self.models["xgb"])],
+                voting=self.voting_method,
+                weights=self.ensemble_weights,
             )
 
-        # Fit ensemble
-        self.ensemble_model.fit(X, y)
+            # Fit ensemble
+            self.ensemble_model.fit(X, y)
 
-        # Evaluate ensemble
-        await self._evaluate_model(X, y, model_name="Ensemble")
+            # Evaluate ensemble
+            await self._evaluate_model(X, y, model_name="Ensemble")
 
-        self.logger.info("✅ Ensemble training completed")
-        return True
-
+            self.logger.info("✅ Ensemble training completed")
+            return True
         except Exception as e:
-        self.logger.exception(f"Error training ensemble models: {e}")
-        return False
+            self.logger.exception(f"Error training ensemble models: {e}")
+            return False
 
     async def _optimize_lightgbm_hyperparameters(
-        self, X: np.ndarray, y: np.ndarray, sample_weights: np.ndarray, tscv: TimeSeriesSplit, ) -> dict:
+        self, X: np.ndarray, y: np.ndarray, sample_weights: np.ndarray, tscv: TimeSeriesSplit,
+    ) -> dict:
         """Optimize LightGBM hyperparameters using Optuna."""
         try:
 
@@ -647,16 +638,16 @@ class SROutcomeModelTrainer:
                         "bagging_fraction", 0.6, 0.9,
                     ),
                     "bagging_freq": trial.suggest_int("bagging_freq", 1, 10),
-                    "reg_alpha": trial.suggest_float("reg_alpha", 0.01, 0.3, log=True)
+                    "reg_alpha": trial.suggest_float("reg_alpha", 0.01, 0.3, log=True),
                     "reg_lambda": trial.suggest_float(
                         "reg_lambda", 0.01, 0.3, log=True
                     ),
                     "random_state": 42,
                 }
 
-        # Cross-validation
-                scores = []
-        for train_idx, val_idx in tscv.split(X):
+                # Cross-validation
+                scores: list[float] = []
+                for train_idx, val_idx in tscv.split(X):
                     X_train = X[train_idx]
                     y_train = y[train_idx]
                     w_train = sample_weights[train_idx]
@@ -664,17 +655,17 @@ class SROutcomeModelTrainer:
                     y_val = y[val_idx]
                     w_val = sample_weights[val_idx]
 
-                    model, lgb.LGBMClassifier(**params, random_state=42)
+                    model = lgb.LGBMClassifier(**params, random_state=42)
                     model.fit(X_train, y_train, sample_weight=w_train)
 
                     y_pred_proba = model.predict_proba(X_val)
-                    score, roc_auc_score(y_val, y_pred_proba, multi_class="ovr")
+                    score = roc_auc_score(y_val, y_pred_proba, multi_class="ovr")
                     scores.append(score)
 
-        return np.mean(scores)
+                return float(np.mean(scores))
 
-        # Run optimization
-            study, optuna.create_study(direction="maximize")
+            # Run optimization
+            study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials=30)
 
             best_params = study.best_params
@@ -688,13 +679,12 @@ class SROutcomeModelTrainer:
                 },
             )
 
-        self.logger.info(f"Best LightGBM hyperparameters: {best_params}")
-        return best_params
-
+            self.logger.info(f"Best LightGBM hyperparameters: {best_params}")
+            return best_params
         except Exception as e:
-        self.logger.exception(f"Error optimizing LightGBM hyperparameters: {e}")
-        # Return default parameters
-        return {
+            self.logger.exception(f"Error optimizing LightGBM hyperparameters: {e}")
+            # Return default parameters
+            return {
                 "objective": "multiclass",
                 "num_class": 3,
                 "boosting_type": "gbdt",
@@ -712,7 +702,8 @@ class SROutcomeModelTrainer:
             }
 
     async def _optimize_xgboost_hyperparameters(
-        self, X: np.ndarray, y: np.ndarray, sample_weights: np.ndarray, tscv: TimeSeriesSplit, ) -> dict:
+        self, X: np.ndarray, y: np.ndarray, sample_weights: np.ndarray, tscv: TimeSeriesSplit,
+    ) -> dict:
         """Optimize XGBoost hyperparameters using Optuna."""
         try:
 
@@ -731,16 +722,16 @@ class SROutcomeModelTrainer:
                         "colsample_bytree", 0.6, 0.9,
                     ),
                     "gamma": trial.suggest_float("gamma", 0, 0.5),
-                    "reg_alpha": trial.suggest_float("reg_alpha", 0.01, 0.3, log=True)
+                    "reg_alpha": trial.suggest_float("reg_alpha", 0.01, 0.3, log=True),
                     "reg_lambda": trial.suggest_float(
                         "reg_lambda", 0.01, 0.3, log=True
                     ),
                     "random_state": 42,
                 }
 
-        # Cross-validation
-                scores = []
-        for train_idx, val_idx in tscv.split(X):
+                # Cross-validation
+                scores: list[float] = []
+                for train_idx, val_idx in tscv.split(X):
                     X_train = X[train_idx]
                     y_train = y[train_idx]
                     w_train = sample_weights[train_idx]
@@ -748,17 +739,17 @@ class SROutcomeModelTrainer:
                     y_val = y[val_idx]
                     w_val = sample_weights[val_idx]
 
-                    model, xgb.XGBClassifier(**params, random_state=42)
+                    model = xgb.XGBClassifier(**params, random_state=42)
                     model.fit(X_train, y_train, sample_weight=w_train)
 
                     y_pred_proba = model.predict_proba(X_val)
-                    score, roc_auc_score(y_val, y_pred_proba, multi_class="ovr")
+                    score = roc_auc_score(y_val, y_pred_proba, multi_class="ovr")
                     scores.append(score)
 
-        return np.mean(scores)
+                return float(np.mean(scores))
 
-        # Run optimization
-            study, optuna.create_study(direction="maximize")
+            # Run optimization
+            study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials=30)
 
             best_params = study.best_params
@@ -771,13 +762,12 @@ class SROutcomeModelTrainer:
                 },
             )
 
-        self.logger.info(f"Best XGBoost hyperparameters: {best_params}")
-        return best_params
-
+            self.logger.info(f"Best XGBoost hyperparameters: {best_params}")
+            return best_params
         except Exception as e:
-        self.logger.exception(f"Error optimizing XGBoost hyperparameters: {e}")
-        # Return default parameters
-        return {
+            self.logger.exception(f"Error optimizing XGBoost hyperparameters: {e}")
+            # Return default parameters
+            return {
                 "objective": "multi:softprob",
                 "num_class": 3,
                 "eval_metric": "mlogloss",
@@ -797,8 +787,8 @@ class SROutcomeModelTrainer:
     ) -> None:
         """Evaluate the trained model."""
         try:
-        # Use appropriate model for evaluation
-        if model_name == "Ensemble" and self.ensemble_model is not None:
+            # Use appropriate model for evaluation
+            if model_name == "Ensemble" and self.ensemble_model is not None:
                 model_to_evaluate = self.ensemble_model
             elif model_name == "LightGBM" and "lgb" in self.models:
                 model_to_evaluate = self.models["lgb"]
@@ -807,122 +797,119 @@ class SROutcomeModelTrainer:
             else:
                 model_to_evaluate = self.ensemble_model
 
-        if model_to_evaluate is None:
-        self.logger.warning(f"No model available for evaluation: {model_name}")
+            if model_to_evaluate is None:
+                self.logger.warning(f"No model available for evaluation: {model_name}")
                 return
 
-        # Predictions
+            # Predictions
             y_pred = model_to_evaluate.predict(X)
             y_pred_proba = model_to_evaluate.predict_proba(X)
 
-        # Metrics
-            report, classification_report(
+            # Metrics
+            report = classification_report(
                 y, y_pred, target_names=self.label_encoder.classes_
             )
-            conf_matrix, confusion_matrix(y, y_pred)
-            auc_score, roc_auc_score(y, y_pred_proba, multi_class="ovr")
+            conf_matrix = confusion_matrix(y, y_pred)
+            auc_score = roc_auc_score(y, y_pred_proba, multi_class="ovr")
 
-        # Feature importance (for individual models)
+            # Feature importance (for individual models)
             feature_importance = None
-        if hasattr(model_to_evaluate, "feature_importances_"):
-                feature_importance, pd.DataFrame(
+            if hasattr(model_to_evaluate, "feature_importances_"):
+                feature_importance = pd.DataFrame(
                     {
                         "feature": self.feature_names,
                         "importance": model_to_evaluate.feature_importances_,
                     },
                 ).sort_values("importance", ascending=False)
             elif model_name == "Ensemble":
-        # For ensemble, combine feature importance from both models
+                # For ensemble, combine feature importance from both models
                 lgb_importance = (
-        self.models["lgb"].feature_importances_
-        if "lgb" in self.models
+                    self.models["lgb"].feature_importances_
+                    if "lgb" in self.models
                     else None
                 )
                 xgb_importance = (
-        self.models["xgb"].feature_importances_
-        if "xgb" in self.models
+                    self.models["xgb"].feature_importances_
+                    if "xgb" in self.models
                     else None
                 )
 
-        if lgb_importance is not None and xgb_importance is not None:
-        # Weighted average of feature importance
+                if lgb_importance is not None and xgb_importance is not None:
+                    # Weighted average of feature importance
                     weighted_importance = (
                         lgb_importance * self.ensemble_weights[0]
                         + xgb_importance * self.ensemble_weights[1]
                     )
-                    feature_importance, pd.DataFrame(
+                    feature_importance = pd.DataFrame(
                         {
                             "feature": self.feature_names,
                             "importance": weighted_importance,
                         },
                     ).sort_values("importance", ascending=False)
 
-        # Log results
-        self.logger.info(f"Model Evaluation Results for {model_name}:")
-        self.logger.info(f"AUC Score: {auc_score:.4f}")
-        self.logger.info(f"Classification Report:\n{report}")
-        if feature_importance is not None:
-        self.logger.info(f"Top 10 Features:\n{feature_importance.head(10)}")
+            # Log results
+            self.logger.info(f"Model Evaluation Results for {model_name}:")
+            self.logger.info(f"AUC Score: {auc_score:.4f}")
+            self.logger.info(f"Classification Report:\n{report}")
+            if feature_importance is not None:
+                self.logger.info(f"Top 10 Features:\n{feature_importance.head(10)}")
 
-        # Save evaluation results
+            # Save evaluation results
             evaluation_results = {
                 "model_name": model_name,
-                "auc_score": auc_score,
+                "auc_score": float(auc_score),
                 "classification_report": report,
                 "confusion_matrix": conf_matrix.tolist(),
                 "feature_importance": feature_importance.to_dict("records")
-        if feature_importance is not None
+                if feature_importance is not None
                 else None,
                 "timestamp": datetime.now().isoformat(),
             }
 
-        with open(
-                os.path.join(
-        self.artifacts_dir = f"{model_name.lower()}_evaluation_results.json"
-                ),
+            with open(
+                os.path.join(self.artifacts_dir, f"{model_name.lower()}_evaluation_results.json"),
                 "w",
             ) as f:
                 json.dump(evaluation_results, f, indent=2)
-
         except Exception as e:
-        self.logger.exception(f"Error evaluating model: {e}")
+            self.logger.exception(f"Error evaluating model: {e}")
 
     async def _save_model_artifacts(self) -> None:
         """Save model artifacts and metadata."""
         try:
-        # Save individual models
-        if "lgb" in self.models:
-                lgb_path, os.path.join(self.artifacts_dir, "lightgbm_model.pkl")
-        with open(lgb_path, "wb") as f:
+            # Save individual models
+            if "lgb" in self.models:
+                lgb_path = os.path.join(self.artifacts_dir, "lightgbm_model.pkl")
+                with open(lgb_path, "wb") as f:
                     pickle.dump(self.models["lgb"], f)
 
-        if "xgb" in self.models:
-                xgb_path, os.path.join(self.artifacts_dir, "xgboost_model.pkl")
-        with open(xgb_path, "wb") as f:
+            if "xgb" in self.models:
+                xgb_path = os.path.join(self.artifacts_dir, "xgboost_model.pkl")
+                with open(xgb_path, "wb") as f:
                     pickle.dump(self.models["xgb"], f)
 
-        # Save ensemble model
-        if self.ensemble_model is not None:
-                ensemble_path, os.path.join(self.artifacts_dir, "ensemble_model.pkl")
-        with open(ensemble_path, "wb") as f:
+            # Save ensemble model
+            if self.ensemble_model is not None:
+                ensemble_path = os.path.join(self.artifacts_dir, "ensemble_model.pkl")
+                with open(ensemble_path, "wb") as f:
                     pickle.dump(self.ensemble_model, f)
 
-        # Save scaler
-            scaler_path, os.path.join(self.artifacts_dir, "sr_outcome_scaler.pkl")
-        with open(scaler_path, "wb") as f:
+            # Save scaler
+            scaler_path = os.path.join(self.artifacts_dir, "sr_outcome_scaler.pkl")
+            with open(scaler_path, "wb") as f:
                 pickle.dump(self.scaler, f)
 
-        # Save label encoder
-            encoder_path, os.path.join(self.artifacts_dir, "sr_outcome_encoder.pkl")
-        with open(encoder_path, "wb") as f:
+            # Save label encoder
+            encoder_path = os.path.join(self.artifacts_dir, "sr_outcome_encoder.pkl")
+            with open(encoder_path, "wb") as f:
                 pickle.dump(self.label_encoder, f)
 
-        # Save feature names
-            feature_names_path, os.path.join(self.artifacts_dir, "feature_names.json")
-        with open(feature_names_path, "w") as f:
+            # Save feature names
+            feature_names_path = os.path.join(self.artifacts_dir, "feature_names.json")
+            with open(feature_names_path, "w") as f:
                 json.dump(self.feature_names, f)
 
-        # Save configuration
+            # Save configuration
             config_save = {
                 "model_config": self.model_config,
                 "ensemble_config": self.ensemble_config,
@@ -934,28 +921,19 @@ class SROutcomeModelTrainer:
                 "voting_method": self.voting_method,
             }
 
-            config_path, os.path.join(self.artifacts_dir, "model_config.json")
-        with open(config_path, "w") as f:
+            config_path = os.path.join(self.artifacts_dir, "model_config.json")
+            with open(config_path, "w") as f:
                 json.dump(config_save, f, indent=2)
 
-        self.logger.info(f"✅ Model artifacts saved to {self.artifacts_dir}")
-
+            self.logger.info(f"✅ Model artifacts saved to {self.artifacts_dir}")
         except Exception as e:
-        self.logger.exception(f"Error saving model artifacts: {e}")
+            self.logger.exception(f"Error saving model artifacts: {e}")
 
     def predict(self, features: dict[str, float]) -> dict[str, Any]:
-        """Make prediction using the trained ensemble or individual model.
-
-        Args:
-            features: Feature dictionary
-
-        Returns:
-            dict: Prediction with probabilities and confidence
-
-        """
+        """Make prediction using the trained ensemble or individual model."""
         try:
-        if self.ensemble_model is None:
-        return {
+            if self.ensemble_model is None:
+                return {
                     "probabilities": {
                         "breakout": 0.33,
                         "rebounce": 0.33,
@@ -966,10 +944,10 @@ class SROutcomeModelTrainer:
                     "model_type": "none",
                 }
 
-        # Create feature vector
+            # Create feature vector
             feature_vector = self._create_feature_vector(features)
-        if feature_vector is None:
-        return {
+            if feature_vector is None:
+                return {
                     "probabilities": {
                         "breakout": 0.33,
                         "rebounce": 0.33,
@@ -980,49 +958,44 @@ class SROutcomeModelTrainer:
                     "model_type": "error",
                 }
 
-        # Scale features
+            # Scale features
             feature_vector_scaled = self.scaler.transform([feature_vector])
 
-        # Make prediction
-        if self.use_ensemble and self.ensemble_model is not None:
-        # Use ensemble prediction
-                y_pred_proba, self.ensemble_model.predict_proba(feature_vector_scaled)[
-                    0
-                ]
-                y_pred, self.ensemble_model.predict(feature_vector_scaled)[0]
+            # Make prediction
+            if self.use_ensemble and self.ensemble_model is not None:
+                # Use ensemble prediction
+                y_pred_proba = self.ensemble_model.predict_proba(feature_vector_scaled)[0]
+                y_pred = self.ensemble_model.predict(feature_vector_scaled)[0]
                 model_type = "ensemble"
             else:
-        # Use individual model prediction
-                y_pred_proba, self.ensemble_model.predict_proba(feature_vector_scaled)[
-                    0
-                ]
-                y_pred, self.ensemble_model.predict(feature_vector_scaled)[0]
+                # Use individual model prediction
+                y_pred_proba = self.ensemble_model.predict_proba(feature_vector_scaled)[0]
+                y_pred = self.ensemble_model.predict(feature_vector_scaled)[0]
                 model_type = self.model_type
 
-        # Map prediction to outcome
+            # Map prediction to outcome
             outcome_mapping = {0: "breakout", 1: "rebounce", 2: "consolidation"}
-            outcome, outcome_mapping.get(y_pred, "consolidation")
+            outcome = outcome_mapping.get(int(y_pred), "consolidation")
 
-        # Create probability dict
+            # Create probability dict
             prob_dict = {
                 "breakout": float(y_pred_proba[0]),
                 "rebounce": float(y_pred_proba[1]),
                 "consolidation": float(y_pred_proba[2]),
             }
 
-        # Calculate confidence
+            # Calculate confidence
             confidence = float(max(y_pred_proba))
 
-        return {
+            return {
                 "probabilities": prob_dict,
                 "confidence": confidence,
                 "outcome": outcome,
                 "model_type": model_type,
             }
-
         except Exception as e:
-        self.logger.exception(f"Error making prediction: {e}")
-        return {
+            self.logger.exception(f"Error making prediction: {e}")
+            return {
                 "probabilities": {
                     "breakout": 0.33,
                     "rebounce": 0.33,
@@ -1043,17 +1016,19 @@ class SROutcomeModelTrainer:
         return 100 - (100 / (1 + rs))
 
     def _calculate_macd(
-        self = prices: pd.Series, fast: int, 12, slow: int, 26, ) -> pd.Series:
+        self, prices: pd.Series, fast: int = 12, slow: int = 26
+    ) -> pd.Series:
         """Calculate MACD indicator."""
-        ema_fast, prices.ewm(span=fast).mean()
-        ema_slow, prices.ewm(span=slow).mean()
+        ema_fast = prices.ewm(span=fast).mean()
+        ema_slow = prices.ewm(span=slow).mean()
         return ema_fast - ema_slow
 
     def _calculate_bb_position(
-        self = prices: pd.Series, period: int, 20, std: int, 2, ) -> pd.Series:
+        self, prices: pd.Series, period: int = 20, std: int = 2
+    ) -> pd.Series:
         """Calculate Bollinger Band position."""
-        sma, prices.rolling(window=period).mean()
-        std_dev, prices.rolling(window=period).std()
+        sma = prices.rolling(window=period).mean()
+        std_dev = prices.rolling(window=period).std()
         upper_band = sma + (std_dev * std)
         lower_band = sma - (std_dev * std)
 
@@ -1064,55 +1039,55 @@ class SROutcomeModelTrainer:
     def _calculate_market_trend(self, market_data: pd.DataFrame) -> float:
         """Calculate market trend strength."""
         try:
-        if len(market_data) < 20:
-        return 0.0
+            if len(market_data) < 20:
+                return 0.0
 
             prices = market_data["close"].values
             x = np.arange(len(prices))
-            slope, np.polyfit(x, prices, 1)[0]
+            slope = np.polyfit(x, prices, 1)[0]
 
             avg_price = np.mean(prices)
             normalized_slope = slope / avg_price if avg_price > 0 else 0
 
-        return np.clip(normalized_slope * 100, -1, 1)
-
+            return float(np.clip(normalized_slope * 100, -1, 1))
         except Exception as e:
-        self.logger.exception(f"Error calculating market trend: {e}")
-        return 0.0
+            self.logger.exception(f"Error calculating market trend: {e}")
+            return 0.0
 
     def _calculate_momentum_strength(self, market_data: pd.DataFrame) -> float:
         """Calculate momentum strength."""
         try:
-        if len(market_data) < 10:
-        return 0.0
+            if len(market_data) < 10:
+                return 0.0
 
             short_momentum = (
                 market_data["close"].pct_change(5).iloc[-1]
-        if len(market_data) > 5
+                if len(market_data) > 5
                 else 0
             )
             long_momentum = (
                 market_data["close"].pct_change(20).iloc[-1]
-        if len(market_data) > 20
+                if len(market_data) > 20
                 else 0
             )
 
             momentum = short_momentum * 0.7 + long_momentum * 0.3
 
-        return np.clip(momentum * 100, -1, 1)
-
+            return float(np.clip(momentum * 100, -1, 1))
         except Exception as e:
-        self.logger.exception(f"Error calculating momentum strength: {e}")
-        return 0.0
+            self.logger.exception(f"Error calculating momentum strength: {e}")
+            return 0.0
 
     def _calculate_time_since_sr_touch(
-        self = market_data: pd.DataFrame, sr_context: dict, ) -> float:
+        self, market_data: pd.DataFrame, sr_context: dict
+    ) -> float:
         """Calculate time since last S/R level touch."""
         # Placeholder implementation
         return 0.5
 
     def _calculate_sr_touch_frequency(
-        self = market_data: pd.DataFrame, sr_context: dict, ) -> float:
+        self, market_data: pd.DataFrame, sr_context: dict
+    ) -> float:
         """Calculate S/R level touch frequency."""
         # Placeholder implementation
         return 0.5
@@ -1120,45 +1095,43 @@ class SROutcomeModelTrainer:
     def _classify_volatility_regime(self, market_data: pd.DataFrame) -> float:
         """Classify volatility regime."""
         try:
-        if len(market_data) < 20:
-        return 0.5
+            if len(market_data) < 20:
+                return 0.5
 
-        # Calculate ATR-based volatility
+            # Calculate ATR-based volatility
             high_low = market_data["high"] - market_data["low"]
             high_close = np.abs(market_data["high"] - market_data["close"].shift())
             low_close = np.abs(market_data["low"] - market_data["close"].shift())
 
-            true_range, np.maximum(high_low, np.maximum(high_close, low_close))
-            atr, true_range.rolling(14).mean().iloc[-1]
+            true_range = np.maximum(high_low, np.maximum(high_close, low_close))
+            atr = true_range.rolling(14).mean().iloc[-1]
 
-        # Normalize ATR by price
+            # Normalize ATR by price
             avg_price = market_data["close"].mean()
             normalized_atr = atr / avg_price if avg_price > 0 else 0
 
-        # Classify regime (0, low volatility, 1, high volatility)
-        return min(1.0, normalized_atr * 100)
-
+            # Classify regime (0, low volatility, 1, high volatility)
+            return float(min(1.0, normalized_atr * 100))
         except Exception as e:
-        self.logger.exception(f"Error classifying volatility regime: {e}")
-        return 0.5
+            self.logger.exception(f"Error classifying volatility regime: {e}")
+            return 0.5
 
     def _calculate_atr_ratio(self, market_data: pd.DataFrame) -> float:
         """Calculate ATR ratio for volatility analysis."""
         try:
-        if len(market_data) < 20:
-        return 1.0
+            if len(market_data) < 20:
+                return 1.0
 
-        # Calculate current ATR vs historical ATR
+            # Calculate current ATR vs historical ATR
             high_low = market_data["high"] - market_data["low"]
             high_close = np.abs(market_data["high"] - market_data["close"].shift())
             low_close = np.abs(market_data["low"] - market_data["close"].shift())
 
-            true_range, np.maximum(high_low, np.maximum(high_close, low_close))
-            current_atr, true_range.rolling(14).mean().iloc[-1]
-            historical_atr, true_range.rolling(50).mean().iloc[-1]
+            true_range = np.maximum(high_low, np.maximum(high_close, low_close))
+            current_atr = true_range.rolling(14).mean().iloc[-1]
+            historical_atr = true_range.rolling(50).mean().iloc[-1]
 
-        return current_atr / historical_atr if historical_atr > 0 else 1.0
-
+            return float(current_atr / historical_atr) if historical_atr > 0 else 1.0
         except Exception as e:
-        self.logger.exception(f"Error calculating ATR ratio: {e}")
-        return 1.0
+            self.logger.exception(f"Error calculating ATR ratio: {e}")
+            return 1.0

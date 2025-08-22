@@ -70,33 +70,35 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name, state=None, *args, **kwarg
     """Module-level normalized ctor to avoid creating a closure (picklable)."""
     global _NP_ORIGINAL_BITGEN_CTOR
     name_candidate = bit_generator_name
-    try: if hasattr(name_candidate = "__name__"):
+    try:
+        if hasattr(name_candidate, "__name__"):
             name_candidate = name_candidate.__name__
         elif isinstance(name_candidate, str) and name_candidate.startswith("<class "):
-            name_candidate, name_candidate.split(".")[-1].split("'>")[0]
+            name_candidate = name_candidate.split(".")[-1].split("'>")[0]
     except Exception:
         pass
 
-    effective_state, kwargs.get("state", state)
-    try: return _NP_ORIGINAL_BITGEN_CTOR(name_candidate = effective_state)  # type: ignore[misc]
+    effective_state = kwargs.get("state", state)
+    try:
+        return _NP_ORIGINAL_BITGEN_CTOR(name_candidate, effective_state)  # type: ignore[misc]
     except (TypeError, ValueError):
         try:
-        return _NP_ORIGINAL_BITGEN_CTOR(name_candidate)  # type: ignore[misc]
+            return _NP_ORIGINAL_BITGEN_CTOR(name_candidate)  # type: ignore[misc]
         except Exception:
-        try:
+            try:
                 import numpy as _np
 
-                bitgen_cls, getattr(_np.random, name_candidate, None)
-        if bitgen_cls is None and name_candidate == "MT19937":
-        try:
+                bitgen_cls = getattr(_np.random, name_candidate, None)
+                if bitgen_cls is None and name_candidate == "MT19937":
+                    try:
                         import numpy.random._mt19937 as _mt  # type: ignore[attr-defined]
 
-                        bitgen_cls, getattr(_mt, "MT19937", None)
-        except Exception:
+                        bitgen_cls = getattr(_mt, "MT19937", None)
+                    except Exception:
                         bitgen_cls = None
-        if bitgen_cls is not None:
-        return bitgen_cls()
-        except Exception:
+                if bitgen_cls is not None:
+                    return bitgen_cls()
+            except Exception:
                 pass
             raise
 
@@ -109,13 +111,13 @@ def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
     try:
         import numpy.random._pickle as np_random_pickle  # type: ignore[attr-defined]
 
-        original_ctor, getattr(np_random_pickle, "__bit_generator_ctor", None)
+        original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
         if original_ctor is None:
             _NUMPY_RNG_UNPICKLE_PATCHED = True
             return
 
         _NP_ORIGINAL_BITGEN_CTOR = original_ctor
-        np_random_pickle.__bit_generator_ctor, _normalized_numpy_bitgen_ctor  # type: ignore[attr-defined]
+        np_random_pickle.__bit_generator_ctor = _normalized_numpy_bitgen_ctor  # type: ignore[attr-defined]
         _NUMPY_RNG_UNPICKLE_PATCHED = True
         if logger is not None:
             logger.info("Applied NumPy RNG unpickle compatibility shim")
@@ -180,39 +182,40 @@ class AnalystEnhancementStep:
     def _safe_get_device(self) -> str:
         """Safely determine the best device to use with timeout protection."""
         try:
-        # Use threading with timeout to prevent hanging
+            # Use threading with timeout to prevent hanging
             import queue
             import threading
 
-            result_queue = queue.Queue()
+            result_queue: "queue.Queue[tuple[str, Exception | None]]" = queue.Queue()
 
             def check_mps() -> None:
-        try:
+                try:
                     is_available = torch.backends.mps.is_available()
                     result_queue.put(("mps" if is_available else "cpu", None))
-        except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     result_queue.put(("cpu", e))
 
-        # Start the check in a separate thread
-            thread, threading.Thread(target=check_mps)
-            thread.daemon, True
+            # Start the check in a separate thread
+            thread = threading.Thread(target=check_mps)
+            thread.daemon = True
             thread.start()
 
-        # Wait for result with timeout
-        try: device = error, result_queue.get(timeout=10)  # 10 second timeout
-        if error:
-        self.logger.error(failed("MPS check failed: {error}, using CPU"))
-        return "cpu"
-        return device
-        except queue.Empty:
-        self.logger.exception(
+            # Wait for result with timeout
+            try:
+                device, err = result_queue.get(timeout=10)  # 10 second timeout
+                if err:
+                    self.logger.error(failed(f"MPS check failed: {err}, using CPU"))
+                    return "cpu"
+                return device
+            except queue.Empty:
+                self.logger.exception(
                     timeout("MPS availability check timed out, using CPU"),
                 )
-        return "cpu"
+                return "cpu"
 
-        except Exception:
-        self.logger.exception(error("Error checking MPS availability: {e}, using CPU"))
-        return "cpu"
+        except Exception as e:  # noqa: BLE001
+            self.logger.exception(error(f"Error checking MPS availability: {e}, using CPU"))
+            return "cpu"
 
     @handle_errors(
         exceptions=(Exception,),

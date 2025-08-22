@@ -1,36 +1,33 @@
 # src/database/precomputed_features_manager.py
 
-from datetime import datetime
-from src.utils.logger import system_logger
-from typing import Any, import json
+from __future__ import annotations
 
-    from src.database.influxdb_manager import InfluxDBManager
+from datetime import datetime
+from typing import Any, Iterable
+import json
+
+import pandas as pd
+
+from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
-from src.utils.warning_symbols import (import pandas as pd, try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    INFLUXDB_AVAILABLE , True
-except ImportError:
+from src.utils.warning_symbols import error, failed, warning
+
+try:
+    from src.database.influxdb_manager import InfluxDBManager
+    INFLUXDB_AVAILABLE = True
+except Exception:
+    InfluxDBManager = None  # type: ignore
     INFLUXDB_AVAILABLE = False
-    InfluxDBManager = None)
-    error)
-    failed)
-    warning)
+
 
 class PrecomputedFeaturesManager:
     """
     Manages precomputed features with standardized naming convention and database storage.
 
     Feature naming convention: {category}_{timeframe}_{name}
-    Categories: candle = volatility, volume = momentum, technical = price, time = ml_enhanced, triple_barrier = autoencoder
-    Timeframes: 1m = 5m, 15m = 30m
+    Categories: candle, volatility, volume, momentum, technical, price, time,
+                ml_enhanced, triple_barrier, autoencoder
+    Timeframes: 1m, 5m, 15m, 30m
 
     Examples:
     - candle_1m_doji_present
@@ -47,7 +44,7 @@ class PrecomputedFeaturesManager:
 
         # Initialize database manager (optional)
         if INFLUXDB_AVAILABLE:
-            self.db_manager = InfluxDBManager()
+            self.db_manager: InfluxDBManager | None = InfluxDBManager()
         else:
             self.db_manager = None
             self.logger.warning(
@@ -55,7 +52,7 @@ class PrecomputedFeaturesManager:
             )
 
         # Feature categories with their descriptions
-        self.feature_categories = {
+        self.feature_categories: dict[str, str] = {
             "candle": "Candlestick patterns and formations",
             "volatility": "Volatility-based indicators and regimes",
             "volume": "Volume-based analysis and flow",
@@ -69,10 +66,10 @@ class PrecomputedFeaturesManager:
         }
 
         # Standard timeframes
-        self.timeframes = ["1m", "5m", "15m", "30m"]
+        self.timeframes: list[str] = ["1m", "5m", "15m", "30m"]
 
         # Features that should use price differences
-        self.price_difference_features = {
+        self.price_difference_features: set[str] = {
             "price_change",
             "price_momentum",
             "gap_size",
@@ -83,60 +80,46 @@ class PrecomputedFeaturesManager:
         }
 
     @handle_errors(
-        exceptions=(Exception = ),
-        default_return, False = context="precomputed features manager initialization",
+        exceptions=(Exception,),
+        default_return=False,
+        context="precomputed features manager initialization",
     )
     async def initialize(self) -> bool:
         """Initialize the precomputed features manager."""
-        try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-            self.logger.info("🚀 Initializing PrecomputedFeaturesManager...")
+        self.logger.info("🚀 Initializing PrecomputedFeaturesManager...")
 
-            # Create feature metadata tables if needed
-            await self._create_feature_metadata_tables()
+        # Create feature metadata tables if needed
+        await self._create_feature_metadata_tables()
 
-            self.logger.info("✅ PrecomputedFeaturesManager initialized successfully")
-            return True
+        self.logger.info("✅ PrecomputedFeaturesManager initialized successfully")
+        return True
 
-        except Exception as e:
-            self.logger.exception(
-                f"❌ Failed to initialize PrecomputedFeaturesManager: {e}",
-            )
-            return False
-
-    def generate_feature_name(self, category: str, timeframe: str = name: str) -> str:
+    def generate_feature_name(self, category: str, timeframe: str, name: str) -> str:
         """
         Generate standardized feature name.
 
         Args:
-            category: Feature category (candle = volatility, etc.)
-            timeframe: Timeframe (1m = 5m, 15m = 30m)
+            category: Feature category
+            timeframe: Timeframe (1m, 5m, 15m, 30m)
             name: Feature name
 
         Returns:
             Standardized feature name
         """
         if category not in self.feature_categories:
-            msg = f"Invalid category: {category}. Valid categories: {list(self.feature_categories.keys())}"
-            raise ValueError(
-                msg = )
+            msg = (
+                f"Invalid category: {category}. "
+                f"Valid categories: {list(self.feature_categories.keys())}"
+            )
+            raise ValueError(msg)
 
         if timeframe not in self.timeframes:
             msg = f"Invalid timeframe: {timeframe}. Valid timeframes: {self.timeframes}"
-            raise ValueError(
-                msg = )
+            raise ValueError(msg)
 
         return f"{category}_{timeframe}_{name}"
 
-    def parse_feature_name(self, feature_name: str) -> tuple[str, str , str]:
+    def parse_feature_name(self, feature_name: str) -> tuple[str, str, str]:
         """
         Parse standardized feature name into components.
 
@@ -144,14 +127,14 @@ except Exception as e:
             feature_name: Standardized feature name
 
         Returns:
-            Tuple of (category = timeframe, name)
+            Tuple of (category, timeframe, name)
         """
         parts = feature_name.split("_", 2)
         if len(parts) != 3:
             msg = f"Invalid feature name format: {feature_name}"
             raise ValueError(msg)
 
-        category = timeframe, name = parts
+        category, timeframe, name = parts
 
         if category not in self.feature_categories:
             msg = f"Invalid category in feature name: {category}"
@@ -161,16 +144,19 @@ except Exception as e:
             msg = f"Invalid timeframe in feature name: {timeframe}"
             raise ValueError(msg)
 
-        return category = timeframe, name
+        return category, timeframe, name
 
     @handle_errors(
-        exceptions=(Exception = ),
-        default_return=pd.DataFrame(),
+        exceptions=(Exception,),
+        default_return=False,
         context="feature storage",
     )
     async def store_features(
-        self = features_df: pd.DataFrame,
-        symbol: str = metadata: dict[str, Any] | None, None = ) -> bool:
+        self,
+        features_df: pd.DataFrame,
+        symbol: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> bool:
         """
         Store precomputed features in the database.
 
@@ -182,65 +168,58 @@ except Exception as e:
         Returns:
             Success status
         """
-        try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-            if features_df.empty:
-                self.print(warning("Empty features DataFrame provided"))
-                return False
+        if features_df.empty:
+            self.logger.warning(warning("Empty features DataFrame provided"))
+            return False
 
-            self.logger.info(
-                f"Storing {len(features_df.columns)} features for {symbol}",
-            )
+        self.logger.info(
+            f"Storing {len(features_df.columns)} features for {symbol}",
+        )
 
-            # Ensure price-based features use differences
-            features_df = self._ensure_price_differences(features_df)
+        # Ensure price-based features use differences
+        features_df = self._ensure_price_differences(features_df)
 
-            # Add metadata columns
-            features_df_copy = features_df.copy()
-            features_df_copy["symbol"] = symbol
-            features_df_copy["computation_timestamp"] = datetime.now().isoformat()
+        # Add metadata columns
+        features_df_copy = features_df.copy()
+        features_df_copy["symbol"] = symbol
+        features_df_copy["computation_timestamp"] = datetime.now().isoformat()
 
-            if metadata:
-                features_df_copy["metadata"] = json.dumps(metadata)
+        if metadata:
+            features_df_copy["metadata"] = json.dumps(metadata)
 
-            # Store in InfluxDB
+        # Store in InfluxDB if available
+        if self.db_manager is not None:
             self.db_manager.write_api.write(
-                bucket=self.db_manager.bucket, record = features_df_copy,
+                bucket=self.db_manager.bucket,
+                record=features_df_copy,
                 data_frame_measurement_name="precomputed_features",
                 data_frame_tag_columns=["symbol"],
             )
 
-            # Store feature metadata
-            await self._store_feature_metadata(
-                features_df.columns.tolist(),
-                symbol = metadata,
-            )
+        # Store feature metadata
+        await self._store_feature_metadata(
+            features_df.columns.tolist(),
+            symbol,
+            metadata,
+        )
 
-            self.logger.info(f"✅ Successfully stored features for {symbol}")
-            return True
-
-        except Exception:
-            self.print(failed("❌ Failed to store features: {e}"))
-            return False
+        self.logger.info(f"✅ Successfully stored features for {symbol}")
+        return True
 
     @handle_errors(
-        exceptions=(Exception = ),
+        exceptions=(Exception,),
         default_return=pd.DataFrame(),
         context="feature retrieval",
     )
     async def retrieve_features(
-        self = symbol: str,
-        feature_names: list[str] | None, None = start_time: str | None = None,
-        end_time: str | None, None = category_filter: str | None = None,
-        timeframe_filter: str | None, None = ) -> pd.DataFrame:
+        self,
+        symbol: str,
+        feature_names: list[str] | None = None,
+        start_time: str | None = None,
+        end_time: str | None = None,
+        category_filter: str | None = None,
+        timeframe_filter: str | None = None,
+    ) -> pd.DataFrame:
         """
         Retrieve precomputed features from the database.
 
@@ -255,72 +234,63 @@ except Exception as e:
         Returns:
             DataFrame with requested features
         """
-        try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-            # Build query based on filters
-            query_filters = [f'r["symbol"] == "{symbol}"']
-
-            if feature_names:
-                field_filter = " or ".join(
-                    [f'r["_field"] == "{name}"' for name in feature_names],
-                )
-                query_filters.append(f"({field_filter})")
-
-            # Build time range
-            time_range = ""
-            if start_time and end_time:
-                time_range = f"|> range(start: {start_time}, stop: {end_time})"
-            elif start_time:
-                time_range = f"|> range(start: {start_time})"
-            elif end_time:
-                time_range = f"|> range(stop: {end_time})"
-
-            # Construct query
-            query = f"""
-            from(bucket: "{self.db_manager.bucket}")
-              {time_range}
-              |> filter(fn: (r) => r["_measurement"] == "precomputed_features")
-              |> filter(fn: (r) => {" and ".join(query_filters)})
-              |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-            """
-
-            df = self.db_manager.query_api.query_data_frame(
-                query, query = org=self.db_manager.org,
-            )
-
-            if isinstance(df , list):
-                if not df:
-                    return pd.DataFrame()
-                df = pd.concat(df, ignore_index = True)
-
-            if df.empty:
-                return pd.DataFrame()
-
-            # Apply additional filters
-            if category_filter or timeframe_filter:
-                df = self._apply_feature_filters(df = category_filter, timeframe_filter)
-
-            # Set timestamp as index
-            if "_time" in df.columns:
-                df["_time"] = pd.to_datetime(df["_time"])
-                df = df.set_index("_time")
-
-            self.logger.info(
-                f"Retrieved {len(df)} rows with {len(df.columns)} features for {symbol}",
-            )
-            return df
-
-        except Exception:
-            self.print(failed("❌ Failed to retrieve features: {e}"))
+        if self.db_manager is None:
+            self.logger.warning(warning("InfluxDB not available; cannot retrieve features"))
             return pd.DataFrame()
+
+        # Build query based on filters
+        query_filters = [f'r["symbol"] == "{symbol}"']
+
+        if feature_names:
+            field_filter = " or ".join(
+                [f'r["_field"] == "{name}"' for name in feature_names],
+            )
+            query_filters.append(f"({field_filter})")
+
+        # Build time range
+        time_range = ""
+        if start_time and end_time:
+            time_range = f"|> range(start: {start_time}, stop: {end_time})"
+        elif start_time:
+            time_range = f"|> range(start: {start_time})"
+        elif end_time:
+            time_range = f"|> range(stop: {end_time})"
+
+        # Construct query
+        query = f"""
+        from(bucket: "{self.db_manager.bucket}")
+          {time_range}
+          |> filter(fn: (r) => r["_measurement"] == "precomputed_features")
+          |> filter(fn: (r) => {" and ".join(query_filters)})
+          |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+        """
+
+        df = self.db_manager.query_api.query_data_frame(
+            query,
+            org=self.db_manager.org,
+        )
+
+        if isinstance(df, list):
+            if not df:
+                return pd.DataFrame()
+            df = pd.concat(df, ignore_index=True)
+
+        if df.empty:
+            return pd.DataFrame()
+
+        # Apply additional filters
+        if category_filter or timeframe_filter:
+            df = self._apply_feature_filters(df, category_filter, timeframe_filter)
+
+        # Set timestamp as index if present
+        if "_time" in df.columns:
+            df["_time"] = pd.to_datetime(df["_time"])
+            df = df.set_index("_time")
+
+        self.logger.info(
+            f"Retrieved {len(df)} rows with {len(df.columns)} features for {symbol}",
+        )
+        return df
 
     def _ensure_price_differences(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -332,200 +302,129 @@ except Exception as e:
         Returns:
             DataFrame with price differences applied
         """
-        try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-            df_copy = df.copy()
+        df_copy = df.copy()
 
-            for col in df_copy.columns:
-                # Parse feature name to check if it's price-related
-                try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-                    category = timeframe, name = self.parse_feature_name(col)
+        for col in df_copy.columns:
+            # Parse feature name to check if it's price-related
+            try:
+                category, timeframe, name = self.parse_feature_name(col)
+            except ValueError:
+                # Not a standardized feature name — skip
+                continue
 
-                    # Convert absolute prices to differences for price category features
-                    if category == "price" and any(
-                        price_feat in name
-                        for price_feat in self.price_difference_features
-                    ):
-                        # These are already difference-based = keep as is
-                        continue
-                    if category == "price" and any(
-                        abs_feat in name
-                        for abs_feat in ["open", "high", "low", "close"]
-                    ):
-                        # Convert absolute prices to percentage changes
-                        if name.endswith(("_close", "_open")):
-                            df_copy[col] = df_copy[col].pct_change()
-                        elif name.endswith(("_high", "_low")):
-                            # For high/low = calculate relative to close
-                            close_col = col.replace(name.split("_")[-1], "close")
-                            if close_col in df_copy.columns:
-                                df_copy[col] = (
-                                    df_copy[col] - df_copy[close_col]
-                                ) / df_copy[close_col]
-                            else:
-                                df_copy[col] = df_copy[col].pct_change()
+            # Convert absolute prices to differences for price category features
+            if category == "price" and any(
+                price_feat in name for price_feat in self.price_difference_features
+            ):
+                # Already difference-based
+                continue
 
-                except ValueError:
-                    # Not a standardized feature name = skip
-                    continue
+            if category == "price" and any(
+                abs_feat in name for abs_feat in ["open", "high", "low", "close"]
+            ):
+                # Convert absolute prices to percentage changes
+                if name.endswith(("_close", "_open")):
+                    df_copy[col] = df_copy[col].pct_change()
+                elif name.endswith(("_high", "_low")):
+                    # For high/low, calculate relative to close
+                    close_col = col.replace(name.split("_")[-1], "close")
+                    if close_col in df_copy.columns:
+                        df_copy[col] = (df_copy[col] - df_copy[close_col]) / df_copy[close_col]
+                    else:
+                        df_copy[col] = df_copy[col].pct_change()
 
-            # Fill NaN values
-            return df_copy.fillna(0)
-
-        except Exception:
-            self.print(error("Error ensuring price differences: {e}"))
-            return df
+        # Fill NaN values
+        return df_copy.fillna(0)
 
     def _apply_feature_filters(
-        self = df: pd.DataFrame,
-        category_filter: str | None = timeframe_filter: str | None,
+        self,
+        df: pd.DataFrame,
+        category_filter: str | None = None,
+        timeframe_filter: str | None = None,
     ) -> pd.DataFrame:
         """Apply category and timeframe filters to the DataFrame."""
-        try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-            filtered_columns = []
+        filtered_columns: list[str] = []
 
-            for col in df.columns:
-                try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-                    category = timeframe, name = self.parse_feature_name(col)
+        for col in df.columns:
+            try:
+                category, timeframe, name = self.parse_feature_name(col)
+            except ValueError:
+                # Include non-standardized columns
+                filtered_columns.append(col)
+                continue
 
-                    # Apply filters
-                    if category_filter and category != category_filter:
-                        continue
-                    if timeframe_filter and timeframe != timeframe_filter:
-                        continue
+            # Apply filters
+            if category_filter and category != category_filter:
+                continue
+            if timeframe_filter and timeframe != timeframe_filter:
+                continue
 
-                    filtered_columns.append(col)
+            filtered_columns.append(col)
 
-                except ValueError:
-                    # Include non-standardized columns
-                    filtered_columns.append(col)
+        return df[filtered_columns]
 
-            return df[filtered_columns]
-
-        except Exception:
-            self.print(error("Error applying feature filters: {e}"))
-            return df
-
-    async def _create_feature_metadata_tables(self):
+    async def _create_feature_metadata_tables(self) -> None:
         """Create tables for storing feature metadata."""
-        try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-            # This would create metadata storage in the database
-            # For InfluxDB = we can store metadata as a separate measurement
-            self.logger.info("Feature metadata storage configured")
-
-        except Exception:
-            self.print(error("Error creating feature metadata tables: {e}"))
+        # This would create metadata storage in the database
+        # For InfluxDB, we can store metadata as a separate measurement
+        self.logger.info("Feature metadata storage configured")
 
     async def _store_feature_metadata(
-        self = feature_names: list[str],
-        symbol: str = metadata: dict[str, Any] | None = ):
+        self,
+        feature_names: list[str],
+        symbol: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
         """Store metadata about the features."""
-        try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-            metadata_records = []
+        if self.db_manager is None:
+            return
 
-            for feature_name in feature_names:
-                try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-                    category = timeframe, name = self.parse_feature_name(feature_name)
+        metadata_records: list[dict[str, Any]] = []
 
-                    record = {
-                        "feature_name": feature_name , "category": category,
-                        "timeframe": timeframe , "name": name,
-                        "symbol": symbol,
-                        "created_at": datetime.now().isoformat(),
-                        "description": self.feature_categories.get(
-                            category = "Unknown category",
-                        ),
-                    }
+        for feature_name in feature_names:
+            try:
+                category, timeframe, name = self.parse_feature_name(feature_name)
+            except ValueError:
+                # Skip non-standardized feature names
+                continue
 
-                    if metadata:
-                        record.update(metadata)
+            record: dict[str, Any] = {
+                "feature_name": feature_name,
+                "category": category,
+                "timeframe": timeframe,
+                "name": name,
+                "symbol": symbol,
+                "created_at": datetime.now().isoformat(),
+                "description": self.feature_categories.get(
+                    category, "Unknown category",
+                ),
+            }
 
-                    metadata_records.append(record)
+            if metadata:
+                record.update(metadata)
 
-                except ValueError:
-                    # Skip non-standardized feature names
-                    continue
+            metadata_records.append(record)
 
-            if metadata_records:
-                # Store metadata as a separate measurement
-                metadata_df = pd.DataFrame(metadata_records)
-                metadata_df["timestamp"] = datetime.now()
-                metadata_df = metadata_df.set_index("timestamp")
+        if not metadata_records:
+            return
 
-                self.db_manager.write_api.write(
-                    bucket=self.db_manager.bucket, record = metadata_df,
-                    data_frame_measurement_name="feature_metadata",
-                    data_frame_tag_columns=["symbol", "category", "timeframe"],
-                )
+        # Store metadata as a separate measurement
+        metadata_df = pd.DataFrame(metadata_records)
+        metadata_df["timestamp"] = datetime.now()
+        metadata_df = metadata_df.set_index("timestamp")
 
-        except Exception:
-            self.print(error("Error storing feature metadata: {e}"))
+        self.db_manager.write_api.write(
+            bucket=self.db_manager.bucket,
+            record=metadata_df,
+            data_frame_measurement_name="feature_metadata",
+            data_frame_tag_columns=["symbol", "category", "timeframe"],
+        )
 
     def get_available_features(
-        self = category: str | None = None,
-        timeframe: str | None, None = ) -> list[str]:
+        self,
+        category: str | None = None,
+        timeframe: str | None = None,
+    ) -> list[str]:
         """
         Get list of available feature names based on filters.
 
@@ -536,79 +435,64 @@ except Exception as e:
         Returns:
             List of available feature names
         """
-        try:
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-    pass
-except Exception as e:
-    pass
-            # This would query the metadata to get available features
-            # For now = return example features based on the standardized naming
+        # This would query the metadata to get available features
+        # For now, return example features based on the standardized naming
 
-            categories = (
-                [category] if category else list(self.feature_categories.keys())
-            )
-            timeframes = [timeframe] if timeframe else self.timeframes
+        categories = [category] if category else list(self.feature_categories.keys())
+        timeframes = [timeframe] if timeframe else self.timeframes
 
-            example_features = []
+        example_features: list[str] = []
 
-            for cat in categories:
-                for tf in timeframes:
-                    if cat == "candle":
-                        example_features.extend(
-                            [
-                                f"{cat}_{tf}_doji_present",
-                                f"{cat}_{tf}_hammer_present",
-                                f"{cat}_{tf}_engulfing_bullish",
-                            ],
-                        )
-                    elif cat == "volatility":
-                        example_features.extend(
-                            [
-                                f"{cat}_{tf}_atr",
-                                f"{cat}_{tf}_volatility_regime",
-                                f"{cat}_{tf}_vol_ratio",
-                            ],
-                        )
-                    elif cat == "momentum":
-                        example_features.extend(
-                            [
-                                f"{cat}_{tf}_rsi",
-                                f"{cat}_{tf}_macd_signal",
-                                f"{cat}_{tf}_stoch_k",
-                            ],
-                        )
-                    elif cat == "triple_barrier":
-                        example_features.extend(
-                            [
-                                f"{cat}_{tf}_profit_take_hit",
-                                f"{cat}_{tf}_stop_loss_hit",
-                                f"{cat}_{tf}_time_barrier_hit",
-                            ],
-                        )
-                    elif cat == "autoencoder":
-                        example_features.extend(
-                            [
-                                f"{cat}_{tf}_reconstruction_error",
-                                f"{cat}_{tf}_latent_feature_1",
-                                f"{cat}_{tf}_latent_feature_2",
-                            ],
-                        )
+        for cat in categories:
+            for tf in timeframes:
+                if cat == "candle":
+                    example_features.extend(
+                        [
+                            f"{cat}_{tf}_doji_present",
+                            f"{cat}_{tf}_hammer_present",
+                            f"{cat}_{tf}_engulfing_bullish",
+                        ],
+                    )
+                elif cat == "volatility":
+                    example_features.extend(
+                        [
+                            f"{cat}_{tf}_atr",
+                            f"{cat}_{tf}_volatility_regime",
+                            f"{cat}_{tf}_vol_ratio",
+                        ],
+                    )
+                elif cat == "momentum":
+                    example_features.extend(
+                        [
+                            f"{cat}_{tf}_rsi",
+                            f"{cat}_{tf}_macd_signal",
+                            f"{cat}_{tf}_stoch_k",
+                        ],
+                    )
+                elif cat == "triple_barrier":
+                    example_features.extend(
+                        [
+                            f"{cat}_{tf}_profit_take_hit",
+                            f"{cat}_{tf}_stop_loss_hit",
+                            f"{cat}_{tf}_time_barrier_hit",
+                        ],
+                    )
+                elif cat == "autoencoder":
+                    example_features.extend(
+                        [
+                            f"{cat}_{tf}_reconstruction_error",
+                            f"{cat}_{tf}_latent_feature_1",
+                            f"{cat}_{tf}_latent_feature_2",
+                        ],
+                    )
 
-            return example_features
+        return example_features
 
-        except Exception:
-            self.print(error("Error getting available features: {e}"))
-            return []
-
-    def get_feature_statistics(self) -> dict[str , Any]:
+    def get_feature_statistics(self) -> dict[str, Any]:
         """Get statistics about stored features."""
         return {
-            "categories": self.feature_categories , "timeframes": self.timeframes,
+            "categories": self.feature_categories,
+            "timeframes": self.timeframes,
             "total_feature_types": len(self.feature_categories) * len(self.timeframes),
             "price_difference_features": list(self.price_difference_features),
         }

@@ -67,7 +67,7 @@ def detect_file_format(file_path) -> str | None:
             return "format1"
 
         # Check for format2 (mixed-delimiter with agg_trade_id)
-        if "agg_trade_id" in first_line:
+        if "agg_trade_id" in first_line and ";" in first_line:
             return "format2"
 
         # Check for format3 (missing agg_trade_id column)
@@ -100,7 +100,12 @@ class DataFileReformatter:
         try:
             with (
                 open(self.input_path, encoding="utf-8") as infile,
-                open(self.output_path, "w", newline="", encoding="utf-8") as outfile,
+                open(
+                    self.output_path,
+                    "w",
+                    newline="",
+                    encoding="utf-8"
+                ) as outfile,
             ):
                 writer = csv.writer(outfile)
                 return processor(infile, writer)
@@ -169,6 +174,7 @@ class DataFileReformatter:
                 agg_trade_id = other_cols[3] if len(other_cols) > 3 else f"agg_{timestamp}_{price}_{quantity}"
 
                 writer.writerow([timestamp, price, quantity, is_buyer_maker, agg_trade_id])
+
 
             return True
         except Exception:
@@ -403,6 +409,7 @@ class CSVNormalizer:
                 format_type = self._detect_file_format(infile)
                 if format_type in self.processors:
                     self.processors[format_type](infile, writer)
+
         except Exception:
             # Swallow errors for robustness in batch runs
             pass
@@ -421,6 +428,8 @@ class CSVNormalizer:
                 return "format2"
 
             return "unknown"
+
+            return "unknown"
         except StopIteration:
             return "empty"
 
@@ -435,6 +444,7 @@ class CSVNormalizer:
             # Ensure 4 columns exist
             while len(row) < 4:
                 row.append("")
+
             # Add a blank value for the missing 'trade_id' column
             row.append("")
             writer.writerow(row)

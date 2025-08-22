@@ -53,14 +53,25 @@ The comprehensive file format validation has been successfully implemented for s
   - Detects null values in index
   - Reports duplicate indices and ordering issues
 
+### 7. File Path and Name ✅
+- **Implementation**: `_validate_file_path_and_name()` method
+- **Features**:
+  - Validates file path structure and existence
+  - Checks for invalid characters in paths
+  - Validates filename length and patterns
+  - Supports relative vs absolute path preferences
+  - Validates against expected filename patterns for each step
+
 ## 📁 Files Created/Modified
 
 ### New Files Created:
 1. **`src/utils/comprehensive_file_validation.py`** - Core validation module
-2. **`COMPREHENSIVE_VALIDATION_IMPLEMENTATION.md`** - Detailed documentation
-3. **`test_comprehensive_validation.py`** - Comprehensive test suite
-4. **`simple_validation_test.py`** - Structure validation test
-5. **`VALIDATION_IMPLEMENTATION_SUMMARY.md`** - This summary document
+2. **`src/utils/validation_decorators.py`** - Validation decorators for continuous validation
+3. **`COMPREHENSIVE_VALIDATION_IMPLEMENTATION.md`** - Detailed documentation
+4. **`test_comprehensive_validation.py`** - Comprehensive test suite
+5. **`simple_validation_test.py`** - Structure validation test
+6. **`validation_decorators_example.py`** - Example usage of validation decorators
+7. **`VALIDATION_IMPLEMENTATION_SUMMARY.md`** - This summary document
 
 ### Files Modified:
 1. **`src/training/steps/step1_data_collection.py`** - Added comprehensive validation
@@ -135,6 +146,23 @@ All validation tests passed successfully:
 
 ## 🚀 Usage
 
+### Continuous Validation with Decorators
+Validation runs at every operation using decorators:
+
+```python
+from src.utils.validation_decorators import validate_file_operation, validate_dataframe_operation
+
+@validate_file_operation("step1", expected_schema="klines", log_level="INFO")
+async def load_klines_data(file_path: str) -> str:
+    # Function automatically validates input and output files
+    return processed_file_path
+
+@validate_dataframe_operation("step2", validate_before=True, validate_after=True)
+def process_features(df, config):
+    # Function automatically validates DataFrames before and after processing
+    return processed_df
+```
+
 ### Automatic Validation
 Validation runs automatically after each step completion:
 
@@ -178,10 +206,13 @@ else:
 
 1. **Data Quality Assurance**: Ensures consistent data quality across all pipeline steps
 2. **Early Error Detection**: Catches issues before they propagate through the pipeline
-3. **Comprehensive Reporting**: Detailed validation reports with actionable information
-4. **Configurable**: Flexible configuration for different validation requirements
-5. **Non-blocking**: Validation issues are logged but don't necessarily stop pipeline execution
-6. **Step-specific**: Tailored validation for each pipeline step's requirements
+3. **Continuous Validation**: Validates at every operation, not just at step completion
+4. **File Path and Name Validation**: Ensures proper file structure and naming conventions
+5. **Comprehensive Reporting**: Detailed validation reports with actionable information
+6. **Configurable**: Flexible configuration for different validation requirements
+7. **Non-blocking**: Validation issues are logged but don't necessarily stop pipeline execution
+8. **Step-specific**: Tailored validation for each pipeline step's requirements
+9. **Decorator-based**: Easy to apply validation to any function with simple decorators
 
 ## 🔮 Future Enhancements
 

@@ -85,10 +85,18 @@ try:
         validate_step1_5_file,
         FileValidationResult
     )
+    from src.utils.validation_decorators import (
+        validate_file_operation,
+        validate_dataframe_operation,
+        validate_step1_5_operation
+    )
 except ImportError:
     ComprehensiveFileValidator = None
     validate_step1_5_file = None
     FileValidationResult = None
+    validate_file_operation = None
+    validate_dataframe_operation = None
+    validate_step1_5_operation = None
 
 # Handle imports with fallback
 CONFIG = None

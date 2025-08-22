@@ -106,7 +106,27 @@ class ComprehensiveFileValidator:
                 "check_data_types": True,
                 "check_index": True,
                 "check_column_names": True,
-                "check_completeness": True
+                "check_completeness": True,
+                "check_file_paths": True,
+                "max_filename_length": 255,
+                "prefer_relative_paths": True,
+                "validate_filename_patterns": True
+            },
+            "expected_filename_patterns": {
+                "step1": {
+                    "klines": r"klines_{exchange}_{symbol}_{timeframe}_consolidated\.parquet",
+                    "aggtrades": r"aggtrades_{exchange}_{symbol}_consolidated\.parquet"
+                },
+                "step1_5": {
+                    "unified_data": r"unified_{exchange}_{symbol}_{timeframe}\.parquet",
+                    "config": r"unified_{exchange}_{symbol}_{timeframe}_config\.json"
+                },
+                "step2": {
+                    "features": r"features_{exchange}_{symbol}_{split}\.parquet"
+                },
+                "step4": {
+                    "labeled": r"{exchange}_{symbol}_labeled_{split}\.parquet"
+                }
             },
             "expected_schemas": {
                 "klines": {
@@ -270,8 +290,8 @@ class ComprehensiveFileValidator:
             validation_timestamp=datetime.now()
         )
     
-    def _validate_file_type(self, file_path: str) -> Dict[str, Any]:
-        """Validate file type and existence."""
+    def _validate_file_path_and_name(self, file_path: str) -> Dict[str, Any]:
+        """Validate file path and name structure."""
         issues = []
         
         # Check if file exists
@@ -281,6 +301,96 @@ class ComprehensiveFileValidator:
                 severity=ValidationSeverity.CRITICAL,
                 description=f"File does not exist: {file_path}"
             ))
+            return {
+                "is_valid": False,
+                "issues": issues
+            }
+        
+        # Validate path structure
+        path_obj = Path(file_path)
+        
+        # Check for invalid characters in path
+        invalid_chars = ['<', '>', ':', '"', '|', '?', '*']
+        path_str = str(path_obj)
+        found_invalid_chars = [char for char in invalid_chars if char in path_str]
+        if found_invalid_chars:
+            issues.append(ValidationIssue(
+                issue_type="invalid_path_characters",
+                severity=ValidationSeverity.ERROR,
+                description=f"Path contains invalid characters: {found_invalid_chars}",
+                details={"invalid_chars": found_invalid_chars, "path": path_str}
+            ))
+        
+        # Check for absolute path (optional validation)
+        if self.config.get("data_quality", {}).get("prefer_relative_paths", False):
+            if path_obj.is_absolute():
+                issues.append(ValidationIssue(
+                    issue_type="absolute_path_detected",
+                    severity=ValidationSeverity.WARNING,
+                    description="File uses absolute path (relative paths preferred)",
+                    details={"path": path_str}
+                ))
+        
+        # Validate filename structure
+        filename = path_obj.name
+        
+        # Check filename length
+        max_filename_length = self.config.get("data_quality", {}).get("max_filename_length", 255)
+        if len(filename) > max_filename_length:
+            issues.append(ValidationIssue(
+                issue_type="filename_too_long",
+                severity=ValidationSeverity.WARNING,
+                description=f"Filename too long ({len(filename)} chars, max: {max_filename_length})",
+                details={"filename": filename, "length": len(filename)}
+            ))
+        
+        # Check for expected filename patterns based on step
+        expected_patterns = self.config.get("expected_filename_patterns", {})
+        if expected_patterns and self.config.get("data_quality", {}).get("validate_filename_patterns", True):
+            # Validate filename against expected patterns
+            import re
+            pattern_matched = False
+            
+            for step_patterns in expected_patterns.values():
+                for pattern_name, pattern in step_patterns.items():
+                    try:
+                        if re.match(pattern, filename):
+                            pattern_matched = True
+                            break
+                    except re.error:
+                        # Invalid regex pattern, skip
+                        continue
+                if pattern_matched:
+                    break
+            
+            if not pattern_matched:
+                issues.append(ValidationIssue(
+                    issue_type="filename_pattern_mismatch",
+                    severity=ValidationSeverity.WARNING,
+                    description=f"Filename '{filename}' doesn't match expected patterns",
+                    details={"filename": filename, "expected_patterns": list(expected_patterns.keys())}
+                ))
+        
+        return {
+            "is_valid": len([i for i in issues if i.severity == ValidationSeverity.CRITICAL]) == 0,
+            "issues": issues,
+            "path_info": {
+                "filename": filename,
+                "directory": str(path_obj.parent),
+                "is_absolute": path_obj.is_absolute(),
+                "path_length": len(path_str)
+            }
+        }
+    
+    def _validate_file_type(self, file_path: str) -> Dict[str, Any]:
+        """Validate file type and existence."""
+        issues = []
+        
+        # First validate path and name
+        path_validation = self._validate_file_path_and_name(file_path)
+        issues.extend(path_validation["issues"])
+        
+        if not path_validation["is_valid"]:
             return {
                 "is_valid": False,
                 "file_type": "unknown",
@@ -326,7 +436,8 @@ class ComprehensiveFileValidator:
             "is_valid": len([i for i in issues if i.severity in [ValidationSeverity.CRITICAL, ValidationSeverity.ERROR]]) == 0,
             "file_type": file_type,
             "issues": issues,
-            "file_size": file_size
+            "file_size": file_size,
+            "path_info": path_validation.get("path_info", {})
         }
     
     def _load_file(self, file_path: str, file_type: str) -> pd.DataFrame:

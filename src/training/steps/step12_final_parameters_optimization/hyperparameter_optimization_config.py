@@ -1,10 +1,13 @@
-# src/training/steps/step12_final_parameters_optimization/hyperparameter_optimization_config.py
+# src/training/steps/step12_final_parameters_optimization/
+# hyperparameter_optimization_config.py
 
 """Hyperparameter Optimization Configuration.
 
 This module defines comprehensive search spaces, optimization strategies, and evaluation
 metrics for Step 12: Final Parameters Optimization.
 """
+
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
@@ -59,7 +62,7 @@ class SearchSpace:
 class ConfidenceThresholdsSearchSpace(SearchSpace):
     """Search space for confidence thresholds optimization."""
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.name = "confidence_thresholds"
         self.optimization_strategy = OptimizationStrategy.MULTI_OBJECTIVE
         self.n_trials = 100
@@ -143,7 +146,7 @@ class ConfidenceThresholdsSearchSpace(SearchSpace):
 class VolatilityParametersSearchSpace(SearchSpace):
     """Search space for volatility parameters optimization."""
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.name = "volatility_parameters"
         self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
         self.n_trials = 50
@@ -212,7 +215,7 @@ class VolatilityParametersSearchSpace(SearchSpace):
 class PositionSizingSearchSpace(SearchSpace):
     """Search space for position sizing parameters optimization."""
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.name = "position_sizing_parameters"
         self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
         self.n_trials = 60
@@ -296,7 +299,7 @@ class PositionSizingSearchSpace(SearchSpace):
 class RiskManagementSearchSpace(SearchSpace):
     """Search space for risk management parameters optimization."""
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.name = "risk_management_parameters"
         self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
         self.n_trials = 50
@@ -368,7 +371,7 @@ class RiskManagementSearchSpace(SearchSpace):
 class EnsembleParametersSearchSpace(SearchSpace):
     """Search space for ensemble parameters optimization."""
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.name = "ensemble_parameters"
         self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
         self.n_trials = 40
@@ -430,7 +433,7 @@ class EnsembleParametersSearchSpace(SearchSpace):
 class RegimeSpecificSearchSpace(SearchSpace):
     """Search space for regime-specific parameters optimization."""
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.name = "regime_specific_parameters"
         self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
         self.n_trials = 30
@@ -438,7 +441,8 @@ class RegimeSpecificSearchSpace(SearchSpace):
             EvaluationMetric.SHARPE_RATIO,
             EvaluationMetric.TOTAL_RETURN,
         ]
-        # Meta-label mixture defaults for downstream use (can be tuned via study-specific configs)
+        # Meta-label mixture defaults for downstream use
+        # (can be tuned via study-specific configs)
         self.meta_label_mixture_defaults = {
             "alpha": 1.0,
             "beta": 1.0,
@@ -505,7 +509,7 @@ class RegimeSpecificSearchSpace(SearchSpace):
 class TimingParametersSearchSpace(SearchSpace):
     """Search space for timing parameters optimization."""
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.name = "timing_parameters"
         self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
         self.n_trials = 30
@@ -534,7 +538,7 @@ class HyperparameterOptimizationConfig:
     """Main configuration class for hyperparameter optimization."""
 
     def __init__(self) -> None:
-        self.search_spaces = {
+        self.search_spaces: dict[str, SearchSpace] = {
             "confidence_thresholds": ConfidenceThresholdsSearchSpace(),
             "volatility_parameters": VolatilityParametersSearchSpace(),
             "position_sizing_parameters": PositionSizingSearchSpace(),
@@ -544,7 +548,7 @@ class HyperparameterOptimizationConfig:
             "timing_parameters": TimingParametersSearchSpace(),
         }
 
-        self.global_config = {
+        self.global_config: dict[str, Any] = {
             "storage_url": "sqlite:///data/optimization_storage/optuna_studies.db",
             "study_name_prefix": "hyperparameter_optimization",
             "sampler": "tpe",  # "tpe", "random", "cmaes", "nsgaii"
@@ -555,7 +559,7 @@ class HyperparameterOptimizationConfig:
             "log_level": "INFO",
         }
 
-        self.evaluation_config = {
+        self.evaluation_config: dict[str, Any] = {
             "backtest_window_days": 30,
             "validation_window_days": 7,
             "min_trades_for_evaluation": 10,
@@ -584,7 +588,7 @@ class HyperparameterOptimizationConfig:
 
     def validate_search_space(self, search_space: SearchSpace) -> list[str]:
         """Validate a search space configuration."""
-        errors = []
+        errors: list[str] = []
 
         # Check required fields
         if not search_space.name:
@@ -653,13 +657,13 @@ def get_hyperparameter_config() -> HyperparameterOptimizationConfig:
 def validate_hyperparameter_config() -> list[str]:
     """Validate the entire hyperparameter optimization configuration."""
     config = get_hyperparameter_config()
-    errors = []
+    errors: list[str] = []
 
     # Validate each search space
     for name, search_space in config.search_spaces.items():
         space_errors = config.validate_search_space(search_space)
-        for error in space_errors:
-            errors.append(f"{name}: {error}")
+        for err in space_errors:
+            errors.append(f"{name}: {err}")
 
     # Validate global config
     if not config.global_config.get("storage_url"):
@@ -704,14 +708,27 @@ if __name__ == "__main__":
     # Validate configuration
     errors = validate_hyperparameter_config()
     if errors:
+        print("❌ Configuration validation errors:")
         for _error in errors:
-    pass  # TODO: Add proper implementation
+            print(f" - {_error}")
     else:
-        pass
+        print("✅ Configuration validated successfully")
 
     # Print optimization plan
     plan = get_optimization_plan()
+    print("\nOptimization plan summary:")
+    print(
+        f" - Total trials: {plan['summary']['total_trials']} | "
+        f"Estimated time (hrs): "
+        f"{plan['optimization_plan']['total_estimated_time_hours']:.1f} | "
+        f"Parallel: {plan['optimization_plan']['parallel_execution']}"
+    )
 
     # Print search spaces
+    print("\nSearch spaces:")
     for _name, _space in config.search_spaces.items():
-    pass  # TODO: Add proper implementation
+        print(
+            f" - {_name}: parameters={len(_space.parameters)} | "
+            f"trials={_space.n_trials} | "
+            f"strategy={_space.optimization_strategy.value}"
+        )

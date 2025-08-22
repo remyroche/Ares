@@ -76,49 +76,50 @@ class OptimizedResampler:
     """Optimized resampling with caching for improved performance."""
 
     def __init__(self) -> None:
-        self.resampling_cache = {}
-        self.cache_hits = 0
-        self.cache_misses = 0
+        self.resampling_cache: dict[str, pd.DataFrame] = {}
+        self.cache_hits: int = 0
+        self.cache_misses: int = 0
         self.logger = system_logger.getChild("OptimizedResampler")
 
     def _get_cache_key(self, data: pd.DataFrame, timeframe: str) -> str:
         """Generate cache key for resampled data."""
         try:
-        # Create a hashable representation of the data
-            data_hash, hashlib.md5(
+            # Create a hashable representation of the data
+            data_hash = hashlib.md5(
                 pd.util.hash_pandas_object(data, index=True).values
             ).hexdigest()
-        return f"{data_hash}_{timeframe}"
+            return f"{data_hash}_{timeframe}"
         except Exception:
-        # Fallback to simple hash
-        return f"{hash(str(data.shape))}_{timeframe}"
+            # Fallback to simple hash
+            return f"{hash(str(data.shape))}_{timeframe}"
 
     def resample_optimized(self, data: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         """Optimized resampling with caching."""
         if not FEATURE_OPTIMIZATION_CONFIG["enable_resampling_cache"]:
-        return self._resample_data_vectorized_fallback(data, timeframe)
+            return self._resample_data_vectorized_fallback(data, timeframe)
 
-        cache_key, self._get_cache_key(data, timeframe)
+        cache_key = self._get_cache_key(data, timeframe)
 
         if cache_key in self.resampling_cache:
-        self.cache_hits += 1
-        return self.resampling_cache[cache_key]
+            self.cache_hits += 1
+            return self.resampling_cache[cache_key]
 
         self.cache_misses += 1
-        resampled, self._resample_data_vectorized_fallback(data, timeframe)
+        resampled = self._resample_data_vectorized_fallback(data, timeframe)
         self.resampling_cache[cache_key] = resampled
 
         # Limit cache size
         cache_limit = FEATURE_OPTIMIZATION_CONFIG["cache_size_limit"]
         if len(self.resampling_cache) > cache_limit:
-        # Remove oldest entries
+            # Remove oldest entries
             oldest_key = next(iter(self.resampling_cache))
             del self.resampling_cache[oldest_key]
 
         return resampled
 
     def _resample_data_vectorized_fallback(
-        self = data: pd.DataFrame, timeframe: str, ) -> pd.DataFrame:
+        self, data: pd.DataFrame, timeframe: str,
+    ) -> pd.DataFrame:
         """Fallback resampling method."""
         # Convert timeframe string to pandas offset
         timeframe_map = {
@@ -128,19 +129,21 @@ class OptimizedResampler:
             "30m": "30min",
         }
 
-        offset, timeframe_map.get(timeframe, "1T")
+        offset = timeframe_map.get(timeframe, "1T")
 
         # Ensure we have a DatetimeIndex
         if not isinstance(data.index, pd.DatetimeIndex):
             data = data.copy()
-        if "timestamp" in data.columns:
-        try: data.index = pd.to_datetime(data["timestamp"], errors="coerce")
+            if "timestamp" in data.columns:
+                try:
+                    data.index = pd.to_datetime(data["timestamp"], errors="coerce")
                     data = data.sort_index()
-        except Exception:
-                    data.index, pd.date_range(
+                except Exception:
+                    data.index = pd.date_range(
                         start="1970-01-01", periods=len(data), freq="1min"
                     )
-            else: data.index = pd.date_range(
+            else:
+                data.index = pd.date_range(
                     start="1970-01-01", periods=len(data), freq="1min"
                 )
 
@@ -162,7 +165,7 @@ class OptimizedResampler:
                 .dropna()
             )
         else:
-        # Fallback for other data types
+            # Fallback for other data types
             resampled = data.resample(offset).last().dropna()
 
         return resampled
@@ -220,18 +223,19 @@ class WaveletFeatureCache:
             cache_path = Path(self.cache_dir)
             cache_path.mkdir(parents=True, exist_ok=True)
 
-        # Create subdirectories
+            # Create subdirectories
             (cache_path / "features").mkdir(exist_ok=True)
             (cache_path / "metadata").mkdir(exist_ok=True)
             (cache_path / "temp").mkdir(exist_ok=True)
 
-        self.logger.info(f"✅ Cache directory initialized: {cache_path}")
+            self.logger.info(f"✅ Cache directory initialized: {cache_path}")
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error initializing cache directory: {e}")
+            self.logger.exception(f"🚨 Error initializing cache directory: {e}")
 
     def generate_cache_key(
-        self, price_data: pd.DataFrame, wavelet_config: dict[str, Any], additional_params: dict[str, Any] | None, None, ) -> str:
+        self, price_data: pd.DataFrame, wavelet_config: dict[str, Any], additional_params: dict[str, Any] | None,
+    ) -> str:
         """Generate a unique cache key based on data and configuration.
 
         Args:
@@ -244,40 +248,39 @@ class WaveletFeatureCache:
 
         """
         try:
-        # Create a hashable representation of the data
+            # Create a hashable representation of the data
             data_hash = self._hash_dataframe(price_data)
 
-        # Create configuration hash
-            config_str, json.dumps(wavelet_config, sort_keys=True)
+            # Create configuration hash
+            config_str = json.dumps(wavelet_config, sort_keys=True)
             config_hash = hashlib.md5(config_str.encode()).hexdigest()
 
-        # Create additional parameters hash
+            # Create additional parameters hash
             params_hash = ""
-        if additional_params:
-                params_str, json.dumps(additional_params, sort_keys=True)
+            if additional_params:
+                params_str = json.dumps(additional_params, sort_keys=True)
                 params_hash = hashlib.md5(params_str.encode()).hexdigest()
 
-        # Combine hashes
+            # Combine hashes
             combined_hash = f"{data_hash}_{config_hash}_{params_hash}"
 
-        # Create final cache key
-        return hashlib.sha256(combined_hash.encode()).hexdigest()[:16]
-
+            # Create final cache key
+            return hashlib.sha256(combined_hash.encode()).hexdigest()[:16]
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error generating cache key: {e}")
-        return "default_cache_key"
+            self.logger.exception(f"🚨 Error generating cache key: {e}")
+            return "default_cache_key"
 
     def _hash_dataframe(self, df: pd.DataFrame) -> str:
         """Generate hash for DataFrame content."""
         try:
-        # Convert DataFrame to bytes for hashing
+            # Convert DataFrame to bytes for hashing
             df_bytes = df.to_string().encode()
-        return hashlib.md5(df_bytes).hexdigest()
+            return hashlib.md5(df_bytes).hexdigest()
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error hashing DataFrame: {e}")
-        return "default_hash"
+            self.logger.exception(f"🚨 Error hashing DataFrame: {e}")
+            return "default_hash"
 
     def get_cache_filepath(self, cache_key: str) -> tuple[Path, Path]:
         """Get file paths for cache files.
@@ -290,8 +293,8 @@ class WaveletFeatureCache:
         """
         try:
             cache_path = Path(self.cache_dir)
-
-        if self.cache_format == "parquet":
+            
+            if self.cache_format == "parquet":
                 features_file = (
                     cache_path / "features" / f"{cache_key}_features.parquet"
                 )
@@ -310,11 +313,11 @@ class WaveletFeatureCache:
                 )
                 metadata_file = cache_path / "metadata" / f"{cache_key}_metadata.json"
 
-        return features_file, metadata_file
+            return features_file, metadata_file
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error getting cache filepath: {e}")
-        return Path(), Path()
+            self.logger.exception(f"🚨 Error getting cache filepath: {e}")
+            return Path(), Path()
 
     def cache_exists(self, cache_key: str) -> bool:
         """Check if cache exists and is valid.
@@ -325,73 +328,76 @@ class WaveletFeatureCache:
         Returns: True if valid cache exists = False otherwise
 
         """
-        try: features_file = metadata_file = self.get_cache_filepath(cache_key)
+        try:
+            features_file, metadata_file = self.get_cache_filepath(cache_key)
 
-        # Check if files exist
-        if not features_file.exists() or not metadata_file.exists():
-        return False
+            # Check if files exist
+            if not features_file.exists() or not metadata_file.exists():
+                return False
 
-        # Check cache expiry
-        if self.cache_expiry_days > 0:
-                file_age, time.time() - features_file.stat().st_mtime
-        if file_age > (self.cache_expiry_days * 24 * 3600):
-        self.logger.info(f"⏰ Cache expired for key: {cache_key}")
-        return False
+            # Check cache expiry
+            if self.cache_expiry_days > 0:
+                file_age = time.time() - features_file.stat().st_mtime
+                if file_age > (self.cache_expiry_days * 24 * 3600):
+                    self.logger.info(f"⏰ Cache expired for key: {cache_key}")
+                    return False
 
-        # Validate cache integrity if enabled
-        if self.validate_cache_integrity:
-        return self._validate_cache_integrity(cache_key)
+            # Validate cache integrity if enabled
+            if self.validate_cache_integrity:
+                return self._validate_cache_integrity(cache_key)
 
-        return True
+            return True
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error checking cache existence: {e}")
-        return False
+            self.logger.exception(f"🚨 Error checking cache existence: {e}")
+            return False
 
     def _validate_cache_integrity(self, cache_key: str) -> bool:
         """Validate cache file integrity."""
-        try: features_file = metadata_file = self.get_cache_filepath(cache_key)
-
-        # Check file sizes
-        if features_file.stat().st_size == 0:
-        self.logger.warning(f"⚠️ Cache file is empty: {features_file}")
-        return False
-
-        # Try to read metadata
         try:
-        with open(metadata_file) as f:
+            features_file, metadata_file = self.get_cache_filepath(cache_key)
+
+            # Check file sizes
+            if features_file.stat().st_size == 0:
+                self.logger.warning(f"⚠️ Cache file is empty: {features_file}")
+                return False
+
+            # Try to read metadata
+            try:
+                with open(metadata_file) as f:
                     metadata = json.load(f)
 
-        # Validate metadata structure
+                # Validate metadata structure
                 required_keys = [
                     "cache_key",
                     "timestamp",
                     "data_shape",
                     "feature_count",
                 ]
-        if not all(key in metadata for key in required_keys):
-        self.logger.warning(
+                if not all(key in metadata for key in required_keys):
+                    self.logger.warning(
                         f"⚠️ Invalid metadata structure for key: {cache_key}",
                     )
-        return False
+                    return False
 
-        # Validate cache key match
-        if metadata.get("cache_key") != cache_key:
-        self.logger.warning(f"⚠️ Cache key mismatch for key: {cache_key}")
-        return False
+                # Validate cache key match
+                if metadata.get("cache_key") != cache_key:
+                    self.logger.warning(f"⚠️ Cache key mismatch for key: {cache_key}")
+                    return False
 
-        return True
+                return True
+
+            except Exception as e:
+                self.logger.warning(f"⚠️ Error reading cache metadata: {e}")
+                return False
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Error reading cache metadata: {e}")
-        return False
-
-        except Exception as e:
-        self.logger.exception(f"🚨 Error validating cache integrity: {e}")
-        return False
+            self.logger.exception(f"🚨 Error validating cache integrity: {e}")
+            return False
 
     def save_to_cache(
-        self, cache_key: str, features: dict[str, Any], metadata: dict[str, Any] | None, None, ) -> bool:
+        self, cache_key: str, features: dict[str, Any], metadata: dict[str, Any] | None,
+    ) -> bool:
         """Save wavelet features to cache.
 
         Args:
@@ -403,19 +409,19 @@ class WaveletFeatureCache:
 
         """
         try:
-        if not self.cache_enabled:
-        return False
+            if not self.cache_enabled:
+                return False
 
-        # Do not cache empty feature sets
-        if not features:
-        self.logger.warning(
+            # Do not cache empty feature sets
+            if not features:
+                self.logger.warning(
                     "⚠️ Skipping cache save for empty wavelet features",
                 )
-        return False
+                return False
 
             features_file, metadata_file = self.get_cache_filepath(cache_key)
 
-        # Prepare metadata
+            # Prepare metadata
             cache_metadata = {
                 "cache_key": cache_key,
                 "timestamp": time.time(),
@@ -425,14 +431,14 @@ class WaveletFeatureCache:
                 "data_shape": list(features.keys()) if features else [],
             }
 
-        if metadata:
+            if metadata:
                 cache_metadata.update(metadata)
 
-        # Convert features to DataFrame for caching
+            # Convert features to DataFrame for caching
             features_df = self._features_to_dataframe(features)
 
-        # Save features based on format
-        if self.cache_format == "parquet":
+            # Save features based on format
+            if self.cache_format == "parquet":
                 features_df.to_parquet(
                     features_file, compression=self.compression, index=True
                 )
@@ -441,21 +447,22 @@ class WaveletFeatureCache:
             elif self.cache_format == "h5":
                 features_df.to_hdf(features_file, key="wavelet_features", mode="w")
 
-        # Save metadata
-        with open(metadata_file, "w") as f:
+            # Save metadata
+            with open(metadata_file, "w") as f:
                 json.dump(cache_metadata, f, indent=2)
 
-        self.logger.info(
+            self.logger.info(
                 f"💾 Cached {len(features)} wavelet features to {features_file}",
             )
-        return True
+            return True
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error saving to cache: {e}")
+            self.logger.exception(f"🚨 Error saving to cache: {e}")
         return False
 
     def load_from_cache(
-        self = cache_key: str, ) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        self, cache_key: str,
+    ) -> tuple[dict[str, Any], dict[str, Any] | None]:
         """Load wavelet features from cache.
 
         Args:
@@ -464,119 +471,121 @@ class WaveletFeatureCache:
         Returns: Tuple of (features = metadata)
 
         """
-        try: features_file = metadata_file = self.get_cache_filepath(cache_key)
+        try:
+            features_file, metadata_file = self.get_cache_filepath(cache_key)
 
-        # Load features based on format
-        if self.cache_format == "parquet":
+            # Load features based on format
+            if self.cache_format == "parquet":
                 features_df = pd.read_parquet(features_file)
             elif self.cache_format == "feather":
                 features_df = pd.read_feather(features_file)
             elif self.cache_format == "h5":
-                features_df, pd.read_hdf(features_file, key="wavelet_features")
+                features_df = pd.read_hdf(features_file, key="wavelet_features")
             else:
                 features_df = pd.read_parquet(features_file)
 
-        # Convert DataFrame back to features dictionary
+            # Convert DataFrame back to features dictionary
             features = self._dataframe_to_features(features_df)
 
-        # If cache content is empty, signal caller to recompute
-        if not features:
-        self.logger.warning(
+            # If cache content is empty, signal caller to recompute
+            if not features:
+                self.logger.warning(
                     f"⚠️ Empty wavelet features found in cache for key {cache_key}; triggering recompute",
                 )
-        return {}, None
+                return {}, None
 
-        # Load metadata
+            # Load metadata
             metadata = None
-        if metadata_file.exists():
-        with open(metadata_file) as f:
+            if metadata_file.exists():
+                with open(metadata_file) as f:
                     metadata = json.load(f)
 
-        self.logger.info(
+            self.logger.info(
                 f"📦 Loaded {len(features)} wavelet features from cache: {cache_key}",
             )
-        return features, metadata
+            return features, metadata
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error loading from cache: {e}")
-        return {}, None
+            self.logger.exception(f"🚨 Error loading from cache: {e}")
+            return {}, None
 
     def _features_to_dataframe(self, features: dict[str, Any]) -> pd.DataFrame:
         """Convert features dictionary to DataFrame for caching."""
         try:
-        # Convert features to DataFrame format with aligned lengths
-        if not features:
-        return pd.DataFrame()
+            # Convert features to DataFrame format with aligned lengths
+            if not features:
+                return pd.DataFrame()
 
-        # Determine candidate array lengths for vector features
+            # Determine candidate array lengths for vector features
             lengths: list[int] = []
-        for key, value in features.items():
-        if isinstance(value, list | np.ndarray):
-        try:
+            for key, value in features.items():
+                if isinstance(value, (list, np.ndarray)):
+                    try:
                         arr = np.asarray(value)
-        if arr.ndim >= 1:
+                        if arr.ndim >= 1:
                             lengths.append(arr.shape[0])
-        except Exception as e:
-        self.logger.warning(
+                    except Exception as e:
+                        self.logger.warning(
                             f"⚠️ Could not determine length for feature '{key}': {e}",
                         )
                         continue
                 elif isinstance(value, pd.Series):
                     lengths.append(len(value))
-            target_len, min(lengths) if lengths else 0
+            target_len = min(lengths) if lengths else 0
 
-            feature_data: dict[str = Any] = {}
-        for key, value in features.items():
-        # Skip non-informative scalars to avoid constant columns in cache
-        if isinstance(value, int | float | np.number):
-        # Only include simple scalars in metadata, not in the features frame
+            feature_data: dict[str, Any] = {}
+            for key, value in features.items():
+                # Skip non-informative scalars to avoid constant columns in cache
+                if isinstance(value, (int, float, np.number)):
+                    # Only include simple scalars in metadata, not in the features frame
                     continue
-        if isinstance(value, pd.Series):
+                if isinstance(value, pd.Series):
                     series_vals = value.values
-        if target_len and series_vals.shape[0] > target_len:
+                    if target_len and series_vals.shape[0] > target_len:
                         series_vals = series_vals[-target_len:]
                     feature_data[key] = series_vals
-                elif isinstance(value, list | np.ndarray):
+                elif isinstance(value, (list, np.ndarray)):
                     arr = np.asarray(value)
-        if arr.ndim == 1:
+                    if arr.ndim == 1:
                         vals = arr
                     elif arr.ndim == 2:
                         vals = arr[:, 0]
-                    else: vals = arr.reshape(arr.shape[0], -1)[:, 0]
-        if target_len and vals.shape[0] > target_len:
+                    else:
+                        vals = arr.reshape(arr.shape[0], -1)[:, 0]
+                    if target_len and vals.shape[0] > target_len:
                         vals = vals[-target_len:]
                     feature_data[key] = vals
-        # Fallback: store as string (single-row) only if no target_len is defined
+                # Fallback: store as string (single-row) only if no target_len is defined
                 elif target_len == 0:
                     feature_data[key] = [str(value)]
-        # else skip
-        # Build DataFrame
-        return pd.DataFrame(feature_data)
+            # else skip
+            # Build DataFrame
+            return pd.DataFrame(feature_data)
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error converting features to DataFrame: {e}")
-        return pd.DataFrame()
+            self.logger.exception(f"🚨 Error converting features to DataFrame: {e}")
+            return pd.DataFrame()
 
     def _dataframe_to_features(self, df: pd.DataFrame) -> dict[str, Any]:
         """Convert DataFrame back to features dictionary."""
         try:
-            features = {}
+            features: dict[str, Any] = {}
 
-        if not df.empty:
-        # Convert DataFrame back to features
-        for column in df.columns:
-        if len(df[column]) == 1:
-        # Single value feature
+            if not df.empty:
+                # Convert DataFrame back to features
+                for column in df.columns:
+                    if len(df[column]) == 1:
+                        # Single value feature
                         features[column] = df[column].iloc[0]
                     else:
-        # Array feature
+                        # Array feature
                         features[column] = df[column].values
 
-        return features
+            return features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error converting DataFrame to features: {e}")
-        return {}
+            self.logger.exception(f"🚨 Error converting DataFrame to features: {e}")
+            return {}
 
     def clear_cache(self, cache_key: str | None = None) -> bool:
         """Clear cache files.
@@ -590,26 +599,26 @@ class WaveletFeatureCache:
         try:
             cache_path = Path(self.cache_dir)
 
-        if cache_key:
-        # Clear specific cache
+            if cache_key:
+                # Clear specific cache
                 features_file, metadata_file = self.get_cache_filepath(cache_key)
-        if features_file.exists():
+                if features_file.exists():
                     features_file.unlink()
-        if metadata_file.exists():
+                if metadata_file.exists():
                     metadata_file.unlink()
-        self.logger.info(f"🗑️ Cleared cache for key: {cache_key}")
+                self.logger.info(f"🗑️ Cleared cache for key: {cache_key}")
             else:
-        # Clear all cache
-        for file_path in cache_path.rglob("*"):
-        if file_path.is_file():
+                # Clear all cache
+                for file_path in cache_path.rglob("*"):
+                    if file_path.is_file():
                         file_path.unlink()
-        self.logger.info("🗑️ Cleared all cache files")
+                self.logger.info("🗑️ Cleared all cache files")
 
-        return True
+            return True
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error clearing cache: {e}")
-        return False
+            self.logger.exception(f"🚨 Error clearing cache: {e}")
+            return False
 
     def get_cache_stats(self) -> dict[str, Any]:
         """Get cache statistics."""
@@ -625,17 +634,17 @@ class WaveletFeatureCache:
                 "newest_file": None,
             }
 
-        if cache_path.exists():
+            if cache_path.exists():
                 files = list(cache_path.rglob("*"))
                 files = [f for f in files if f.is_file()]
 
-        if files:
+                if files:
                     stats["total_files"] = len(files)
                     stats["total_size_mb"] = sum(f.stat().st_size for f in files) / (
                         1024 * 1024
                     )
 
-        # File timestamps
+                    # File timestamps
                     timestamps = [f.stat().st_mtime for f in files]
                     stats["oldest_file"] = time.strftime(
                         "%Y-%m-%d %H:%M:%S", time.localtime(min(timestamps)),
@@ -644,11 +653,11 @@ class WaveletFeatureCache:
                         "%Y-%m-%d %H:%M:%S", time.localtime(max(timestamps)),
                     )
 
-        return stats
+            return stats
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error getting cache stats: {e}")
-        return {}
+            self.logger.exception(f"🚨 Error getting cache stats: {e}")
+            return {}
 
 
 class VectorizedVolatilityRegimeModel:
@@ -662,112 +671,113 @@ class VectorizedVolatilityRegimeModel:
     async def initialize(self) -> bool:
         """Initialize the volatility regime model."""
         try:
-        self.logger.info("🚀 Initializing VectorizedVolatilityRegimeModel...")
-        self.is_initialized = True
-        self.logger.info(
+            self.logger.info("🚀 Initializing VectorizedVolatilityRegimeModel...")
+            self.is_initialized = True
+            self.logger.info(
                 "✅ VectorizedVolatilityRegimeModel initialized successfully",
             )
-        return True
+            return True
         except Exception as e:
-        self.logger.exception(
+            self.logger.exception(
                 f"❌ Failed to initialize VectorizedVolatilityRegimeModel: {e}",
             )
-        return False
+            return False
 
     async def model_volatility_vectorized(
-        self = price_data: pd.DataFrame, volume_data: pd.DataFrame, ) -> dict[str, Any]:
+        self, price_data: pd.DataFrame, volume_data: pd.DataFrame,
+    ) -> dict[str, Any]:
         """Generate volatility regime features using vectorized operations."""
         try:
-            features = {}
+            features: dict[str, Any] = {}
 
-        # Debug: Check what columns are available
-        self.logger.info(
+            # Debug: Check what columns are available
+            self.logger.info(
                 f"🔍 Volatility model input - price_data columns: {list(price_data.columns)}",
             )
-        self.logger.info(
+            self.logger.info(
                 f"🔍 Volatility model input - price_data shape: {price_data.shape}",
             )
 
-        # Basic volatility features
-        if "close" not in price_data.columns:
-        self.logger.error("❌ 'close' column not found in price_data")
-        return {}
+            # Basic volatility features
+            if "close" not in price_data.columns:
+                self.logger.error("❌ 'close' column not found in price_data")
+                return {}
 
             close = price_data["close"].astype(float)
-        self.logger.info(
+            self.logger.info(
                 f"🔍 Close price range: {close.min():.2f} to {close.max():.2f}",
             )
 
-            returns, close.pct_change().fillna(0)
-        self.logger.info(
+            returns = close.pct_change().fillna(0)
+            self.logger.info(
                 f"🔍 Returns range: {returns.min():.4f} to {returns.max():.4f}",
             )
 
         # Rolling volatility measures - OPTIMIZED: Balance between lookahead bias and predictive power
         for window in [5, 10, 20, 50]:
-        # Use current bar for volatility calculation (standard practice)
-                vol, returns.rolling(window, min_periods=1).std()
-                features[f"volatility_{window}"] = vol
-        # Use percentage change for change features to avoid perfect correlation
-                features[f"volatility_{window}_change"] = vol.pct_change().fillna(0)
+            # Use current bar for volatility calculation (standard practice)
+            vol = returns.rolling(window, min_periods=1).std()
+            features[f"volatility_{window}"] = vol
+            # Use percentage change for change features to avoid perfect correlation
+            features[f"volatility_{window}_change"] = vol.pct_change().fillna(0)
 
         # GARCH-like volatility clustering - OPTIMIZED: Balance between lookahead bias and predictive power
-            vol_20, returns.rolling(20, min_periods=1).std()
-            vol_persistence, vol_20.ewm(alpha=0.1).mean()
+            vol_20 = returns.rolling(20, min_periods=1).std()
+            vol_persistence = vol_20.ewm(alpha=0.1).mean()
             features["volatility_persistence"] = vol_persistence
 
-        # Volatility of volatility - OPTIMIZED
-            vol_of_vol, vol_20.rolling(10, min_periods=1).std()
+            # Volatility of volatility - OPTIMIZED
+            vol_of_vol = vol_20.rolling(10, min_periods=1).std()
             features["volatility_of_volatility"] = vol_of_vol
 
-        # Regime detection using volatility thresholds - OPTIMIZED
-            vol_median, vol_20.rolling(100, min_periods=1).median()
+            # Regime detection using volatility thresholds - OPTIMIZED
+            vol_median = vol_20.rolling(100, min_periods=1).median()
             high_vol_regime = (vol_20 > vol_median * 1.5).astype(int)
             low_vol_regime = (vol_20 < vol_median * 0.5).astype(int)
             features["high_volatility_regime"] = high_vol_regime
             features["low_volatility_regime"] = low_vol_regime
 
-        # Additional volatility features
-        # Volatility ratio (short-term vs long-term)
-            vol_5, returns.rolling(5, min_periods=1).std()
-            vol_10, returns.rolling(10, min_periods=1).std()
-            vol_50, returns.rolling(50, min_periods=1).std()
+            # Additional volatility features
+            # Volatility ratio (short-term vs long-term)
+            vol_5 = returns.rolling(5, min_periods=1).std()
+            vol_10 = returns.rolling(10, min_periods=1).std()
+            vol_50 = returns.rolling(50, min_periods=1).std()
             features["volatility_ratio_5_20"] = vol_5 / (vol_20 + 1e-8)
             features["volatility_ratio_10_50"] = vol_10 / (vol_50 + 1e-8)
 
-        # Volatility momentum
+            # Volatility momentum
             features["volatility_momentum_5"] = vol_5.pct_change().fillna(0)
             features["volatility_momentum_20"] = vol_20.pct_change().fillna(0)
 
-        # Volatility regime strength
+            # Volatility regime strength
             features["volatility_regime_strength"] = (vol_20 - vol_median) / (vol_median + 1e-8)
 
-        # Volatility clustering (GARCH-like)
+            # Volatility clustering (GARCH-like)
             vol_squared = returns ** 2
             features["volatility_clustering"] = vol_squared.rolling(10).mean()
 
-        # Volatility asymmetry (up vs down volatility)
-            up_returns, returns.where(returns > 0, 0)
-            down_returns, returns.where(returns < 0, 0)
+            # Volatility asymmetry (up vs down volatility)
+            up_returns = returns.where(returns > 0, 0)
+            down_returns = returns.where(returns < 0, 0)
             up_vol = up_returns.rolling(20).std()
             down_vol = down_returns.rolling(20).std()
             features["volatility_asymmetry"] = up_vol / (down_vol + 1e-8)
 
         # Debug: Check feature values - only show features with >0.1% NaN values
         for name, feature in features.items():
-        if isinstance(feature, pd.Series):
-                    non_nan_count = feature.notna().sum()
-                    nan_percentage = (len(feature) - non_nan_count) / len(feature)
-        if nan_percentage > 0.001:  # 0.1% = 0.001
-        self.logger.info(
-                            f"🔍 Feature {name}: {non_nan_count}/{len(feature)} non-NaN values ({nan_percentage:.3%} NaN)",
-                        )
+            if isinstance(feature, pd.Series):
+                non_nan_count = feature.notna().sum()
+                nan_percentage = (len(feature) - non_nan_count) / len(feature)
+                if nan_percentage > 0.001:  # 0.1% = 0.001
+                    self.logger.info(
+                        f"🔍 Feature {name}: {non_nan_count}/{len(feature)} non-NaN values ({nan_percentage:.3%} NaN)",
+                    )
 
         return features
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in volatility modeling: {e}")
-        return {}
+            self.logger.exception(f"❌ Error in volatility modeling: {e}")
+            return {}
 
 
 class VectorizedCorrelationAnalyzer:
@@ -781,38 +791,39 @@ class VectorizedCorrelationAnalyzer:
     async def initialize(self) -> bool:
         """Initialize the correlation analyzer."""
         try:
-        self.logger.info("🚀 Initializing VectorizedCorrelationAnalyzer...")
-        self.is_initialized = True
-        self.logger.info(
+            self.logger.info("🚀 Initializing VectorizedCorrelationAnalyzer...")
+            self.is_initialized = True
+            self.logger.info(
                 "✅ VectorizedCorrelationAnalyzer initialized successfully",
             )
-        return True
+            return True
         except Exception as e:
-        self.logger.exception(
+            self.logger.exception(
                 f"❌ Failed to initialize VectorizedCorrelationAnalyzer: {e}",
             )
-        return False
+            return False
 
     @validate_feature_engineering_with_lookahead_bias_detection
     async def analyze_correlations_vectorized(
-        self = price_data: pd.DataFrame, ) -> dict[str, Any]:
+        self, price_data: pd.DataFrame,
+    ) -> dict[str, Any]:
         """Analyze price-volume correlations using vectorized operations."""
         try:
-            features = {}
+            features: dict[str, Any] = {}
 
             close = price_data["close"].astype(float)
             volume = price_data["volume"].astype(float)
 
-        # Price-volume correlation
-            returns, close.pct_change().fillna(0)
+            # Price-volume correlation
+            returns = close.pct_change().fillna(0)
             volume_returns = volume.pct_change().fillna(0)
 
-        # Rolling correlations
-        for window in [10, 20, 50]:
+            # Rolling correlations
+            for window in [10, 20, 50]:
                 corr = returns.rolling(window).corr(volume_returns)
                 features[f"price_volume_correlation_{window}"] = corr.fillna(0)
 
-        # Cross-sectional correlations
+            # Cross-sectional correlations
             high_vol = (volume > volume.rolling(20).quantile(0.8)).astype(int)
             low_vol = (volume < volume.rolling(20).quantile(0.2)).astype(int)
 
@@ -821,11 +832,11 @@ class VectorizedCorrelationAnalyzer:
             )
             features["low_volume_price_impact"] = (returns * low_vol).rolling(10).mean()
 
-        return features
+            return features
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in correlation analysis: {e}")
-        return {}
+            self.logger.exception(f"❌ Error in correlation analysis: {e}")
+            return {}
 
 
 class VectorizedMomentumAnalyzer:
@@ -851,21 +862,22 @@ class VectorizedMomentumAnalyzer:
 
     @validate_feature_engineering_with_lookahead_bias_detection
     async def analyze_momentum_vectorized(
-        self = price_data: pd.DataFrame, volume_data: pd.DataFrame, ) -> dict[str, Any]:
+        self, price_data: pd.DataFrame, volume_data: pd.DataFrame,
+    ) -> dict[str, Any]:
         """Generate momentum features using vectorized operations."""
         try:
-            features = {}
+            features: dict[str, Any] = {}
 
             close = price_data["close"].astype(float)
             volume = volume_data["volume"].astype(float)
 
-        # Price momentum - OPTIMIZED: Balance between lookahead bias and predictive power
-        for period in [5, 10, 20, 50]:
-        # Use current bar for momentum calculation (standard practice)
+            # Price momentum - OPTIMIZED: Balance between lookahead bias and predictive power
+            for period in [5, 10, 20, 50]:
+                # Use current bar for momentum calculation (standard practice)
                 momentum = close.pct_change(period).fillna(0)
                 features[f"price_momentum_{period}"] = momentum
 
-        # Volume-weighted momentum - OPTIMIZED
+                # Volume-weighted momentum - OPTIMIZED
                 vol_weighted_momentum = (momentum * volume).rolling(
                     period,
                 ).sum() / volume.rolling(period).sum()
@@ -873,16 +885,16 @@ class VectorizedMomentumAnalyzer:
                     vol_weighted_momentum.fillna(0)
                 )
 
-        # RSI-like momentum - OPTIMIZED: Balance between lookahead bias and predictive power
-        # Use shift(1) to avoid NaN in first row
+            # RSI-like momentum - OPTIMIZED: Balance between lookahead bias and predictive power
+            # Use shift(1) to avoid NaN in first row
             price_change = close - close.shift(1)
-            gains, price_change.clip(lower=0)
+            gains = price_change.clip(lower=0)
             losses = -price_change.clip(upper=0)
 
-        for period in [14, 20]:
+            for period in [14, 20]:
                 avg_gain = gains.rolling(period).mean()
                 avg_loss = losses.rolling(period).mean()
-                rs, avg_gain / avg_loss.replace(0, np.nan)
+                rs = avg_gain / avg_loss.replace(0, np.nan)
                 rsi = 100 - (100 / (1 + rs))
                 features[f"rsi_{period}"] = rsi.fillna(50)
 
@@ -911,11 +923,11 @@ class VectorizedMomentumAnalyzer:
             features["momentum_strength_10"] = abs(features["roc_10"])
             features["momentum_strength_20"] = abs(features["roc_20"])
 
-        return features
+            return features
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in momentum analysis: {e}")
-        return {}
+            self.logger.exception(f"❌ Error in momentum analysis: {e}")
+            return {}
 
 
 class VectorizedLiquidityAnalyzer:
@@ -929,84 +941,85 @@ class VectorizedLiquidityAnalyzer:
     async def initialize(self) -> bool:
         """Initialize the liquidity analyzer."""
         try:
-        self.logger.info("🚀 Initializing VectorizedLiquidityAnalyzer...")
-        self.is_initialized = True
-        self.logger.info("✅ VectorizedLiquidityAnalyzer initialized successfully")
-        return True
+            self.logger.info("🚀 Initializing VectorizedLiquidityAnalyzer...")
+            self.is_initialized = True
+            self.logger.info("✅ VectorizedLiquidityAnalyzer initialized successfully")
+            return True
         except Exception as e:
-        self.logger.exception(
+            self.logger.exception(
                 f"❌ Failed to initialize VectorizedLiquidityAnalyzer: {e}",
             )
-        return False
+            return False
 
     async def analyze_liquidity_vectorized(
-        self = price_data: pd.DataFrame, volume_data: pd.DataFrame, ) -> dict[str, Any]:
+        self, price_data: pd.DataFrame, volume_data: pd.DataFrame,
+    ) -> dict[str, Any]:
         """Generate liquidity features using vectorized operations."""
         try:
-            features = {}
+            features: dict[str, Any] = {}
 
             close = price_data["close"].astype(float)
             volume = volume_data["volume"].astype(float)
             high = price_data["high"].astype(float)
             low = price_data["low"].astype(float)
 
-        # Amihud illiquidity measure - IMPROVED: Better handling of edge cases
-            returns, close.pct_change().abs()
-        # Use a minimum volume threshold to prevent division by very small numbers
-            min_volume_threshold, volume.quantile(0.01) * 0.1  # 10% of 1st percentile
-            volume_safe, volume.replace(0, min_volume_threshold)
+            # Amihud illiquidity measure - IMPROVED: Better handling of edge cases
+            returns = close.pct_change().abs()
+            # Use a minimum volume threshold to prevent division by very small numbers
+            min_volume_threshold = volume.quantile(0.01) * 0.1  # 10% of 1st percentile
+            volume_safe = volume.replace(0, min_volume_threshold)
             amihud = returns / volume_safe
             features["amihud_illiquidity"] = amihud.fillna(0)
 
-        # Roll's effective spread proxy - OPTIMIZED
+            # Roll's effective spread proxy - OPTIMIZED
             price_range = (high - low) / close
             features["roll_spread_proxy"] = price_range
 
-        # Additional liquidity features
-        # VWAP deviation
+            # Additional liquidity features
+            # VWAP deviation
             vwap = (close * volume).rolling(20).sum() / volume.rolling(20).sum()
             features["vwap_deviation"] = (close - vwap) / vwap
 
-        # Liquidity ratio (volume / price volatility)
+            # Liquidity ratio (volume / price volatility)
             price_volatility = close.rolling(20).std()
             features["liquidity_ratio"] = volume / (price_volatility + 1e-8)
 
-        # Volume Z-score
+            # Volume Z-score
             volume_mean = volume.rolling(20).mean()
             volume_std = volume.rolling(20).std()
             features["volume_zscore"] = (volume - volume_mean) / (volume_std + 1e-8)
 
-        # Bid-ask spread approximation using high-low range
+            # Bid-ask spread approximation using high-low range
             features["spread_approximation"] = (high - low) / ((high + low) / 2)
 
-        # Liquidity pressure (volume * price change)
+            # Liquidity pressure (volume * price change)
             features["liquidity_pressure"] = volume * close.pct_change().abs()
 
-        # Volume-weighted average price (VWAP) - OPTIMIZED
+            # Volume-weighted average price (VWAP) - OPTIMIZED
             typical_price = (high + low + close) / 3
             vwap = (typical_price * volume).rolling(20).sum() / volume.rolling(20).sum()
             features["vwap_deviation"] = (close - vwap) / vwap
 
-        # Liquidity ratio - IMPROVED: Better handling of edge cases
-        # Use a minimum price range to prevent division by zero
-            min_price_range, price_range.quantile(0.01) * 0.1  # 10% of 1st percentile
-            price_range_safe, price_range.replace(0, min_price_range)
+            # Liquidity ratio - IMPROVED: Better handling of edge cases
+            # Use a minimum price range to prevent division by zero
+            min_price_range = price_range.quantile(0.01) * 0.1  # 10% of 1st percentile
+            price_range_safe = price_range.replace(0, min_price_range)
             liquidity_ratio = volume / price_range_safe
             features["liquidity_ratio"] = liquidity_ratio.fillna(0)
 
-        # Volume profile - IMPROVED: Better handling of zero standard deviation
+            # Volume profile - IMPROVED: Better handling of zero standard deviation
             volume_ma = volume.rolling(20).mean()
             volume_std = volume.rolling(20).std()
-        # Use a minimum standard deviation to prevent division by zero
-            min_std_threshold, volume_std.quantile(0.01) * 0.1  # 10% of 1st percentile
-            volume_std_safe, volume_std.replace(0, min_std_threshold)
+            # Use a minimum standard deviation to prevent division by zero
+            min_std_threshold = volume_std.quantile(0.01) * 0.1  # 10% of 1st percentile
+            volume_std_safe = volume_std.replace(0, min_std_threshold)
             features["volume_zscore"] = (volume - volume_ma) / volume_std_safe
 
-        return features
+            return features
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in liquidity analysis: {e}")
-        return {}
+            self.logger.exception(f"❌ Error in liquidity analysis: {e}")
+            return {}
 
 
 class VectorizedCandlestickPatternAnalyzer:

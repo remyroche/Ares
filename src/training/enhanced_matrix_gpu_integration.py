@@ -80,23 +80,29 @@ class EnhancedMatrixGPUIntegration:
         """
         start_time = time.time()
         try:
-            # Placeholder: call into matrix operations; ensure minimal safe behavior
             enhanced_df = features_df.copy()
+
+            # Apply CPU-based enhanced matrix operations
+            enhanced_df, decomp_meta = self.matrix_ops.advanced_decomposition_techniques(enhanced_df)
+            enhanced_df, cluster_meta = self.matrix_ops.advanced_clustering_features(enhanced_df)
+            enhanced_df, feature_meta = self.matrix_ops.advanced_feature_engineering(enhanced_df)
+            quality_meta = self.matrix_ops.quality_assurance_checks(enhanced_df)
 
             all_metadata: dict[str, Any] = {
                 "gpu_available": getattr(self.gpu_accel, "mps_available", False),
                 "device": str(getattr(self.gpu_accel, "device", "cpu")),
-                "feature_count_increase": max(0, len(enhanced_df.columns) - len(features_df.columns)),
-                "elapsed_sec": time.time() - start_time,
+                "enhanced_decompositions": decomp_meta,
+                "enhanced_clustering": cluster_meta,
+                "enhanced_feature_engineering": feature_meta,
+                "quality_assurance": quality_meta,
             }
 
-            # GPU performance summary if available
-            if getattr(self.gpu_accel, "mps_available", False):
-                with asyncio.to_thread(self.gpu_accel.get_performance_summary) if hasattr(asyncio, "to_thread") else contextlib.suppress(Exception):
-                    pass  # keep lightweight; avoid heavy ops here
+            total_time = time.time() - start_time
+            all_metadata["elapsed_sec"] = total_time
+            all_metadata["feature_count_increase"] = max(0, len(enhanced_df.columns) - len(features_df.columns))
 
             self.logger.info(
-                f"Enhanced GPU Matrix Operations completed in {all_metadata['elapsed_sec']:.2f}s",
+                f"Enhanced GPU Matrix Operations completed in {total_time:.2f}s",
             )
             return enhanced_df, all_metadata
         except Exception as e:

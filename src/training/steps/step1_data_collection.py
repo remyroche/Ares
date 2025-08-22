@@ -101,7 +101,7 @@ class DataCollectionStep:
 
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any], ) -> dict[str, Any]:
-        """Execute data collection.
+        """Execute data collection with enhanced quality management.
 
         Args:
             training_input: Training input parameters
@@ -111,7 +111,7 @@ class DataCollectionStep:
             Updated pipeline state
 
         """
-        self.logger.info("Starting data collection...")
+        self.logger.info("Starting enhanced data collection...")
 
         try:
             # Execute the data collection
@@ -119,16 +119,71 @@ class DataCollectionStep:
 
             if success:
                 self.logger.info("Data collection completed successfully")
-                pipeline_state["data_collection_completed"] = True
+                
+                # Run enhanced quality check after data collection
+                quality_success = await self._run_enhanced_quality_check(training_input)
+                
+                if quality_success:
+                    self.logger.info("✅ Enhanced quality check passed")
+                    pipeline_state["data_collection_completed"] = True
+                    pipeline_state["quality_check_passed"] = True
+                else:
+                    self.logger.warning("⚠️ Enhanced quality check found issues")
+                    pipeline_state["data_collection_completed"] = True
+                    pipeline_state["quality_check_passed"] = False
             else:
                 self.logger.error("Data collection failed")
                 pipeline_state["data_collection_completed"] = False
+                pipeline_state["quality_check_passed"] = False
 
         except Exception as e:
             self.logger.exception(f"Error during data collection: {e}")
             pipeline_state["data_collection_completed"] = False
+            pipeline_state["quality_check_passed"] = False
 
         return pipeline_state
+
+    async def _run_enhanced_quality_check(self, training_input: dict[str, Any]) -> bool:
+        """Run enhanced quality check after data collection."""
+        try:
+            from .enhanced_data_quality_manager import EnhancedDataQualityManager
+            
+            symbol = training_input.get("symbol", "ETHUSDT")
+            exchange = training_input.get("exchange", "BINANCE")
+            timeframe = training_input.get("timeframe", "1m")
+            data_dir = training_input.get("data_dir", "data_cache")
+            
+            self.logger.info("🔍 Running enhanced quality check...")
+            
+            manager = EnhancedDataQualityManager(data_dir)
+            quality_results = await manager.comprehensive_quality_check(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                check_gaps=True,
+                fill_gaps=True,
+                validate_format=True
+            )
+            
+            if quality_results.get("success", False):
+                self.logger.info("✅ Enhanced quality check completed successfully")
+                
+                # Log quality metrics
+                if quality_results.get("gaps_detected"):
+                    self.logger.info(f"📊 Detected {len(quality_results['gaps_detected'])} gaps")
+                if quality_results.get("gaps_filled"):
+                    self.logger.info(f"🔧 Filled {len(quality_results['gaps_filled'])} gaps")
+                if quality_results.get("format_issues"):
+                    self.logger.warning(f"⚠️ Found {len(quality_results['format_issues'])} format issues")
+                
+                return True
+            else:
+                self.logger.error("❌ Enhanced quality check failed")
+                return False
+                
+        except Exception as e:
+            self.logger.exception(f"❌ Error running enhanced quality check: {e}")
+            return False
 
     @handle_data_collection_errors(context="run_data_collection")
     @log_step_metrics(context="data_collection")

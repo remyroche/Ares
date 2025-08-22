@@ -1081,12 +1081,12 @@ class UnifiedDataConverter:
         self.logger.error("❌ Failed to set up future infrastructure")
         return False
 
-        # Step 4: Validate unified dataset
-            validation_success, await self._validate_unified_dataset(
+        # Step 4: Run enhanced quality validation
+            validation_success, await self._run_enhanced_quality_validation(
                 symbol = exchange, timeframe,
             )
         if not validation_success:
-        self.logger.error("❌ Unified dataset validation failed")
+        self.logger.error("❌ Enhanced quality validation failed")
         return False
 
         # Step 5: Verify data quality and completeness
@@ -1095,6 +1095,60 @@ class UnifiedDataConverter:
             )
         if not verification_success:
         self.logger.warning("⚠️ Data quality verification found issues")
+
+        self.logger.info("=" * 80)
+        self.logger.info("✅ STEP 1.5 COMPLETED: Unified Data Converter")
+        self.logger.info("=" * 80)
+        return True
+
+    async def _run_enhanced_quality_validation(self, symbol: str, exchange: str, timeframe: str) -> bool:
+        """Run enhanced quality validation using the quality manager."""
+        try:
+            from .enhanced_data_quality_manager import EnhancedDataQualityManager
+            
+            self.logger.info("🔍 Running enhanced quality validation...")
+            
+            manager = EnhancedDataQualityManager(str(self.data_cache_dir))
+            quality_results = await manager.comprehensive_quality_check(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                check_gaps=True,
+                fill_gaps=True,
+                validate_format=True
+            )
+            
+            if quality_results.get("success", False):
+                self.logger.info("✅ Enhanced quality validation passed")
+                
+                # Log detailed quality metrics
+                if quality_results.get("gaps_detected"):
+                    self.logger.info(f"📊 Detected {len(quality_results['gaps_detected'])} gaps")
+                if quality_results.get("gaps_filled"):
+                    self.logger.info(f"🔧 Filled {len(quality_results['gaps_filled'])} gaps")
+                if quality_results.get("format_issues"):
+                    self.logger.warning(f"⚠️ Found {len(quality_results['format_issues'])} format issues")
+                
+                # Check if data is ready for step3/step4
+                if quality_results.get("step3_step4_ready", False):
+                    self.logger.info("✅ Data is ready for step3/step4")
+                else:
+                    self.logger.warning("⚠️ Data may not be ready for step3/step4")
+                    missing = quality_results.get("missing_for_steps", [])
+                    for item in missing:
+                        self.logger.warning(f"   - {item}")
+                
+                return True
+            else:
+                self.logger.error("❌ Enhanced quality validation failed")
+                issues = quality_results.get("issues", [])
+                for issue in issues:
+                    self.logger.error(f"   - {issue}")
+                return False
+                
+        except Exception as e:
+            self.logger.exception(f"❌ Error running enhanced quality validation: {e}")
+            return False
 
         self.logger.info("=" * 80)
         self.logger.info("✅ STEP 1.5 COMPLETED: Unified Data Converter")

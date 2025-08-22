@@ -52,7 +52,7 @@ def check_file_format(file_path) -> bool | None:
 
 def detect_file_format(file_path) -> str | None:
     """Detect the format of a CSV file and return the format type.
-    Returns: 'correct' = 'format1', 'format2', 'format3', or 'unknown'.
+    Returns: 'correct', 'format1', 'format2', 'format3', or 'unknown'.
     """
     try:
         with open(file_path, encoding="utf-8") as f:
@@ -133,9 +133,7 @@ class DataFileReformatter:
                     price = fields[1]
                     quantity = fields[2]
                     is_buyer_maker = fields[3]
-                    agg_trade_id = (
-                        f"agg_{timestamp}_{price}_{quantity}"  # Generate dummy ID
-                    )
+                    agg_trade_id = f"agg_{timestamp}_{price}_{quantity}"
 
                     writer.writerow(
                         [timestamp, price, quantity, is_buyer_maker, agg_trade_id],
@@ -159,24 +157,24 @@ class DataFileReformatter:
                 if not line or line.startswith("timestamp"):
                     continue
 
-                # Handle mixed delimiter format
-                if "," in line and ";" in line:
-                    # Split by comma first, then handle semicolon-separated parts
-                    parts = line.split(",")
-                    if len(parts) >= 4:
-                        timestamp = parts[0]
-                        price = parts[1]
-                        quantity = parts[2]
-                        is_buyer_maker = parts[3]
-                        agg_trade_id = (
-                            parts[4]
-                            if len(parts) > 4
-                            else f"agg_{timestamp}_{price}_{quantity}"
-                        )
+                # Handle mixed delimiter format: timestamp contains a semicolon
+                # Replace semicolon in the timestamp with a space, parse the rest as CSV
+                if "," in line:
+                    ts_part, rest = line.split(",", 1)
+                else:
+                    # Fallback: treat entire line as ts_part
+                    ts_part, rest = line, ""
 
-                        writer.writerow(
-                            [timestamp, price, quantity, is_buyer_maker, agg_trade_id],
-                        )
+                timestamp = ts_part.replace(";", " ")
+                other_cols = next(csv.reader([rest])) if rest else []
+
+                price = other_cols[0] if len(other_cols) > 0 else ""
+                quantity = other_cols[1] if len(other_cols) > 1 else ""
+                is_buyer_maker = other_cols[2] if len(other_cols) > 2 else ""
+                agg_trade_id = other_cols[3] if len(other_cols) > 3 else f"agg_{timestamp}_{price}_{quantity}"
+
+                writer.writerow([timestamp, price, quantity, is_buyer_maker, agg_trade_id])
+
 
             return True
         except Exception:
@@ -203,9 +201,7 @@ class DataFileReformatter:
                     price = fields[1]
                     quantity = fields[2]
                     is_buyer_maker = fields[3]
-                    agg_trade_id = (
-                        f"agg_{timestamp}_{price}_{quantity}"  # Generate dummy ID
-                    )
+                    agg_trade_id = f"agg_{timestamp}_{price}_{quantity}"
 
                     writer.writerow(
                         [timestamp, price, quantity, is_buyer_maker, agg_trade_id],
@@ -229,7 +225,6 @@ def auto_reformat_aggtrades_files() -> None:
     pattern = os.path.join(data_cache_dir, "aggtrades_*_*.csv")
     files = glob.glob(pattern)
 
-
     files_to_reformat = []
     files_checked = 0
 
@@ -241,16 +236,9 @@ def auto_reformat_aggtrades_files() -> None:
             format_type = detect_file_format(file_path)
             if format_type != "correct":
                 files_to_reformat.append((file_path, format_type))
-            else:
-                pass
-        else:
-            pass
 
     if not files_to_reformat:
         return
-
-    for file_path, format_type in files_to_reformat:
-        pass
 
     # Ask for confirmation
     response = input("\nDo you want to proceed with reformatting? (y/N): ")
@@ -258,9 +246,7 @@ def auto_reformat_aggtrades_files() -> None:
         return
 
     # Reformat files
-
     for file_path, format_type in files_to_reformat:
-
         # Create backup
         backup_path = os.path.join(backup_dir, os.path.basename(file_path))
         shutil.copy2(file_path, backup_path)
@@ -294,7 +280,6 @@ def auto_reformat_aggtrades_files_for_exchange(exchange: str, symbol: str) -> No
     pattern = os.path.join(data_cache_dir, f"aggtrades_{exchange}_{symbol}_*.csv")
     files = glob.glob(pattern)
 
-
     files_to_reformat = []
     files_checked = 0
 
@@ -306,21 +291,12 @@ def auto_reformat_aggtrades_files_for_exchange(exchange: str, symbol: str) -> No
             format_type = detect_file_format(file_path)
             if format_type != "correct":
                 files_to_reformat.append((file_path, format_type))
-            else:
-                pass
-        else:
-            pass
 
     if not files_to_reformat:
         return
 
-    for file_path, format_type in files_to_reformat:
-        pass
-
     # Reformat files without asking for confirmation (for automated use)
-
     for file_path, format_type in files_to_reformat:
-
         # Create backup
         backup_path = os.path.join(backup_dir, os.path.basename(file_path))
         shutil.copy2(file_path, backup_path)
@@ -398,10 +374,8 @@ class CSVNormalizer:
         if not files_to_process:
             return
 
-
         for filename in files_to_process:
             self._process_single_file(filename)
-
 
     def _setup_output_directory(self) -> None:
         """Create output directory if it doesn't exist."""
@@ -420,26 +394,24 @@ class CSVNormalizer:
         input_path = os.path.join(self.input_directory, filename)
         output_path = os.path.join(self.output_directory, f"formatted_{filename}")
 
-
         try:
             with (
                 open(input_path, encoding="utf-8") as infile,
-                open(output_path, "w", newline="", encoding="utf-8") as outfile
+                open(output_path, "w", newline="", encoding="utf-8") as outfile,
             ):
                 writer = csv.writer(outfile)
 
-            # Write header if requested
-            if self.write_header:
-                writer.writerow(self.target_header)
+                # Write header if requested
+                if self.write_header:
+                    writer.writerow(self.target_header)
 
-            # Detect and process format
-            format_type = self._detect_file_format(infile)
-            if format_type in self.processors:
-                self.processors[format_type](infile, writer)
-            else:
-                pass
+                # Detect and process format
+                format_type = self._detect_file_format(infile)
+                if format_type in self.processors:
+                    self.processors[format_type](infile, writer)
 
         except Exception:
+            # Swallow errors for robustness in batch runs
             pass
 
     def _detect_file_format(self, infile) -> str:
@@ -457,6 +429,7 @@ class CSVNormalizer:
 
             return "unknown"
 
+            return "unknown"
         except StopIteration:
             return "empty"
 
@@ -464,10 +437,14 @@ class CSVNormalizer:
         """Process format 1 (semicolon-delimited without trade_id)."""
         for line in infile:
             line = line.strip()
-            if not line:
+            if not line or line.startswith("timestamp"):
                 continue
             # Parse the row using the correct delimiter
             row = next(csv.reader([line], delimiter=";"))
+            # Ensure 4 columns exist
+            while len(row) < 4:
+                row.append("")
+
             # Add a blank value for the missing 'trade_id' column
             row.append("")
             writer.writerow(row)
@@ -476,7 +453,7 @@ class CSVNormalizer:
         """Process format 2 (mixed delimiters with agg_trade_id)."""
         for line in infile:
             line = line.strip()
-            if not line:
+            if not line or line.startswith("timestamp"):
                 continue
 
             try:
@@ -489,7 +466,10 @@ class CSVNormalizer:
                 # The rest of the line is a standard comma-separated string
                 other_cols = next(csv.reader([rest_of_line]))
 
-                price, quantity, is_buyer_maker, trade_id = other_cols
+                price = other_cols[0]
+                quantity = other_cols[1]
+                is_buyer_maker = other_cols[2]
+                trade_id = other_cols[3] if len(other_cols) > 3 else ""
                 writer.writerow([timestamp, price, quantity, is_buyer_maker, trade_id])
             except (ValueError, IndexError):
                 continue
@@ -497,5 +477,4 @@ class CSVNormalizer:
 
 if __name__ == "__main__":
     # Run the automatic reformatting
-
     auto_reformat_aggtrades_files()

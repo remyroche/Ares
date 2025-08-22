@@ -65,6 +65,7 @@ except ImportError:
     validate_ml_data_quality = None
     step_specific_ml_validation = None
 from src.utils.logger import system_logger as _logger
+from src.utils.training_pipeline_decorators import monitor_feature_engineering
 
 
 @with_tracing_span("step4._build_sr_levels", log_args=False)
@@ -313,6 +314,7 @@ def _persist_sr_levels(config: dict[str, Any], sr_levels: dict[str, Any], asof_t
     disk_threshold_gb=10.0,
     auto_cleanup=True,
 )
+@monitor_feature_engineering()
 @memory_efficient(
     chunk_size=1000,
     streaming_processing=True,

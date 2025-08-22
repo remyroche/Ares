@@ -30,6 +30,7 @@ from src.utils.centralized_decorators import (
     with_tracing_span,
 )
 from src.utils.logger import system_logger
+from src.utils.training_pipeline_decorators import monitor_feature_engineering
 
 logger = system_logger.getChild("Step3HMMRegimeDiscovery")
 
@@ -660,6 +661,7 @@ class HMMRegimeDiscoveryStep:
         return transitions
 
 
+@monitor_feature_engineering()
 @handle_errors(
     exceptions=(Exception,),
     default_return=False,

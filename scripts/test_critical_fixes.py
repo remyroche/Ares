@@ -3,7 +3,6 @@
 Test Critical Fixes Script
 
 This script tests the critical fixes implemented in the main pipeline:
-    pass
 1. Binary classification (label imbalance fix)
 2. Redundant feature filtering (multicollinearity fix)
 3. Extreme VIF removal (safety net)
@@ -19,26 +18,29 @@ import sys
 import numpy as np
 import pandas as pd
 
-from training.steps.vectorized_labelling_orchestrator import VectorizedLabellingOrchestrator
-
-# Add the src directory to the Python path
+# Add the src directory to the Python path first
 current_dir = Path(__file__).parent
 src_dir = current_dir.parent / "src"
-sys.path.insert(0, str(src_dir))
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
 
-def create_test_data():
+from src.training.steps.vectorized_labelling_orchestrator import VectorizedLabellingOrchestrator
+
+
+def create_test_data() -> tuple[pd.DataFrame, pd.DataFrame]:
     """Create test data with the problematic features that cause multicollinearity."""
     print("📊 Creating test data with problematic features...")
 
     # Create base price data
-    dates, pd.date_range("2024-01-01", periods=1000, freq="1min")
+    dates = pd.date_range("2024-01-01", periods=1000, freq="1min")
     np.random.seed(42)
-    base_price, 100 + np.cumsum(np.random.randn(1000) * 0.1)
+    base_price = 100 + np.cumsum(np.random.randn(1000) * 0.1)
 
     # Create price data with redundant features
-    price_data, pd.DataFrame(
+    price_data = pd.DataFrame(
         {
-            "timestamp": dates, "open": base_price + np.random.randn(1000) * 0.5,
+            "timestamp": dates,
+            "open": base_price + np.random.randn(1000) * 0.5,
             "high": base_price + np.random.randn(1000) * 0.8,
             "low": base_price - np.random.randn(1000) * 0.8,
             "close": base_price + np.random.randn(1000) * 0.5,
@@ -59,9 +61,10 @@ def create_test_data():
     price_data["max_price_change"] = price_data["max_price"].pct_change()
 
     # Create volume data
-    volume_data, pd.DataFrame(
+    volume_data = pd.DataFrame(
         {
-            "timestamp": dates, "volume": price_data["volume"].copy(),
+            "timestamp": dates,
+            "volume": price_data["volume"].copy(),
             "trade_count": np.random.randint(10, 100, 1000),
             "trade_volume": price_data["volume"] * 0.8,  # Redundant
             "volume_ratio": price_data["volume"]
@@ -81,20 +84,24 @@ def create_test_data():
 
     return price_data, volume_data
 
-async def test_critical_fixes():
+
+async def test_critical_fixes() -> None:
     """Test the critical fixes in the main pipeline."""
     print("🧪 TESTING CRITICAL FIXES")
     print("=" * 60)
 
     # Create test data
-    price_data, volume_data, create_test_data()
+    price_data, volume_data = create_test_data()
 
     # Configuration with critical fixes enabled
     config = {
         "vectorized_labelling_orchestrator": {
-            "enable_stationary_checks": True, "enable_data_normalization": True,
-            "enable_lookahead_bias_handling": True, "enable_feature_selection": True,
-            "enable_memory_efficient_types": True, "enable_parquet_saving": True,
+            "enable_stationary_checks": True,
+            "enable_data_normalization": True,
+            "enable_lookahead_bias_handling": True,
+            "enable_feature_selection": True,
+            "enable_memory_efficient_types": True,
+            "enable_parquet_saving": False,
             "profit_take_multiplier": 0.002,
             "stop_loss_multiplier": 0.001,
             "time_barrier_minutes": 30,
@@ -103,9 +110,11 @@ async def test_critical_fixes():
             "feature_selection": {
                 "vif_threshold": 5.0,  # CRITICAL FIX: Stricter VIF threshold
                 "correlation_threshold": 0.95,  # CRITICAL FIX: Stricter correlation threshold
-                "enable_aggressive_vif_removal": True , "max_removal_percentage": 0.8,
+                "enable_aggressive_vif_removal": True,
+                "max_removal_percentage": 0.8,
                 "min_features_to_keep": 5,
-                "enable_multicollinearity_validation": True , "enable_redundant_price_filtering": True,  # CRITICAL FIX: Enable redundant filtering
+                "enable_multicollinearity_validation": True,
+                "enable_redundant_price_filtering": True,  # CRITICAL FIX: Enable redundant filtering
                 "vif_removal_strategy": "iterative",
                 "max_iterations": 10,
             },
@@ -114,8 +123,8 @@ async def test_critical_fixes():
 
     # Initialize orchestrator
     print("\n🚀 Initializing orchestrator with critical fixes...")
-    orchestrator, VectorizedLabellingOrchestrator(config)
-    success, await orchestrator.initialize()
+    orchestrator = VectorizedLabellingOrchestrator(config)
+    success = await orchestrator.initialize()
 
     if not success:
         print("❌ Failed to initialize orchestrator")
@@ -125,9 +134,10 @@ async def test_critical_fixes():
 
     # Test the pipeline
     print("\n🎯 Testing the complete pipeline...")
-    if True:
+    try:
         result = await orchestrator.orchestrate_labeling_and_feature_engineering(
-            price_data = volume_data,
+            price_data=price_data,
+            volume_data=volume_data,
         )
 
         if "error" in result:
@@ -141,30 +151,30 @@ async def test_critical_fixes():
             print(f"📊 Final data shape: {final_data.shape}")
             print(f"📏 Final features: {list(final_data.columns)}")
 
-        # Check for label column
-        if "label" in final_data.columns:
+            # Check for label column
+            if "label" in final_data.columns:
                 labels = final_data["label"]
-                unique_labels = counts, np.unique(labels, return_counts=True)
+                unique_labels, counts = np.unique(labels, return_counts=True)
                 label_distribution = dict(zip(unique_labels, counts))
 
                 print("\n🎯 Label distribution:")
-        for label , count in label_distribution.items():
+                for label, count in label_distribution.items():
                     ratio = count / len(labels) * 100
                     print(f"   {label}: {count} samples ({ratio:.1f}%)")
 
-        # Check for label imbalance fix
-        if 0 not in label_distribution:
+                # Check for label imbalance fix
+                if 0 not in label_distribution:
                     print(
                         "✅ CRITICAL FIX VERIFIED: HOLD class (0) successfully removed",
                     )
                 else:
                     print("⚠️ WARNING: HOLD class still present")
 
-        # Check for balanced binary classification
-        if len(label_distribution) == 2:
+                # Check for balanced binary classification
+                if len(label_distribution) == 2:
                     min_ratio = min(label_distribution.values()) / len(labels) * 100
-                    max(label_distribution.values()) / len(labels) * 100
-        if min_ratio > 10:  # At least 10% in each class
+                    max_ratio = max(label_distribution.values()) / len(labels) * 100
+                    if min_ratio > 10:  # At least 10% in each class
                         print(
                             "✅ CRITICAL FIX VERIFIED: Balanced binary classification achieved",
                         )
@@ -173,45 +183,47 @@ async def test_critical_fixes():
                 else:
                     print("⚠️ WARNING: Not binary classification")
 
-        # Check for multicollinearity fix
-            feature_columns = [col for col in final_data.columns if col !,  "label"]
-        if len(feature_columns) < 20:  # Should have fewer features after filtering
-                print(
-                    "✅ CRITICAL FIX VERIFIED: Feature count reduced (multicollinearity addressed)",
-                )
-            else:
-                print("⚠️ WARNING: Feature count not significantly reduced")
+                # Check for multicollinearity fix
+                feature_columns = [col for col in final_data.columns if col != "label"]
+                if len(feature_columns) < 20:  # Should have fewer features after filtering
+                    print(
+                        "✅ CRITICAL FIX VERIFIED: Feature count reduced (multicollinearity addressed)",
+                    )
+                else:
+                    print("⚠️ WARNING: Feature count not significantly reduced")
 
-        # Check for redundant features
-            redundant_features = [
-                "open",
-                "high",
-                "low",
-                "avg_price",
-                "min_price",
-                "max_price",
-            ]
-            remaining_redundant = [
-                col for col in redundant_features if col in feature_columns
-            ]
-        if not remaining_redundant:
-                print(
-                    "✅ CRITICAL FIX VERIFIED: Redundant price features successfully removed",
-                )
-            else:
-                print(
-                    f"⚠️ WARNING: Some redundant features still present: {remaining_redundant}",
-                )
+                # Check for redundant features
+                redundant_features = [
+                    "open",
+                    "high",
+                    "low",
+                    "avg_price",
+                    "min_price",
+                    "max_price",
+                ]
+                remaining_redundant = [
+                    col for col in redundant_features if col in feature_columns
+                ]
+                if not remaining_redundant:
+                    print(
+                        "✅ CRITICAL FIX VERIFIED: Redundant price features successfully removed",
+                    )
+                else:
+                    print(
+                        f"⚠️ WARNING: Some redundant features still present: {remaining_redundant}",
+                    )
 
+            else:
+                print("❌ No final data in result")
         else:
             print("❌ No final data in result")
 
-    pass
+    except Exception as e:  # noqa: BLE001
         print(f"❌ Pipeline test failed: {e}")
-
         traceback.print_exc()
 
-def main():
+
+def main() -> None:
     """Main function to run the critical fixes test."""
     print("🧪 CRITICAL FIXES TEST")
     print("=" * 60)
@@ -226,6 +238,7 @@ def main():
     print("\n" + "=" * 60)
     print("✅ Critical fixes test completed!")
     print("=" * 60)
+
 
 if __name__ == "__main__":
     main()

@@ -133,9 +133,9 @@ class TargetedSyntaxFixer:
         fixes = 0
         
         # Fix import statement errors
-        content = re.sub(r'from pathlib import Path
+        content = re.sub(r'from pathlib import Path)
 import glob', 'from pathlib import Path\nimport glob', content)
-        fixes += len(re.findall(r'from pathlib import Path
+        fixes += len(re.findall(r'from pathlib import Path)
 import glob', content))
         
         # Fix function call syntax errors

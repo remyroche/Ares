@@ -474,34 +474,25 @@ def step_specific_ml_validation(step_name: str, **kwargs):
             "target_col": None,
             "timestamp_col": "timestamp",
             "min_quality_score": 0.7,
-            "required_grade": "C",
-            "validate_financial": True,
-            "validate_time_series": True
+            "required_grade": "C"
         },
         "step1_5": {
             "target_col": None,
             "timestamp_col": "timestamp",
             "min_quality_score": 0.75,
-            "required_grade": "C",
-            "validate_financial": True,
-            "validate_time_series": True
+            "required_grade": "C"
         },
         "step2": {
             "target_col": None,
             "timestamp_col": "timestamp",
             "min_quality_score": 0.8,
-            "required_grade": "B",
-            "validate_correlations": True,
-            "validate_distributions": True
+            "required_grade": "B"
         },
         "step4": {
             "target_col": "target",
             "timestamp_col": "timestamp",
             "min_quality_score": 0.85,
-            "required_grade": "B",
-            "validate_target": True,
-            "validate_correlations": True,
-            "validate_distributions": True
+            "required_grade": "B"
         }
     }
     

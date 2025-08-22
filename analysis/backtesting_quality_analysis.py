@@ -3,7 +3,10 @@
 Backtesting Quality Analysis Report
 Analyzes the quality of backtest results, performance metrics, and trading consistency.
 """
+from analysis import missing_values_analysis
 
+
+analysis/backtesting_quality_analysis.py, data_collection_quality_analysis.py, data_preparation_quality_analysis.py, missing_values_analysis, model_training_quality_analysis.py
 from pathlib import Path
 import glob
 import json
@@ -170,25 +173,18 @@ class BacktestingQualityAnalyzer:
                 
         # Determine if performance is good based on metric type
         if metric_name in ['total_return', 'sharpe_ratio', 'win_rate', 'profit_factor', 'calmar_ratio', 'sortino_ratio']:
-        if metric_name == 'total_return':
-                        performance_quality = 'excellent' if value >= 0.5 else 'good' if value >= 0.2 else 'fair' if value >= 0 else 'poor'
-                        performance_score, min(100, max(0, value * 100))
-                    elif metric_name == 'sharpe_ratio':
-                        performance_quality = 'excellent' if value >= 2.0 else 'good' if value >= 1.0 else 'fair' if value >= 0 else 'poor'
-                        performance_score, min(100, max(0, value * 25))
-                    elif metric_name == 'win_rate':
-                        performance_quality = 'excellent' if value >= 0.7 else 'good' if value >= 0.6 else 'fair' if value >= 0.5 else 'poor'
-                        performance_score, min(100, value * 100)
-                    elif metric_name == 'profit_factor':
-                        performance_quality = 'excellent' if value >= 2.0 else 'good' if value >= 1.5 else 'fair' if value >= 1.0 else 'poor'
-                        performance_score, min(100, max(0, (value - 1) * 50))
-                    else:  # calmar_ratio, sortino_ratio
-                        performance_quality = 'excellent' if value >= 1.5 else 'good' if value >= 1.0 else 'fair' if value >= 0.5 else 'poor'
-                        performance_score, min(100, max(0, value * 40))
+            performance_quality = 'excellent' if value >= 0.5 else 'good' if value >= 0.2 else 'fair' if value >= 0 else 'poor'
+        elif metric_name == 'sharpe_ratio':
+            performance_quality = 'excellent' if value >= 2.0 else 'good' if value >= 1.0 else 'fair' if value >= 0 else 'poor'
+        elif metric_name == 'win_rate':
+            performance_quality = 'excellent' if value >= 0.7 else 'good' if value >= 0.6 else 'fair' if value >= 0.5 else 'poor'
+        elif metric_name == 'profit_factor':
+            performance_quality = 'excellent' if value >= 2.0 else 'good' if value >= 1.5 else 'fair' if value >= 1.0 else 'poor'
+        else:  # calmar_ratio, sortino_ratio
+            performance_quality = 'excellent' if value >= 1.5 else 'good' if value >= 1.0 else 'fair' if value >= 0.5 else 'poor'
                 else:
         # For max_drawdown, lower is better
                     performance_quality = 'excellent' if value <= 0.1 else 'good' if value <= 0.2 else 'fair' if value <= 0.3 else 'poor'
-                    performance_score, max(0, 100 - value * 200)
                 
                 performance_analysis[metric_name] = {
                     'value': value,

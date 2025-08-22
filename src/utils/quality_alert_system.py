@@ -11,7 +11,7 @@ import json
 import requests
 import smtplib
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Tuple
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 import logging

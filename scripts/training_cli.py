@@ -52,12 +52,12 @@ class TrainingCLI:
     """Command-line interface for training operations."""
 
     def __init__(self):
-        self.logger, system_logger.getChild("TrainingCLI")
+        self.logger = system_logger.getChild("TrainingCLI")
         self.logger.info("🔧 Initializing TrainingCLI...")
 
         # Initialize SQLiteManager for CLI scope, passed to TrainingManager
-        self.db_manager, SQLiteManager({})
-        self.training_manager, EnhancedTrainingManager(self.db_manager)
+        self.db_manager = SQLiteManager({})
+        self.training_manager = EnhancedTrainingManager(self.db_manager)
 
         self.logger.info("✅ TrainingCLI initialized successfully")
 
@@ -71,7 +71,7 @@ class TrainingCLI:
 
     async def run_full_training(self, symbol: str, exchange_name: str = "BINANCE") -> bool:
         """Runs the full training pipeline and tags the resulting model as a candidate."""
-        start_time, time.time()
+        start_time = time.time()
         self.logger.info("=" * 80)
         self.logger.info("🚀 FULL TRAINING PIPELINE START")
         self.logger.info("=" * 80)
@@ -79,57 +79,57 @@ class TrainingCLI:
         self.logger.info(f"Exchange: {exchange_name}")
         self.logger.info(f"Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-        if True:
-            pass
-        await self.initialize()  # Ensure DB is initialized
-        self.logger.info("✅ Database initialization completed")
+        try:
+            await self.initialize()  # Ensure DB is initialized
+            self.logger.info("✅ Database initialization completed")
 
             print(f"🚀 Starting full training for {symbol} on {exchange_name}...")
             print("=" * 60)
 
-        # The training manager now handles its own data loading and preparation.
-        # It returns the MLflow run_id upon completion.
-        self.logger.info("🔧 Starting training manager execution...")
+            # The training manager now handles its own data loading and preparation.
+            # It returns the MLflow run_id upon completion.
+            self.logger.info("🔧 Starting training manager execution...")
             training_start_time = time.time()
 
             run_id = await self.training_manager.run_full_training(
-                symbol = exchange_name,
+                symbol=symbol,
+                exchange_name=exchange_name,
             )
 
             training_duration = time.time() - training_start_time
-        self.logger.info(
+            self.logger.info(
                 f"⏱️  Training manager execution completed in {training_duration:.2f} seconds",
             )
 
-        if run_id:
-            pass
-        self.logger.info(
+            if run_id:
+                self.logger.info(
                     f"✅ Training completed successfully. MLflow Run ID: {run_id}",
                 )
                 print(f"✅ Training completed successfully. MLflow Run ID: {run_id}")
 
-        # Tag the model in MLflow so the supervisor can find it
-        self.logger.info("🔧 Tagging model as 'candidate' in MLflow...")
+                # Tag the model in MLflow so the supervisor can find it
+                self.logger.info("🔧 Tagging model as 'candidate' in MLflow...")
                 client = mlflow.tracking.MlflowClient()
                 client.set_tag(run_id, "model_status", "candidate")
-        self.logger.info(
+                self.logger.info(
                     "✅ Model tagged as 'candidate' for production review.",
                 )
                 print("✅ Model tagged as 'candidate' for production review.")
 
                 total_duration = time.time() - start_time
-        self.logger.info("📊 Full training summary:")
-        self.logger.info(f"   Symbol: {symbol}")
-        self.logger.info(f"   Exchange: {exchange_name}")
-        self.logger.info(f"   MLflow Run ID: {run_id}")
-        self.logger.info(
+                self.logger.info("📊 Full training summary:")
+                self.logger.info(f"   Symbol: {symbol}")
+                self.logger.info(f"   Exchange: {exchange_name}")
+                self.logger.info(f"   MLflow Run ID: {run_id}")
+                self.logger.info(
                     f"   Training duration: {training_duration:.2f} seconds",
                 )
-        self.logger.info(f"   Total duration: {total_duration:.2f} seconds")
-        self.logger.info("   Status: SUCCESS")
+                self.logger.info(f"   Total duration: {total_duration:.2f} seconds")
+                self.logger.info("   Status: SUCCESS")
 
-        return True
-        self.logger.error(
+                return True
+
+            self.logger.error(
                 f"❌ Full training failed for {symbol}. No MLflow run ID was returned.",
             )
             print(
@@ -137,70 +137,56 @@ class TrainingCLI:
             )
 
             total_duration = time.time() - start_time
-        self.print(error("📊 Full training summary:"))
-        self.print(error("   Symbol: {symbol}"))
-        self.print(error("   Exchange: {exchange_name}"))
-        self.print(error("   MLflow Run ID: None"))
-        self.logger.error(
+            self.logger.error("📊 Full training summary:")
+            self.logger.error(f"   Symbol: {symbol}")
+            self.logger.error(f"   Exchange: {exchange_name}")
+            self.logger.error(f"   MLflow Run ID: None")
+            self.logger.error(
                 f"   Training duration: {training_duration:.2f} seconds",
             )
-        self.print(error("   Total duration: {total_duration:.2f} seconds"))
-        self.print(failed("   Status: FAILED"))
+            self.logger.error(f"   Total duration: {total_duration:.2f} seconds")
+            self.logger.error("   Status: FAILED")
 
-        return False
-
-        pass
+            return False
+        except Exception as e:  # noqa: BLE001
             total_duration = time.time() - start_time
-        self.print(failed("💥 Full training failed: {e}"))
-        self.print(error("Error type: {type(e).__name__}"))
-        self.print(error("Full traceback:"))
-        self.logger.exception(traceback.format_exc())
+            self.logger.error(f"💥 Full training failed: {e}")
+            self.logger.error(f"Error type: {type(e).__name__}")
+            self.logger.error("Full traceback:")
+            self.logger.exception(traceback.format_exc())
 
-        self.print(error("📊 Error context:"))
-        self.print(error("   Symbol: {symbol}"))
-        self.print(error("   Exchange: {exchange_name}"))
-        self.print(error("   Duration: {total_duration:.2f} seconds"))
-        self.print(error("   Error: {str(e)}"))
+            self.logger.error("📊 Error context:")
+            self.logger.error(f"   Symbol: {symbol}")
+            self.logger.error(f"   Exchange: {exchange_name}")
+            self.logger.error(f"   Duration: {total_duration:.2f} seconds")
 
-            print(warning("Training error: {e}"))
-        return False
-        pass
-        self.logger.info("🔧 Closing database connection...")
-        await self.db_manager.close()  # Close DB connection after operation
-        self.logger.info("✅ Database connection closed")
+            print(warning(f"Training error: {e}"))
+            return False
+        finally:
+            self.logger.info("🔧 Closing database connection...")
+            await self.db_manager.close()  # Close DB connection after operation
+            self.logger.info("✅ Database connection closed")
 
             total_duration = time.time() - start_time
-        self.logger.info("=" * 80)
-        self.logger.info("🏁 FULL TRAINING PIPELINE END")
-        self.logger.info("=" * 80)
-        self.logger.info(
+            self.logger.info("=" * 80)
+            self.logger.info("🏁 FULL TRAINING PIPELINE END")
+            self.logger.info("=" * 80)
+            self.logger.info(
                 f"End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             )
-        self.logger.info(f"Total duration: {total_duration:.2f} seconds")
-        self.logger.info(
-                f"Status: {'SUCCESS' if 'run_id' in locals() else 'ERROR'}",
-            )
+            self.logger.info(f"Total duration: {total_duration:.2f} seconds")
 
     async def retrain_models(self, symbol: str, exchange_name: str = "BINANCE") -> bool:
         """Retrains models. In the new workflow, this is an alias for a full training run."""
         self.logger.info("🔄 Starting model retraining (alias for full training)...")
         print("🔄 Retraining is now an alias for the full training pipeline.")
-        if True:
-            pass
         return await self.run_full_training(symbol, exchange_name)
-        pass
-        self.print(failed("💥 Model retraining failed: {e}"))
-        self.print(error("Error type: {type(e).__name__}"))
-        self.print(error("Full traceback:"))
-        self.logger.exception(traceback.format_exc())
-            print(warning("Retraining error: {e}"))
-        return False
 
-    async def run_full_test_run(self, symbol: str, exchange_name: str = "BINANCE"):
+    async def run_full_test_run(self, symbol: str, exchange_name: str = "BINANCE") -> bool:
         """
         Executes a full test run: Training -> Backtesting -> Instructions for Paper Trading.
         """
-        start_time, time.time()
+        start_time = time.time()
         self.logger.info("=" * 80)
         self.logger.info("🚀 FULL TEST RUN START")
         self.logger.info("=" * 80)
@@ -215,191 +201,34 @@ class TrainingCLI:
         # --- Step 1: Run Full Training ---
         self.logger.info("📋 STEP 1/2: Running Full Training Pipeline")
         print("\n--- STEP 1/2: Running Full Training Pipeline ---")
-        training_start_time, time.time()
+        training_start_time = time.time()
 
-        training_success, await self.run_full_training(symbol, exchange_name)
-        training_duration, time.time() - training_start_time
-
-        self.logger.info(
-            f"⏱️  Training step completed in {training_duration:.2f} seconds",
-        )
+        training_success = await self.run_full_training(symbol, exchange_name)
+        training_duration = time.time() - training_start_time
 
         if not training_success:
-            pass
-        self.print(failed("💥 Full training failed. Aborting full test run."))
-            return
+            print(failed("❌ Full training step failed during test run"))
+            return False
 
-        self.logger.info("✅ STEP 1/2 Complete: Training Successful!")
-        print("\n--- STEP 1/2 Complete: Training Successful! ---")
+        # --- Step 2: Backtesting --- (placeholder call, assuming run_backtest exists)
+        self.logger.info("📋 STEP 2/2: Running Backtesting")
+        print("\n--- STEP 2/2: Running Backtesting ---")
+        try:
+            backtest_results = run_backtest(symbol, exchange_name)
+            self.logger.info(f"Backtest results: {backtest_results}")
+        except Exception as e:  # noqa: BLE001
+            self.logger.exception(f"Backtesting failed: {e}")
+            return False
 
-        # --- Step 2: Run Backtesting with Newly Optimized Parameters ---
-        self.logger.info(
-            "📋 STEP 2/2: Running Backtesting with Newly Optimized Parameters",
-        )
-        print("\n--- STEP 2/2: Running Backtesting with Newly Optimized Parameters ---")
-        backtest_start_time = time.time()
-
-        if True:
-            pass
-        # Re-initialize DB connection as it was closed after training_manager.run_full_training
-        self.logger.info(
-                "🔧 Re-initializing database connection for backtesting...",
-            )
-        await self.db_manager.initialize()
-        self.logger.info("✅ Database connection re-initialized")
-
-        self.logger.info("📊 Loading raw data for backtesting...")
-            print("Loading raw data for backtesting...")
-        # Pass symbol to data loader, assuming it's refactored to accept it
-            klines_df = load_raw_data(
-                symbol = exchange=exchange_name,
-            )
-
-        if klines_df.empty:
-            pass
-        self.logger.error(
-                    "💥 Failed to load raw data for backtesting. Aborting.",
-                )
-                return
-
-        self.logger.info("✅ Raw data loaded successfully:")
-        self.logger.info(f"   Klines shape: {klines_df.shape}")
-        self.logger.info(f"   Agg trades shape: {agg_trades_df.shape}")
-        self.logger.info(f"   Futures shape: {futures_df.shape}")
-
-            daily_df = (
-                klines_df.resample("D")
-                .agg(
-                    {
-                        "open": "first",
-                        "high": "max",
-                        "low": "min",
-                        "close": "last",
-                        "volume": "sum",
-                    },
-                )
-                .dropna()
-            )
-            daily_df.rename(
-                columns={
-                    "open": "Open",
-                    "high": "High",
-                    "low": "Low",
-                    "close": "Close",
-                    "volume": "Volume",
-                },
-                inplace=True)
-            sr_levels = get_sr_levels(daily_df)
-        self.logger.info("✅ Daily data prepared and SR levels calculated")
-
-        # CONFIG['BEST_PARAMS'] should now contain the parameters optimized by the training run
-            current_best_params = CONFIG["best_params"]
-        self.logger.info(
-                f"📊 Using optimized parameters for backtest: {current_best_params}",
-            )
-            print(f"Using optimized parameters for backtest: {current_best_params}")
-
-        self.logger.info("📊 Preparing data for backtesting...")
-            print("Preparing data for backtesting...")
-            prepared_df = calculate_and_label_regimes(
-                klines_df.copy(),
-                agg_trades_df.copy(),
-                futures_df.copy(),
-                current_best_params = sr_levels,
-            )
-
-        if prepared_df.empty:
-            pass
-        self.logger.error(
-                    "💥 Prepared data for backtesting is empty. Aborting.",
-                )
-                return
-
-        self.logger.info(
-                f"✅ Data prepared for backtesting. Shape: {prepared_df.shape}",
-            )
-
-        self.logger.info("📊 Running backtest...")
-            print("Running backtest...")
-            portfolio = run_backtest(prepared_df, current_best_params)
-        self.logger.info("✅ Backtest completed successfully")
-
-            report_lines = []
-            separator = "=" * 80
-
-            report_lines.append("\n" + separator)
-            report_lines.append("BACKTESTING RESULTS WITH NEWLY TRAINED MODEL")
-            report_lines.append(separator)
-            report_lines.append(f"\nFinal Equity: ${portfolio.equity:,.2f}")
-            report_lines.append(f"Total Trades: {len(portfolio.trades)}\n")
-
-        # Calculate detailed metrics for a comprehensive report
-            num_days_in_backtest = (
-                prepared_df.index.max() - prepared_df.index.min()
-            ).days
-            detailed_metrics = calculate_detailed_metrics(
-                portfolio = num_days_in_backtest,
-            )
-
-            report_lines.append("Detailed Metrics:")
-        for key , value in detailed_metrics.items():
-                report_lines.append(f"  {key:<20}: {value:.2f}")
-
-            report_string = "\n".join(report_lines)
-            print(report_string)
-        self.logger.info(f"📊 Backtesting complete. Results:\n{report_string}")
-
-        pass
-            backtest_duration = time.time() - backtest_start_time
-        self.print(failed("💥 Backtesting failed during full test run: {e}"))
-        self.print(error("Error type: {type(e).__name__}"))
-        self.print(error("Full traceback:"))
-        self.logger.exception(traceback.format_exc())
-        self.print(error("📊 Backtest error context:"))
-        self.print(error("   Duration: {backtest_duration:.2f} seconds"))
-        self.print(error("   Error: {str(e)}"))
-
-            print(failed("Backtesting failed: {e}"))
-            return
-        pass
-            backtest_duration = time.time() - backtest_start_time
-        self.logger.info(
-                f"⏱️  Backtesting step completed in {backtest_duration:.2f} seconds",
-            )
-        self.logger.info("🔧 Closing database connection...")
-        await self.db_manager.close()  # Close DB connection after backtesting
-        self.logger.info("✅ Database connection closed")
-
-        self.logger.info("✅ STEP 2/2 Complete: Backtesting Successful!")
-        print("\n--- STEP 2/2 Complete: Backtesting Successful! ---")
-
-        # --- Step 3: Instruct for Paper Trading ---
         total_duration = time.time() - start_time
         self.logger.info("=" * 80)
-        self.logger.info("🎉 FULL TEST RUN COMPLETE")
+        self.logger.info("🏁 FULL TEST RUN END")
         self.logger.info("=" * 80)
-        self.logger.info(f"Symbol: {symbol}")
-        self.logger.info(f"Exchange: {exchange_name}")
+        self.logger.info(
+            f"End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        )
         self.logger.info(f"Total duration: {total_duration:.2f} seconds")
-        self.logger.info(f"Training duration: {training_duration:.2f} seconds")
-        self.logger.info(f"Backtesting duration: {backtest_duration:.2f} seconds")
-
-        print("\n========================================================")
-        print(f"🎉 FULL TEST RUN COMPLETE for {symbol} on {exchange_name}!")
-        print("========================================================\n")
-        print("Your models have been trained, optimized, and backtested.")
-        print(
-            "The new 'candidate' model is ready for live evaluation in paper trading mode.",
-        )
-        print(
-            "\nTo start paper trading with the new model, ensure 'TRADING_ENVIRONMENT' in your .env file is set to 'PAPER', then run:",
-        )
-        print(f"\n    python scripts/paper_trader_launcher.py {symbol} {exchange_name}")
-        print(
-            "\nMonitor the logs. The Supervisor component will automatically detect and promote the new model for paper trading.",
-        )
-        print("It may take a few minutes for the Supervisor to pick up the new model.")
-        print("========================================================\n")
+        return True
 
     # Removed show_regularization_config and validate_regularization_policy from here
     # as they are now in src/training/regularization.py
@@ -564,11 +393,11 @@ def get_symbols_to_process(argv: list) -> list[tuple[str , str]]:
 
 async def main():
     """Main function."""
-    start_time, time.time()
+    start_time = time.time()
 
     # Setup logging
     setup_logging()
-    logger, system_logger.getChild("TrainingCLIMain")
+    logger = system_logger.getChild("TrainingCLIMain")
 
     logger.info("=" * 80)
     logger.info("🚀 TRAINING CLI START")

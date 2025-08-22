@@ -224,7 +224,7 @@ class TimeframeDataVerifier:
         print(f"🎯 Target Timeframes: {', '.join(report['timeframes'])}")
 
         # Summary
-        summary, report["summary"]
+        summary = report["summary"]
         print("\n📈 SUMMARY:")
         print(f"   Total Timeframes: {summary['total_timeframes']}")
         print(f"   Ready for Training: {summary['ready_timeframes']}")
@@ -254,14 +254,15 @@ class TimeframeDataVerifier:
             )
             print(f"      Ready: {completeness.get('ready_for_training', False)}")
 
-        if "error" in completeness:
+            if "error" in completeness:
                 print(f"      Error: {completeness['error']}")
 
         print("\n" + "=" * 80)
 
-def main():
+
+def main() -> bool:
     """Main function to run the verification."""
-    parser, argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         description="Verify timeframe data for multi-timeframe HMM ensemble",
     )
     parser.add_argument("--config", type=str, default="", help="Path to config file")
@@ -272,9 +273,9 @@ def main():
         help="Path to save report JSON",
     )
 
-    args, parser.parse_args()
+    args = parser.parse_args()
 
-    if True:
+    try:
         # Load configuration
         config = CONFIG if hasattr(CONFIG, "get") else {}
 
@@ -289,8 +290,7 @@ def main():
 
         # Save report if requested
         if args.output:
-            pass
-        with open(args.output, "w") as f:
+            with open(args.output, "w") as f:
                 json.dump(report, f, indent=2, default=str)
             logger.info(f"📄 Report saved to {args.output}")
 
@@ -302,8 +302,7 @@ def main():
             logger.warning("⚠️  Some timeframes need attention before training")
 
         return success
-
-    pass
+    except Exception as e:  # noqa: BLE001
         logger.exception(f"💥 Verification failed: {e}")
         return False
 

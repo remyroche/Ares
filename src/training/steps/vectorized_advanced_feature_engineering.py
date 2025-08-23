@@ -1144,47 +1144,43 @@ class VectorizedSRDistanceCalculator:
 
             close = price_data["close"].astype(float)
 
-        if sr_levels is None or not isinstance(sr_levels, dict):
-        return features
+            if sr_levels is None or not isinstance(sr_levels, dict):
+                return features
 
-        # Calculate distances to nearest levels
-        for level_type in ["support", "resistance"]:
-        if level_type in sr_levels:
+            # Calculate distances to nearest levels
+            for level_type in ["support", "resistance"]:
+                if level_type in sr_levels:
                     level_prices = sr_levels[level_type]
 
-        # Convert to numeric if it's a list or array
-        if isinstance(level_prices, list | np.ndarray):
+                    # Convert to numeric if it's a list or array
+                    if isinstance(level_prices, list | np.ndarray):
                         level_prices = np.array(level_prices).astype(float)
                     else:
                         level_prices = np.array([float(level_prices)])
 
-        # Find nearest level for each price
+                    # Find nearest level for each price
                     distances = []
-        for price in close:
-        if not pd.isna(price):
+                    for price in close:
+                        if not pd.isna(price):
                             level_distances = abs(level_prices - price)
                             min_distance = level_distances.min()
                             distances.append(min_distance)
                         else:
                             distances.append(np.nan)
 
-                    distance_series, pd.Series(distances, index=close.index)
+                    distance_series = pd.Series(distances, index=close.index)
                     features[f"distance_to_{level_type}"] = distance_series.fillna(0)
 
-        # Normalized distance
+                    # Normalized distance
                     price_range = close.rolling(20).max() - close.rolling(20).min()
-                    normalized_distance, distance_series / price_range.replace(
-                        0, np.nan,
-                    )
-                    features[f"normalized_distance_to_{level_type}"] = (
-                        normalized_distance.fillna(0)
-                    )
+                    normalized_distance = distance_series / price_range.replace(0, np.nan)
+                    features[f"normalized_distance_to_{level_type}"] = normalized_distance.fillna(0)
 
-        return features
+            return features
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in S/R distance calculation: {e}")
-        return {}
+            self.logger.exception(f"❌ Error in S/R distance calculation: {e}")
+            return {}
 
 
 class VectorizedWaveletTransformAnalyzer:
@@ -1199,14 +1195,14 @@ class VectorizedWaveletTransformAnalyzer:
     async def initialize(self) -> bool:
         """Initialize the wavelet transform analyzer."""
         try:
-        self.logger.info("🚀 Initializing VectorizedWaveletTransformAnalyzer...")
-        self.is_initialized = True
-        self.logger.info(
-                "✅ VectorizedWaveletTransformAnalyzer initialized successfully",
+            self.logger.info("🚀 Initializing VectorizedWaveletTransformAnalyzer...")
+            self.is_initialized = True
+            self.logger.info(
+                "✅ VectorizedWaveletTransformAnalyzer initialized successfully"
             )
-        return True
+            return True
         except Exception as e:
-        self.logger.exception(
+            self.logger.exception(
                 f"❌ Failed to initialize VectorizedWaveletTransformAnalyzer: {e}",
             )
         return False

@@ -1,0 +1,99 @@
+2025-08-23 11:58:24,425 INFO AresGlobal ================================================================================ - -
+2025-08-23 11:58:24,425 INFO AresGlobal 📊 SESSION SUMMARY - -
+2025-08-23 11:58:24,425 INFO AresGlobal Session started: 2025-08-23 11:58:24 - -
+2025-08-23 11:58:24,425 INFO AresGlobal This file contains ALL logs for this session - -
+2025-08-23 11:58:24,425 INFO AresGlobal ================================================================================ - -
+2025-08-23 11:58:24,425 INFO AresSystem ================================================================================ - -
+2025-08-23 11:58:24,425 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 11:58:24,425 INFO AresSystem 🚀 ARES LAUNCHER STARTED - Mode: INITIALIZATION - -
+2025-08-23 11:58:24,425 INFO AresGlobal [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: INITIALIZATION - -
+2025-08-23 11:58:24,425 INFO AresSystem Start time: 2025-08-23 11:58:24 - -
+2025-08-23 11:58:24,425 INFO AresGlobal [SYSTEM] Start time: 2025-08-23 11:58:24 - -
+2025-08-23 11:58:24,425 INFO AresSystem Log directory: log - -
+2025-08-23 11:58:24,425 INFO AresGlobal [SYSTEM] Log directory: log - -
+2025-08-23 11:58:24,425 INFO AresSystem ================================================================================ - -
+2025-08-23 11:58:24,425 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 11:58:24,425 INFO AresGlobal.AresLauncher ================================================================================ - -
+2025-08-23 11:58:24,425 INFO AresGlobal.AresLauncher 🚀 ARES COMPREHENSIVE LAUNCHER - -
+2025-08-23 11:58:24,425 INFO AresGlobal.AresLauncher ================================================================================ - -
+2025-08-23 11:58:24,425 INFO AresGlobal.AresLauncher Start time: 2025-08-23 11:58:24 - -
+2025-08-23 11:58:24,425 INFO AresGlobal.AresLauncher Log directory: log - -
+2025-08-23 11:58:24,425 INFO AresGlobal.AresLauncher Log level: INFO - -
+2025-08-23 11:58:24,425 INFO AresGlobal.AresLauncher Global log file: ares_global_20250823_115824.log - -
+2025-08-23 11:58:24,425 INFO AresGlobal.AresLauncher Full run log: log/ares_full_20250823_115824.log - -
+2025-08-23 11:58:24,425 INFO AresGlobal.AresLauncher Trades log: log/ares_trades_20250823_115824.log - -
+2025-08-23 11:58:24,425 INFO AresGlobal.AresLauncher Backtest log: log/ares_backtest_20250823_115824.log - -
+2025-08-23 11:58:24,425 INFO AresGlobal.AresLauncher ================================================================================ - -
+2025-08-23 11:58:24,426 INFO AresTradingSystem.System.SignalHandler Shutdown callback registered - -
+2025-08-23 11:58:24,426 INFO AresSystem ================================================================================ - -
+2025-08-23 11:58:24,426 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 11:58:24,426 INFO AresSystem 🚀 ARES LAUNCHER STARTED - Mode: blank - Symbol: ETHUSDT - Exchange: BINANCE - -
+2025-08-23 11:58:24,426 INFO AresGlobal [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: blank - Symbol: ETHUSDT - Exchange: BINANCE - -
+2025-08-23 11:58:24,426 INFO AresSystem Start time: 2025-08-23 11:58:24 - -
+2025-08-23 11:58:24,426 INFO AresGlobal [SYSTEM] Start time: 2025-08-23 11:58:24 - -
+2025-08-23 11:58:24,426 INFO AresSystem Log directory: log - -
+2025-08-23 11:58:24,426 INFO AresGlobal [SYSTEM] Log directory: log - -
+2025-08-23 11:58:24,426 INFO AresSystem ================================================================================ - -
+2025-08-23 11:58:24,426 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 11:58:24,426 INFO AresGlobal.AresLauncher 🚀 Running enhanced 16-step training pipeline for ETHUSDT on BINANCE - -
+2025-08-23 11:58:24,426 INFO AresGlobal.AresLauncher Starting from step: step1_5_data_converter - -
+2025-08-23 11:58:24,426 INFO AresGlobal.AresLauncher 🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training - -
+2025-08-23 11:58:24,427 INFO AresGlobal.ProgressManager Initialized ProgressManager for ETHUSDT on BINANCE - -
+2025-08-23 11:58:24,427 INFO AresGlobal.ProgressManager Progress directory: data/training/progress/BINANCE_ETHUSDT - -
+2025-08-23 11:58:24,427 INFO AresGlobal.StepOrchestrator Initialized StepOrchestrator for ETHUSDT on BINANCE - -
+2025-08-23 11:58:24,427 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step1_5_data_converter - -
+2025-08-23 11:58:24,427 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step1_5_data_converter' (force) - -
+2025-08-23 11:58:24,427 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step2_feature_engineering - -
+2025-08-23 11:58:24,427 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step2_feature_engineering' (force) - -
+2025-08-23 11:58:24,427 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step3_hmm_regime_discovery - -
+2025-08-23 11:58:24,427 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step3_hmm_regime_discovery' (force) - -
+2025-08-23 11:58:24,427 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step4_processing_labeling - -
+2025-08-23 11:58:24,427 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step4_processing_labeling' (force) - -
+2025-08-23 11:58:24,427 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step5_regime_data_splitting - -
+2025-08-23 11:58:24,427 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step5_regime_data_splitting' (force) - -
+2025-08-23 11:58:24,427 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step6_hmm_based_training - -
+2025-08-23 11:58:24,427 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step6_hmm_based_training' (force) - -
+2025-08-23 11:58:24,427 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step6_5_unified_regime_intelligence - -
+2025-08-23 11:58:24,427 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step6_5_unified_regime_intelligence' (force) - -
+2025-08-23 11:58:24,427 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step7_analyst_enhancement - -
+2025-08-23 11:58:24,427 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step7_analyst_enhancement' (force) - -
+2025-08-23 11:58:24,427 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step8_tactician_labeling - -
+2025-08-23 11:58:24,427 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step8_tactician_labeling' (force) - -
+2025-08-23 11:58:24,428 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step9_tactician_specialist_training - -
+2025-08-23 11:58:24,428 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step9_tactician_specialist_training' (force) - -
+2025-08-23 11:58:24,428 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step10_confidence_calibration - -
+2025-08-23 11:58:24,428 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step10_confidence_calibration' (force) - -
+2025-08-23 11:58:24,428 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step11_final_parameters_optimization - -
+2025-08-23 11:58:24,428 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step11_final_parameters_optimization' (force) - -
+2025-08-23 11:58:24,428 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step12_walk_forward_validation - -
+2025-08-23 11:58:24,428 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step12_walk_forward_validation' (force) - -
+2025-08-23 11:58:24,428 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step13_monte_carlo_validation - -
+2025-08-23 11:58:24,428 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step13_monte_carlo_validation' (force) - -
+2025-08-23 11:58:24,428 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step14_ab_testing - -
+2025-08-23 11:58:24,428 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step14_ab_testing' (force) - -
+2025-08-23 11:58:24,428 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step15_saving - -
+2025-08-23 11:58:24,428 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step15_saving' (force) - -
+2025-08-23 11:58:24,428 INFO AresGlobal.AresLauncher ✅ Cleared progress for 16 steps: ['step1_5_data_converter', 'step2_feature_engineering', 'step3_hmm_regime_discovery', 'step4_processing_labeling', 'step5_regime_data_splitting', 'step6_hmm_based_training', 'step6_5_unified_regime_intelligence', 'step7_analyst_enhancement', 'step8_tactician_labeling', 'step9_tactician_specialist_training', 'step10_confidence_calibration', 'step11_final_parameters_optimization', 'step12_walk_forward_validation', 'step13_monte_carlo_validation', 'step14_ab_testing', 'step15_saving'] - -
+2025-08-23 11:58:24,428 DEBUG asyncio Using selector: EpollSelector - -
+2025-08-23 11:58:24,428 INFO AresGlobal.StepOrchestrator 🚀 Starting execution from step: step1_5_data_converter - -
+2025-08-23 11:58:24,429 ERROR AresGlobal.StepOrchestrator Failed to setup enhanced training manager: No module named 'psutil' - -
+Traceback (most recent call last):
+  File "/workspace/src/training/step_orchestrator.py", line 74, in _setup_enhanced_training_manager
+    from src.training.enhanced_training_manager import (
+        setup_enhanced_training_manager,
+    )
+  File "/workspace/src/training/enhanced_training_manager.py", line 17, in <module>
+    import psutil
+ModuleNotFoundError: No module named 'psutil'
+2025-08-23 11:58:24,430 INFO AresGlobal.StepOrchestrator [91m[1m🚫[0m [91m[1mFailed to setup enhanced training manager: No module named 'psutil'[0m - -
+2025-08-23 11:58:24,430 ERROR AresGlobal.AresLauncher ❌ Step-based training pipeline failed - -
+2025-08-23 11:58:24,431 INFO AresSystem ================================================================================ - -
+2025-08-23 11:58:24,431 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 11:58:24,431 INFO AresSystem 🛑 ARES LAUNCHER ENDED - Exit code: 1 - -
+2025-08-23 11:58:24,431 INFO AresGlobal [SYSTEM] 🛑 ARES LAUNCHER ENDED - Exit code: 1 - -
+2025-08-23 11:58:24,431 INFO AresSystem End time: 2025-08-23 11:58:24 - -
+2025-08-23 11:58:24,431 INFO AresGlobal [SYSTEM] End time: 2025-08-23 11:58:24 - -
+2025-08-23 11:58:24,431 INFO AresSystem ================================================================================ - -
+2025-08-23 11:58:24,431 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 11:58:24,431 INFO AresGlobal.AresLauncher 🧹 Cleaning up processes... - -
+2025-08-23 11:58:24,431 INFO AresGlobal.AresLauncher ✅ Cleanup completed - -

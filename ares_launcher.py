@@ -27,6 +27,9 @@ Usage:
     # Short blank training (30 days instead of 60 for faster testing)
     python ares_launcher.py short-blank --symbol ETHUSDT --exchange BINANCE
 
+    # Start from step2 with existing data (no new downloads)
+    python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE
+
     # Multi-timeframe ensemble training (trains models on 1m, 5m, 15m, 1h, 4h, 1d and creates ensembles)
     python ares_launcher.py multi-timeframe --symbol ETHUSDT --exchange BINANCE
 
@@ -1349,6 +1352,82 @@ class AresLauncher:
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
+        context="run_step2_with_existing_data",
+    )
+    def run_step2_with_existing_data(
+        self,
+        symbol: str,
+        exchange: str,
+        start_step: str = "step2_feature_engineering",
+        force_rerun: bool = False,
+        with_gui: bool = False,
+    ):
+        """Run step2 with existing data from step1 and step1_5 without triggering new downloads."""
+        self.logger.info(
+            f"🚀 Running step2 with existing data for {symbol} on {exchange}"
+        )
+        self.logger.info(
+            "📊 Using existing data from step1 and step1_5 - no new downloads"
+        )
+        
+        # Validate existing data before proceeding
+        try:
+            from src.utils.data_completeness_validator import validate_data_for_step2, print_data_validation_report
+            
+            # Validate existing data
+            can_start, validation_result = validate_data_for_step2(symbol, exchange)
+            
+            # Print validation report
+            print_data_validation_report(symbol, exchange)
+            
+            if not can_start:
+                self.logger.error("❌ Cannot start from step2 - missing required data")
+                self.logger.error("Please run step1 and step1_5 first to collect and process data")
+                return False
+            
+            # Log warnings if any
+            if validation_result.get("warnings"):
+                self.logger.warning("⚠️ Data completeness warnings detected:")
+                for warning in validation_result["warnings"]:
+                    self.logger.warning(f"   • {warning}")
+            
+            if validation_result.get("gaps"):
+                self.logger.warning("🕳️ Data gaps detected:")
+                for gap in validation_result["gaps"]:
+                    self.logger.warning(f"   • {gap}")
+            
+            self.logger.info("✅ Data validation passed - proceeding with existing data")
+            
+        except ImportError as e:
+            self.logger.warning(f"⚠️ Could not import data completeness validator: {e}")
+            self.logger.warning("Proceeding with basic file existence check")
+            
+            # Fallback to basic check
+            consolidated_file = (
+                f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
+            )
+            if not os.path.exists(consolidated_file):
+                self.logger.error(
+                    f"❌ Consolidated data file not found: {consolidated_file}"
+                )
+                self.logger.error(
+                    "Please run data loading first or ensure consolidated data exists"
+                )
+                return False
+            self.logger.info(f"✅ Found consolidated data: {consolidated_file}")
+        
+        return self._run_step_pipeline(
+            symbol=symbol,
+            exchange=exchange,
+            start_step=start_step,
+            force_rerun=force_rerun,
+            with_gui=with_gui,
+            training_mode="blank",  # Use blank mode for step2 with existing data
+        )
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
         context="run_data_loading",
     )
     def run_data_loading(
@@ -1704,24 +1783,59 @@ class AresLauncher:
                 self._force_fresh_start_from_step(orchestrator, start_step)
                 self._clear_checkpoint_files(symbol, exchange, timeframe="1m")
 
-            # Check for pre-consolidated data if starting from step 2
+            # Enhanced data validation for step2
             if start_step in (
                 "step2_market_regime_classification",
                 "step2_processing_labeling_feature_engineering",
+                "step2_feature_engineering",
             ):
-                self.logger.info("📁 Using pre-consolidated data for step2")
-                consolidated_file = (
-                    f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
-                )
-                if not os.path.exists(consolidated_file):
-                    self.logger.error(
-                        f"❌ Consolidated data file not found: {consolidated_file}"
+                self.logger.info("🔍 Validating existing data for step2 execution")
+                
+                # Import data completeness validator
+                try:
+                    from src.utils.data_completeness_validator import validate_data_for_step2, print_data_validation_report
+                    
+                    # Validate existing data
+                    can_start, validation_result = validate_data_for_step2(symbol, exchange)
+                    
+                    # Print validation report
+                    print_data_validation_report(symbol, exchange)
+                    
+                    if not can_start:
+                        self.logger.error("❌ Cannot start from step2 - missing required data")
+                        self.logger.error("Please run step1 and step1_5 first to collect and process data")
+                        return False
+                    
+                    # Log warnings if any
+                    if validation_result.get("warnings"):
+                        self.logger.warning("⚠️ Data completeness warnings detected:")
+                        for warning in validation_result["warnings"]:
+                            self.logger.warning(f"   • {warning}")
+                    
+                    if validation_result.get("gaps"):
+                        self.logger.warning("🕳️ Data gaps detected:")
+                        for gap in validation_result["gaps"]:
+                            self.logger.warning(f"   • {gap}")
+                    
+                    self.logger.info("✅ Data validation passed - proceeding with existing data")
+                    
+                except ImportError as e:
+                    self.logger.warning(f"⚠️ Could not import data completeness validator: {e}")
+                    self.logger.warning("Proceeding with basic file existence check")
+                    
+                    # Fallback to basic check
+                    consolidated_file = (
+                        f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
                     )
-                    self.logger.error(
-                        "Please run data loading first or ensure consolidated data exists"
-                    )
-                    return False
-                self.logger.info(f"✅ Found consolidated data: {consolidated_file}")
+                    if not os.path.exists(consolidated_file):
+                        self.logger.error(
+                            f"❌ Consolidated data file not found: {consolidated_file}"
+                        )
+                        self.logger.error(
+                            "Please run data loading first or ensure consolidated data exists"
+                        )
+                        return False
+                    self.logger.info(f"✅ Found consolidated data: {consolidated_file}")
 
             # Run the step-based training using the orchestrator
             import asyncio
@@ -1757,9 +1871,11 @@ Examples:
   python ares_launcher.py backtest --symbol ETHUSDT --exchange BINANCE --gui
   python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --gui
   python ares_launcher.py short-blank --symbol ETHUSDT --exchange BINANCE
-  python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step4_regime_data_splitting
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step1_data_collection
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_processing_labeling_feature_engineering
+      python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step4_regime_data_splitting
+    python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE  # Start from step2 with existing data
+    python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE --step step2_feature_engineering  # Specific step2
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step1_data_collection
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_processing_labeling_feature_engineering
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step3_feature_engineering
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step4_regime_data_splitting
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step5_hmm_based_training
@@ -1798,6 +1914,7 @@ Examples:
             "gui",
             "blank",
             "short-blank",
+            "step2",  # New command to start from step2 with existing data
             "full",
             "multi-timeframe",
             "load",
@@ -1986,6 +2103,13 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
         "short-blank": lambda: launcher.run_short_blank_training(
             args.symbol,
             args.exchange,
+            with_gui=args.gui,
+        ),
+        "step2": lambda: launcher.run_step2_with_existing_data(
+            args.symbol,
+            args.exchange,
+            start_step=normalized_step or "step2_feature_engineering",
+            force_rerun=force_flag,
             with_gui=args.gui,
         ),
         "full": lambda: launcher.run_step_based_full_training(

@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import json
 import os
-    from datetime import UTC, datetime
+from datetime import UTC, datetime
 from typing import Any, Never
 
 import numpy as np
@@ -46,6 +46,13 @@ from src.training.steps.raw_data_quality_checker import auto_fix_data_quality_is
 from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
+
+# Import VIF calculator for robust VIF calculation
+try:
+    from src.utils.vif_calculator import calculate_vif_robust, analyze_vif_issues
+except ImportError:
+    calculate_vif_robust = None
+    analyze_vif_issues = None
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
@@ -1520,50 +1527,37 @@ async def run_step(
                     std = std.replace(0.0, 1.0)
                     Xn = (Xn - Xn.mean()) / std
 
-                    # Cheap VIF via shrinkage inverse with timeout protection
-                    import signal
-
-                    def timeout_handler(signum, frame) -> Never:
-                        msg = "VIF calculation timed out"
-                        raise TimeoutError(msg)
-
-                    try:
-                        # Set timeout for VIF calculation (30 seconds)
-                        signal.signal(signal.SIGALRM, timeout_handler)
-                        signal.alarm(30)
-
+                    # Robust VIF calculation with comprehensive validation
+                    if calculate_vif_robust is not None and analyze_vif_issues is not None:
                         try:
-                            from sklearn.covariance import LedoitWolf
-                            lw = LedoitWolf().fit(Xn.values)
-                            cov = lw.covariance_
-                            std_vec = np.sqrt(np.diag(cov))
-                            std_vec[std_vec == 0.0] = 1.0
-                            R = cov / np.outer(std_vec, std_vec)
-                        except Exception:
-                            logger.info("🔍 VIF Analysis: LedoitWolf failed, using correlation matrix")
-                            R = Xn.corr().values
-
-                        try:
-                            R_inv = np.linalg.pinv(R)
-                            vif_vals = pd.Series(np.diag(R_inv), index=num_cols)
-                        except Exception as _e:
-                            logger.warning(f"⚠️ VIF Analysis: pseudo-inverse failed, fallback to diag ones: {_e}")
+                            # Calculate VIF using robust method
+                            vif_vals = calculate_vif_robust(Xn, num_cols)
+                            
+                            # Analyze VIF issues and log comprehensive report
+                            vif_analysis = analyze_vif_issues(vif_vals)
+                            
+                            # Log VIF analysis results
+                            logger.info(f"🔍 VIF Analysis: Max VIF: {vif_analysis['max_vif']:.2f}, Threshold: {vif_thr}")
+                            logger.info(f"🔍 VIF Analysis: VIF range: {vif_analysis['min_vif']:.2f} to {vif_analysis['max_vif']:.2f}")
+                            logger.info(f"🔍 VIF Analysis: Features with VIF > {vif_thr}: {(vif_vals > vif_thr).sum()}")
+                            
+                            # Log any issues found
+                            if vif_analysis['issues']:
+                                for issue in vif_analysis['issues']:
+                                    logger.warning(f"⚠️ VIF Analysis: {issue}")
+                            
+                            max_vif = vif_analysis['max_vif']
+                            
+                        except Exception as e:
+                            logger.warning(f"⚠️ VIF Analysis: Robust VIF calculation failed, using fallback: {e}")
+                            # Fallback to simple VIF calculation
                             vif_vals = pd.Series(np.ones(len(num_cols)), index=num_cols)
-
-                        # Cancel timeout
-                        signal.alarm(0)
-
-                    except TimeoutError:
-                        logger.warning("⚠️ VIF Analysis: Calculation timed out, skipping VIF filtering")
+                            max_vif = 1.0
+                    else:
+                        logger.warning("⚠️ VIF Analysis: VIF calculator not available, using fallback")
+                        # Fallback to simple VIF calculation
                         vif_vals = pd.Series(np.ones(len(num_cols)), index=num_cols)
-                    except Exception as e:
-                        logger.warning(f"⚠️ VIF Analysis: Unexpected error, skipping VIF filtering: {e}")
-                        vif_vals = pd.Series(np.ones(len(num_cols)), index=num_cols)
-                    max_vif = float(vif_vals.max()) if not vif_vals.empty else 0.0
-
-                    logger.info(f"🔍 VIF Analysis: Max VIF: {max_vif:.2f}, Threshold: {vif_thr}")
-                    logger.info(f"🔍 VIF Analysis: VIF range: {vif_vals.min():.2f} to {vif_vals.max():.2f}")
-                    logger.info(f"🔍 VIF Analysis: Features with VIF > {vif_thr}: {(vif_vals > vif_thr).sum()}")
+                        max_vif = 1.0
 
                     # One-shot prune: drop up to K highest VIF offenders
                     K = int(kwargs.get("max_vif_drop", 5))

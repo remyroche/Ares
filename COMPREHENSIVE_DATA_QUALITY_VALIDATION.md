@@ -13,8 +13,8 @@ This document describes the comprehensive data quality validation system impleme
 - **Detailed Logging**: Comprehensive logging of all quality issues found
 
 ### 📊 **Quality Checks**
-- **NaN Values**: Detects and reports features with excessive NaN values (0.1% threshold)
-- **Infinite Values**: Identifies features with infinite or negative infinite values (1 value threshold)
+- **NaN Values**: Detects and reports features with any NaN values (zero tolerance)
+- **Infinite Values**: Identifies features with any infinite or negative infinite values (zero tolerance)
 - **Constant Features**: Flags features with insufficient variation (2+ unique values, except boolean)
 - **High Correlations**: Detects highly correlated feature pairs
 - **File Integrity**: Validates file structure and basic properties
@@ -28,8 +28,8 @@ This document describes the comprehensive data quality validation system impleme
 - Validates data completeness and format
 - **Data Structure Validation**: Columns, format, index, data types
 - **Thresholds**: 
-  - Max NaN ratio: 0.1%
-  - Max infinite count: 1 value
+  - Max NaN ratio: 0% (zero tolerance)
+  - Max infinite count: 0 values (zero tolerance)
   - Min unique values: 2 (except boolean)
 
 #### **Step1_5: Data Converter**
@@ -46,8 +46,8 @@ This document describes the comprehensive data quality validation system impleme
 - Ensures minimum feature count requirements
 - **Data Structure Validation**: Columns, format, index, data types
 - **Thresholds**:
-  - Max NaN ratio: 0.1% (stricter)
-  - Max infinite count: 1 value
+  - Max NaN ratio: 0% (zero tolerance)
+  - Max infinite count: 0 values (zero tolerance)
   - Min unique values: 2 (except boolean)
   - Max correlation threshold: 95%
 
@@ -189,8 +189,8 @@ log_feature_quality_issues(feature_df, "Training Features")
 ### Configurable Parameters
 ```python
 config = {
-    "max_nan_ratio": 0.001,         # Maximum allowed ratio of NaN values (0.1%)
-    "max_infinite_count": 1,        # Maximum allowed count of infinite values
+    "max_nan_ratio": 0.0,           # Maximum allowed ratio of NaN values (zero tolerance)
+    "max_infinite_count": 0,        # Maximum allowed count of infinite values (zero tolerance)
     "min_unique_values": 2,         # Minimum unique values for non-constant features
     "max_constant_ratio": 0.95,     # Maximum ratio for constant features
     "min_feature_count": 40,        # Minimum required features for Step2
@@ -202,9 +202,9 @@ config = {
 
 | Step | Max NaN Ratio | Max Infinite Count | Min Unique Values | Check Correlations | Data Structure Validation |
 |------|---------------|-------------------|-------------------|-------------------|---------------------------|
-| Step1 | 0.1% | 1 | 2 (except boolean) | No | Yes |
-| Step1_5 | 0.1% | 1 | 2 (except boolean) | No | Yes |
-| Step2 | 0.1% | 1 | 2 (except boolean) | Yes | Yes |
+| Step1 | **0%** | **0** | 2 (except boolean) | No | Yes |
+| Step1_5 | **0%** | **0** | 2 (except boolean) | No | Yes |
+| Step2 | **0%** | **0** | 2 (except boolean) | Yes | Yes |
 
 ## Error Handling
 

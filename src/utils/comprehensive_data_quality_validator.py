@@ -42,9 +42,9 @@ class ComprehensiveDataQualityValidator:
         self.config = config or {}
         self.logger = system_logger.getChild("ComprehensiveDataQualityValidator")
         
-        # Quality thresholds - Updated with stricter requirements
-        self.max_nan_ratio = self.config.get("max_nan_ratio", 0.001)  # 0.1% NaN
-        self.max_infinite_count = self.config.get("max_infinite_count", 1)  # 1 infinite value
+        # Quality thresholds - Updated with zero tolerance for NaN and infinite values
+        self.max_nan_ratio = self.config.get("max_nan_ratio", 0.0)  # 0% NaN (zero tolerance)
+        self.max_infinite_count = self.config.get("max_infinite_count", 0)  # 0 infinite values (zero tolerance)
         self.min_unique_values = self.config.get("min_unique_values", 2)  # 2+ unique values
         self.max_constant_ratio = self.config.get("max_constant_ratio", 0.95)
         self.min_feature_count = self.config.get("min_feature_count", 40)
@@ -332,15 +332,15 @@ class ComprehensiveDataQualityValidator:
             result["structure_issues"] = structure_issues
             result["issues"].extend(structure_issues)
             
-            # Check for NaN values (0.1% threshold)
+            # Check for NaN values (zero tolerance)
             nan_counts = df.isnull().sum()
-            high_nan_features = nan_counts[nan_counts > len(df) * self.max_nan_ratio].index.tolist()
+            nan_features = nan_counts[nan_counts > 0].index.tolist()  # Any NaN values
             result["nan_counts"] = nan_counts.to_dict()
             
-            if high_nan_features:
-                result["issues"].append(f"Features with >{self.max_nan_ratio*100}% NaN values: {high_nan_features}")
+            if nan_features:
+                result["issues"].append(f"Features with NaN values (zero tolerance): {nan_features}")
             
-            # Check for infinite values (1 value threshold)
+            # Check for infinite values (zero tolerance)
             infinite_counts = {}
             infinite_features = []
             
@@ -348,13 +348,13 @@ class ComprehensiveDataQualityValidator:
                 infinite_count = np.isinf(df[col]).sum()
                 infinite_counts[col] = infinite_count
                 
-                if infinite_count > self.max_infinite_count:
+                if infinite_count > 0:  # Any infinite values
                     infinite_features.append(col)
             
             result["infinite_counts"] = infinite_counts
             
             if infinite_features:
-                result["issues"].append(f"Features with >{self.max_infinite_count} infinite values: {infinite_features}")
+                result["issues"].append(f"Features with infinite values (zero tolerance): {infinite_features}")
             
             # Check for constant features (2+ unique values, except boolean)
             constant_features = []
@@ -549,25 +549,25 @@ class ComprehensiveDataQualityValidator:
             result["structure_issues"] = structure_issues
             result["issues"].extend(structure_issues)
             
-            # Check for NaN values (0.1% threshold)
+            # Check for NaN values (zero tolerance)
             nan_counts = df.isnull().sum()
-            nan_features = nan_counts[nan_counts > len(df) * self.max_nan_ratio].index.tolist()
+            nan_features = nan_counts[nan_counts > 0].index.tolist()  # Any NaN values
             result["nan_features"] = nan_features
             
             if nan_features:
-                result["issues"].append(f"Features with >{self.max_nan_ratio*100}% NaN values: {nan_features}")
+                result["issues"].append(f"Features with NaN values (zero tolerance): {nan_features}")
             
-            # Check for infinite values (1 value threshold)
+            # Check for infinite values (zero tolerance)
             infinite_features = []
             for col in df.select_dtypes(include=[np.number]).columns:
                 infinite_count = np.isinf(df[col]).sum()
-                if infinite_count > self.max_infinite_count:
+                if infinite_count > 0:  # Any infinite values
                     infinite_features.append(col)
             
             result["infinite_features"] = infinite_features
             
             if infinite_features:
-                result["issues"].append(f"Features with >{self.max_infinite_count} infinite values: {infinite_features}")
+                result["issues"].append(f"Features with infinite values (zero tolerance): {infinite_features}")
             
             # Check for constant features (2+ unique values, except boolean)
             constant_features = []

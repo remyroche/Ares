@@ -13,7 +13,8 @@ python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE
 ✅ **Validates existing data** from step1 and step1_5  
 ✅ **Shows detailed report** of data completeness  
 ✅ **Proceeds with existing data** - no new downloads  
-✅ **Warns about gaps** but continues if possible  
+✅ **Uses smart fallbacks** - comprehensive validator when available, simple file checker otherwise  
+✅ **Warns about missing optional files** but continues if required files exist  
 ❌ **Fails gracefully** if essential data is missing  
 
 ## Prerequisites

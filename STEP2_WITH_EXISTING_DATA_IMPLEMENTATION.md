@@ -26,28 +26,35 @@ This implementation allows users to start the enhanced_training_pipeline from st
 
 ## Implementation Details
 
-### 1. Data Completeness Validator (`src/utils/data_completeness_validator.py`)
+### 1. Data Validators
 
-**Purpose**: Validates completeness of existing data from step1 and step1_5.
+**Simple File Existence Validator** (`src/utils/simple_data_validator.py`):
+- Lightweight validator without external dependencies
+- Checks file existence for step1 and step1_5 data
+- Provides clear file status reports
+- Fallback when comprehensive validator unavailable
 
-**Key Components**:
-- `DataCompletenessValidator` class
-- `validate_step1_data_completeness()` method
-- `can_start_from_step2()` method
-- `print_validation_report()` method
+**Comprehensive Data Quality Validator** (existing in codebase):
+- Uses `src/utils/comprehensive_data_quality_validator.py`
+- Provides detailed data quality analysis
+- Requires pandas/numpy dependencies
+- Automatically used when available
 
 **Validation Logic**:
 ```python
-# Step1 validation: requires aggtrades + at least one klines file
-has_aggtrades = any("aggtrades_" in f for f in files.keys())
-has_1m_klines = any("klines_" in f and "1m_consolidated" in f for f in files.keys())
-has_5m_klines = any("klines_" in f and "5m_consolidated" in f for f in files.keys())
-essential_files = sum([has_aggtrades, has_1m_klines, has_5m_klines])
-step1_complete = essential_files >= 2
+# Simple validator - checks file existence
+step1_files = [
+    f"klines_{exchange}_{symbol}_1m_consolidated.parquet",  # Required
+    f"aggtrades_{exchange}_{symbol}_consolidated.parquet"   # Required
+]
 
-# Step1_5 validation: requires all three processed datasets
-required_files = ["train", "validation", "test"]
-step1_5_complete = all(any(required in f for f in files.keys()) for required in required_files)
+step1_5_files = [
+    f"processed_{exchange}_{symbol}_train.parquet",        # Required
+    f"processed_{exchange}_{symbol}_validation.parquet",   # Required
+    f"processed_{exchange}_{symbol}_test.parquet"          # Required
+]
+
+# Validation passes if all required files exist
 ```
 
 ### 2. Enhanced Ares Launcher (`ares_launcher.py`)

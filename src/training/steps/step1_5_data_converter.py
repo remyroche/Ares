@@ -34,6 +34,23 @@ try:
 		guard_dataframe_nulls,
 		with_tracing_span,
 	)
+	# Additional quality/format decorators
+	from src.utils.data_quality_decorators import (
+		validate_klines_data,
+		format_klines_data,
+		validate_aggtrades_data,
+		format_aggtrades_data,
+		validate_futures_data,
+		format_futures_data,
+		log_step_metrics,
+	)
+	from src.utils.enhanced_data_quality_decorators import (
+		validate_datetime_index,
+		validate_data_structure,
+		validate_data_completeness,
+		comprehensive_data_validation,
+		validate_memory_optimized_data_quality,
+	)
 except Exception:
 	def _passthrough(*_args, **_kwargs):
 		def _decorator(func):
@@ -52,6 +69,18 @@ except Exception:
 	circuit_breaker_protection = _passthrough
 	guard_dataframe_nulls = _passthrough
 	with_tracing_span = _passthrough
+	validate_klines_data = _passthrough
+	format_klines_data = _passthrough
+	validate_aggtrades_data = _passthrough
+	format_aggtrades_data = _passthrough
+	validate_futures_data = _passthrough
+	format_futures_data = _passthrough
+	log_step_metrics = _passthrough
+	validate_datetime_index = _passthrough
+	validate_data_structure = _passthrough
+	validate_data_completeness = _passthrough
+	comprehensive_data_validation = _passthrough
+	validate_memory_optimized_data_quality = _passthrough
 
 # Logger
 try:
@@ -281,6 +310,7 @@ class ParquetDatasetManager:
 						self.logger.debug(f"Schema conversion skipped for column: {col}")
 		return df
 
+	@handle_file_operations(context="write_partitioned_dataset")
 	def write_partitioned_dataset(
 		self,
 		df: pd.DataFrame,
@@ -414,6 +444,7 @@ class ParquetDatasetManager:
 			with contextlib.suppress(Exception):
 				self.update_manifest(base_dir)
 
+	@handle_file_operations(context="scan_dataset")
 	def scan_dataset(
 		self,
 		base_dir: str,
@@ -506,6 +537,7 @@ class ParquetDatasetManager:
 			return None
 		return None
 
+	@handle_file_operations(context="write_flat_parquet")
 	def write_flat_parquet(
 		self,
 		df: pd.DataFrame,
@@ -534,6 +566,7 @@ class ParquetDatasetManager:
 			write_statistics=write_statistics,
 		)
 
+	@handle_file_operations(context="update_manifest")
 	def update_manifest(self, base_dir: str, ts_column: str = "timestamp") -> None:
 		try:
 			if not os.path.exists(base_dir):
@@ -793,6 +826,9 @@ class UnifiedDataConverter:
 			self.logger.exception(f"❌ Data conversion failed: {e}")
 			return False
 
+	@comprehensive_data_validation
+	@validate_datetime_index
+	@validate_data_completeness
 	async def _process_data_incrementally(
 		self,
 		klines_data: pd.DataFrame,
@@ -874,6 +910,10 @@ class UnifiedDataConverter:
 			self.logger.exception(f"❌ Incremental processing failed: {e}")
 			return False
 
+	@handle_file_operations(context="load_aggtrades_for_date")
+	@validate_aggtrades_data(context="daily_load")
+	@format_aggtrades_data(context="daily_load")
+	@log_step_metrics(context="aggtrades_daily_load")
 	async def _load_aggtrades_for_date(self, symbol: str, exchange: str, target_date: date) -> Optional[pd.DataFrame]:
 		try:
 			parquet_dir = os.path.join(self.data_cache_dir, "parquet", f"aggtrades_{exchange}_{symbol}")
@@ -903,6 +943,10 @@ class UnifiedDataConverter:
 			self.logger.warning(f"⚠️ Failed to load aggtrades for {target_date}: {e}")
 			return None
 
+	@handle_file_operations(context="load_futures_for_date")
+	@validate_futures_data(context="daily_load")
+	@format_futures_data(context="daily_load")
+	@log_step_metrics(context="futures_daily_load")
 	async def _load_futures_for_date(self, symbol: str, exchange: str, target_date: date) -> Optional[pd.DataFrame]:
 		try:
 			parquet_dir = os.path.join(self.data_cache_dir, "parquet", f"futures_{exchange}_{symbol}")
@@ -931,6 +975,9 @@ class UnifiedDataConverter:
 			self.logger.warning(f"⚠️ Failed to load futures for {target_date}: {e}")
 			return None
 
+	@comprehensive_data_validation
+	@validate_datetime_index
+	@validate_data_completeness
 	async def _merge_daily_data(
 		self,
 		daily_klines: pd.DataFrame,
@@ -1158,12 +1205,10 @@ class UnifiedDataConverter:
 	def get_unified_config_path(self, symbol: str, exchange: str, timeframe: str) -> str:
 		return os.path.join(self.unified_dir, f"{exchange.lower()}_{symbol}_{timeframe}_config.json")
 
-	@validate_klines_data_quality
-	@secure_data_processing
-	@prevent_data_leakage
-	@resource_monitor
-	@memory_efficient
-	@quality_gate
+	@validate_klines_data(context="loading")
+	@format_klines_data(context="loading")
+	@log_step_metrics(context="klines_loading")
+	@handle_file_operations(context="load_klines_data")
 	@handle_errors(exceptions=(Exception,), default_return=None, context="klines data loading")
 	async def _load_klines_data(self, symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
 		try:
@@ -1198,6 +1243,7 @@ class UnifiedDataConverter:
 			self.logger.exception(f"❌ Failed to load klines data: {e}")
 			return None
 
+	@handle_file_operations(context="download_klines_data")
 	@secure_klines_download_operation
 	@validate_klines_data_quality
 	@secure_data_processing

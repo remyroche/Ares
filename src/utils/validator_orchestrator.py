@@ -37,7 +37,7 @@ class ValidatorOrchestrator:
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
         config: dict[str, Any],
-        validation_level: str = "STANDARD",
+        validation_level: str = "CRITICAL",
     ) -> dict[str, Any]:
         """
         Run the validator for a specific step with enhanced validation levels.
@@ -47,7 +47,7 @@ class ValidatorOrchestrator:
             training_input: Training input parameters
             pipeline_state: Current pipeline state
             config: Configuration dictionary
-            validation_level: Validation level ("BASIC", "STANDARD", "COMPREHENSIVE", "CRITICAL")
+            validation_level: Validation level ("BASIC", "STANDARD", "COMPREHENSIVE", "CRITICAL") - defaults to CRITICAL
 
         Returns:
             Dictionary containing validation results
@@ -394,7 +394,7 @@ class ValidatorOrchestrator:
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
         config: dict[str, Any],
-        validation_level: str = "STANDARD",
+        validation_level: str = "CRITICAL",
     ) -> dict[str, Any]:
         """
         Dynamically import and run the appropriate validator.

@@ -3145,15 +3145,20 @@ class EnhancedTrainingManager:
     def _get_validation_level(self, step_name: str, is_fatal: bool) -> str:
         """
         Determine the appropriate validation level for a step.
+        By default, all steps use CRITICAL validation for maximum thoroughness.
         
         Args:
             step_name: Name of the step
             is_fatal: Whether step failure is fatal
             
         Returns:
-            Validation level string
+            Validation level string (defaults to CRITICAL)
         """
-        # Critical steps that require comprehensive validation
+        # All steps now default to CRITICAL validation for maximum thoroughness
+        # This ensures comprehensive validation across the entire pipeline
+        
+        # For backward compatibility, we still identify specific critical steps
+        # but they all return CRITICAL level
         critical_steps = [
             "step1_data_collection",
             "step2_feature_engineering", 
@@ -3165,7 +3170,6 @@ class EnhancedTrainingManager:
             "step13_monte_carlo_validation",
         ]
         
-        # Steps that require comprehensive validation
         comprehensive_steps = [
             "step1_5_data_converter",
             "step4_processing_labeling",
@@ -3178,12 +3182,9 @@ class EnhancedTrainingManager:
             "step15_saving",
         ]
         
-        if step_name in critical_steps or is_fatal:
-            return "CRITICAL"
-        elif step_name in comprehensive_steps:
-            return "COMPREHENSIVE"
-        else:
-            return "STANDARD"
+        # All steps now use CRITICAL validation by default
+        # This ensures maximum thoroughness and reliability
+        return "CRITICAL"
     
     def _log_validation_details(self, validation_result: dict[str, Any]) -> None:
         """
@@ -3271,7 +3272,7 @@ class EnhancedTrainingManager:
         step_name: str,
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
-        validation_level: str = "STANDARD",
+        validation_level: str = "CRITICAL",
     ) -> dict[str, Any]:
         """Run validator for a specific step.
 
@@ -3279,7 +3280,7 @@ class EnhancedTrainingManager:
             step_name: Name of the step to validate
             training_input: Training input parameters
             pipeline_state: Current pipeline state
-            force_rerun: If True, skip dependency validation for the starting step
+            validation_level: Validation level (defaults to CRITICAL for maximum thoroughness)
 
         Returns:
             Validation result dictionary

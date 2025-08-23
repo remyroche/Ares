@@ -4,6 +4,8 @@
 
 This document summarizes the comprehensive enhancements made to the validation framework in the Enhanced Training Manager to ensure thoroughness of validators, orchestrator, and validators orchestration.
 
+**⚠️ IMPORTANT: All validation operations now default to CRITICAL level for maximum reliability and data quality. This ensures comprehensive validation across the entire training pipeline by default.**
+
 ## Key Enhancements
 
 ### 1. Enhanced Base Validator (`src/utils/base_validator.py`)
@@ -117,23 +119,28 @@ This document summarizes the comprehensive enhancements made to the validation f
 - Minimal validation
 - Essential checks only
 - Fast execution
+- **Note**: Not recommended for production use
 
 ### STANDARD
 - Standard validation
 - Common checks
 - Balanced performance and thoroughness
+- **Note**: Not recommended for production use
 
 ### COMPREHENSIVE
 - Comprehensive validation
 - All available checks
 - Detailed reporting
 - Recommendations generation
+- **Note**: Good for development and testing
 
-### CRITICAL
-- Critical validation
+### CRITICAL (DEFAULT)
+- **Critical validation - DEFAULT LEVEL**
 - Maximum thoroughness
 - All checks required to pass
 - Detailed failure analysis
+- **Recommended for all production use**
+- **Ensures maximum reliability and data quality**
 
 ## Validation Flow
 
@@ -168,33 +175,45 @@ This document summarizes the comprehensive enhancements made to the validation f
 
 ## Usage Examples
 
-### Basic Validation
+### Default Critical Validation (Recommended)
+```python
+# Uses CRITICAL level by default - no need to specify validation_level
+validation_result = await validator_orchestrator.run_step_validator(
+    step_name="step1_data_collection",
+    training_input=training_input,
+    pipeline_state=pipeline_state,
+    config=config
+)
+```
+
+### Explicit Critical Validation
 ```python
 validation_result = await validator_orchestrator.run_step_validator(
     step_name="step1_data_collection",
     training_input=training_input,
     pipeline_state=pipeline_state,
     config=config,
-    validation_level="BASIC"
+    validation_level="CRITICAL"  # Explicitly set CRITICAL (same as default)
 )
 ```
 
-### Comprehensive Validation
+### Pipeline Validation (CRITICAL by default)
 ```python
-validation_result = await validator_orchestrator.run_step_validator(
-    step_name="step1_data_collection",
-    training_input=training_input,
-    pipeline_state=pipeline_state,
-    config=config,
-    validation_level="COMPREHENSIVE"
-)
-```
-
-### Pipeline Validation
-```python
+# Uses CRITICAL level by default - no need to specify validation_level
 pipeline_validation = await training_orchestrator.validate_training_pipeline(
-    pipeline_config=config,
-    validation_level="CRITICAL"
+    pipeline_config=config
+)
+```
+
+### Lower Level Validation (Not recommended for production)
+```python
+# Only use for development/testing - not recommended for production
+validation_result = await validator_orchestrator.run_step_validator(
+    step_name="step1_data_collection",
+    training_input=training_input,
+    pipeline_state=pipeline_state,
+    config=config,
+    validation_level="COMPREHENSIVE"  # Lower level - use with caution
 )
 ```
 
@@ -208,4 +227,6 @@ pipeline_validation = await training_orchestrator.validate_training_pipeline(
 
 ## Conclusion
 
-The enhanced validation framework provides a robust, comprehensive, and flexible validation system that ensures the thoroughness of validators, orchestrator, and validators orchestration. The multi-level validation approach allows for different validation intensities based on requirements, while the comprehensive error handling and detailed reporting improve debugging and monitoring capabilities.
+The enhanced validation framework provides a robust, comprehensive, and flexible validation system that ensures the thoroughness of validators, orchestrator, and validators orchestration. **By default, all validation operations use the CRITICAL level to ensure maximum reliability and data quality in production environments.**
+
+The multi-level validation approach allows for different validation intensities based on requirements, while the comprehensive error handling and detailed reporting improve debugging and monitoring capabilities. **The CRITICAL default ensures that all validation checks are performed unless explicitly overridden, providing the highest level of confidence in the training pipeline's integrity.**

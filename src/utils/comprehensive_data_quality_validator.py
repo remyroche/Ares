@@ -42,10 +42,10 @@ class ComprehensiveDataQualityValidator:
         self.config = config or {}
         self.logger = system_logger.getChild("ComprehensiveDataQualityValidator")
         
-        # Quality thresholds
-        self.max_nan_ratio = self.config.get("max_nan_ratio", 0.5)
-        self.max_infinite_ratio = self.config.get("max_infinite_ratio", 0.1)
-        self.min_unique_values = self.config.get("min_unique_values", 2)
+        # Quality thresholds - Updated with stricter requirements
+        self.max_nan_ratio = self.config.get("max_nan_ratio", 0.001)  # 0.1% NaN
+        self.max_infinite_count = self.config.get("max_infinite_count", 1)  # 1 infinite value
+        self.min_unique_values = self.config.get("min_unique_values", 2)  # 2+ unique values
         self.max_constant_ratio = self.config.get("max_constant_ratio", 0.95)
         self.min_feature_count = self.config.get("min_feature_count", 40)
         self.max_correlation_threshold = self.config.get("max_correlation_threshold", 0.95)
@@ -306,6 +306,7 @@ class ComprehensiveDataQualityValidator:
             "nan_counts": {},
             "infinite_counts": {},
             "constant_features": [],
+            "structure_issues": [],
             "issues": []
         }
         
@@ -326,7 +327,12 @@ class ComprehensiveDataQualityValidator:
             result["memory_usage_mb"] = df.memory_usage(deep=True).sum() / (1024 * 1024)
             result["dtypes"] = df.dtypes.value_counts().to_dict()
             
-            # Check for NaN values
+            # Validate data structure first
+            structure_issues = self._validate_data_structure(df, file_name)
+            result["structure_issues"] = structure_issues
+            result["issues"].extend(structure_issues)
+            
+            # Check for NaN values (0.1% threshold)
             nan_counts = df.isnull().sum()
             high_nan_features = nan_counts[nan_counts > len(df) * self.max_nan_ratio].index.tolist()
             result["nan_counts"] = nan_counts.to_dict()
@@ -334,7 +340,7 @@ class ComprehensiveDataQualityValidator:
             if high_nan_features:
                 result["issues"].append(f"Features with >{self.max_nan_ratio*100}% NaN values: {high_nan_features}")
             
-            # Check for infinite values
+            # Check for infinite values (1 value threshold)
             infinite_counts = {}
             infinite_features = []
             
@@ -342,18 +348,20 @@ class ComprehensiveDataQualityValidator:
                 infinite_count = np.isinf(df[col]).sum()
                 infinite_counts[col] = infinite_count
                 
-                if infinite_count > len(df) * self.max_infinite_ratio:
+                if infinite_count > self.max_infinite_count:
                     infinite_features.append(col)
             
             result["infinite_counts"] = infinite_counts
             
             if infinite_features:
-                result["issues"].append(f"Features with >{self.max_infinite_ratio*100}% infinite values: {infinite_features}")
+                result["issues"].append(f"Features with >{self.max_infinite_count} infinite values: {infinite_features}")
             
-            # Check for constant features
+            # Check for constant features (2+ unique values, except boolean)
             constant_features = []
             for col in df.columns:
-                if df[col].nunique() <= self.min_unique_values:
+                unique_count = df[col].nunique()
+                # Allow boolean features (2 unique values) and binary features
+                if unique_count < self.min_unique_values and not self._is_boolean_feature(df[col]):
                     constant_features.append(col)
             
             result["constant_features"] = constant_features
@@ -368,6 +376,136 @@ class ComprehensiveDataQualityValidator:
             result["issues"].append(f"Error loading file: {str(e)}")
             
         return result
+    
+    def _validate_data_structure(self, df: pd.DataFrame, file_name: str) -> List[str]:
+        """
+        Validate data structure including columns, format, index, and data types.
+        
+        Args:
+            df: DataFrame to validate
+            file_name: Name of the file for logging
+            
+        Returns:
+            List of structure issues found
+        """
+        issues = []
+        
+        # Check if DataFrame is empty
+        if df.empty:
+            issues.append(f"{file_name}: DataFrame is empty")
+            return issues
+        
+        # Check for required columns based on file type
+        if "klines" in file_name.lower():
+            required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
+            missing_columns = set(required_columns) - set(df.columns)
+            if missing_columns:
+                issues.append(f"{file_name}: Missing required klines columns: {missing_columns}")
+        
+        elif "aggtrades" in file_name.lower():
+            required_columns = ["timestamp", "price", "quantity"]
+            missing_columns = set(required_columns) - set(df.columns)
+            if missing_columns:
+                issues.append(f"{file_name}: Missing required aggtrades columns: {missing_columns}")
+        
+        elif "features" in file_name.lower():
+            # Features should have timestamp and at least some feature columns
+            if "timestamp" not in df.columns:
+                issues.append(f"{file_name}: Missing timestamp column in features")
+            
+            feature_columns = [col for col in df.columns if col != "timestamp"]
+            if len(feature_columns) < 5:  # Minimum feature count
+                issues.append(f"{file_name}: Insufficient feature columns: {len(feature_columns)}")
+        
+        # Check for duplicate columns
+        duplicate_columns = df.columns[df.columns.duplicated()].tolist()
+        if duplicate_columns:
+            issues.append(f"{file_name}: Duplicate columns found: {duplicate_columns}")
+        
+        # Check for empty columns
+        empty_columns = []
+        for col in df.columns:
+            if df[col].isnull().all():
+                empty_columns.append(col)
+        if empty_columns:
+            issues.append(f"{file_name}: Empty columns found: {empty_columns}")
+        
+        # Check for proper data types
+        type_issues = []
+        for col in df.columns:
+            if col == "timestamp":
+                # Timestamp should be datetime
+                if not pd.api.types.is_datetime64_any_dtype(df[col]):
+                    type_issues.append(f"timestamp column should be datetime, got {df[col].dtype}")
+            elif col in ["open", "high", "low", "close", "volume", "price", "quantity"]:
+                # OHLCV and trade data should be numeric
+                if not pd.api.types.is_numeric_dtype(df[col]):
+                    type_issues.append(f"{col} column should be numeric, got {df[col].dtype}")
+        
+        if type_issues:
+            issues.append(f"{file_name}: Data type issues: {type_issues}")
+        
+        # Check for proper index
+        if not isinstance(df.index, pd.DatetimeIndex) and "timestamp" in df.columns:
+            # If timestamp column exists, it should be properly formatted
+            try:
+                pd.to_datetime(df["timestamp"])
+            except Exception:
+                issues.append(f"{file_name}: Timestamp column contains invalid datetime values")
+        
+        # Check for reasonable data ranges
+        range_issues = []
+        for col in df.columns:
+            if pd.api.types.is_numeric_dtype(df[col]):
+                # Check for extreme values
+                if col in ["open", "high", "low", "close", "price"]:
+                    if (df[col] <= 0).any():
+                        range_issues.append(f"{col} contains non-positive values")
+                elif col == "volume":
+                    if (df[col] < 0).any():
+                        range_issues.append(f"{col} contains negative values")
+        
+        if range_issues:
+            issues.append(f"{file_name}: Data range issues: {range_issues}")
+        
+        return issues
+    
+    def _is_boolean_feature(self, series: pd.Series) -> bool:
+        """
+        Check if a series represents a boolean feature.
+        
+        Args:
+            series: Pandas series to check
+            
+        Returns:
+            True if the series represents a boolean feature
+        """
+        # Check if it's already boolean dtype
+        if pd.api.types.is_bool_dtype(series):
+            return True
+        
+        # Check if it has exactly 2 unique values that could be boolean
+        unique_values = series.dropna().unique()
+        if len(unique_values) == 2:
+            # Check if values are typical boolean patterns
+            unique_set = set(unique_values)
+            boolean_patterns = [
+                {True, False},
+                {1, 0},
+                {1.0, 0.0},
+                {'True', 'False'},
+                {'true', 'false'},
+                {'1', '0'},
+                {'yes', 'no'},
+                {'Y', 'N'},
+                {'y', 'n'}
+            ]
+            
+            for pattern in boolean_patterns:
+                if unique_set == pattern:
+                    return True
+        
+        return False
     
     def _validate_feature_quality(self, file_path: str, file_name: str) -> Dict[str, Any]:
         """Comprehensive feature quality validation for Step2."""
@@ -406,29 +544,37 @@ class ComprehensiveDataQualityValidator:
                 df = df.drop(columns=present_forbidden)
                 result["issues"].append(f"Removed raw OHLCV columns: {present_forbidden}")
             
-            # Check for NaN values
+            # Validate data structure first
+            structure_issues = self._validate_data_structure(df, file_name)
+            result["structure_issues"] = structure_issues
+            result["issues"].extend(structure_issues)
+            
+            # Check for NaN values (0.1% threshold)
             nan_counts = df.isnull().sum()
-            nan_features = nan_counts[nan_counts > 0].index.tolist()
+            nan_features = nan_counts[nan_counts > len(df) * self.max_nan_ratio].index.tolist()
             result["nan_features"] = nan_features
             
             if nan_features:
-                result["issues"].append(f"Features with NaN values: {nan_features}")
+                result["issues"].append(f"Features with >{self.max_nan_ratio*100}% NaN values: {nan_features}")
             
-            # Check for infinite values
+            # Check for infinite values (1 value threshold)
             infinite_features = []
             for col in df.select_dtypes(include=[np.number]).columns:
-                if np.isinf(df[col]).any():
+                infinite_count = np.isinf(df[col]).sum()
+                if infinite_count > self.max_infinite_count:
                     infinite_features.append(col)
             
             result["infinite_features"] = infinite_features
             
             if infinite_features:
-                result["issues"].append(f"Features with infinite values: {infinite_features}")
+                result["issues"].append(f"Features with >{self.max_infinite_count} infinite values: {infinite_features}")
             
-            # Check for constant features
+            # Check for constant features (2+ unique values, except boolean)
             constant_features = []
             for col in df.columns:
-                if df[col].nunique() <= self.min_unique_values:
+                unique_count = df[col].nunique()
+                # Allow boolean features (2 unique values) and binary features
+                if unique_count < self.min_unique_values and not self._is_boolean_feature(df[col]):
                     constant_features.append(col)
             
             result["constant_features"] = constant_features

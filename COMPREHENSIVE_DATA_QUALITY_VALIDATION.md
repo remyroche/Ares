@@ -13,11 +13,12 @@ This document describes the comprehensive data quality validation system impleme
 - **Detailed Logging**: Comprehensive logging of all quality issues found
 
 ### 📊 **Quality Checks**
-- **NaN Values**: Detects and reports features with excessive NaN values
-- **Infinite Values**: Identifies features with infinite or negative infinite values
-- **Constant Features**: Flags features with insufficient variation
+- **NaN Values**: Detects and reports features with excessive NaN values (0.1% threshold)
+- **Infinite Values**: Identifies features with infinite or negative infinite values (1 value threshold)
+- **Constant Features**: Flags features with insufficient variation (2+ unique values, except boolean)
 - **High Correlations**: Detects highly correlated feature pairs
 - **File Integrity**: Validates file structure and basic properties
+- **Data Structure**: Validates columns, format, index, and data types at every step
 
 ### 🎯 **Step-Specific Validation**
 
@@ -25,15 +26,17 @@ This document describes the comprehensive data quality validation system impleme
 - Validates consolidated parquet files (klines, aggtrades)
 - Checks file existence and basic data quality
 - Validates data completeness and format
+- **Data Structure Validation**: Columns, format, index, data types
 - **Thresholds**: 
-  - Max NaN ratio: 50%
-  - Max infinite ratio: 10%
-  - Min unique values: 2
+  - Max NaN ratio: 0.1%
+  - Max infinite count: 1 value
+  - Min unique values: 2 (except boolean)
 
 #### **Step1_5: Data Converter**
 - Validates unified data directory structure
 - Checks partitioned parquet files
 - Validates data quality in unified format
+- **Data Structure Validation**: Columns, format, index, data types
 - **Thresholds**: Same as Step1
 
 #### **Step2: Feature Engineering**
@@ -41,13 +44,38 @@ This document describes the comprehensive data quality validation system impleme
 - Special attention to NaN, infinite, and constant values
 - Validates feature correlations
 - Ensures minimum feature count requirements
+- **Data Structure Validation**: Columns, format, index, data types
 - **Thresholds**:
-  - Max NaN ratio: 10% (stricter)
-  - Max infinite ratio: 5% (stricter)
-  - Min unique values: 3 (more variation required)
+  - Max NaN ratio: 0.1% (stricter)
+  - Max infinite count: 1 value
+  - Min unique values: 2 (except boolean)
   - Max correlation threshold: 95%
 
 ## Implementation
+
+### Data Structure Validation
+
+The system now includes comprehensive data structure validation at every step:
+
+#### **Required Columns Validation**
+- **Klines Data**: Validates presence of `timestamp`, `open`, `high`, `low`, `close`, `volume`
+- **Aggtrades Data**: Validates presence of `timestamp`, `price`, `quantity`
+- **Feature Data**: Validates presence of `timestamp` and minimum feature count
+
+#### **Data Type Validation**
+- **Timestamp Columns**: Ensures proper datetime format
+- **Numeric Columns**: Validates OHLCV and trade data are numeric
+- **Feature Columns**: Validates appropriate data types for features
+
+#### **Data Range Validation**
+- **Price Data**: Ensures positive values for OHLCV
+- **Volume Data**: Ensures non-negative values
+- **Feature Data**: Validates reasonable value ranges
+
+#### **Index and Format Validation**
+- **Datetime Index**: Validates proper timestamp formatting
+- **Duplicate Columns**: Detects and reports duplicate column names
+- **Empty Columns**: Identifies completely empty columns
 
 ### Core Components
 
@@ -161,8 +189,8 @@ log_feature_quality_issues(feature_df, "Training Features")
 ### Configurable Parameters
 ```python
 config = {
-    "max_nan_ratio": 0.5,           # Maximum allowed ratio of NaN values
-    "max_infinite_ratio": 0.1,      # Maximum allowed ratio of infinite values
+    "max_nan_ratio": 0.001,         # Maximum allowed ratio of NaN values (0.1%)
+    "max_infinite_count": 1,        # Maximum allowed count of infinite values
     "min_unique_values": 2,         # Minimum unique values for non-constant features
     "max_constant_ratio": 0.95,     # Maximum ratio for constant features
     "min_feature_count": 40,        # Minimum required features for Step2
@@ -172,11 +200,11 @@ config = {
 
 ### Step-Specific Thresholds
 
-| Step | Max NaN Ratio | Max Infinite Ratio | Min Unique Values | Check Correlations |
-|------|---------------|-------------------|-------------------|-------------------|
-| Step1 | 50% | 10% | 2 | No |
-| Step1_5 | 50% | 10% | 2 | No |
-| Step2 | 10% | 5% | 3 | Yes |
+| Step | Max NaN Ratio | Max Infinite Count | Min Unique Values | Check Correlations | Data Structure Validation |
+|------|---------------|-------------------|-------------------|-------------------|---------------------------|
+| Step1 | 0.1% | 1 | 2 (except boolean) | No | Yes |
+| Step1_5 | 0.1% | 1 | 2 (except boolean) | No | Yes |
+| Step2 | 0.1% | 1 | 2 (except boolean) | Yes | Yes |
 
 ## Error Handling
 

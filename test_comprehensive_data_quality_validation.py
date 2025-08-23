@@ -56,19 +56,20 @@ def create_test_data_with_issues():
     
     df = pd.DataFrame(data)
     
-    # Add quality issues for demonstration
+    # Add quality issues for demonstration (using new stricter thresholds)
     
-    # 1. NaN values
-    df.loc[100:150, 'open'] = np.nan  # 50 NaN values
-    df.loc[200:250, 'high'] = np.nan  # 50 NaN values
+    # 1. NaN values (0.1% threshold = ~4.3 values for 43200 samples)
+    df.loc[100:105, 'open'] = np.nan  # 6 NaN values (will trigger)
+    df.loc[200:202, 'high'] = np.nan  # 3 NaN values (will trigger)
     
-    # 2. Infinite values
-    df.loc[300:310, 'low'] = np.inf  # 10 infinite values
-    df.loc[320:330, 'close'] = -np.inf  # 10 negative infinite values
+    # 2. Infinite values (1 value threshold)
+    df.loc[300, 'low'] = np.inf  # 1 infinite value (will trigger)
+    df.loc[320, 'close'] = -np.inf  # 1 negative infinite value (will trigger)
     
-    # 3. Constant features
-    df['constant_feature'] = 42  # Constant value
-    df['binary_feature'] = 1  # Binary feature (acceptable)
+    # 3. Constant features (2+ unique values, except boolean)
+    df['constant_feature'] = 42  # Constant value (will trigger)
+    df['binary_feature'] = np.random.choice([0, 1], n_samples)  # Binary feature (acceptable)
+    df['boolean_feature'] = np.random.choice([True, False], n_samples)  # Boolean feature (acceptable)
     
     # 4. Highly correlated features
     df['highly_correlated'] = df['open'] * 1.01 + 0.1  # Almost perfect correlation
@@ -100,19 +101,20 @@ def create_test_feature_data():
     
     df = pd.DataFrame(features)
     
-    # Add feature-specific issues
+    # Add feature-specific issues (using new stricter thresholds)
     
-    # 1. NaN values in features
-    df.loc[100:120, 'rsi'] = np.nan  # 20 NaN values
-    df.loc[200:220, 'macd'] = np.nan  # 20 NaN values
+    # 1. NaN values in features (0.1% threshold)
+    df.loc[100:105, 'rsi'] = np.nan  # 6 NaN values (will trigger)
+    df.loc[200:202, 'macd'] = np.nan  # 3 NaN values (will trigger)
     
-    # 2. Infinite values in features
-    df.loc[300:305, 'bollinger_upper'] = np.inf  # 5 infinite values
-    df.loc[310:315, 'bollinger_lower'] = -np.inf  # 5 negative infinite values
+    # 2. Infinite values in features (1 value threshold)
+    df.loc[300, 'bollinger_upper'] = np.inf  # 1 infinite value (will trigger)
+    df.loc[310, 'bollinger_lower'] = -np.inf  # 1 negative infinite value (will trigger)
     
-    # 3. Constant features (should be flagged)
-    df['constant_rsi'] = 50  # Constant RSI
-    df['constant_macd'] = 0  # Constant MACD
+    # 3. Constant features (2+ unique values, except boolean)
+    df['constant_rsi'] = 50  # Constant RSI (will trigger)
+    df['constant_macd'] = 0  # Constant MACD (will trigger)
+    df['binary_signal'] = np.random.choice([0, 1], n_samples)  # Binary feature (acceptable)
     
     # 4. Highly correlated features
     df['rsi_duplicate'] = df['rsi'] * 0.99 + 0.1  # Highly correlated with RSI
@@ -304,11 +306,11 @@ async def test_comprehensive_validator():
     print("🧪 TESTING COMPREHENSIVE VALIDATOR")
     print("="*80)
     
-    # Create validator instance
+    # Create validator instance with updated thresholds
     validator = ComprehensiveDataQualityValidator({
-        "max_nan_ratio": 0.3,
-        "max_infinite_ratio": 0.05,
-        "min_unique_values": 3,
+        "max_nan_ratio": 0.001,  # 0.1% NaN
+        "max_infinite_count": 1,  # 1 infinite value
+        "min_unique_values": 2,   # 2+ unique values (except boolean)
         "min_feature_count": 5,
         "max_correlation_threshold": 0.95
     })

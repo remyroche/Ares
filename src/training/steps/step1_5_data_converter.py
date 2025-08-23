@@ -697,6 +697,32 @@ class UnifiedDataConverter:
 			verify_ok = await self._verify_unified_data_quality(symbol, exchange, timeframe)
 			if not verify_ok:
 				self.logger.warning("⚠️ Data quality verification found issues")
+			
+			# Run comprehensive data quality validation
+			try:
+				from src.utils.comprehensive_data_quality_validator import validate_step1_5_quality
+				
+				self.logger.info("🔍 Running comprehensive Step1.5 data quality validation...")
+				validation_result = validate_step1_5_quality(
+					symbol=symbol,
+					exchange=exchange,
+					data_dir=self.data_cache_dir
+				)
+				
+				if validation_result["validation_passed"]:
+					self.logger.info("✅ Comprehensive Step1.5 data quality validation passed")
+				else:
+					self.logger.warning(f"⚠️ Comprehensive Step1.5 data quality validation found {len(validation_result['issues'])} issues:")
+					for issue in validation_result["issues"][:5]:  # Show first 5 issues
+						self.logger.warning(f"   - {issue}")
+					if len(validation_result["issues"]) > 5:
+						self.logger.warning(f"   ... and {len(validation_result['issues']) - 5} more issues")
+					
+					# Continue with warning instead of failing
+					self.logger.warning("⚠️ Continuing with data quality issues - review logs for details")
+				
+			except Exception as e:
+				self.logger.warning(f"⚠️ Comprehensive Step1.5 data quality validation failed: {e} - continuing anyway")
 
 			self.logger.info("=" * 80)
 			self.logger.info("✅ STEP 1.5 COMPLETED: Unified Data Converter")

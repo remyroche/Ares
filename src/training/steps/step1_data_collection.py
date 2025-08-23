@@ -111,6 +111,8 @@ except ImportError:
     system_logger = setup_logging()
     download_all_data_with_consolidation = None
 
+from src.utils.training_pipeline_decorators import monitor_data_collection
+
 
 class DataCollectionStep:
     """Step 1: Data Collection using existing run_step function."""
@@ -318,6 +320,7 @@ class DataCollectionStep:
             return False
 
 
+@monitor_data_collection()
 @handle_errors(
     exceptions=(Exception,),
     default_return=False,

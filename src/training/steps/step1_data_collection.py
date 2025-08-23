@@ -428,20 +428,47 @@ async def run_step(
         if result.get("data_collection_completed", False):
             logger.info("✅ Step 1: Data Collection completed successfully")
 
-            # Run comprehensive file format validation
-            if validate_step1_file:
-                logger.info("🔍 Running comprehensive file format validation...")
-                validation_success = await step._run_comprehensive_validation(symbol, exchange, timeframe, data_dir, logger)
-
-                if validation_success:
-                    logger.info("✅ Comprehensive file format validation passed")
-                    return True
+            # Run comprehensive data quality validation
+            try:
+                from src.utils.comprehensive_data_quality_validator import validate_step1_quality
+                
+                logger.info("🔍 Running comprehensive data quality validation...")
+                validation_result = validate_step1_quality(
+                    symbol=symbol,
+                    exchange=exchange,
+                    data_dir=data_dir
+                )
+                
+                if validation_result["validation_passed"]:
+                    logger.info("✅ Comprehensive data quality validation passed")
                 else:
-                    logger.warning("⚠️ Comprehensive file format validation found issues")
-                    return True  # Still return True as data collection succeeded
-            else:
-                logger.info("⚠️ Comprehensive file validation not available, skipping validation")
-                return True
+                    logger.warning(f"⚠️ Comprehensive data quality validation found {len(validation_result['issues'])} issues:")
+                    for issue in validation_result["issues"][:5]:  # Show first 5 issues
+                        logger.warning(f"   - {issue}")
+                    if len(validation_result["issues"]) > 5:
+                        logger.warning(f"   ... and {len(validation_result['issues']) - 5} more issues")
+                    
+                    # Continue with warning instead of failing
+                    logger.warning("⚠️ Continuing with data quality issues - review logs for details")
+                
+                # Also run legacy validation if available
+                if validate_step1_file:
+                    logger.info("🔍 Running legacy file format validation...")
+                    validation_success = await step._run_comprehensive_validation(symbol, exchange, timeframe, data_dir, logger)
+                    if not validation_success:
+                        logger.warning("⚠️ Legacy file format validation found issues")
+                
+            except Exception as e:
+                logger.warning(f"⚠️ Comprehensive data quality validation failed: {e} - continuing anyway")
+                
+                # Fallback to legacy validation if available
+                if validate_step1_file:
+                    logger.info("🔍 Running legacy file format validation...")
+                    validation_success = await step._run_comprehensive_validation(symbol, exchange, timeframe, data_dir, logger)
+                    if not validation_success:
+                        logger.warning("⚠️ Legacy file format validation found issues")
+            
+            return True
         else:
             logger.error("❌ Step 1: Data Collection failed")
         return False

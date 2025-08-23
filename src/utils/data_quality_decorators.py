@@ -1,634 +1,422 @@
-"""Data quality and formatting decorators for step1 and step1_5.
+"""
+Data Quality Decorators
 
-This module provides specialized decorators for data collection and processing
-steps to ensure data quality, proper formatting, and robust error handling.
+This module provides decorators for automatic data quality validation
+at each pipeline step, with special attention to NaN, infinite, and constant values.
 """
 
+import functools
 import logging
+from typing import Any, Callable, Dict, Optional, Union
+import numpy as np
 import pandas as pd
-from functools import wraps
-from typing import Any, Callable, Dict, List, Optional
-import asyncio
 
-from src.utils.error_handler import (
-    handle_errors,
-    ErrorSeverity,
-)
-from src.utils.logger import system_logger
-
-# Type variables
-F = Callable[..., Any]
+try:
+    from src.utils.logger import system_logger
+except ImportError:
+    system_logger = logging.getLogger("DataQualityDecorators")
 
 
-def validate_data_quality(
-    required_columns: Optional[List[str]] = None,
-    min_rows: int = 1,
-    max_null_ratio: float = 0.5,
-    check_duplicates: bool = True,
-    check_timestamps: bool = True,
-    context: str = "",
-) -> Callable[[F], F]:
-    """Decorator to validate data quality before processing.
-
-    Args:
-        required_columns: List of required columns in the dataframe
-        min_rows: Minimum number of rows required
-        max_null_ratio: Maximum allowed ratio of null values per column
-        check_duplicates: Whether to check for duplicate rows
-        check_timestamps: Whether to validate timestamp columns
-        context: Additional context for error logging
-
-    Returns:
-        Decorated function
+def validate_data_quality_at_step(
+    step_name: str,
+    validate_input: bool = True,
+    validate_output: bool = True,
+    check_nan: bool = True,
+    check_infinite: bool = True,
+    check_constant: bool = True,
+    check_correlation: bool = True,
+    max_nan_ratio: float = 0.5,
+    max_infinite_ratio: float = 0.1,
+    min_unique_values: int = 2,
+    max_correlation_threshold: float = 0.95,
+    fail_on_issues: bool = False,
+    log_issues: bool = True
+):
     """
-    def decorator(func: F) -> F:
-        @wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            logger = system_logger.getChild("DataQualityValidator")
-            try:
-                # Execute the function
-                result = await func(*args, **kwargs)
-
-                # Validate result if it's a DataFrame
-                if isinstance(result, pd.DataFrame):
-                    validation_result = await _validate_dataframe_quality(
-                        result, required_columns, min_rows, max_null_ratio,
-                        check_duplicates, check_timestamps, context
-                    )
-
-                    if not validation_result["valid"]:
-                        logger.warning(f"⚠️ Data quality issues detected in {context}:")
-                        for issue in validation_result["issues"]:
-                            logger.warning(f"   - {issue}")
-
-                    # Add quality metrics to result
-                    result.attrs["quality_metrics"] = validation_result
-
-                return result
-
-            except Exception as e:
-                logger.error(f"❌ Data quality validation failed in {context}: {e}")
-                raise
-
-        @wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            logger = system_logger.getChild("DataQualityValidator")
-            try:
-                # Execute the function
-                result = func(*args, **kwargs)
-
-                # Validate result if it's a DataFrame
-                if isinstance(result, pd.DataFrame):
-                    validation_result = _validate_dataframe_quality_sync(
-                        result, required_columns, min_rows, max_null_ratio,
-                        check_duplicates, check_timestamps, context
-                    )
-
-                    if not validation_result["valid"]:
-                        logger.warning(f"⚠️ Data quality issues detected in {context}:")
-                        for issue in validation_result["issues"]:
-                            logger.warning(f"   - {issue}")
-
-                    # Add quality metrics to result
-                    result.attrs["quality_metrics"] = validation_result
-
-                return result
-
-            except Exception as e:
-                logger.error(f"❌ Data quality validation failed in {context}: {e}")
-                raise
-
-        # Return appropriate wrapper based on function type
-        if asyncio.iscoroutinefunction(func):
-            return async_wrapper
-        else:
-            return sync_wrapper
-
-    return decorator
-
-
-def ensure_data_format(
-    expected_schema: Optional[Dict[str, str]] = None,
-    timestamp_columns: Optional[List[str]] = None,
-    numeric_columns: Optional[List[str]] = None,
-    categorical_columns: Optional[List[str]] = None,
-    context: str = "",
-) -> Callable[[F], F]:
-    """Decorator to ensure data is in the expected format.
-
+    Decorator to validate data quality at each pipeline step.
+    
     Args:
-        expected_schema: Expected column names and types
-        timestamp_columns: Columns that should be datetime
-        numeric_columns: Columns that should be numeric
-        categorical_columns: Columns that should be categorical
-        context: Additional context for error logging
-
-    Returns:
-        Decorated function
+        step_name: Name of the step for logging
+        validate_input: Whether to validate input data
+        validate_output: Whether to validate output data
+        check_nan: Whether to check for NaN values
+        check_infinite: Whether to check for infinite values
+        check_constant: Whether to check for constant features
+        check_correlation: Whether to check for high correlations
+        max_nan_ratio: Maximum allowed ratio of NaN values
+        max_infinite_ratio: Maximum allowed ratio of infinite values
+        min_unique_values: Minimum unique values for non-constant features
+        max_correlation_threshold: Maximum correlation threshold
+        fail_on_issues: Whether to fail the step on quality issues
+        log_issues: Whether to log quality issues
     """
-    def decorator(func: F) -> F:
-        @wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            logger = system_logger.getChild("DataFormatter")
-            try:
-                # Execute the function
-                result = await func(*args, **kwargs)
-
-                # Format result if it's a DataFrame
-                if isinstance(result, pd.DataFrame):
-                    formatted_result = await _format_dataframe(
-                        result, expected_schema, timestamp_columns,
-                        numeric_columns, categorical_columns, context
-                    )
-                    return formatted_result
-
-                return result
-
-            except Exception as e:
-                logger.error(f"❌ Data formatting failed in {context}: {e}")
-                raise
-
-        @wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            logger = system_logger.getChild("DataFormatter")
-            try:
-                # Execute the function
-                result = func(*args, **kwargs)
-
-                # Format result if it's a DataFrame
-                if isinstance(result, pd.DataFrame):
-                    formatted_result = _format_dataframe_sync(
-                        result, expected_schema, timestamp_columns,
-                        numeric_columns, categorical_columns, context
-                    )
-                    return formatted_result
-
-                return result
-
-            except Exception as e:
-                logger.error(f"❌ Data formatting failed in {context}: {e}")
-                raise
-
-        # Return appropriate wrapper based on function type
-        if asyncio.iscoroutinefunction(func):
-            return async_wrapper
-        else:
-            return sync_wrapper
-
-    return decorator
-
-
-def handle_data_collection_errors(
-    context: str = "",
-    max_retries: int = 3,
-    retry_delay: float = 2.0,
-) -> Callable[[F], F]:
-    """Decorator for handling data collection specific errors.
-
-    Args:
-        context: Additional context for error logging
-        max_retries: Maximum number of retries
-        retry_delay: Delay between retries in seconds
-
-    Returns:
-        Decorated function
-    """
-    return handle_errors(
-        exceptions=(
-            ConnectionError,
-            TimeoutError,
-            OSError,
-            ValueError,
-            KeyError,
-            pd.errors.EmptyDataError,
-            pd.errors.ParserError
-        ),
-        default_return=None,
-        context=f"data_collection_{context}",
-        severity=ErrorSeverity.MEDIUM,
-        max_retries=max_retries,
-        retry_delay=retry_delay,
-    )
-
-
-def handle_data_processing_errors(
-    context: str = "",
-) -> Callable[[F], F]:
-    """Decorator for handling data processing specific errors.
-
-    Args:
-        context: Additional context for error logging
-
-    Returns:
-        Decorated function
-    """
-    return handle_errors(
-        exceptions=(
-            ValueError,
-            TypeError,
-            KeyError,
-            IndexError,
-            pd.errors.EmptyDataError,
-            pd.errors.ParserError,
-            MemoryError
-        ),
-        default_return=None,
-        context=f"data_processing_{context}",
-        severity=ErrorSeverity.MEDIUM,
-    )
-
-
-def log_data_metrics(
-    context: str = "",
-    log_memory_usage: bool = True,
-    log_shape: bool = True,
-    log_dtypes: bool = False,
-) -> Callable[[F], F]:
-    """Decorator to log data metrics after processing.
-
-    Args:
-        context: Additional context for logging
-        log_memory_usage: Whether to log memory usage
-        log_shape: Whether to log data shape
-        log_dtypes: Whether to log data types
-
-    Returns:
-        Decorated function
-    """
-    def decorator(func: F) -> F:
-        @wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            logger = system_logger.getChild("DataMetricsLogger")
-
-            # Execute the function
-            result = await func(*args, **kwargs)
-
-            # Log metrics if result is a DataFrame
-            if isinstance(result, pd.DataFrame):
-                await _log_dataframe_metrics(
-                    result, context, log_memory_usage, log_shape, log_dtypes, logger
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs):
+            logger = system_logger.getChild(f"DataQuality.{step_name}")
+            
+            # Validate input data if requested
+            if validate_input:
+                logger.info(f"🔍 Validating input data quality for {step_name}...")
+                input_issues = _validate_data_quality(
+                    args, kwargs, "input", logger,
+                    check_nan, check_infinite, check_constant, check_correlation,
+                    max_nan_ratio, max_infinite_ratio, min_unique_values, max_correlation_threshold
                 )
-
-            return result
-
-        @wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            logger = system_logger.getChild("DataMetricsLogger")
-
+                
+                if input_issues and log_issues:
+                    logger.warning(f"⚠️ Input data quality issues found in {step_name}:")
+                    for issue in input_issues[:5]:  # Show first 5 issues
+                        logger.warning(f"   - {issue}")
+                    if len(input_issues) > 5:
+                        logger.warning(f"   ... and {len(input_issues) - 5} more issues")
+                
+                if input_issues and fail_on_issues:
+                    raise ValueError(f"Input data quality validation failed for {step_name}: {input_issues}")
+            
             # Execute the function
-            result = func(*args, **kwargs)
-
-            # Log metrics if result is a DataFrame
-            if isinstance(result, pd.DataFrame):
-                _log_dataframe_metrics_sync(
-                    result, context, log_memory_usage, log_shape, log_dtypes, logger
+            try:
+                result = await func(*args, **kwargs)
+            except Exception as e:
+                logger.error(f"❌ {step_name} execution failed: {e}")
+                raise
+            
+            # Validate output data if requested
+            if validate_output and result is not None:
+                logger.info(f"🔍 Validating output data quality for {step_name}...")
+                output_issues = _validate_data_quality(
+                    [result], {}, "output", logger,
+                    check_nan, check_infinite, check_constant, check_correlation,
+                    max_nan_ratio, max_infinite_ratio, min_unique_values, max_correlation_threshold
                 )
-
+                
+                if output_issues and log_issues:
+                    logger.warning(f"⚠️ Output data quality issues found in {step_name}:")
+                    for issue in output_issues[:5]:  # Show first 5 issues
+                        logger.warning(f"   - {issue}")
+                    if len(output_issues) > 5:
+                        logger.warning(f"   ... and {len(output_issues) - 5} more issues")
+                
+                if output_issues and fail_on_issues:
+                    raise ValueError(f"Output data quality validation failed for {step_name}: {output_issues}")
+            
             return result
-
-        # Return appropriate wrapper based on function type
-        if asyncio.iscoroutinefunction(func):
-            return async_wrapper
-        else:
-            return sync_wrapper
-
+        
+        return wrapper
     return decorator
 
 
-async def _validate_dataframe_quality(
-    df: pd.DataFrame,
-    required_columns: Optional[List[str]],
-    min_rows: int,
-    max_null_ratio: float,
-    check_duplicates: bool,
-    check_timestamps: bool,
-    context: str,
-) -> Dict[str, Any]:
-    """Validate DataFrame quality asynchronously."""
-    issues = []
-    valid = True
-
-    # Check required columns
-    if required_columns:
-        missing_columns = set(required_columns) - set(df.columns)
-        if missing_columns:
-            issues.append(f"Missing required columns: {missing_columns}")
-            valid = False
-
-    # Check minimum rows
-    if len(df) < min_rows:
-        issues.append(f"DataFrame has {len(df)} rows, minimum required: {min_rows}")
-        valid = False
-
-    # Check null ratios
-    for col in df.columns:
-        null_ratio = df[col].isnull().sum() / len(df)
-        if null_ratio > max_null_ratio:
-            issues.append(f"⚠️ Column '{col}' has {null_ratio:.2%} null values (max: {max_null_ratio:.2%})")
-
-    # Check duplicates
-    if check_duplicates and df.duplicated().any():
-        duplicate_count = df.duplicated().sum()
-        issues.append(f"⚠️ Found {duplicate_count} duplicate rows")
-
-    # Check timestamps
-    if check_timestamps:
-        timestamp_cols = [col for col in df.columns if 'time' in col.lower() or 'date' in col.lower()]
-        for col in timestamp_cols:
-            if col in df.columns:
-                try:
-                    pd.to_datetime(df[col])
-                except Exception:
-                    issues.append(f"⚠️ Column '{col}' contains invalid timestamp data")
-
-    return {
-        "valid": valid,
-        "issues": issues,
-        "row_count": len(df),
-        "column_count": len(df.columns),
-        "null_ratios": {col: df[col].isnull().sum() / len(df) for col in df.columns}
-    }
-
-
-def _validate_dataframe_quality_sync(
-    df: pd.DataFrame,
-    required_columns: Optional[List[str]],
-    min_rows: int,
-    max_null_ratio: float,
-    check_duplicates: bool,
-    check_timestamps: bool,
-    context: str,
-) -> Dict[str, Any]:
-    """Validate DataFrame quality synchronously."""
-    issues = []
-    valid = True
-
-    # Check required columns
-    if required_columns:
-        missing_columns = set(required_columns) - set(df.columns)
-        if missing_columns:
-            issues.append(f"Missing required columns: {missing_columns}")
-            valid = False
-
-    # Check minimum rows
-    if len(df) < min_rows:
-        issues.append(f"DataFrame has {len(df)} rows, minimum required: {min_rows}")
-        valid = False
-
-    # Check null ratios
-    for col in df.columns:
-        null_ratio = df[col].isnull().sum() / len(df)
-        if null_ratio > max_null_ratio:
-            issues.append(f"⚠️ Column '{col}' has {null_ratio:.2%} null values (max: {max_null_ratio:.2%})")
-
-    # Check duplicates
-    if check_duplicates and df.duplicated().any():
-        duplicate_count = df.duplicated().sum()
-        issues.append(f"⚠️ Found {duplicate_count} duplicate rows")
-
-    # Check timestamps
-    if check_timestamps:
-        timestamp_cols = [col for col in df.columns if 'time' in col.lower() or 'date' in col.lower()]
-        for col in timestamp_cols:
-            if col in df.columns:
-                try:
-                    pd.to_datetime(df[col])
-                except Exception:
-                    issues.append(f"⚠️ Column '{col}' contains invalid timestamp data")
-
-    return {
-        "valid": valid,
-        "issues": issues,
-        "row_count": len(df),
-        "column_count": len(df.columns),
-        "null_ratios": {col: df[col].isnull().sum() / len(df) for col in df.columns}
-    }
-
-
-async def _format_dataframe(
-    df: pd.DataFrame,
-    expected_schema: Optional[Dict[str, str]],
-    timestamp_columns: Optional[List[str]],
-    numeric_columns: Optional[List[str]],
-    categorical_columns: Optional[List[str]],
-    context: str,
-) -> pd.DataFrame:
-    """Format DataFrame asynchronously."""
-    formatted_df = df.copy()
-
-    # Convert timestamp columns
-    if timestamp_columns:
-        for col in timestamp_columns:
-            if col in formatted_df.columns:
-                try:
-                    formatted_df[col] = pd.to_datetime(formatted_df[col])
-                except Exception as e:
-                    system_logger.warning(f"⚠️ Failed to convert column '{col}' to datetime: {e}")
-
-    # Convert numeric columns
-    if numeric_columns:
-        for col in numeric_columns:
-            if col in formatted_df.columns:
-                try:
-                    formatted_df[col] = pd.to_numeric(formatted_df[col], errors='coerce')
-                except Exception as e:
-                    system_logger.warning(f"⚠️ Failed to convert column '{col}' to numeric: {e}")
-
-    # Convert categorical columns
-    if categorical_columns:
-        for col in categorical_columns:
-            if col in formatted_df.columns:
-                try:
-                    formatted_df[col] = formatted_df[col].astype('category')
-                except Exception as e:
-                    system_logger.warning(f"⚠️ Failed to convert column '{col}' to categorical: {e}")
-
-    return formatted_df
-
-
-def _format_dataframe_sync(
-    df: pd.DataFrame,
-    expected_schema: Optional[Dict[str, str]],
-    timestamp_columns: Optional[List[str]],
-    numeric_columns: Optional[List[str]],
-    categorical_columns: Optional[List[str]],
-    context: str,
-) -> pd.DataFrame:
-    """Format DataFrame synchronously."""
-    formatted_df = df.copy()
-
-    # Convert timestamp columns
-    if timestamp_columns:
-        for col in timestamp_columns:
-            if col in formatted_df.columns:
-                try:
-                    formatted_df[col] = pd.to_datetime(formatted_df[col])
-                except Exception as e:
-                    system_logger.warning(f"⚠️ Failed to convert column '{col}' to datetime: {e}")
-
-    # Convert numeric columns
-    if numeric_columns:
-        for col in numeric_columns:
-            if col in formatted_df.columns:
-                try:
-                    formatted_df[col] = pd.to_numeric(formatted_df[col], errors='coerce')
-                except Exception as e:
-                    system_logger.warning(f"⚠️ Failed to convert column '{col}' to numeric: {e}")
-
-    # Convert categorical columns
-    if categorical_columns:
-        for col in categorical_columns:
-            if col in formatted_df.columns:
-                try:
-                    formatted_df[col] = formatted_df[col].astype('category')
-                except Exception as e:
-                    system_logger.warning(f"⚠️ Failed to convert column '{col}' to categorical: {e}")
-
-    return formatted_df
-
-
-async def _log_dataframe_metrics(
-    df: pd.DataFrame,
-    context: str,
-    log_memory_usage: bool,
-    log_shape: bool,
-    log_dtypes: bool,
+def _validate_data_quality(
+    args: tuple,
+    kwargs: dict,
+    data_type: str,
     logger: logging.Logger,
-) -> None:
-    """Log DataFrame metrics asynchronously."""
-    metrics = []
+    check_nan: bool,
+    check_infinite: bool,
+    check_constant: bool,
+    check_correlation: bool,
+    max_nan_ratio: float,
+    max_infinite_ratio: float,
+    min_unique_values: int,
+    max_correlation_threshold: float
+) -> list[str]:
+    """
+    Validate data quality for given arguments and keyword arguments.
+    
+    Returns:
+        List of quality issues found
+    """
+    issues = []
+    
+    # Check all arguments for DataFrames
+    for i, arg in enumerate(args):
+        if isinstance(arg, pd.DataFrame):
+            df_issues = _validate_dataframe_quality(
+                arg, f"{data_type}_arg_{i}", logger,
+                check_nan, check_infinite, check_constant, check_correlation,
+                max_nan_ratio, max_infinite_ratio, min_unique_values, max_correlation_threshold
+            )
+            issues.extend(df_issues)
+    
+    # Check all keyword arguments for DataFrames
+    for key, value in kwargs.items():
+        if isinstance(value, pd.DataFrame):
+            df_issues = _validate_dataframe_quality(
+                value, f"{data_type}_kwarg_{key}", logger,
+                check_nan, check_infinite, check_constant, check_correlation,
+                max_nan_ratio, max_infinite_ratio, min_unique_values, max_correlation_threshold
+            )
+            issues.extend(df_issues)
+    
+    return issues
 
-    if log_shape:
-        metrics.append(f"Shape: {df.shape}")
 
-    if log_memory_usage:
-        memory_mb = df.memory_usage(deep=True).sum() / 1024 / 1024
-        metrics.append(f"Memory: {memory_mb:.2f} MB")
-
-    if log_dtypes:
-        dtypes_str = ", ".join([f"{col}: {dtype}" for col, dtype in df.dtypes.items()])
-        metrics.append(f"Dtypes: {dtypes_str}")
-
-    if metrics:
-        logger.info(f"📊 {context} metrics: {' | '.join(metrics)}")
-
-
-def _log_dataframe_metrics_sync(
+def _validate_dataframe_quality(
     df: pd.DataFrame,
-    context: str,
-    log_memory_usage: bool,
-    log_shape: bool,
-    log_dtypes: bool,
+    df_name: str,
     logger: logging.Logger,
-) -> None:
-    """Log DataFrame metrics synchronously."""
-    try:
-        metrics = []
+    check_nan: bool,
+    check_infinite: bool,
+    check_constant: bool,
+    check_correlation: bool,
+    max_nan_ratio: float,
+    max_infinite_ratio: float,
+    min_unique_values: int,
+    max_correlation_threshold: float
+) -> list[str]:
+    """
+    Validate DataFrame quality with specific checks.
+    
+    Returns:
+        List of quality issues found
+    """
+    issues = []
+    
+    if df.empty:
+        issues.append(f"{df_name}: DataFrame is empty")
+        return issues
+    
+    # Check for NaN values
+    if check_nan:
+        nan_counts = df.isnull().sum()
+        high_nan_features = nan_counts[nan_counts > len(df) * max_nan_ratio].index.tolist()
+        if high_nan_features:
+            issues.append(f"{df_name}: Features with >{max_nan_ratio*100}% NaN values: {high_nan_features}")
+    
+    # Check for infinite values
+    if check_infinite:
+        infinite_features = []
+        for col in df.select_dtypes(include=[np.number]).columns:
+            if np.isinf(df[col]).any():
+                infinite_count = np.isinf(df[col]).sum()
+                if infinite_count > len(df) * max_infinite_ratio:
+                    infinite_features.append(col)
+        
+        if infinite_features:
+            issues.append(f"{df_name}: Features with >{max_infinite_ratio*100}% infinite values: {infinite_features}")
+    
+    # Check for constant features
+    if check_constant:
+        constant_features = []
+        for col in df.columns:
+            if df[col].nunique() <= min_unique_values:
+                constant_features.append(col)
+        
+        if constant_features:
+            issues.append(f"{df_name}: Constant features found: {constant_features}")
+    
+    # Check for high correlations
+    if check_correlation:
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        if len(numeric_cols) > 1:
+            corr_matrix = df[numeric_cols].corr().abs()
+            high_corr_pairs = []
+            
+            for i in range(len(corr_matrix.columns)):
+                for j in range(i + 1, len(corr_matrix.columns)):
+                    if corr_matrix.iloc[i, j] > max_correlation_threshold:
+                        high_corr_pairs.append((corr_matrix.columns[i], corr_matrix.columns[j]))
+            
+            if high_corr_pairs:
+                issues.append(f"{df_name}: Highly correlated feature pairs: {high_corr_pairs}")
+    
+    return issues
 
-        if log_shape:
-            metrics.append(f"Shape: {df.shape}")
 
-        if log_memory_usage:
-            memory_mb = df.memory_usage(deep=True).sum() / 1024 / 1024
-            metrics.append(f"Memory: {memory_mb:.2f} MB")
-
-        if log_dtypes:
-            dtypes_str = ", ".join([f"{col}: {dtype}" for col, dtype in df.dtypes.items()])
-            metrics.append(f"Dtypes: {dtypes_str}")
-
-        if metrics:
-            logger.info(f"📊 {context} metrics: {' | '.join(metrics)}")
-
-    except Exception as e:
-        logger.warning(f"⚠️ Failed to log metrics for {context}: {e}")
+def validate_step1_quality(func: Callable) -> Callable:
+    """Decorator specifically for Step1 data quality validation."""
+    return validate_data_quality_at_step(
+        "step1_data_collection",
+        validate_input=True,
+        validate_output=True,
+        check_nan=True,
+        check_infinite=True,
+        check_constant=False,  # Raw data can be constant
+        check_correlation=False,  # Raw data correlation is not relevant
+        fail_on_issues=False,
+        log_issues=True
+    )(func)
 
 
-# Specialized decorators for step1 and step1_5
-def validate_klines_data(context: str = "") -> Callable[[F], F]:
-    """Decorator to validate klines data quality."""
-    return validate_data_quality(
-        required_columns=["timestamp", "open", "high", "low", "close", "volume"],
-        min_rows=1,
-        max_null_ratio=0.1,
-        check_duplicates=True,
-        check_timestamps=True,
-        context=f"klines_{context}",
-    )
+def validate_step1_5_quality(func: Callable) -> Callable:
+    """Decorator specifically for Step1.5 data quality validation."""
+    return validate_data_quality_at_step(
+        "step1_5_data_converter",
+        validate_input=True,
+        validate_output=True,
+        check_nan=True,
+        check_infinite=True,
+        check_constant=False,  # Unified data can be constant
+        check_correlation=False,  # Unified data correlation is not relevant
+        fail_on_issues=False,
+        log_issues=True
+    )(func)
 
 
-def validate_aggtrades_data(context: str = "") -> Callable[[F], F]:
-    """Decorator to validate aggtrades data quality."""
-    return validate_data_quality(
-        required_columns=["timestamp", "price", "quantity"],
-        min_rows=1,
-        max_null_ratio=0.1,
-        check_duplicates=True,
-        check_timestamps=True,
-        context=f"aggtrades_{context}",
-    )
+def validate_step2_quality(func: Callable) -> Callable:
+    """Decorator specifically for Step2 data quality validation with special attention to features."""
+    return validate_data_quality_at_step(
+        "step2_feature_engineering",
+        validate_input=True,
+        validate_output=True,
+        check_nan=True,
+        check_infinite=True,
+        check_constant=True,  # Features should not be constant
+        check_correlation=True,  # Feature correlation is important
+        max_nan_ratio=0.1,  # Stricter for features
+        max_infinite_ratio=0.05,  # Stricter for features
+        min_unique_values=3,  # Features should have more variation
+        max_correlation_threshold=0.95,
+        fail_on_issues=False,
+        log_issues=True
+    )(func)
 
 
-def validate_futures_data(context: str = "") -> Callable[[F], F]:
-    """Decorator to validate futures data quality."""
-    return validate_data_quality(
-        required_columns=["timestamp", "fundingRate"],
-        min_rows=1,
-        max_null_ratio=0.3,  # Higher tolerance for futures data
-        check_duplicates=True,
-        check_timestamps=True,
-        context=f"futures_{context}",
-    )
+def log_feature_quality_issues(df: pd.DataFrame, df_name: str, logger: Optional[logging.Logger] = None) -> None:
+    """
+    Log detailed feature quality issues for a DataFrame.
+    
+    Args:
+        df: DataFrame to check
+        df_name: Name of the DataFrame for logging
+        logger: Logger to use (defaults to system_logger)
+    """
+    if logger is None:
+        logger = system_logger.getChild("FeatureQualityLogger")
+    
+    logger.info(f"🔍 Checking feature quality for {df_name}...")
+    
+    # Check for NaN values
+    nan_counts = df.isnull().sum()
+    nan_features = nan_counts[nan_counts > 0].index.tolist()
+    if nan_features:
+        logger.warning(f"⚠️ {df_name}: Features with NaN values ({len(nan_features)}):")
+        for feature in nan_features[:10]:  # Show first 10
+            nan_count = nan_counts[feature]
+            nan_ratio = nan_count / len(df) * 100
+            logger.warning(f"   - {feature}: {nan_count} NaN values ({nan_ratio:.1f}%)")
+        if len(nan_features) > 10:
+            logger.warning(f"   ... and {len(nan_features) - 10} more features with NaN values")
+    
+    # Check for infinite values
+    infinite_features = []
+    for col in df.select_dtypes(include=[np.number]).columns:
+        if np.isinf(df[col]).any():
+            infinite_count = np.isinf(df[col]).sum()
+            infinite_ratio = infinite_count / len(df) * 100
+            infinite_features.append((col, infinite_count, infinite_ratio))
+    
+    if infinite_features:
+        logger.warning(f"⚠️ {df_name}: Features with infinite values ({len(infinite_features)}):")
+        for feature, count, ratio in infinite_features[:10]:  # Show first 10
+            logger.warning(f"   - {feature}: {count} infinite values ({ratio:.1f}%)")
+        if len(infinite_features) > 10:
+            logger.warning(f"   ... and {len(infinite_features) - 10} more features with infinite values")
+    
+    # Check for constant features
+    constant_features = []
+    for col in df.columns:
+        unique_count = df[col].nunique()
+        if unique_count <= 2:  # Allow for binary features
+            constant_features.append((col, unique_count))
+    
+    if constant_features:
+        logger.warning(f"⚠️ {df_name}: Constant or near-constant features ({len(constant_features)}):")
+        for feature, unique_count in constant_features[:10]:  # Show first 10
+            logger.warning(f"   - {feature}: {unique_count} unique values")
+        if len(constant_features) > 10:
+            logger.warning(f"   ... and {len(constant_features) - 10} more constant features")
+    
+    # Check for high correlations
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    if len(numeric_cols) > 1:
+        corr_matrix = df[numeric_cols].corr().abs()
+        high_corr_pairs = []
+        
+        for i in range(len(corr_matrix.columns)):
+            for j in range(i + 1, len(corr_matrix.columns)):
+                corr_value = corr_matrix.iloc[i, j]
+                if corr_value > 0.95:
+                    high_corr_pairs.append((corr_matrix.columns[i], corr_matrix.columns[j], corr_value))
+        
+        if high_corr_pairs:
+            logger.warning(f"⚠️ {df_name}: Highly correlated feature pairs ({len(high_corr_pairs)}):")
+            for feat1, feat2, corr_value in high_corr_pairs[:5]:  # Show first 5
+                logger.warning(f"   - {feat1} ↔ {feat2}: {corr_value:.3f}")
+            if len(high_corr_pairs) > 5:
+                logger.warning(f"   ... and {len(high_corr_pairs) - 5} more highly correlated pairs")
+    
+    # Summary
+    total_issues = len(nan_features) + len(infinite_features) + len(constant_features) + len(high_corr_pairs)
+    if total_issues == 0:
+        logger.info(f"✅ {df_name}: No feature quality issues detected")
+    else:
+        logger.warning(f"⚠️ {df_name}: Total feature quality issues: {total_issues}")
 
 
-def format_klines_data(context: str = "") -> Callable[[F], F]:
-    """Decorator to format klines data."""
-    return ensure_data_format(
-        expected_schema={
-            "timestamp": "int64",
-            "open": "float64",
-            "high": "float64",
-            "low": "float64",
-            "close": "float64",
-            "volume": "float64",
+# Convenience function for quick validation
+def quick_validate_features(df: pd.DataFrame, df_name: str = "DataFrame") -> Dict[str, Any]:
+    """
+    Quick validation of features with summary statistics.
+    
+    Args:
+        df: DataFrame to validate
+        df_name: Name of the DataFrame
+        
+    Returns:
+        Dictionary with validation results
+    """
+    results = {
+        "df_name": df_name,
+        "shape": df.shape,
+        "total_features": len(df.columns),
+        "total_samples": len(df),
+        "issues": {
+            "nan_features": [],
+            "infinite_features": [],
+            "constant_features": [],
+            "high_correlation_pairs": []
         },
-        timestamp_columns=["timestamp"],
-        numeric_columns=["open", "high", "low", "close", "volume"],
-        context=f"klines_{context}",
-    )
-
-
-def format_aggtrades_data(context: str = "") -> Callable[[F], F]:
-    """Decorator to format aggtrades data."""
-    return ensure_data_format(
-        expected_schema={
-            "timestamp": "int64",
-            "price": "float64",
-            "quantity": "float64",
-        },
-        timestamp_columns=["timestamp"],
-        numeric_columns=["price", "quantity"],
-        context=f"aggtrades_{context}",
-    )
-
-
-def format_futures_data(context: str = "") -> Callable[[F], F]:
-    """Decorator to format futures data."""
-    return ensure_data_format(
-        expected_schema={
-            "timestamp": "int64",
-            "fundingRate": "float64",
-        },
-        timestamp_columns=["timestamp"],
-        numeric_columns=["fundingRate"],
-        context=f"futures_{context}",
-    )
-
-
-def log_step_metrics(context: str = "") -> Callable[[F], F]:
-    """Decorator to log step execution metrics."""
-    return log_data_metrics(
-        context=f"step_{context}",
-        log_memory_usage=True,
-        log_shape=True,
-        log_dtypes=False,
-    )
+        "summary": {
+            "nan_count": 0,
+            "infinite_count": 0,
+            "constant_count": 0,
+            "high_correlation_count": 0
+        }
+    }
+    
+    # Check for NaN values
+    nan_counts = df.isnull().sum()
+    nan_features = nan_counts[nan_counts > 0].index.tolist()
+    results["issues"]["nan_features"] = nan_features
+    results["summary"]["nan_count"] = len(nan_features)
+    
+    # Check for infinite values
+    infinite_features = []
+    for col in df.select_dtypes(include=[np.number]).columns:
+        if np.isinf(df[col]).any():
+            infinite_features.append(col)
+    results["issues"]["infinite_features"] = infinite_features
+    results["summary"]["infinite_count"] = len(infinite_features)
+    
+    # Check for constant features
+    constant_features = []
+    for col in df.columns:
+        if df[col].nunique() <= 2:
+            constant_features.append(col)
+    results["issues"]["constant_features"] = constant_features
+    results["summary"]["constant_count"] = len(constant_features)
+    
+    # Check for high correlations
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    high_corr_pairs = []
+    if len(numeric_cols) > 1:
+        corr_matrix = df[numeric_cols].corr().abs()
+        for i in range(len(corr_matrix.columns)):
+            for j in range(i + 1, len(corr_matrix.columns)):
+                if corr_matrix.iloc[i, j] > 0.95:
+                    high_corr_pairs.append((corr_matrix.columns[i], corr_matrix.columns[j]))
+    results["issues"]["high_correlation_pairs"] = high_corr_pairs
+    results["summary"]["high_correlation_count"] = len(high_corr_pairs)
+    
+    return results

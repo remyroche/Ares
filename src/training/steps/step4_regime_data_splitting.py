@@ -9,7 +9,7 @@ from typing import Any
 import pandas as pd
 
 # Import the auto-fix decorator for data quality issues
-from src.training.steps.raw_data_quality_checker import auto_fix_data_quality_issues
+from src.utils.centralized_decorators import auto_fix_data_quality_issues
 from src.training.steps.unified_data_loader import get_unified_data_loader
 from src.utils.logger import system_logger
 

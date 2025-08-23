@@ -445,7 +445,7 @@ def test_enhanced_decorators():
     print("=" * 50)
     
     try:
-        from src.utils.enhanced_validation_decorators import (
+        from src.utils.centralized_decorators import (
             validate_ml_data_quality_decorator,
             quality_gate,
             step_specific_ml_validation

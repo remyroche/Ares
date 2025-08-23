@@ -6,13 +6,26 @@ import functools
 import time
 import asyncio
 import logging
-import psutil
-import gc
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Optional, Dict, List
 import inspect
+
+# Handle optional dependencies
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    psutil = None
+
+try:
+    import gc
+    GC_AVAILABLE = True
+except ImportError:
+    GC_AVAILABLE = False
+    gc = None
 
 from src.utils.logger import system_logger
 
@@ -54,6 +67,8 @@ class PerformanceMetrics:
 
 def _get_memory_usage() -> float:
     """Get current memory usage in MB."""
+    if not PSUTIL_AVAILABLE:
+        return 0.0
     try:
         process = psutil.Process()
         return process.memory_info().rss / 1024 / 1024
@@ -63,6 +78,8 @@ def _get_memory_usage() -> float:
 
 def _get_cpu_usage() -> float:
     """Get current CPU usage percentage."""
+    if not PSUTIL_AVAILABLE:
+        return 0.0
     try:
         return psutil.cpu_percent(interval=0.1)
     except Exception:
@@ -82,7 +99,7 @@ def performance_monitor(level: PerformanceLevel = PerformanceLevel.BASIC):
             start_time = time.time()
             start_memory = _get_memory_usage()
             start_cpu = _get_cpu_usage()
-            gc_collections_before = gc.get_count()
+            gc_collections_before = gc.get_count() if GC_AVAILABLE else [0, 0, 0]
             
             logger.info(f"📊 [PERF] Starting performance monitoring for {func.__name__}")
             
@@ -92,7 +109,7 @@ def performance_monitor(level: PerformanceLevel = PerformanceLevel.BASIC):
                 elapsed = time.time() - start_time
                 end_memory = _get_memory_usage()
                 end_cpu = _get_cpu_usage()
-                gc_collections_after = gc.get_count()
+                gc_collections_after = gc.get_count() if GC_AVAILABLE else [0, 0, 0]
                 
                 memory_diff = end_memory - start_memory
                 cpu_diff = end_cpu - start_cpu
@@ -117,7 +134,7 @@ def performance_monitor(level: PerformanceLevel = PerformanceLevel.BASIC):
             start_time = time.time()
             start_memory = _get_memory_usage()
             start_cpu = _get_cpu_usage()
-            gc_collections_before = gc.get_count()
+            gc_collections_before = gc.get_count() if GC_AVAILABLE else [0, 0, 0]
             
             logger.info(f"📊 [PERF] Starting performance monitoring for {func.__name__}")
             
@@ -127,7 +144,7 @@ def performance_monitor(level: PerformanceLevel = PerformanceLevel.BASIC):
                 elapsed = time.time() - start_time
                 end_memory = _get_memory_usage()
                 end_cpu = _get_cpu_usage()
-                gc_collections_after = gc.get_count()
+                gc_collections_after = gc.get_count() if GC_AVAILABLE else [0, 0, 0]
                 
                 memory_diff = end_memory - start_memory
                 cpu_diff = end_cpu - start_cpu

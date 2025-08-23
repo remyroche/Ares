@@ -10,10 +10,28 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import time
-import psutil
 
-import numpy as np
-import pandas as pd
+# Handle optional dependencies
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    psutil = None
+
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
+
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -28,9 +46,9 @@ from src.utils.centralized_decorators import (
     validate_data_structure,
     with_tracing_span,
 )
-from src.utils.enhanced_validation_decorators import quality_gate
+from src.utils.centralized_decorators import quality_gate
 from src.utils.logger import system_logger
-from src.utils.training_pipeline_decorators import monitor_feature_engineering
+from src.utils.centralized_decorators import monitor_feature_engineering
 
 logger = system_logger.getChild("Step3HMMRegimeDiscovery")
 
@@ -105,8 +123,11 @@ class HMMRegimeDiscoveryStep:
         self.logger.info(f"🔄 Pipeline state keys: {list(pipeline_state.keys())}")
         
         # Initial memory usage
-        initial_memory = psutil.virtual_memory()
-        self.logger.info(f"💾 Initial memory usage: {initial_memory.percent:.1f}% ({initial_memory.used / 1024**3:.1f}GB / {initial_memory.total / 1024**3:.1f}GB)")
+        if PSUTIL_AVAILABLE:
+            initial_memory = psutil.virtual_memory()
+            self.logger.info(f"💾 Initial memory usage: {initial_memory.percent:.1f}% ({initial_memory.used / 1024**3:.1f}GB / {initial_memory.total / 1024**3:.1f}GB)")
+        else:
+            self.logger.info("💾 Memory monitoring not available (psutil not installed)")
 
         try:
             # Step 1: Ensure data quality and readiness
@@ -430,7 +451,7 @@ class HMMRegimeDiscoveryStep:
 
     @with_tracing_span("prepare_hmm_features")
     @validate_data_structure
-    async def _prepare_hmm_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    async def _prepare_hmm_features(self, df: Any) -> Any:
         """Prepare features for HMM regime discovery."""
         try:
             self.logger.info("🔧 Starting feature preparation for HMM...")
@@ -447,7 +468,7 @@ class HMMRegimeDiscoveryStep:
 
             # Calculate basic features
             self.logger.info("📊 Calculating price-based features...")
-            features = pd.DataFrame()
+            features = pd.DataFrame() if PANDAS_AVAILABLE else None
             features["timestamp"] = df["timestamp"]
 
             # Price-based features
@@ -499,7 +520,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f"❌ Error preparing HMM features: {e}")
             raise
 
-    def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
+    def _calculate_rsi(self, prices: Any, window: int = 14) -> Any:
         """Calculate Relative Strength Index."""
         self.logger.debug(f"Calculating RSI with window {window}...")
         delta = prices.diff()
@@ -509,7 +530,7 @@ class HMMRegimeDiscoveryStep:
         rsi = 100 - (100 / (1 + rs))
         return rsi
 
-    def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
+    def _calculate_macd(self, prices: Any, fast: int = 12, slow: int = 26, signal: int = 9) -> Any:
         """Calculate MACD (Moving Average Convergence Divergence)."""
         self.logger.debug(f"Calculating MACD (fast={fast}, slow={slow}, signal={signal})...")
         ema_fast = prices.ewm(span=fast).mean()
@@ -522,7 +543,7 @@ class HMMRegimeDiscoveryStep:
     async def _perform_hmm_regime_discovery(
         self, 
         training_input: dict[str, Any], 
-        data: pd.DataFrame
+        data: Any
     ) -> dict[str, Any]:
         """Perform HMM regime discovery on the prepared data."""
         try:
@@ -603,7 +624,7 @@ class HMMRegimeDiscoveryStep:
 
             # Calculate regime statistics
             self.logger.info("📊 Calculating regime statistics...")
-            regime_counts_series = pd.Series(regime_counts)
+            regime_counts_series = pd.Series(regime_counts) if PANDAS_AVAILABLE else None
             regime_transitions = self._calculate_regime_transitions(regimes)
 
             self.logger.info(f"✅ HMM regime discovery completed successfully")

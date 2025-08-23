@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 from src.utils.data_preprocessing import preprocess_data_for_multi_timeframe
-from src.utils.data_quality_decorators import (
+from src.utils.centralized_decorators import (
     ValidationLevel,
     validate_data_quality,
     validate_feature_engineering_with_lookahead_bias_detection,

@@ -14,7 +14,7 @@ from src.config_optuna import get_parameter_value
 from src.utils.confidence import normalize_dual_confidence
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import error, initialization_error, missing
-from src.utils.data_quality_decorators import validate_data_quality
+from src.utils.centralized_decorators import validate_data_quality
 
 
 class PositionSizer:

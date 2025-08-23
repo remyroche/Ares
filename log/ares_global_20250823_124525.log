@@ -1,0 +1,96 @@
+2025-08-23 12:45:25,070 INFO AresGlobal ================================================================================ - -
+2025-08-23 12:45:25,070 INFO AresGlobal 📊 SESSION SUMMARY - -
+2025-08-23 12:45:25,070 INFO AresGlobal Session started: 2025-08-23 12:45:25 - -
+2025-08-23 12:45:25,070 INFO AresGlobal This file contains ALL logs for this session - -
+2025-08-23 12:45:25,070 INFO AresGlobal ================================================================================ - -
+2025-08-23 12:45:25,070 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 12:45:25,070 INFO AresGlobal [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: INITIALIZATION - -
+2025-08-23 12:45:25,070 INFO AresGlobal [SYSTEM] Start time: 2025-08-23 12:45:25 - -
+2025-08-23 12:45:25,070 INFO AresGlobal [SYSTEM] Log directory: log - -
+2025-08-23 12:45:25,070 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 12:45:25,070 INFO AresGlobal.AresLauncher ================================================================================ - -
+2025-08-23 12:45:25,070 INFO AresGlobal.AresLauncher 🚀 ARES COMPREHENSIVE LAUNCHER - -
+2025-08-23 12:45:25,070 INFO AresGlobal.AresLauncher ================================================================================ - -
+2025-08-23 12:45:25,070 INFO AresGlobal.AresLauncher Start time: 2025-08-23 12:45:25 - -
+2025-08-23 12:45:25,070 INFO AresGlobal.AresLauncher Log directory: log - -
+2025-08-23 12:45:25,070 INFO AresGlobal.AresLauncher Log level: INFO - -
+2025-08-23 12:45:25,070 INFO AresGlobal.AresLauncher Global log file: ares_global_20250823_124525.log - -
+2025-08-23 12:45:25,070 INFO AresGlobal.AresLauncher Full run log: log/ares_full_20250823_124525.log - -
+2025-08-23 12:45:25,070 INFO AresGlobal.AresLauncher Trades log: log/ares_trades_20250823_124525.log - -
+2025-08-23 12:45:25,070 INFO AresGlobal.AresLauncher Backtest log: log/ares_backtest_20250823_124525.log - -
+2025-08-23 12:45:25,070 INFO AresGlobal.AresLauncher ================================================================================ - -
+2025-08-23 12:45:25,070 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 12:45:25,071 INFO AresGlobal [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: blank - Symbol: ETHUSDT - Exchange: BINANCE - -
+2025-08-23 12:45:25,071 INFO AresGlobal [SYSTEM] Start time: 2025-08-23 12:45:25 - -
+2025-08-23 12:45:25,071 INFO AresGlobal [SYSTEM] Log directory: log - -
+2025-08-23 12:45:25,071 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 12:45:25,071 INFO AresGlobal.AresLauncher 🚀 Running enhanced 16-step training pipeline for ETHUSDT on BINANCE - -
+2025-08-23 12:45:25,071 INFO AresGlobal.AresLauncher Starting from step: step1_5_data_converter - -
+2025-08-23 12:45:25,071 INFO AresGlobal.AresLauncher 🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training - -
+2025-08-23 12:45:25,071 INFO AresGlobal.ProgressManager Initialized ProgressManager for ETHUSDT on BINANCE - -
+2025-08-23 12:45:25,071 INFO AresGlobal.ProgressManager Progress directory: data/training/progress/BINANCE_ETHUSDT - -
+2025-08-23 12:45:25,072 INFO AresGlobal.StepOrchestrator Initialized StepOrchestrator for ETHUSDT on BINANCE - -
+2025-08-23 12:45:25,072 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step1_5_data_converter - -
+2025-08-23 12:45:25,072 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step1_5_data_converter' (force) - -
+2025-08-23 12:45:25,072 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step2_feature_engineering - -
+2025-08-23 12:45:25,072 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step2_feature_engineering' (force) - -
+2025-08-23 12:45:25,072 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step3_hmm_regime_discovery - -
+2025-08-23 12:45:25,072 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step3_hmm_regime_discovery' (force) - -
+2025-08-23 12:45:25,072 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step4_processing_labeling - -
+2025-08-23 12:45:25,072 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step4_processing_labeling' (force) - -
+2025-08-23 12:45:25,072 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step5_regime_data_splitting - -
+2025-08-23 12:45:25,072 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step5_regime_data_splitting' (force) - -
+2025-08-23 12:45:25,072 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step6_hmm_based_training - -
+2025-08-23 12:45:25,072 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step6_hmm_based_training' (force) - -
+2025-08-23 12:45:25,072 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step6_5_unified_regime_intelligence - -
+2025-08-23 12:45:25,072 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step6_5_unified_regime_intelligence' (force) - -
+2025-08-23 12:45:25,072 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step7_analyst_enhancement - -
+2025-08-23 12:45:25,072 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step7_analyst_enhancement' (force) - -
+2025-08-23 12:45:25,072 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step8_tactician_labeling - -
+2025-08-23 12:45:25,072 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step8_tactician_labeling' (force) - -
+2025-08-23 12:45:25,072 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step9_tactician_specialist_training - -
+2025-08-23 12:45:25,072 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step9_tactician_specialist_training' (force) - -
+2025-08-23 12:45:25,072 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step10_confidence_calibration - -
+2025-08-23 12:45:25,072 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step10_confidence_calibration' (force) - -
+2025-08-23 12:45:25,072 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step11_final_parameters_optimization - -
+2025-08-23 12:45:25,073 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step11_final_parameters_optimization' (force) - -
+2025-08-23 12:45:25,073 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step12_walk_forward_validation - -
+2025-08-23 12:45:25,073 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step12_walk_forward_validation' (force) - -
+2025-08-23 12:45:25,073 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step13_monte_carlo_validation - -
+2025-08-23 12:45:25,073 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step13_monte_carlo_validation' (force) - -
+2025-08-23 12:45:25,073 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step14_ab_testing - -
+2025-08-23 12:45:25,073 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step14_ab_testing' (force) - -
+2025-08-23 12:45:25,073 INFO AresGlobal.ProgressManager 🗑️  Cleared progress for step15_saving - -
+2025-08-23 12:45:25,073 INFO AresGlobal.AresLauncher 🧹 Cleared progress for 'step15_saving' (force) - -
+2025-08-23 12:45:25,073 INFO AresGlobal.AresLauncher ✅ Cleared progress for 16 steps: ['step1_5_data_converter', 'step2_feature_engineering', 'step3_hmm_regime_discovery', 'step4_processing_labeling', 'step5_regime_data_splitting', 'step6_hmm_based_training', 'step6_5_unified_regime_intelligence', 'step7_analyst_enhancement', 'step8_tactician_labeling', 'step9_tactician_specialist_training', 'step10_confidence_calibration', 'step11_final_parameters_optimization', 'step12_walk_forward_validation', 'step13_monte_carlo_validation', 'step14_ab_testing', 'step15_saving'] - -
+2025-08-23 12:45:25,073 INFO AresGlobal.StepOrchestrator 🚀 Starting execution from step: step1_5_data_converter - -
+2025-08-23 12:45:25,688 ERROR AresGlobal.StepOrchestrator Failed to setup enhanced training manager: quality_gate() got an unexpected keyword argument 'timestamp_col' - -
+Traceback (most recent call last):
+  File "/workspace/src/training/step_orchestrator.py", line 74, in _setup_enhanced_training_manager
+    from src.training.enhanced_training_manager import (
+        setup_enhanced_training_manager,
+    )
+  File "/workspace/src/training/enhanced_training_manager.py", line 53, in <module>
+    from src.training.steps.multi_timeframe_training.multi_timeframe_training_manager import (
+        MultiTimeframeTrainingManager,
+    )
+  File "/workspace/src/training/steps/__init__.py", line 9, in <module>
+    from .step1_data_collection import DataCollectionStep
+  File "/workspace/src/training/steps/step1_data_collection.py", line 117, in <module>
+    class DataCollectionStep:
+    ...<395 lines>...
+                logger.info("=" * 80)
+  File "/workspace/src/training/steps/step1_data_collection.py", line 219, in DataCollectionStep
+    @((step_specific_ml_validation("step1", timestamp_col="timestamp") if step_specific_ml_validation else (lambda x: x)))
+       ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/src/utils/centralized_decorators.py", line 631, in step_specific_ml_validation
+    return quality_gate(**config)
+TypeError: quality_gate() got an unexpected keyword argument 'timestamp_col'
+2025-08-23 12:45:25,694 INFO AresGlobal.StepOrchestrator [91m[1m🚫[0m [91m[1mFailed to setup enhanced training manager: quality_gate() got an unexpected keyword argument 'timestamp_col'[0m - -
+2025-08-23 12:45:25,694 ERROR AresGlobal.AresLauncher ❌ Step-based training pipeline failed - -
+2025-08-23 12:45:25,695 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 12:45:25,695 INFO AresGlobal [SYSTEM] 🛑 ARES LAUNCHER ENDED - Exit code: 1 - -
+2025-08-23 12:45:25,695 INFO AresGlobal [SYSTEM] End time: 2025-08-23 12:45:25 - -
+2025-08-23 12:45:25,695 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 12:45:25,695 INFO AresGlobal.AresLauncher 🧹 Cleaning up processes... - -
+2025-08-23 12:45:25,695 INFO AresGlobal.AresLauncher ✅ Cleanup completed - -

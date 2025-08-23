@@ -625,8 +625,15 @@ def step_specific_ml_validation(step_name: str, **kwargs):
     # Get step configuration
     step_config = step_configs.get(step_name, {})
     
+    # Filter kwargs to only include parameters that quality_gate accepts
+    quality_gate_params = {
+        'min_quality_score', 'max_correlation', 'max_drift_psi', 
+        'required_grade', 'enable_alerts', 'alert_config', 'validation_level'
+    }
+    filtered_kwargs = {k: v for k, v in kwargs.items() if k in quality_gate_params}
+    
     # Merge with provided kwargs
-    config = {**step_config, **kwargs}
+    config = {**step_config, **filtered_kwargs}
     
     return quality_gate(**config)
 

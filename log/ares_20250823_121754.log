@@ -1,0 +1,28 @@
+2025-08-23 12:17:54,924 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-23 12:17:56,007 INFO AresTradingSystem.System.PipelineMonitor 🔄 [STEP 1] Starting: run_step - -
+2025-08-23 12:17:56,007 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Pre-execution checks for run_step - -
+2025-08-23 12:17:56,007 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Running data quality validation for run_step - -
+2025-08-23 12:17:56,008 INFO AresTradingSystem.System.PipelineMonitor 🔄 [STEP 2] Starting: run_step - -
+2025-08-23 12:17:56,008 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Pre-execution checks for run_step - -
+2025-08-23 12:17:56,008 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Running data quality validation for run_step - -
+2025-08-23 12:17:56,008 INFO AresTradingSystem.System.ValidateAndExecute ✅ Function executed successfully - -
+2025-08-23 12:17:56,008 INFO AresTradingSystem.System.PipelineStepMonitor ✅ [PIPELINE STEP] Data quality validation completed for run_step - -
+2025-08-23 12:17:56,008 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Post-execution checks for run_step - -
+2025-08-23 12:17:56,008 ERROR AresTradingSystem.System.PipelineStepMonitor 💥 [PIPELINE STEP] Step run_step failed with error - -
+2025-08-23 12:17:56,009 ERROR AresTradingSystem.System.PipelineMonitor ❌ [ERROR] Step run_step failed: 'duration' - -
+2025-08-23 12:17:56,009 INFO AresTradingSystem.System.PipelineMonitor ✅ [STEP] Completed: run_step - -
+2025-08-23 12:17:56,009 ERROR AresTradingSystem.System.ValidateAndExecute ❌ Function execution failed: 'duration' - -
+2025-08-23 12:17:56,009 ERROR AresTradingSystem.System.PipelineStepMonitor ❌ [PIPELINE STEP] Data quality validation failed: 'duration' - -
+2025-08-23 12:17:56,009 WARNING AresTradingSystem.System.PipelineMonitor ⚠️ [WARNING] Step run_step: Data quality validation failed: 'duration' - -
+2025-08-23 12:17:56,010 INFO AresTradingSystem.System.PipelineMonitor 🔄 [STEP 3] Starting: run_step - -
+2025-08-23 12:17:56,010 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Pre-execution checks for run_step - -
+2025-08-23 12:17:56,010 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Running data quality validation for run_step - -
+2025-08-23 12:17:56,010 INFO AresTradingSystem.System.ValidateAndExecute ✅ Function executed successfully - -
+2025-08-23 12:17:56,010 INFO AresTradingSystem.System.PipelineStepMonitor ✅ [PIPELINE STEP] Data quality validation completed for run_step - -
+2025-08-23 12:17:56,010 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Post-execution checks for run_step - -
+2025-08-23 12:17:56,010 ERROR AresTradingSystem.System.PipelineStepMonitor 💥 [PIPELINE STEP] Step run_step failed with error - -
+2025-08-23 12:17:56,010 ERROR AresTradingSystem.System.PipelineMonitor ❌ [ERROR] Step run_step failed: 'duration' - -
+2025-08-23 12:17:56,010 INFO AresTradingSystem.System.PipelineMonitor ✅ [STEP] Completed: run_step - -
+2025-08-23 12:17:56,010 ERROR AresTradingSystem.System.PipelineStepMonitor 💥 [PIPELINE STEP] Step run_step failed with error - -
+2025-08-23 12:17:56,010 ERROR AresTradingSystem.System.PipelineMonitor ❌ [ERROR] Step run_step failed: 'duration' - -
+2025-08-23 12:17:56,011 INFO AresTradingSystem.System.PipelineMonitor ✅ [STEP] Completed: run_step - -

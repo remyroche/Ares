@@ -1,0 +1,48 @@
+2025-08-23 12:18:33,769 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-23 12:18:34,843 INFO AresTradingSystem.System.PipelineMonitor 🔄 [STEP 1] Starting: run_step - -
+2025-08-23 12:18:34,843 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Pre-execution checks for run_step - -
+2025-08-23 12:18:34,844 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Running data quality validation for run_step - -
+2025-08-23 12:18:34,844 INFO AresTradingSystem.System.PipelineMonitor 🔄 [STEP 2] Starting: run_step - -
+2025-08-23 12:18:34,844 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Pre-execution checks for run_step - -
+2025-08-23 12:18:34,845 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Running data quality validation for run_step - -
+2025-08-23 12:18:34,845 INFO AresTradingSystem.System.ValidateAndExecute ✅ Function executed successfully - -
+2025-08-23 12:18:34,845 INFO AresTradingSystem.System.PipelineStepMonitor ✅ [PIPELINE STEP] Data quality validation completed for run_step - -
+2025-08-23 12:18:34,845 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Post-execution checks for run_step - -
+2025-08-23 12:18:34,845 INFO AresTradingSystem.System.PipelineStepMonitor ✅ [PIPELINE STEP] Step run_step completed successfully - -
+2025-08-23 12:18:34,845 INFO AresTradingSystem.System.PipelineMonitor ✅ [STEP] Completed: run_step - -
+2025-08-23 12:18:34,845 INFO AresTradingSystem.System.ValidateAndExecute ✅ Function executed successfully - -
+2025-08-23 12:18:34,845 INFO AresTradingSystem.System.PipelineStepMonitor ✅ [PIPELINE STEP] Data quality validation completed for run_step - -
+2025-08-23 12:18:34,845 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Post-execution checks for run_step - -
+2025-08-23 12:18:34,845 INFO AresTradingSystem.System.PipelineStepMonitor ✅ [PIPELINE STEP] Step run_step completed successfully - -
+2025-08-23 12:18:34,846 INFO AresTradingSystem.System.PipelineMonitor ✅ [STEP] Completed: run_step - -
+2025-08-23 12:18:34,846 WARNING AresTradingSystem.System.MLQualityValidator No DataFrame found in function arguments, skipping ML validation - -
+2025-08-23 12:18:34,846 INFO AresTradingSystem.System.Step2.FeatureEngineering ================================================================================ - -
+2025-08-23 12:18:34,846 INFO AresTradingSystem.System.Step2.FeatureEngineering 🚀 STEP 2: FEATURE ENGINEERING PIPELINE STARTING - -
+2025-08-23 12:18:34,846 INFO AresTradingSystem.System.Step2.FeatureEngineering ================================================================================ - -
+2025-08-23 12:18:34,846 INFO AresTradingSystem.System.Step2.FeatureEngineering 📊 Parameters: - -
+2025-08-23 12:18:34,846 INFO AresTradingSystem.System.Step2.FeatureEngineering    - Symbol: ETHUSDT - -
+2025-08-23 12:18:34,846 INFO AresTradingSystem.System.Step2.FeatureEngineering    - Exchange: BINANCE - -
+2025-08-23 12:18:34,846 INFO AresTradingSystem.System.Step2.FeatureEngineering    - Data Directory: 1m - -
+2025-08-23 12:18:34,846 INFO AresTradingSystem.System.Step2.FeatureEngineering    - Timeframe: data_cache - -
+2025-08-23 12:18:34,846 INFO AresTradingSystem.System.Step2.FeatureEngineering    - Force Rerun: False - -
+2025-08-23 12:18:34,846 INFO AresTradingSystem.System.Step2.FeatureEngineering    - Additional kwargs: [] - -
+2025-08-23 12:18:34,846 INFO AresTradingSystem.System.Step2.FeatureEngineering ================================================================================ - -
+2025-08-23 12:18:34,846 INFO AresTradingSystem.System.Step2.FeatureEngineering 🔍 Checking for existing feature artifacts... - -
+2025-08-23 12:18:34,846 INFO AresTradingSystem.System.Step2.FeatureEngineering 📦 Artifact hash: 36ae034235d963d2e5cad3a771884c78 - -
+2025-08-23 12:18:34,846 INFO AresTradingSystem.System.Step2.FeatureEngineering 📦 Artifacts exist: False - -
+2025-08-23 12:18:34,846 INFO AresTradingSystem.System.Step2.FeatureEngineering 🔧 No existing artifacts found - generating features - -
+2025-08-23 12:18:34,846 INFO AresTradingSystem.System.Step2.FeatureEngineering 🆕 Starting fresh feature engineering pipeline - -
+2025-08-23 12:18:34,868 ERROR AresTradingSystem.System.Step2.FeatureEngineering ================================================================================ - -
+2025-08-23 12:18:34,868 ERROR AresTradingSystem.System.Step2.FeatureEngineering ❌ STEP 2: FEATURE ENGINEERING PIPELINE FAILED - -
+2025-08-23 12:18:34,868 ERROR AresTradingSystem.System.Step2.FeatureEngineering ================================================================================ - -
+2025-08-23 12:18:34,868 ERROR AresTradingSystem.System.Step2.FeatureEngineering 🚨 Step 2 feature engineering failed: expected 'except' or 'finally' block (vectorized_advanced_feature_engineering.py, line 1147) - -
+Traceback (most recent call last):
+  File "/workspace/src/training/steps/step2_feature_engineering.py", line 511, in run_step
+    from src.training.steps.vectorized_advanced_feature_engineering import (
+        VectorizedAdvancedFeatureEngineering,
+    )
+  File "/workspace/src/training/steps/vectorized_advanced_feature_engineering.py", line 1147
+    if sr_levels is None or not isinstance(sr_levels, dict):
+    ^^
+SyntaxError: expected 'except' or 'finally' block
+2025-08-23 12:18:34,869 ERROR AresTradingSystem.System.Step2.FeatureEngineering ================================================================================ - -

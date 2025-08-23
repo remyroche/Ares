@@ -70,7 +70,11 @@ class EnhancedDataQualityManager:
             logger.warning(f"⚠️ Could not import AggtradesValidator: {e}")
 
     @with_tracing_span("comprehensive_data_quality_check")
-    @quality_gate(validation_level="comprehensive")
+    @quality_gate(
+        min_quality_score=0.6,
+        max_correlation=0.95,
+        required_grade="C"
+    )
     @handle_errors(
         exceptions=(Exception,),
         default_return={"success": False, "issues": ["Quality check failed"]},

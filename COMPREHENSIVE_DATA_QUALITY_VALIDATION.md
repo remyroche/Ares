@@ -14,6 +14,11 @@ This document describes the comprehensive data quality validation system impleme
   - **Detailed Problematic Value Information**: Counts, percentages, sample indices, value distributions
   - **Issue Breakdown**: Categorized summary of all problems
   - **Sample Data**: Shows actual problematic values and their locations
+- **Data Extract Logging**: Comprehensive data structure analysis for troubleshooting
+  - **Data Structure Information**: Shape, columns, data types, file sizes
+  - **Sample Data**: First and last 5 rows with formatted values
+  - **Quality Metrics**: Date ranges, value ranges, missing values, duplicates
+  - **Data Quality Checks**: Infinite values, zero prices, negative volumes
 
 ### 📊 **Quality Checks**
 - **NaN Values**: Detects and reports features with any NaN values (zero tolerance)
@@ -34,6 +39,7 @@ This document describes the comprehensive data quality validation system impleme
 - Checks file existence and basic data quality
 - Validates data completeness and format
 - **Data Structure Validation**: Columns, format, index, data types
+- **Detailed Data Extract**: Comprehensive logging of data structure, types, samples, and quality metrics
 - **Thresholds**: 
   - Max NaN ratio: 0% (zero tolerance)
   - Max infinite count: 0 values (zero tolerance)
@@ -262,6 +268,58 @@ The system implements graceful degradation:
 - Warnings are issued for quality problems
 - The pipeline continues with data quality issues noted
 - Detailed validation results are available for analysis
+
+### 📊 **Data Extract Logging for Troubleshooting**
+
+Step1 now includes comprehensive data extract logging that provides detailed information about downloaded data:
+
+#### **Data Structure Information**
+- **Shape**: Number of rows and columns
+- **File Size**: Actual file size in bytes
+- **Columns**: Complete list of column names
+- **Data Types**: Detailed data type information for each column
+
+#### **Sample Data Analysis**
+- **First 5 Rows**: Sample data from the beginning of the dataset
+- **Last 5 Rows**: Sample data from the end of the dataset
+- **Formatted Values**: Clean, readable format for all data types
+
+#### **Quality Metrics**
+- **Date Range**: Start and end dates with total days
+- **Value Ranges**: Min, max, and mean values for numeric columns
+- **Missing Values**: Count and percentage of missing data per column
+- **Duplicate Check**: Number of duplicate timestamps
+
+#### **Data Quality Checks**
+- **Infinite Values**: Detection of positive/negative infinite values
+- **Zero Prices**: Zero values in price columns (open, high, low, close, price)
+- **Negative Volumes**: Negative values in volume column
+- **Data Completeness**: Overall data quality assessment
+
+#### **Example Output**
+```
+📊 DETAILED DATA EXTRACT FOR TROUBLESHOOTING
+===============================================================================
+🔍 Analyzing Klines data: data_cache/klines_BINANCE_ETHUSDT_1m_consolidated.parquet
+   📊 Shape: (43200, 6)
+   📁 File size: 2,048,000 bytes
+   🗂️ Columns (6): ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+   🔧 Data types:
+      - timestamp: datetime64[ns]
+      - open: float64
+      - high: float64
+      - low: float64
+      - close: float64
+      - volume: float64
+   📋 Sample data (first 5 rows):
+      Row 0: {'timestamp': '2023-01-01 00:00:00', 'open': '1199.500000', 'high': '1200.100000', 'low': '1199.200000', 'close': '1199.800000', 'volume': '1500.000000'}
+   📅 Date range: 2023-01-01 00:00:00 to 2023-12-31 23:59:00 (365 days)
+   ✅ No missing values found
+   ✅ No duplicate timestamps found
+   ✅ No infinite values found
+   ✅ No zero values in price columns
+   ✅ No negative volume values
+```
 
 ### 🔄 **Fallback Mechanisms**
 - Legacy validation systems are preserved

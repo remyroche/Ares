@@ -242,6 +242,13 @@ class DataCollectionStep:
                     exchange_name=exchange,
                     interval=timeframe,
                 )
+                
+                if success:
+                    self.logger.info("✅ Data download completed successfully")
+                    # Log immediate data extract after download
+                    data_dir = training_input.get("data_dir", "data_cache")
+                    await self._log_detailed_data_extract(symbol, exchange, timeframe, data_dir, self.logger)
+                
                 return bool(success)
             # Fallback implementation
             self.logger.warning("Using fallback data collection method")
@@ -312,6 +319,192 @@ class DataCollectionStep:
                 total_files = len(validation_results)
                 valid_files = sum(1 for r in validation_results if getattr(r, "is_valid", False))
                 logger.info(f"📊 Validation Summary: {valid_files}/{total_files} files passed validation")
+
+    async def _log_detailed_data_extract(
+        self, symbol: str, exchange: str, timeframe: str, data_dir: str, logger: Any
+    ) -> None:
+        """Log detailed data extract for troubleshooting purposes.
+        
+        Args:
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframe: Timeframe
+            data_dir: Data directory
+            logger: Logger instance
+        """
+        logger.info("=" * 80)
+        logger.info("📊 DETAILED DATA EXTRACT FOR TROUBLESHOOTING")
+        logger.info("=" * 80)
+        
+        try:
+            import pandas as pd
+            
+            # Check for consolidated files
+            klines_file = f"{data_dir}/klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
+            aggtrades_file = f"{data_dir}/aggtrades_{exchange}_{symbol}_consolidated.parquet"
+            
+            files_to_check = [
+                ("Klines", klines_file),
+                ("Aggtrades", aggtrades_file)
+            ]
+            
+            for data_type, file_path in files_to_check:
+                logger.info(f"🔍 Analyzing {data_type} data: {file_path}")
+                
+                if Path(file_path).exists():
+                    try:
+                        # Load the data
+                        df = pd.read_parquet(file_path)
+                        
+                        # Basic information
+                        logger.info(f"   📊 Shape: {df.shape}")
+                        logger.info(f"   📁 File size: {Path(file_path).stat().st_size:,} bytes")
+                        
+                        # Column information
+                        logger.info(f"   🗂️ Columns ({len(df.columns)}): {list(df.columns)}")
+                        
+                        # Data types
+                        logger.info(f"   🔧 Data types:")
+                        for col, dtype in df.dtypes.items():
+                            logger.info(f"      - {col}: {dtype}")
+                        
+                        # Sample data (first 5 rows)
+                        logger.info(f"   📋 Sample data (first 5 rows):")
+                        sample_df = df.head(5)
+                        for idx, row in sample_df.iterrows():
+                            # Format the row data for better readability
+                            formatted_row = {}
+                            for col, val in row.items():
+                                if pd.isna(val):
+                                    formatted_row[col] = "NaN"
+                                elif isinstance(val, (int, float)):
+                                    formatted_row[col] = f"{val:.6f}" if isinstance(val, float) else str(val)
+                                else:
+                                    formatted_row[col] = str(val)
+                            logger.info(f"      Row {idx}: {formatted_row}")
+                        
+                        # Last 5 rows for comparison
+                        logger.info(f"   📋 Sample data (last 5 rows):")
+                        sample_df_last = df.tail(5)
+                        for idx, row in sample_df_last.iterrows():
+                            # Format the row data for better readability
+                            formatted_row = {}
+                            for col, val in row.items():
+                                if pd.isna(val):
+                                    formatted_row[col] = "NaN"
+                                elif isinstance(val, (int, float)):
+                                    formatted_row[col] = f"{val:.6f}" if isinstance(val, float) else str(val)
+                                else:
+                                    formatted_row[col] = str(val)
+                            logger.info(f"      Row {idx}: {formatted_row}")
+                        
+                        # Date range information
+                        if "timestamp" in df.columns:
+                            try:
+                                df["timestamp"] = pd.to_datetime(df["timestamp"])
+                                min_date = df["timestamp"].min()
+                                max_date = df["timestamp"].max()
+                                total_days = (max_date - min_date).days
+                                logger.info(f"   📅 Date range: {min_date} to {max_date} ({total_days} days)")
+                            except Exception as e:
+                                logger.warning(f"   ⚠️ Could not parse timestamp: {e}")
+                        
+                        # Value ranges for numeric columns
+                        numeric_cols = df.select_dtypes(include=['number']).columns
+                        if len(numeric_cols) > 0:
+                            logger.info(f"   📈 Numeric value ranges:")
+                            for col in numeric_cols:
+                                if col in df.columns:
+                                    col_data = df[col].dropna()
+                                    if len(col_data) > 0:
+                                        min_val = col_data.min()
+                                        max_val = col_data.max()
+                                        mean_val = col_data.mean()
+                                        logger.info(f"      - {col}: min={min_val:.6f}, max={max_val:.6f}, mean={mean_val:.6f}")
+                        
+                        # Missing values
+                        missing_counts = df.isnull().sum()
+                        if missing_counts.sum() > 0:
+                            logger.warning(f"   ⚠️ Missing values:")
+                            for col, count in missing_counts.items():
+                                if count > 0:
+                                    percentage = (count / len(df)) * 100
+                                    logger.warning(f"      - {col}: {count} ({percentage:.2f}%)")
+                        else:
+                            logger.info(f"   ✅ No missing values found")
+                        
+                        # Duplicate check
+                        if "timestamp" in df.columns:
+                            duplicates = df.duplicated(subset=["timestamp"]).sum()
+                            if duplicates > 0:
+                                logger.warning(f"   ⚠️ Found {duplicates} duplicate timestamps")
+                            else:
+                                logger.info(f"   ✅ No duplicate timestamps found")
+                        
+                        # Data quality checks
+                        logger.info(f"   🔍 Data quality checks:")
+                        
+                        # Check for infinite values
+                        infinite_counts = {}
+                        for col in numeric_cols:
+                            if col in df.columns:
+                                infinite_count = (df[col] == float('inf')).sum() + (df[col] == float('-inf')).sum()
+                                if infinite_count > 0:
+                                    infinite_counts[col] = infinite_count
+                        
+                        if infinite_counts:
+                            logger.warning(f"      ⚠️ Infinite values found:")
+                            for col, count in infinite_counts.items():
+                                logger.warning(f"         - {col}: {count} infinite values")
+                        else:
+                            logger.info(f"      ✅ No infinite values found")
+                        
+                        # Check for zero values in price columns
+                        price_columns = ['open', 'high', 'low', 'close', 'price']
+                        zero_price_counts = {}
+                        for col in price_columns:
+                            if col in df.columns:
+                                zero_count = (df[col] == 0).sum()
+                                if zero_count > 0:
+                                    zero_price_counts[col] = zero_count
+                        
+                        if zero_price_counts:
+                            logger.warning(f"      ⚠️ Zero values in price columns:")
+                            for col, count in zero_price_counts.items():
+                                logger.warning(f"         - {col}: {count} zero values")
+                        else:
+                            logger.info(f"      ✅ No zero values in price columns")
+                        
+                        # Check for negative values in volume
+                        if 'volume' in df.columns:
+                            negative_volume = (df['volume'] < 0).sum()
+                            if negative_volume > 0:
+                                logger.warning(f"      ⚠️ Negative volume values: {negative_volume}")
+                            else:
+                                logger.info(f"      ✅ No negative volume values")
+                        
+                        logger.info(f"   ✅ {data_type} data analysis completed")
+                        
+                    except Exception as e:
+                        logger.error(f"   ❌ Error analyzing {data_type} data: {e}")
+                        logger.error(f"   📋 Full error: {str(e)}")
+                else:
+                    logger.warning(f"   ⚠️ File not found: {file_path}")
+                
+                logger.info("")  # Empty line for readability
+            
+            # Summary
+            logger.info("📋 DATA EXTRACT SUMMARY:")
+            existing_files = sum(1 for _, file_path in files_to_check if Path(file_path).exists())
+            logger.info(f"   • Files found: {existing_files}/{len(files_to_check)}")
+            logger.info(f"   • Data types analyzed: Klines, Aggtrades")
+            logger.info("   • Information logged: Shape, columns, data types, sample data, date ranges, value ranges, missing values, duplicates")
+            logger.info("=" * 80)
+            
+        except Exception as e:
+            logger.error(f"❌ Error in detailed data extract: {e}")
+            logger.error(f"📋 Full error: {str(e)}")
+            logger.info("=" * 80)
 
             return all_valid
 
@@ -400,6 +593,11 @@ async def run_step(
                             else:
                                 logger.info(f"✅ Data is up to date (last data: {max_date}, {days_since_last_data} days ago)")
                                 logger.info("✅ Step 1: Data Collection completed (using existing data)")
+                                
+                                # Show detailed data extract for existing data
+                                step = DataCollectionStep(CONFIG or {})
+                                await step._log_detailed_data_extract(symbol, exchange, timeframe, data_dir, logger)
+                                
                                 return True
                         else:
                             logger.warning("⚠️ Could not determine data completeness, proceeding with data collection...")
@@ -427,6 +625,9 @@ async def run_step(
 
         if result.get("data_collection_completed", False):
             logger.info("✅ Step 1: Data Collection completed successfully")
+
+            # Show detailed data extract for troubleshooting
+            await step._log_detailed_data_extract(symbol, exchange, timeframe, data_dir, logger)
 
             # Run comprehensive data quality validation
             try:

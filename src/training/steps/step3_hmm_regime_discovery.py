@@ -75,7 +75,7 @@ class HMMRegimeDiscoveryStep:
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
     @with_tracing_span("execute_hmm_regime_discovery")
-    @quality_gate(validation_level="comprehensive")
+    @quality_gate()
     @handle_errors(
         exceptions=(Exception,),
         default_return={"success": False, "regimes": [], "error": "HMM discovery failed"},

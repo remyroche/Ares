@@ -325,19 +325,24 @@ def log_feature_quality_issues(df: pd.DataFrame, df_name: str, logger: Optional[
     
     logger.info(f"🔍 Checking feature quality for {df_name}...")
     
-    # Check for NaN values (zero tolerance)
+    # Check for NaN values (zero tolerance) with detailed information
     nan_counts = df.isnull().sum()
     nan_features = nan_counts[nan_counts > 0].index.tolist()  # Any NaN values
     if nan_features:
         logger.warning(f"⚠️ {df_name}: Features with NaN values (zero tolerance) ({len(nan_features)}):")
+        logger.warning("📊 Detailed NaN Analysis:")
         for feature in nan_features[:10]:  # Show first 10
             nan_count = nan_counts[feature]
             nan_ratio = nan_count / len(df) * 100
-            logger.warning(f"   - {feature}: {nan_count} NaN values ({nan_ratio:.1f}%)")
+            logger.warning(f"   • {feature}: {nan_count} NaN values ({nan_ratio:.3f}%)")
+            # Log sample of problematic indices
+            nan_indices = df[df[feature].isnull()].index[:5]  # First 5 NaN indices
+            if len(nan_indices) > 0:
+                logger.warning(f"     Sample NaN indices: {list(nan_indices)}")
         if len(nan_features) > 10:
             logger.warning(f"   ... and {len(nan_features) - 10} more features with NaN values")
     
-    # Check for infinite values (zero tolerance)
+    # Check for infinite values (zero tolerance) with detailed information
     infinite_features = []
     for col in df.select_dtypes(include=[np.number]).columns:
         infinite_count = np.isinf(df[col]).sum()
@@ -346,8 +351,14 @@ def log_feature_quality_issues(df: pd.DataFrame, df_name: str, logger: Optional[
     
     if infinite_features:
         logger.warning(f"⚠️ {df_name}: Features with infinite values (zero tolerance) ({len(infinite_features)}):")
+        logger.warning("📊 Detailed Infinite Value Analysis:")
         for feature, count in infinite_features[:10]:  # Show first 10
-            logger.warning(f"   - {feature}: {count} infinite values")
+            infinite_ratio = count / len(df) * 100
+            logger.warning(f"   • {feature}: {count} infinite values ({infinite_ratio:.3f}%)")
+            # Log sample of problematic indices
+            infinite_indices = df[np.isinf(df[feature])].index[:5]  # First 5 infinite indices
+            if len(infinite_indices) > 0:
+                logger.warning(f"     Sample infinite indices: {list(infinite_indices)}")
         if len(infinite_features) > 10:
             logger.warning(f"   ... and {len(infinite_features) - 10} more features with infinite values")
     
@@ -360,8 +371,13 @@ def log_feature_quality_issues(df: pd.DataFrame, df_name: str, logger: Optional[
     
     if constant_features:
         logger.warning(f"⚠️ {df_name}: Constant or near-constant features ({len(constant_features)}):")
+        logger.warning("📊 Detailed Constant Feature Analysis:")
         for feature, unique_count in constant_features[:10]:  # Show first 10
-            logger.warning(f"   - {feature}: {unique_count} unique values")
+            unique_values = df[feature].dropna().unique()
+            logger.warning(f"   • {feature}: {unique_count} unique values: {unique_values}")
+            # Log value distribution
+            value_counts = df[feature].value_counts()
+            logger.warning(f"     Value distribution: {dict(value_counts.head(3))}")
         if len(constant_features) > 10:
             logger.warning(f"   ... and {len(constant_features) - 10} more constant features")
     
@@ -377,19 +393,30 @@ def log_feature_quality_issues(df: pd.DataFrame, df_name: str, logger: Optional[
                 if corr_value > 0.95:
                     high_corr_pairs.append((corr_matrix.columns[i], corr_matrix.columns[j], corr_value))
         
-        if high_corr_pairs:
+            if high_corr_pairs:
             logger.warning(f"⚠️ {df_name}: Highly correlated feature pairs ({len(high_corr_pairs)}):")
+            logger.warning("📊 Detailed Correlation Analysis:")
             for feat1, feat2, corr_value in high_corr_pairs[:5]:  # Show first 5
-                logger.warning(f"   - {feat1} ↔ {feat2}: {corr_value:.3f}")
+                logger.warning(f"   • {feat1} ↔ {feat2}: correlation = {corr_value:.3f}")
+                # Log sample of values to show the relationship
+                sample_size = min(5, len(df))
+                sample_df = df[[feat1, feat2]].head(sample_size)
+                logger.warning(f"     Sample values: {feat1}={list(sample_df[feat1])}, {feat2}={list(sample_df[feat2])}")
             if len(high_corr_pairs) > 5:
                 logger.warning(f"   ... and {len(high_corr_pairs) - 5} more highly correlated pairs")
     
-    # Summary
+    # Summary with detailed breakdown
     total_issues = len(nan_features) + len(infinite_features) + len(constant_features) + len(high_corr_pairs)
     if total_issues == 0:
         logger.info(f"✅ {df_name}: No feature quality issues detected")
     else:
         logger.warning(f"⚠️ {df_name}: Total feature quality issues: {total_issues}")
+        logger.warning("📋 Issue Breakdown:")
+        logger.warning(f"   • NaN features: {len(nan_features)}")
+        logger.warning(f"   • Infinite features: {len(infinite_features)}")
+        logger.warning(f"   • Constant features: {len(constant_features)}")
+        logger.warning(f"   • High correlation pairs: {len(high_corr_pairs)}")
+        logger.warning("💡 For detailed information about each problematic value, check the validation results above")
 
 
 # Convenience function for quick validation
@@ -420,43 +447,95 @@ def quick_validate_features(df: pd.DataFrame, df_name: str = "DataFrame") -> Dic
             "infinite_count": 0,
             "constant_count": 0,
             "high_correlation_count": 0
+        },
+        "details": {
+            "nan_details": {},
+            "infinite_details": {},
+            "constant_details": {},
+            "correlation_details": {}
         }
     }
     
-    # Check for NaN values (zero tolerance)
+    # Check for NaN values (zero tolerance) with detailed information
     nan_counts = df.isnull().sum()
     nan_features = nan_counts[nan_counts > 0].index.tolist()  # Any NaN values
     results["issues"]["nan_features"] = nan_features
     results["summary"]["nan_count"] = len(nan_features)
     
-    # Check for infinite values (zero tolerance)
+    # Add detailed NaN information
+    nan_details = {}
+    for feature in nan_features:
+        nan_count = nan_counts[feature]
+        nan_ratio = nan_count / len(df) * 100
+        nan_details[feature] = {
+            "count": int(nan_count),
+            "percentage": float(nan_ratio),
+            "sample_indices": df[df[feature].isnull()].index[:10].tolist()  # First 10 NaN indices
+        }
+    results["details"]["nan_details"] = nan_details
+    
+    # Check for infinite values (zero tolerance) with detailed information
     infinite_features = []
+    infinite_details = {}
     for col in df.select_dtypes(include=[np.number]).columns:
         infinite_count = np.isinf(df[col]).sum()
         if infinite_count > 0:  # Any infinite values
             infinite_features.append(col)
+            infinite_ratio = infinite_count / len(df) * 100
+            infinite_details[col] = {
+                "count": int(infinite_count),
+                "percentage": float(infinite_ratio),
+                "sample_indices": df[np.isinf(df[col])].index[:10].tolist()  # First 10 infinite indices
+            }
     results["issues"]["infinite_features"] = infinite_features
     results["summary"]["infinite_count"] = len(infinite_features)
+    results["details"]["infinite_details"] = infinite_details
     
-    # Check for constant features (2+ unique values, except boolean)
+    # Check for constant features (2+ unique values, except boolean) with detailed information
     constant_features = []
+    constant_details = {}
     for col in df.columns:
         unique_count = df[col].nunique()
         if unique_count < 2 and not _is_boolean_feature(df[col]):
             constant_features.append(col)
+            unique_values = df[col].dropna().unique()
+            value_counts = df[col].value_counts()
+            constant_details[col] = {
+                "unique_count": int(unique_count),
+                "unique_values": unique_values.tolist(),
+                "value_distribution": value_counts.to_dict(),
+                "is_boolean": _is_boolean_feature(df[col])
+            }
     results["issues"]["constant_features"] = constant_features
     results["summary"]["constant_count"] = len(constant_features)
+    results["details"]["constant_details"] = constant_details
     
-    # Check for high correlations
+    # Check for high correlations with detailed information
     numeric_cols = df.select_dtypes(include=[np.number]).columns
     high_corr_pairs = []
+    correlation_details = {}
     if len(numeric_cols) > 1:
         corr_matrix = df[numeric_cols].corr().abs()
         for i in range(len(corr_matrix.columns)):
             for j in range(i + 1, len(corr_matrix.columns)):
-                if corr_matrix.iloc[i, j] > 0.95:
-                    high_corr_pairs.append((corr_matrix.columns[i], corr_matrix.columns[j]))
+                corr_value = corr_matrix.iloc[i, j]
+                if corr_value > 0.95:
+                    feat1, feat2 = corr_matrix.columns[i], corr_matrix.columns[j]
+                    pair_key = f"{feat1}↔{feat2}"
+                    high_corr_pairs.append((feat1, feat2, corr_value))
+                    
+                    # Add detailed correlation information
+                    correlation_details[pair_key] = {
+                        "feature1": feat1,
+                        "feature2": feat2,
+                        "correlation": float(corr_value),
+                        "sample_values": {
+                            feat1: df[feat1].head(5).tolist(),
+                            feat2: df[feat2].head(5).tolist()
+                        }
+                    }
     results["issues"]["high_correlation_pairs"] = high_corr_pairs
     results["summary"]["high_correlation_count"] = len(high_corr_pairs)
+    results["details"]["correlation_details"] = correlation_details
     
     return results

@@ -1,0 +1,18 @@
+2025-08-23 12:16:44,557 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-23 12:16:45,279 INFO AresTradingSystem.System.UnifiedDataConverter 🚀 Initializing Unified Data Converter... - -
+2025-08-23 12:16:45,279 INFO AresTradingSystem.System.UnifiedDataConverter 📁 Unified data directory: data_cache/unified - -
+2025-08-23 12:16:45,279 INFO AresTradingSystem.System.UnifiedDataConverter 📁 Backup directory: data_cache/backup_pre_unified - -
+2025-08-23 12:16:45,279 INFO AresTradingSystem.System.UnifiedDataConverter ================================================================================ - -
+2025-08-23 12:16:45,279 INFO AresTradingSystem.System.UnifiedDataConverter 🔄 STEP 1.5: Unified Data Converter - -
+2025-08-23 12:16:45,279 INFO AresTradingSystem.System.UnifiedDataConverter ================================================================================ - -
+2025-08-23 12:16:45,279 INFO AresTradingSystem.System.UnifiedDataConverter 🎯 Symbol: ETHUSDT - -
+2025-08-23 12:16:45,279 INFO AresTradingSystem.System.UnifiedDataConverter 🏢 Exchange: BINANCE - -
+2025-08-23 12:16:45,279 INFO AresTradingSystem.System.UnifiedDataConverter 📊 Timeframe: 1m - -
+2025-08-23 12:16:45,279 INFO AresTradingSystem.System.UnifiedDataConverter 📁 Data directory: data_cache - -
+2025-08-23 12:16:45,281 INFO AresTradingSystem.System.UnifiedDataConverter ✅ Found existing unified data: 31 files - -
+2025-08-23 12:16:45,281 INFO AresTradingSystem.System.UnifiedDataConverter ✅ Unified data already exists, checking for incremental updates... - -
+2025-08-23 12:16:45,281 INFO AresTradingSystem.System.UnifiedDataConverter 🔍 Checking for incremental updates... - -
+2025-08-23 12:16:45,281 INFO AresTradingSystem.System.UnifiedDataConverter 📊 Loading klines from parquet: data_cache/klines_BINANCE_ETHUSDT_1m_consolidated.parquet - -
+2025-08-23 12:16:45,293 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Loaded 43200 klines rows - -
+2025-08-23 12:16:45,303 INFO AresTradingSystem.System.UnifiedDataConverter ✅ No missing dates found - unified dataset is complete - -
+2025-08-23 12:16:45,304 INFO AresTradingSystem.System.UnifiedDataConverter ✅ Incremental processing completed - -

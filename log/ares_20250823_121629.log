@@ -1,0 +1,10 @@
+2025-08-23 12:16:29,460 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-23 12:16:30,513 INFO AresTradingSystem.System.PipelineMonitor 🔄 [STEP 1] Starting: run_step - -
+2025-08-23 12:16:30,513 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Pre-execution checks for run_step - -
+2025-08-23 12:16:30,513 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Running data quality validation for run_step - -
+2025-08-23 12:16:30,514 ERROR AresTradingSystem.System.ValidateAndExecute ❌ Function execution failed: asyncio.run() cannot be called from a running event loop - -
+2025-08-23 12:16:30,514 ERROR AresTradingSystem.System.PipelineStepMonitor ❌ [PIPELINE STEP] Data quality validation failed: asyncio.run() cannot be called from a running event loop - -
+2025-08-23 12:16:30,514 WARNING AresTradingSystem.System.PipelineMonitor ⚠️ [WARNING] Step run_step: Data quality validation failed: asyncio.run() cannot be called from a running event loop - -
+2025-08-23 12:16:30,514 ERROR AresTradingSystem.System.PipelineStepMonitor 💥 [PIPELINE STEP] Step run_step failed with error - -
+2025-08-23 12:16:30,514 ERROR AresTradingSystem.System.PipelineMonitor ❌ [ERROR] Step run_step failed: asyncio.run() cannot be called from a running event loop - -
+2025-08-23 12:16:30,514 INFO AresTradingSystem.System.PipelineMonitor ✅ [STEP] Completed: run_step - -

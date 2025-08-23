@@ -111,14 +111,14 @@ class TrainingOrchestrator:
     async def validate_training_pipeline(
         self,
         pipeline_config: dict[str, Any],
-        validation_level: str = "COMPREHENSIVE",
+        validation_level: str = "CRITICAL",
     ) -> dict[str, Any]:
         """
         Validate the entire training pipeline configuration and dependencies.
         
         Args:
             pipeline_config: Pipeline configuration dictionary
-            validation_level: Validation level ("BASIC", "STANDARD", "COMPREHENSIVE", "CRITICAL")
+            validation_level: Validation level ("BASIC", "STANDARD", "COMPREHENSIVE", "CRITICAL") - defaults to CRITICAL
             
         Returns:
             Validation result dictionary

@@ -4,9 +4,22 @@ Provides comprehensive data quality validation decorators for the training pipel
 """
 
 import functools
-import numpy as np
-import pandas as pd
 from typing import Any, Optional
+
+# Handle optional dependencies
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
+
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
 
 from src.utils.logger import system_logger
 

@@ -19,7 +19,7 @@ from src.training.steps.vectorized_advanced_feature_engineering import (
     WaveletFeatureCache,
 )
 from src.utils.data_optimizer import ohlcv_columns
-from src.utils.data_quality_decorators import validate_wavelet_data_quality
+from src.utils.centralized_decorators import validate_wavelet_data_quality
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,

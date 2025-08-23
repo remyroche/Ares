@@ -54,7 +54,7 @@ try:
         validate_step4_operation,
     )
     from src.utils.advanced_ml_validation import validate_ml_data_quality
-    from src.utils.enhanced_validation_decorators import step_specific_ml_validation
+    from src.utils.centralized_decorators import step_specific_ml_validation
 except ImportError:
     ComprehensiveFileValidator = None
     validate_step4_file = None
@@ -65,7 +65,7 @@ except ImportError:
     validate_ml_data_quality = None
     step_specific_ml_validation = None
 from src.utils.logger import system_logger as _logger
-from src.utils.training_pipeline_decorators import monitor_feature_engineering
+from src.utils.centralized_decorators import monitor_feature_engineering
 
 
 @with_tracing_span("step4._build_sr_levels", log_args=False)

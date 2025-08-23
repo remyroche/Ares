@@ -1,0 +1,56 @@
+2025-08-23 11:33:01,898 INFO AresGlobal ================================================================================ - -
+2025-08-23 11:33:01,898 INFO AresGlobal 📊 SESSION SUMMARY - -
+2025-08-23 11:33:01,898 INFO AresGlobal Session started: 2025-08-23 11:33:01 - -
+2025-08-23 11:33:01,898 INFO AresGlobal This file contains ALL logs for this session - -
+2025-08-23 11:33:01,898 INFO AresGlobal ================================================================================ - -
+2025-08-23 11:33:01,898 INFO AresSystem ================================================================================ - -
+2025-08-23 11:33:01,898 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 11:33:01,898 INFO AresSystem 🚀 ARES LAUNCHER STARTED - Mode: INITIALIZATION - -
+2025-08-23 11:33:01,898 INFO AresGlobal [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: INITIALIZATION - -
+2025-08-23 11:33:01,898 INFO AresSystem Start time: 2025-08-23 11:33:01 - -
+2025-08-23 11:33:01,898 INFO AresGlobal [SYSTEM] Start time: 2025-08-23 11:33:01 - -
+2025-08-23 11:33:01,898 INFO AresSystem Log directory: log - -
+2025-08-23 11:33:01,898 INFO AresGlobal [SYSTEM] Log directory: log - -
+2025-08-23 11:33:01,898 INFO AresSystem ================================================================================ - -
+2025-08-23 11:33:01,898 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 11:33:01,898 INFO AresGlobal.AresLauncher ================================================================================ - -
+2025-08-23 11:33:01,898 INFO AresGlobal.AresLauncher 🚀 ARES COMPREHENSIVE LAUNCHER - -
+2025-08-23 11:33:01,898 INFO AresGlobal.AresLauncher ================================================================================ - -
+2025-08-23 11:33:01,898 INFO AresGlobal.AresLauncher Start time: 2025-08-23 11:33:01 - -
+2025-08-23 11:33:01,898 INFO AresGlobal.AresLauncher Log directory: log - -
+2025-08-23 11:33:01,898 INFO AresGlobal.AresLauncher Log level: INFO - -
+2025-08-23 11:33:01,898 INFO AresGlobal.AresLauncher Global log file: ares_global_20250823_113301.log - -
+2025-08-23 11:33:01,898 INFO AresGlobal.AresLauncher Full run log: log/ares_full_20250823_113301.log - -
+2025-08-23 11:33:01,898 INFO AresGlobal.AresLauncher Trades log: log/ares_trades_20250823_113301.log - -
+2025-08-23 11:33:01,898 INFO AresGlobal.AresLauncher Backtest log: log/ares_backtest_20250823_113301.log - -
+2025-08-23 11:33:01,898 INFO AresGlobal.AresLauncher ================================================================================ - -
+2025-08-23 11:33:01,898 INFO AresTradingSystem.System.SignalHandler Shutdown callback registered - -
+2025-08-23 11:33:01,898 INFO AresSystem ================================================================================ - -
+2025-08-23 11:33:01,898 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 11:33:01,899 INFO AresSystem 🚀 ARES LAUNCHER STARTED - Mode: blank - Symbol: ETHUSDT - Exchange: BINANCE - -
+2025-08-23 11:33:01,899 INFO AresGlobal [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: blank - Symbol: ETHUSDT - Exchange: BINANCE - -
+2025-08-23 11:33:01,899 INFO AresSystem Start time: 2025-08-23 11:33:01 - -
+2025-08-23 11:33:01,899 INFO AresGlobal [SYSTEM] Start time: 2025-08-23 11:33:01 - -
+2025-08-23 11:33:01,899 INFO AresSystem Log directory: log - -
+2025-08-23 11:33:01,899 INFO AresGlobal [SYSTEM] Log directory: log - -
+2025-08-23 11:33:01,899 INFO AresSystem ================================================================================ - -
+2025-08-23 11:33:01,899 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 11:33:01,899 INFO AresGlobal.AresLauncher 🚀 Running enhanced 16-step training pipeline for ETHUSDT on BINANCE - -
+2025-08-23 11:33:01,899 INFO AresGlobal.AresLauncher Starting from step: step1_data_collection - -
+2025-08-23 11:33:01,902 INFO AresGlobal.AresLauncher 🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training - -
+2025-08-23 11:33:01,902 ERROR AresGlobal.AresLauncher ❌ Cannot use blank mode with step1_data_collection - -
+2025-08-23 11:33:01,902 ERROR AresGlobal.AresLauncher Blank mode is designed for quick testing with limited data - -
+2025-08-23 11:33:01,902 ERROR AresGlobal.AresLauncher step1_data_collection processes all available data files - -
+2025-08-23 11:33:01,902 ERROR AresGlobal.AresLauncher Use one of the following instead: - -
+2025-08-23 11:33:01,902 ERROR AresGlobal.AresLauncher   - python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE (for full data) - -
+2025-08-23 11:33:01,902 ERROR AresGlobal.AresLauncher   - python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step2_processing_labeling_feature_engineering (for blank mode) - -
+2025-08-23 11:33:01,902 INFO AresSystem ================================================================================ - -
+2025-08-23 11:33:01,902 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 11:33:01,902 INFO AresSystem 🛑 ARES LAUNCHER ENDED - Exit code: 1 - -
+2025-08-23 11:33:01,902 INFO AresGlobal [SYSTEM] 🛑 ARES LAUNCHER ENDED - Exit code: 1 - -
+2025-08-23 11:33:01,902 INFO AresSystem End time: 2025-08-23 11:33:01 - -
+2025-08-23 11:33:01,902 INFO AresGlobal [SYSTEM] End time: 2025-08-23 11:33:01 - -
+2025-08-23 11:33:01,902 INFO AresSystem ================================================================================ - -
+2025-08-23 11:33:01,902 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 11:33:01,902 INFO AresGlobal.AresLauncher 🧹 Cleaning up processes... - -
+2025-08-23 11:33:01,902 INFO AresGlobal.AresLauncher ✅ Cleanup completed - -

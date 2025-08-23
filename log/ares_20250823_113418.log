@@ -1,0 +1,9 @@
+2025-08-23 11:34:18,069 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-23 11:34:18,283 INFO AresTradingSystem.System.SignalHandler Initializing Signal Handler... - -
+2025-08-23 11:34:18,283 INFO AresTradingSystem.System.SignalHandler Signal configuration loaded successfully - -
+2025-08-23 11:34:18,283 INFO AresTradingSystem.System.SignalHandler Configuration validation successful - -
+2025-08-23 11:34:18,284 INFO AresTradingSystem.System.SignalHandler Registered SIGTERM handler - -
+2025-08-23 11:34:18,284 INFO AresTradingSystem.System.SignalHandler Registered SIGINT handler - -
+2025-08-23 11:34:18,284 INFO AresTradingSystem.System.SignalHandler Signal handlers registered successfully - -
+2025-08-23 11:34:18,284 INFO AresTradingSystem.System.SignalHandler ✅ Signal Handler initialization completed successfully - -
+2025-08-23 11:34:18,285 INFO AresTradingSystem.System.SignalHandler Shutdown callback registered - -

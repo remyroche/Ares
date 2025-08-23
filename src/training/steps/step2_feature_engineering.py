@@ -1975,17 +1975,58 @@ async def run_step(
         logger.info(f"   - Features removed by correlation pruning: {removed_corr_count}")
         logger.info("=" * 80)
 
-        # Run comprehensive file format validation
-        if validate_step2_file:
-            logger.info("🔍 Running comprehensive file format validation...")
-            validation_success = await _run_comprehensive_validation(symbol, exchange, data_dir, logger)
-
-            if validation_success:
-                logger.info("✅ Comprehensive file format validation passed")
+        # Run comprehensive data quality validation with special attention to NaN, infinite, and constant values
+        try:
+            from src.utils.comprehensive_data_quality_validator import validate_step2_quality
+            
+            logger.info("🔍 Running comprehensive Step2 data quality validation...")
+            validation_result = validate_step2_quality(
+                symbol=symbol,
+                exchange=exchange,
+                data_dir=data_dir
+            )
+            
+            if validation_result["validation_passed"]:
+                logger.info("✅ Comprehensive Step2 data quality validation passed")
             else:
-                logger.warning("⚠️ Comprehensive file format validation found issues")
-        else:
-            logger.info("⚠️ Comprehensive file validation not available, skipping validation")
+                logger.warning(f"⚠️ Comprehensive Step2 data quality validation found {len(validation_result['issues'])} issues:")
+                for issue in validation_result["issues"][:5]:  # Show first 5 issues
+                    logger.warning(f"   - {issue}")
+                if len(validation_result["issues"]) > 5:
+                    logger.warning(f"   ... and {len(validation_result['issues']) - 5} more issues")
+                
+                # Log detailed problematic features
+                problematic = validation_result.get("problematic_features", {})
+                if any(problematic.values()):
+                    logger.warning("⚠️ Problematic features detected:")
+                    if problematic.get("nan_features"):
+                        logger.warning(f"   - NaN features: {len(problematic['nan_features'])}")
+                    if problematic.get("infinite_features"):
+                        logger.warning(f"   - Infinite features: {len(problematic['infinite_features'])}")
+                    if problematic.get("constant_features"):
+                        logger.warning(f"   - Constant features: {len(problematic['constant_features'])}")
+                    if problematic.get("high_correlation_pairs"):
+                        logger.warning(f"   - High correlation pairs: {len(problematic['high_correlation_pairs'])}")
+                
+                # Continue with warning instead of failing
+                logger.warning("⚠️ Continuing with data quality issues - review logs for details")
+            
+            # Also run legacy validation if available
+            if validate_step2_file:
+                logger.info("🔍 Running legacy file format validation...")
+                validation_success = await _run_comprehensive_validation(symbol, exchange, data_dir, logger)
+                if not validation_success:
+                    logger.warning("⚠️ Legacy file format validation found issues")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Comprehensive Step2 data quality validation failed: {e} - continuing anyway")
+            
+            # Fallback to legacy validation if available
+            if validate_step2_file:
+                logger.info("🔍 Running legacy file format validation...")
+                validation_success = await _run_comprehensive_validation(symbol, exchange, data_dir, logger)
+                if not validation_success:
+                    logger.warning("⚠️ Legacy file format validation found issues")
 
         logger.info("=" * 80)
         logger.info("🎯 STEP 2: FEATURE ENGINEERING PIPELINE COMPLETED")

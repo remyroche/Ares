@@ -1,0 +1,118 @@
+2025-08-23 12:20:44,216 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-23 12:20:44,916 INFO AresTradingSystem.System.UnifiedDataConverter 🚀 Initializing Unified Data Converter... - -
+2025-08-23 12:20:44,916 INFO AresTradingSystem.System.UnifiedDataConverter 📁 Unified data directory: data_cache/unified - -
+2025-08-23 12:20:44,916 INFO AresTradingSystem.System.UnifiedDataConverter 📁 Backup directory: data_cache/backup_pre_unified - -
+2025-08-23 12:20:44,916 INFO AresTradingSystem.System.UnifiedDataConverter ================================================================================ - -
+2025-08-23 12:20:44,917 INFO AresTradingSystem.System.UnifiedDataConverter 🔄 STEP 1.5: Unified Data Converter - -
+2025-08-23 12:20:44,917 INFO AresTradingSystem.System.UnifiedDataConverter ================================================================================ - -
+2025-08-23 12:20:44,917 INFO AresTradingSystem.System.UnifiedDataConverter 🎯 Symbol: ETHUSDT - -
+2025-08-23 12:20:44,917 INFO AresTradingSystem.System.UnifiedDataConverter 🏢 Exchange: BINANCE - -
+2025-08-23 12:20:44,917 INFO AresTradingSystem.System.UnifiedDataConverter 📊 Timeframe: 1m - -
+2025-08-23 12:20:44,917 INFO AresTradingSystem.System.UnifiedDataConverter 📁 Data directory: data_cache - -
+2025-08-23 12:20:44,917 INFO AresTradingSystem.System.UnifiedDataConverter ✅ Found existing unified data: 31 files - -
+2025-08-23 12:20:44,918 INFO AresTradingSystem.System.UnifiedDataConverter ✅ Unified data already exists, checking for incremental updates... - -
+2025-08-23 12:20:44,918 INFO AresTradingSystem.System.UnifiedDataConverter 🔍 Checking for incremental updates... - -
+2025-08-23 12:20:44,918 INFO AresTradingSystem.System.UnifiedDataConverter 📊 Loading klines from parquet: data_cache/klines_BINANCE_ETHUSDT_1m_consolidated.parquet - -
+2025-08-23 12:20:44,927 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Loaded 43200 klines rows - -
+2025-08-23 12:20:44,937 INFO AresTradingSystem.System.UnifiedDataConverter ✅ No missing dates found - unified dataset is complete - -
+2025-08-23 12:20:44,938 INFO AresTradingSystem.System.UnifiedDataConverter ✅ Incremental processing completed - -
+2025-08-23 12:20:45,336 INFO AresTradingSystem.System.PipelineMonitor 🔄 [STEP 1] Starting: run_step - -
+2025-08-23 12:20:45,337 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Pre-execution checks for run_step - -
+2025-08-23 12:20:45,337 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Running data quality validation for run_step - -
+2025-08-23 12:20:45,337 INFO AresTradingSystem.System.PipelineMonitor 🔄 [STEP 2] Starting: run_step - -
+2025-08-23 12:20:45,338 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Pre-execution checks for run_step - -
+2025-08-23 12:20:45,338 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Running data quality validation for run_step - -
+2025-08-23 12:20:45,338 INFO AresTradingSystem.System.ValidateAndExecute ✅ Function executed successfully - -
+2025-08-23 12:20:45,338 INFO AresTradingSystem.System.PipelineStepMonitor ✅ [PIPELINE STEP] Data quality validation completed for run_step - -
+2025-08-23 12:20:45,338 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Post-execution checks for run_step - -
+2025-08-23 12:20:45,338 INFO AresTradingSystem.System.PipelineStepMonitor ✅ [PIPELINE STEP] Step run_step completed successfully - -
+2025-08-23 12:20:45,338 INFO AresTradingSystem.System.PipelineMonitor ✅ [STEP] Completed: run_step - -
+2025-08-23 12:20:45,338 INFO AresTradingSystem.System.ValidateAndExecute ✅ Function executed successfully - -
+2025-08-23 12:20:45,338 INFO AresTradingSystem.System.PipelineStepMonitor ✅ [PIPELINE STEP] Data quality validation completed for run_step - -
+2025-08-23 12:20:45,338 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Post-execution checks for run_step - -
+2025-08-23 12:20:45,338 INFO AresTradingSystem.System.PipelineStepMonitor ✅ [PIPELINE STEP] Step run_step completed successfully - -
+2025-08-23 12:20:45,339 INFO AresTradingSystem.System.PipelineMonitor ✅ [STEP] Completed: run_step - -
+2025-08-23 12:20:45,339 WARNING AresTradingSystem.System.MLQualityValidator No DataFrame found in function arguments, skipping ML validation - -
+2025-08-23 12:20:45,339 INFO AresTradingSystem.System.Step2.FeatureEngineering ================================================================================ - -
+2025-08-23 12:20:45,339 INFO AresTradingSystem.System.Step2.FeatureEngineering 🚀 STEP 2: FEATURE ENGINEERING PIPELINE STARTING - -
+2025-08-23 12:20:45,339 INFO AresTradingSystem.System.Step2.FeatureEngineering ================================================================================ - -
+2025-08-23 12:20:45,339 INFO AresTradingSystem.System.Step2.FeatureEngineering 📊 Parameters: - -
+2025-08-23 12:20:45,339 INFO AresTradingSystem.System.Step2.FeatureEngineering    - Symbol: ETHUSDT - -
+2025-08-23 12:20:45,339 INFO AresTradingSystem.System.Step2.FeatureEngineering    - Exchange: BINANCE - -
+2025-08-23 12:20:45,339 INFO AresTradingSystem.System.Step2.FeatureEngineering    - Data Directory: 1m - -
+2025-08-23 12:20:45,339 INFO AresTradingSystem.System.Step2.FeatureEngineering    - Timeframe: data_cache - -
+2025-08-23 12:20:45,339 INFO AresTradingSystem.System.Step2.FeatureEngineering    - Force Rerun: False - -
+2025-08-23 12:20:45,339 INFO AresTradingSystem.System.Step2.FeatureEngineering    - Additional kwargs: [] - -
+2025-08-23 12:20:45,339 INFO AresTradingSystem.System.Step2.FeatureEngineering ================================================================================ - -
+2025-08-23 12:20:45,339 INFO AresTradingSystem.System.Step2.FeatureEngineering 🔍 Checking for existing feature artifacts... - -
+2025-08-23 12:20:45,339 INFO AresTradingSystem.System.Step2.FeatureEngineering 📦 Artifact hash: 36ae034235d963d2e5cad3a771884c78 - -
+2025-08-23 12:20:45,339 INFO AresTradingSystem.System.Step2.FeatureEngineering 📦 Artifacts exist: False - -
+2025-08-23 12:20:45,339 INFO AresTradingSystem.System.Step2.FeatureEngineering 🔧 No existing artifacts found - generating features - -
+2025-08-23 12:20:45,339 INFO AresTradingSystem.System.Step2.FeatureEngineering 🆕 Starting fresh feature engineering pipeline - -
+2025-08-23 12:20:45,349 ERROR AresTradingSystem.System.Step2.FeatureEngineering ================================================================================ - -
+2025-08-23 12:20:45,349 ERROR AresTradingSystem.System.Step2.FeatureEngineering ❌ STEP 2: FEATURE ENGINEERING PIPELINE FAILED - -
+2025-08-23 12:20:45,349 ERROR AresTradingSystem.System.Step2.FeatureEngineering ================================================================================ - -
+2025-08-23 12:20:45,350 ERROR AresTradingSystem.System.Step2.FeatureEngineering 🚨 Step 2 feature engineering failed: expected 'except' or 'finally' block (vectorized_advanced_feature_engineering.py, line 1218) - -
+Traceback (most recent call last):
+  File "/workspace/src/training/steps/step2_feature_engineering.py", line 511, in run_step
+    from src.training.steps.vectorized_advanced_feature_engineering import (
+        VectorizedAdvancedFeatureEngineering,
+    )
+  File "/workspace/src/training/steps/vectorized_advanced_feature_engineering.py", line 1218
+    if price_data.empty or "close" not in price_data.columns:
+    ^^
+SyntaxError: expected 'except' or 'finally' block
+2025-08-23 12:20:45,350 ERROR AresTradingSystem.System.Step2.FeatureEngineering ================================================================================ - -
+2025-08-23 12:20:45,351 INFO AresTradingSystem.System.PipelineMonitor 🔄 [STEP 3] Starting: run_step - -
+2025-08-23 12:20:45,351 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Pre-execution checks for run_step - -
+2025-08-23 12:20:45,351 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Running data quality validation for run_step - -
+2025-08-23 12:20:45,351 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery ================================================================================ - -
+2025-08-23 12:20:45,351 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery 🚀 STEP 3: HMM Regime Discovery - -
+2025-08-23 12:20:45,351 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery ================================================================================ - -
+2025-08-23 12:20:45,351 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery 🎯 Symbol: ETHUSDT - -
+2025-08-23 12:20:45,351 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery 🏢 Exchange: BINANCE - -
+2025-08-23 12:20:45,351 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery 📊 Timeframe: 1m - -
+2025-08-23 12:20:45,351 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery 📁 Data directory: data_cache - -
+2025-08-23 12:20:45,351 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery 🔄 Force rerun: False - -
+2025-08-23 12:20:45,351 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery ⏰ Start time: 2025-08-23 12:20:45 - -
+2025-08-23 12:20:45,351 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery ================================================================================ - -
+2025-08-23 12:20:45,351 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery 🔧 Initializing HMM regime discovery step... - -
+2025-08-23 12:20:45,351 INFO AresTradingSystem.System.HMMRegimeDiscoveryStep 🔧 Initializing HMM regime discovery components... - -
+2025-08-23 12:20:45,357 ERROR AresTradingSystem.System.Step3HMMRegimeDiscovery ❌ Step 3: HMM Regime Discovery failed with exception: quality_gate() got an unexpected keyword argument 'min_quality_score' - -
+Traceback (most recent call last):
+  File "/workspace/src/training/steps/step3_hmm_regime_discovery.py", line 720, in run_step
+    step = HMMRegimeDiscoveryStep(config)
+  File "/workspace/src/training/steps/step3_hmm_regime_discovery.py", line 47, in __init__
+    self._initialize_components()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/workspace/src/training/steps/step3_hmm_regime_discovery.py", line 53, in _initialize_components
+    from .step1.enhanced_data_quality_manager import EnhancedDataQualityManager
+  File "/workspace/src/training/steps/step1/enhanced_data_quality_manager.py", line 39, in <module>
+    class EnhancedDataQualityManager:
+    ...<461 lines>...
+                }
+  File "/workspace/src/training/steps/step1/enhanced_data_quality_manager.py", line 73, in EnhancedDataQualityManager
+    @quality_gate(
+     ~~~~~~~~~~~~^
+        min_quality_score=0.6,
+        ^^^^^^^^^^^^^^^^^^^^^^
+        max_correlation=0.95,
+        ^^^^^^^^^^^^^^^^^^^^^
+        required_grade="C"
+        ^^^^^^^^^^^^^^^^^^
+    )
+    ^
+TypeError: quality_gate() got an unexpected keyword argument 'min_quality_score'
+2025-08-23 12:20:45,360 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery ================================================================================ - -
+2025-08-23 12:20:45,360 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery 💥 STEP 3 EXECUTION SUMMARY - -
+2025-08-23 12:20:45,360 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery ================================================================================ - -
+2025-08-23 12:20:45,360 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery ⏱️ Total execution time: 0.01 seconds - -
+2025-08-23 12:20:45,360 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery ⏰ End time: 2025-08-23 12:20:45 - -
+2025-08-23 12:20:45,361 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery ❌ FAILED - -
+2025-08-23 12:20:45,361 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery    Exception: quality_gate() got an unexpected keyword argument 'min_quality_score' - -
+2025-08-23 12:20:45,361 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery ================================================================================ - -
+2025-08-23 12:20:45,361 INFO AresTradingSystem.System.ValidateAndExecute ✅ Function executed successfully - -
+2025-08-23 12:20:45,361 INFO AresTradingSystem.System.PipelineStepMonitor ✅ [PIPELINE STEP] Data quality validation completed for run_step - -
+2025-08-23 12:20:45,361 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Post-execution checks for run_step - -
+2025-08-23 12:20:45,361 INFO AresTradingSystem.System.PipelineStepMonitor ✅ [PIPELINE STEP] Step run_step completed successfully - -
+2025-08-23 12:20:45,361 INFO AresTradingSystem.System.PipelineMonitor ✅ [STEP] Completed: run_step - -

@@ -1,0 +1,55 @@
+2025-08-23 21:38:34,832 INFO AresGlobal ================================================================================ - -
+2025-08-23 21:38:34,832 INFO AresGlobal 📊 SESSION SUMMARY - -
+2025-08-23 21:38:34,832 INFO AresGlobal Session started: 2025-08-23 21:38:34 - -
+2025-08-23 21:38:34,832 INFO AresGlobal This file contains ALL logs for this session - -
+2025-08-23 21:38:34,832 INFO AresGlobal ================================================================================ - -
+2025-08-23 21:38:34,832 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 21:38:34,832 INFO AresGlobal [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: INITIALIZATION - -
+2025-08-23 21:38:34,832 INFO AresGlobal [SYSTEM] Start time: 2025-08-23 21:38:34 - -
+2025-08-23 21:38:34,832 INFO AresGlobal [SYSTEM] Log directory: log - -
+2025-08-23 21:38:34,832 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 21:38:34,832 INFO AresGlobal.AresLauncher ================================================================================ - -
+2025-08-23 21:38:34,832 INFO AresGlobal.AresLauncher 🚀 ARES COMPREHENSIVE LAUNCHER - -
+2025-08-23 21:38:34,832 INFO AresGlobal.AresLauncher ================================================================================ - -
+2025-08-23 21:38:34,832 INFO AresGlobal.AresLauncher Start time: 2025-08-23 21:38:34 - -
+2025-08-23 21:38:34,832 INFO AresGlobal.AresLauncher Log directory: log - -
+2025-08-23 21:38:34,832 INFO AresGlobal.AresLauncher Log level: INFO - -
+2025-08-23 21:38:34,832 INFO AresGlobal.AresLauncher Global log file: ares_global_20250823_213834.log - -
+2025-08-23 21:38:34,832 INFO AresGlobal.AresLauncher Full run log: log/ares_full_20250823_213834.log - -
+2025-08-23 21:38:34,832 INFO AresGlobal.AresLauncher Trades log: log/ares_trades_20250823_213834.log - -
+2025-08-23 21:38:34,832 INFO AresGlobal.AresLauncher Backtest log: log/ares_backtest_20250823_213834.log - -
+2025-08-23 21:38:34,832 INFO AresGlobal.AresLauncher ================================================================================ - -
+2025-08-23 21:38:34,833 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 21:38:34,833 INFO AresGlobal [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: step2 - Symbol: ETHUSDT - Exchange: BINANCE - -
+2025-08-23 21:38:34,833 INFO AresGlobal [SYSTEM] Start time: 2025-08-23 21:38:34 - -
+2025-08-23 21:38:34,833 INFO AresGlobal [SYSTEM] Log directory: log - -
+2025-08-23 21:38:34,833 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 21:38:34,833 INFO AresGlobal.AresLauncher 🚀 Running step2 with existing data for ETHUSDT on BINANCE - -
+2025-08-23 21:38:34,833 INFO AresGlobal.AresLauncher 📊 Using existing data from step1 and step1_5 - no new downloads - -
+2025-08-23 21:38:34,834 INFO AresGlobal.AresLauncher 📁 Using simple file existence validator - -
+2025-08-23 21:38:34,834 INFO AresGlobal.AresLauncher ✅ Data validation passed - proceeding with existing data - -
+2025-08-23 21:38:34,834 INFO AresGlobal.AresLauncher Starting from step: step2_feature_engineering - -
+2025-08-23 21:38:34,835 INFO AresGlobal.AresLauncher 🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training - -
+2025-08-23 21:38:34,835 INFO AresGlobal.ProgressManager Initialized ProgressManager for ETHUSDT on BINANCE - -
+2025-08-23 21:38:34,835 INFO AresGlobal.ProgressManager Progress directory: data/training/progress/BINANCE_ETHUSDT - -
+2025-08-23 21:38:34,835 INFO AresGlobal.StepOrchestrator Initialized StepOrchestrator for ETHUSDT on BINANCE - -
+2025-08-23 21:38:34,835 INFO AresGlobal.AresLauncher 📁 Basic validation for step2 execution - -
+2025-08-23 21:38:34,835 INFO AresGlobal.AresLauncher ✅ Found consolidated data: data_cache/aggtrades_BINANCE_ETHUSDT_consolidated.parquet - -
+2025-08-23 21:38:34,835 INFO AresGlobal.StepOrchestrator 🚀 Starting execution from step: step2_feature_engineering - -
+2025-08-23 21:38:34,836 ERROR AresGlobal.StepOrchestrator Failed to setup enhanced training manager: No module named 'numpy' - -
+Traceback (most recent call last):
+  File "/workspace/src/training/step_orchestrator.py", line 74, in _setup_enhanced_training_manager
+    from src.training.enhanced_training_manager import (
+        setup_enhanced_training_manager,
+    )
+  File "/workspace/src/training/enhanced_training_manager.py", line 15, in <module>
+    import numpy as np
+ModuleNotFoundError: No module named 'numpy'
+2025-08-23 21:38:34,838 INFO AresGlobal.StepOrchestrator [91m[1m🚫[0m [91m[1mFailed to setup enhanced training manager: No module named 'numpy'[0m - -
+2025-08-23 21:38:34,838 ERROR AresGlobal.AresLauncher ❌ Step-based training pipeline failed - -
+2025-08-23 21:38:34,838 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 21:38:34,838 INFO AresGlobal [SYSTEM] 🛑 ARES LAUNCHER ENDED - Exit code: 1 - -
+2025-08-23 21:38:34,838 INFO AresGlobal [SYSTEM] End time: 2025-08-23 21:38:34 - -
+2025-08-23 21:38:34,838 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 21:38:34,838 INFO AresGlobal.AresLauncher 🧹 Cleaning up processes... - -
+2025-08-23 21:38:34,838 INFO AresGlobal.AresLauncher ✅ Cleanup completed - -

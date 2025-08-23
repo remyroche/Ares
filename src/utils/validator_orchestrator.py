@@ -180,6 +180,7 @@ class ValidatorOrchestrator:
         # Map step names to validator modules
         validator_mapping = {
             "step1_data_collection": "step1_data_collection_validator",
+            "step1_5_data_converter": "step1_5_data_converter_validator",
             "step2_feature_engineering": "step2_feature_engineering_validator",
             "step3_hmm_regime_discovery": "step3_hmm_regime_discovery_validator",
             "step4_processing_labeling": "step4_processing_labeling_validator",

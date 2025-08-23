@@ -1,0 +1,13 @@
+2025-08-23 21:44:41,386 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-23 21:44:41,388 INFO AresTradingSystem.System.ValidatorOrchestrator 🔍 Running validator for step1_data_collection - -
+2025-08-23 21:44:41,395 WARNING AresTradingSystem.System.ValidatorOrchestrator [93m[1m⚠️[0m [93m[1m⚠️ Validator module not found for step1_data_collection: No module named 'pandas'[0m - -
+2025-08-23 21:44:41,395 INFO AresTradingSystem.System.ValidatorOrchestrator ✅ Validator for step1_data_collection completed in 0.007s: passed=True - -
+2025-08-23 21:44:41,395 INFO AresTradingSystem.System.ValidatorOrchestrator 🔍 Running validator for step1_5_data_converter - -
+2025-08-23 21:44:41,398 WARNING AresTradingSystem.System.ValidatorOrchestrator [93m[1m⚠️[0m [93m[1m⚠️ Validator module not found for step1_5_data_converter: No module named 'pandas'[0m - -
+2025-08-23 21:44:41,398 INFO AresTradingSystem.System.ValidatorOrchestrator ✅ Validator for step1_5_data_converter completed in 0.003s: passed=True - -
+2025-08-23 21:44:41,398 INFO AresTradingSystem.System.ValidatorOrchestrator 🔍 Running validator for step1_data_collection - -
+2025-08-23 21:44:41,398 WARNING AresTradingSystem.System.ValidatorOrchestrator [93m[1m⚠️[0m [93m[1m⚠️ Validator module not found for step1_data_collection: No module named 'pandas'[0m - -
+2025-08-23 21:44:41,398 INFO AresTradingSystem.System.ValidatorOrchestrator ✅ Validator for step1_data_collection completed in 0.000s: passed=True - -
+2025-08-23 21:44:41,399 INFO AresTradingSystem.System.ValidatorOrchestrator 🔍 Running validator for step1_5_data_converter - -
+2025-08-23 21:44:41,399 WARNING AresTradingSystem.System.ValidatorOrchestrator [93m[1m⚠️[0m [93m[1m⚠️ Validator module not found for step1_5_data_converter: No module named 'pandas'[0m - -
+2025-08-23 21:44:41,399 INFO AresTradingSystem.System.ValidatorOrchestrator ✅ Validator for step1_5_data_converter completed in 0.000s: passed=True - -

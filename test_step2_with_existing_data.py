@@ -16,20 +16,9 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-try:
-    # Try comprehensive validator first
-    from src.utils.comprehensive_data_quality_validator import (
-        validate_step1_quality as validate_step1_files,
-        validate_step1_5_quality as validate_step1_5_files
-    )
-    print("🔬 Using comprehensive data quality validator")
-except ImportError:
-    # Fallback to simple file existence validator
-    from src.utils.simple_data_validator import (
-        validate_step1_files,
-        validate_step1_5_files
-    )
-    print("📁 Using simple file existence validator")
+# Use existing validator orchestrator
+from src.utils.validator_orchestrator import ValidatorOrchestrator
+print("🔧 Using existing validator orchestrator")
 
 
 def print_step2_validation_report(step1_result: dict, step1_5_result: dict, symbol: str, exchange: str):
@@ -91,8 +80,8 @@ def print_step2_validation_report(step1_result: dict, step1_5_result: dict, symb
     print("="*80 + "\n")
 
 
-def test_data_validation():
-    """Test the data validation functionality using existing validator."""
+async def test_data_validation():
+    """Test the data validation functionality using existing validator orchestrator."""
     print("🧪 Testing Data Quality Validation")
     print("=" * 60)
     
@@ -103,25 +92,49 @@ def test_data_validation():
     print(f"\n📊 Testing validation for {symbol} on {exchange}")
     print("   (with empty data_cache directory)")
     
-    # Use existing validators
-    step1_result = validate_step1_files(symbol, exchange)
-    step1_5_result = validate_step1_5_files(symbol, exchange)
+    # Use existing validator orchestrator
+    validator_orchestrator = ValidatorOrchestrator()
+    
+    # Prepare training input for validation
+    training_input = {
+        "symbol": symbol,
+        "exchange": exchange,
+        "timeframe": "1m",
+        "data_dir": "data_cache"
+    }
+    
+    # Empty pipeline state since we're checking existing data
+    pipeline_state = {}
+    
+    # Import CONFIG
+    from src.config import CONFIG
+    
+    # Validate step1 and step1_5 using existing validators
+    print("🔍 Validating step1_data_collection using existing validator")
+    step1_result = await validator_orchestrator.run_step_validator(
+        "step1_data_collection", training_input, pipeline_state, CONFIG
+    )
+    
+    print("🔍 Validating step1_5_data_converter using existing validator")
+    step1_5_result = await validator_orchestrator.run_step_validator(
+        "step1_5_data_converter", training_input, pipeline_state, CONFIG
+    )
     
     print("\n📋 Validation Results:")
     print(f"   Step1 Passed: {step1_result.get('validation_passed', False)}")
     print(f"   Step1_5 Passed: {step1_5_result.get('validation_passed', False)}")
-    print(f"   Step1 Issues: {len(step1_result.get('issues', []))}")
-    print(f"   Step1_5 Issues: {len(step1_5_result.get('issues', []))}")
+    print(f"   Step1 Warnings: {len(step1_result.get('warnings', []))}")
+    print(f"   Step1_5 Warnings: {len(step1_5_result.get('warnings', []))}")
     
-    if step1_result.get('issues'):
-        print("\n⚠️  Step1 Issues:")
-        for issue in step1_result['issues']:
-            print(f"   • {issue}")
+    if step1_result.get('warnings'):
+        print("\n⚠️  Step1 Warnings:")
+        for warning in step1_result['warnings']:
+            print(f"   • {warning}")
     
-    if step1_5_result.get('issues'):
-        print("\n⚠️  Step1_5 Issues:")
-        for issue in step1_5_result['issues']:
-            print(f"   • {issue}")
+    if step1_5_result.get('warnings'):
+        print("\n⚠️  Step1_5 Warnings:")
+        for warning in step1_5_result['warnings']:
+            print(f"   • {warning}")
     
     # Test the overall readiness
     print(f"\n🔍 Testing step2 readiness...")
@@ -195,7 +208,7 @@ def create_mock_data_files():
     print("   📁 Mock data files created successfully")
 
 
-def test_with_mock_data():
+async def test_with_mock_data():
     """Test validation with mock data files."""
     print("\n🧪 Testing with mock data files...")
     
@@ -205,9 +218,34 @@ def test_with_mock_data():
     # Create mock data
     create_mock_data_files()
     
+    # Use existing validator orchestrator
+    validator_orchestrator = ValidatorOrchestrator()
+    
+    # Prepare training input for validation
+    training_input = {
+        "symbol": symbol,
+        "exchange": exchange,
+        "timeframe": "1m",
+        "data_dir": "data_cache"
+    }
+    
+    # Empty pipeline state since we're checking existing data
+    pipeline_state = {}
+    
+    # Import CONFIG
+    from src.config import CONFIG
+    
     # Test validation
-    step1_result = validate_step1_files(symbol, exchange)
-    step1_5_result = validate_step1_5_files(symbol, exchange)
+    print("🔍 Validating step1_data_collection using existing validator")
+    step1_result = await validator_orchestrator.run_step_validator(
+        "step1_data_collection", training_input, pipeline_state, CONFIG
+    )
+    
+    print("🔍 Validating step1_5_data_converter using existing validator")
+    step1_5_result = await validator_orchestrator.run_step_validator(
+        "step1_5_data_converter", training_input, pipeline_state, CONFIG
+    )
+    
     can_start = step1_result.get('validation_passed', False) and step1_5_result.get('validation_passed', False)
     
     print(f"\n📊 Validation Results with Mock Data:")
@@ -215,27 +253,11 @@ def test_with_mock_data():
     print(f"   Step1 Passed: {step1_result.get('validation_passed', False)}")
     print(f"   Step1_5 Passed: {step1_5_result.get('validation_passed', False)}")
     
-    print(f"\n📋 File Checks Found:")
-    step1_files = step1_result.get('file_checks', {})
-    step1_5_files = step1_5_result.get('file_checks', {})
-    
-    if step1_files:
-        print(f"   Step1 files: {len(step1_files)}")
-        for filename, check in step1_files.items():
-            status = "✅" if check.get('exists', False) else "❌"
-            print(f"     {status} {filename}")
-    
-    if step1_5_files:
-        print(f"   Step1_5 files: {len(step1_5_files)}")
-        for filename, check in step1_5_files.items():
-            status = "✅" if check.get('exists', False) else "❌"
-            print(f"     {status} {filename}")
-    
     print(f"\n📊 Full Validation Report:")
     print_step2_validation_report(step1_result, step1_5_result, symbol, exchange)
 
 
-def main():
+async def main():
     """Main test function."""
     print("🧪 STEP2 WITH EXISTING DATA TEST")
     print("=" * 80)
@@ -244,13 +266,13 @@ def main():
     print("=" * 80)
     
     # Test 1: Data validation with empty cache
-    test_data_validation()
+    await test_data_validation()
     
     # Test 2: Step2 command explanation
     test_step2_command()
     
     # Test 3: Data validation with mock data
-    test_with_mock_data()
+    await test_with_mock_data()
     
     print("\n" + "=" * 80)
     print("✅ STEP2 WITH EXISTING DATA TEST COMPLETED")
@@ -268,4 +290,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())

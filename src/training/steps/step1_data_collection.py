@@ -320,6 +320,12 @@ class DataCollectionStep:
                 valid_files = sum(1 for r in validation_results if getattr(r, "is_valid", False))
                 logger.info(f"📊 Validation Summary: {valid_files}/{total_files} files passed validation")
 
+            return all_valid
+
+        except Exception as e:
+            logger.exception(f"❌ Error during comprehensive validation: {e}")
+            return False
+
     async def _log_detailed_data_extract(
         self, symbol: str, exchange: str, timeframe: str, data_dir: str, logger: Any
     ) -> None:
@@ -505,12 +511,6 @@ class DataCollectionStep:
             logger.error(f"❌ Error in detailed data extract: {e}")
             logger.error(f"📋 Full error: {str(e)}")
             logger.info("=" * 80)
-
-            return all_valid
-
-        except Exception as e:
-            logger.exception(f"❌ Error during comprehensive validation: {e}")
-            return False
 
 
 @monitor_data_collection()

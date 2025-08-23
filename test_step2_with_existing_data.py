@@ -16,16 +16,84 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.data_completeness_validator import (
-    DataCompletenessValidator,
-    validate_data_for_step2,
-    print_data_validation_report
-)
+try:
+    # Try comprehensive validator first
+    from src.utils.comprehensive_data_quality_validator import (
+        validate_step1_quality as validate_step1_files,
+        validate_step1_5_quality as validate_step1_5_files
+    )
+    print("🔬 Using comprehensive data quality validator")
+except ImportError:
+    # Fallback to simple file existence validator
+    from src.utils.simple_data_validator import (
+        validate_step1_files,
+        validate_step1_5_files
+    )
+    print("📁 Using simple file existence validator")
+
+
+def print_step2_validation_report(step1_result: dict, step1_5_result: dict, symbol: str, exchange: str):
+    """Print a formatted validation report for step2 readiness."""
+    print("\n" + "="*80)
+    print(f"📊 DATA VALIDATION REPORT FOR STEP2")
+    print(f"🎯 Symbol: {symbol}")
+    print(f"🏢 Exchange: {exchange}")
+    print("="*80)
+    
+    # Step1 status
+    step1_status = "✅ PASSED" if step1_result.get("validation_passed", False) else "❌ FAILED"
+    step1_issues = len(step1_result.get("issues", []))
+    print(f"📁 Step1 Data Collection: {step1_status}")
+    if step1_issues > 0:
+        print(f"   ⚠️  Found {step1_issues} issues")
+    
+    # Show step1 file checks
+    file_checks = step1_result.get("file_checks", {})
+    if file_checks:
+        print(f"   📄 File Status:")
+        for filename, check in file_checks.items():
+            status = "✅" if check.get("exists", False) else "❌"
+            print(f"     {status} {filename}")
+    
+    # Step1_5 status
+    step1_5_status = "✅ PASSED" if step1_5_result.get("validation_passed", False) else "❌ FAILED"
+    step1_5_issues = len(step1_5_result.get("issues", []))
+    print(f"🔄 Step1_5 Data Converter: {step1_5_status}")
+    if step1_5_issues > 0:
+        print(f"   ⚠️  Found {step1_5_issues} issues")
+    
+    # Show step1_5 file checks
+    file_checks_1_5 = step1_5_result.get("file_checks", {})
+    if file_checks_1_5:
+        print(f"   📄 File Status:")
+        for filename, check in file_checks_1_5.items():
+            status = "✅" if check.get("exists", False) else "❌"
+            print(f"     {status} {filename}")
+    
+    # Issues summary
+    total_issues = step1_issues + step1_5_issues
+    if total_issues > 0:
+        print(f"\n⚠️  ISSUES SUMMARY ({total_issues} total):")
+        for issue in step1_result.get("issues", []):
+            print(f"   • Step1: {issue}")
+        for issue in step1_5_result.get("issues", []):
+            print(f"   • Step1_5: {issue}")
+    
+    # Overall assessment
+    can_start = step1_result.get("validation_passed", False) and step1_5_result.get("validation_passed", False)
+    if can_start:
+        print(f"\n✅ READY TO START FROM STEP2")
+        print(f"   Proceeding with existing data...")
+    else:
+        print(f"\n❌ NOT READY FOR STEP2")
+        print(f"   Data validation failed - missing or invalid data")
+    
+    print("="*80 + "\n")
 
 
 def test_data_validation():
-    """Test the data completeness validation functionality."""
-    print("🧪 Testing Data Completeness Validation")
+    """Test the data validation functionality using existing validator."""
+    print("🧪 Testing Data Quality Validation")
     print("=" * 60)
     
     symbol = "ETHUSDT"
@@ -35,32 +103,33 @@ def test_data_validation():
     print(f"\n📊 Testing validation for {symbol} on {exchange}")
     print("   (with empty data_cache directory)")
     
-    validator = DataCompletenessValidator()
-    validation_result = validator.validate_step1_data_completeness(symbol, exchange)
+    # Use existing validators
+    step1_result = validate_step1_files(symbol, exchange)
+    step1_5_result = validate_step1_5_files(symbol, exchange)
     
     print("\n📋 Validation Results:")
-    print(f"   Step1 Complete: {validation_result['step1_complete']}")
-    print(f"   Step1_5 Complete: {validation_result['step1_5_complete']}")
-    print(f"   Warnings: {len(validation_result['warnings'])}")
-    print(f"   Gaps: {len(validation_result['gaps'])}")
+    print(f"   Step1 Passed: {step1_result.get('validation_passed', False)}")
+    print(f"   Step1_5 Passed: {step1_5_result.get('validation_passed', False)}")
+    print(f"   Step1 Issues: {len(step1_result.get('issues', []))}")
+    print(f"   Step1_5 Issues: {len(step1_5_result.get('issues', []))}")
     
-    if validation_result['warnings']:
-        print("\n⚠️  Warnings:")
-        for warning in validation_result['warnings']:
-            print(f"   • {warning}")
+    if step1_result.get('issues'):
+        print("\n⚠️  Step1 Issues:")
+        for issue in step1_result['issues']:
+            print(f"   • {issue}")
     
-    if validation_result['gaps']:
-        print("\n🕳️  Data Gaps:")
-        for gap in validation_result['gaps']:
-            print(f"   • {gap}")
+    if step1_5_result.get('issues'):
+        print("\n⚠️  Step1_5 Issues:")
+        for issue in step1_5_result['issues']:
+            print(f"   • {issue}")
     
-    # Test the convenience functions
-    print(f"\n🔍 Testing convenience functions...")
-    can_start, result = validate_data_for_step2(symbol, exchange)
+    # Test the overall readiness
+    print(f"\n🔍 Testing step2 readiness...")
+    can_start = step1_result.get('validation_passed', False) and step1_5_result.get('validation_passed', False)
     print(f"   Can start from step2: {can_start}")
     
     print(f"\n📊 Printing validation report...")
-    print_data_validation_report(symbol, exchange)
+    print_step2_validation_report(step1_result, step1_5_result, symbol, exchange)
 
 
 def test_step2_command():
@@ -137,21 +206,33 @@ def test_with_mock_data():
     create_mock_data_files()
     
     # Test validation
-    can_start, validation_result = validate_data_for_step2(symbol, exchange)
+    step1_result = validate_step1_files(symbol, exchange)
+    step1_5_result = validate_step1_5_files(symbol, exchange)
+    can_start = step1_result.get('validation_passed', False) and step1_5_result.get('validation_passed', False)
     
     print(f"\n📊 Validation Results with Mock Data:")
     print(f"   Can start from step2: {can_start}")
-    print(f"   Step1 Complete: {validation_result['step1_complete']}")
-    print(f"   Step1_5 Complete: {validation_result['step1_5_complete']}")
+    print(f"   Step1 Passed: {step1_result.get('validation_passed', False)}")
+    print(f"   Step1_5 Passed: {step1_5_result.get('validation_passed', False)}")
     
-    print(f"\n📋 Data Files Found:")
-    for step, files in validation_result['data_files'].items():
-        print(f"   {step}: {len(files)} files")
-        for filename in files.keys():
-            print(f"     • {filename}")
+    print(f"\n📋 File Checks Found:")
+    step1_files = step1_result.get('file_checks', {})
+    step1_5_files = step1_5_result.get('file_checks', {})
+    
+    if step1_files:
+        print(f"   Step1 files: {len(step1_files)}")
+        for filename, check in step1_files.items():
+            status = "✅" if check.get('exists', False) else "❌"
+            print(f"     {status} {filename}")
+    
+    if step1_5_files:
+        print(f"   Step1_5 files: {len(step1_5_files)}")
+        for filename, check in step1_5_files.items():
+            status = "✅" if check.get('exists', False) else "❌"
+            print(f"     {status} {filename}")
     
     print(f"\n📊 Full Validation Report:")
-    print_data_validation_report(symbol, exchange)
+    print_step2_validation_report(step1_result, step1_5_result, symbol, exchange)
 
 
 def main():

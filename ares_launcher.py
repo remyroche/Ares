@@ -1372,49 +1372,51 @@ class AresLauncher:
         
         # Validate existing data before proceeding
         try:
-            from src.utils.data_completeness_validator import validate_data_for_step2, print_data_validation_report
-            
-            # Validate existing data
-            can_start, validation_result = validate_data_for_step2(symbol, exchange)
-            
-            # Print validation report
-            print_data_validation_report(symbol, exchange)
-            
-            if not can_start:
-                self.logger.error("❌ Cannot start from step2 - missing required data")
-                self.logger.error("Please run step1 and step1_5 first to collect and process data")
-                return False
-            
-            # Log warnings if any
-            if validation_result.get("warnings"):
-                self.logger.warning("⚠️ Data completeness warnings detected:")
-                for warning in validation_result["warnings"]:
-                    self.logger.warning(f"   • {warning}")
-            
-            if validation_result.get("gaps"):
-                self.logger.warning("🕳️ Data gaps detected:")
-                for gap in validation_result["gaps"]:
-                    self.logger.warning(f"   • {gap}")
-            
-            self.logger.info("✅ Data validation passed - proceeding with existing data")
-            
-        except ImportError as e:
-            self.logger.warning(f"⚠️ Could not import data completeness validator: {e}")
-            self.logger.warning("Proceeding with basic file existence check")
-            
-            # Fallback to basic check
-            consolidated_file = (
-                f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
+            # Try comprehensive validator first
+            from src.utils.comprehensive_data_quality_validator import (
+                validate_step1_quality, 
+                validate_step1_5_quality
             )
-            if not os.path.exists(consolidated_file):
-                self.logger.error(
-                    f"❌ Consolidated data file not found: {consolidated_file}"
-                )
-                self.logger.error(
-                    "Please run data loading first or ensure consolidated data exists"
-                )
-                return False
-            self.logger.info(f"✅ Found consolidated data: {consolidated_file}")
+            
+            # Validate existing step1 and step1_5 data
+            step1_result = validate_step1_quality(symbol, exchange)
+            step1_5_result = validate_step1_5_quality(symbol, exchange)
+            
+            self.logger.info("🔬 Using comprehensive data quality validator")
+            
+        except ImportError:
+            # Fallback to simple file existence validator
+            from src.utils.simple_data_validator import (
+                validate_step1_files,
+                validate_step1_5_files
+            )
+            
+            step1_result = validate_step1_files(symbol, exchange)
+            step1_5_result = validate_step1_5_files(symbol, exchange)
+            
+            self.logger.info("📁 Using simple file existence validator")
+        
+        # Print validation report
+        self._print_step2_validation_report(step1_result, step1_5_result, symbol, exchange)
+        
+        # Check if we can proceed
+        can_start = step1_result.get("validation_passed", False) and step1_5_result.get("validation_passed", False)
+        
+        if not can_start:
+            self.logger.error("❌ Cannot start from step2 - data validation failed")
+            self.logger.error("Please run step1 and step1_5 first to collect and process data")
+            return False
+        
+        # Log warnings if any issues found
+        total_issues = len(step1_result.get("issues", [])) + len(step1_5_result.get("issues", []))
+        if total_issues > 0:
+            self.logger.warning(f"⚠️ Data validation found {total_issues} issues - proceeding with existing data")
+            for issue in step1_result.get("issues", []):
+                self.logger.warning(f"   • Step1: {issue}")
+            for issue in step1_5_result.get("issues", []):
+                self.logger.warning(f"   • Step1_5: {issue}")
+        
+        self.logger.info("✅ Data validation passed - proceeding with existing data")
         
         return self._run_step_pipeline(
             symbol=symbol,
@@ -1424,6 +1426,64 @@ class AresLauncher:
             with_gui=with_gui,
             training_mode="blank",  # Use blank mode for step2 with existing data
         )
+
+    def _print_step2_validation_report(self, step1_result: dict, step1_5_result: dict, symbol: str, exchange: str):
+        """Print a formatted validation report for step2 readiness."""
+        print("\n" + "="*80)
+        print(f"📊 DATA VALIDATION REPORT FOR STEP2")
+        print(f"🎯 Symbol: {symbol}")
+        print(f"🏢 Exchange: {exchange}")
+        print("="*80)
+        
+        # Step1 status
+        step1_status = "✅ PASSED" if step1_result.get("validation_passed", False) else "❌ FAILED"
+        step1_issues = len(step1_result.get("issues", []))
+        print(f"📁 Step1 Data Collection: {step1_status}")
+        if step1_issues > 0:
+            print(f"   ⚠️  Found {step1_issues} issues")
+        
+        # Show step1 file checks
+        file_checks = step1_result.get("file_checks", {})
+        if file_checks:
+            print(f"   📄 File Status:")
+            for filename, check in file_checks.items():
+                status = "✅" if check.get("exists", False) else "❌"
+                print(f"     {status} {filename}")
+        
+        # Step1_5 status
+        step1_5_status = "✅ PASSED" if step1_5_result.get("validation_passed", False) else "❌ FAILED"
+        step1_5_issues = len(step1_5_result.get("issues", []))
+        print(f"🔄 Step1_5 Data Converter: {step1_5_status}")
+        if step1_5_issues > 0:
+            print(f"   ⚠️  Found {step1_5_issues} issues")
+        
+        # Show step1_5 file checks
+        file_checks_1_5 = step1_5_result.get("file_checks", {})
+        if file_checks_1_5:
+            print(f"   📄 File Status:")
+            for filename, check in file_checks_1_5.items():
+                status = "✅" if check.get("exists", False) else "❌"
+                print(f"     {status} {filename}")
+        
+        # Issues summary
+        total_issues = step1_issues + step1_5_issues
+        if total_issues > 0:
+            print(f"\n⚠️  ISSUES SUMMARY ({total_issues} total):")
+            for issue in step1_result.get("issues", []):
+                print(f"   • Step1: {issue}")
+            for issue in step1_5_result.get("issues", []):
+                print(f"   • Step1_5: {issue}")
+        
+        # Overall assessment
+        can_start = step1_result.get("validation_passed", False) and step1_5_result.get("validation_passed", False)
+        if can_start:
+            print(f"\n✅ READY TO START FROM STEP2")
+            print(f"   Proceeding with existing data...")
+        else:
+            print(f"\n❌ NOT READY FOR STEP2")
+            print(f"   Data validation failed - missing or invalid data")
+        
+        print("="*80 + "\n")
 
     @handle_errors(
         exceptions=(Exception,),
@@ -1783,59 +1843,27 @@ class AresLauncher:
                 self._force_fresh_start_from_step(orchestrator, start_step)
                 self._clear_checkpoint_files(symbol, exchange, timeframe="1m")
 
-            # Enhanced data validation for step2
+            # Basic validation for step2 (the step2 command has its own comprehensive validation)
             if start_step in (
                 "step2_market_regime_classification",
                 "step2_processing_labeling_feature_engineering",
                 "step2_feature_engineering",
             ):
-                self.logger.info("🔍 Validating existing data for step2 execution")
+                self.logger.info("📁 Basic validation for step2 execution")
                 
-                # Import data completeness validator
-                try:
-                    from src.utils.data_completeness_validator import validate_data_for_step2, print_data_validation_report
-                    
-                    # Validate existing data
-                    can_start, validation_result = validate_data_for_step2(symbol, exchange)
-                    
-                    # Print validation report
-                    print_data_validation_report(symbol, exchange)
-                    
-                    if not can_start:
-                        self.logger.error("❌ Cannot start from step2 - missing required data")
-                        self.logger.error("Please run step1 and step1_5 first to collect and process data")
-                        return False
-                    
-                    # Log warnings if any
-                    if validation_result.get("warnings"):
-                        self.logger.warning("⚠️ Data completeness warnings detected:")
-                        for warning in validation_result["warnings"]:
-                            self.logger.warning(f"   • {warning}")
-                    
-                    if validation_result.get("gaps"):
-                        self.logger.warning("🕳️ Data gaps detected:")
-                        for gap in validation_result["gaps"]:
-                            self.logger.warning(f"   • {gap}")
-                    
-                    self.logger.info("✅ Data validation passed - proceeding with existing data")
-                    
-                except ImportError as e:
-                    self.logger.warning(f"⚠️ Could not import data completeness validator: {e}")
-                    self.logger.warning("Proceeding with basic file existence check")
-                    
-                    # Fallback to basic check
-                    consolidated_file = (
-                        f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
+                # Basic consolidated file check
+                consolidated_file = (
+                    f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
+                )
+                if not os.path.exists(consolidated_file):
+                    self.logger.error(
+                        f"❌ Consolidated data file not found: {consolidated_file}"
                     )
-                    if not os.path.exists(consolidated_file):
-                        self.logger.error(
-                            f"❌ Consolidated data file not found: {consolidated_file}"
-                        )
-                        self.logger.error(
-                            "Please run data loading first or ensure consolidated data exists"
-                        )
-                        return False
-                    self.logger.info(f"✅ Found consolidated data: {consolidated_file}")
+                    self.logger.error(
+                        "Please run data loading first or use: python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE"
+                    )
+                    return False
+                self.logger.info(f"✅ Found consolidated data: {consolidated_file}")
 
             # Run the step-based training using the orchestrator
             import asyncio

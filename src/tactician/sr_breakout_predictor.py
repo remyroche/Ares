@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.data_quality_decorators import validate_data_quality
+from src.utils.centralized_decorators import validate_data_quality
 
 class SRBreakoutPredictor:
     """

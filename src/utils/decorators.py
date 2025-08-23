@@ -17,8 +17,20 @@ import logging
 from collections.abc import Callable
 from typing import Any, Iterable, TypeVar, cast
 
-import numpy as np
-import pandas as pd
+# Handle optional dependencies
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
+
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
 
 from src.utils.domain_errors import (
     DataValidationError,

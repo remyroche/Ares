@@ -100,7 +100,7 @@ def test_class_definitions():
         print("✅ Quality alert system classes")
         
         # Test enhanced decorators
-        from src.utils.enhanced_validation_decorators import (
+        from src.utils.centralized_decorators import (
             validate_ml_data_quality_decorator,
             quality_gate,
             continuous_quality_monitoring,

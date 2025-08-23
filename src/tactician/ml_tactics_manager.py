@@ -5,7 +5,7 @@ from src.utils.logger import system_logger
 from typing import Any
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import failed, invalid, warning
-from src.utils.data_quality_decorators import validate_data_quality
+from src.utils.centralized_decorators import validate_data_quality
 
 class MLTacticsManager:
     """

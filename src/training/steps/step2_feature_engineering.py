@@ -31,7 +31,7 @@ try:
         validate_step2_operation,
     )
     from src.utils.advanced_ml_validation import validate_ml_data_quality
-    from src.utils.enhanced_validation_decorators import step_specific_ml_validation
+    from src.utils.centralized_decorators import step_specific_ml_validation
 except ImportError:
     ComprehensiveFileValidator = None
     validate_step2_file = None
@@ -42,7 +42,7 @@ except ImportError:
     step_specific_ml_validation = None  # ensure symbol exists
 
 # Import the auto-fix decorator for data quality issues
-from src.training.steps.raw_data_quality_checker import auto_fix_data_quality_issues
+from src.utils.centralized_decorators import auto_fix_data_quality_issues
 from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors

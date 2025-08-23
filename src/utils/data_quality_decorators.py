@@ -394,7 +394,7 @@ def log_feature_quality_issues(df: pd.DataFrame, df_name: str, logger: Optional[
                     high_corr_pairs.append((corr_matrix.columns[i], corr_matrix.columns[j], corr_value))
         
             if high_corr_pairs:
-            logger.warning(f"⚠️ {df_name}: Highly correlated feature pairs ({len(high_corr_pairs)}):")
+                logger.warning(f"⚠️ {df_name}: Highly correlated feature pairs ({len(high_corr_pairs)}):")
             logger.warning("📊 Detailed Correlation Analysis:")
             for feat1, feat2, corr_value in high_corr_pairs[:5]:  # Show first 5
                 logger.warning(f"   • {feat1} ↔ {feat2}: correlation = {corr_value:.3f}")

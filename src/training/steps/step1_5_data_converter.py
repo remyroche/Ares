@@ -35,7 +35,7 @@ try:
 		with_tracing_span,
 	)
 	# Additional quality/format decorators
-	from src.utils.data_quality_decorators import (
+	from src.utils.centralized_decorators import (
 		validate_klines_data,
 		format_klines_data,
 		validate_aggtrades_data,

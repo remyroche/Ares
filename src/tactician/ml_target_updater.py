@@ -18,7 +18,7 @@ from src.utils.warning_symbols import (
     failed,
     warning,
 )
-from src.utils.data_quality_decorators import validate_data_quality
+from src.utils.centralized_decorators import validate_data_quality
 
 class MLTargetUpdater:
     """

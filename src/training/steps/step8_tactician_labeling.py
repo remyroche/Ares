@@ -460,7 +460,7 @@ class TacticianLabelingStep:
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
-from src.utils.training_pipeline_decorators import (
+from src.utils.centralized_decorators import (
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,

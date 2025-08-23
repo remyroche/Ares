@@ -9,12 +9,37 @@ import time
 import traceback
 from typing import Any, Dict, List, Optional, Callable, Union, Type
 from datetime import datetime, timedelta
-import pandas as pd
-import numpy as np
 import asyncio
 from enum import Enum
-import psutil
-import gc
+
+# Handle optional dependencies
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
+
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
+
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    psutil = None
+
+try:
+    import gc
+    GC_AVAILABLE = True
+except ImportError:
+    GC_AVAILABLE = False
+    gc = None
 
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, warning, critical, success

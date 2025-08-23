@@ -33,7 +33,7 @@ try:
         validate_step1_operation,
     )
     from src.utils.advanced_ml_validation import validate_ml_data_quality
-    from src.utils.enhanced_validation_decorators import step_specific_ml_validation
+    from src.utils.centralized_decorators import step_specific_ml_validation
 except ImportError:
     ComprehensiveFileValidator = None
     validate_step1_file = None
@@ -111,7 +111,7 @@ except ImportError:
     system_logger = setup_logging()
     download_all_data_with_consolidation = None
 
-from src.utils.training_pipeline_decorators import monitor_data_collection
+from src.utils.centralized_decorators import monitor_data_collection
 
 
 class DataCollectionStep:

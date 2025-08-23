@@ -1,0 +1,120 @@
+2025-08-23 12:07:34,536 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-23 12:07:35,160 INFO AresTradingSystem.System.UnifiedDataConverter 🚀 Initializing Unified Data Converter... - -
+2025-08-23 12:07:35,160 INFO AresTradingSystem.System.UnifiedDataConverter 📁 Unified data directory: data_cache/unified - -
+2025-08-23 12:07:35,160 INFO AresTradingSystem.System.UnifiedDataConverter 📁 Backup directory: data_cache/backup_pre_unified - -
+2025-08-23 12:07:35,160 INFO AresTradingSystem.System.UnifiedDataConverter ================================================================================ - -
+2025-08-23 12:07:35,161 INFO AresTradingSystem.System.UnifiedDataConverter 🔄 STEP 1.5: Unified Data Converter - -
+2025-08-23 12:07:35,161 INFO AresTradingSystem.System.UnifiedDataConverter ================================================================================ - -
+2025-08-23 12:07:35,161 INFO AresTradingSystem.System.UnifiedDataConverter 🎯 Symbol: ETHUSDT - -
+2025-08-23 12:07:35,161 INFO AresTradingSystem.System.UnifiedDataConverter 🏢 Exchange: BINANCE - -
+2025-08-23 12:07:35,161 INFO AresTradingSystem.System.UnifiedDataConverter 📊 Timeframe: 1m - -
+2025-08-23 12:07:35,161 INFO AresTradingSystem.System.UnifiedDataConverter 📁 Data directory: data_cache - -
+2025-08-23 12:07:35,161 INFO AresTradingSystem.System.UnifiedDataConverter 🔄 No existing unified data found - performing initial conversion - -
+2025-08-23 12:07:35,161 INFO AresTradingSystem.System.UnifiedDataConverter 🔄 Converting existing consolidated data to unified format incrementally... - -
+2025-08-23 12:07:35,161 INFO AresTradingSystem.System.UnifiedDataConverter 📊 Loading klines from parquet: data_cache/klines_BINANCE_ETHUSDT_1m_consolidated.parquet - -
+2025-08-23 12:07:35,178 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Loaded 43200 klines rows - -
+2025-08-23 12:07:35,178 INFO AresTradingSystem.System.UnifiedDataConverter ✅ Loaded 43200 klines rows - -
+2025-08-23 12:07:35,178 INFO AresTradingSystem.System.UnifiedDataConverter 🔄 Processing data incrementally by date... - -
+2025-08-23 12:07:35,201 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing 31 days from 2025-07-24 to 2025-08-23 - -
+2025-08-23 12:07:35,201 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-07-24 (1/31) - -
+2025-08-23 12:07:35,209 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 720 kline rows for 2025-07-24 - -
+2025-08-23 12:07:35,209 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-07-25 (2/31) - -
+2025-08-23 12:07:35,216 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-07-25 - -
+2025-08-23 12:07:35,216 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-07-26 (3/31) - -
+2025-08-23 12:07:35,225 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-07-26 - -
+2025-08-23 12:07:35,225 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-07-27 (4/31) - -
+2025-08-23 12:07:35,231 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-07-27 - -
+2025-08-23 12:07:35,231 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-07-28 (5/31) - -
+2025-08-23 12:07:35,237 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-07-28 - -
+2025-08-23 12:07:35,237 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-07-29 (6/31) - -
+2025-08-23 12:07:35,242 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-07-29 - -
+2025-08-23 12:07:35,242 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-07-30 (7/31) - -
+2025-08-23 12:07:35,248 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-07-30 - -
+2025-08-23 12:07:35,248 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-07-31 (8/31) - -
+2025-08-23 12:07:35,253 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-07-31 - -
+2025-08-23 12:07:35,253 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-08-01 (9/31) - -
+2025-08-23 12:07:35,259 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-08-01 - -
+2025-08-23 12:07:35,259 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-08-02 (10/31) - -
+2025-08-23 12:07:35,264 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-08-02 - -
+2025-08-23 12:07:35,265 INFO AresTradingSystem.System.UnifiedDataConverter 📊 Progress: 10/31 days (32.3%) - 13,680 total rows - -
+2025-08-23 12:07:35,265 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-08-03 (11/31) - -
+2025-08-23 12:07:35,270 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-08-03 - -
+2025-08-23 12:07:35,270 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-08-04 (12/31) - -
+2025-08-23 12:07:35,276 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-08-04 - -
+2025-08-23 12:07:35,276 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-08-05 (13/31) - -
+2025-08-23 12:07:35,281 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-08-05 - -
+2025-08-23 12:07:35,281 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-08-06 (14/31) - -
+2025-08-23 12:07:35,287 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-08-06 - -
+2025-08-23 12:07:35,287 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-08-07 (15/31) - -
+2025-08-23 12:07:35,292 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-08-07 - -
+2025-08-23 12:07:35,292 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-08-08 (16/31) - -
+2025-08-23 12:07:35,298 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-08-08 - -
+2025-08-23 12:07:35,298 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-08-09 (17/31) - -
+2025-08-23 12:07:35,303 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-08-09 - -
+2025-08-23 12:07:35,303 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-08-10 (18/31) - -
+2025-08-23 12:07:35,309 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-08-10 - -
+2025-08-23 12:07:35,309 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-08-11 (19/31) - -
+2025-08-23 12:07:35,314 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-08-11 - -
+2025-08-23 12:07:35,315 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-08-12 (20/31) - -
+2025-08-23 12:07:35,320 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-08-12 - -
+2025-08-23 12:07:35,320 INFO AresTradingSystem.System.UnifiedDataConverter 📊 Progress: 20/31 days (64.5%) - 28,080 total rows - -
+2025-08-23 12:07:35,320 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-08-13 (21/31) - -
+2025-08-23 12:07:35,326 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-08-13 - -
+2025-08-23 12:07:35,326 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-08-14 (22/31) - -
+2025-08-23 12:07:35,331 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-08-14 - -
+2025-08-23 12:07:35,331 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-08-15 (23/31) - -
+2025-08-23 12:07:35,337 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-08-15 - -
+2025-08-23 12:07:35,337 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-08-16 (24/31) - -
+2025-08-23 12:07:35,342 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-08-16 - -
+2025-08-23 12:07:35,343 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-08-17 (25/31) - -
+2025-08-23 12:07:35,348 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-08-17 - -
+2025-08-23 12:07:35,348 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-08-18 (26/31) - -
+2025-08-23 12:07:35,353 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-08-18 - -
+2025-08-23 12:07:35,354 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-08-19 (27/31) - -
+2025-08-23 12:07:35,359 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-08-19 - -
+2025-08-23 12:07:35,359 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-08-20 (28/31) - -
+2025-08-23 12:07:35,364 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-08-20 - -
+2025-08-23 12:07:35,365 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-08-21 (29/31) - -
+2025-08-23 12:07:35,370 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-08-21 - -
+2025-08-23 12:07:35,370 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-08-22 (30/31) - -
+2025-08-23 12:07:35,376 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 1440 kline rows for 2025-08-22 - -
+2025-08-23 12:07:35,376 INFO AresTradingSystem.System.UnifiedDataConverter 📊 Progress: 30/31 days (96.8%) - 42,480 total rows - -
+2025-08-23 12:07:35,376 INFO AresTradingSystem.System.UnifiedDataConverter 📅 Processing date: 2025-08-23 (31/31) - -
+2025-08-23 12:07:35,380 INFO AresTradingSystem.System.UnifiedDataConverter    ✅ Processed 720 kline rows for 2025-08-23 - -
+2025-08-23 12:07:35,381 INFO AresTradingSystem.System.UnifiedDataConverter ✅ Incremental processing completed: 43,200 total rows across 31 days - -
+2025-08-23 12:07:35,381 INFO AresTradingSystem.System.UnifiedDataConverter 🔧 Setting up infrastructure for future data collection... - -
+2025-08-23 12:07:35,381 INFO AresTradingSystem.System.UnifiedDataConverter ✅ Future infrastructure config saved to: data_cache/unified/binance_ETHUSDT_1m_config.json - -
+2025-08-23 12:07:35,384 ERROR AresTradingSystem.System.UnifiedDataConverter ❌ Error running enhanced quality validation: cannot import name 'validate_data_quality' from 'src.utils.data_quality_decorators' (/workspace/src/utils/data_quality_decorators.py) - -
+Traceback (most recent call last):
+  File "/workspace/src/training/steps/step1_5_data_converter.py", line 739, in _run_enhanced_quality_validation
+    from .step1.enhanced_data_quality_manager import EnhancedDataQualityManager
+  File "/workspace/src/training/steps/step1/__init__.py", line 13, in <module>
+    from .aggtrades_validator import AggtradesValidator
+  File "/workspace/src/training/steps/step1/aggtrades_validator.py", line 19, in <module>
+    from src.utils.centralized_decorators import (
+    ...<4 lines>...
+    )
+  File "/workspace/src/utils/centralized_decorators.py", line 31, in <module>
+    from src.utils.data_quality_decorators import (
+        validate_data_quality,
+    )
+ImportError: cannot import name 'validate_data_quality' from 'src.utils.data_quality_decorators' (/workspace/src/utils/data_quality_decorators.py)
+2025-08-23 12:07:35,384 INFO AresTradingSystem.System.UnifiedDataConverter 🔍 Verifying unified data quality... - -
+2025-08-23 12:07:35,389 WARNING AresTradingSystem.System.UnifiedDataConverter ⚠️ Data quality issues found: - -
+2025-08-23 12:07:35,389 WARNING AresTradingSystem.System.UnifiedDataConverter    - 2025-01-01: File not found - -
+2025-08-23 12:07:35,389 WARNING AresTradingSystem.System.UnifiedDataConverter    - 2025-04-15: File not found - -
+2025-08-23 12:07:35,389 WARNING AresTradingSystem.System.UnifiedDataConverter    - 2025-07-15: File not found - -
+2025-08-23 12:07:35,389 WARNING AresTradingSystem.System.UnifiedDataConverter    - 2025-08-08: Missing aggtrades data - -
+2025-08-23 12:07:35,389 WARNING AresTradingSystem.System.UnifiedDataConverter    - 2025-08-08: Missing futures data - -
+2025-08-23 12:07:35,389 WARNING AresTradingSystem.System.UnifiedDataConverter ⚠️ Data quality verification found issues - -
+2025-08-23 12:07:35,393 INFO AresTradingSystem.System.UnifiedDataConverter 🔍 Running comprehensive Step1.5 data quality validation... - -
+2025-08-23 12:07:35,393 INFO AresTradingSystem.System.ComprehensiveDataQualityValidator 🔍 Validating Step1.5 data converter quality... - -
+2025-08-23 12:07:35,416 WARNING AresTradingSystem.System.ComprehensiveDataQualityValidator ⚠️ Step1.5 data quality validation found 3 issues - -
+2025-08-23 12:07:35,416 WARNING AresTradingSystem.System.UnifiedDataConverter ⚠️ Comprehensive Step1.5 data quality validation found 3 issues: - -
+2025-08-23 12:07:35,416 WARNING AresTradingSystem.System.UnifiedDataConverter    - Constant features found: ['year', 'month', 'day', 'exchange', 'symbol', 'timeframe'] - -
+2025-08-23 12:07:35,416 WARNING AresTradingSystem.System.UnifiedDataConverter    - Constant features found: ['year', 'month', 'day', 'exchange', 'symbol', 'timeframe'] - -
+2025-08-23 12:07:35,416 WARNING AresTradingSystem.System.UnifiedDataConverter    - Constant features found: ['year', 'month', 'day', 'exchange', 'symbol', 'timeframe'] - -
+2025-08-23 12:07:35,416 WARNING AresTradingSystem.System.UnifiedDataConverter ⚠️ Continuing with data quality issues - review logs for details - -
+2025-08-23 12:07:35,416 INFO AresTradingSystem.System.UnifiedDataConverter ================================================================================ - -
+2025-08-23 12:07:35,416 INFO AresTradingSystem.System.UnifiedDataConverter ✅ STEP 1.5 COMPLETED: Unified Data Converter - -
+2025-08-23 12:07:35,416 INFO AresTradingSystem.System.UnifiedDataConverter ================================================================================ - -

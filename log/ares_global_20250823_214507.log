@@ -1,0 +1,51 @@
+2025-08-23 21:45:07,614 INFO AresGlobal ================================================================================ - -
+2025-08-23 21:45:07,614 INFO AresGlobal 📊 SESSION SUMMARY - -
+2025-08-23 21:45:07,614 INFO AresGlobal Session started: 2025-08-23 21:45:07 - -
+2025-08-23 21:45:07,614 INFO AresGlobal This file contains ALL logs for this session - -
+2025-08-23 21:45:07,614 INFO AresGlobal ================================================================================ - -
+2025-08-23 21:45:07,615 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 21:45:07,615 INFO AresGlobal [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: INITIALIZATION - -
+2025-08-23 21:45:07,615 INFO AresGlobal [SYSTEM] Start time: 2025-08-23 21:45:07 - -
+2025-08-23 21:45:07,615 INFO AresGlobal [SYSTEM] Log directory: log - -
+2025-08-23 21:45:07,615 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 21:45:07,615 INFO AresGlobal.AresLauncher ================================================================================ - -
+2025-08-23 21:45:07,615 INFO AresGlobal.AresLauncher 🚀 ARES COMPREHENSIVE LAUNCHER - -
+2025-08-23 21:45:07,615 INFO AresGlobal.AresLauncher ================================================================================ - -
+2025-08-23 21:45:07,615 INFO AresGlobal.AresLauncher Start time: 2025-08-23 21:45:07 - -
+2025-08-23 21:45:07,615 INFO AresGlobal.AresLauncher Log directory: log - -
+2025-08-23 21:45:07,615 INFO AresGlobal.AresLauncher Log level: INFO - -
+2025-08-23 21:45:07,615 INFO AresGlobal.AresLauncher Global log file: ares_global_20250823_214507.log - -
+2025-08-23 21:45:07,615 INFO AresGlobal.AresLauncher Full run log: log/ares_full_20250823_214507.log - -
+2025-08-23 21:45:07,615 INFO AresGlobal.AresLauncher Trades log: log/ares_trades_20250823_214507.log - -
+2025-08-23 21:45:07,615 INFO AresGlobal.AresLauncher Backtest log: log/ares_backtest_20250823_214507.log - -
+2025-08-23 21:45:07,615 INFO AresGlobal.AresLauncher ================================================================================ - -
+2025-08-23 21:45:07,615 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 21:45:07,615 INFO AresGlobal [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: step2 - Symbol: ETHUSDT - Exchange: BINANCE - -
+2025-08-23 21:45:07,615 INFO AresGlobal [SYSTEM] Start time: 2025-08-23 21:45:07 - -
+2025-08-23 21:45:07,615 INFO AresGlobal [SYSTEM] Log directory: log - -
+2025-08-23 21:45:07,615 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 21:45:07,616 INFO AresGlobal.AresLauncher 🚀 Running step2 with existing data for ETHUSDT on BINANCE - -
+2025-08-23 21:45:07,616 INFO AresGlobal.AresLauncher 📊 Using existing data from step1 and step1_5 - no new downloads - -
+2025-08-23 21:45:07,616 INFO AresGlobal.AresLauncher 🔍 Validating step1_data_collection using existing validator - -
+2025-08-23 21:45:07,616 INFO AresGlobal.ValidatorOrchestrator 🔍 Running validator for step1_data_collection - -
+2025-08-23 21:45:07,622 WARNING AresGlobal.ValidatorOrchestrator [93m[1m⚠️[0m [93m[1m⚠️ Validator module not found for step1_data_collection: No module named 'pandas'[0m - -
+2025-08-23 21:45:07,622 INFO AresGlobal.ValidatorOrchestrator ✅ Validator for step1_data_collection completed in 0.006s: passed=True - -
+2025-08-23 21:45:07,622 INFO AresGlobal.AresLauncher 🔍 Validating step1_5_data_converter using existing validator - -
+2025-08-23 21:45:07,622 INFO AresGlobal.ValidatorOrchestrator 🔍 Running validator for step1_5_data_converter - -
+2025-08-23 21:45:07,623 WARNING AresGlobal.ValidatorOrchestrator [93m[1m⚠️[0m [93m[1m⚠️ Validator module not found for step1_5_data_converter: No module named 'pandas'[0m - -
+2025-08-23 21:45:07,623 INFO AresGlobal.ValidatorOrchestrator ✅ Validator for step1_5_data_converter completed in 0.000s: passed=True - -
+2025-08-23 21:45:07,623 INFO AresGlobal.AresLauncher ✅ Data validation passed - proceeding with existing data - -
+2025-08-23 21:45:07,623 INFO AresGlobal.AresLauncher Starting from step: step2_feature_engineering - -
+2025-08-23 21:45:07,623 INFO AresGlobal.AresLauncher 🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training - -
+2025-08-23 21:45:07,623 INFO AresGlobal.ProgressManager Initialized ProgressManager for ETHUSDT on BINANCE - -
+2025-08-23 21:45:07,623 INFO AresGlobal.ProgressManager Progress directory: data/training/progress/BINANCE_ETHUSDT - -
+2025-08-23 21:45:07,623 INFO AresGlobal.StepOrchestrator Initialized StepOrchestrator for ETHUSDT on BINANCE - -
+2025-08-23 21:45:07,623 INFO AresGlobal.AresLauncher 📁 Basic validation for step2 execution - -
+2025-08-23 21:45:07,623 INFO AresGlobal.AresLauncher ✅ Found consolidated data: data_cache/aggtrades_BINANCE_ETHUSDT_consolidated.parquet - -
+2025-08-23 21:45:07,624 ERROR AresGlobal.AresLauncher ❌ Failed to run step-based training pipeline: asyncio.run() cannot be called from a running event loop - -
+2025-08-23 21:45:07,624 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 21:45:07,624 INFO AresGlobal [SYSTEM] 🛑 ARES LAUNCHER ENDED - Exit code: 1 - -
+2025-08-23 21:45:07,624 INFO AresGlobal [SYSTEM] End time: 2025-08-23 21:45:07 - -
+2025-08-23 21:45:07,624 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-23 21:45:07,624 INFO AresGlobal.AresLauncher 🧹 Cleaning up processes... - -
+2025-08-23 21:45:07,625 INFO AresGlobal.AresLauncher ✅ Cleanup completed - -

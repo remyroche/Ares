@@ -26,35 +26,35 @@ This implementation allows users to start the enhanced_training_pipeline from st
 
 ## Implementation Details
 
-### 1. Data Validators
+### 1. Existing Validator Integration
 
-**Simple File Existence Validator** (`src/utils/simple_data_validator.py`):
-- Lightweight validator without external dependencies
-- Checks file existence for step1 and step1_5 data
-- Provides clear file status reports
-- Fallback when comprehensive validator unavailable
+**Validator Orchestrator** (`src/utils/validator_orchestrator.py`):
+- Uses existing step validators from `src/training/steps/`
+- Leverages `Step1DataCollectionValidator` and `Step1_5DataConverterValidator`
+- Provides consistent validation interface
+- Handles missing dependencies gracefully
 
-**Comprehensive Data Quality Validator** (existing in codebase):
-- Uses `src/utils/comprehensive_data_quality_validator.py`
-- Provides detailed data quality analysis
-- Requires pandas/numpy dependencies
-- Automatically used when available
+**Step Validators** (existing in codebase):
+- `src/training/steps/step1_data_collection_validator.py`
+- `src/training/steps/step1_5_data_converter_validator.py`
+- Inherit from `BaseValidator` for consistent interface
+- Provide comprehensive data quality checks
 
 **Validation Logic**:
 ```python
-# Simple validator - checks file existence
-step1_files = [
-    f"klines_{exchange}_{symbol}_1m_consolidated.parquet",  # Required
-    f"aggtrades_{exchange}_{symbol}_consolidated.parquet"   # Required
-]
+# Uses existing validator orchestrator
+validator_orchestrator = ValidatorOrchestrator()
 
-step1_5_files = [
-    f"processed_{exchange}_{symbol}_train.parquet",        # Required
-    f"processed_{exchange}_{symbol}_validation.parquet",   # Required
-    f"processed_{exchange}_{symbol}_test.parquet"          # Required
-]
+# Validate step1 and step1_5 using existing validators
+step1_result = await validator_orchestrator.run_step_validator(
+    "step1_data_collection", training_input, pipeline_state, CONFIG
+)
+step1_5_result = await validator_orchestrator.run_step_validator(
+    "step1_5_data_converter", training_input, pipeline_state, CONFIG
+)
 
-# Validation passes if all required files exist
+# Check if both validations passed
+can_start = step1_result.get("validation_passed", False) and step1_5_result.get("validation_passed", False)
 ```
 
 ### 2. Enhanced Ares Launcher (`ares_launcher.py`)

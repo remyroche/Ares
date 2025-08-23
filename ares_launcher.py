@@ -1354,7 +1354,7 @@ class AresLauncher:
         default_return=False,
         context="run_step2_with_existing_data",
     )
-    def run_step2_with_existing_data(
+    async def run_step2_with_existing_data(
         self,
         symbol: str,
         exchange: str,
@@ -1370,53 +1370,79 @@ class AresLauncher:
             "📊 Using existing data from step1 and step1_5 - no new downloads"
         )
         
-        # Validate existing data before proceeding
+        # Use existing validator orchestrator to validate step1 and step1_5
         try:
-            # Try comprehensive validator first
-            from src.utils.comprehensive_data_quality_validator import (
-                validate_step1_quality, 
-                validate_step1_5_quality
+            from src.utils.validator_orchestrator import ValidatorOrchestrator
+            
+            # Create validator orchestrator
+            validator_orchestrator = ValidatorOrchestrator()
+            
+            # Prepare training input for validation
+            training_input = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": "1m",
+                "data_dir": "data_cache"
+            }
+            
+            # Empty pipeline state since we're checking existing data
+            pipeline_state = {}
+            
+            # Validate step1 and step1_5 using existing validators
+            self.logger.info("🔍 Validating step1_data_collection using existing validator")
+            step1_result = await validator_orchestrator.run_step_validator(
+                "step1_data_collection", training_input, pipeline_state, CONFIG
             )
             
-            # Validate existing step1 and step1_5 data
-            step1_result = validate_step1_quality(symbol, exchange)
-            step1_5_result = validate_step1_5_quality(symbol, exchange)
-            
-            self.logger.info("🔬 Using comprehensive data quality validator")
-            
-        except ImportError:
-            # Fallback to simple file existence validator
-            from src.utils.simple_data_validator import (
-                validate_step1_files,
-                validate_step1_5_files
+            self.logger.info("🔍 Validating step1_5_data_converter using existing validator")
+            step1_5_result = await validator_orchestrator.run_step_validator(
+                "step1_5_data_converter", training_input, pipeline_state, CONFIG
             )
             
-            step1_result = validate_step1_files(symbol, exchange)
-            step1_5_result = validate_step1_5_files(symbol, exchange)
+            # Print validation report
+            self._print_step2_validation_report(step1_result, step1_5_result, symbol, exchange)
             
-            self.logger.info("📁 Using simple file existence validator")
-        
-        # Print validation report
-        self._print_step2_validation_report(step1_result, step1_5_result, symbol, exchange)
-        
-        # Check if we can proceed
-        can_start = step1_result.get("validation_passed", False) and step1_5_result.get("validation_passed", False)
-        
-        if not can_start:
-            self.logger.error("❌ Cannot start from step2 - data validation failed")
-            self.logger.error("Please run step1 and step1_5 first to collect and process data")
-            return False
-        
-        # Log warnings if any issues found
-        total_issues = len(step1_result.get("issues", [])) + len(step1_5_result.get("issues", []))
-        if total_issues > 0:
-            self.logger.warning(f"⚠️ Data validation found {total_issues} issues - proceeding with existing data")
-            for issue in step1_result.get("issues", []):
-                self.logger.warning(f"   • Step1: {issue}")
-            for issue in step1_5_result.get("issues", []):
-                self.logger.warning(f"   • Step1_5: {issue}")
-        
-        self.logger.info("✅ Data validation passed - proceeding with existing data")
+            # Check if we can proceed
+            step1_passed = step1_result.get("validation_passed", False)
+            step1_5_passed = step1_5_result.get("validation_passed", False)
+            can_start = step1_passed and step1_5_passed
+            
+            if not can_start:
+                self.logger.error("❌ Cannot start from step2 - data validation failed")
+                self.logger.error("Please run step1 and step1_5 first to collect and process data")
+                return False
+            
+            # Log warnings if any issues found
+            step1_warnings = step1_result.get("warnings", [])
+            step1_5_warnings = step1_5_result.get("warnings", [])
+            total_warnings = len(step1_warnings) + len(step1_5_warnings)
+            
+            if total_warnings > 0:
+                self.logger.warning(f"⚠️ Data validation found {total_warnings} warnings - proceeding with existing data")
+                for warning in step1_warnings:
+                    self.logger.warning(f"   • Step1: {warning}")
+                for warning in step1_5_warnings:
+                    self.logger.warning(f"   • Step1_5: {warning}")
+            
+            self.logger.info("✅ Data validation passed - proceeding with existing data")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not run existing validators: {e}")
+            self.logger.warning("Proceeding with basic file existence check")
+            
+            # Fallback to basic check
+            consolidated_file = (
+                f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
+            )
+            if not os.path.exists(consolidated_file):
+                self.logger.error(
+                    f"❌ Consolidated data file not found: {consolidated_file}"
+                )
+                self.logger.error(
+                    "Please run data loading first or ensure consolidated data exists"
+                )
+                return False
+            self.logger.info(f"✅ Found consolidated data: {consolidated_file}")
         
         return self._run_step_pipeline(
             symbol=symbol,
@@ -1436,46 +1462,33 @@ class AresLauncher:
         print("="*80)
         
         # Step1 status
-        step1_status = "✅ PASSED" if step1_result.get("validation_passed", False) else "❌ FAILED"
-        step1_issues = len(step1_result.get("issues", []))
+        step1_passed = step1_result.get("validation_passed", False)
+        step1_status = "✅ PASSED" if step1_passed else "❌ FAILED"
+        step1_warnings = step1_result.get("warnings", [])
         print(f"📁 Step1 Data Collection: {step1_status}")
-        if step1_issues > 0:
-            print(f"   ⚠️  Found {step1_issues} issues")
-        
-        # Show step1 file checks
-        file_checks = step1_result.get("file_checks", {})
-        if file_checks:
-            print(f"   📄 File Status:")
-            for filename, check in file_checks.items():
-                status = "✅" if check.get("exists", False) else "❌"
-                print(f"     {status} {filename}")
+        if step1_warnings:
+            print(f"   ⚠️  Found {len(step1_warnings)} warnings")
+            for warning in step1_warnings:
+                print(f"     • {warning}")
         
         # Step1_5 status
-        step1_5_status = "✅ PASSED" if step1_5_result.get("validation_passed", False) else "❌ FAILED"
-        step1_5_issues = len(step1_5_result.get("issues", []))
+        step1_5_passed = step1_5_result.get("validation_passed", False)
+        step1_5_status = "✅ PASSED" if step1_5_passed else "❌ FAILED"
+        step1_5_warnings = step1_5_result.get("warnings", [])
         print(f"🔄 Step1_5 Data Converter: {step1_5_status}")
-        if step1_5_issues > 0:
-            print(f"   ⚠️  Found {step1_5_issues} issues")
+        if step1_5_warnings:
+            print(f"   ⚠️  Found {len(step1_5_warnings)} warnings")
+            for warning in step1_5_warnings:
+                print(f"     • {warning}")
         
-        # Show step1_5 file checks
-        file_checks_1_5 = step1_5_result.get("file_checks", {})
-        if file_checks_1_5:
-            print(f"   📄 File Status:")
-            for filename, check in file_checks_1_5.items():
-                status = "✅" if check.get("exists", False) else "❌"
-                print(f"     {status} {filename}")
-        
-        # Issues summary
-        total_issues = step1_issues + step1_5_issues
-        if total_issues > 0:
-            print(f"\n⚠️  ISSUES SUMMARY ({total_issues} total):")
-            for issue in step1_result.get("issues", []):
-                print(f"   • Step1: {issue}")
-            for issue in step1_5_result.get("issues", []):
-                print(f"   • Step1_5: {issue}")
+        # Show validation details if available
+        if step1_result.get("details"):
+            print(f"   📋 Step1 Details: {step1_result['details']}")
+        if step1_5_result.get("details"):
+            print(f"   📋 Step1_5 Details: {step1_5_result['details']}")
         
         # Overall assessment
-        can_start = step1_result.get("validation_passed", False) and step1_5_result.get("validation_passed", False)
+        can_start = step1_passed and step1_5_passed
         if can_start:
             print(f"\n✅ READY TO START FROM STEP2")
             print(f"   Proceeding with existing data...")
@@ -2133,12 +2146,14 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             args.exchange,
             with_gui=args.gui,
         ),
-        "step2": lambda: launcher.run_step2_with_existing_data(
-            args.symbol,
-            args.exchange,
-            start_step=normalized_step or "step2_feature_engineering",
-            force_rerun=force_flag,
-            with_gui=args.gui,
+        "step2": lambda: asyncio.run(
+            launcher.run_step2_with_existing_data(
+                args.symbol,
+                args.exchange,
+                start_step=normalized_step or "step2_feature_engineering",
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
         ),
         "full": lambda: launcher.run_step_based_full_training(
             args.symbol,

@@ -1,0 +1,46 @@
+2025-08-23 12:20:13,111 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-23 12:20:13,756 INFO AresTradingSystem.System.PipelineMonitor 🔄 [STEP 1] Starting: run_step - -
+2025-08-23 12:20:13,756 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Pre-execution checks for run_step - -
+2025-08-23 12:20:13,756 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Running data quality validation for run_step - -
+2025-08-23 12:20:13,756 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery ================================================================================ - -
+2025-08-23 12:20:13,756 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery 🚀 STEP 3: HMM Regime Discovery - -
+2025-08-23 12:20:13,756 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery ================================================================================ - -
+2025-08-23 12:20:13,756 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery 🎯 Symbol: ETHUSDT - -
+2025-08-23 12:20:13,756 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery 🏢 Exchange: BINANCE - -
+2025-08-23 12:20:13,756 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery 📊 Timeframe: 1m - -
+2025-08-23 12:20:13,756 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery 📁 Data directory: data_cache - -
+2025-08-23 12:20:13,756 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery 🔄 Force rerun: False - -
+2025-08-23 12:20:13,756 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery ⏰ Start time: 2025-08-23 12:20:13 - -
+2025-08-23 12:20:13,756 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery ================================================================================ - -
+2025-08-23 12:20:13,756 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery 🔧 Initializing HMM regime discovery step... - -
+2025-08-23 12:20:13,756 INFO AresTradingSystem.System.HMMRegimeDiscoveryStep 🔧 Initializing HMM regime discovery components... - -
+2025-08-23 12:20:13,800 ERROR AresTradingSystem.System.Step3HMMRegimeDiscovery ❌ Step 3: HMM Regime Discovery failed with exception: quality_gate() got an unexpected keyword argument 'validation_level' - -
+Traceback (most recent call last):
+  File "/workspace/src/training/steps/step3_hmm_regime_discovery.py", line 720, in run_step
+    step = HMMRegimeDiscoveryStep(config)
+  File "/workspace/src/training/steps/step3_hmm_regime_discovery.py", line 47, in __init__
+    self._initialize_components()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/workspace/src/training/steps/step3_hmm_regime_discovery.py", line 53, in _initialize_components
+    from .step1.enhanced_data_quality_manager import EnhancedDataQualityManager
+  File "/workspace/src/training/steps/step1/enhanced_data_quality_manager.py", line 39, in <module>
+    class EnhancedDataQualityManager:
+    ...<457 lines>...
+                }
+  File "/workspace/src/training/steps/step1/enhanced_data_quality_manager.py", line 73, in EnhancedDataQualityManager
+    @quality_gate(validation_level="comprehensive")
+     ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: quality_gate() got an unexpected keyword argument 'validation_level'
+2025-08-23 12:20:13,804 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery ================================================================================ - -
+2025-08-23 12:20:13,804 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery 💥 STEP 3 EXECUTION SUMMARY - -
+2025-08-23 12:20:13,804 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery ================================================================================ - -
+2025-08-23 12:20:13,804 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery ⏱️ Total execution time: 0.05 seconds - -
+2025-08-23 12:20:13,804 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery ⏰ End time: 2025-08-23 12:20:13 - -
+2025-08-23 12:20:13,804 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery ❌ FAILED - -
+2025-08-23 12:20:13,804 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery    Exception: quality_gate() got an unexpected keyword argument 'validation_level' - -
+2025-08-23 12:20:13,804 INFO AresTradingSystem.System.Step3HMMRegimeDiscovery ================================================================================ - -
+2025-08-23 12:20:13,804 INFO AresTradingSystem.System.ValidateAndExecute ✅ Function executed successfully - -
+2025-08-23 12:20:13,804 INFO AresTradingSystem.System.PipelineStepMonitor ✅ [PIPELINE STEP] Data quality validation completed for run_step - -
+2025-08-23 12:20:13,804 INFO AresTradingSystem.System.PipelineStepMonitor 🔍 [PIPELINE STEP] Post-execution checks for run_step - -
+2025-08-23 12:20:13,804 INFO AresTradingSystem.System.PipelineStepMonitor ✅ [PIPELINE STEP] Step run_step completed successfully - -
+2025-08-23 12:20:13,804 INFO AresTradingSystem.System.PipelineMonitor ✅ [STEP] Completed: run_step - -

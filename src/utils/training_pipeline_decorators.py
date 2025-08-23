@@ -713,19 +713,43 @@ def monitor_pipeline_step(
 
         @functools.wraps(func)
         def sync_wrapper(self: Any, *args, **kwargs) -> Any:
-            return asyncio.run(
-                _monitor_and_execute_pipeline_step(
-                    func,
-                    self,
-                    args,
-                    kwargs,
-                    stage,
-                    validation_level,
-                    enable_data_quality,
-                    memory_threshold,
-                    duration_threshold,
+            try:
+                # Try to get the current event loop
+                loop = asyncio.get_running_loop()
+                # If we're in an event loop, we can't use asyncio.run()
+                # Instead, we need to schedule the coroutine
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(
+                        asyncio.run,
+                        _monitor_and_execute_pipeline_step(
+                            func,
+                            self,
+                            args,
+                            kwargs,
+                            stage,
+                            validation_level,
+                            enable_data_quality,
+                            memory_threshold,
+                            duration_threshold,
+                        )
+                    )
+                    return future.result()
+            except RuntimeError:
+                # No event loop running, safe to use asyncio.run()
+                return asyncio.run(
+                    _monitor_and_execute_pipeline_step(
+                        func,
+                        self,
+                        args,
+                        kwargs,
+                        stage,
+                        validation_level,
+                        enable_data_quality,
+                        memory_threshold,
+                        duration_threshold,
+                    )
                 )
-            )
 
         # Return appropriate wrapper based on function type
         if asyncio.iscoroutinefunction(func):
@@ -836,21 +860,23 @@ async def _monitor_and_execute_pipeline_step(
             logger.warning(f"⚠️ [PIPELINE STEP] {warning_msg}")
             _pipeline_monitor.log_warning(step_name, warning_msg)
 
-        # Duration check
-        if step_name in _pipeline_monitor.metrics.step_durations:
-            duration = _pipeline_monitor.metrics.step_durations[step_name]["duration"]
-            if duration > duration_threshold:
-                warning_msg = f"Long execution time: {duration:.2f}s"
-                print(f"⚠️ [PIPELINE STEP] {warning_msg}")
-                logger.warning(f"⚠️ [PIPELINE STEP] {warning_msg}")
-                _pipeline_monitor.log_warning(step_name, warning_msg)
-
         # Success logging
         print(f"✅ [PIPELINE STEP] Step {step_name} completed successfully")
         logger.info(f"✅ [PIPELINE STEP] Step {step_name} completed successfully")
 
         # End step monitoring
         _pipeline_monitor.end_step(step_name, success=True, result=result)
+
+        # Duration check (after step has ended)
+        if step_name in _pipeline_monitor.metrics.step_durations:
+            step_data = _pipeline_monitor.metrics.step_durations[step_name]
+            if "duration" in step_data:
+                duration = step_data["duration"]
+                if duration > duration_threshold:
+                    warning_msg = f"Long execution time: {duration:.2f}s"
+                    print(f"⚠️ [PIPELINE STEP] {warning_msg}")
+                    logger.warning(f"⚠️ [PIPELINE STEP] {warning_msg}")
+                    _pipeline_monitor.log_warning(step_name, warning_msg)
 
         return result
 

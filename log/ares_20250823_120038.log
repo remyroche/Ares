@@ -1,0 +1,11 @@
+2025-08-23 12:00:38,860 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-23 12:00:39,402 INFO AresTradingSystem.System.UnifiedDataConverter 🚀 Initializing Unified Data Converter... - -
+2025-08-23 12:00:39,402 INFO AresTradingSystem.System.UnifiedDataConverter 📁 Unified data directory: data_cache/unified - -
+2025-08-23 12:00:39,402 INFO AresTradingSystem.System.UnifiedDataConverter 📁 Backup directory: data_cache/backup_pre_unified - -
+2025-08-23 12:00:39,403 ERROR AresTradingSystem.System.UnifiedDataConverter ❌ Unified data conversion failed: expected str, bytes or os.PathLike object, not dict - -
+Traceback (most recent call last):
+  File "/workspace/src/training/steps/step1_5_data_converter.py", line 656, in execute
+    self.unified_dir = os.path.join(self.data_cache_dir, "unified")
+                       ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen posixpath>", line 77, in join
+TypeError: expected str, bytes or os.PathLike object, not dict

@@ -23,12 +23,12 @@ from src.utils.centralized_decorators import (
     comprehensive_data_validation,
     handle_errors,
     memory_efficient,
-    quality_gate,
     resource_monitor,
     secure_data_processing,
     validate_data_structure,
     with_tracing_span,
 )
+from src.utils.enhanced_validation_decorators import quality_gate
 from src.utils.logger import system_logger
 from src.utils.training_pipeline_decorators import monitor_feature_engineering
 
@@ -75,7 +75,11 @@ class HMMRegimeDiscoveryStep:
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
     @with_tracing_span("execute_hmm_regime_discovery")
-    @quality_gate(validation_level="comprehensive")
+    @quality_gate(
+        min_quality_score=0.7,
+        max_correlation=0.95,
+        required_grade="C"
+    )
     @handle_errors(
         exceptions=(Exception,),
         default_return={"success": False, "regimes": [], "error": "HMM discovery failed"},

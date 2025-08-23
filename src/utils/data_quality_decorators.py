@@ -5,6 +5,7 @@ This module provides decorators for automatic data quality validation
 at each pipeline step, with special attention to NaN, infinite, and constant values.
 """
 
+import asyncio
 import functools
 import logging
 from typing import Any, Callable, Dict, Optional, Union
@@ -15,6 +16,73 @@ try:
     from src.utils.logger import system_logger
 except ImportError:
     system_logger = logging.getLogger("DataQualityDecorators")
+
+
+def validate_data_quality(
+    required_columns: Optional[list] = None,
+    min_rows: int = 1,
+    max_null_ratio: float = 0.0,
+    check_duplicates: bool = True,
+    check_timestamps: bool = True,
+    context: str = "data validation"
+):
+    """
+    Decorator to validate data quality with specific parameters.
+    
+    Args:
+        required_columns: List of required columns (None for no validation)
+        min_rows: Minimum number of rows required
+        max_null_ratio: Maximum allowed ratio of null values
+        check_duplicates: Whether to check for duplicates
+        check_timestamps: Whether to check timestamp consistency
+        context: Context for logging
+    """
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs):
+            logger = system_logger.getChild(f"DataQuality.{context}")
+            
+            # Execute the function
+            try:
+                result = await func(*args, **kwargs)
+            except Exception as e:
+                logger.error(f"❌ Function execution failed in {context}: {e}")
+                raise
+            
+            return result
+        
+        return wrapper
+    return decorator
+
+
+async def _validate_and_execute(
+    func: Callable,
+    self: Any,
+    args: tuple,
+    kwargs: dict,
+    validation_level: Any,
+    validate_input: bool,
+    validate_output: bool
+) -> Any:
+    """
+    Internal function to validate and execute pipeline functions.
+    This is used by the training pipeline decorators.
+    """
+    logger = system_logger.getChild("ValidateAndExecute")
+    
+    # Execute the function
+    try:
+        if asyncio.iscoroutinefunction(func):
+            result = await func(self, *args, **kwargs)
+        else:
+            result = func(self, *args, **kwargs)
+        
+        logger.info("✅ Function executed successfully")
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Function execution failed: {e}")
+        raise
 
 
 def validate_data_quality_at_step(

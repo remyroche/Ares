@@ -1,0 +1,7 @@
+2025-08-23 08:42:48,684 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-23 08:42:50,378 INFO AresTradingSystem.System.DataQualityValidator Quality validation for test_klines: FAILED (1 issues, 0 warnings) - -
+2025-08-23 08:42:50,378 WARNING AresTradingSystem.System.DataQualityValidator   - price_anomalies: Found 57753 price anomalies - -
+2025-08-23 08:42:53,283 INFO AresTradingSystem.System.DataQualityValidator Quality validation for problematic_data: FAILED (3 issues, 0 warnings) - -
+2025-08-23 08:42:53,283 WARNING AresTradingSystem.System.DataQualityValidator   - nan_values: NaN ratio 0.0000 exceeds threshold 0.0 - -
+2025-08-23 08:42:53,283 WARNING AresTradingSystem.System.DataQualityValidator   - infinite_values: Found 1 infinite values in columns: ['high'] - -
+2025-08-23 08:42:53,283 WARNING AresTradingSystem.System.DataQualityValidator   - price_anomalies: Found 57753 price anomalies - -

@@ -52,9 +52,11 @@ try:
 		validate_memory_optimized_data_quality,
 	)
 except Exception:
-	def _passthrough(*_args, **_kwargs):
+	def _passthrough(*args, **kwargs):
 		def _decorator(func):
 			return func
+		if len(args) == 1 and callable(args[0]):
+			return args[0]
 		return _decorator
 
 	handle_errors = _passthrough
@@ -454,7 +456,7 @@ class ParquetDatasetManager:
 		to_pandas: bool = True,
 		use_threads: bool = True,
 		ignore_hidden_temp: bool = True,
-	) -> pd.DataFrame | "pa.Table":
+	) -> pd.DataFrame | Any:
 		self._ensure_pyarrow()
 		if batch_size is None:
 			batch_size = self.default_batch_size

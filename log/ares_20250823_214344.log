@@ -1,0 +1,31 @@
+2025-08-23 21:43:44,903 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-23 21:43:44,906 INFO AresTradingSystem.System.ValidatorOrchestrator 🔍 Running validator for step1_data_collection - -
+2025-08-23 21:43:44,943 WARNING AresTradingSystem.System.ValidatorOrchestrator [93m[1m⚠️[0m [93m[1m⚠️ Validator module not found for step1_data_collection: No module named 'pandas'[0m - -
+2025-08-23 21:43:44,943 INFO AresTradingSystem.System.ValidatorOrchestrator ✅ Validator for step1_data_collection completed in 0.037s: passed=True - -
+2025-08-23 21:43:44,943 INFO AresTradingSystem.System.ValidatorOrchestrator 🔍 Running validator for step1_5_data_converter - -
+2025-08-23 21:43:44,943 ERROR AresTradingSystem.System.ValidatorOrchestrator ❌ Exception while running validator for step1_5_data_converter: No validator mapping found for step: step1_5_data_converter - -
+Traceback (most recent call last):
+  File "/workspace/src/utils/validator_orchestrator.py", line 72, in run_step_validator
+    raw_result = await self._run_validator(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+    )
+    ^
+  File "/workspace/src/utils/validator_orchestrator.py", line 216, in _run_validator
+    raise ValueError(msg)
+ValueError: No validator mapping found for step: step1_5_data_converter
+2025-08-23 21:43:44,944 INFO AresTradingSystem.System.ValidatorOrchestrator 🔍 Running validator for step1_data_collection - -
+2025-08-23 21:43:44,944 WARNING AresTradingSystem.System.ValidatorOrchestrator [93m[1m⚠️[0m [93m[1m⚠️ Validator module not found for step1_data_collection: No module named 'pandas'[0m - -
+2025-08-23 21:43:44,944 INFO AresTradingSystem.System.ValidatorOrchestrator ✅ Validator for step1_data_collection completed in 0.000s: passed=True - -
+2025-08-23 21:43:44,944 INFO AresTradingSystem.System.ValidatorOrchestrator 🔍 Running validator for step1_5_data_converter - -
+2025-08-23 21:43:44,944 ERROR AresTradingSystem.System.ValidatorOrchestrator ❌ Exception while running validator for step1_5_data_converter: No validator mapping found for step: step1_5_data_converter - -
+Traceback (most recent call last):
+  File "/workspace/src/utils/validator_orchestrator.py", line 72, in run_step_validator
+    raw_result = await self._run_validator(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+    )
+    ^
+  File "/workspace/src/utils/validator_orchestrator.py", line 216, in _run_validator
+    raise ValueError(msg)
+ValueError: No validator mapping found for step: step1_5_data_converter

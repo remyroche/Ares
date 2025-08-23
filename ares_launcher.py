@@ -27,6 +27,9 @@ Usage:
     # Short blank training (30 days instead of 60 for faster testing)
     python ares_launcher.py short-blank --symbol ETHUSDT --exchange BINANCE
 
+    # Start from step2 with existing data (no new downloads)
+    python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE
+
     # Multi-timeframe ensemble training (trains models on 1m, 5m, 15m, 1h, 4h, 1d and creates ensembles)
     python ares_launcher.py multi-timeframe --symbol ETHUSDT --exchange BINANCE
 
@@ -1349,6 +1352,155 @@ class AresLauncher:
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
+        context="run_step2_with_existing_data",
+    )
+    async def run_step2_with_existing_data(
+        self,
+        symbol: str,
+        exchange: str,
+        start_step: str = "step2_feature_engineering",
+        force_rerun: bool = False,
+        with_gui: bool = False,
+    ):
+        """Run step2 with existing data from step1 and step1_5 without triggering new downloads."""
+        self.logger.info(
+            f"🚀 Running step2 with existing data for {symbol} on {exchange}"
+        )
+        self.logger.info(
+            "📊 Using existing data from step1 and step1_5 - no new downloads"
+        )
+        
+        # Use existing validator orchestrator to validate step1 and step1_5
+        try:
+            from src.utils.validator_orchestrator import ValidatorOrchestrator
+            
+            # Create validator orchestrator
+            validator_orchestrator = ValidatorOrchestrator()
+            
+            # Prepare training input for validation
+            training_input = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": "1m",
+                "data_dir": "data_cache"
+            }
+            
+            # Empty pipeline state since we're checking existing data
+            pipeline_state = {}
+            
+            # Validate step1 and step1_5 using existing validators
+            self.logger.info("🔍 Validating step1_data_collection using existing validator")
+            step1_result = await validator_orchestrator.run_step_validator(
+                "step1_data_collection", training_input, pipeline_state, CONFIG
+            )
+            
+            self.logger.info("🔍 Validating step1_5_data_converter using existing validator")
+            step1_5_result = await validator_orchestrator.run_step_validator(
+                "step1_5_data_converter", training_input, pipeline_state, CONFIG
+            )
+            
+            # Print validation report
+            self._print_step2_validation_report(step1_result, step1_5_result, symbol, exchange)
+            
+            # Check if we can proceed
+            step1_passed = step1_result.get("validation_passed", False)
+            step1_5_passed = step1_5_result.get("validation_passed", False)
+            can_start = step1_passed and step1_5_passed
+            
+            if not can_start:
+                self.logger.error("❌ Cannot start from step2 - data validation failed")
+                self.logger.error("Please run step1 and step1_5 first to collect and process data")
+                return False
+            
+            # Log warnings if any issues found
+            step1_warnings = step1_result.get("warnings", [])
+            step1_5_warnings = step1_5_result.get("warnings", [])
+            total_warnings = len(step1_warnings) + len(step1_5_warnings)
+            
+            if total_warnings > 0:
+                self.logger.warning(f"⚠️ Data validation found {total_warnings} warnings - proceeding with existing data")
+                for warning in step1_warnings:
+                    self.logger.warning(f"   • Step1: {warning}")
+                for warning in step1_5_warnings:
+                    self.logger.warning(f"   • Step1_5: {warning}")
+            
+            self.logger.info("✅ Data validation passed - proceeding with existing data")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not run existing validators: {e}")
+            self.logger.warning("Proceeding with basic file existence check")
+            
+            # Fallback to basic check
+            consolidated_file = (
+                f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
+            )
+            if not os.path.exists(consolidated_file):
+                self.logger.error(
+                    f"❌ Consolidated data file not found: {consolidated_file}"
+                )
+                self.logger.error(
+                    "Please run data loading first or ensure consolidated data exists"
+                )
+                return False
+            self.logger.info(f"✅ Found consolidated data: {consolidated_file}")
+        
+        return self._run_step_pipeline(
+            symbol=symbol,
+            exchange=exchange,
+            start_step=start_step,
+            force_rerun=force_rerun,
+            with_gui=with_gui,
+            training_mode="blank",  # Use blank mode for step2 with existing data
+        )
+
+    def _print_step2_validation_report(self, step1_result: dict, step1_5_result: dict, symbol: str, exchange: str):
+        """Print a formatted validation report for step2 readiness."""
+        print("\n" + "="*80)
+        print(f"📊 DATA VALIDATION REPORT FOR STEP2")
+        print(f"🎯 Symbol: {symbol}")
+        print(f"🏢 Exchange: {exchange}")
+        print("="*80)
+        
+        # Step1 status
+        step1_passed = step1_result.get("validation_passed", False)
+        step1_status = "✅ PASSED" if step1_passed else "❌ FAILED"
+        step1_warnings = step1_result.get("warnings", [])
+        print(f"📁 Step1 Data Collection: {step1_status}")
+        if step1_warnings:
+            print(f"   ⚠️  Found {len(step1_warnings)} warnings")
+            for warning in step1_warnings:
+                print(f"     • {warning}")
+        
+        # Step1_5 status
+        step1_5_passed = step1_5_result.get("validation_passed", False)
+        step1_5_status = "✅ PASSED" if step1_5_passed else "❌ FAILED"
+        step1_5_warnings = step1_5_result.get("warnings", [])
+        print(f"🔄 Step1_5 Data Converter: {step1_5_status}")
+        if step1_5_warnings:
+            print(f"   ⚠️  Found {len(step1_5_warnings)} warnings")
+            for warning in step1_5_warnings:
+                print(f"     • {warning}")
+        
+        # Show validation details if available
+        if step1_result.get("details"):
+            print(f"   📋 Step1 Details: {step1_result['details']}")
+        if step1_5_result.get("details"):
+            print(f"   📋 Step1_5 Details: {step1_5_result['details']}")
+        
+        # Overall assessment
+        can_start = step1_passed and step1_5_passed
+        if can_start:
+            print(f"\n✅ READY TO START FROM STEP2")
+            print(f"   Proceeding with existing data...")
+        else:
+            print(f"\n❌ NOT READY FOR STEP2")
+            print(f"   Data validation failed - missing or invalid data")
+        
+        print("="*80 + "\n")
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
         context="run_data_loading",
     )
     def run_data_loading(
@@ -1704,12 +1856,15 @@ class AresLauncher:
                 self._force_fresh_start_from_step(orchestrator, start_step)
                 self._clear_checkpoint_files(symbol, exchange, timeframe="1m")
 
-            # Check for pre-consolidated data if starting from step 2
+            # Basic validation for step2 (the step2 command has its own comprehensive validation)
             if start_step in (
                 "step2_market_regime_classification",
                 "step2_processing_labeling_feature_engineering",
+                "step2_feature_engineering",
             ):
-                self.logger.info("📁 Using pre-consolidated data for step2")
+                self.logger.info("📁 Basic validation for step2 execution")
+                
+                # Basic consolidated file check
                 consolidated_file = (
                     f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
                 )
@@ -1718,7 +1873,7 @@ class AresLauncher:
                         f"❌ Consolidated data file not found: {consolidated_file}"
                     )
                     self.logger.error(
-                        "Please run data loading first or ensure consolidated data exists"
+                        "Please run data loading first or use: python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE"
                     )
                     return False
                 self.logger.info(f"✅ Found consolidated data: {consolidated_file}")
@@ -1757,9 +1912,11 @@ Examples:
   python ares_launcher.py backtest --symbol ETHUSDT --exchange BINANCE --gui
   python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --gui
   python ares_launcher.py short-blank --symbol ETHUSDT --exchange BINANCE
-  python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step4_regime_data_splitting
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step1_data_collection
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_processing_labeling_feature_engineering
+      python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step4_regime_data_splitting
+    python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE  # Start from step2 with existing data
+    python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE --step step2_feature_engineering  # Specific step2
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step1_data_collection
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_processing_labeling_feature_engineering
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step3_feature_engineering
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step4_regime_data_splitting
   python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step5_hmm_based_training
@@ -1798,6 +1955,7 @@ Examples:
             "gui",
             "blank",
             "short-blank",
+            "step2",  # New command to start from step2 with existing data
             "full",
             "multi-timeframe",
             "load",
@@ -1987,6 +2145,15 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             args.symbol,
             args.exchange,
             with_gui=args.gui,
+        ),
+        "step2": lambda: asyncio.run(
+            launcher.run_step2_with_existing_data(
+                args.symbol,
+                args.exchange,
+                start_step=normalized_step or "step2_feature_engineering",
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
         ),
         "full": lambda: launcher.run_step_based_full_training(
             args.symbol,

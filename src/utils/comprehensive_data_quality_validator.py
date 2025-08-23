@@ -338,11 +338,18 @@ class ComprehensiveDataQualityValidator:
             result["nan_counts"] = nan_counts.to_dict()
             
             if nan_features:
-                result["issues"].append(f"Features with NaN values (zero tolerance): {nan_features}")
+                # Detailed NaN logging
+                nan_details = []
+                for feature in nan_features:
+                    nan_count = nan_counts[feature]
+                    nan_ratio = nan_count / len(df) * 100
+                    nan_details.append(f"{feature}({nan_count} NaN, {nan_ratio:.3f}%)")
+                result["issues"].append(f"Features with NaN values (zero tolerance): {', '.join(nan_details)}")
             
             # Check for infinite values (zero tolerance)
             infinite_counts = {}
             infinite_features = []
+            infinite_details = []
             
             for col in df.select_dtypes(include=[np.number]).columns:
                 infinite_count = np.isinf(df[col]).sum()
@@ -350,11 +357,13 @@ class ComprehensiveDataQualityValidator:
                 
                 if infinite_count > 0:  # Any infinite values
                     infinite_features.append(col)
+                    infinite_ratio = infinite_count / len(df) * 100
+                    infinite_details.append(f"{col}({infinite_count} infinite, {infinite_ratio:.3f}%)")
             
             result["infinite_counts"] = infinite_counts
             
             if infinite_features:
-                result["issues"].append(f"Features with infinite values (zero tolerance): {infinite_features}")
+                result["issues"].append(f"Features with infinite values (zero tolerance): {', '.join(infinite_details)}")
             
             # Check for constant features (2+ unique values, except boolean)
             constant_features = []
@@ -555,48 +564,64 @@ class ComprehensiveDataQualityValidator:
             result["nan_features"] = nan_features
             
             if nan_features:
-                result["issues"].append(f"Features with NaN values (zero tolerance): {nan_features}")
+                # Detailed NaN logging with counts and percentages
+                nan_details = []
+                for feature in nan_features:
+                    nan_count = nan_counts[feature]
+                    nan_ratio = nan_count / len(df) * 100
+                    nan_details.append(f"{feature}({nan_count} NaN, {nan_ratio:.3f}%)")
+                result["issues"].append(f"Features with NaN values (zero tolerance): {', '.join(nan_details)}")
             
             # Check for infinite values (zero tolerance)
             infinite_features = []
+            infinite_details = []
             for col in df.select_dtypes(include=[np.number]).columns:
                 infinite_count = np.isinf(df[col]).sum()
                 if infinite_count > 0:  # Any infinite values
                     infinite_features.append(col)
+                    infinite_ratio = infinite_count / len(df) * 100
+                    infinite_details.append(f"{col}({infinite_count} infinite, {infinite_ratio:.3f}%)")
             
             result["infinite_features"] = infinite_features
             
             if infinite_features:
-                result["issues"].append(f"Features with infinite values (zero tolerance): {infinite_features}")
+                result["issues"].append(f"Features with infinite values (zero tolerance): {', '.join(infinite_details)}")
             
             # Check for constant features (2+ unique values, except boolean)
             constant_features = []
+            constant_details = []
             for col in df.columns:
                 unique_count = df[col].nunique()
                 # Allow boolean features (2 unique values) and binary features
                 if unique_count < self.min_unique_values and not self._is_boolean_feature(df[col]):
                     constant_features.append(col)
+                    unique_values = df[col].dropna().unique()
+                    constant_details.append(f"{col}({unique_count} unique: {unique_values})")
             
             result["constant_features"] = constant_features
             
             if constant_features:
-                result["issues"].append(f"Constant features found: {constant_features}")
+                result["issues"].append(f"Constant features found: {', '.join(constant_details)}")
             
             # Check for high correlation
             numeric_cols = df.select_dtypes(include=[np.number]).columns
             if len(numeric_cols) > 1:
                 corr_matrix = df[numeric_cols].corr().abs()
                 high_corr_pairs = []
+                high_corr_details = []
                 
                 for i in range(len(corr_matrix.columns)):
                     for j in range(i + 1, len(corr_matrix.columns)):
-                        if corr_matrix.iloc[i, j] > self.max_correlation_threshold:
-                            high_corr_pairs.append((corr_matrix.columns[i], corr_matrix.columns[j]))
+                        corr_value = corr_matrix.iloc[i, j]
+                        if corr_value > self.max_correlation_threshold:
+                            pair = (corr_matrix.columns[i], corr_matrix.columns[j])
+                            high_corr_pairs.append(pair)
+                            high_corr_details.append(f"{pair[0]}↔{pair[1]}({corr_value:.3f})")
                 
                 result["high_correlation_pairs"] = high_corr_pairs
                 
                 if high_corr_pairs:
-                    result["issues"].append(f"Highly correlated feature pairs: {high_corr_pairs}")
+                    result["issues"].append(f"Highly correlated feature pairs: {', '.join(high_corr_details)}")
             
             # Calculate relevant features
             problematic_features = set(nan_features + infinite_features + constant_features)
@@ -619,46 +644,66 @@ class ComprehensiveDataQualityValidator:
         return result
     
     def _log_feature_quality_report(self, results: Dict[str, Any]) -> None:
-        """Log detailed feature quality report."""
+        """Log detailed feature quality report with comprehensive information about problematic values."""
         self.logger.info("=" * 80)
         self.logger.info("📊 STEP2 FEATURE QUALITY REPORT")
         self.logger.info("=" * 80)
         
         problematic = results["problematic_features"]
         
-        # Log NaN features
+        # Log NaN features with detailed information
         if problematic["nan_features"]:
             self.logger.warning(f"⚠️ Features with NaN values ({len(problematic['nan_features'])}):")
             for feature in problematic["nan_features"][:10]:  # Show first 10
                 self.logger.warning(f"   - {feature}")
             if len(problematic["nan_features"]) > 10:
                 self.logger.warning(f"   ... and {len(problematic['nan_features']) - 10} more")
+            
+            # Log detailed NaN statistics
+            self.logger.warning("📊 NaN Statistics:")
+            for feature in problematic["nan_features"][:5]:  # Show detailed info for first 5
+                self.logger.warning(f"   • {feature}: NaN count and percentage details available in validation results")
         
-        # Log infinite features
+        # Log infinite features with detailed information
         if problematic["infinite_features"]:
             self.logger.warning(f"⚠️ Features with infinite values ({len(problematic['infinite_features'])}):")
             for feature in problematic["infinite_features"][:10]:  # Show first 10
                 self.logger.warning(f"   - {feature}")
             if len(problematic["infinite_features"]) > 10:
                 self.logger.warning(f"   ... and {len(problematic['infinite_features']) - 10} more")
+            
+            # Log detailed infinite statistics
+            self.logger.warning("📊 Infinite Value Statistics:")
+            for feature in problematic["infinite_features"][:5]:  # Show detailed info for first 5
+                self.logger.warning(f"   • {feature}: Infinite count and percentage details available in validation results")
         
-        # Log constant features
+        # Log constant features with detailed information
         if problematic["constant_features"]:
             self.logger.warning(f"⚠️ Constant features ({len(problematic['constant_features'])}):")
             for feature in problematic["constant_features"][:10]:  # Show first 10
                 self.logger.warning(f"   - {feature}")
             if len(problematic["constant_features"]) > 10:
                 self.logger.warning(f"   ... and {len(problematic['constant_features']) - 10} more")
+            
+            # Log detailed constant feature information
+            self.logger.warning("📊 Constant Feature Details:")
+            for feature in problematic["constant_features"][:5]:  # Show detailed info for first 5
+                self.logger.warning(f"   • {feature}: Unique values and counts available in validation results")
         
-        # Log high correlation pairs
+        # Log high correlation pairs with detailed information
         if problematic["high_correlation_pairs"]:
             self.logger.warning(f"⚠️ Highly correlated feature pairs ({len(problematic['high_correlation_pairs'])}):")
             for pair in problematic["high_correlation_pairs"][:5]:  # Show first 5
                 self.logger.warning(f"   - {pair[0]} ↔ {pair[1]}")
             if len(problematic["high_correlation_pairs"]) > 5:
                 self.logger.warning(f"   ... and {len(problematic['high_correlation_pairs']) - 5} more")
+            
+            # Log detailed correlation information
+            self.logger.warning("📊 Correlation Details:")
+            for pair in problematic["high_correlation_pairs"][:3]:  # Show detailed info for first 3
+                self.logger.warning(f"   • {pair[0]} ↔ {pair[1]}: Correlation coefficient available in validation results")
         
-        # Summary
+        # Summary with detailed breakdown
         total_issues = (
             len(problematic["nan_features"]) +
             len(problematic["infinite_features"]) +
@@ -670,6 +715,12 @@ class ComprehensiveDataQualityValidator:
             self.logger.info("✅ No feature quality issues detected")
         else:
             self.logger.warning(f"⚠️ Total feature quality issues: {total_issues}")
+            self.logger.warning("📋 Issue Breakdown:")
+            self.logger.warning(f"   • NaN features: {len(problematic['nan_features'])}")
+            self.logger.warning(f"   • Infinite features: {len(problematic['infinite_features'])}")
+            self.logger.warning(f"   • Constant features: {len(problematic['constant_features'])}")
+            self.logger.warning(f"   • High correlation pairs: {len(problematic['high_correlation_pairs'])}")
+            self.logger.warning("💡 For detailed information about each problematic value, check the validation results")
         
         self.logger.info("=" * 80)
     

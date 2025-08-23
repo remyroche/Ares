@@ -11,12 +11,19 @@ This document describes the comprehensive data quality validation system impleme
 - **Data Quality Validation**: Validates DataFrame quality including NaN, infinite, and constant values
 - **Feature-Specific Validation**: Special validation for Step2 features with stricter thresholds
 - **Detailed Logging**: Comprehensive logging of all quality issues found
+  - **Detailed Problematic Value Information**: Counts, percentages, sample indices, value distributions
+  - **Issue Breakdown**: Categorized summary of all problems
+  - **Sample Data**: Shows actual problematic values and their locations
 
 ### 📊 **Quality Checks**
 - **NaN Values**: Detects and reports features with any NaN values (zero tolerance)
+  - Detailed logging includes: count, percentage, sample indices
 - **Infinite Values**: Identifies features with any infinite or negative infinite values (zero tolerance)
+  - Detailed logging includes: count, percentage, sample indices
 - **Constant Features**: Flags features with insufficient variation (2+ unique values, except boolean)
+  - Detailed logging includes: unique values, value distribution, boolean detection
 - **High Correlations**: Detects highly correlated feature pairs
+  - Detailed logging includes: correlation coefficients, sample values
 - **File Integrity**: Validates file structure and basic properties
 - **Data Structure**: Validates columns, format, index, and data types at every step
 
@@ -206,15 +213,57 @@ config = {
 | Step1_5 | **0%** | **0** | 2 (except boolean) | No | Yes |
 | Step2 | **0%** | **0** | 2 (except boolean) | Yes | Yes |
 
-## Error Handling
+## Enhanced Logging and Error Handling
 
-### Graceful Degradation
-- Validation failures don't stop the pipeline
-- Issues are logged as warnings
-- Pipeline continues with quality issues noted
-- Comprehensive reports are generated
+### 🎯 **Detailed Problematic Value Information**
 
-### Fallback Mechanisms
+The system now provides comprehensive detailed information about problematic values:
+
+#### **NaN Values Details**
+- **Count**: Exact number of NaN values per feature
+- **Percentage**: Percentage of NaN values relative to total samples
+- **Sample Indices**: First 10 indices where NaN values occur
+- **Example**: `feature_name(5 NaN, 0.012%) - Sample indices: [100, 200, 300, 400, 500]`
+
+#### **Infinite Values Details**
+- **Count**: Exact number of infinite values per feature
+- **Percentage**: Percentage of infinite values relative to total samples
+- **Sample Indices**: First 10 indices where infinite values occur
+- **Example**: `feature_name(2 infinite, 0.005%) - Sample indices: [150, 250]`
+
+#### **Constant Features Details**
+- **Unique Count**: Number of unique values
+- **Unique Values**: Actual unique values found
+- **Value Distribution**: Frequency of each value
+- **Boolean Detection**: Whether the feature is correctly identified as boolean
+- **Example**: `feature_name(1 unique: [0.5]) - Value distribution: {0.5: 1000}`
+
+#### **High Correlation Details**
+- **Correlation Coefficient**: Exact correlation value
+- **Sample Values**: First 5 values from both features to show relationship
+- **Example**: `feature1↔feature2(0.987) - Sample values: [1.2, 1.3, 1.1], [2.4, 2.6, 2.2]`
+
+### 📋 **Issue Breakdown Summary**
+
+The system provides categorized summaries:
+```
+📋 Issue Breakdown:
+   • NaN features: 3
+   • Infinite features: 1
+   • Constant features: 2
+   • High correlation pairs: 5
+```
+
+### 💡 **Graceful Degradation**
+
+The system implements graceful degradation:
+- Validation failures don't stop the pipeline execution
+- All issues are logged with detailed information
+- Warnings are issued for quality problems
+- The pipeline continues with data quality issues noted
+- Detailed validation results are available for analysis
+
+### 🔄 **Fallback Mechanisms**
 - Legacy validation systems are preserved
 - Multiple validation layers for robustness
 - Detailed error reporting and logging

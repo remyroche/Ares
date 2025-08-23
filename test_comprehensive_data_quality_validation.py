@@ -56,13 +56,13 @@ def create_test_data_with_issues():
     
     df = pd.DataFrame(data)
     
-    # Add quality issues for demonstration (using new stricter thresholds)
+    # Add quality issues for demonstration (using zero tolerance)
     
-    # 1. NaN values (0.1% threshold = ~4.3 values for 43200 samples)
-    df.loc[100:105, 'open'] = np.nan  # 6 NaN values (will trigger)
-    df.loc[200:202, 'high'] = np.nan  # 3 NaN values (will trigger)
+    # 1. NaN values (zero tolerance - any NaN will trigger)
+    df.loc[100, 'open'] = np.nan  # 1 NaN value (will trigger)
+    df.loc[200, 'high'] = np.nan  # 1 NaN value (will trigger)
     
-    # 2. Infinite values (1 value threshold)
+    # 2. Infinite values (zero tolerance - any infinite will trigger)
     df.loc[300, 'low'] = np.inf  # 1 infinite value (will trigger)
     df.loc[320, 'close'] = -np.inf  # 1 negative infinite value (will trigger)
     
@@ -101,13 +101,13 @@ def create_test_feature_data():
     
     df = pd.DataFrame(features)
     
-    # Add feature-specific issues (using new stricter thresholds)
+    # Add feature-specific issues (using zero tolerance)
     
-    # 1. NaN values in features (0.1% threshold)
-    df.loc[100:105, 'rsi'] = np.nan  # 6 NaN values (will trigger)
-    df.loc[200:202, 'macd'] = np.nan  # 3 NaN values (will trigger)
+    # 1. NaN values in features (zero tolerance - any NaN will trigger)
+    df.loc[100, 'rsi'] = np.nan  # 1 NaN value (will trigger)
+    df.loc[200, 'macd'] = np.nan  # 1 NaN value (will trigger)
     
-    # 2. Infinite values in features (1 value threshold)
+    # 2. Infinite values in features (zero tolerance - any infinite will trigger)
     df.loc[300, 'bollinger_upper'] = np.inf  # 1 infinite value (will trigger)
     df.loc[310, 'bollinger_lower'] = -np.inf  # 1 negative infinite value (will trigger)
     
@@ -306,10 +306,10 @@ async def test_comprehensive_validator():
     print("🧪 TESTING COMPREHENSIVE VALIDATOR")
     print("="*80)
     
-    # Create validator instance with updated thresholds
+    # Create validator instance with zero tolerance thresholds
     validator = ComprehensiveDataQualityValidator({
-        "max_nan_ratio": 0.001,  # 0.1% NaN
-        "max_infinite_count": 1,  # 1 infinite value
+        "max_nan_ratio": 0.0,  # 0% NaN (zero tolerance)
+        "max_infinite_count": 0,  # 0 infinite values (zero tolerance)
         "min_unique_values": 2,   # 2+ unique values (except boolean)
         "min_feature_count": 5,
         "max_correlation_threshold": 0.95

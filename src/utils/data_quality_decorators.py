@@ -25,8 +25,8 @@ def validate_data_quality_at_step(
     check_infinite: bool = True,
     check_constant: bool = True,
     check_correlation: bool = True,
-    max_nan_ratio: float = 0.001,  # 0.1% NaN
-    max_infinite_count: int = 1,   # 1 infinite value
+    max_nan_ratio: float = 0.0,    # 0% NaN (zero tolerance)
+    max_infinite_count: int = 0,   # 0 infinite values (zero tolerance)
     min_unique_values: int = 2,
     max_correlation_threshold: float = 0.95,
     fail_on_issues: bool = False,
@@ -176,23 +176,23 @@ def _validate_dataframe_quality(
         issues.append(f"{df_name}: DataFrame is empty")
         return issues
     
-    # Check for NaN values (0.1% threshold)
+    # Check for NaN values (zero tolerance)
     if check_nan:
         nan_counts = df.isnull().sum()
-        high_nan_features = nan_counts[nan_counts > len(df) * max_nan_ratio].index.tolist()
-        if high_nan_features:
-            issues.append(f"{df_name}: Features with >{max_nan_ratio*100}% NaN values: {high_nan_features}")
+        nan_features = nan_counts[nan_counts > 0].index.tolist()  # Any NaN values
+        if nan_features:
+            issues.append(f"{df_name}: Features with NaN values (zero tolerance): {nan_features}")
     
-    # Check for infinite values (1 value threshold)
+    # Check for infinite values (zero tolerance)
     if check_infinite:
         infinite_features = []
         for col in df.select_dtypes(include=[np.number]).columns:
             infinite_count = np.isinf(df[col]).sum()
-            if infinite_count > max_infinite_count:
+            if infinite_count > 0:  # Any infinite values
                 infinite_features.append(col)
         
         if infinite_features:
-            issues.append(f"{df_name}: Features with >{max_infinite_count} infinite values: {infinite_features}")
+            issues.append(f"{df_name}: Features with infinite values (zero tolerance): {infinite_features}")
     
     # Check for constant features (2+ unique values, except boolean)
     if check_constant:
@@ -302,8 +302,8 @@ def validate_step2_quality(func: Callable) -> Callable:
         check_infinite=True,
         check_constant=True,  # Features should not be constant
         check_correlation=True,  # Feature correlation is important
-        max_nan_ratio=0.001,  # 0.1% NaN (stricter for features)
-        max_infinite_count=1,  # 1 infinite value
+        max_nan_ratio=0.0,  # 0% NaN (zero tolerance)
+        max_infinite_count=0,  # 0 infinite values (zero tolerance)
         min_unique_values=2,  # 2+ unique values (except boolean)
         max_correlation_threshold=0.95,
         fail_on_issues=False,
@@ -325,12 +325,11 @@ def log_feature_quality_issues(df: pd.DataFrame, df_name: str, logger: Optional[
     
     logger.info(f"🔍 Checking feature quality for {df_name}...")
     
-    # Check for NaN values (0.1% threshold)
+    # Check for NaN values (zero tolerance)
     nan_counts = df.isnull().sum()
-    nan_threshold = len(df) * 0.001  # 0.1%
-    nan_features = nan_counts[nan_counts > nan_threshold].index.tolist()
+    nan_features = nan_counts[nan_counts > 0].index.tolist()  # Any NaN values
     if nan_features:
-        logger.warning(f"⚠️ {df_name}: Features with >0.1% NaN values ({len(nan_features)}):")
+        logger.warning(f"⚠️ {df_name}: Features with NaN values (zero tolerance) ({len(nan_features)}):")
         for feature in nan_features[:10]:  # Show first 10
             nan_count = nan_counts[feature]
             nan_ratio = nan_count / len(df) * 100
@@ -338,15 +337,15 @@ def log_feature_quality_issues(df: pd.DataFrame, df_name: str, logger: Optional[
         if len(nan_features) > 10:
             logger.warning(f"   ... and {len(nan_features) - 10} more features with NaN values")
     
-    # Check for infinite values (1 value threshold)
+    # Check for infinite values (zero tolerance)
     infinite_features = []
     for col in df.select_dtypes(include=[np.number]).columns:
         infinite_count = np.isinf(df[col]).sum()
-        if infinite_count > 1:  # More than 1 infinite value
+        if infinite_count > 0:  # Any infinite values
             infinite_features.append((col, infinite_count))
     
     if infinite_features:
-        logger.warning(f"⚠️ {df_name}: Features with >1 infinite values ({len(infinite_features)}):")
+        logger.warning(f"⚠️ {df_name}: Features with infinite values (zero tolerance) ({len(infinite_features)}):")
         for feature, count in infinite_features[:10]:  # Show first 10
             logger.warning(f"   - {feature}: {count} infinite values")
         if len(infinite_features) > 10:
@@ -424,18 +423,17 @@ def quick_validate_features(df: pd.DataFrame, df_name: str = "DataFrame") -> Dic
         }
     }
     
-    # Check for NaN values (0.1% threshold)
+    # Check for NaN values (zero tolerance)
     nan_counts = df.isnull().sum()
-    nan_threshold = len(df) * 0.001  # 0.1%
-    nan_features = nan_counts[nan_counts > nan_threshold].index.tolist()
+    nan_features = nan_counts[nan_counts > 0].index.tolist()  # Any NaN values
     results["issues"]["nan_features"] = nan_features
     results["summary"]["nan_count"] = len(nan_features)
     
-    # Check for infinite values (1 value threshold)
+    # Check for infinite values (zero tolerance)
     infinite_features = []
     for col in df.select_dtypes(include=[np.number]).columns:
         infinite_count = np.isinf(df[col]).sum()
-        if infinite_count > 1:  # More than 1 infinite value
+        if infinite_count > 0:  # Any infinite values
             infinite_features.append(col)
     results["issues"]["infinite_features"] = infinite_features
     results["summary"]["infinite_count"] = len(infinite_features)

@@ -25,6 +25,8 @@ The Ares trading system now features a centralized training mode configuration s
 - Multi-timeframe Training: Disabled
 - Adaptive Training: Disabled
 
+**Minimum Requirements**: All modes enforce a minimum of 3 trials for both max_trials and n_trials to ensure meaningful training results.
+
 ### 2. Blank Mode (180 days) - 10% Intensity
 - **Purpose**: Moderate testing and validation
 - **Lookback Period**: 180 days (6 months)
@@ -37,8 +39,8 @@ The Ares trading system now features a centralized training mode configuration s
   - Experimentation
 
 **Configuration**:
-- Max Trials: 20 (10% of 200)
-- N Trials: 10 (10% of 100)
+- Max Trials: 20 (10% of 200, minimum 3)
+- N Trials: 10 (10% of 100, minimum 3)
 - Advanced Model Training: Enabled
 - Ensemble Training: Enabled
 - Multi-timeframe Training: Disabled
@@ -56,8 +58,8 @@ The Ares trading system now features a centralized training mode configuration s
   - Maximum accuracy requirements
 
 **Configuration**:
-- Max Trials: 200 (100% intensity)
-- N Trials: 100 (100% intensity)
+- Max Trials: 200 (100% intensity, minimum 3)
+- N Trials: 100 (100% intensity, minimum 3)
 - Advanced Model Training: Enabled
 - Ensemble Training: Enabled
 - Multi-timeframe Training: Enabled

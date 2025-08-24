@@ -54,7 +54,7 @@ BLANK_MODE = TrainingModeConfig(
     description="Blank training mode for moderate testing and validation (180 days) - 10% of full intensity",
     lookback_days=180,
     max_trials=20,  # 10% of 200 = 20
-    n_trials=10,   # 10% of 100 = 10
+    n_trials=10,   # 10% of 100 = 10 (already above minimum 3)
     exclude_recent_days=2,
     enable_advanced_model_training=True,
     enable_ensemble_training=True,
@@ -232,9 +232,17 @@ def validate_mode_parameters(mode: str, **kwargs) -> bool:
         # Validate max_trials if provided
         if "max_trials" in kwargs:
             provided_max_trials = kwargs["max_trials"]
-            if provided_max_trials < 1:
+            if provided_max_trials < 3:  # Minimum 3 trials for all modes
                 return False
             if mode == "light" and provided_max_trials > 5:  # Light mode should be quick
+                return False
+        
+        # Validate n_trials if provided
+        if "n_trials" in kwargs:
+            provided_n_trials = kwargs["n_trials"]
+            if provided_n_trials < 3:  # Minimum 3 trials for all modes
+                return False
+            if mode == "light" and provided_n_trials > 5:  # Light mode should be quick
                 return False
         
         return True

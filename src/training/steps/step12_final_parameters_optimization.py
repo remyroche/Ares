@@ -401,8 +401,10 @@ class FinalParametersOptimizationStep:
             if prev_params:
                 study.enqueue_trial(prev_params)
 
-            self.logger.info("Step12: Optimizing confidence thresholds (n_trials=40)")
-            study.optimize(objective, n_trials=40)
+            # Get trials from training input or use default
+            confidence_trials = self.training_input.get("confidence_threshold_trials", 40)
+            self.logger.info(f"Step12: Optimizing confidence thresholds (n_trials={confidence_trials})")
+            study.optimize(objective, n_trials=confidence_trials)
 
             pareto_front = study.best_trials
             best_solution = self._select_best_pareto_solution(pareto_front)
@@ -479,8 +481,10 @@ class FinalParametersOptimizationStep:
                 )
             if prev_params:
                 study.enqueue_trial(prev_params)
-            self.logger.info("Step12: Optimizing volatility parameters (n_trials=50)")
-            study.optimize(objective, n_trials=50)
+            # Get trials from training input or use default
+            volatility_trials = self.training_input.get("volatility_trials", 50)
+            self.logger.info(f"Step12: Optimizing volatility parameters (n_trials={volatility_trials})")
+            study.optimize(objective, n_trials=volatility_trials)
 
             return {
                 "optimized_parameters": study.best_params,
@@ -568,10 +572,12 @@ class FinalParametersOptimizationStep:
                 )
             if prev_params:
                 study.enqueue_trial(prev_params)
+            # Get trials from training input or use default
+            position_sizing_trials = self.training_input.get("position_sizing_trials", 60)
             self.logger.info(
-                "Step12: Optimizing position sizing parameters (n_trials=60)"
+                f"Step12: Optimizing position sizing parameters (n_trials={position_sizing_trials})"
             )
-            study.optimize(objective, n_trials=60)
+            study.optimize(objective, n_trials=position_sizing_trials)
 
             return {
                 "optimized_parameters": study.best_params,
@@ -654,10 +660,12 @@ class FinalParametersOptimizationStep:
                 )
             if prev_params:
                 study.enqueue_trial(prev_params)
+            # Get trials from training input or use default
+            risk_management_trials = self.training_input.get("risk_management_trials", 50)
             self.logger.info(
-                "Step12: Optimizing risk management parameters (n_trials=50)"
+                f"Step12: Optimizing risk management parameters (n_trials={risk_management_trials})"
             )
-            study.optimize(objective, n_trials=50)
+            study.optimize(objective, n_trials=risk_management_trials)
 
             return {
                 "optimized_parameters": study.best_params,
@@ -727,8 +735,10 @@ class FinalParametersOptimizationStep:
                 )
             if prev_params:
                 study.enqueue_trial(prev_params)
-            self.logger.info("Step12: Optimizing ensemble parameters (n_trials=40)")
-            study.optimize(objective, n_trials=40)
+            # Get trials from training input or use default
+            ensemble_trials = self.training_input.get("ensemble_trials", 40)
+            self.logger.info(f"Step12: Optimizing ensemble parameters (n_trials={ensemble_trials})")
+            study.optimize(objective, n_trials=ensemble_trials)
 
             return {
                 "optimized_parameters": study.best_params,
@@ -801,9 +811,12 @@ class FinalParametersOptimizationStep:
             if prev_params:
                 study.enqueue_trial(prev_params)
             self.logger.info(
-                "Step12: Optimizing regime-specific parameters (n_trials=30)"
+                            # Get trials from training input or use default
+            regime_specific_trials = self.training_input.get("regime_specific_trials", 30)
+            self.logger.info(
+                f"Step12: Optimizing regime-specific parameters (n_trials={regime_specific_trials})"
             )
-            study.optimize(objective, n_trials=30)
+            study.optimize(objective, n_trials=regime_specific_trials)
 
             return {
                 "optimized_parameters": study.best_params,
@@ -880,8 +893,10 @@ class FinalParametersOptimizationStep:
                 )
             if prev_params:
                 study.enqueue_trial(prev_params)
-            self.logger.info("Step12: Optimizing timing parameters (n_trials=30)")
-            study.optimize(objective, n_trials=30)
+            # Get trials from training input or use default
+            timing_trials = self.training_input.get("timing_trials", 30)
+            self.logger.info(f"Step12: Optimizing timing parameters (n_trials={timing_trials})")
+            study.optimize(objective, n_trials=timing_trials)
 
             return {
                 "optimized_parameters": study.best_params,

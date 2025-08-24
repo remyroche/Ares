@@ -173,6 +173,15 @@ class StepOrchestrator:
                 if not setup_success:
                     return False
 
+            # Determine training mode and apply mode-specific parameters
+            training_mode = "blank" if os.getenv("BLANK_TRAINING_MODE", "0") == "1" else "full"
+            
+            # Apply mode-specific parameters to the configuration
+            config = apply_mode_parameters_to_config(config, training_mode, step_name)
+            
+            # Get step-specific parameters
+            step_params = get_step_specific_parameters(training_mode, step_name)
+            
             # Prepare training input for enhanced training manager
             training_input = {
                 "symbol": self.symbol,
@@ -181,9 +190,7 @@ class StepOrchestrator:
                 "data_dir": self.data_dir,
                 "start_step": step_name,
                 "force_rerun": force_rerun,
-                # Let the enhanced training manager determine lookback_days based on its configuration
-                # The enhanced training manager will use the correct lookback_days from its config
-                "exclude_recent_days": 2,  # Always exclude the last 2 days for both blank and full mode
+                **step_params,  # Include all step-specific parameters
             }
 
             # Execute the enhanced training pipeline
@@ -286,16 +293,23 @@ class StepOrchestrator:
         # Prepare training input for enhanced training manager
         # Use proper lookback_days based on training mode
         from src.config.constants import (
-            BLANK_TRAINING_LOOKBACK_DAYS,
-            FULL_TRAINING_LOOKBACK_DAYS,
-        )
+    BLANK_TRAINING_LOOKBACK_DAYS,
+    FULL_TRAINING_LOOKBACK_DAYS,
+)
+from src.config.training_modes import (
+    get_step_specific_parameters,
+    apply_mode_parameters_to_config,
+)
 
-        # Determine lookback_days based on training mode
-        if os.getenv("BLANK_TRAINING_MODE", "0") == "1":
-            lookback_days = BLANK_TRAINING_LOOKBACK_DAYS  # 180 days for blank mode
-        else:
-            lookback_days = FULL_TRAINING_LOOKBACK_DAYS  # 2 years for full mode
-
+        # Determine training mode and apply mode-specific parameters
+        training_mode = "blank" if os.getenv("BLANK_TRAINING_MODE", "0") == "1" else "full"
+        
+        # Apply mode-specific parameters to the configuration
+        config = apply_mode_parameters_to_config(config, training_mode, start_step)
+        
+        # Get step-specific parameters
+        step_params = get_step_specific_parameters(training_mode, start_step)
+        
         training_input = {
             "symbol": self.symbol,
             "exchange": self.exchange,
@@ -303,8 +317,7 @@ class StepOrchestrator:
             "data_dir": self.data_dir,
             "start_step": start_step,
             "force_rerun": force_rerun,
-            "lookback_days": lookback_days,
-            "exclude_recent_days": 2,  # Always exclude the last 2 days for both blank and full mode
+            **step_params,  # Include all step-specific parameters
         }
 
         # Execute the enhanced training pipeline

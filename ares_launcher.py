@@ -24,8 +24,11 @@ Usage:
     # Enhanced model training with efficiency optimizations (uses existing data)
     python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE
 
-    # Short blank training (30 days instead of 60 for faster testing)
-    python ares_launcher.py short-blank --symbol ETHUSDT --exchange BINANCE
+    # Light training (30 days for quick testing and development)
+    python ares_launcher.py light --symbol ETHUSDT --exchange BINANCE
+
+    # Show available training modes and their configurations
+    python ares_launcher.py modes
 
     # Start from step2 with existing data (no new downloads)
     python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE
@@ -83,6 +86,16 @@ from src.config.constants import (
     FULL_TRAINING_LOOKBACK_DAYS,
     BLANK_TRAINING_LOOKBACK_DAYS,
     SHORT_BLANK_LOOKBACK_DAYS,
+)
+from src.config.training_modes import (
+    get_training_mode_config,
+    get_training_config_dict,
+    get_training_input_dict,
+    list_available_modes,
+    validate_mode_parameters,
+    get_mode_recommendations,
+    get_intensity_percentage,
+    get_intensity_comparison,
 )
 from src.utils.comprehensive_logger import (
     setup_comprehensive_logging,
@@ -364,24 +377,50 @@ class AresLauncher:
         symbol: str,
         exchange: str,
         training_mode: str,
-        lookback_days: int,
+        lookback_days: int = None,
         with_gui: bool = False,
     ):
-        """Run unified training with enhanced training manager."""
-        # Set environment variable for training mode
+        """Run unified training with enhanced training manager using centralized mode configuration."""
+        # Get the training mode configuration
+        try:
+            mode_config = get_training_mode_config(training_mode)
+        except ValueError as e:
+            self.logger.error(f"❌ Invalid training mode: {e}")
+            print(f"❌ Invalid training mode: {e}")
+            return False
+
+        # Use the mode's default lookback_days if not provided
+        if lookback_days is None:
+            lookback_days = mode_config.lookback_days
+
+        # Set environment variables for training mode
         import os
 
-        if training_mode == "blank":
-            os.environ["BLANK_TRAINING_MODE"] = "1"
+        if training_mode == "light":
+            os.environ["LIGHT_TRAINING_MODE"] = "1"
+            os.environ["BLANK_TRAINING_MODE"] = "0"
             os.environ["FULL_TRAINING_MODE"] = "0"
-            print("🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1")
+            print(f"💡 LIGHT TRAINING MODE: Set LIGHT_TRAINING_MODE=1")
+        elif training_mode == "blank":
+            os.environ["BLANK_TRAINING_MODE"] = "1"
+            os.environ["LIGHT_TRAINING_MODE"] = "0"
+            os.environ["FULL_TRAINING_MODE"] = "0"
+            print(f"🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1")
         elif training_mode == "full":
             os.environ["FULL_TRAINING_MODE"] = "1"
+            os.environ["LIGHT_TRAINING_MODE"] = "0"
             os.environ["BLANK_TRAINING_MODE"] = "0"
-            print("🚀 FULL TRAINING MODE: Set FULL_TRAINING_MODE=1")
+            print(f"🚀 FULL TRAINING MODE: Set FULL_TRAINING_MODE=1")
 
         mode_display = f"{training_mode} training"
+        intensity_pct = f"{get_intensity_percentage(training_mode)*100:.0f}%"
         print(f"🚀 Starting {mode_display} for {symbol} on {exchange}")
+        print(f"📊 Mode Configuration ({intensity_pct} of full intensity):")
+        print(f"   • Lookback Days: {lookback_days}")
+        print(f"   • Max Trials: {mode_config.max_trials}")
+        print(f"   • N Trials: {mode_config.n_trials}")
+        print(f"   • Computational Intensity: {mode_config.computational_intensity}")
+        print(f"   • Estimated Duration: {mode_config.estimated_duration_minutes} minutes")
         self.logger.info(f"🚀 Starting {mode_display} for {symbol} on {exchange}")
 
         @handle_errors(
@@ -407,6 +446,9 @@ class AresLauncher:
             logger.info(f"🏢 Exchange: {exchange}")
             logger.info(f"📊 Training Mode: {training_mode}")
             logger.info(f"📈 Lookback Days: {lookback_days}")
+            logger.info(f"⚙️ Max Trials: {mode_config.max_trials}")
+            logger.info(f"⚙️ N Trials: {mode_config.n_trials}")
+            logger.info(f"⚙️ Computational Intensity: {mode_config.computational_intensity}")
             print("=" * 80)
             print("🚀 ENHANCED TRAINING PIPELINE START")
             print("=" * 80)
@@ -435,34 +477,14 @@ class AresLauncher:
                 logger.info("🤖 STEP 1: Initializing Enhanced Training Manager...")
                 print("   🤖 Initializing enhanced training manager...")
 
-                # Set training parameters based on mode
-                if training_mode == "blank":
-                    max_trials = 3
-                    n_trials = 5
-                elif training_mode == "full":
-                    max_trials = 200
-                    n_trials = 100
-                else:
-                    max_trials = 200
-                    n_trials = 100
-
-                training_config = {
-                    "enhanced_training_manager": {
-                        "enhanced_training_interval": 3600,
-                        "max_enhanced_training_history": 100,
-                        "enable_advanced_model_training": True,
-                        "enable_ensemble_training": True,
-                        "enable_multi_timeframe_training": True,
-                        "enable_adaptive_training": True,
-                        # Parameters based on training mode
-                        "blank_training_mode": training_mode == "blank",
-                        "full_training_mode": training_mode == "full",
-                        "max_trials": max_trials,
-                        "n_trials": n_trials,
-                        "lookback_days": lookback_days,
-                    },
-                    "database": default_config["database"],
-                }
+                # Get training configuration from centralized mode configuration
+                training_config = get_training_config_dict(training_mode)
+                training_config["database"] = default_config["database"]
+                
+                # Override lookback_days if provided
+                if lookback_days != mode_config.lookback_days:
+                    training_config["enhanced_training_manager"]["lookback_days"] = lookback_days
+                    logger.info(f"📈 Overriding lookback_days to: {lookback_days}")
 
                 training_manager = EnhancedTrainingManager(training_config)
                 logger.info("✅ Enhanced training manager initialized successfully")
@@ -478,18 +500,14 @@ class AresLauncher:
                     print("❌ Failed to initialize enhanced training manager")
                     return False
 
-                # Prepare training input
-                training_input = {
-                    "enhanced_training_type": f"{training_mode}_training",
-                    "model_architecture": "enhanced_ensemble",
-                    "timestamp": datetime.now().isoformat(),
-                    "symbol": symbol,
-                    "exchange": exchange,
-                    "timeframe": "1m",
-                    "lookback_days": lookback_days,
-                    "training_mode": training_mode,
-                    "exclude_recent_days": 2,  # Always exclude the last 2 days for both blank and full mode
-                }
+                # Prepare training input using centralized configuration
+                training_input = get_training_input_dict(
+                    mode=training_mode,
+                    symbol=symbol,
+                    exchange=exchange,
+                    timestamp=datetime.now().isoformat(),
+                    lookback_days=lookback_days,
+                )
 
                 # Execute the enhanced training
                 success = await training_manager.execute_enhanced_training(
@@ -506,6 +524,7 @@ class AresLauncher:
                     logger.info(f"🎯 Symbol: {symbol}")
                     logger.info(f"🏢 Exchange: {exchange}")
                     logger.info(f"📊 Training Mode: {training_mode}")
+                    logger.info(f"📈 Lookback Days: {lookback_days}")
                     print("=" * 80)
                     print("🎉 ENHANCED TRAINING PIPELINE COMPLETED SUCCESSFULLY")
                     print("=" * 80)
@@ -568,30 +587,96 @@ class AresLauncher:
             symbol=symbol,
             exchange=exchange,
             training_mode="blank",
-            lookback_days=BLANK_TRAINING_LOOKBACK_DAYS,  # 180 days for blank training
             with_gui=with_gui,
         )
 
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="run_short_blank_training",
+        context="run_light_training",
     )
-    def run_short_blank_training(
+    def run_light_training(
         self,
         symbol: str,
         exchange: str,
         with_gui: bool = False,
     ):
-        """Run short blank training using unified training method with 30 days."""
-        # Short blank training uses only 30 days for very quick testing
+        """Run light training using unified training method with 30 days."""
+        # Light training uses only 30 days for very quick testing
         return self._run_unified_training(
             symbol=symbol,
             exchange=exchange,
-            training_mode="blank",
-            lookback_days=SHORT_BLANK_LOOKBACK_DAYS,  # 30 days for short blank training
+            training_mode="light",
             with_gui=with_gui,
         )
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="show_training_modes",
+    )
+    def show_training_modes(self):
+        """Display available training modes and their configurations."""
+        print("=" * 80)
+        print("🎯 AVAILABLE TRAINING MODES")
+        print("=" * 80)
+        
+        # Show intensity comparison table
+        print("\n📊 INTENSITY COMPARISON")
+        print("-" * 80)
+        comparison = get_intensity_comparison()
+        
+        # Print header
+        print(f"{'Mode':<8} {'Intensity':<12} {'Max Trials':<12} {'N Trials':<10} {'Duration':<10} {'Lookback':<10}")
+        print("-" * 80)
+        
+        for mode, data in comparison.items():
+            intensity_pct = f"{data['intensity_percentage']*100:.0f}%"
+            print(f"{mode:<8} {intensity_pct:<12} {data['max_trials']:<12} {data['n_trials']:<10} {data['estimated_duration_minutes']:<10}min {data['lookback_days']:<10}days")
+        
+        print("\n" + "=" * 80)
+        print("📋 DETAILED MODE CONFIGURATIONS")
+        print("=" * 80)
+        
+        modes = list_available_modes()
+        recommendations = get_mode_recommendations()
+        
+        for mode_name, description in modes.items():
+            try:
+                config = get_training_mode_config(mode_name)
+                recommendation = recommendations.get(mode_name, "No specific recommendation available.")
+                intensity_pct = f"{get_intensity_percentage(mode_name)*100:.0f}%"
+                
+                print(f"\n📊 {mode_name.upper()} MODE ({intensity_pct} of full intensity)")
+                print(f"   Description: {description}")
+                print(f"   Lookback Days: {config.lookback_days}")
+                print(f"   Max Trials: {config.max_trials}")
+                print(f"   N Trials: {config.n_trials}")
+                print(f"   Exclude Recent Days: {config.exclude_recent_days}")
+                print(f"   Min Data Points: {config.min_data_points}")
+                print(f"   Computational Intensity: {config.computational_intensity}")
+                print(f"   Estimated Duration: {config.estimated_duration_minutes} minutes")
+                print(f"   Advanced Model Training: {'✅' if config.enable_advanced_model_training else '❌'}")
+                print(f"   Ensemble Training: {'✅' if config.enable_ensemble_training else '❌'}")
+                print(f"   Multi-timeframe Training: {'✅' if config.enable_multi_timeframe_training else '❌'}")
+                print(f"   Adaptive Training: {'✅' if config.enable_adaptive_training else '❌'}")
+                print(f"   Recommendation: {recommendation}")
+                
+            except ValueError as e:
+                print(f"\n❌ Error loading {mode_name} mode: {e}")
+        
+        print("\n" + "=" * 80)
+        print("💡 USAGE EXAMPLES")
+        print("=" * 80)
+        print("  python ares_launcher.py light --symbol ETHUSDT --exchange BINANCE")
+        print("  python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE")
+        print("  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE")
+        print("  python ares_launcher.py light --symbol ETHUSDT --exchange BINANCE --lookback-days 15")
+        print("  python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --lookback-days 90")
+        print("  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --lookback-days 365")
+        print("=" * 80)
+        
+        return True
 
     @handle_errors(
         exceptions=(Exception,),
@@ -610,7 +695,6 @@ class AresLauncher:
             symbol=symbol,
             exchange=exchange,
             training_mode="full",
-            lookback_days=FULL_TRAINING_LOOKBACK_DAYS,  # 2 years for full training
             with_gui=with_gui,
         )
 
@@ -1911,7 +1995,7 @@ Examples:
   python ares_launcher.py paper --symbol ETHUSDT --exchange BINANCE
   python ares_launcher.py backtest --symbol ETHUSDT --exchange BINANCE --gui
   python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --gui
-  python ares_launcher.py short-blank --symbol ETHUSDT --exchange BINANCE
+  python ares_launcher.py light --symbol ETHUSDT --exchange BINANCE
       python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step4_regime_data_splitting
     python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE  # Start from step2 with existing data
     python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE --step step2_feature_engineering  # Specific step2
@@ -1953,8 +2037,8 @@ Examples:
             "live",
             "portfolio",
             "gui",
+            "light",
             "blank",
-            "short-blank",
             "step2",  # New command to start from step2 with existing data
             "full",
             "multi-timeframe",
@@ -1962,6 +2046,7 @@ Examples:
             "regime",
             "precompute",
             "resume",
+            "modes",  # Show available training modes
         ],
         help="The command to execute",
     )
@@ -2054,6 +2139,12 @@ Examples:
         help="[Deprecated] Use --force instead. Force rerun of completed steps. Not available for 'load' command.",
     )
 
+    parser.add_argument(
+        "--lookback-days",
+        type=int,
+        help="Override the default lookback period for the training mode (in days). Use with caution.",
+    )
+
     return parser.parse_args()
 
 
@@ -2081,8 +2172,8 @@ def validate_arguments(args: argparse.Namespace) -> None:
         "backtest",
         # "model_trainer",  # REMOVED: Use blank command with step5_hmm_based_training instead
         "live",
+        "light",
         "blank",
-        "short-blank",
         "full",
         "multi-timeframe",
         "load",
@@ -2133,17 +2224,18 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             args.exchange,
             with_gui=args.gui,
         ),
-        "blank": lambda: launcher.run_step_based_training(
+        "blank": lambda: launcher._run_unified_training(
             args.symbol,
             args.exchange,
-            start_step=normalized_step
-            or "step2_processing_labeling_feature_engineering",
-            force_rerun=force_flag,
+            training_mode="blank",
+            lookback_days=getattr(args, "lookback_days", None),
             with_gui=args.gui,
         ),
-        "short-blank": lambda: launcher.run_short_blank_training(
+        "light": lambda: launcher._run_unified_training(
             args.symbol,
             args.exchange,
+            training_mode="light",
+            lookback_days=getattr(args, "lookback_days", None),
             with_gui=args.gui,
         ),
         "step2": lambda: asyncio.run(
@@ -2155,12 +2247,11 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
                 with_gui=args.gui,
             ),
         ),
-        "full": lambda: launcher.run_step_based_full_training(
+        "full": lambda: launcher._run_unified_training(
             args.symbol,
             args.exchange,
-            start_step=normalized_step
-            or "step2_processing_labeling_feature_engineering",
-            force_rerun=force_flag,
+            training_mode="full",
+            lookback_days=getattr(args, "lookback_days", None),
             with_gui=args.gui,
         ),
         "live": lambda: launcher.run_live_trading(
@@ -2198,6 +2289,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             args.exchange,
             args.gui,
         ),
+        "modes": lambda: launcher.show_training_modes(),
     }
 
     if args.command in command_handlers:

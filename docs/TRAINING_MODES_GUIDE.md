@@ -120,6 +120,31 @@ All training mode configurations are centralized in `src/config/training_modes.p
 2. **Easy Customization**: Parameters can be easily modified without touching multiple files
 3. **Consistency**: Ensures all components use the same configuration
 4. **Validation**: Built-in parameter validation to prevent invalid configurations
+5. **Step-Specific Parameters**: Different pipeline steps get appropriate parameter scaling
+
+### Parameter Application Across Pipeline Steps
+
+The training mode parameters are applied across all pipeline steps with step-specific scaling:
+
+#### **Step 12: Final Parameters Optimization**
+- **Light Mode**: 3 trials for each optimization section (confidence, volatility, position sizing, etc.)
+- **Blank Mode**: 4-6 trials for each optimization section
+- **Full Mode**: 30-60 trials for each optimization section
+
+#### **Step 6: Analyst Enhancement**
+- **Light Mode**: 3-5 trials for each model type (LightGBM, XGBoost, SVM, etc.)
+- **Blank Mode**: 3-5 trials for each model type
+- **Full Mode**: 25-50 trials for each model type
+
+#### **Step 5.5: Unified Regime Intelligence**
+- **Light Mode**: 3 HPO trials, 300s timeout
+- **Blank Mode**: 2 HPO trials, 300s timeout
+- **Full Mode**: 20 HPO trials, 900s timeout
+
+#### **Validation Steps (13, 14, 15)**
+- **Light Mode**: 2-3 validation folds/runs, 3 trials
+- **Blank Mode**: 2-10 validation folds/runs, 3 trials
+- **Full Mode**: 5-100 validation folds/runs, 20-50 trials
 
 ### Configuration Structure
 
@@ -224,6 +249,38 @@ from src.config.training_modes import get_mode_recommendations
 recommendations = get_mode_recommendations()
 for mode, recommendation in recommendations.items():
     print(f"{mode}: {recommendation}")
+```
+
+#### `get_step_specific_parameters(mode: str, step_name: str) -> Dict[str, Any]`
+Get step-specific parameters for a particular pipeline step.
+
+```python
+from src.config.training_modes import get_step_specific_parameters
+
+# Get parameters for step 12 with light mode
+step_params = get_step_specific_parameters("light", "step12_final_parameters_optimization")
+print(f"Confidence trials: {step_params['confidence_threshold_trials']}")
+```
+
+#### `get_optimization_parameters(mode: str, optimization_type: str) -> Dict[str, Any]`
+Get optimization parameters for different optimization types.
+
+```python
+from src.config.training_modes import get_optimization_parameters
+
+# Get hyperparameter optimization parameters for blank mode
+opt_params = get_optimization_parameters("blank", "hyperparameter")
+print(f"Trials: {opt_params['n_trials']}, Timeout: {opt_params['timeout']}s")
+```
+
+#### `apply_mode_parameters_to_config(config: Dict[str, Any], mode: str, step_name: str) -> Dict[str, Any]`
+Apply training mode parameters to an existing configuration.
+
+```python
+from src.config.training_modes import apply_mode_parameters_to_config
+
+base_config = {"some_param": "value"}
+updated_config = apply_mode_parameters_to_config(base_config, "light", "step6_analyst_enhancement")
 ```
 
 ## Best Practices

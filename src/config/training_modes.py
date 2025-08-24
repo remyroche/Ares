@@ -323,3 +323,172 @@ def get_mode_recommendations() -> Dict[str, str]:
         "blank": "Use for moderate testing, validation, and experimentation. Balanced performance and computational requirements (10% of full intensity).",
         "full": "Use for production training, final validation, and comprehensive model development. Maximum accuracy with high computational requirements (100% intensity)."
     }
+
+
+def get_step_specific_parameters(mode: str, step_name: str) -> Dict[str, Any]:
+    """
+    Get step-specific parameters based on the training mode.
+    
+    Args:
+        mode: The training mode ("light", "blank", or "full")
+        step_name: The name of the pipeline step
+        
+    Returns:
+        Dictionary containing step-specific parameters
+    """
+    config = get_training_mode_config(mode)
+    percentage = get_intensity_percentage(mode)
+    
+    # Base parameters that apply to most steps
+    base_params = {
+        "max_trials": config.max_trials,
+        "n_trials": config.n_trials,
+        "lookback_days": config.lookback_days,
+        "exclude_recent_days": config.exclude_recent_days,
+        "min_data_points": config.min_data_points,
+        "computational_intensity": config.computational_intensity,
+        "training_mode": mode,
+        "intensity_percentage": percentage,
+    }
+    
+    # Step-specific parameter overrides
+    step_overrides = {
+        # Step 12: Final Parameters Optimization - has multiple optimization sections
+        "step12_final_parameters_optimization": {
+            "confidence_threshold_trials": max(3, int(40 * percentage)),
+            "volatility_trials": max(3, int(50 * percentage)),
+            "position_sizing_trials": max(3, int(60 * percentage)),
+            "risk_management_trials": max(3, int(50 * percentage)),
+            "ensemble_trials": max(3, int(40 * percentage)),
+            "regime_specific_trials": max(3, int(30 * percentage)),
+            "timing_trials": max(3, int(30 * percentage)),
+        },
+        # Step 6: Analyst Enhancement - has multiple model training sections
+        "step6_analyst_enhancement": {
+            "lightgbm_trials": max(3, int(50 * percentage)),
+            "xgboost_trials": max(3, int(50 * percentage)),
+            "svm_trials": max(3, int(30 * percentage)),
+            "random_forest_trials": max(3, int(40 * percentage)),
+            "neural_network_trials": max(3, int(25 * percentage)),
+        },
+        # Step 5.5: Unified Regime Intelligence
+        "step5_5_unified_regime_intelligence": {
+            "hpo_trials": max(3, int(20 * percentage)),
+            "hpo_timeout": max(300, int(900 * percentage)),  # Minimum 5 minutes
+        },
+        # Step 13: Walk Forward Validation
+        "step13_walk_forward_validation": {
+            "validation_folds": max(2, int(5 * percentage)),
+            "validation_trials": max(3, int(30 * percentage)),
+        },
+        # Step 14: Monte Carlo Validation
+        "step14_monte_carlo_validation": {
+            "monte_carlo_runs": max(10, int(100 * percentage)),
+            "validation_trials": max(3, int(25 * percentage)),
+        },
+        # Step 15: A/B Testing
+        "step15_ab_testing": {
+            "ab_test_runs": max(5, int(50 * percentage)),
+            "ab_test_trials": max(3, int(20 * percentage)),
+        },
+    }
+    
+    # Merge base parameters with step-specific overrides
+    step_params = base_params.copy()
+    if step_name in step_overrides:
+        step_params.update(step_overrides[step_name])
+    
+    return step_params
+
+
+def get_optimization_parameters(mode: str, optimization_type: str = "default") -> Dict[str, Any]:
+    """
+    Get optimization parameters based on the training mode and optimization type.
+    
+    Args:
+        mode: The training mode ("light", "blank", or "full")
+        optimization_type: The type of optimization ("default", "hyperparameter", "ensemble", etc.)
+        
+    Returns:
+        Dictionary containing optimization parameters
+    """
+    config = get_training_mode_config(mode)
+    percentage = get_intensity_percentage(mode)
+    
+    # Base optimization parameters
+    base_params = {
+        "n_trials": config.n_trials,
+        "max_trials": config.max_trials,
+        "timeout": max(300, int(1800 * percentage)),  # Minimum 5 minutes
+        "pruning_enabled": True,
+        "early_stopping_patience": max(3, int(10 * percentage)),
+    }
+    
+    # Optimization type-specific parameters
+    type_overrides = {
+        "hyperparameter": {
+            "n_trials": max(3, int(50 * percentage)),
+            "timeout": max(600, int(3600 * percentage)),  # Minimum 10 minutes
+        },
+        "ensemble": {
+            "n_trials": max(3, int(30 * percentage)),
+            "timeout": max(300, int(1800 * percentage)),
+        },
+        "confidence": {
+            "n_trials": max(3, int(40 * percentage)),
+            "timeout": max(300, int(1200 * percentage)),
+        },
+        "volatility": {
+            "n_trials": max(3, int(50 * percentage)),
+            "timeout": max(300, int(1500 * percentage)),
+        },
+        "position_sizing": {
+            "n_trials": max(3, int(60 * percentage)),
+            "timeout": max(300, int(1800 * percentage)),
+        },
+        "risk_management": {
+            "n_trials": max(3, int(50 * percentage)),
+            "timeout": max(300, int(1500 * percentage)),
+        },
+    }
+    
+    # Merge base parameters with type-specific overrides
+    opt_params = base_params.copy()
+    if optimization_type in type_overrides:
+        opt_params.update(type_overrides[optimization_type])
+    
+    return opt_params
+
+
+def apply_mode_parameters_to_config(config: Dict[str, Any], mode: str, step_name: str = None) -> Dict[str, Any]:
+    """
+    Apply training mode parameters to an existing configuration dictionary.
+    
+    Args:
+        config: The existing configuration dictionary
+        mode: The training mode ("light", "blank", or "full")
+        step_name: Optional step name for step-specific parameters
+        
+    Returns:
+        Updated configuration dictionary with mode parameters applied
+    """
+    mode_config = get_training_mode_config(mode)
+    
+    # Apply base mode parameters
+    config.update({
+        "max_trials": mode_config.max_trials,
+        "n_trials": mode_config.n_trials,
+        "lookback_days": mode_config.lookback_days,
+        "exclude_recent_days": mode_config.exclude_recent_days,
+        "min_data_points": mode_config.min_data_points,
+        "computational_intensity": mode_config.computational_intensity,
+        "training_mode": mode,
+        "intensity_percentage": get_intensity_percentage(mode),
+    })
+    
+    # Apply step-specific parameters if step name is provided
+    if step_name:
+        step_params = get_step_specific_parameters(mode, step_name)
+        config.update(step_params)
+    
+    return config

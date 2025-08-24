@@ -1769,8 +1769,12 @@ class UnifiedRegimeIntelligenceStep:
             score = 0.5 + 0.3 * (1.0 - float(params["dropout"])) + 0.2 * (float(params["d_model"]) / 512.0),
             return float(score)
 
+            # Get HPO parameters from training input or use defaults
+            hpo_trials = self.training_input.get("hpo_trials", self.n_trials)
+            hpo_timeout = self.training_input.get("hpo_timeout", self.hpo_timeout)
+            
             study.optimize(
-                objective, n_trials=self.n_trials, timeout=self.hpo_timeout, show_progress_bar=False
+                objective, n_trials=hpo_trials, timeout=hpo_timeout, show_progress_bar=False
             )
 
             best_params = study.best_params,

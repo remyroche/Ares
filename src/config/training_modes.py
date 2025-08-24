@@ -370,11 +370,18 @@ def get_step_specific_parameters(mode: str, step_name: str) -> Dict[str, Any]:
             "svm_trials": max(3, int(30 * percentage)),
             "random_forest_trials": max(3, int(40 * percentage)),
             "neural_network_trials": max(3, int(25 * percentage)),
+            "catboost_trials": max(3, int(25 * percentage)),
+            "logistic_trials": max(3, int(25 * percentage)),
         },
         # Step 5.5: Unified Regime Intelligence
         "step5_5_unified_regime_intelligence": {
             "hpo_trials": max(3, int(20 * percentage)),
             "hpo_timeout": max(300, int(900 * percentage)),  # Minimum 5 minutes
+        },
+        # SR Outcome Model Trainer
+        "sr_outcome_model_trainer": {
+            "sr_lightgbm_trials": max(3, int(30 * percentage)),
+            "sr_xgboost_trials": max(3, int(30 * percentage)),
         },
         # Step 13: Walk Forward Validation
         "step13_walk_forward_validation": {

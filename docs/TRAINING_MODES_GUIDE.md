@@ -124,22 +124,31 @@ All training mode configurations are centralized in `src/config/training_modes.p
 
 ### Parameter Application Across Pipeline Steps
 
-The training mode parameters are applied across all pipeline steps with step-specific scaling:
+The training mode parameters are applied across all pipeline steps with step-specific scaling. **All steps now use the centralized configuration instead of hardcoded values.**
 
 #### **Step 12: Final Parameters Optimization**
 - **Light Mode**: 3 trials for each optimization section (confidence, volatility, position sizing, etc.)
 - **Blank Mode**: 4-6 trials for each optimization section
 - **Full Mode**: 30-60 trials for each optimization section
+- **Parameters**: `confidence_threshold_trials`, `volatility_trials`, `position_sizing_trials`, `risk_management_trials`, `ensemble_trials`, `regime_specific_trials`, `timing_trials`
 
 #### **Step 6: Analyst Enhancement**
-- **Light Mode**: 3-5 trials for each model type (LightGBM, XGBoost, SVM, etc.)
+- **Light Mode**: 3 trials for each model type (LightGBM, XGBoost, SVM, etc.)
 - **Blank Mode**: 3-5 trials for each model type
 - **Full Mode**: 25-50 trials for each model type
+- **Parameters**: `lightgbm_trials`, `xgboost_trials`, `svm_trials`, `random_forest_trials`, `neural_network_trials`, `catboost_trials`, `logistic_trials`
 
 #### **Step 5.5: Unified Regime Intelligence**
 - **Light Mode**: 3 HPO trials, 300s timeout
-- **Blank Mode**: 2 HPO trials, 300s timeout
+- **Blank Mode**: 3 HPO trials, 300s timeout
 - **Full Mode**: 20 HPO trials, 900s timeout
+- **Parameters**: `hpo_trials`, `hpo_timeout`
+
+#### **SR Outcome Model Trainer**
+- **Light Mode**: 3 trials for each model type
+- **Blank Mode**: 3 trials for each model type
+- **Full Mode**: 30 trials for each model type
+- **Parameters**: `sr_lightgbm_trials`, `sr_xgboost_trials`
 
 #### **Validation Steps (13, 14, 15)**
 - **Light Mode**: 2-3 validation folds/runs, 3 trials
@@ -282,6 +291,37 @@ from src.config.training_modes import apply_mode_parameters_to_config
 base_config = {"some_param": "value"}
 updated_config = apply_mode_parameters_to_config(base_config, "light", "step6_analyst_enhancement")
 ```
+
+## Implementation Details
+
+### Step Modifications
+
+All pipeline steps have been updated to use the centralized training mode configuration instead of hardcoded values:
+
+#### **Modified Steps**
+1. **Step 12: Final Parameters Optimization** - All optimization sections now use configurable trials
+2. **Step 6: Analyst Enhancement** - All model types now use configurable trials  
+3. **Step 5.5: Unified Regime Intelligence** - HPO uses configurable trials and timeout
+4. **SR Outcome Model Trainer** - Both LightGBM and XGBoost use configurable trials
+
+#### **Parameter Access Pattern**
+Each step now follows this pattern to access training input parameters:
+
+```python
+# Get trials from training input or use default
+confidence_trials = self.training_input.get("confidence_threshold_trials", 40)
+study.optimize(objective, n_trials=confidence_trials)
+```
+
+#### **Fallback Mechanism**
+If a step-specific parameter is not provided in the training input, the step falls back to a reasonable default value. This ensures backward compatibility and graceful degradation.
+
+### Benefits of Step Modifications
+
+1. **True Scalability**: Light and blank modes now use only 2% and 10% of full intensity across ALL steps
+2. **Consistent Behavior**: All steps respect the training mode configuration
+3. **Maintainable**: Easy to adjust parameters for specific steps
+4. **Backward Compatible**: Steps work even without step-specific parameters
 
 ## Best Practices
 

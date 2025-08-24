@@ -664,9 +664,11 @@ class SROutcomeModelTrainer:
 
                 return float(np.mean(scores))
 
+            # Get trials from training input or use default
+            sr_lightgbm_trials = getattr(self, 'training_input', {}).get("sr_lightgbm_trials", 30)
             # Run optimization
             study = optuna.create_study(direction="maximize")
-            study.optimize(objective, n_trials=30)
+            study.optimize(objective, n_trials=sr_lightgbm_trials)
 
             best_params = study.best_params
             best_params.update(
@@ -748,9 +750,11 @@ class SROutcomeModelTrainer:
 
                 return float(np.mean(scores))
 
+            # Get trials from training input or use default
+            sr_xgboost_trials = getattr(self, 'training_input', {}).get("sr_xgboost_trials", 30)
             # Run optimization
             study = optuna.create_study(direction="maximize")
-            study.optimize(objective, n_trials=30)
+            study.optimize(objective, n_trials=sr_xgboost_trials)
 
             best_params = study.best_params
             best_params.update(

@@ -1307,9 +1307,17 @@ class AnalystEnhancementStep:
             is_blank_cfg = False,
         blank_mode = is_blank_env or is_blank_cfg,
 
-        default_trials, min(50, self.config.get("n_trials", 50))
-        # In BLANK mode, restrict trials aggressively for speed across all models
-        total_trials = 3 if blank_mode else default_trials,
+        # Get model-specific trials from training input or use defaults
+        model_trial_mapping = {
+            "lightgbm": self.training_input.get("lightgbm_trials", 50),
+            "xgboost": self.training_input.get("xgboost_trials", 50),
+            "svm": self.training_input.get("svm_trials", 30),
+            "random_forest": self.training_input.get("random_forest_trials", 40),
+            "neural_network": self.training_input.get("neural_network_trials", 25),
+        }
+        
+        # Use model-specific trials or fall back to general n_trials
+        total_trials = model_trial_mapping.get(model_name, self.config.get("n_trials", 50))
         self.logger.info(
             {
                 "msg": "HPO trial plan",
@@ -3156,8 +3164,10 @@ class AnalystEnhancementStep:
                 pred = model.predict(X_val)
                 return float((pred == y_val).mean())
 
+            # Get trials from training input or use default
+            rf_trials = self.training_input.get("random_forest_trials", 25)
             study = optuna.create_study(direction="maximize")
-            study.optimize(objective, n_trials=25)
+            study.optimize(objective, n_trials=rf_trials)
             return study.best_params, float(study.best_value)
         except Exception as e:
             self.logger.warning(f"RF HPO failed: {e}")
@@ -3197,8 +3207,10 @@ class AnalystEnhancementStep:
                 pred = model.predict(X_val)
                 return float((pred == y_val).mean())
 
+            # Get trials from training input or use default
+            logistic_trials = self.training_input.get("logistic_trials", 25)
             study = optuna.create_study(direction="maximize")
-            study.optimize(objective, n_trials=25)
+            study.optimize(objective, n_trials=logistic_trials)
             return study.best_params, float(study.best_value)
         except Exception as e:
             self.logger.warning(f"Logistic HPO failed: {e}")
@@ -3233,8 +3245,10 @@ class AnalystEnhancementStep:
                 pred = pipe.predict(X_val)
                 return float((pred == y_val).mean())
 
+            # Get trials from training input or use default
+            svm_trials = self.training_input.get("svm_trials", 25)
             study = optuna.create_study(direction="maximize")
-            study.optimize(objective, n_trials=25)
+            study.optimize(objective, n_trials=svm_trials)
             return study.best_params, float(study.best_value)
         except Exception as e:
             self.logger.warning(f"SVM-proxy HPO failed: {e}")

@@ -16,9 +16,14 @@ DEFAULT_COMPUTATION_TIME_THRESHOLD: Final[float] = 0.1  # 100ms
 # Centralized lookback windows to ensure a single source of truth across the project
 # Note: Keep this consistent with usages in config and training steps
 DEFAULT_LOOKBACK_DAYS: Final[int] = 730  # 2 years default lookback window
-FULL_TRAINING_LOOKBACK_DAYS: Final[int] = 730  # Full training horizon
-BLANK_TRAINING_LOOKBACK_DAYS: Final[int] = 180  # 6 months for blank/quick training
-SHORT_BLANK_LOOKBACK_DAYS: Final[int] = 30  # Short runs for quick experiments
+
+# Import training mode constants from centralized configuration
+from .training_modes import (
+    FULL_TRAINING_LOOKBACK_DAYS,
+    BLANK_TRAINING_LOOKBACK_DAYS,
+    SHORT_BLANK_LOOKBACK_DAYS,
+    LIGHT_TRAINING_LOOKBACK_DAYS,
+)
 
 # Feature Engineering Constants
 DEFAULT_IMPORTANCE_THRESHOLD: Final[float] = 0.15

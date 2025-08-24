@@ -33,10 +33,10 @@ class TrainingModeConfig:
 # Training Mode Configurations
 LIGHT_MODE = TrainingModeConfig(
     name="light",
-    description="Light training mode for quick testing and development (30 days)",
+    description="Light training mode for quick testing and development (30 days) - 2% of full intensity",
     lookback_days=30,
-    max_trials=2,
-    n_trials=3,
+    max_trials=4,  # 2% of 200 = 4, minimum 3
+    n_trials=3,   # 2% of 100 = 2, but minimum 3
     exclude_recent_days=1,
     enable_advanced_model_training=False,
     enable_ensemble_training=False,
@@ -51,10 +51,10 @@ LIGHT_MODE = TrainingModeConfig(
 
 BLANK_MODE = TrainingModeConfig(
     name="blank",
-    description="Blank training mode for moderate testing and validation (180 days)",
+    description="Blank training mode for moderate testing and validation (180 days) - 10% of full intensity",
     lookback_days=180,
-    max_trials=3,
-    n_trials=5,
+    max_trials=20,  # 10% of 200 = 20
+    n_trials=10,   # 10% of 100 = 10
     exclude_recent_days=2,
     enable_advanced_model_training=True,
     enable_ensemble_training=True,
@@ -69,7 +69,7 @@ BLANK_MODE = TrainingModeConfig(
 
 FULL_MODE = TrainingModeConfig(
     name="full",
-    description="Full training mode for production-ready models (730 days)",
+    description="Full training mode for production-ready models (730 days) - 100% intensity",
     lookback_days=730,
     max_trials=200,
     n_trials=100,
@@ -85,6 +85,13 @@ FULL_MODE = TrainingModeConfig(
     estimated_duration_minutes=120
 )
 
+
+# Intensity percentages for each mode
+INTENSITY_PERCENTAGES = {
+    "light": 0.02,  # 2% of full intensity
+    "blank": 0.10,  # 10% of full intensity
+    "full": 1.00,   # 100% intensity
+}
 
 # Mode mapping for easy access
 TRAINING_MODES: Dict[str, TrainingModeConfig] = {
@@ -236,6 +243,66 @@ def validate_mode_parameters(mode: str, **kwargs) -> bool:
         return False
 
 
+def calculate_intensity_percentage(base_value: int, percentage: float, minimum: int = 3) -> int:
+    """
+    Calculate a percentage of a base value with a minimum threshold.
+    
+    Args:
+        base_value: The base value to calculate percentage from
+        percentage: The percentage to apply (0.0 to 1.0)
+        minimum: The minimum value to return
+        
+    Returns:
+        The calculated value, never less than the minimum
+    """
+    calculated = max(int(base_value * percentage), minimum)
+    return calculated
+
+
+def get_intensity_percentage(mode: str) -> float:
+    """
+    Get the intensity percentage for a specific mode.
+    
+    Args:
+        mode: The training mode ("light", "blank", or "full")
+        
+    Returns:
+        The intensity percentage as a float (0.0 to 1.0)
+        
+    Raises:
+        ValueError: If the mode is not supported
+    """
+    if mode not in INTENSITY_PERCENTAGES:
+        raise ValueError(f"Unsupported training mode: {mode}. Supported modes: {list(INTENSITY_PERCENTAGES.keys())}")
+    return INTENSITY_PERCENTAGES[mode]
+
+
+def get_intensity_comparison() -> Dict[str, Dict[str, int]]:
+    """
+    Get a comparison of training parameters across all modes.
+    
+    Returns:
+        Dictionary with parameter comparisons
+    """
+    full_config = get_training_mode_config("full")
+    
+    comparison = {}
+    for mode in TRAINING_MODES.keys():
+        config = get_training_mode_config(mode)
+        percentage = get_intensity_percentage(mode)
+        
+        comparison[mode] = {
+            "intensity_percentage": percentage,
+            "max_trials": config.max_trials,
+            "n_trials": config.n_trials,
+            "lookback_days": config.lookback_days,
+            "estimated_duration_minutes": config.estimated_duration_minutes,
+            "computational_intensity": config.computational_intensity,
+        }
+    
+    return comparison
+
+
 def get_mode_recommendations() -> Dict[str, str]:
     """
     Get recommendations for when to use each mode.
@@ -244,7 +311,7 @@ def get_mode_recommendations() -> Dict[str, str]:
         Dictionary with mode recommendations
     """
     return {
-        "light": "Use for quick testing, development, and debugging. Fast execution with minimal computational requirements.",
-        "blank": "Use for moderate testing, validation, and experimentation. Balanced performance and computational requirements.",
-        "full": "Use for production training, final validation, and comprehensive model development. Maximum accuracy with high computational requirements."
+        "light": "Use for quick testing, development, and debugging. Fast execution with minimal computational requirements (2% of full intensity).",
+        "blank": "Use for moderate testing, validation, and experimentation. Balanced performance and computational requirements (10% of full intensity).",
+        "full": "Use for production training, final validation, and comprehensive model development. Maximum accuracy with high computational requirements (100% intensity)."
     }

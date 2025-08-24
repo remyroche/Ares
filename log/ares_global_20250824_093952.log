@@ -1,0 +1,32 @@
+2025-08-24 09:39:52,743 INFO AresGlobal ================================================================================ - -
+2025-08-24 09:39:52,743 INFO AresGlobal 📊 SESSION SUMMARY - -
+2025-08-24 09:39:52,744 INFO AresGlobal Session started: 2025-08-24 09:39:52 - -
+2025-08-24 09:39:52,744 INFO AresGlobal This file contains ALL logs for this session - -
+2025-08-24 09:39:52,744 INFO AresGlobal ================================================================================ - -
+2025-08-24 09:39:52,744 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-24 09:39:52,744 INFO AresGlobal [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: INITIALIZATION - -
+2025-08-24 09:39:52,744 INFO AresGlobal [SYSTEM] Start time: 2025-08-24 09:39:52 - -
+2025-08-24 09:39:52,744 INFO AresGlobal [SYSTEM] Log directory: log - -
+2025-08-24 09:39:52,744 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-24 09:39:52,744 INFO AresGlobal.AresLauncher ================================================================================ - -
+2025-08-24 09:39:52,744 INFO AresGlobal.AresLauncher 🚀 ARES COMPREHENSIVE LAUNCHER - -
+2025-08-24 09:39:52,744 INFO AresGlobal.AresLauncher ================================================================================ - -
+2025-08-24 09:39:52,744 INFO AresGlobal.AresLauncher Start time: 2025-08-24 09:39:52 - -
+2025-08-24 09:39:52,744 INFO AresGlobal.AresLauncher Log directory: log - -
+2025-08-24 09:39:52,744 INFO AresGlobal.AresLauncher Log level: INFO - -
+2025-08-24 09:39:52,744 INFO AresGlobal.AresLauncher Global log file: ares_global_20250824_093952.log - -
+2025-08-24 09:39:52,744 INFO AresGlobal.AresLauncher Full run log: log/ares_full_20250824_093952.log - -
+2025-08-24 09:39:52,744 INFO AresGlobal.AresLauncher Trades log: log/ares_trades_20250824_093952.log - -
+2025-08-24 09:39:52,744 INFO AresGlobal.AresLauncher Backtest log: log/ares_backtest_20250824_093952.log - -
+2025-08-24 09:39:52,744 INFO AresGlobal.AresLauncher ================================================================================ - -
+2025-08-24 09:39:52,744 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-24 09:39:52,744 INFO AresGlobal [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: modes - -
+2025-08-24 09:39:52,745 INFO AresGlobal [SYSTEM] Start time: 2025-08-24 09:39:52 - -
+2025-08-24 09:39:52,745 INFO AresGlobal [SYSTEM] Log directory: log - -
+2025-08-24 09:39:52,745 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-24 09:39:52,745 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-24 09:39:52,745 INFO AresGlobal [SYSTEM] 🛑 ARES LAUNCHER ENDED - Exit code: 0 - -
+2025-08-24 09:39:52,745 INFO AresGlobal [SYSTEM] End time: 2025-08-24 09:39:52 - -
+2025-08-24 09:39:52,745 INFO AresGlobal [SYSTEM] ================================================================================ - -
+2025-08-24 09:39:52,745 INFO AresGlobal.AresLauncher 🧹 Cleaning up processes... - -
+2025-08-24 09:39:52,745 INFO AresGlobal.AresLauncher ✅ Cleanup completed - -

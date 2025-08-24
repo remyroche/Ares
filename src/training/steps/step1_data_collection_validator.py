@@ -35,15 +35,15 @@ class Step1DataCollectionValidator(BaseValidator):
 		self,
 		training_input: Dict[str, Any],
 		pipeline_state: Dict[str, Any],
-	) -> bool:
-		"""Validate the data collection step.
+	) -> Dict[str, Any]:
+		"""Validate the data collection step with comprehensive checks.
 
 		Args:
 			training_input: Training input parameters
 			pipeline_state: Current pipeline state
 
 		Returns:
-			bool: True if validation passed, False otherwise
+			Dict containing validation results with detailed information
 
 		"""
 		symbol = training_input.get("symbol", "ETHUSDT")
@@ -55,25 +55,63 @@ class Step1DataCollectionValidator(BaseValidator):
 			f"🔍 Validating Step 1 data collection for {exchange} {symbol} {timeframe}",
 		)
 
+		validation_result = {
+			"validation_passed": False,
+			"step_name": "step1_data_collection",
+			"validation_results": {},
+			"critical_issues": [],
+			"warnings": [],
+			"data_quality_metrics": {},
+		}
+
 		# Check pipeline_state presence first
 		md = pipeline_state.get("market_data") or {}
 		if isinstance(md, pd.DataFrame) and not md.empty:
 			self.logger.info(f"✅ Market data present in state: {md.shape} rows/cols")
-			try:
-				if isinstance(md.index, pd.DatetimeIndex):
-					self.logger.info(
-						f"   Date range: {md.index.min()} -> {md.index.max()}",
-					)
-				req = [c for c in ["open", "high", "low", "close"] if c in md.columns]
-				self.logger.info(f"   OHLC present: {req}")
-			except Exception:
-				pass
-			return True
+			
+			# Comprehensive DataFrame validation
+			df_validation, df_metrics = self.validate_dataframe_quality(
+				df=md,
+				min_rows=self.min_records,
+				required_columns=["open", "high", "low", "close", "volume"],
+				check_data_types=True,
+				check_value_ranges=True,
+				check_duplicates=True,
+				check_temporal_consistency=True,
+			)
+			
+			validation_result["validation_results"]["pipeline_state_data"] = {
+				"valid": df_validation,
+				"metrics": df_metrics,
+			}
+			
+			if df_validation:
+				validation_result["validation_passed"] = True
+				validation_result["data_quality_metrics"] = df_metrics
+				
+				# Log additional details
+				try:
+					if isinstance(md.index, pd.DatetimeIndex):
+						self.logger.info(f"   Date range: {md.index.min()} -> {md.index.max()}")
+					req = [c for c in ["open", "high", "low", "close"] if c in md.columns]
+					self.logger.info(f"   OHLC present: {req}")
+				except Exception:
+					pass
+			else:
+				validation_result["critical_issues"].extend(df_metrics.get("critical_issues", []))
+				validation_result["warnings"].extend(df_metrics.get("data_quality_issues", []))
+			
+			return validation_result
 
 		# Check for consolidated files in data_cache directory
 		consolidated_files = await self._check_consolidated_files(
 			symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir,
 		)
+
+		validation_result["validation_results"]["consolidated_files"] = {
+			"found": consolidated_files["found"],
+			"files": consolidated_files.get("files", []),
+		}
 
 		if consolidated_files["found"]:
 			self.logger.info(f"✅ Found consolidated files: {consolidated_files['files']}")
@@ -83,15 +121,23 @@ class Step1DataCollectionValidator(BaseValidator):
 				consolidated_files["files"], symbol, exchange, timeframe,
 			)
 
-			if data_validation:
+			validation_result["validation_results"]["data_quality"] = data_validation
+
+			if data_validation.get("valid", False):
 				self.logger.info("✅ Consolidated data quality validation passed")
-				return True
+				validation_result["validation_passed"] = True
+				validation_result["data_quality_metrics"] = data_validation.get("metrics", {})
 			else:
 				self.logger.warning("⚠️ Consolidated data quality issues detected")
-				return False
+				validation_result["critical_issues"].extend(data_validation.get("critical_issues", []))
+				validation_result["warnings"].extend(data_validation.get("warnings", []))
+		else:
+			validation_result["critical_issues"].append("No consolidated files found")
 
-		self.logger.error("❌ No market data found in state or consolidated files")
-		return False
+		if not validation_result["validation_passed"]:
+			self.logger.error("❌ No market data found in state or consolidated files")
+
+		return validation_result
 
 	async def _check_consolidated_files(
 		self,
@@ -150,7 +196,7 @@ class Step1DataCollectionValidator(BaseValidator):
 		symbol: str,
 		exchange: str,
 		timeframe: str,
-	) -> bool:
+	) -> Dict[str, Any]:
 		"""Validate the quality of consolidated data files.
 
 		Args:
@@ -163,32 +209,87 @@ class Step1DataCollectionValidator(BaseValidator):
 			bool: True if validation passed
 		"""
 		try:
+			validation_result = {
+				"valid": True,
+				"files_validated": len(files),
+				"file_validation_results": {},
+				"critical_issues": [],
+				"warnings": [],
+				"metrics": {
+					"total_files": len(files),
+					"valid_files": 0,
+					"total_records": 0,
+					"data_quality_score": 0.0,
+				},
+			}
+
 			# Validate klines data first (required)
 			klines_files = [f for f in files if "klines" in f]
 			if not klines_files:
-				self.logger.error("❌ No klines files found")
-				return False
+				validation_result["valid"] = False
+				validation_result["critical_issues"].append("No klines files found")
+				return validation_result
 
 			# Load and validate the first klines file
 			klines_file = klines_files[0]
 			self.logger.info(f"🔍 Validating klines file: {klines_file}")
 
-			if klines_file.endswith(".parquet"):
-				df = pd.read_parquet(klines_file)
-			elif klines_file.endswith(".csv"):
-				df = pd.read_csv(klines_file)
-			elif klines_file.endswith(".pkl"):
-				df = pd.read_pickle(klines_file)
-			else:
-				self.logger.error(f"❌ Unsupported file format: {klines_file}")
-				return False
+			try:
+				if klines_file.endswith(".parquet"):
+					df = pd.read_parquet(klines_file)
+				elif klines_file.endswith(".csv"):
+					df = pd.read_csv(klines_file)
+				elif klines_file.endswith(".pkl"):
+					df = pd.read_pickle(klines_file)
+				else:
+					validation_result["valid"] = False
+					validation_result["critical_issues"].append(f"Unsupported file format: {klines_file}")
+					return validation_result
 
-			# Validate data characteristics
-			return self._validate_data_characteristics(df, symbol, exchange)
+				# Comprehensive DataFrame validation
+				df_validation, df_metrics = self.validate_dataframe_quality(
+					df=df,
+					min_rows=self.min_records,
+					required_columns=["open", "high", "low", "close", "volume"],
+					check_data_types=True,
+					check_value_ranges=True,
+					check_duplicates=True,
+					check_temporal_consistency=True,
+				)
+
+				validation_result["file_validation_results"][klines_file] = {
+					"valid": df_validation,
+					"file_path": klines_file,
+					"row_count": len(df),
+					"metrics": df_metrics,
+				}
+
+				if df_validation:
+					validation_result["metrics"]["valid_files"] = 1
+					validation_result["metrics"]["total_records"] = len(df)
+					validation_result["metrics"]["data_quality_score"] = 1.0
+				else:
+					validation_result["critical_issues"].extend(df_metrics.get("critical_issues", []))
+					validation_result["warnings"].extend(df_metrics.get("data_quality_issues", []))
+
+				# Additional data characteristics validation
+				characteristics_validation = self._validate_data_characteristics(df, symbol, exchange)
+				if not characteristics_validation:
+					validation_result["warnings"].append("Data characteristics validation failed")
+
+			except Exception as e:
+				validation_result["valid"] = False
+				validation_result["critical_issues"].append(f"Error reading {klines_file}: {str(e)}")
+
+			return validation_result
 
 		except Exception as e:
 			self.logger.exception(f"❌ Error validating consolidated data: {e}")
-			return False
+			return {
+				"valid": False,
+				"error": str(e),
+				"critical_issues": [f"Validation error: {str(e)}"],
+			}
 
 	def _validate_data_characteristics(
 		self,

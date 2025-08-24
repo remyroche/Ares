@@ -198,7 +198,7 @@ class FinalParametersOptimizationStepNew:
             self.logger.info("Optimizing all parameters by category...")
 
             optimization_results = {}
-            categories = ["confidence", "position_sizing", "leverage", "tpsl", "ensemble", "sr"]
+            categories = ["confidence", "position_sizing", "leverage", "tpsl", "ensemble", "sr", "two_tier"]
 
             for category in categories:
                 self.logger.info(f"Optimizing {category} parameters...")
@@ -358,6 +358,9 @@ class FinalParametersOptimizationStepNew:
             elif category == "sr":
                 # S/R strength and accuracy
                 base_score = self._evaluate_sr_params(params, calibration_results)
+            elif category == "two_tier":
+                # Two-tier system parameters
+                base_score = self._evaluate_two_tier_params(params, calibration_results)
             
             return base_score
 
@@ -478,6 +481,36 @@ class FinalParametersOptimizationStepNew:
         
         return score
 
+    def _evaluate_two_tier_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
+        """Evaluate two-tier system parameters."""
+        score = 0.0
+        
+        # Tier weights should sum to 1.0
+        if "tier1_weight" in params and "tier2_weight" in params:
+            tier1_weight = params["tier1_weight"]
+            tier2_weight = params["tier2_weight"]
+            if abs((tier1_weight + tier2_weight) - 1.0) < 0.1:
+                score += 0.3
+            else:
+                score += 0.1
+        
+        # Reasonable thresholds
+        if "direction_threshold" in params:
+            threshold = params["direction_threshold"]
+            if 0.6 <= threshold <= 0.8:
+                score += 0.2
+            else:
+                score += 0.1
+        
+        if "timing_threshold" in params:
+            threshold = params["timing_threshold"]
+            if 0.7 <= threshold <= 0.9:
+                score += 0.2
+            else:
+                score += 0.1
+        
+        return score
+
     async def _load_calibration_results(
         self, symbol: str, exchange: str, data_dir: str, ) -> dict[str, Any] | None:
         """Load calibration results from previous step."""
@@ -517,7 +550,7 @@ class FinalParametersOptimizationStepNew:
                 return False
 
             # Check that all categories have results
-            expected_categories = ["confidence", "position_sizing", "leverage", "tpsl", "ensemble", "sr"]
+            expected_categories = ["confidence", "position_sizing", "leverage", "tpsl", "ensemble", "sr", "two_tier"]
             for category in expected_categories:
                 if category not in optimization_results:
                     self.logger.warning(f"Missing optimization results for category: {category}")

@@ -69,8 +69,6 @@ class EnsembleConfig:
                 "BULL_TREND": 1.2,
                 "BEAR_TREND": 0.8,
                 "SIDEWAYS_RANGE": 0.9,
-                "HIGH_IMPACT_CANDLE": 0.6,
-                "SR_ZONE_ACTION": 1.1,
             }
 
 
@@ -102,6 +100,4 @@ def get_ensemble_search_space() -> dict[str, dict[str, Any]]:
         "regime_specific_weights.BULL_TREND": {"min": 1.0, "max": 1.5, "type": "float"},
         "regime_specific_weights.BEAR_TREND": {"min": 0.6, "max": 0.9, "type": "float"},
         "regime_specific_weights.SIDEWAYS_RANGE": {"min": 0.8, "max": 1.1, "type": "float"},
-        "regime_specific_weights.HIGH_IMPACT_CANDLE": {"min": 0.4, "max": 0.8, "type": "float"},
-        "regime_specific_weights.SR_ZONE_ACTION": {"min": 1.0, "max": 1.3, "type": "float"},
     }

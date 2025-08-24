@@ -15,6 +15,7 @@ from .config_leverage import get_leverage_config, get_leverage_search_space
 from .config_tpsl import get_tpsl_config, get_tpsl_search_space
 from .config_ensemble import get_ensemble_config, get_ensemble_search_space
 from .config_sr import get_sr_config, get_sr_search_space
+from .config_two_tier import get_two_tier_config, get_two_tier_search_space
 
 
 class ConfigManager:
@@ -40,6 +41,7 @@ class ConfigManager:
             "tpsl": get_tpsl_config(),
             "ensemble": get_ensemble_config(),
             "sr": get_sr_config(),
+            "two_tier": get_two_tier_config(),
         }
         
         # Load search spaces for optimization
@@ -50,6 +52,7 @@ class ConfigManager:
             "tpsl": get_tpsl_search_space(),
             "ensemble": get_ensemble_search_space(),
             "sr": get_sr_search_space(),
+            "two_tier": get_two_tier_search_space(),
         }
     
     def get_static_config(self) -> Dict[str, Any]:

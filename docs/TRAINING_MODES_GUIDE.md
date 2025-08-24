@@ -6,10 +6,10 @@ The Ares trading system now features a centralized training mode configuration s
 
 ## Training Modes
 
-### 1. Light Mode (30 days)
+### 1. Light Mode (30 days) - 2% Intensity
 - **Purpose**: Quick testing, development, and debugging
 - **Lookback Period**: 30 days
-- **Computational Intensity**: Low
+- **Computational Intensity**: Low (2% of full intensity)
 - **Estimated Duration**: 5 minutes
 - **Best For**: 
   - Rapid prototyping
@@ -18,17 +18,17 @@ The Ares trading system now features a centralized training mode configuration s
   - Quick validation of changes
 
 **Configuration**:
-- Max Trials: 2
-- N Trials: 3
+- Max Trials: 4 (2% of 200, minimum 3)
+- N Trials: 3 (2% of 100, minimum 3)
 - Advanced Model Training: Disabled
 - Ensemble Training: Disabled
 - Multi-timeframe Training: Disabled
 - Adaptive Training: Disabled
 
-### 2. Blank Mode (180 days)
+### 2. Blank Mode (180 days) - 10% Intensity
 - **Purpose**: Moderate testing and validation
 - **Lookback Period**: 180 days (6 months)
-- **Computational Intensity**: Medium
+- **Computational Intensity**: Medium (10% of full intensity)
 - **Estimated Duration**: 15 minutes
 - **Best For**:
   - Feature validation
@@ -37,17 +37,17 @@ The Ares trading system now features a centralized training mode configuration s
   - Experimentation
 
 **Configuration**:
-- Max Trials: 3
-- N Trials: 5
+- Max Trials: 20 (10% of 200)
+- N Trials: 10 (10% of 100)
 - Advanced Model Training: Enabled
 - Ensemble Training: Enabled
 - Multi-timeframe Training: Disabled
 - Adaptive Training: Disabled
 
-### 3. Full Mode (730 days)
+### 3. Full Mode (730 days) - 100% Intensity
 - **Purpose**: Production-ready model training
 - **Lookback Period**: 730 days (2 years)
-- **Computational Intensity**: High
+- **Computational Intensity**: High (100% intensity)
 - **Estimated Duration**: 120 minutes
 - **Best For**:
   - Production training
@@ -56,8 +56,8 @@ The Ares trading system now features a centralized training mode configuration s
   - Maximum accuracy requirements
 
 **Configuration**:
-- Max Trials: 200
-- N Trials: 100
+- Max Trials: 200 (100% intensity)
+- N Trials: 100 (100% intensity)
 - Advanced Model Training: Enabled
 - Ensemble Training: Enabled
 - Multi-timeframe Training: Enabled

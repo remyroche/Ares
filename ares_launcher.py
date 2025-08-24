@@ -94,6 +94,8 @@ from src.config.training_modes import (
     list_available_modes,
     validate_mode_parameters,
     get_mode_recommendations,
+    get_intensity_percentage,
+    get_intensity_comparison,
 )
 from src.utils.comprehensive_logger import (
     setup_comprehensive_logging,
@@ -411,8 +413,9 @@ class AresLauncher:
             print(f"🚀 FULL TRAINING MODE: Set FULL_TRAINING_MODE=1")
 
         mode_display = f"{training_mode} training"
+        intensity_pct = f"{get_intensity_percentage(training_mode)*100:.0f}%"
         print(f"🚀 Starting {mode_display} for {symbol} on {exchange}")
-        print(f"📊 Mode Configuration:")
+        print(f"📊 Mode Configuration ({intensity_pct} of full intensity):")
         print(f"   • Lookback Days: {lookback_days}")
         print(f"   • Max Trials: {mode_config.max_trials}")
         print(f"   • N Trials: {mode_config.n_trials}")
@@ -618,6 +621,23 @@ class AresLauncher:
         print("🎯 AVAILABLE TRAINING MODES")
         print("=" * 80)
         
+        # Show intensity comparison table
+        print("\n📊 INTENSITY COMPARISON")
+        print("-" * 80)
+        comparison = get_intensity_comparison()
+        
+        # Print header
+        print(f"{'Mode':<8} {'Intensity':<12} {'Max Trials':<12} {'N Trials':<10} {'Duration':<10} {'Lookback':<10}")
+        print("-" * 80)
+        
+        for mode, data in comparison.items():
+            intensity_pct = f"{data['intensity_percentage']*100:.0f}%"
+            print(f"{mode:<8} {intensity_pct:<12} {data['max_trials']:<12} {data['n_trials']:<10} {data['estimated_duration_minutes']:<10}min {data['lookback_days']:<10}days")
+        
+        print("\n" + "=" * 80)
+        print("📋 DETAILED MODE CONFIGURATIONS")
+        print("=" * 80)
+        
         modes = list_available_modes()
         recommendations = get_mode_recommendations()
         
@@ -625,8 +645,9 @@ class AresLauncher:
             try:
                 config = get_training_mode_config(mode_name)
                 recommendation = recommendations.get(mode_name, "No specific recommendation available.")
+                intensity_pct = f"{get_intensity_percentage(mode_name)*100:.0f}%"
                 
-                print(f"\n📊 {mode_name.upper()} MODE")
+                print(f"\n📊 {mode_name.upper()} MODE ({intensity_pct} of full intensity)")
                 print(f"   Description: {description}")
                 print(f"   Lookback Days: {config.lookback_days}")
                 print(f"   Max Trials: {config.max_trials}")

@@ -306,16 +306,29 @@ class EnhancedTrainingManager:
             self._save_checkpoint(step_name, pipeline_state)
             step_times[step_name] = time.time() - step_start_time
 
-            # Run validator for step (AFTER execution, for verification only)
+            # Run comprehensive validator for step (AFTER execution, for verification only)
             try:
-                step_validation = await self._run_step_validator(step_name, training_input, pipeline_state)
+                # Determine validation level based on step criticality
+                validation_level = self._get_validation_level(step_name, is_fatal)
+                
+                step_validation = await self._run_step_validator(
+                    step_name, training_input, pipeline_state, validation_level
+                )
+                
                 if step_validation and step_validation.get("validation_passed", False):
                     self.logger.info(f"🎉 {step_display_name} completed successfully and validation passed")
+                    
+                    # Log validation details for comprehensive validation
+                    if validation_level in ["COMPREHENSIVE", "CRITICAL"]:
+                        self._log_validation_details(step_validation)
+                        
                 elif is_fatal:
                     self.logger.error(f"❌ {step_display_name} validation failed - stopping pipeline")
+                    self._log_validation_failure(step_validation)
                     return False
                 else:
                     self.logger.warning(f"⚠️ {step_display_name} validation failed - continuing pipeline")
+                    self._log_validation_failure(step_validation)
                     return True
             except Exception as e:
                 if is_fatal:
@@ -3129,12 +3142,137 @@ class EnhancedTrainingManager:
             stats["trial_history_size"] = len(self.adaptive_sampler.trial_history)
         return stats
 
+    def _get_validation_level(self, step_name: str, is_fatal: bool) -> str:
+        """
+        Determine the appropriate validation level for a step.
+        By default, all steps use CRITICAL validation for maximum thoroughness.
+        
+        Args:
+            step_name: Name of the step
+            is_fatal: Whether step failure is fatal
+            
+        Returns:
+            Validation level string (defaults to CRITICAL)
+        """
+        # All steps now default to CRITICAL validation for maximum thoroughness
+        # This ensures comprehensive validation across the entire pipeline
+        
+        # For backward compatibility, we still identify specific critical steps
+        # but they all return CRITICAL level
+        critical_steps = [
+            "step1_data_collection",
+            "step2_feature_engineering", 
+            "step3_hmm_regime_discovery",
+            "step6_hmm_based_training",
+            "step7_analyst_enhancement",
+            "step9_tactician_specialist_training",
+            "step12_walk_forward_validation",
+            "step13_monte_carlo_validation",
+        ]
+        
+        comprehensive_steps = [
+            "step1_5_data_converter",
+            "step4_processing_labeling",
+            "step5_regime_data_splitting",
+            "step6_5_unified_regime_intelligence",
+            "step8_tactician_labeling",
+            "step10_confidence_calibration",
+            "step11_final_parameters_optimization",
+            "step14_ab_testing",
+            "step15_saving",
+        ]
+        
+        # All steps now use CRITICAL validation by default
+        # This ensures maximum thoroughness and reliability
+        return "CRITICAL"
+    
+    def _log_validation_details(self, validation_result: dict[str, Any]) -> None:
+        """
+        Log detailed validation information for comprehensive validation levels.
+        
+        Args:
+            validation_result: Validation result dictionary
+        """
+        try:
+            if not validation_result:
+                return
+                
+            self.logger.info("📊 Validation Details:")
+            
+            # Log validation level and timing
+            if "validation_level" in validation_result:
+                self.logger.info(f"   Level: {validation_result['validation_level']}")
+            
+            if "duration" in validation_result:
+                self.logger.info(f"   Duration: {validation_result['duration']:.3f}s")
+            
+            # Log warnings and recommendations
+            if validation_result.get("warnings"):
+                self.logger.info(f"   Warnings: {len(validation_result['warnings'])}")
+                for warning in validation_result["warnings"][:3]:  # Show first 3
+                    self.logger.info(f"     - {warning}")
+            
+            if validation_result.get("recommendations"):
+                self.logger.info(f"   Recommendations: {len(validation_result['recommendations'])}")
+                for rec in validation_result["recommendations"][:3]:  # Show first 3
+                    self.logger.info(f"     - {rec}")
+            
+            # Log validation results summary
+            if "validation_results" in validation_result:
+                vr = validation_result["validation_results"]
+                if isinstance(vr, dict):
+                    self.logger.info(f"   Validation Checks: {len(vr)}")
+                    for check_name, check_result in list(vr.items())[:5]:  # Show first 5
+                        status = "✅" if check_result.get("valid", False) else "❌"
+                        self.logger.info(f"     {status} {check_name}")
+                        
+        except Exception as e:
+            self.logger.debug(f"Error logging validation details: {e}")
+    
+    def _log_validation_failure(self, validation_result: dict[str, Any]) -> None:
+        """
+        Log validation failure details.
+        
+        Args:
+            validation_result: Validation result dictionary
+        """
+        try:
+            if not validation_result:
+                return
+                
+            self.logger.error("❌ Validation Failure Details:")
+            
+            # Log error message
+            if "error" in validation_result:
+                self.logger.error(f"   Error: {validation_result['error']}")
+            
+            # Log critical issues
+            if validation_result.get("critical_issues"):
+                self.logger.error(f"   Critical Issues: {len(validation_result['critical_issues'])}")
+                for issue in validation_result["critical_issues"][:3]:  # Show first 3
+                    self.logger.error(f"     - {issue}")
+            
+            # Log data quality issues
+            if validation_result.get("data_quality_issues"):
+                self.logger.error(f"   Data Quality Issues: {len(validation_result['data_quality_issues'])}")
+                for issue in validation_result["data_quality_issues"][:3]:  # Show first 3
+                    self.logger.error(f"     - {issue}")
+            
+            # Log missing artifacts
+            if validation_result.get("missing_artifacts"):
+                self.logger.error(f"   Missing Artifacts: {len(validation_result['missing_artifacts'])}")
+                for artifact in validation_result["missing_artifacts"][:3]:  # Show first 3
+                    self.logger.error(f"     - {artifact}")
+                    
+        except Exception as e:
+            self.logger.debug(f"Error logging validation failure: {e}")
+
     async def _run_step_validator(
         self,
         step_name: str,
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
-        force_rerun: bool,
+        validation_level: str = "CRITICAL",
     ) -> dict[str, Any]:
         """Run validator for a specific step.
 
@@ -3142,7 +3280,7 @@ class EnhancedTrainingManager:
             step_name: Name of the step to validate
             training_input: Training input parameters
             pipeline_state: Current pipeline state
-            force_rerun: If True, skip dependency validation for the starting step
+            validation_level: Validation level (defaults to CRITICAL for maximum thoroughness)
 
         Returns:
             Validation result dictionary
@@ -3178,6 +3316,7 @@ class EnhancedTrainingManager:
                 training_input=training_input,
                 pipeline_state=pipeline_state,
                 config=self.config,
+                validation_level=validation_level,
             )
 
             # Store validation result

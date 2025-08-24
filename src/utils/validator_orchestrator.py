@@ -37,36 +37,49 @@ class ValidatorOrchestrator:
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
         config: dict[str, Any],
+        validation_level: str = "CRITICAL",
     ) -> dict[str, Any]:
         """
-        Run the validator for a specific step.
+        Run the validator for a specific step with enhanced validation levels.
 
         Args:
             step_name: Name of the step (e.g., "step1_data_collection")
             training_input: Training input parameters
             pipeline_state: Current pipeline state
             config: Configuration dictionary
+            validation_level: Validation level ("BASIC", "STANDARD", "COMPREHENSIVE", "CRITICAL") - defaults to CRITICAL
 
         Returns:
             Dictionary containing validation results
         """
         start_perf = time.perf_counter()
         try:
-            self.logger.info(f"🔍 Running validator for {step_name}")
+            self.logger.info(f"🔍 Running {validation_level} validator for {step_name}")
+            
             # Debug-level context for troubleshooting
             try:
                 self.logger.debug(
-                    "Input context - training_input_keys=%s pipeline_state_keys=%s",
+                    "Input context - training_input_keys=%s pipeline_state_keys=%s validation_level=%s",
                     list(training_input.keys())
                     if isinstance(training_input, dict)
                     else type(training_input).__name__,
                     list(pipeline_state.keys())
                     if isinstance(pipeline_state, dict)
                     else type(pipeline_state).__name__,
+                    validation_level,
                 )
             except Exception:
                 # Defensive: never fail due to logging of keys
                 pass
+
+            # Pre-validation checks
+            pre_validation_result = await self._run_pre_validation_checks(
+                step_name, training_input, pipeline_state, config, validation_level
+            )
+            
+            if not pre_validation_result.get("passed", True):
+                duration = max(0.0, time.perf_counter() - start_perf)
+                return self._normalize_result(step_name, pre_validation_result, duration)
 
             # Import and run the appropriate validator
             raw_result = await self._run_validator(
@@ -74,11 +87,22 @@ class ValidatorOrchestrator:
                 training_input,
                 pipeline_state,
                 config,
+                validation_level,
+            )
+
+            # Post-validation checks
+            post_validation_result = await self._run_post_validation_checks(
+                step_name, raw_result, training_input, pipeline_state, config, validation_level
+            )
+
+            # Combine results
+            combined_result = self._combine_validation_results(
+                step_name, raw_result, post_validation_result, validation_level
             )
 
             # Normalize and enrich result with timing and defaults
             duration = max(0.0, time.perf_counter() - start_perf)
-            result = self._normalize_result(step_name, raw_result, duration)
+            result = self._normalize_result(step_name, combined_result, duration)
 
             # Store validation result
             self.validation_results[step_name] = result
@@ -158,12 +182,219 @@ class ValidatorOrchestrator:
 
             return error_result
 
+    async def _run_pre_validation_checks(
+        self,
+        step_name: str,
+        training_input: dict[str, Any],
+        pipeline_state: dict[str, Any],
+        config: dict[str, Any],
+        validation_level: str,
+    ) -> dict[str, Any]:
+        """
+        Run pre-validation checks before executing the main validator.
+        
+        Args:
+            step_name: Name of the step
+            training_input: Training input parameters
+            pipeline_state: Current pipeline state
+            config: Configuration dictionary
+            validation_level: Validation level
+            
+        Returns:
+            Pre-validation result dictionary
+        """
+        try:
+            self.logger.debug(f"🔍 Running pre-validation checks for {step_name}")
+            
+            # Basic input validation
+            if not isinstance(training_input, dict):
+                return {
+                    "passed": False,
+                    "validation_passed": False,
+                    "error": "training_input must be a dictionary",
+                }
+            
+            if not isinstance(pipeline_state, dict):
+                return {
+                    "passed": False,
+                    "validation_passed": False,
+                    "error": "pipeline_state must be a dictionary",
+                }
+            
+            if not isinstance(config, dict):
+                return {
+                    "passed": False,
+                    "validation_passed": False,
+                    "error": "config must be a dictionary",
+                }
+            
+            # Check for required training input parameters
+            required_params = ["symbol", "exchange", "timeframe"]
+            missing_params = [param for param in required_params if param not in training_input]
+            
+            if missing_params:
+                return {
+                    "passed": False,
+                    "validation_passed": False,
+                    "error": f"Missing required training input parameters: {missing_params}",
+                }
+            
+            # Enhanced checks for comprehensive validation level
+            if validation_level in ["COMPREHENSIVE", "CRITICAL"]:
+                # Validate configuration structure
+                if "data_dir" not in config:
+                    return {
+                        "passed": False,
+                        "validation_passed": False,
+                        "error": "Missing data_dir in configuration",
+                    }
+                
+                # Check for critical pipeline state issues
+                failed_steps = [
+                    step for step, info in pipeline_state.items()
+                    if isinstance(info, dict) and info.get("status") == "FAILED"
+                ]
+                
+                if failed_steps:
+                    return {
+                        "passed": False,
+                        "validation_passed": False,
+                        "error": f"Pipeline has failed steps: {failed_steps}",
+                    }
+            
+            return {"passed": True, "validation_passed": True}
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error in pre-validation checks for {step_name}: {e}")
+            return {
+                "passed": False,
+                "validation_passed": False,
+                "error": f"Pre-validation check error: {str(e)}",
+            }
+
+    async def _run_post_validation_checks(
+        self,
+        step_name: str,
+        validation_result: dict[str, Any],
+        training_input: dict[str, Any],
+        pipeline_state: dict[str, Any],
+        config: dict[str, Any],
+        validation_level: str,
+    ) -> dict[str, Any]:
+        """
+        Run post-validation checks after executing the main validator.
+        
+        Args:
+            step_name: Name of the step
+            validation_result: Result from main validator
+            training_input: Training input parameters
+            pipeline_state: Current pipeline state
+            config: Configuration dictionary
+            validation_level: Validation level
+            
+        Returns:
+            Post-validation result dictionary
+        """
+        try:
+            self.logger.debug(f"🔍 Running post-validation checks for {step_name}")
+            
+            post_checks = {
+                "validation_passed": True,
+                "warnings": [],
+                "recommendations": [],
+            }
+            
+            # Check validation result structure
+            if not isinstance(validation_result, dict):
+                post_checks["validation_passed"] = False
+                post_checks["warnings"].append("Validation result is not a dictionary")
+                return post_checks
+            
+            # Enhanced checks for comprehensive validation level
+            if validation_level in ["COMPREHENSIVE", "CRITICAL"]:
+                # Check for critical issues in validation result
+                if validation_result.get("critical_issues"):
+                    post_checks["warnings"].append(f"Critical issues found: {validation_result['critical_issues']}")
+                
+                # Check for data quality issues
+                if validation_result.get("data_quality_issues"):
+                    post_checks["warnings"].append(f"Data quality issues: {validation_result['data_quality_issues']}")
+                
+                # Generate recommendations based on validation level
+                if validation_level == "CRITICAL":
+                    post_checks["recommendations"].append("Consider running additional data quality checks")
+                    post_checks["recommendations"].append("Review model performance metrics")
+            
+            return post_checks
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error in post-validation checks for {step_name}: {e}")
+            return {
+                "validation_passed": False,
+                "error": f"Post-validation check error: {str(e)}",
+            }
+
+    def _combine_validation_results(
+        self,
+        step_name: str,
+        main_result: dict[str, Any],
+        post_result: dict[str, Any],
+        validation_level: str,
+    ) -> dict[str, Any]:
+        """
+        Combine main validation result with post-validation checks.
+        
+        Args:
+            step_name: Name of the step
+            main_result: Main validation result
+            post_result: Post-validation result
+            validation_level: Validation level
+            
+        Returns:
+            Combined validation result
+        """
+        try:
+            combined = dict(main_result)
+            
+            # Add post-validation information
+            if post_result.get("warnings"):
+                combined.setdefault("warnings", []).extend(post_result["warnings"])
+            
+            if post_result.get("recommendations"):
+                combined.setdefault("recommendations", []).extend(post_result["recommendations"])
+            
+            # Determine final validation status
+            main_passed = main_result.get("validation_passed", False)
+            post_passed = post_result.get("validation_passed", True)
+            
+            # For critical validation level, both must pass
+            if validation_level == "CRITICAL":
+                combined["validation_passed"] = main_passed and post_passed
+            else:
+                # For other levels, main result takes precedence
+                combined["validation_passed"] = main_passed
+            
+            # Add validation level information
+            combined["validation_level"] = validation_level
+            combined["validation_timestamp"] = time.time()
+            
+            return combined
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error combining validation results for {step_name}: {e}")
+            return {
+                "step_name": step_name,
+                "validation_passed": False,
+                "error": f"Result combination error: {str(e)}",
+            }
+
     async def _run_validator(
         self,
         step_name: str,
         training_input: dict[str, Any],
         pipeline_state: dict[str, Any],
         config: dict[str, Any],
+        validation_level: str = "CRITICAL",
     ) -> dict[str, Any]:
         """
         Dynamically import and run the appropriate validator.

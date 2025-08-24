@@ -91,8 +91,6 @@ class TPSLConfig:
                 "BULL_TREND": 1.2,
                 "BEAR_TREND": 0.8,
                 "SIDEWAYS_RANGE": 1.0,
-                "HIGH_IMPACT_CANDLE": 0.6,
-                "SR_ZONE_ACTION": 1.1,
             }
         
         if self.regime_sl_multipliers is None:
@@ -100,8 +98,6 @@ class TPSLConfig:
                 "BULL_TREND": 0.8,
                 "BEAR_TREND": 1.2,
                 "SIDEWAYS_RANGE": 1.0,
-                "HIGH_IMPACT_CANDLE": 1.5,
-                "SR_ZONE_ACTION": 0.9,
             }
         
         if self.confidence_tp_multipliers is None:
@@ -164,14 +160,10 @@ def get_tpsl_search_space() -> dict[str, dict[str, Any]]:
         "regime_tp_multipliers.BULL_TREND": {"min": 1.0, "max": 1.5, "type": "float"},
         "regime_tp_multipliers.BEAR_TREND": {"min": 0.6, "max": 1.0, "type": "float"},
         "regime_tp_multipliers.SIDEWAYS_RANGE": {"min": 0.8, "max": 1.2, "type": "float"},
-        "regime_tp_multipliers.HIGH_IMPACT_CANDLE": {"min": 0.4, "max": 0.8, "type": "float"},
-        "regime_tp_multipliers.SR_ZONE_ACTION": {"min": 1.0, "max": 1.3, "type": "float"},
         # Regime SL multipliers
         "regime_sl_multipliers.BULL_TREND": {"min": 0.6, "max": 1.0, "type": "float"},
         "regime_sl_multipliers.BEAR_TREND": {"min": 1.0, "max": 1.5, "type": "float"},
         "regime_sl_multipliers.SIDEWAYS_RANGE": {"min": 0.8, "max": 1.2, "type": "float"},
-        "regime_sl_multipliers.HIGH_IMPACT_CANDLE": {"min": 1.2, "max": 2.0, "type": "float"},
-        "regime_sl_multipliers.SR_ZONE_ACTION": {"min": 0.7, "max": 1.1, "type": "float"},
         # Confidence TP multipliers
         "confidence_tp_multipliers.low_confidence": {"min": 0.6, "max": 1.0, "type": "float"},
         "confidence_tp_multipliers.medium_confidence": {"min": 0.8, "max": 1.2, "type": "float"},

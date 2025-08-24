@@ -19,7 +19,7 @@ class ConfidenceThresholdsConfig:
     volatility_multiplier: float = 0.5
     volatility_zscore_threshold: float = 1.0
     
-    # Analyst vs Tactician thresholds
+    # Two-tier system thresholds
     analyst_confidence_threshold: float = 0.7
     tactician_confidence_threshold: float = 0.8
     
@@ -50,7 +50,6 @@ class ConfidenceThresholdsConfig:
     bear_trend_threshold: float = 0.75
     sideways_threshold: float = 0.8
     sr_zone_threshold: float = 0.7
-    high_impact_candle_threshold: float = 0.9
     
     # S/R specific confidence thresholds
     min_sr_confidence: float = 0.6
@@ -89,7 +88,6 @@ def get_confidence_search_space() -> dict[str, dict[str, Any]]:
         "bear_trend_threshold": {"min": 0.7, "max": 0.9, "type": "float"},
         "sideways_threshold": {"min": 0.75, "max": 0.9, "type": "float"},
         "sr_zone_threshold": {"min": 0.6, "max": 0.9, "type": "float"},
-        "high_impact_candle_threshold": {"min": 0.8, "max": 0.98, "type": "float"},
         "min_sr_confidence": {"min": 0.5, "max": 0.8, "type": "float"},
         "high_confidence_threshold": {"min": 0.7, "max": 0.9, "type": "float"},
         "confidence_decay_rate": {"min": 0.1, "max": 0.5, "type": "float"},

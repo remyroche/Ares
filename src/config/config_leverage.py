@@ -69,8 +69,6 @@ class LeverageConfig:
                 "BULL_TREND": 1.2,
                 "BEAR_TREND": 0.8,
                 "SIDEWAYS_RANGE": 0.9,
-                "HIGH_IMPACT_CANDLE": 0.6,
-                "SR_ZONE_ACTION": 1.1,
             }
         
         if self.confidence_leverage_thresholds is None:
@@ -112,8 +110,6 @@ def get_leverage_search_space() -> dict[str, dict[str, Any]]:
         "regime_leverage_multipliers.BULL_TREND": {"min": 1.0, "max": 1.5, "type": "float"},
         "regime_leverage_multipliers.BEAR_TREND": {"min": 0.6, "max": 0.9, "type": "float"},
         "regime_leverage_multipliers.SIDEWAYS_RANGE": {"min": 0.8, "max": 1.1, "type": "float"},
-        "regime_leverage_multipliers.HIGH_IMPACT_CANDLE": {"min": 0.4, "max": 0.8, "type": "float"},
-        "regime_leverage_multipliers.SR_ZONE_ACTION": {"min": 1.0, "max": 1.3, "type": "float"},
         # Confidence leverage multipliers
         "confidence_leverage_multipliers.low_confidence": {"min": 0.3, "max": 0.7, "type": "float"},
         "confidence_leverage_multipliers.medium_confidence": {"min": 0.6, "max": 1.0, "type": "float"},

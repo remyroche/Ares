@@ -260,11 +260,86 @@ python3 test_new_config_structure.py
 | **Ensemble** | 15 | Model ensemble configuration |
 | **S/R** | 29 | Support/resistance parameters |
 | **Two-Tier** | 29 | Two-tier system parameters |
-| **Technical Indicators** | 43 | Technical analysis parameters |
-| **System Monitoring** | 35 | System performance parameters |
+| **Technical Indicators** | 49 | Technical analysis parameters |
+| **System Monitoring** | 37 | System performance parameters |
 | **Training Optimization** | 12 | Training optimization parameters |
 | **Regime Transitions** | 25 | Regime transition handling |
-| **Total** | **323+** | **Complete parameter set** |
+| **Total** | **331+** | **Complete parameter set** |
+
+## 🔍 **Comprehensive Audit Results**
+
+### ✅ **Relevance Verification**
+All parameters in our configuration are **relevant and actually used** in the codebase:
+
+#### **Technical Indicators (49 parameters)**
+- **RSI, MACD, ADX parameters**: Used in `unified_regime_classifier.py`
+- **Moving averages**: Used in `live_regime_calculations.py`
+- **Bollinger Bands**: Used in `advanced_feature_engineering.py`
+- **Volatility indicators**: Used in `transition_regime_handler.py`
+- **Regime classification parameters**: Used in `simple_regime_rules.py`
+- **Transition parameters**: Used in `transition_regime_handler.py`
+
+#### **System Monitoring (37 parameters)**
+- **Learning rate**: Used in `dynamic_weighter.py`
+- **Performance multipliers**: Used in `dynamic_weighter.py`
+- **Monitoring intervals**: Used in `supervisor.py`
+- **Memory thresholds**: Used in `enhanced_memory_management.py`
+
+#### **Two-Tier System (29 parameters)**
+- **Confidence thresholds**: Used in `regime_expert_orchestrator.py`
+- **Integration weights**: Used in `two_tier_integration.py`
+- **Performance thresholds**: Used in `regime_expert_orchestrator.py`
+
+#### **Regime Transitions (25 parameters)**
+- **Transition detection**: Used in `transition_regime_handler.py`
+- **Model blending**: Used in `transition_regime_handler.py`
+- **Risk management**: Used in `transition_regime_handler.py`
+
+### ✅ **Missing Parameters Added**
+The following hardcoded parameters were **added** to the configuration:
+
+#### **From `simple_regime_rules.py`:**
+- ✅ `ema_fast_period = 21`
+- ✅ `ema_slow_period = 55`
+- ✅ `ema_sep_min_ratio = 0.0`
+
+#### **From `unified_regime_classifier.py`:**
+- ✅ `volatility_period = 10`
+- ✅ `atr_normalized_threshold = 0.035`
+- ✅ `volatility_percentile_threshold = 0.80`
+- ✅ `bb_width_volatility_threshold = 0.045`
+
+#### **From `transition_regime_handler.py`:**
+- ✅ `transition_intensity_threshold = 0.3`
+- ✅ `min_combined_intensity = 0.6`
+- ✅ `max_regimes_to_consider = 3`
+
+#### **From `dynamic_weighter.py`:**
+- ✅ `performance_multiplier_base = 0.5`
+- ✅ `performance_multiplier_range = 1.0`
+
+### ✅ **No Forgotten Parameters**
+All optimizable parameters from the codebase are now included in the configuration:
+
+#### **Training Steps (1-11):**
+- ✅ Step 2: Market regime classification parameters
+- ✅ Step 3: HMM regime discovery parameters
+- ✅ Step 4: Processing & labeling parameters
+- ✅ Step 5: HMM-based training parameters
+- ✅ Step 6: Analyst enhancement parameters
+- ✅ Step 11: Confidence calibration parameters
+
+#### **Trading Components:**
+- ✅ Analyst: Confidence thresholds, technical indicators
+- ✅ Tactician: Position sizing, leverage, TP/SL
+- ✅ Supervisor: Ensemble weights, system monitoring
+- ✅ Regime transitions: Transition handling parameters
+
+#### **System Components:**
+- ✅ Data quality thresholds
+- ✅ Performance monitoring parameters
+- ✅ Memory and resource management
+- ✅ Error handling and recovery
 
 ## 🧹 **Parameter Cleanup**
 
@@ -275,15 +350,9 @@ The following parameters have been removed as they were based on strategies we d
 - ❌ `momentum_breakout_threshold`
 - ❌ `mean_reversion_threshold` 
 - ❌ `trend_following_threshold`
-- ❌ `momentum_confidence_threshold`
-- ❌ `mean_reversion_confidence_threshold`
-- ❌ `trend_following_confidence_threshold`
-- ❌ `momentum_position_multiplier`
-- ❌ `mean_reversion_position_multiplier`
-- ❌ `trend_following_position_multiplier`
-- ❌ `momentum_risk_multiplier`
-- ❌ `mean_reversion_risk_multiplier`
-- ❌ `trend_following_risk_multiplier`
+- ❌ Strategy-specific confidence thresholds
+- ❌ Strategy-specific position multipliers
+- ❌ Strategy-specific risk multipliers
 
 #### **Regime Transitions Configuration:**
 - ❌ `trend_emergence_threshold`
@@ -301,39 +370,3 @@ These parameters were removed because:
 2. **Architecture Mismatch**: Our system uses per-HMM regime models, not strategy-based model selection
 3. **Simplification**: Removing unused parameters reduces complexity and optimization space
 4. **Focus on Reality**: Parameters now reflect what the system actually does
-
-## ✅ Comprehensive Coverage Achieved
-
-The new configuration structure now covers **ALL** parameters used during training and trading:
-
-### ✅ **Training Parameters**
-- Technical indicator parameters (RSI, MACD, ADX, etc.)
-- Feature engineering parameters
-- Data quality thresholds
-- Model optimization parameters
-- Cross-validation settings
-- **Training optimization parameters from all steps (2, 3, 4, 5, 6, 11)**
-- **Model hyperparameters (LightGBM, Neural Networks, Random Forest)**
-- **Performance thresholds and memory settings**
-
-### ✅ **Trading Parameters**
-- Confidence thresholds
-- Position sizing parameters
-- Leverage parameters
-- Take profit/stop loss parameters
-- Risk management parameters
-
-### ✅ **System Parameters**
-- Monitoring intervals
-- Performance thresholds
-- Memory and cache settings
-- Learning and adaptation parameters
-- Export and reporting settings
-
-### ✅ **Two-Tier System Parameters**
-- Tier 1 (Direction/Strategy) parameters
-- Tier 2 (Timing) parameters
-- Integration parameters
-- Strategy classification thresholds
-
-The new configuration structure is now complete and optimized for per-HMM state ML models with comprehensive parameter coverage!

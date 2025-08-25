@@ -1,9 +1,8 @@
 # src/analyst/__init__.py
 # This file makes the 'analyst' directory a Python package.
 
-from .live_regime_calculations import LiveRegimeCalculator, RegimeSummary
+# Note: LiveRegimeCalculator and RegimeSummary have been removed
+# as they were part of the deprecated bull/bear/sideways market classification
+# The system now uses advanced HMM market categorization
 
-__all__ = [
-    "LiveRegimeCalculator",
-    "RegimeSummary",
-]
+__all__ = []

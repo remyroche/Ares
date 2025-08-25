@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.analyst.simple_regime_rules import classify_regime_series
+from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
 from src.training.steps.unified_data_loader import get_unified_data_loader
 from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
 from src.utils.logger import system_logger
@@ -73,11 +73,11 @@ class MarketRegimeClassificationStep:
         """Initialize the market regime classification step."""
         self.logger.info("🚀 Initializing Market Regime Classification Step...")
 
-        # No ML classifier; using deterministic EMA/ADX rules
-        self.regime_classifier = None
+        # Using advanced HMM-based UnifiedRegimeClassifier
+        self.regime_classifier = None  # Will be initialized per execution
 
         self.logger.info(
-            "✅ Market Regime Classification Step initialized successfully",
+            "✅ Market Regime Classification Step initialized successfully (Advanced HMM)",
         )
 
     async def execute(
@@ -283,16 +283,13 @@ class MarketRegimeClassificationStep:
         *,
         training_input: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Classify market regimes using simplified EMA/ADX rules on raw OHLCV.
+        """Classify market regimes using the existing advanced HMM-based UnifiedRegimeClassifier.
 
-        Rules (1h timeframe):
-        - Bull: EMA(21) > EMA(55) AND ADX > 25
-        - Bear: EMA(21) < EMA(55) AND ADX > 25
-        - Sideways: if neither Bull nor Bear OR ADX < 20
+        This uses the pre-existing classify_regimes method instead of rewriting the logic.
         """
         try:
             self.logger.info(
-                f"Classifying market regimes (EMA/ADX) for {symbol} on {exchange}...",
+                f"Classifying market regimes (Advanced HMM) for {symbol} on {exchange}...",
             )
 
             # Ensure required columns exist and are sorted by timestamp
@@ -323,213 +320,64 @@ class MarketRegimeClassificationStep:
 
             df = data.copy()
 
-            # Resolve parameter overrides (training_input > config > defaults)
-            regime_cfg = (
-                (self.config or {}).get("regime_classification", {})
-                if isinstance(self.config, dict)
-                else {}
-            )
-            overrides = (
-                (training_input or {}).get("regime_params", {})
-                if isinstance(training_input, dict)
-                else {}
+            # Initialize the UnifiedRegimeClassifier
+            self.logger.info("Initializing UnifiedRegimeClassifier...")
+            regime_classifier = UnifiedRegimeClassifier(
+                config=self.config,
+                exchange=exchange,
+                symbol=symbol,
             )
 
-            ema_fast = overrides.get("ema_fast", regime_cfg.get("ema_fast", 21))
-            ema_slow = overrides.get("ema_slow", regime_cfg.get("ema_slow", 55))
-            adx_period = overrides.get("adx_period", regime_cfg.get("adx_period", 14))
-            adx_trend_threshold = overrides.get(
-                "adx_trend_threshold", regime_cfg.get("adx_trend_threshold", 25.0),
-            )
-            adx_sideways_threshold = overrides.get(
-                "adx_sideways_threshold", regime_cfg.get("adx_sideways_threshold", 20.0),
-            )
-            ema_sep_min_ratio = overrides.get(
-                "ema_sep_min_ratio", regime_cfg.get("ema_sep_min_ratio", 0.0),
-            )
+            # Use the existing classify_regimes method
+            self.logger.info("Using existing advanced HMM classification system...")
+            classification_results = await regime_classifier.classify_regimes(df)
 
-            # Optional auto-calibration to hit target SIDEWAYS band
-            target_range = overrides.get(
-                "target_sideways_range",
-                regime_cfg.get("target_sideways_range", [0.25, 0.35]),
-            )  # default 25–35%
-            auto_calibrate = overrides.get(
-                "auto_calibrate_sideways",
-                regime_cfg.get("auto_calibrate_sideways", True),
-            )
-            max_calibration_iters = int(
-                overrides.get(
-                    "max_calibration_iters", regime_cfg.get("max_calibration_iters", 6),
-                ),
-            )
-            # Step sizes
-            adx_trend_step = float(
-                overrides.get("adx_trend_step", regime_cfg.get("adx_trend_step", 2.0)),
-            )
-            adx_sideways_step = float(
-                overrides.get(
-                    "adx_sideways_step", regime_cfg.get("adx_sideways_step", 1.0),
-                ),
-            )
-            ema_sep_step = float(
-                overrides.get("ema_sep_step", regime_cfg.get("ema_sep_step", 0.0005)),
-            )
+            # Check for errors
+            if "error" in classification_results:
+                raise ValueError(f"Regime classification failed: {classification_results['error']}")
 
-            def classify_and_ratio(
-                fast: int,
-                slow: int,
-                adx_p: int,
-                adx_tr: float,
-                adx_sw: float,
-                ema_sep_min: float,
-            ) -> tuple[list[str], list[float], float]:
-                r, c = classify_regime_series(
-                    df,
-                    ema_fast=fast,
-                    ema_slow=slow,
-                    adx_period=adx_p,
-                    adx_trend_threshold=adx_tr,
-                    adx_sideways_threshold=adx_sw,
-                    ema_sep_min_ratio=ema_sep_min,
-                )
-                if len(r) == 0:
-                    return r, c, 0.0
-                sideways_ratio = float(np.mean(np.array(r, dtype=object) == "SIDEWAYS"))
-                return r, c, sideways_ratio
+            # Extract results from the existing method
+            regimes = classification_results.get("regimes", [])
+            confidence_scores = classification_results.get("confidence_scores", [])
+            regime_distribution = classification_results.get("regime_distribution", {})
+            total_records = classification_results.get("total_records", len(df))
 
-            regimes, confidences, sideways_ratio = classify_and_ratio(
-                ema_fast,
-                ema_slow,
-                adx_period,
-                adx_trend_threshold,
-                adx_sideways_threshold,
-                ema_sep_min_ratio,
-            )
-
-            calibrated_params = {
-                "ema_fast": ema_fast,
-                "ema_slow": ema_slow,
-                "adx_period": adx_period,
-                "adx_trend_threshold": adx_trend_threshold,
-                "adx_sideways_threshold": adx_sideways_threshold,
-                "ema_sep_min_ratio": ema_sep_min_ratio,
-            }
-
-            if (
-                auto_calibrate
-                and target_range
-                and isinstance(target_range, (list, tuple))
-                and len(target_range) == 2
-            ):
-                target_low = float(target_range[0])
-                target_high = float(target_range[1])
-                it = 0
-
-                _ADX_LOWER_BOUND = 5.0
-                _ADX_UPPER_BOUND = 60.0
-                _EMA_SEP_LOWER_BOUND = 0.0
-                _EMA_SEP_UPPER_BOUND = 0.02
-                _ADX_THRESHOLD_GAP = 1.0
-
-                while (
-                    sideways_ratio < target_low or sideways_ratio > target_high
-                ) and it < max_calibration_iters:
-                    # Adjust thresholds to move ratio toward band
-                    if sideways_ratio > target_high:
-                        # Too much SIDEWAYS -> make trend easier
-                        adx_trend_threshold = max(
-                            _ADX_LOWER_BOUND, adx_trend_threshold - adx_trend_step,
-                        )
-                        adx_sideways_threshold = max(
-                            _ADX_LOWER_BOUND, adx_sideways_threshold - adx_sideways_step,
-                        )
-                        ema_sep_min_ratio = max(
-                            _EMA_SEP_LOWER_BOUND, ema_sep_min_ratio - ema_sep_step,
-                        )
-                    else:
-                        # Too little SIDEWAYS -> make trend harder / expand sideways
-                        adx_trend_threshold = min(
-                            _ADX_UPPER_BOUND, adx_trend_threshold + adx_trend_step,
-                        )
-                        adx_sideways_threshold = min(
-                            adx_trend_threshold - _ADX_THRESHOLD_GAP,
-                            adx_sideways_threshold + adx_sideways_step,
-                        )
-                        ema_sep_min_ratio = min(
-                            _EMA_SEP_UPPER_BOUND, ema_sep_min_ratio + ema_sep_step,
-                        )
-
-                    # Enforce relationship
-                    adx_sideways_threshold = min(
-                        adx_sideways_threshold, adx_trend_threshold - _ADX_THRESHOLD_GAP,
-                    )
-
-                    regimes, confidences, sideways_ratio = classify_and_ratio(
-                        ema_fast,
-                        ema_slow,
-                        adx_period,
-                        adx_trend_threshold,
-                        adx_sideways_threshold,
-                        ema_sep_min_ratio,
-                    )
-
-                    it += 1
-
-                calibrated_params.update(
-                    {
-                        "adx_trend_threshold": adx_trend_threshold,
-                        "adx_sideways_threshold": adx_sideways_threshold,
-                        "ema_sep_min_ratio": ema_sep_min_ratio,
-                        "target_sideways_range": [target_low, target_high],
-                        "achieved_sideways_ratio": sideways_ratio,
-                        "calibration_iters": it,
-                    },
-                )
-
-            # Build results
-            from collections import Counter
-
-            regime_counts = Counter(regimes)
-
+            # Build results in the expected format for step2
             formatted_results: dict[str, Any] = {
                 "symbol": symbol,
                 "exchange": exchange,
                 "classification_date": datetime.utcnow().isoformat(),
-                "total_records": len(df),
-                "regime_distribution": dict(regime_counts),
+                "total_records": total_records,
+                "regime_distribution": regime_distribution,
                 "regime_sequence": regimes,
                 "regime_transitions": [],
-                "confidence_scores": confidences,
+                "confidence_scores": confidence_scores,
                 "metadata": {
-                    "classifier_version": "ema_adx_rules_v2",
-                    "classification_method": "EMA_ADX_PARAMETERIZED",
-                    "ema_periods": {"fast": ema_fast, "slow": ema_slow},
-                    "adx": {
-                        "period": adx_period,
-                        "trend_threshold": adx_trend_threshold,
-                        "sideways_threshold": adx_sideways_threshold,
-                    },
-                    "ema_sep_min_ratio": ema_sep_min_ratio,
+                    "classifier_version": "unified_hmm_v1",
+                    "classification_method": "ADVANCED_HMM_CATEGORIZATION",
                     "timeframe": "1h",
-                    "calibrated_params": calibrated_params,
+                    "hmm_states": regime_classifier.n_states,
+                    "hmm_iterations": regime_classifier.n_iter,
+                    "system_status": regime_classifier.get_system_status(),
                 },
             }
 
-            # Transitions
-            s_regimes = pd.Series(regimes)
-            shifted = s_regimes.shift(1)
-            mask = s_regimes != shifted
-            transitions_df = pd.DataFrame(
-                {
-                    "from_regime": shifted[mask].values,
-                    "to_regime": s_regimes[mask].values,
-                    "transition_index": s_regimes.index[mask].values,
-                },
-            )
-            formatted_results["regime_transitions"] = transitions_df.to_dict("records")
+            # Calculate transitions
+            if len(regimes) > 1:
+                s_regimes = pd.Series(regimes)
+                shifted = s_regimes.shift(1)
+                mask = s_regimes != shifted
+                transitions_df = pd.DataFrame(
+                    {
+                        "from_regime": shifted[mask].values,
+                        "to_regime": s_regimes[mask].values,
+                        "transition_index": s_regimes.index[mask].values,
+                    },
+                )
+                formatted_results["regime_transitions"] = transitions_df.to_dict("records")
 
             self.logger.info(
-                f"Regime classification (EMA/ADX) completed. Found {len(regime_counts)} distinct regimes",
+                f"Advanced HMM regime classification completed. Found {len(regime_distribution)} distinct regimes",
             )
 
             return formatted_results

@@ -42,7 +42,17 @@ def test_config_loading():
         
         # Test optimizable configs loading
         optimizable_configs = get_all_optimizable_configs()
-        expected_categories = ["confidence", "position_sizing", "leverage", "tpsl", "ensemble", "sr", "two_tier"]
+        expected_categories = [
+            "confidence", 
+            "position_sizing", 
+            "leverage", 
+            "tpsl", 
+            "ensemble", 
+            "sr", 
+            "two_tier",
+            "technical_indicators",
+            "system_monitoring"
+        ]
         
         for category in expected_categories:
             if category in optimizable_configs:
@@ -101,8 +111,19 @@ def test_search_spaces():
     print("\n🎯 Testing search spaces...")
     
     try:
+        # Test search spaces
         search_spaces = get_all_search_spaces()
-        expected_categories = ["confidence", "position_sizing", "leverage", "tpsl", "ensemble", "sr", "two_tier"]
+        expected_categories = [
+            "confidence", 
+            "position_sizing", 
+            "leverage", 
+            "tpsl", 
+            "ensemble", 
+            "sr", 
+            "two_tier",
+            "technical_indicators",
+            "system_monitoring"
+        ]
         
         for category in expected_categories:
             if category in search_spaces:
@@ -129,6 +150,20 @@ def test_search_spaces():
             print("✅ Two-tier search space contains expected parameters")
         else:
             print("❌ Two-tier search space missing expected parameters")
+            return False
+        
+        technical_indicators_space = get_search_space("technical_indicators")
+        if "rsi_period" in technical_indicators_space:
+            print("✅ Technical indicators search space contains expected parameters")
+        else:
+            print("❌ Technical indicators search space missing expected parameters")
+            return False
+        
+        system_monitoring_space = get_search_space("system_monitoring")
+        if "analysis_interval" in system_monitoring_space:
+            print("✅ System monitoring search space contains expected parameters")
+        else:
+            print("❌ System monitoring search space missing expected parameters")
             return False
         
         print("✅ All search space tests passed")
@@ -210,12 +245,11 @@ def test_complete_config():
     print("\n📋 Testing complete configuration...")
     
     try:
+        # Test complete configuration
         complete_config = get_complete_config()
         
-        # Check that both static and optimizable configs are included
+        # Test static sections
         static_sections = ["database", "exchange", "system", "environment", "trading", "training"]
-        optimizable_sections = ["confidence", "position_sizing", "leverage", "tpsl", "ensemble", "sr", "two_tier"]
-        
         for section in static_sections:
             if section in complete_config:
                 print(f"✅ Static section '{section}' found in complete config")
@@ -223,6 +257,18 @@ def test_complete_config():
                 print(f"❌ Static section '{section}' missing from complete config")
                 return False
         
+        # Test optimizable sections
+        optimizable_sections = [
+            "confidence", 
+            "position_sizing", 
+            "leverage", 
+            "tpsl", 
+            "ensemble", 
+            "sr", 
+            "two_tier",
+            "technical_indicators",
+            "system_monitoring"
+        ]
         for section in optimizable_sections:
             if section in complete_config:
                 print(f"✅ Optimizable section '{section}' found in complete config")

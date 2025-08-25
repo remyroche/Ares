@@ -24,15 +24,11 @@ class LeverageConfig:
     # Dynamic leverage adjustment
     enable_dynamic_leverage: bool = True
     volatility_based_leverage: bool = True
-    regime_based_leverage: bool = True
     
     # Volatility-based leverage
     volatility_leverage_multiplier: float = 1.0
     low_volatility_leverage_boost: float = 1.2
     high_volatility_leverage_reduction: float = 0.7
-    
-    # Regime-based leverage
-    regime_leverage_multipliers: dict[str, float] = None
     
     # Confidence-based leverage
     enable_confidence_leverage: bool = True
@@ -62,13 +58,6 @@ class LeverageConfig:
                 60: 0.03,  # 60x leverage: can handle 3% adverse movement
                 75: 0.025, # 75x leverage: can handle 2.5% adverse movement
                 100: 0.02, # 100x leverage: can handle 2% adverse movement
-            }
-        
-        if self.regime_leverage_multipliers is None:
-            self.regime_leverage_multipliers = {
-                "BULL_TREND": 1.2,
-                "BEAR_TREND": 0.8,
-                "SIDEWAYS_RANGE": 0.9,
             }
         
         if self.confidence_leverage_thresholds is None:
@@ -106,10 +95,6 @@ def get_leverage_search_space() -> dict[str, dict[str, Any]]:
         "max_liquidation_risk": {"min": 0.02, "max": 0.1, "type": "float"},
         "leverage_decay_rate": {"min": 0.05, "max": 0.2, "type": "float"},
         "leverage_decay_threshold": {"min": 0.7, "max": 0.9, "type": "float"},
-        # Regime leverage multipliers
-        "regime_leverage_multipliers.BULL_TREND": {"min": 1.0, "max": 1.5, "type": "float"},
-        "regime_leverage_multipliers.BEAR_TREND": {"min": 0.6, "max": 0.9, "type": "float"},
-        "regime_leverage_multipliers.SIDEWAYS_RANGE": {"min": 0.8, "max": 1.1, "type": "float"},
         # Confidence leverage multipliers
         "confidence_leverage_multipliers.low_confidence": {"min": 0.3, "max": 0.7, "type": "float"},
         "confidence_leverage_multipliers.medium_confidence": {"min": 0.6, "max": 1.0, "type": "float"},

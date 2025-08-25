@@ -1,4 +1,4 @@
-# src/training/steps/step4_regime_data_splitting.py
+# src/training/steps/step7_regime_data_splitting.py
 
 import asyncio
 import json
@@ -175,7 +175,7 @@ class RegimeDataSplittingStep:
 
 
 @deterministic_seed(42)
-@idempotent_step(step_key="step4_regime_data_splitting")
+@idempotent_step(step_key="step7_regime_data_splitting")
 @artifact_write_lock()
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")
@@ -238,7 +238,7 @@ class RegimeDataSplittingStep:
     validation_score_requirements={"splitting_accuracy": 0.8},
 )
 @auto_fix_data_quality_issues
-@handle_errors(exceptions=(Exception,), default_return=False, context="step4_regime_data_splitting")
+@handle_errors(exceptions=(Exception,), default_return=False, context="step7_regime_data_splitting")
 async def run_step(
     symbol: str, 
     exchange: str, 

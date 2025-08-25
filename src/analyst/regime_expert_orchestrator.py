@@ -16,10 +16,8 @@ from src.analyst.predictive_ensembles.ensemble_orchestrator import (
     RegimePredictiveEnsembles,
 )
 from src.analyst.regime_runtime import get_current_regime_info
-from src.analyst.transition_regime_handler import (
-    TransitionRegimeHandler,
-    TransitionAnalysis,
-)
+# TransitionRegimeHandler and TransitionAnalysis have been removed
+# as they were part of the deprecated bull/bear/sideways market classification
 
 
 class RegimeExpertOrchestrator:
@@ -77,10 +75,7 @@ class RegimeExpertOrchestrator:
         self.use_step9_5 = config.get("use_step9_5", True)
         self.use_step10 = config.get("use_step10", True)
 
-        # Initialize transition handler for cluster -1
-        self.transition_handler = TransitionRegimeHandler(
-            config.get("transition_config", {})
-        )
+        # Transition handler removed - using advanced HMM categorization instead
 
         # Cache for regime predictions
         self.regime_cache = {}

@@ -12,7 +12,6 @@ from sklearn.decomposition import PCA
 from src.config import CONFIG
 from src.utils.logger import system_logger
 
-from .regime_ensembles.sideways_range_ensemble import SidewaysRangeEnsemble
 from .regime_ensembles.volatile_regime_ensemble import VolatileRegimeEnsemble
 
 
@@ -29,7 +28,6 @@ class RegimePredictiveEnsembles:
 
         # Initialize all possible ensemble instances - updated for new regime classification
         self.regime_ensembles = {
-            "SIDEWAYS_RANGE": SidewaysRangeEnsemble(config, "SidewaysRangeEnsemble"),
             "VOLATILE_REGIME": VolatileRegimeEnsemble(config, "VolatileRegimeEnsemble"),
         }
         # Model storage path is now dynamic based on checkpoint config
@@ -140,13 +138,8 @@ class RegimePredictiveEnsembles:
             if regime_key not in self.regime_ensembles:
                 self.logger.info(f"🆕 Creating new ensemble instance for {regime_key}")
                 # Create a new ensemble instance for this HMM composite regime
-                if regime_id == 0:  # Assuming regime 0 is bullish
-                    ensemble_instance = BullTrendEnsemble(self.config, regime_key)
-                elif regime_id == 1:  # Assuming regime 1 is bearish
-                    ensemble_instance = BearTrendEnsemble(self.config, regime_key)
-                else:
-                    # For other regimes, use a generic ensemble
-                    ensemble_instance = VolatileRegimeEnsemble(self.config, regime_key)
+                # Use VolatileRegimeEnsemble for all regimes since we're using advanced HMM categorization
+                ensemble_instance = VolatileRegimeEnsemble(self.config, regime_key)
                 self.regime_ensembles[regime_key] = ensemble_instance
 
             ensemble_instance = self.regime_ensembles[regime_key]

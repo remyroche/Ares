@@ -53,7 +53,7 @@ def test_config_loading():
             "technical_indicators",
             "system_monitoring",
             "training_optimization",
-            "strategy_selection"
+            "regime_transitions"
         ]
         
         for category in expected_categories:
@@ -175,11 +175,11 @@ def test_search_spaces():
             print("❌ Training optimization search space missing expected parameters")
             return False
         
-        strategy_selection_space = get_search_space("strategy_selection")
-        if "momentum_selection_threshold" in strategy_selection_space:
-            print("✅ Strategy selection search space contains expected parameters")
+        regime_transitions_space = get_search_space("regime_transitions")
+        if "transition_intensity_threshold" in regime_transitions_space:
+            print("✅ Regime transitions search space contains expected parameters")
         else:
-            print("❌ Strategy selection search space missing expected parameters")
+            print("❌ Regime transitions search space missing expected parameters")
             return False
         
         print("✅ All search space tests passed")
@@ -285,7 +285,7 @@ def test_complete_config():
             "technical_indicators",
             "system_monitoring",
             "training_optimization",
-            "strategy_selection"
+            "regime_transitions"
         ]
         for section in optimizable_sections:
             if section in complete_config:

@@ -29,9 +29,6 @@ class RegimeTransitionConfig:
     regime_expert_weight: float = 0.3
     
     # Transition type classification
-    trend_emergence_threshold: float = 0.6
-    trend_continuation_threshold: float = 0.5
-    trend_reversal_threshold: float = 0.7
     range_breakout_threshold: float = 0.65
     volatility_spike_threshold: float = 0.55
     
@@ -85,9 +82,6 @@ def get_regime_transition_search_space() -> dict[str, dict[str, Any]]:
         "regime_expert_weight": {"min": 0.2, "max": 0.5, "type": "float"},
         
         # Transition type classification
-        "trend_emergence_threshold": {"min": 0.5, "max": 0.8, "type": "float"},
-        "trend_continuation_threshold": {"min": 0.4, "max": 0.7, "type": "float"},
-        "trend_reversal_threshold": {"min": 0.6, "max": 0.9, "type": "float"},
         "range_breakout_threshold": {"min": 0.55, "max": 0.8, "type": "float"},
         "volatility_spike_threshold": {"min": 0.45, "max": 0.7, "type": "float"},
         

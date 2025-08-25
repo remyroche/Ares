@@ -32,8 +32,7 @@ class EnsembleConfig:
     
     # Weighted ensemble
     analyst_weight: float = 0.4
-    tactician_weight: float = 0.3
-    strategist_weight: float = 0.3
+    tactician_weight: float = 0.6
     
     # Meta-learner parameters
     meta_learner_type: str = "lightgbm"
@@ -71,8 +70,7 @@ def get_ensemble_search_space() -> dict[str, dict[str, Any]]:
         "all_threshold_confidence": {"min": 0.7, "max": 0.95, "type": "float"},
         "majority_vote_threshold": {"min": 0.5, "max": 0.8, "type": "float"},
         "analyst_weight": {"min": 0.2, "max": 0.6, "type": "float"},
-        "tactician_weight": {"min": 0.2, "max": 0.5, "type": "float"},
-        "strategist_weight": {"min": 0.2, "max": 0.5, "type": "float"},
+        "tactician_weight": {"min": 0.4, "max": 0.8, "type": "float"},
         "meta_learner_learning_rate": {"min": 0.05, "max": 0.3, "type": "float"},
         "meta_learner_n_estimators": {"min": 50, "max": 200, "type": "int"},
         "meta_learner_max_depth": {"min": 3, "max": 10, "type": "int"},

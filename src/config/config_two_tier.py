@@ -55,6 +55,21 @@ class TwoTierConfig:
     mean_reversion_threshold: float = 0.4
     trend_following_threshold: float = 0.7
     
+    # Strategy-specific confidence thresholds
+    momentum_confidence_threshold: float = 0.75
+    mean_reversion_confidence_threshold: float = 0.8
+    trend_following_confidence_threshold: float = 0.7
+    
+    # Strategy-specific position sizing
+    momentum_position_multiplier: float = 1.2
+    mean_reversion_position_multiplier: float = 0.8
+    trend_following_position_multiplier: float = 1.0
+    
+    # Strategy-specific risk management
+    momentum_risk_multiplier: float = 1.1
+    mean_reversion_risk_multiplier: float = 0.9
+    trend_following_risk_multiplier: float = 1.0
+    
     def __post_init__(self):
         if self.tier1_timeframes is None:
             self.tier1_timeframes = ["1m", "5m", "15m", "1h"]
@@ -91,4 +106,16 @@ def get_two_tier_search_space() -> dict[str, dict[str, Any]]:
         "momentum_breakout_threshold": {"min": 0.5, "max": 0.8, "type": "float"},
         "mean_reversion_threshold": {"min": 0.3, "max": 0.6, "type": "float"},
         "trend_following_threshold": {"min": 0.6, "max": 0.9, "type": "float"},
+        # Strategy-specific confidence thresholds
+        "momentum_confidence_threshold": {"min": 0.7, "max": 0.9, "type": "float"},
+        "mean_reversion_confidence_threshold": {"min": 0.75, "max": 0.9, "type": "float"},
+        "trend_following_confidence_threshold": {"min": 0.65, "max": 0.85, "type": "float"},
+        # Strategy-specific position sizing
+        "momentum_position_multiplier": {"min": 1.0, "max": 1.5, "type": "float"},
+        "mean_reversion_position_multiplier": {"min": 0.6, "max": 1.0, "type": "float"},
+        "trend_following_position_multiplier": {"min": 0.8, "max": 1.2, "type": "float"},
+        # Strategy-specific risk management
+        "momentum_risk_multiplier": {"min": 1.0, "max": 1.3, "type": "float"},
+        "mean_reversion_risk_multiplier": {"min": 0.8, "max": 1.0, "type": "float"},
+        "trend_following_risk_multiplier": {"min": 0.9, "max": 1.1, "type": "float"},
     }

@@ -102,21 +102,9 @@ ensemble_settings:
   model_cache_ttl: 300            # Cache TTL in seconds (5 minutes)
   
   # Ensemble-specific settings
-  bull_trend_ensemble:
-    name: "BullTrendEnsemble"
-    description: "Specialized ensemble for bullish market conditions"
-    
-  bear_trend_ensemble:
-    name: "BearTrendEnsemble" 
-    description: "Specialized ensemble for bearish market conditions"
-    
-  sideways_range_ensemble:
-    name: "SidewaysRangeEnsemble"
-    description: "Specialized ensemble for sideways market conditions"
-    
   volatile_regime_ensemble:
     name: "VolatileRegimeEnsemble"
-    description: "Specialized ensemble for volatile market conditions"
+    description: "Specialized ensemble for all market conditions using advanced HMM categorization"
 
 # Decision making settings
 decision_making:

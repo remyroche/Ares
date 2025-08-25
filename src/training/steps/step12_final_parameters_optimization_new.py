@@ -209,7 +209,7 @@ class FinalParametersOptimizationStepNew:
                 "technical_indicators",
                 "system_monitoring",
                 "training_optimization",
-                "strategy_selection"
+                "regime_transitions"
             ]
 
             for category in categories:
@@ -382,9 +382,9 @@ class FinalParametersOptimizationStepNew:
             elif category == "training_optimization":
                 # Training optimization parameters
                 base_score = self._evaluate_training_optimization_params(params, calibration_results)
-            elif category == "strategy_selection":
-                # Strategy selection parameters
-                base_score = self._evaluate_strategy_selection_params(params, calibration_results)
+            elif category == "regime_transitions":
+                # Regime transition parameters
+                base_score = self._evaluate_regime_transitions_params(params, calibration_results)
             
             return base_score
 
@@ -661,46 +661,49 @@ class FinalParametersOptimizationStepNew:
         
         return score
 
-    def _evaluate_strategy_selection_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
-        """Evaluate strategy selection parameters."""
+    def _evaluate_regime_transitions_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
+        """Evaluate regime transition parameters."""
         score = 0.0
         
-        # Strategy selection thresholds
-        if "momentum_selection_threshold" in params:
-            threshold = params["momentum_selection_threshold"]
-            if 0.6 <= threshold <= 0.85:
+        # Transition detection thresholds
+        if "transition_intensity_threshold" in params:
+            threshold = params["transition_intensity_threshold"]
+            if 0.2 <= threshold <= 0.5:
                 score += 0.2
             else:
                 score += 0.1
         
-        # Model selection criteria
-        if "min_model_confidence" in params:
-            min_confidence = params["min_model_confidence"]
-            if 0.5 <= min_confidence <= 0.75:
+        # Transition confidence thresholds
+        if "transition_confidence_threshold" in params:
+            confidence_thresh = params["transition_confidence_threshold"]
+            if 0.6 <= confidence_thresh <= 0.9:
                 score += 0.2
             else:
                 score += 0.1
         
-        # Model diversity requirements
-        if "min_model_diversity" in params:
-            diversity = params["min_model_diversity"]
-            if 0.2 <= diversity <= 0.5:
+        # Model blending during transitions
+        if "step9_5_weight" in params and "step10_weight" in params and "regime_expert_weight" in params:
+            step9_5_w = params["step9_5_weight"]
+            step10_w = params["step10_weight"]
+            regime_w = params["regime_expert_weight"]
+            total_weight = step9_5_w + step10_w + regime_w
+            if 0.9 <= total_weight <= 1.1:  # Weights should sum to approximately 1
                 score += 0.2
             else:
                 score += 0.1
         
-        # Strategy switching thresholds
-        if "strategy_switch_threshold" in params:
-            switch_thresh = params["strategy_switch_threshold"]
-            if 0.1 <= switch_thresh <= 0.3:
+        # Transition timing
+        if "transition_lookback_periods" in params:
+            lookback = params["transition_lookback_periods"]
+            if 3 <= lookback <= 10:
                 score += 0.2
             else:
                 score += 0.1
         
-        # Performance-based selection
-        if "min_performance_threshold" in params:
-            perf_thresh = params["min_performance_threshold"]
-            if 0.4 <= perf_thresh <= 0.6:
+        # Risk management during transitions
+        if "transition_risk_multiplier" in params:
+            risk_mult = params["transition_risk_multiplier"]
+            if 1.0 <= risk_mult <= 1.5:
                 score += 0.2
             else:
                 score += 0.1
@@ -757,7 +760,7 @@ class FinalParametersOptimizationStepNew:
                 "technical_indicators",
                 "system_monitoring",
                 "training_optimization",
-                "strategy_selection"
+                "regime_transitions"
             ]
             for category in expected_categories:
                 if category not in optimization_results:

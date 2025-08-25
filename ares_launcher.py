@@ -1436,6 +1436,43 @@ class AresLauncher:
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
+        context="run_step_based_training_with_validation",
+    )
+    async def run_step_based_training_with_validation(
+        self,
+        symbol: str,
+        exchange: str,
+        start_step: str,
+        training_mode: str = "blank",
+        force_rerun: bool = False,
+        with_gui: bool = False,
+    ):
+        """Run step-based training with comprehensive validation of previous steps."""
+        self.logger.info(
+            f"🚀 Running step-based training with validation for {symbol} on {exchange}"
+        )
+        self.logger.info(f"📊 Starting from: {start_step}")
+        self.logger.info(f"🎯 Training mode: {training_mode}")
+        
+        # Validate previous steps before proceeding
+        validation_success = await self._validate_previous_steps(symbol, exchange, start_step)
+        if not validation_success:
+            self.logger.error(f"❌ Cannot start from {start_step} - previous step validation failed")
+            return False
+        
+        # Run the step pipeline with the specified training mode
+        return self._run_step_pipeline(
+            symbol=symbol,
+            exchange=exchange,
+            start_step=start_step,
+            force_rerun=force_rerun,
+            with_gui=with_gui,
+            training_mode=training_mode,
+        )
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
         context="run_step2_with_existing_data",
     )
     async def run_step2_with_existing_data(
@@ -1536,6 +1573,133 @@ class AresLauncher:
             with_gui=with_gui,
             training_mode="blank",  # Use blank mode for step2 with existing data
         )
+
+    async def _validate_previous_steps(self, symbol: str, exchange: str, start_step: str) -> bool:
+        """Validate all previous steps before starting from a specific step."""
+        self.logger.info(f"🔍 Validating previous steps before starting from {start_step}")
+        
+        try:
+            from src.utils.validator_orchestrator import ValidatorOrchestrator
+            from src.utils.step_dependency_validator import StepDependencyValidator
+            
+            # Create validator orchestrator and dependency validator
+            validator_orchestrator = ValidatorOrchestrator()
+            dependency_validator = StepDependencyValidator()
+            
+            # Prepare training input for validation
+            training_input = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": "1m",
+                "data_dir": "data_cache"
+            }
+            
+            # Get step dependencies
+            step_dependencies = dependency_validator.step_dependencies
+            
+            # Find all steps that need to be validated
+            steps_to_validate = self._get_required_steps(start_step, step_dependencies)
+            
+            if not steps_to_validate:
+                self.logger.info(f"✅ No previous steps to validate for {start_step}")
+                return True
+            
+            self.logger.info(f"🔍 Validating {len(steps_to_validate)} previous steps: {steps_to_validate}")
+            
+            # Validate each required step
+            validation_results = {}
+            all_passed = True
+            
+            for step in steps_to_validate:
+                self.logger.info(f"🔍 Validating {step}...")
+                try:
+                    result = await validator_orchestrator.run_step_validator(
+                        step, training_input, {}, CONFIG
+                    )
+                    validation_results[step] = result
+                    
+                    if result.get("validation_passed", False):
+                        self.logger.info(f"✅ {step} validation passed")
+                    else:
+                        self.logger.error(f"❌ {step} validation failed: {result.get('error', 'Unknown error')}")
+                        all_passed = False
+                        
+                except Exception as e:
+                    self.logger.error(f"❌ Error validating {step}: {e}")
+                    validation_results[step] = {"validation_passed": False, "error": str(e)}
+                    all_passed = False
+            
+            # Print validation report
+            self._print_validation_report(validation_results, symbol, exchange, start_step)
+            
+            return all_passed
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in step validation: {e}")
+            return False
+
+    def _get_required_steps(self, start_step: str, step_dependencies: dict) -> list:
+        """Get all steps that need to be validated before starting from a specific step."""
+        required_steps = []
+        
+        # Use a simple approach: validate all steps that come before the start step
+        step_order = [
+            "step1_data_collection",
+            "step1_5_data_converter", 
+            "step2_data_reading",
+            "step3_hmm_regime_discovery",
+            "step4_triple_barrier_method",
+            "step5_labeling",
+            "step6_feature_engineering",
+            "step7_regime_data_splitting",
+            "step8_hmm_based_training",
+            "step8_5_unified_regime_intelligence",
+            "step9_analyst_enhancement",
+            "step10_tactician_labeling",
+            "step11_tactician_specialist_training",
+            "step12_confidence_calibration",
+            "step13_final_parameters_optimization",
+            "step14_walk_forward_validation",
+            "step15_monte_carlo_validation",
+            "step16_ab_testing",
+            "step17_saving",
+        ]
+        
+        try:
+            start_index = step_order.index(start_step)
+            required_steps = step_order[:start_index]
+        except ValueError:
+            self.logger.warning(f"⚠️ Unknown step {start_step}, skipping validation")
+            return []
+        
+        return required_steps
+
+    def _print_validation_report(self, validation_results: dict, symbol: str, exchange: str, start_step: str):
+        """Print a formatted validation report."""
+        print("\n" + "="*80)
+        print(f"📊 STEP VALIDATION REPORT")
+        print(f"🎯 Symbol: {symbol}")
+        print(f"🏢 Exchange: {exchange}")
+        print(f"🚀 Starting from: {start_step}")
+        print("="*80)
+        
+        all_passed = True
+        for step, result in validation_results.items():
+            passed = result.get("validation_passed", False)
+            status = "✅ PASSED" if passed else "❌ FAILED"
+            print(f"{step:<35} {status}")
+            
+            if not passed:
+                all_passed = False
+                error = result.get("error", "Unknown error")
+                print(f"   Error: {error}")
+        
+        print("="*80)
+        if all_passed:
+            print("🎉 All previous steps validated successfully!")
+        else:
+            print("❌ Some previous steps failed validation")
+        print("="*80)
 
     def _print_step2_validation_report(self, step1_result: dict, step1_5_result: dict, symbol: str, exchange: str):
         """Print a formatted validation report for step2 readiness."""
@@ -1894,17 +2058,26 @@ class AresLauncher:
         from src.config import CONFIG
 
         # Set training mode environment
-        if training_mode == "blank":
-            os.environ["BLANK_TRAINING_MODE"] = "1"
+        if training_mode == "light":
+            os.environ["LIGHT_TRAINING_MODE"] = "1"
+            os.environ["BLANK_TRAINING_MODE"] = "0"
             os.environ["FULL_TRAINING_MODE"] = "0"
             self.logger.info(
-                "🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training"
+                "💡 LIGHT TRAINING MODE: Set LIGHT_TRAINING_MODE=1 for step-based training (30 days)"
             )
-        else:
+        elif training_mode == "blank":
+            os.environ["BLANK_TRAINING_MODE"] = "1"
+            os.environ["LIGHT_TRAINING_MODE"] = "0"
+            os.environ["FULL_TRAINING_MODE"] = "0"
+            self.logger.info(
+                "🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training (60 days)"
+            )
+        elif training_mode == "full":
             os.environ["FULL_TRAINING_MODE"] = "1"
+            os.environ["LIGHT_TRAINING_MODE"] = "0"
             os.environ["BLANK_TRAINING_MODE"] = "0"
             self.logger.info(
-                "📊 FULL TRAINING MODE: Set FULL_TRAINING_MODE=1 for step-based training"
+                "📊 FULL TRAINING MODE: Set FULL_TRAINING_MODE=1 for step-based training (730 days)"
             )
 
         # Prevent blank mode with step1 data collection
@@ -1940,27 +2113,8 @@ class AresLauncher:
                 self._force_fresh_start_from_step(orchestrator, start_step)
                 self._clear_checkpoint_files(symbol, exchange, timeframe="1m")
 
-            # Basic validation for step2 (the step2 command has its own comprehensive validation)
-            if start_step in (
-                "step2_market_regime_classification",
-                "step2_processing_labeling_feature_engineering",
-                "step2_feature_engineering",
-            ):
-                self.logger.info("📁 Basic validation for step2 execution")
-                
-                # Basic consolidated file check
-                consolidated_file = (
-                    f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
-                )
-                if not os.path.exists(consolidated_file):
-                    self.logger.error(
-                        f"❌ Consolidated data file not found: {consolidated_file}"
-                    )
-                    self.logger.error(
-                        "Please run data loading first or use: python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE"
-                    )
-                    return False
-                self.logger.info(f"✅ Found consolidated data: {consolidated_file}")
+            # Validation is now handled by EnhancedTrainingManager
+            self.logger.info("🔍 Step validation will be performed by EnhancedTrainingManager")
 
             # Run the step-based training using the orchestrator
             import asyncio
@@ -1998,25 +2152,34 @@ Examples:
   python ares_launcher.py light --symbol ETHUSDT --exchange BINANCE
       python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step4_regime_data_splitting
     python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE  # Start from step2 with existing data
-    python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE --step step2_feature_engineering  # Specific step2
+    python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE --step step2_data_reading  # Specific step2
+    
+    # New step-based commands with validation
+    python ares_launcher.py step1 --symbol ETHUSDT --exchange BINANCE --training-mode light
+    python ares_launcher.py step4 --symbol ETHUSDT --exchange BINANCE --training-mode blank
+    python ares_launcher.py step8 --symbol ETHUSDT --exchange BINANCE --training-mode full
+    python ares_launcher.py step5 --symbol ETHUSDT --exchange BINANCE --training-mode light --force
+    python ares_launcher.py step10 --symbol ETHUSDT --exchange BINANCE --training-mode blank --gui
+    
+    # Legacy step-based commands (still supported)
     python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step1_data_collection
     python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_processing_labeling_feature_engineering
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step3_feature_engineering
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step4_regime_data_splitting
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step5_hmm_based_training
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step6_analyst_enhancement
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step7_analyst_ensemble_creation
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step8_tactician_labeling
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step9_tactician_specialist_training
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step10_tactician_ensemble_creation
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step11_confidence_calibration
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step12_final_parameters_optimization
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step13_walk_forward_validation
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step14_monte_carlo_validation
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step15_ab_testing
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step16_saving
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_processing_labeling_feature_engineering --force
-  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step5_hmm_based_training --force --gui
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step3_feature_engineering
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step4_regime_data_splitting
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step5_hmm_based_training
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step6_analyst_enhancement
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step7_analyst_ensemble_creation
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step8_tactician_labeling
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step9_tactician_specialist_training
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step10_tactician_ensemble_creation
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step11_confidence_calibration
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step12_final_parameters_optimization
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step13_walk_forward_validation
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step14_monte_carlo_validation
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step15_ab_testing
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step16_saving
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_processing_labeling_feature_engineering --force
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step5_hmm_based_training --force --gui
   python ares_launcher.py live --symbol ETHUSDT --exchange BINANCE
   python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE  # Safe: only downloads missing data
   python ares_launcher.py load --symbol ETHUSDT --exchange MEXC    # Safe: only downloads missing data
@@ -2047,6 +2210,9 @@ Examples:
             "precompute",
             "resume",
             "modes",  # Show available training modes
+            # New step-based commands
+            "step1", "step1_5", "step2", "step3", "step4", "step5", "step6", "step7", "step8",
+            "step8_5", "step9", "step10", "step11", "step12", "step13", "step14", "step15", "step16", "step17",
         ],
         help="The command to execute",
     )
@@ -2127,6 +2293,14 @@ Examples:
     )
 
     parser.add_argument(
+        "--training-mode",
+        type=str,
+        choices=["light", "blank", "full"],
+        default="blank",
+        help="Training mode for step-based commands: light (30 days), blank (60 days), full (730 days). Default: blank",
+    )
+
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Force a fresh run starting from the specified step (clears progress and checkpoints from that step). Not available for 'load' command.",
@@ -2178,6 +2352,9 @@ def validate_arguments(args: argparse.Namespace) -> None:
         "multi-timeframe",
         "load",
         "precompute",
+        # Step-based commands
+        "step1", "step1_5", "step2", "step3", "step4", "step5", "step6", "step7", "step8",
+        "step8_5", "step9", "step10", "step11", "step12", "step13", "step14", "step15", "step16", "step17",
     ]
 
     if args.command in commands_requiring_symbol:
@@ -2242,7 +2419,188 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.run_step2_with_existing_data(
                 args.symbol,
                 args.exchange,
-                start_step=normalized_step or "step2_feature_engineering",
+                start_step=normalized_step or "step2_data_reading",
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        # New step-based commands with validation
+        "step1": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step1_data_collection",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step1_5": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step1_5_data_converter",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step3": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step3_hmm_regime_discovery",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step4": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step4_triple_barrier_method",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step5": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step5_labeling",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step6": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step6_feature_engineering",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step7": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step7_regime_data_splitting",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step8": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step8_hmm_based_training",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step8_5": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step8_5_unified_regime_intelligence",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step9": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step9_analyst_enhancement",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step10": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step10_tactician_labeling",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step11": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step11_tactician_specialist_training",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step12": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step12_confidence_calibration",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step13": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step13_final_parameters_optimization",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step14": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step14_walk_forward_validation",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step15": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step15_monte_carlo_validation",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step16": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step16_ab_testing",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step17": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step17_saving",
+                training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,
             ),

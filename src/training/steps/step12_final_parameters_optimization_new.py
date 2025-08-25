@@ -198,7 +198,17 @@ class FinalParametersOptimizationStepNew:
             self.logger.info("Optimizing all parameters by category...")
 
             optimization_results = {}
-            categories = ["confidence", "position_sizing", "leverage", "tpsl", "ensemble", "sr", "two_tier"]
+            categories = [
+                "confidence", 
+                "position_sizing", 
+                "leverage", 
+                "tpsl", 
+                "ensemble", 
+                "sr", 
+                "two_tier",
+                "technical_indicators",
+                "system_monitoring"
+            ]
 
             for category in categories:
                 self.logger.info(f"Optimizing {category} parameters...")
@@ -361,6 +371,12 @@ class FinalParametersOptimizationStepNew:
             elif category == "two_tier":
                 # Two-tier system parameters
                 base_score = self._evaluate_two_tier_params(params, calibration_results)
+            elif category == "technical_indicators":
+                # Technical indicator parameters
+                base_score = self._evaluate_technical_indicators_params(params, calibration_results)
+            elif category == "system_monitoring":
+                # System monitoring parameters
+                base_score = self._evaluate_system_monitoring_params(params, calibration_results)
             
             return base_score
 
@@ -511,6 +527,84 @@ class FinalParametersOptimizationStepNew:
         
         return score
 
+    def _evaluate_technical_indicators_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
+        """Evaluate technical indicator parameters."""
+        score = 0.0
+        
+        # RSI parameters
+        if "rsi_period" in params:
+            rsi_period = params["rsi_period"]
+            if 10 <= rsi_period <= 20:
+                score += 0.2
+            else:
+                score += 0.1
+        
+        # MACD parameters
+        if "macd_fast_period" in params and "macd_slow_period" in params:
+            fast = params["macd_fast_period"]
+            slow = params["macd_slow_period"]
+            if fast < slow and 8 <= fast <= 16 and 20 <= slow <= 30:
+                score += 0.2
+            else:
+                score += 0.1
+        
+        # ADX parameters
+        if "adx_trend_threshold" in params and "adx_sideways_threshold" in params:
+            trend = params["adx_trend_threshold"]
+            sideways = params["adx_sideways_threshold"]
+            if trend > sideways:
+                score += 0.2
+            else:
+                score += 0.1
+        
+        # Volatility parameters
+        if "volatility_threshold" in params:
+            vol_thresh = params["volatility_threshold"]
+            if 0.015 <= vol_thresh <= 0.035:
+                score += 0.2
+            else:
+                score += 0.1
+        
+        return score
+
+    def _evaluate_system_monitoring_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
+        """Evaluate system monitoring parameters."""
+        score = 0.0
+        
+        # Monitoring intervals should be reasonable
+        if "analysis_interval" in params:
+            interval = params["analysis_interval"]
+            if 1800 <= interval <= 7200:  # 30 minutes to 2 hours
+                score += 0.2
+            else:
+                score += 0.1
+        
+        # History limits should be reasonable
+        if "max_history" in params:
+            max_hist = params["max_history"]
+            if 50 <= max_hist <= 200:
+                score += 0.2
+            else:
+                score += 0.1
+        
+        # System performance parameters
+        if "memory_threshold" in params:
+            mem_thresh = params["memory_threshold"]
+            if 0.7 <= mem_thresh <= 0.9:
+                score += 0.2
+            else:
+                score += 0.1
+        
+        # Learning rate should be reasonable
+        if "learning_rate" in params:
+            lr = params["learning_rate"]
+            if 0.005 <= lr <= 0.05:
+                score += 0.2
+            else:
+                score += 0.1
+        
+        return score
+
     async def _load_calibration_results(
         self, symbol: str, exchange: str, data_dir: str, ) -> dict[str, Any] | None:
         """Load calibration results from previous step."""
@@ -550,7 +644,17 @@ class FinalParametersOptimizationStepNew:
                 return False
 
             # Check that all categories have results
-            expected_categories = ["confidence", "position_sizing", "leverage", "tpsl", "ensemble", "sr", "two_tier"]
+            expected_categories = [
+                "confidence", 
+                "position_sizing", 
+                "leverage", 
+                "tpsl", 
+                "ensemble", 
+                "sr", 
+                "two_tier",
+                "technical_indicators",
+                "system_monitoring"
+            ]
             for category in expected_categories:
                 if category not in optimization_results:
                     self.logger.warning(f"Missing optimization results for category: {category}")

@@ -29,10 +29,6 @@ class PositionSizingConfig:
     volatility_thresholds: dict[str, float] = None
     volatility_multipliers: dict[str, float] = None
     
-    # Regime-based adjustment
-    enable_regime_adjustment: bool = True
-    regime_multipliers: dict[str, float] = None
-    
     # Liquidation risk adjustment
     enable_liquidation_scaling: bool = True
     lss_thresholds: dict[str, float] = None
@@ -90,13 +86,6 @@ class PositionSizingConfig:
                 "low_volatility": 1.2,
                 "medium_volatility": 1.0,
                 "high_volatility": 0.7,
-            }
-        
-        if self.regime_multipliers is None:
-            self.regime_multipliers = {
-                "BULL_TREND": 1.2,
-                "BEAR_TREND": 0.8,
-                "SIDEWAYS_RANGE": 0.9,
             }
         
         if self.lss_thresholds is None:
@@ -168,8 +157,4 @@ def get_position_sizing_search_space() -> dict[str, dict[str, Any]]:
         "volatility_multipliers.low_volatility": {"min": 1.0, "max": 1.5, "type": "float"},
         "volatility_multipliers.medium_volatility": {"min": 0.8, "max": 1.2, "type": "float"},
         "volatility_multipliers.high_volatility": {"min": 0.5, "max": 0.9, "type": "float"},
-        # Regime multipliers
-        "regime_multipliers.BULL_TREND": {"min": 1.0, "max": 1.5, "type": "float"},
-        "regime_multipliers.BEAR_TREND": {"min": 0.6, "max": 0.9, "type": "float"},
-        "regime_multipliers.SIDEWAYS_RANGE": {"min": 0.8, "max": 1.1, "type": "float"},
     }

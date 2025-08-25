@@ -213,19 +213,7 @@ class LabelingStep:
                 except Exception as e:
                     self.logger.warning(f"⚠️ Meta-labeling failed: {e}")
             
-            # 3. Generate trend-based labels
-            trend_labels = await self._generate_trend_labels(data)
-            if trend_labels is not None:
-                result_data['trend_label'] = trend_labels
-                self.logger.info("✅ Generated trend labels")
-            
-            # 4. Generate volatility-based labels
-            volatility_labels = await self._generate_volatility_labels(data)
-            if volatility_labels is not None:
-                result_data['volatility_label'] = volatility_labels
-                self.logger.info("✅ Generated volatility labels")
-            
-            # 5. Create composite label (primary label for training)
+            # 3. Create composite label (primary label for training)
             composite_label = await self._create_composite_label(result_data)
             result_data['label'] = composite_label
             
@@ -242,71 +230,7 @@ class LabelingStep:
             self.logger.exception(f"❌ Error generating comprehensive labels: {e}")
             return None
 
-    async def _generate_trend_labels(self, data: pd.DataFrame) -> Optional[pd.Series]:
-        """Generate trend-based labels."""
-        try:
-            # Simple trend detection using moving averages
-            window_short = 10
-            window_long = 30
-            
-            if len(data) < window_long:
-                self.logger.warning(f"⚠️ Insufficient data for trend labels: {len(data)} < {window_long}")
-                return pd.Series(0, index=data.index)
-            
-            # Calculate moving averages
-            ma_short = data['close'].rolling(window=window_short).mean()
-            ma_long = data['close'].rolling(window=window_long).mean()
-            
-            # Generate trend labels
-            trend_labels = np.zeros(len(data), dtype=np.int8)
-            
-            # Bullish trend: short MA > long MA
-            bullish_mask = (ma_short > ma_long) & (ma_short.notna()) & (ma_long.notna())
-            trend_labels[bullish_mask] = 1
-            
-            # Bearish trend: short MA < long MA
-            bearish_mask = (ma_short < ma_long) & (ma_short.notna()) & (ma_long.notna())
-            trend_labels[bearish_mask] = -1
-            
-            return pd.Series(trend_labels, index=data.index)
 
-        except Exception as e:
-            self.logger.warning(f"⚠️ Error generating trend labels: {e}")
-            return None
-
-    async def _generate_volatility_labels(self, data: pd.DataFrame) -> Optional[pd.Series]:
-        """Generate volatility-based labels."""
-        try:
-            # Calculate rolling volatility
-            window = 20
-            if len(data) < window:
-                self.logger.warning(f"⚠️ Insufficient data for volatility labels: {len(data)} < {window}")
-                return pd.Series(0, index=data.index)
-            
-            # Calculate returns
-            returns = data['close'].pct_change()
-            
-            # Calculate rolling volatility
-            volatility = returns.rolling(window=window).std()
-            
-            # Generate volatility labels based on percentile
-            volatility_labels = np.zeros(len(data), dtype=np.int8)
-            
-            # High volatility: top 25%
-            high_vol_threshold = volatility.quantile(0.75)
-            high_vol_mask = (volatility > high_vol_threshold) & (volatility.notna())
-            volatility_labels[high_vol_mask] = 1
-            
-            # Low volatility: bottom 25%
-            low_vol_threshold = volatility.quantile(0.25)
-            low_vol_mask = (volatility < low_vol_threshold) & (volatility.notna())
-            volatility_labels[low_vol_mask] = -1
-            
-            return pd.Series(volatility_labels, index=data.index)
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ Error generating volatility labels: {e}")
-            return None
 
     async def _create_composite_label(self, data: pd.DataFrame) -> pd.Series:
         """Create composite label from multiple labeling strategies."""
@@ -324,15 +248,6 @@ class LabelingStep:
                 )
                 composite_label[analyst_override_mask] = data['analyst_label'][analyst_override_mask]
             
-            # If we have trend labels, use them for additional context
-            if 'trend_label' in data.columns:
-                # Use trend labels to enhance hold signals
-                trend_enhancement_mask = (
-                    (composite_label == 0) & 
-                    (data['trend_label'] != 0)
-                )
-                composite_label[trend_enhancement_mask] = data['trend_label'][trend_enhancement_mask]
-            
             return composite_label
 
         except Exception as e:
@@ -349,14 +264,6 @@ class LabelingStep:
             if 'analyst_label' in data.columns:
                 agreement_mask = (data['label'] == data['analyst_label']) & (data['analyst_label'] != 0)
                 confidence[agreement_mask] += 0.2
-            
-            if 'trend_label' in data.columns:
-                agreement_mask = (data['label'] == data['trend_label']) & (data['trend_label'] != 0)
-                confidence[agreement_mask] += 0.1
-            
-            if 'volatility_label' in data.columns:
-                agreement_mask = (data['label'] == data['volatility_label']) & (data['volatility_label'] != 0)
-                confidence[agreement_mask] += 0.1
             
             # Cap confidence at 1.0
             confidence = np.minimum(confidence, 1.0)
@@ -380,8 +287,6 @@ class LabelingStep:
                         sources.append("triple_barrier")
                 elif 'analyst_label' in data.columns and data['label'].iloc[idx] == data['analyst_label'].iloc[idx]:
                     sources.append("analyst")
-                elif 'trend_label' in data.columns and data['label'].iloc[idx] == data['trend_label'].iloc[idx]:
-                    sources.append("trend")
                 else:
                     sources.append("composite")
             

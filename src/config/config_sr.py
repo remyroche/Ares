@@ -45,7 +45,6 @@ class SRConfig:
     min_sr_confidence: float = 0.6
     high_confidence_threshold: float = 0.8
     confidence_decay_rate: float = 0.2
-    regime_confidence_boost: float = 0.15
     ensemble_confidence_threshold: float = 0.7
     
     # Optimization configuration
@@ -123,7 +122,6 @@ class SRConfig:
             "min_sr_confidence": self.min_sr_confidence,
             "high_confidence_threshold": self.high_confidence_threshold,
             "confidence_decay_rate": self.confidence_decay_rate,
-            "regime_confidence_boost": self.regime_confidence_boost,
             "ensemble_confidence_threshold": self.ensemble_confidence_threshold,
         }
 
@@ -164,7 +162,6 @@ def get_sr_search_space() -> dict[str, dict[str, Any]]:
         "min_sr_confidence": {"min": 0.5, "max": 0.8, "type": "float"},
         "high_confidence_threshold": {"min": 0.7, "max": 0.9, "type": "float"},
         "confidence_decay_rate": {"min": 0.1, "max": 0.5, "type": "float"},
-        "regime_confidence_boost": {"min": 0.1, "max": 0.3, "type": "float"},
         "ensemble_confidence_threshold": {"min": 0.6, "max": 0.9, "type": "float"},
         # Performance thresholds
         "min_sharpe_ratio": {"min": 0.3, "max": 0.8, "type": "float"},

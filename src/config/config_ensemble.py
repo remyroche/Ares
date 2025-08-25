@@ -17,7 +17,6 @@ class EnsembleMethod(Enum):
     WEIGHTED_AVERAGE = "weighted_average"
     META_LEARNER = "meta_learner"
     CONFIDENCE_WEIGHTED = "confidence_weighted"
-    REGIME_SPECIFIC = "regime_specific"
 
 
 @dataclass
@@ -43,9 +42,6 @@ class EnsembleConfig:
     meta_learner_max_depth: int = 6
     meta_learner_min_child_samples: int = 20
     
-    # Regime-specific ensemble
-    regime_specific_weights: dict[str, float] = None
-    
     # Ensemble validation
     min_ensemble_agreement: float = 0.7
     max_ensemble_disagreement: float = 0.3
@@ -62,14 +58,6 @@ class EnsembleConfig:
     enable_stability_check: bool = True
     stability_threshold: float = 0.8
     stability_lookback_periods: int = 10
-    
-    def __post_init__(self):
-        if self.regime_specific_weights is None:
-            self.regime_specific_weights = {
-                "BULL_TREND": 1.2,
-                "BEAR_TREND": 0.8,
-                "SIDEWAYS_RANGE": 0.9,
-            }
 
 
 def get_ensemble_config() -> EnsembleConfig:
@@ -96,8 +84,4 @@ def get_ensemble_search_space() -> dict[str, dict[str, Any]]:
         "diversity_penalty_weight": {"min": 0.05, "max": 0.3, "type": "float"},
         "stability_threshold": {"min": 0.7, "max": 0.95, "type": "float"},
         "stability_lookback_periods": {"min": 5, "max": 20, "type": "int"},
-        # Regime-specific weights
-        "regime_specific_weights.BULL_TREND": {"min": 1.0, "max": 1.5, "type": "float"},
-        "regime_specific_weights.BEAR_TREND": {"min": 0.6, "max": 0.9, "type": "float"},
-        "regime_specific_weights.SIDEWAYS_RANGE": {"min": 0.8, "max": 1.1, "type": "float"},
     }

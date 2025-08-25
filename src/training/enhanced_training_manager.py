@@ -162,23 +162,25 @@ class EnhancedTrainingManager:
 
         # Define pipeline step order as class constant
         self.STEP_ORDER = [
-            "step1_data_collection",
-            "step1_5_data_converter",
-            "step2_feature_engineering",
-            "step3_hmm_regime_discovery",
-            "step4_processing_labeling",
-            "step5_regime_data_splitting",
-            "step6_hmm_based_training",
-            "step6_5_unified_regime_intelligence",
-            "step7_analyst_enhancement",
-            "step8_tactician_labeling",
-            "step9_tactician_specialist_training",
-            "step10_confidence_calibration",
-            "step11_final_parameters_optimization",
-            "step12_walk_forward_validation",
-            "step13_monte_carlo_validation",
-            "step14_ab_testing",
-            "step15_saving",
+            "step1_data_collection",           # Download and prepare market data
+            "step1_5_data_converter",          # Convert data to unified format
+            "step2_data_reading",              # Read and validate data quality
+            "step3_hmm_regime_discovery",      # Define HMM regime clusters
+            "step4_triple_barrier_method",     # Apply triple barrier method
+            "step5_labeling",                  # Create labels
+            "step6_feature_engineering",       # Feature engineering
+            "step7_regime_data_splitting",     # Split data by regimes
+            "step8_hmm_based_training",        # HMM-based model training
+            "step8_5_unified_regime_intelligence", # Unified regime intelligence
+            "step9_analyst_enhancement",       # Analyst enhancement
+            "step10_tactician_labeling",       # Tactician labeling
+            "step11_tactician_specialist_training", # Tactician specialist training
+            "step12_confidence_calibration",   # Confidence calibration
+            "step13_final_parameters_optimization", # Final parameters optimization
+            "step14_walk_forward_validation",  # Walk forward validation
+            "step15_monte_carlo_validation",   # Monte Carlo validation
+            "step16_ab_testing",               # A/B testing
+            "step17_saving",                   # Save final models
         ]
 
         # Define critical artifact patterns for each step
@@ -363,23 +365,25 @@ class EnhancedTrainingManager:
 
         # Define pipeline step order as class constant
         self.STEP_ORDER = [
-            "step1_data_collection",
-            "step1_5_data_converter",
-            "step2_feature_engineering",
-            "step3_hmm_regime_discovery",
-            "step4_processing_labeling",
-            "step5_regime_data_splitting",
-            "step6_hmm_based_training",
-            "step6_5_unified_regime_intelligence",
-            "step7_analyst_enhancement",
-            "step8_tactician_labeling",
-            "step9_tactician_specialist_training",
-            "step10_confidence_calibration",
-            "step11_final_parameters_optimization",
-            "step12_walk_forward_validation",
-            "step13_monte_carlo_validation",
-            "step14_ab_testing",
-            "step15_saving",
+            "step1_data_collection",           # Download and prepare market data
+            "step1_5_data_converter",          # Convert data to unified format
+            "step2_data_reading",              # Read and validate data quality
+            "step3_hmm_regime_discovery",      # Define HMM regime clusters
+            "step4_triple_barrier_method",     # Apply triple barrier method
+            "step5_labeling",                  # Create labels
+            "step6_feature_engineering",       # Feature engineering
+            "step7_regime_data_splitting",     # Split data by regimes
+            "step8_hmm_based_training",        # HMM-based model training
+            "step8_5_unified_regime_intelligence", # Unified regime intelligence
+            "step9_analyst_enhancement",       # Analyst enhancement
+            "step10_tactician_labeling",       # Tactician labeling
+            "step11_tactician_specialist_training", # Tactician specialist training
+            "step12_confidence_calibration",   # Confidence calibration
+            "step13_final_parameters_optimization", # Final parameters optimization
+            "step14_walk_forward_validation",  # Walk forward validation
+            "step15_monte_carlo_validation",   # Monte Carlo validation
+            "step16_ab_testing",               # A/B testing
+            "step17_saving",                   # Save final models
         ]
 
         # Define critical artifact patterns for each step
@@ -447,40 +451,52 @@ class EnhancedTrainingManager:
                 "data_cache/klines_{exchange}_{symbol}_*_consolidated.*",
                 "data_cache/aggtrades_{exchange}_{symbol}_consolidated.*",
             ],
-            "step2_feature_engineering": [
-                "data/training/{exchange}_{symbol}_{timeframe}_engineered_features.*",
-                "data/training/{exchange}_{symbol}_{timeframe}_feature_metadata.*",
+            "step1_5_data_converter": [
+                "data_cache/unified/{exchange}/{symbol}/{timeframe}/**/*.parquet",
+                "data_cache/unified/{exchange}_{symbol}_{timeframe}_config.json",
+            ],
+            "step2_data_reading": [
+                "data_cache/unified/{exchange}/{symbol}/{timeframe}/**/*.parquet",
+                "data_cache/unified/{exchange}_{symbol}_{timeframe}_config.json",
             ],
             "step3_hmm_regime_discovery": [
                 "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_hmm_*.parquet",
                 "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.*",
                 "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_regime_*.json",
             ],
-            "step4_processing_labeling": [
-                "data/training/{exchange}_{symbol}_{timeframe}_labeled_*.parquet",
-                "data/training/{exchange}_{symbol}_{timeframe}_processing_*.json",
+            "step4_triple_barrier_method": [
+                "data/training/{exchange}_{symbol}_{timeframe}_triple_barrier_*.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_barrier_*.json",
             ],
-            "step5_regime_data_splitting": [
+            "step5_labeling": [
+                "data/training/{exchange}_{symbol}_{timeframe}_labeled_*.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_labels_*.json",
+            ],
+            "step6_feature_engineering": [
+                "data/training/{exchange}_{symbol}_{timeframe}_engineered_features.*",
+                "data/training/{exchange}_{symbol}_{timeframe}_feature_metadata.*",
+            ],
+            "step7_regime_data_splitting": [
                 "data/training/{exchange}_{symbol}_{timeframe}_regime_splits_*.parquet",
                 "data/training/{exchange}_{symbol}_{timeframe}_split_metadata.*",
             ],
-            "step6_hmm_based_training": [
+            "step8_hmm_based_training": [
                 "data/training/{exchange}_{symbol}_{timeframe}_hmm_models_*.pkl",
                 "data/training/{exchange}_{symbol}_{timeframe}_training_results_*.json",
             ],
-            "step6_5_unified_regime_intelligence": [
+            "step8_5_unified_regime_intelligence": [
                 "data/training/{exchange}_{symbol}_{timeframe}_unified_intelligence_*.parquet",
                 "data/training/{exchange}_{symbol}_{timeframe}_intelligence_*.json",
             ],
-            "step7_analyst_enhancement": [
+            "step9_analyst_enhancement": [
                 "data/training/{exchange}_{symbol}_{timeframe}_analyst_*.pkl",
                 "data/training/{exchange}_{symbol}_{timeframe}_analyst_*.json",
             ],
-            "step8_tactician_labeling": [
+            "step10_tactician_labeling": [
                 "data/training/{exchange}_{symbol}_{timeframe}_tactician_labels_*.parquet",
                 "data/training/{exchange}_{symbol}_{timeframe}_tactician_*.json",
             ],
-            "step9_tactician_specialist_training": [
+            "step11_tactician_specialist_training": [
                 "data/training/{exchange}_{symbol}_{timeframe}_specialist_*.pkl",
                 "data/training/{exchange}_{symbol}_{timeframe}_specialist_*.json",
             ],

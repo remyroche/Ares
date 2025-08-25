@@ -74,6 +74,22 @@ class TechnicalIndicatorsConfig:
     regime_transition_threshold: float = 0.6
     regime_confirmation_periods: int = 3
     
+    # Regime classification parameters (from simple_regime_rules.py)
+    ema_fast_period: int = 21
+    ema_slow_period: int = 55
+    ema_sep_min_ratio: float = 0.0
+    
+    # Unified regime classifier parameters
+    volatility_period: int = 10
+    atr_normalized_threshold: float = 0.035
+    volatility_percentile_threshold: float = 0.80
+    bb_width_volatility_threshold: float = 0.045
+    
+    # Transition regime handler parameters
+    transition_intensity_threshold: float = 0.3
+    min_combined_intensity: float = 0.6
+    max_regimes_to_consider: int = 3
+    
     # Data quality thresholds
     correlation_threshold: float = 0.95
     nan_threshold: float = 0.1
@@ -147,6 +163,22 @@ def get_technical_indicators_search_space() -> dict[str, dict[str, Any]]:
         "regime_stability_threshold": {"min": 0.6, "max": 0.8, "type": "float"},
         "regime_transition_threshold": {"min": 0.5, "max": 0.7, "type": "float"},
         "regime_confirmation_periods": {"min": 2, "max": 5, "type": "int"},
+        
+        # Regime classification parameters
+        "ema_fast_period": {"min": 15, "max": 30, "type": "int"},
+        "ema_slow_period": {"min": 40, "max": 70, "type": "int"},
+        "ema_sep_min_ratio": {"min": 0.0, "max": 0.1, "type": "float"},
+        
+        # Unified regime classifier parameters
+        "volatility_period": {"min": 5, "max": 20, "type": "int"},
+        "atr_normalized_threshold": {"min": 0.02, "max": 0.05, "type": "float"},
+        "volatility_percentile_threshold": {"min": 0.7, "max": 0.9, "type": "float"},
+        "bb_width_volatility_threshold": {"min": 0.03, "max": 0.06, "type": "float"},
+        
+        # Transition regime handler parameters
+        "transition_intensity_threshold": {"min": 0.2, "max": 0.5, "type": "float"},
+        "min_combined_intensity": {"min": 0.5, "max": 0.8, "type": "float"},
+        "max_regimes_to_consider": {"min": 2, "max": 5, "type": "int"},
         
         # Data quality thresholds
         "correlation_threshold": {"min": 0.9, "max": 0.98, "type": "float"},

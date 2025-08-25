@@ -83,6 +83,10 @@ class SystemMonitoringConfig:
     enable_performance_weighting: bool = True
     enable_risk_weighting: bool = True
     
+    # Performance multiplier parameters
+    performance_multiplier_base: float = 0.5
+    performance_multiplier_range: float = 1.0
+    
     # Portfolio management
     enable_portfolio_allocation: bool = True
     enable_risk_management: bool = True
@@ -154,4 +158,8 @@ def get_system_monitoring_search_space() -> dict[str, dict[str, Any]]:
         "learning_rate": {"min": 0.005, "max": 0.05, "type": "float"},
         "min_weight": {"min": 0.05, "max": 0.2, "type": "float"},
         "max_weight": {"min": 0.7, "max": 0.9, "type": "float"},
+        
+        # Performance multiplier parameters
+        "performance_multiplier_base": {"min": 0.3, "max": 0.7, "type": "float"},
+        "performance_multiplier_range": {"min": 0.5, "max": 1.5, "type": "float"},
     }

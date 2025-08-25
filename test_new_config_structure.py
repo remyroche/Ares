@@ -51,7 +51,8 @@ def test_config_loading():
             "sr", 
             "two_tier",
             "technical_indicators",
-            "system_monitoring"
+            "system_monitoring",
+            "training_optimization"
         ]
         
         for category in expected_categories:
@@ -166,6 +167,13 @@ def test_search_spaces():
             print("❌ System monitoring search space missing expected parameters")
             return False
         
+        training_optimization_space = get_search_space("training_optimization")
+        if "adx_trend_threshold" in training_optimization_space:
+            print("✅ Training optimization search space contains expected parameters")
+        else:
+            print("❌ Training optimization search space missing expected parameters")
+            return False
+        
         print("✅ All search space tests passed")
         return True
         
@@ -267,7 +275,8 @@ def test_complete_config():
             "sr", 
             "two_tier",
             "technical_indicators",
-            "system_monitoring"
+            "system_monitoring",
+            "training_optimization"
         ]
         for section in optimizable_sections:
             if section in complete_config:

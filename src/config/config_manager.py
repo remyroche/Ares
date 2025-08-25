@@ -18,6 +18,7 @@ from .config_sr import get_sr_config, get_sr_search_space
 from .config_two_tier import get_two_tier_config, get_two_tier_search_space
 from .config_technical_indicators import get_technical_indicators_config, get_technical_indicators_search_space
 from .config_system_monitoring import get_system_monitoring_config, get_system_monitoring_search_space
+from .config_training_optimization import get_training_optimization_config, get_training_optimization_search_space
 
 
 class ConfigManager:
@@ -46,6 +47,7 @@ class ConfigManager:
             "two_tier": get_two_tier_config(),
             "technical_indicators": get_technical_indicators_config(),
             "system_monitoring": get_system_monitoring_config(),
+            "training_optimization": get_training_optimization_config(),
         }
         
         # Load search spaces for optimization
@@ -59,6 +61,7 @@ class ConfigManager:
             "two_tier": get_two_tier_search_space(),
             "technical_indicators": get_technical_indicators_search_space(),
             "system_monitoring": get_system_monitoring_search_space(),
+            "training_optimization": get_training_optimization_search_space(),
         }
     
     def get_static_config(self) -> Dict[str, Any]:

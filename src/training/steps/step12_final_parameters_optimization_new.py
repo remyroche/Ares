@@ -207,7 +207,8 @@ class FinalParametersOptimizationStepNew:
                 "sr", 
                 "two_tier",
                 "technical_indicators",
-                "system_monitoring"
+                "system_monitoring",
+                "training_optimization"
             ]
 
             for category in categories:
@@ -377,6 +378,9 @@ class FinalParametersOptimizationStepNew:
             elif category == "system_monitoring":
                 # System monitoring parameters
                 base_score = self._evaluate_system_monitoring_params(params, calibration_results)
+            elif category == "training_optimization":
+                # Training optimization parameters
+                base_score = self._evaluate_training_optimization_params(params, calibration_results)
             
             return base_score
 
@@ -605,6 +609,54 @@ class FinalParametersOptimizationStepNew:
         
         return score
 
+    def _evaluate_training_optimization_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
+        """Evaluate training optimization parameters."""
+        score = 0.0
+        
+        # Step 2: Market Regime Classification
+        if "adx_trend_threshold" in params and "adx_sideways_threshold" in params:
+            trend = params["adx_trend_threshold"]
+            sideways = params["adx_sideways_threshold"]
+            if trend > sideways and 20.0 <= trend <= 35.0 and 15.0 <= sideways <= 30.0:
+                score += 0.2
+            else:
+                score += 0.1
+        
+        # Step 4: Processing & Labeling
+        if "min_label_balance" in params and "max_label_balance" in params:
+            min_balance = params["min_label_balance"]
+            max_balance = params["max_label_balance"]
+            if min_balance < max_balance and 0.03 <= min_balance <= 0.1 and 0.9 <= max_balance <= 0.98:
+                score += 0.2
+            else:
+                score += 0.1
+        
+        # Step 6: Analyst Enhancement
+        if "stability_threshold" in params:
+            stability = params["stability_threshold"]
+            if 0.6 <= stability <= 0.9:
+                score += 0.2
+            else:
+                score += 0.1
+        
+        # Model hyperparameters
+        if "lgb_learning_rate" in params:
+            lr = params["lgb_learning_rate"]
+            if 0.01 <= lr <= 0.2:
+                score += 0.2
+            else:
+                score += 0.1
+        
+        # Performance thresholds
+        if "model_performance_threshold" in params:
+            perf_thresh = params["model_performance_threshold"]
+            if 0.6 <= perf_thresh <= 0.85:
+                score += 0.2
+            else:
+                score += 0.1
+        
+        return score
+
     async def _load_calibration_results(
         self, symbol: str, exchange: str, data_dir: str, ) -> dict[str, Any] | None:
         """Load calibration results from previous step."""
@@ -653,7 +705,8 @@ class FinalParametersOptimizationStepNew:
                 "sr", 
                 "two_tier",
                 "technical_indicators",
-                "system_monitoring"
+                "system_monitoring",
+                "training_optimization"
             ]
             for category in expected_categories:
                 if category not in optimization_results:

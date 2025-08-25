@@ -19,7 +19,8 @@ src/config/
 ├── config_sr.py                # Support/Resistance parameters
 ├── config_two_tier.py          # Two-tier system parameters
 ├── config_technical_indicators.py # Technical indicator parameters
-└── config_system_monitoring.py  # System monitoring parameters
+├── config_system_monitoring.py  # System monitoring parameters
+└── config_training_optimization.py # Training optimization parameters
 ```
 
 ### 🔧 Configuration Categories
@@ -118,6 +119,17 @@ src/config/
 - **Learning and adaptation**: Learning rates, weight limits, adaptive weighting
 - **Portfolio management**: Allocation, risk management, rebalancing
 
+##### Training Optimization (`config_training_optimization.py`)
+- **Step 2: Market Regime Classification**: ADX thresholds, EMA separation, regime dominance
+- **Step 3: HMM Regime Discovery**: Quality thresholds, correlation limits
+- **Step 4: Processing & Labeling**: Data quality, label balance, performance thresholds
+- **Step 5: HMM-Based Training**: Learning rates, architecture optimization
+- **Step 6: Analyst Enhancement**: Stability thresholds, feature selection, model hyperparameters
+- **Step 11: Confidence Calibration**: Calibration accuracy, performance thresholds
+- **Model Hyperparameters**: LightGBM, Neural Networks, Random Forest parameters
+- **Performance Thresholds**: Model performance, data quality, artifact completeness
+- **Memory and Performance**: Memory, CPU, disk thresholds, monitoring intervals
+
 ## 🎯 Key Features
 
 ### 1. Centralized Management
@@ -207,10 +219,11 @@ categories = [
     "sr",                  # 29 parameters
     "two_tier",            # 20 parameters
     "technical_indicators", # 46 parameters
-    "system_monitoring"     # 35 parameters
+    "system_monitoring",    # 35 parameters
+    "training_optimization" # 20 parameters
 ]
 
-# Total: 242 optimizable parameters across 9 categories
+# Total: 262 optimizable parameters across 10 categories
 ```
 
 Each category is optimized independently with its own:
@@ -227,9 +240,9 @@ python3 test_new_config_structure.py
 ```
 
 **Test Results:**
-- ✅ Configuration loading (9/9 categories)
+- ✅ Configuration loading (10/10 categories)
 - ✅ Parameter access (dot notation)
-- ✅ Search spaces (242 total parameters)
+- ✅ Search spaces (262 total parameters)
 - ✅ Configuration updates (dynamic updates)
 - ✅ Configuration validation
 - ✅ Complete configuration retrieval
@@ -249,7 +262,8 @@ python3 test_new_config_structure.py
 | **Two-Tier** | 20 | Two-tier system parameters |
 | **Technical Indicators** | 46 | Technical analysis parameters |
 | **System Monitoring** | 35 | System performance parameters |
-| **Total** | **292+** | **Complete parameter set** |
+| **Training Optimization** | 20 | Training optimization parameters |
+| **Total** | **312+** | **Complete parameter set** |
 
 ## 🎉 Benefits
 
@@ -305,6 +319,9 @@ The new configuration structure now covers **ALL** parameters used during traini
 - Data quality thresholds
 - Model optimization parameters
 - Cross-validation settings
+- **Training optimization parameters from all steps (2, 3, 4, 5, 6, 11)**
+- **Model hyperparameters (LightGBM, Neural Networks, Random Forest)**
+- **Performance thresholds and memory settings**
 
 ### ✅ **Trading Parameters**
 - Confidence thresholds

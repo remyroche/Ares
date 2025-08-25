@@ -52,7 +52,8 @@ def test_config_loading():
             "two_tier",
             "technical_indicators",
             "system_monitoring",
-            "training_optimization"
+            "training_optimization",
+            "strategy_selection"
         ]
         
         for category in expected_categories:
@@ -168,10 +169,17 @@ def test_search_spaces():
             return False
         
         training_optimization_space = get_search_space("training_optimization")
-        if "adx_trend_threshold" in training_optimization_space:
+        if "min_quality_score" in training_optimization_space:
             print("✅ Training optimization search space contains expected parameters")
         else:
             print("❌ Training optimization search space missing expected parameters")
+            return False
+        
+        strategy_selection_space = get_search_space("strategy_selection")
+        if "momentum_selection_threshold" in strategy_selection_space:
+            print("✅ Strategy selection search space contains expected parameters")
+        else:
+            print("❌ Strategy selection search space missing expected parameters")
             return False
         
         print("✅ All search space tests passed")
@@ -276,7 +284,8 @@ def test_complete_config():
             "two_tier",
             "technical_indicators",
             "system_monitoring",
-            "training_optimization"
+            "training_optimization",
+            "strategy_selection"
         ]
         for section in optimizable_sections:
             if section in complete_config:

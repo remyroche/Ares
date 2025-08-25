@@ -25,21 +25,23 @@ class StepDependencyValidator:
         self.step_dependencies = {
             "step1_data_collection": [],
             "step1_5_data_converter": ["step1_data_collection"],
-            "step2_feature_engineering": ["step1_5_data_converter"],
-            "step3_hmm_regime_discovery": ["step2_feature_engineering"],
-            "step4_processing_labeling": ["step3_hmm_regime_discovery"],
-            "step5_regime_data_splitting": ["step4_processing_labeling"],
-            "step6_hmm_based_training": ["step5_regime_data_splitting"],
-            "step6_5_unified_regime_intelligence": ["step6_hmm_based_training"],
-            "step7_analyst_enhancement": ["step6_5_unified_regime_intelligence"],
-            "step8_tactician_labeling": ["step7_analyst_enhancement"],
-            "step9_tactician_specialist_training": ["step8_tactician_labeling"],
-            "step10_confidence_calibration": ["step9_tactician_specialist_training"],
-            "step11_final_parameters_optimization": ["step10_confidence_calibration"],
-            "step12_walk_forward_validation": ["step11_final_parameters_optimization"],
-            "step13_monte_carlo_validation": ["step12_walk_forward_validation"],
-            "step14_ab_testing": ["step13_monte_carlo_validation"],
-            "step15_saving": ["step14_ab_testing"],
+            "step2_data_reading": ["step1_5_data_converter"],
+            "step3_hmm_regime_discovery": ["step2_data_reading"],
+            "step4_triple_barrier_method": ["step3_hmm_regime_discovery"],
+            "step5_labeling": ["step4_triple_barrier_method"],
+            "step6_feature_engineering": ["step5_labeling"],
+            "step7_regime_data_splitting": ["step6_feature_engineering"],
+            "step8_hmm_based_training": ["step7_regime_data_splitting"],
+            "step8_5_unified_regime_intelligence": ["step8_hmm_based_training"],
+            "step9_analyst_enhancement": ["step8_5_unified_regime_intelligence"],
+            "step10_tactician_labeling": ["step9_analyst_enhancement"],
+            "step11_tactician_specialist_training": ["step10_tactician_labeling"],
+            "step12_confidence_calibration": ["step11_tactician_specialist_training"],
+            "step13_final_parameters_optimization": ["step12_confidence_calibration"],
+            "step14_walk_forward_validation": ["step13_final_parameters_optimization"],
+            "step15_monte_carlo_validation": ["step14_walk_forward_validation"],
+            "step16_ab_testing": ["step15_monte_carlo_validation"],
+            "step17_saving": ["step16_ab_testing"],
         }
         
         # Define critical data requirements for each step
@@ -54,67 +56,77 @@ class StepDependencyValidator:
                 "required_columns": ["open", "high", "low", "close", "volume"],
                 "min_rows": 500
             },
-            "step2_feature_engineering": {
-                "required_files": ["data/training/*_features_train.parquet"],
+            "step2_data_reading": {
+                "required_files": ["data_cache/unified/*/*/*/*.parquet"],
                 "required_columns": ["open", "high", "low", "close", "volume"],
-                "min_rows": 100
+                "min_rows": 500
             },
             "step3_hmm_regime_discovery": {
                 "required_files": ["data/hmm_regimes/*_composite_clusters.parquet"],
                 "required_columns": ["composite_cluster_id"],
                 "min_rows": 100
             },
-            "step4_processing_labeling": {
-                "required_files": ["data/training/*_labeled_validation.parquet"],
-                "required_columns": ["label", "composite_cluster_id"],
+            "step4_triple_barrier_method": {
+                "required_files": ["data/training/*_triple_barrier_labels.parquet"],
+                "required_columns": ["triple_barrier_label"],
                 "min_rows": 100
             },
-            "step5_regime_data_splitting": {
+            "step5_labeling": {
+                "required_files": ["data/training/*_labeled_data.parquet"],
+                "required_columns": ["label", "triple_barrier_label"],
+                "min_rows": 100
+            },
+            "step6_feature_engineering": {
+                "required_files": ["data/training/*_features_train.parquet"],
+                "required_columns": ["open", "high", "low", "close", "volume"],
+                "min_rows": 100
+            },
+            "step7_regime_data_splitting": {
                 "required_files": ["data/training/*_regime_splits_train.parquet"],
                 "required_columns": ["label", "composite_cluster_id"],
                 "min_rows": 100
             },
-            "step6_hmm_based_training": {
+            "step8_hmm_based_training": {
                 "required_files": ["data/training/*_hmm_models.pkl"],
                 "required_columns": [],
                 "min_rows": 0
             },
-            "step6_5_unified_regime_intelligence": {
+            "step8_5_unified_regime_intelligence": {
                 "required_files": ["data/training/*_unified_intelligence.parquet"],
                 "required_columns": ["intelligence_score"],
                 "min_rows": 100
             },
-            "step7_analyst_enhancement": {
+            "step9_analyst_enhancement": {
                 "required_files": ["data/training/*_analyst_models.pkl"],
                 "required_columns": [],
                 "min_rows": 0
             },
-            "step8_tactician_labeling": {
+            "step10_tactician_labeling": {
                 "required_files": ["data/training/*_tactician_labels.parquet"],
                 "required_columns": ["tactician_label"],
                 "min_rows": 100
             },
-            "step9_tactician_specialist_training": {
+            "step11_tactician_specialist_training": {
                 "required_files": ["data/training/*_specialist_models.pkl"],
                 "required_columns": [],
                 "min_rows": 0
             },
-            "step10_confidence_calibration": {
+            "step12_confidence_calibration": {
                 "required_files": ["data/training/*_calibration_results.pkl"],
                 "required_columns": [],
                 "min_rows": 0
             },
-            "step11_final_parameters_optimization": {
+            "step13_final_parameters_optimization": {
                 "required_files": ["data/training/*_optimization_results.json"],
                 "required_columns": [],
                 "min_rows": 0
             },
-            "step12_walk_forward_validation": {
+            "step14_walk_forward_validation": {
                 "required_files": ["data/training/*_walk_forward_results.json"],
                 "required_columns": [],
                 "min_rows": 0
             },
-            "step13_monte_carlo_validation": {
+            "step15_monte_carlo_validation": {
                 "required_files": ["data/training/*_monte_carlo_results.json"],
                 "required_columns": [],
                 "min_rows": 0

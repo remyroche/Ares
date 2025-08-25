@@ -412,34 +412,33 @@ class ValidatorOrchestrator:
         validator_mapping = {
             "step1_data_collection": "step1_data_collection_validator",
             "step1_5_data_converter": "step1_5_data_converter_validator",
-            "step2_feature_engineering": "step2_feature_engineering_validator",
+            "step2_data_reading": "step2_data_reading_validator",
             "step3_hmm_regime_discovery": "step3_hmm_regime_discovery_validator",
-            "step4_processing_labeling": "step4_processing_labeling_validator",
-            "step4_market_regime_classification": (
-                "step2_market_regime_classification_validator"
-            ),
-            "step5_regime_data_splitting": "step5_regime_data_splitting_validator",
-            "step6_hmm_based_training": "step6_hmm_based_training_validator",
-            "step6_5_unified_regime_intelligence": "step5_5_unified_regime_intelligence_validator",
-            "step7_analyst_enhancement": "step6_analyst_enhancement_validator",
-            "step8_tactician_labeling": "step8_tactician_labeling_validator",
-            "step9_tactician_specialist_training": (
+            "step4_triple_barrier_method": "step4_triple_barrier_method_validator",
+            "step5_labeling": "step5_labeling_validator",
+            "step6_feature_engineering": "step6_feature_engineering_validator",
+            "step7_regime_data_splitting": "step7_regime_data_splitting_validator",
+            "step8_hmm_based_training": "step6_hmm_based_training_validator",
+            "step8_5_unified_regime_intelligence": "step5_5_unified_regime_intelligence_validator",
+            "step9_analyst_enhancement": "step6_analyst_enhancement_validator",
+            "step10_tactician_labeling": "step8_tactician_labeling_validator",
+            "step11_tactician_specialist_training": (
                 "step9_tactician_specialist_training_validator"
             ),
-            "step10_confidence_calibration": (
+            "step12_confidence_calibration": (
                 "step11_confidence_calibration_validator"
             ),
-            "step11_final_parameters_optimization": (
+            "step13_final_parameters_optimization": (
                 "step12_final_parameters_optimization_validator"
             ),
-            "step12_walk_forward_validation": (
+            "step14_walk_forward_validation": (
                 "step13_walk_forward_validation_validator"
             ),
-            "step13_monte_carlo_validation": (
+            "step15_monte_carlo_validation": (
                 "step14_monte_carlo_validation_validator"
             ),
-            "step14_ab_testing": "step15_ab_testing_validator",
-            "step15_saving": "step16_saving_validator",
+            "step16_ab_testing": "step15_ab_testing_validator",
+            "step17_saving": "step16_saving_validator",
         }
 
         validator_module_name = validator_mapping.get(step_name)

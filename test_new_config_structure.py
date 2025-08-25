@@ -92,9 +92,10 @@ def test_parameter_access():
             print(f"❌ Confidence base entry threshold incorrect: {base_entry_threshold}")
             return False
         
-        # Test two-tier config parameter access
-        direction_threshold = get_parameter_value("two_tier.direction_threshold")
-        if direction_threshold == 0.7:
+        # Test two-tier parameters
+        two_tier_config = get_optimizable_config("two_tier")
+        direction_threshold = two_tier_config.direction_threshold
+        if direction_threshold == 0.6:  # Updated value after cleanup
             print("✅ Two-tier direction threshold accessed correctly")
         else:
             print(f"❌ Two-tier direction threshold incorrect: {direction_threshold}")

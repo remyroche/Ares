@@ -50,11 +50,6 @@ class TechnicalIndicatorsConfig:
     atr_normalized_threshold: float = 0.02
     bb_width_volatility_threshold: float = 0.03
     
-    # Momentum indicators
-    momentum_period: int = 10
-    momentum_threshold: float = 0.01
-    momentum_strength_threshold: float = 0.5
-    
     # Volume indicators
     volume_sma_period: int = 20
     volume_threshold: float = 1.5
@@ -135,11 +130,6 @@ def get_technical_indicators_search_space() -> dict[str, dict[str, Any]]:
         "volatility_percentile_threshold": {"min": 0.7, "max": 0.9, "type": "float"},
         "atr_normalized_threshold": {"min": 0.015, "max": 0.025, "type": "float"},
         "bb_width_volatility_threshold": {"min": 0.02, "max": 0.04, "type": "float"},
-        
-        # Momentum indicators
-        "momentum_period": {"min": 5, "max": 15, "type": "int"},
-        "momentum_threshold": {"min": 0.005, "max": 0.02, "type": "float"},
-        "momentum_strength_threshold": {"min": 0.3, "max": 0.7, "type": "float"},
         
         # Volume indicators
         "volume_sma_period": {"min": 15, "max": 25, "type": "int"},

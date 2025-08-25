@@ -248,7 +248,7 @@ python3 test_new_config_structure.py
 - ✅ Complete configuration retrieval
 - ✅ Step12 integration
 
-## 📊 Parameter Summary
+## 📊 **Parameter Categories and Counts**
 
 | Category | Parameters | Description |
 |----------|------------|-------------|
@@ -257,57 +257,50 @@ python3 test_new_config_structure.py
 | **Position Sizing** | 27 | Risk and position management |
 | **Leverage** | 14 | Leverage and risk control |
 | **TP/SL** | 36 | Take profit and stop loss |
-| **Ensemble** | 16 | Model ensemble configuration |
+| **Ensemble** | 15 | Model ensemble configuration |
 | **S/R** | 29 | Support/resistance parameters |
-| **Two-Tier** | 20 | Two-tier system parameters |
-| **Technical Indicators** | 46 | Technical analysis parameters |
+| **Two-Tier** | 29 | Two-tier system parameters |
+| **Technical Indicators** | 43 | Technical analysis parameters |
 | **System Monitoring** | 35 | System performance parameters |
-| **Training Optimization** | 20 | Training optimization parameters |
-| **Total** | **312+** | **Complete parameter set** |
+| **Training Optimization** | 12 | Training optimization parameters |
+| **Regime Transitions** | 25 | Regime transition handling |
+| **Total** | **323+** | **Complete parameter set** |
 
-## 🎉 Benefits
+## 🧹 **Parameter Cleanup**
 
-1. **Modularity**: Each category is self-contained and focused
-2. **Maintainability**: Easy to add, modify, or remove parameters
-3. **Optimization**: Structured for efficient hyperparameter optimization
-4. **Two-Tier Support**: Properly integrated with the two-tier architecture
-5. **Per-HMM State Models**: Optimized for per-HMM state ML models
-6. **Clean Architecture**: No redundant regime-specific parameters
-7. **Validation**: Built-in validation and error checking
-8. **Documentation**: Clear structure and comprehensive documentation
-9. **Comprehensive Coverage**: All training and trading parameters included
-10. **Technical Analysis**: Complete technical indicator parameter coverage
-11. **System Performance**: Complete monitoring and performance parameter coverage
+### **Removed Parameters**
+The following parameters have been removed as they were based on strategies we don't actually implement:
 
-## 🔧 Migration Guide
+#### **Two-Tier Configuration:**
+- ❌ `momentum_breakout_threshold`
+- ❌ `mean_reversion_threshold` 
+- ❌ `trend_following_threshold`
+- ❌ `momentum_confidence_threshold`
+- ❌ `mean_reversion_confidence_threshold`
+- ❌ `trend_following_confidence_threshold`
+- ❌ `momentum_position_multiplier`
+- ❌ `mean_reversion_position_multiplier`
+- ❌ `trend_following_position_multiplier`
+- ❌ `momentum_risk_multiplier`
+- ❌ `mean_reversion_risk_multiplier`
+- ❌ `trend_following_risk_multiplier`
 
-### From Old Configuration
-1. **Static Parameters**: Moved to `src/config/config.py`
-2. **Optimizable Parameters**: Distributed across category-specific files
-3. **Access Pattern**: Use `get_parameter_value("category.parameter")`
-4. **Updates**: Use `update_optimizable_config(category, updates)`
+#### **Regime Transitions Configuration:**
+- ❌ `trend_emergence_threshold`
+- ❌ `trend_continuation_threshold`
+- ❌ `trend_reversal_threshold`
 
-### To New Configuration
-1. **Import**: `from src.config.config_manager import *`
-2. **Access**: Use dot notation for parameter access
-3. **Optimization**: Use categorized optimization in step12
-4. **Validation**: Use built-in validation functions
+#### **Technical Indicators Configuration:**
+- ❌ `momentum_period`
+- ❌ `momentum_threshold`
+- ❌ `momentum_strength_threshold`
 
-## 🚫 Removed Parameters
-
-### Regime-Specific Parameters (Removed)
-The following regime-specific parameters were removed as they are redundant with per-HMM state ML models:
-
-- **Regime Multipliers**: `regime_multipliers`, `regime_leverage_multipliers`, `regime_tp_multipliers`, `regime_sl_multipliers`
-- **Regime Weights**: `regime_specific_weights`
-- **Regime Thresholds**: `bull_trend_threshold`, `bear_trend_threshold`, `sideways_threshold`
-- **Regime Boosts**: `regime_confidence_boost`
-
-### Why Removed?
-1. **Redundancy**: HMM states already capture market regimes
-2. **Conflicts**: Regime multipliers can conflict with per-state ML models
-3. **Complexity**: Unnecessary parameter complexity
-4. **Performance**: Cleaner, more efficient parameter optimization
+### **Rationale**
+These parameters were removed because:
+1. **No Strategy Detection**: We don't have logic to determine if we're in trend following, reversal, or momentum modes
+2. **Architecture Mismatch**: Our system uses per-HMM regime models, not strategy-based model selection
+3. **Simplification**: Removing unused parameters reduces complexity and optimization space
+4. **Focus on Reality**: Parameters now reflect what the system actually does
 
 ## ✅ Comprehensive Coverage Achieved
 

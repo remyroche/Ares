@@ -283,9 +283,9 @@ class MarketRegimeClassificationStep:
         *,
         training_input: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Classify market regimes using advanced HMM-based UnifiedRegimeClassifier.
+        """Classify market regimes using the existing advanced HMM-based UnifiedRegimeClassifier.
 
-        This replaces the old EMA/ADX rules with the advanced HMM categorization system.
+        This uses the pre-existing classify_regimes method instead of rewriting the logic.
         """
         try:
             self.logger.info(
@@ -328,60 +328,56 @@ class MarketRegimeClassificationStep:
                 symbol=symbol,
             )
 
-            # Train the HMM-based classifier
-            self.logger.info("Training HMM-based regime classifier...")
-            regime_classifier.train_hmm_labeler(df)
+            # Use the existing classify_regimes method
+            self.logger.info("Using existing advanced HMM classification system...")
+            classification_results = await regime_classifier.classify_regimes(df)
 
-            # Get regime predictions for the entire dataset
-            self.logger.info("Generating regime predictions...")
-            regimes = []
-            confidences = []
-            
-            for i in range(len(df)):
-                regime, confidence, _ = regime_classifier.predict_regime(
-                    df.iloc[:i+1] if i > 0 else df.iloc[:1]
-                )
-                regimes.append(regime)
-                confidences.append(confidence)
+            # Check for errors
+            if "error" in classification_results:
+                raise ValueError(f"Regime classification failed: {classification_results['error']}")
 
-            # Build results
-            from collections import Counter
+            # Extract results from the existing method
+            regimes = classification_results.get("regimes", [])
+            confidence_scores = classification_results.get("confidence_scores", [])
+            regime_distribution = classification_results.get("regime_distribution", {})
+            total_records = classification_results.get("total_records", len(df))
 
-            regime_counts = Counter(regimes)
-
+            # Build results in the expected format for step2
             formatted_results: dict[str, Any] = {
                 "symbol": symbol,
                 "exchange": exchange,
                 "classification_date": datetime.utcnow().isoformat(),
-                "total_records": len(df),
-                "regime_distribution": dict(regime_counts),
+                "total_records": total_records,
+                "regime_distribution": regime_distribution,
                 "regime_sequence": regimes,
                 "regime_transitions": [],
-                "confidence_scores": confidences,
+                "confidence_scores": confidence_scores,
                 "metadata": {
                     "classifier_version": "unified_hmm_v1",
                     "classification_method": "ADVANCED_HMM_CATEGORIZATION",
                     "timeframe": "1h",
                     "hmm_states": regime_classifier.n_states,
                     "hmm_iterations": regime_classifier.n_iter,
+                    "system_status": regime_classifier.get_system_status(),
                 },
             }
 
-            # Transitions
-            s_regimes = pd.Series(regimes)
-            shifted = s_regimes.shift(1)
-            mask = s_regimes != shifted
-            transitions_df = pd.DataFrame(
-                {
-                    "from_regime": shifted[mask].values,
-                    "to_regime": s_regimes[mask].values,
-                    "transition_index": s_regimes.index[mask].values,
-                },
-            )
-            formatted_results["regime_transitions"] = transitions_df.to_dict("records")
+            # Calculate transitions
+            if len(regimes) > 1:
+                s_regimes = pd.Series(regimes)
+                shifted = s_regimes.shift(1)
+                mask = s_regimes != shifted
+                transitions_df = pd.DataFrame(
+                    {
+                        "from_regime": shifted[mask].values,
+                        "to_regime": s_regimes[mask].values,
+                        "transition_index": s_regimes.index[mask].values,
+                    },
+                )
+                formatted_results["regime_transitions"] = transitions_df.to_dict("records")
 
             self.logger.info(
-                f"Advanced HMM regime classification completed. Found {len(regime_counts)} distinct regimes",
+                f"Advanced HMM regime classification completed. Found {len(regime_distribution)} distinct regimes",
             )
 
             return formatted_results

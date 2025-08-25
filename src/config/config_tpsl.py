@@ -37,11 +37,6 @@ class TPSLConfig:
     volatility_tp_multipliers: dict[str, float] = None
     volatility_sl_multipliers: dict[str, float] = None
     
-    # Regime-based TP/SL
-    enable_regime_based_tpsl: bool = True
-    regime_tp_multipliers: dict[str, float] = None
-    regime_sl_multipliers: dict[str, float] = None
-    
     # Confidence-based TP/SL
     enable_confidence_based_tpsl: bool = True
     confidence_tp_multipliers: dict[str, float] = None
@@ -84,20 +79,6 @@ class TPSLConfig:
                 "low_volatility": 1.2,
                 "medium_volatility": 1.0,
                 "high_volatility": 0.8,
-            }
-        
-        if self.regime_tp_multipliers is None:
-            self.regime_tp_multipliers = {
-                "BULL_TREND": 1.2,
-                "BEAR_TREND": 0.8,
-                "SIDEWAYS_RANGE": 1.0,
-            }
-        
-        if self.regime_sl_multipliers is None:
-            self.regime_sl_multipliers = {
-                "BULL_TREND": 0.8,
-                "BEAR_TREND": 1.2,
-                "SIDEWAYS_RANGE": 1.0,
             }
         
         if self.confidence_tp_multipliers is None:
@@ -156,14 +137,6 @@ def get_tpsl_search_space() -> dict[str, dict[str, Any]]:
         "volatility_sl_multipliers.low_volatility": {"min": 1.0, "max": 1.5, "type": "float"},
         "volatility_sl_multipliers.medium_volatility": {"min": 0.8, "max": 1.2, "type": "float"},
         "volatility_sl_multipliers.high_volatility": {"min": 0.6, "max": 1.0, "type": "float"},
-        # Regime TP multipliers
-        "regime_tp_multipliers.BULL_TREND": {"min": 1.0, "max": 1.5, "type": "float"},
-        "regime_tp_multipliers.BEAR_TREND": {"min": 0.6, "max": 1.0, "type": "float"},
-        "regime_tp_multipliers.SIDEWAYS_RANGE": {"min": 0.8, "max": 1.2, "type": "float"},
-        # Regime SL multipliers
-        "regime_sl_multipliers.BULL_TREND": {"min": 0.6, "max": 1.0, "type": "float"},
-        "regime_sl_multipliers.BEAR_TREND": {"min": 1.0, "max": 1.5, "type": "float"},
-        "regime_sl_multipliers.SIDEWAYS_RANGE": {"min": 0.8, "max": 1.2, "type": "float"},
         # Confidence TP multipliers
         "confidence_tp_multipliers.low_confidence": {"min": 0.6, "max": 1.0, "type": "float"},
         "confidence_tp_multipliers.medium_confidence": {"min": 0.8, "max": 1.2, "type": "float"},

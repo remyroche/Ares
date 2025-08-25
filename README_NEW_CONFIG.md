@@ -2,7 +2,7 @@
 
 ## Overview
 
-The configuration system has been successfully reorganized into a modular, categorized structure that separates non-optimizable (static) parameters from optimizable parameters. The system now properly supports the two-tier architecture and uses current regime names.
+The configuration system has been successfully reorganized into a modular, categorized structure that separates non-optimizable (static) parameters from optimizable parameters. The system now properly supports the two-tier architecture and is optimized for per-HMM state ML models.
 
 ## Configuration Structure
 
@@ -37,14 +37,13 @@ src/config/
 - Two-tier system thresholds (analyst vs tactician)
 - Position management thresholds
 - Model performance thresholds
-- Regime-specific thresholds (BULL_TREND, BEAR_TREND, SIDEWAYS_RANGE)
 - S/R confidence thresholds
+- Breakout confidence thresholds
 
 ##### Position Sizing (`config_position_sizing.py`)
 - Base position sizing parameters
 - Confidence-based scaling
 - Volatility adjustment
-- Regime-based adjustment (BULL_TREND, BEAR_TREND, SIDEWAYS_RANGE)
 - Liquidation risk adjustment
 - Successive position rules
 - Risk limits and Kelly criterion
@@ -53,7 +52,6 @@ src/config/
 - Base leverage settings
 - Dynamic leverage adjustment
 - Volatility-based leverage
-- Regime-based leverage (BULL_TREND, BEAR_TREND, SIDEWAYS_RANGE)
 - Confidence-based leverage
 - Liquidation risk management
 - Leverage decay
@@ -61,7 +59,6 @@ src/config/
 ##### Take Profit/Stop Loss (`config_tpsl.py`)
 - Base TP/SL settings
 - Dynamic TP/SL based on volatility
-- Regime-based TP/SL (BULL_TREND, BEAR_TREND, SIDEWAYS_RANGE)
 - Confidence-based TP/SL
 - Trailing stop loss
 - Time-based exits
@@ -72,7 +69,6 @@ src/config/
 - Threshold-based ensemble
 - Weighted ensemble (analyst, tactician, strategist)
 - Meta-learner parameters
-- Regime-specific ensemble (BULL_TREND, BEAR_TREND, SIDEWAYS_RANGE)
 - Ensemble validation and diversity
 
 ##### Support/Resistance (`config_sr.py`)
@@ -115,11 +111,11 @@ src/config/
 - **Integration**: Seamless integration with existing ensemble system
 - **Optimizable**: All two-tier parameters can be optimized
 
-### 4. Current Regime Support
-- **BULL_TREND**: Bullish market conditions
-- **BEAR_TREND**: Bearish market conditions  
-- **SIDEWAYS_RANGE**: Sideways/range-bound conditions
-- **Regime-Specific**: Parameters optimized for each regime
+### 4. Per-HMM State ML Model Optimization
+- **No Regime Multipliers**: Removed redundant regime-specific parameters
+- **State-Based Models**: Optimized for per-HMM state ML models
+- **Clean Architecture**: Simplified parameter structure
+- **Better Performance**: Eliminates conflicting regime adjustments
 
 ## 🚀 Usage Examples
 
@@ -167,16 +163,16 @@ The new configuration structure is fully integrated with step12 optimization:
 ```python
 # Categories optimized in step12
 categories = [
-    "confidence",      # 24 parameters
-    "position_sizing", # 30 parameters  
-    "leverage",        # 17 parameters
-    "tpsl",           # 42 parameters
-    "ensemble",        # 19 parameters
-    "sr",             # 30 parameters
+    "confidence",      # 19 parameters
+    "position_sizing", # 27 parameters  
+    "leverage",        # 14 parameters
+    "tpsl",           # 36 parameters
+    "ensemble",        # 16 parameters
+    "sr",             # 29 parameters
     "two_tier"        # 20 parameters
 ]
 
-# Total: 182 optimizable parameters across 7 categories
+# Total: 161 optimizable parameters across 7 categories
 ```
 
 Each category is optimized independently with its own:
@@ -195,7 +191,7 @@ python3 test_new_config_structure.py
 **Test Results:**
 - ✅ Configuration loading (7/7 categories)
 - ✅ Parameter access (dot notation)
-- ✅ Search spaces (182 total parameters)
+- ✅ Search spaces (161 total parameters)
 - ✅ Configuration updates (dynamic updates)
 - ✅ Configuration validation
 - ✅ Complete configuration retrieval
@@ -206,14 +202,14 @@ python3 test_new_config_structure.py
 | Category | Parameters | Description |
 |----------|------------|-------------|
 | **Static** | 50+ | Non-optimizable system parameters |
-| **Confidence** | 24 | Thresholds for decision making |
-| **Position Sizing** | 30 | Risk and position management |
-| **Leverage** | 17 | Leverage and risk control |
-| **TP/SL** | 42 | Take profit and stop loss |
-| **Ensemble** | 19 | Model ensemble configuration |
-| **S/R** | 30 | Support/resistance parameters |
+| **Confidence** | 19 | Thresholds for decision making |
+| **Position Sizing** | 27 | Risk and position management |
+| **Leverage** | 14 | Leverage and risk control |
+| **TP/SL** | 36 | Take profit and stop loss |
+| **Ensemble** | 16 | Model ensemble configuration |
+| **S/R** | 29 | Support/resistance parameters |
 | **Two-Tier** | 20 | Two-tier system parameters |
-| **Total** | **232+** | **Complete parameter set** |
+| **Total** | **211+** | **Complete parameter set** |
 
 ## 🎉 Benefits
 
@@ -221,9 +217,10 @@ python3 test_new_config_structure.py
 2. **Maintainability**: Easy to add, modify, or remove parameters
 3. **Optimization**: Structured for efficient hyperparameter optimization
 4. **Two-Tier Support**: Properly integrated with the two-tier architecture
-5. **Current Regimes**: Uses current regime names (BULL_TREND, BEAR_TREND, SIDEWAYS_RANGE)
-6. **Validation**: Built-in validation and error checking
-7. **Documentation**: Clear structure and comprehensive documentation
+5. **Per-HMM State Models**: Optimized for per-HMM state ML models
+6. **Clean Architecture**: No redundant regime-specific parameters
+7. **Validation**: Built-in validation and error checking
+8. **Documentation**: Clear structure and comprehensive documentation
 
 ## 🔧 Migration Guide
 
@@ -239,4 +236,20 @@ python3 test_new_config_structure.py
 3. **Optimization**: Use categorized optimization in step12
 4. **Validation**: Use built-in validation functions
 
-The new configuration structure is now complete and ready for production use!
+## 🚫 Removed Parameters
+
+### Regime-Specific Parameters (Removed)
+The following regime-specific parameters were removed as they are redundant with per-HMM state ML models:
+
+- **Regime Multipliers**: `regime_multipliers`, `regime_leverage_multipliers`, `regime_tp_multipliers`, `regime_sl_multipliers`
+- **Regime Weights**: `regime_specific_weights`
+- **Regime Thresholds**: `bull_trend_threshold`, `bear_trend_threshold`, `sideways_threshold`
+- **Regime Boosts**: `regime_confidence_boost`
+
+### Why Removed?
+1. **Redundancy**: HMM states already capture market regimes
+2. **Conflicts**: Regime multipliers can conflict with per-state ML models
+3. **Complexity**: Unnecessary parameter complexity
+4. **Performance**: Cleaner, more efficient parameter optimization
+
+The new configuration structure is now complete and optimized for per-HMM state ML models!

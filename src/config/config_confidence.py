@@ -45,17 +45,10 @@ class ConfidenceThresholdsConfig:
     model_degradation_threshold: float = 0.4
     model_retrain_threshold: float = 0.3
     
-    # Regime-specific thresholds
-    bull_trend_threshold: float = 0.65
-    bear_trend_threshold: float = 0.75
-    sideways_threshold: float = 0.8
-    sr_zone_threshold: float = 0.7
-    
     # S/R specific confidence thresholds
     min_sr_confidence: float = 0.6
     high_confidence_threshold: float = 0.8
     confidence_decay_rate: float = 0.2
-    regime_confidence_boost: float = 0.15
     ensemble_confidence_threshold: float = 0.7
     
     # Breakout confidence thresholds
@@ -84,14 +77,9 @@ def get_confidence_search_space() -> dict[str, dict[str, Any]]:
         "model_performance_threshold": {"min": 0.5, "max": 0.8, "type": "float"},
         "model_degradation_threshold": {"min": 0.3, "max": 0.6, "type": "float"},
         "model_retrain_threshold": {"min": 0.2, "max": 0.5, "type": "float"},
-        "bull_trend_threshold": {"min": 0.6, "max": 0.8, "type": "float"},
-        "bear_trend_threshold": {"min": 0.7, "max": 0.9, "type": "float"},
-        "sideways_threshold": {"min": 0.75, "max": 0.9, "type": "float"},
-        "sr_zone_threshold": {"min": 0.6, "max": 0.9, "type": "float"},
         "min_sr_confidence": {"min": 0.5, "max": 0.8, "type": "float"},
         "high_confidence_threshold": {"min": 0.7, "max": 0.9, "type": "float"},
         "confidence_decay_rate": {"min": 0.1, "max": 0.5, "type": "float"},
-        "regime_confidence_boost": {"min": 0.1, "max": 0.3, "type": "float"},
         "ensemble_confidence_threshold": {"min": 0.6, "max": 0.9, "type": "float"},
         "breakout_confidence_threshold": {"min": 0.6, "max": 0.9, "type": "float"},
         "false_breakout_filter": {"min": 0.1, "max": 0.3, "type": "float"},

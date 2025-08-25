@@ -14,10 +14,32 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
+from src.utils.centralized_decorators import (
+    comprehensive_data_validation,
+    handle_errors,
+    memory_efficient,
+    resource_monitor,
+    secure_data_processing,
+    validate_data_structure,
+    with_tracing_span,
+    quality_gate,
+)
 
 logger = system_logger.getChild("Step6FeatureEngineeringValidator")
 
 
+@with_tracing_span("validate_feature_engineering")
+@quality_gate(
+    min_quality_score=0.7,
+    max_correlation=0.95,
+    required_grade="C"
+)
+@comprehensive_data_validation
+@handle_errors
+@memory_efficient
+@resource_monitor
+@secure_data_processing
+@validate_data_structure
 async def run_validator(
     training_input: Dict[str, Any],
     pipeline_state: Dict[str, Any],

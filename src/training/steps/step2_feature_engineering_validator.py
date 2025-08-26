@@ -1,4 +1,4 @@
-# src/training/steps/step2_feature_engineering_validator.py
+# src/training/steps/step6_feature_engineering_validator.py
 
 """Validator for Step 2: Feature Engineering."""
 

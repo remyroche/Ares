@@ -1,4 +1,4 @@
-# src/training/steps/step2_feature_engineering.py
+# src/training/steps/step6_feature_engineering.py
 
 import asyncio
 import hashlib
@@ -432,8 +432,8 @@ def _save_feature_artifacts(
 )
 @monitor_feature_engineering()
 @auto_fix_data_quality_issues
-@handle_errors(exceptions=(Exception,), default_return=False, context="step2_feature_engineering")
-@((step_specific_ml_validation("step2", timestamp_col="timestamp") if step_specific_ml_validation else (lambda x: x)))
+@handle_errors(exceptions=(Exception,), default_return=False, context="step6_feature_engineering")
+@((step_specific_ml_validation("step6", timestamp_col="timestamp") if step_specific_ml_validation else (lambda x: x)))
 async def run_step(
     symbol: str,
     exchange: str = "BINANCE",

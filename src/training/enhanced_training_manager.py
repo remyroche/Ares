@@ -162,23 +162,25 @@ class EnhancedTrainingManager:
 
         # Define pipeline step order as class constant
         self.STEP_ORDER = [
-            "step1_data_collection",
-            "step1_5_data_converter",
-            "step2_feature_engineering",
-            "step3_hmm_regime_discovery",
-            "step4_processing_labeling",
-            "step5_regime_data_splitting",
-            "step6_hmm_based_training",
-            "step6_5_unified_regime_intelligence",
-            "step7_analyst_enhancement",
-            "step8_tactician_labeling",
-            "step9_tactician_specialist_training",
-            "step10_confidence_calibration",
-            "step11_final_parameters_optimization",
-            "step12_walk_forward_validation",
-            "step13_monte_carlo_validation",
-            "step14_ab_testing",
-            "step15_saving",
+            "step1_data_collection",           # Download and prepare market data
+            "step1_5_data_converter",          # Convert data to unified format
+            "step2_data_reading",              # Read and validate data quality
+            "step3_hmm_regime_discovery",      # Define HMM regime clusters
+            "step4_triple_barrier_method",     # Apply triple barrier method
+            "step5_labeling",                  # Create labels
+            "step6_feature_engineering",       # Feature engineering
+            "step7_regime_data_splitting",     # Split data by regimes
+            "step8_hmm_based_training",        # HMM-based model training
+            "step8_5_unified_regime_intelligence", # Unified regime intelligence
+            "step9_analyst_enhancement",       # Analyst enhancement
+            "step10_tactician_labeling",       # Tactician labeling
+            "step11_tactician_specialist_training", # Tactician specialist training
+            "step12_confidence_calibration",   # Confidence calibration
+            "step13_final_parameters_optimization", # Final parameters optimization
+            "step14_walk_forward_validation",  # Walk forward validation
+            "step15_monte_carlo_validation",   # Monte Carlo validation
+            "step16_ab_testing",               # A/B testing
+            "step17_saving",                   # Save final models
         ]
 
         # Define critical artifact patterns for each step
@@ -363,23 +365,25 @@ class EnhancedTrainingManager:
 
         # Define pipeline step order as class constant
         self.STEP_ORDER = [
-            "step1_data_collection",
-            "step1_5_data_converter",
-            "step2_feature_engineering",
-            "step3_hmm_regime_discovery",
-            "step4_processing_labeling",
-            "step5_regime_data_splitting",
-            "step6_hmm_based_training",
-            "step6_5_unified_regime_intelligence",
-            "step7_analyst_enhancement",
-            "step8_tactician_labeling",
-            "step9_tactician_specialist_training",
-            "step10_confidence_calibration",
-            "step11_final_parameters_optimization",
-            "step12_walk_forward_validation",
-            "step13_monte_carlo_validation",
-            "step14_ab_testing",
-            "step15_saving",
+            "step1_data_collection",           # Download and prepare market data
+            "step1_5_data_converter",          # Convert data to unified format
+            "step2_data_reading",              # Read and validate data quality
+            "step3_hmm_regime_discovery",      # Define HMM regime clusters
+            "step4_triple_barrier_method",     # Apply triple barrier method
+            "step5_labeling",                  # Create labels
+            "step6_feature_engineering",       # Feature engineering
+            "step7_regime_data_splitting",     # Split data by regimes
+            "step8_hmm_based_training",        # HMM-based model training
+            "step8_5_unified_regime_intelligence", # Unified regime intelligence
+            "step9_analyst_enhancement",       # Analyst enhancement
+            "step10_tactician_labeling",       # Tactician labeling
+            "step11_tactician_specialist_training", # Tactician specialist training
+            "step12_confidence_calibration",   # Confidence calibration
+            "step13_final_parameters_optimization", # Final parameters optimization
+            "step14_walk_forward_validation",  # Walk forward validation
+            "step15_monte_carlo_validation",   # Monte Carlo validation
+            "step16_ab_testing",               # A/B testing
+            "step17_saving",                   # Save final models
         ]
 
         # Define critical artifact patterns for each step
@@ -447,40 +451,52 @@ class EnhancedTrainingManager:
                 "data_cache/klines_{exchange}_{symbol}_*_consolidated.*",
                 "data_cache/aggtrades_{exchange}_{symbol}_consolidated.*",
             ],
-            "step2_feature_engineering": [
-                "data/training/{exchange}_{symbol}_{timeframe}_engineered_features.*",
-                "data/training/{exchange}_{symbol}_{timeframe}_feature_metadata.*",
+            "step1_5_data_converter": [
+                "data_cache/unified/{exchange}/{symbol}/{timeframe}/**/*.parquet",
+                "data_cache/unified/{exchange}_{symbol}_{timeframe}_config.json",
+            ],
+            "step2_data_reading": [
+                "data_cache/unified/{exchange}/{symbol}/{timeframe}/**/*.parquet",
+                "data_cache/unified/{exchange}_{symbol}_{timeframe}_config.json",
             ],
             "step3_hmm_regime_discovery": [
                 "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_hmm_*.parquet",
                 "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.*",
                 "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_regime_*.json",
             ],
-            "step4_processing_labeling": [
-                "data/training/{exchange}_{symbol}_{timeframe}_labeled_*.parquet",
-                "data/training/{exchange}_{symbol}_{timeframe}_processing_*.json",
+            "step4_triple_barrier_method": [
+                "data/training/{exchange}_{symbol}_{timeframe}_triple_barrier_*.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_barrier_*.json",
             ],
-            "step5_regime_data_splitting": [
+            "step5_labeling": [
+                "data/training/{exchange}_{symbol}_{timeframe}_labeled_*.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_labels_*.json",
+            ],
+            "step6_feature_engineering": [
+                "data/training/{exchange}_{symbol}_{timeframe}_engineered_features.*",
+                "data/training/{exchange}_{symbol}_{timeframe}_feature_metadata.*",
+            ],
+            "step7_regime_data_splitting": [
                 "data/training/{exchange}_{symbol}_{timeframe}_regime_splits_*.parquet",
                 "data/training/{exchange}_{symbol}_{timeframe}_split_metadata.*",
             ],
-            "step6_hmm_based_training": [
+            "step8_hmm_based_training": [
                 "data/training/{exchange}_{symbol}_{timeframe}_hmm_models_*.pkl",
                 "data/training/{exchange}_{symbol}_{timeframe}_training_results_*.json",
             ],
-            "step6_5_unified_regime_intelligence": [
+            "step8_5_unified_regime_intelligence": [
                 "data/training/{exchange}_{symbol}_{timeframe}_unified_intelligence_*.parquet",
                 "data/training/{exchange}_{symbol}_{timeframe}_intelligence_*.json",
             ],
-            "step7_analyst_enhancement": [
+            "step9_analyst_enhancement": [
                 "data/training/{exchange}_{symbol}_{timeframe}_analyst_*.pkl",
                 "data/training/{exchange}_{symbol}_{timeframe}_analyst_*.json",
             ],
-            "step8_tactician_labeling": [
+            "step10_tactician_labeling": [
                 "data/training/{exchange}_{symbol}_{timeframe}_tactician_labels_*.parquet",
                 "data/training/{exchange}_{symbol}_{timeframe}_tactician_*.json",
             ],
-            "step9_tactician_specialist_training": [
+            "step11_tactician_specialist_training": [
                 "data/training/{exchange}_{symbol}_{timeframe}_specialist_*.pkl",
                 "data/training/{exchange}_{symbol}_{timeframe}_specialist_*.json",
             ],
@@ -1889,126 +1905,126 @@ class EnhancedTrainingManager:
                     return False
                 self.logger.info("➡️ Proceeding to Step 4: Processing & Labeling")
 
-                # Step 4: Processing & Labeling (market regime classification deprecated)
-                self._heartbeat("Step 4: Processing & Labeling")
+                # Step 4: Regime Data Splitting (NEW - moved before labeling and feature engineering)
+                self._heartbeat("Step 4: Regime Data Splitting")
 
-                should_run_step4 = _should_run("step4_processing_labeling")
-                step_start_4 = time.time()  # Define step_start_4 here to avoid NameError
+                should_run_step4 = _should_run("step4_regime_data_splitting")
+                step_start_4 = time.time()
 
                 if not should_run_step4:
                     self.logger.info(
-                        f"⏭️ Skipping Step 4: Processing & Labeling (starting from '{start_step_key}')",
+                        f"⏭️ Skipping Step 4: Regime Data Splitting (starting from '{start_step_key}')",
                     )
-                    pipeline_state["processing_labeling"] = {
+                    pipeline_state["regime_data_splitting"] = {
                         "status": "SKIPPED",
                         "success": True,
                         "skipped": True,
                         "reason": f"start_step={start_step_key}",
                     }
                 else:
-                    # Validate step dependencies before execution (non-blocking)
-                    validation_result = await self.validate_step_dependencies("step4_processing_labeling", pipeline_state, self.force_rerun)
-                    if not validation_result.get("valid", False):
-                        self.logger.warning(f"⚠️ Step 4 dependencies not fully met: {validation_result.get('reason', 'Unknown')}")
-                        self.logger.warning("⚠️ Proceeding anyway (validation is non-blocking)")
-                        # Continue execution even if validation fails
+                    # Verify previous step artifacts BEFORE execution
+                    if not await self.verify_previous_step_artifacts("step4_regime_data_splitting", symbol, exchange, timeframe):
+                        self.logger.error("❌ Previous step artifacts not found for step4, stopping pipeline")
+                        return False
+
+                    # Validate step dependencies BEFORE execution
+                    if not await self.validate_step_dependencies("step4_regime_data_splitting", pipeline_state, self.force_rerun):
+                        self.logger.error("❌ Step 4 dependencies not met, stopping pipeline")
+                        return False
 
                     step_start_4 = time.time()
                     try:
-                        # Run Step 4 (processing/labeling)
-                        from src.training.steps import step4_processing_labeling
+                        from src.training.steps import step4_regime_data_splitting
 
-                        step4_success = await step4_processing_labeling.run_step(
+                        step4_success = await step4_regime_data_splitting.run_step(
                             symbol=symbol,
-                            exchange_name=exchange,
-                            data_dir=data_dir,
-                            timeframe=timeframe,
                             exchange=exchange,
+                            timeframe=timeframe,
+                            data_dir=data_dir,
                             force_rerun=self.force_rerun,
-                            pipeline_config=self.config,
+                            config=self.config,
                         )
-                        validator_step_name = "step4_processing_labeling"
                     except Exception as e:
                         self.logger.exception(f"❌ Error in Step 4: {e}")
                         step4_success = False
-                        validator_step_name = "step4_processing_labeling"
 
                     if not step4_success:
                         self._log_step_completion(
-                            "Step 4: Processing & Labeling",
+                            "Step 4: Regime Data Splitting",
                             step_start_4,
                             step_times,
                             success=False,
                         )
                         return False
                     self._log_step_completion(
-                        "Step 4: Processing & Labeling",
+                        "Step 4: Regime Data Splitting",
                         step_start_4,
                         step_times,
                         success=True,
                     )
 
-                    # Update pipeline state
-                    pipeline_state["processing_labeling"] = {
-                        "status": "SUCCESS",
-                        "success": step4_success,
+                    pipeline_state["regime_data_splitting"] = {
+                        "status": "SUCCESS" if step4_success else "FAILED",
+                        "success": bool(step4_success),
+                        "completed": bool(step4_success),
                     }
+                    self._save_checkpoint("step4_regime_data_splitting", pipeline_state)
+                    step_times["step4_regime_data_splitting"] = time.time() - step_start_4
 
-                    # Save checkpoint for Step 4
-                    self._save_checkpoint("step4_processing_labeling", pipeline_state)
-
-                    # Run validator for Step 4 (match orchestrator mapping)
-                    validation_result = await self._run_step_validator(
-                        validator_step_name, training_input, pipeline_state,
-                    )
-                    if validation_result and validation_result.get("validation_passed", False):
-                        self.logger.info(
-                            "🎉 Step 4: Processing & Labeling completed successfully and validation passed",
+                    # Run validator for Step 4
+                    try:
+                        step4_validation = await self._run_step_validator(
+                            "step4_regime_data_splitting", training_input, pipeline_state,
                         )
-                        # Gate progression
-                        if not validation_result or not bool(validation_result.get("validation_passed", False)):
-                            self.logger.error("❌ Step 4 validation failed — stopping before Step 5")
+                        if step4_validation and step4_validation.get("validation_passed", False):
+                            self.logger.info(
+                                "🎉 Step 4: Regime Data Splitting completed successfully and validation passed",
+                            )
+                        else:
+                            self.logger.error("❌ Step 4 validation failed - stopping pipeline")
                             return False
-                        self.logger.info("➡️ Proceeding to Step 5: Regime Data Splitting")
-                    else:
-                        self.logger.warning(f"⚠️ Step 4 validation failed: {validation_result.get('error', 'Unknown error')}")
-                        self.logger.warning("⚠️ Proceeding anyway (validation is non-blocking)")
-                        # Continue execution even if validation fails
+                    except Exception as e:
+                        self.logger.exception(f"❌ Step 4 validator failed: {e} - stopping pipeline")
+                        return False
 
-                # Step 5: Data Splitting for Training (HMM composite clusters only)
-                self._heartbeat("Step 5: HMM Composite Regime Data Splitting")
+                # Step 5: Triple Barrier Method (regime-specific)
+                self._heartbeat("Step 5: Triple Barrier Method")
 
-                should_run_step5 = _should_run("step5_regime_data_splitting")
+                should_run_step5 = _should_run("step5_triple_barrier_method")
+                step_start_5 = time.time()
+
                 if not should_run_step5:
                     self.logger.info(
-                        f"⏭️ Skipping Step 5: HMM Composite Regime Data Splitting (starting from '{start_step_key}')",
+                        f"⏭️ Skipping Step 5: Triple Barrier Method (starting from '{start_step_key}')",
                     )
-                    pipeline_state["hmm_composite_regime_data_splitting"] = {
+                    pipeline_state["triple_barrier_method"] = {
                         "status": "SKIPPED",
                         "success": True,
                         "skipped": True,
                         "reason": f"start_step={start_step_key}",
                     }
                 else:
-                    # Validate step dependencies before execution
-                    if not await self.validate_step_dependencies("step5_regime_data_splitting", pipeline_state, self.force_rerun):
-                        self.logger.error("❌ Step 5 dependencies not met, skipping")
+                    # Verify previous step artifacts BEFORE execution
+                    if not await self.verify_previous_step_artifacts("step5_triple_barrier_method", symbol, exchange, timeframe):
+                        self.logger.error("❌ Previous step artifacts not found for step5, stopping pipeline")
+                        return False
+
+                    # Validate step dependencies BEFORE execution
+                    if not await self.validate_step_dependencies("step5_triple_barrier_method", pipeline_state, self.force_rerun):
+                        self.logger.error("❌ Step 5 dependencies not met, stopping pipeline")
                         return False
 
                     step_start_5 = time.time()
                     try:
-                        from src.training.steps import step4_regime_data_splitting as _split
+                        from src.training.steps import step5_triple_barrier_method
 
-                        step5_kwargs = {}
-                        # HMM COMPOSITE CLUSTERS ONLY - NO FALLBACKS
-                        step5_kwargs["regime_basis"] = "hmm_composite_clusters_only"
-                        step5_success = await _split.run_step(
+                        step5_success = await step5_triple_barrier_method.run_step(
                             symbol=symbol,
                             exchange=exchange,
-                            data_dir=data_dir,
                             timeframe=timeframe,
+                            data_dir=data_dir,
                             force_rerun=self.force_rerun,
-                            **step5_kwargs,
+                            config=self.config,
                         )
                     except Exception as e:
                         self.logger.exception(f"❌ Error in Step 5: {e}")
@@ -2016,52 +2032,290 @@ class EnhancedTrainingManager:
 
                     if not step5_success:
                         self._log_step_completion(
-                            "Step 5: HMM Composite Regime Data Splitting",
+                            "Step 5: Triple Barrier Method",
                             step_start_5,
                             step_times,
                             success=False,
                         )
                         return False
                     self._log_step_completion(
-                        "Step 5: HMM Composite Regime Data Splitting",
+                        "Step 5: Triple Barrier Method",
                         step_start_5,
                         step_times,
                         success=True,
                     )
 
-                    # Provide explicit success indicators for validators
-                    pipeline_state["hmm_composite_regime_data_splitting"] = {
+                    pipeline_state["triple_barrier_method"] = {
                         "status": "SUCCESS" if step5_success else "FAILED",
                         "success": bool(step5_success),
                         "completed": bool(step5_success),
                     }
-                    self._save_checkpoint("step5_regime_data_splitting", pipeline_state)
-                    self._optimize_memory_usage()
+                    self._save_checkpoint("step5_triple_barrier_method", pipeline_state)
+                    step_times["step5_triple_barrier_method"] = time.time() - step_start_5
 
-                    # Run validator for Step 5 (match orchestrator mapping)
-                    step5_validation = await self._run_step_validator(
-                        "step5_regime_data_splitting",
-                        training_input,
-                        pipeline_state,
-                    )
-                    if step5_validation and step5_validation.get("validation_passed", False):
-                        self.logger.info(
-                            "🎉 Step 5: HMM Composite Regime Data Splitting completed successfully and validation passed",
+                    # Run validator for Step 5
+                    try:
+                        step5_validation = await self._run_step_validator(
+                            "step5_triple_barrier_method", training_input, pipeline_state,
                         )
-                    else:
-                        self.logger.error("❌ Step 5 validation failed — stopping before Step 6")
+                        if step5_validation and step5_validation.get("validation_passed", False):
+                            self.logger.info(
+                                "🎉 Step 5: Triple Barrier Method completed successfully and validation passed",
+                            )
+                        else:
+                            self.logger.error("❌ Step 5 validation failed - stopping pipeline")
+                            return False
+                    except Exception as e:
+                        self.logger.exception(f"❌ Step 5 validator failed: {e} - stopping pipeline")
                         return False
-                    self.logger.info("➡️ Proceeding to Step 6: HMM-Based Training")
 
-                # Step 4_8: Regime Forecasting is now integrated into Step 6 training (artifacts emitted there)
+                # Step 6: Labeling (regime-specific)
+                self._heartbeat("Step 6: Labeling")
 
-                # Step 6: HMM-Based Training (enable Method A experts via config)
-                self._heartbeat("Step 6: HMM-Based Training")
-
-                should_run_step6 = _should_run("step6_hmm_based_training")
+                should_run_step6 = _should_run("step6_labeling")
                 if not should_run_step6:
                     self.logger.info(
-                        f"⏭️ Skipping Step 6: HMM-Based Training (starting from '{start_step_key}')",
+                        f"⏭️ Skipping Step 6: Labeling (starting from '{start_step_key}')",
+                    )
+                    pipeline_state["labeling"] = {
+                        "status": "SKIPPED",
+                        "success": True,
+                        "skipped": True,
+                        "reason": f"start_step={start_step_key}",
+                    }
+                else:
+                    # Verify previous step artifacts BEFORE execution
+                    if not await self.verify_previous_step_artifacts("step6_labeling", symbol, exchange, timeframe):
+                        self.logger.error("❌ Previous step artifacts not found for step6, stopping pipeline")
+                        return False
+
+                    # Validate step dependencies BEFORE execution
+                    if not await self.validate_step_dependencies("step6_labeling", pipeline_state, self.force_rerun):
+                        self.logger.error("❌ Step 6 dependencies not met, stopping pipeline")
+                        return False
+
+                    step_start_6 = time.time()
+                    try:
+                        from src.training.steps import step6_labeling
+
+                        step6_success = await step6_labeling.run_step(
+                            symbol=symbol,
+                            exchange=exchange,
+                            timeframe=timeframe,
+                            data_dir=data_dir,
+                            force_rerun=self.force_rerun,
+                            config=self.config,
+                        )
+                    except Exception as e:
+                        self.logger.exception(f"❌ Error in Step 6: {e}")
+                        step6_success = False
+
+                    if not step6_success:
+                        self._log_step_completion(
+                            "Step 6: Labeling",
+                            step_start_6,
+                            step_times,
+                            success=False,
+                        )
+                        return False
+                    self._log_step_completion(
+                        "Step 6: Labeling",
+                        step_start_6,
+                        step_times,
+                        success=True,
+                    )
+
+                    pipeline_state["labeling"] = {
+                        "status": "SUCCESS" if step6_success else "FAILED",
+                        "success": bool(step6_success),
+                        "completed": bool(step6_success),
+                    }
+                    self._save_checkpoint("step6_labeling", pipeline_state)
+                    step_times["step6_labeling"] = time.time() - step_start_6
+
+                    # Run validator for Step 6
+                    try:
+                        step6_validation = await self._run_step_validator(
+                            "step6_labeling", training_input, pipeline_state,
+                        )
+                        if step6_validation and step6_validation.get("validation_passed", False):
+                            self.logger.info(
+                                "🎉 Step 6: Labeling completed successfully and validation passed",
+                            )
+                        else:
+                            self.logger.error("❌ Step 6 validation failed - stopping pipeline")
+                            return False
+                    except Exception as e:
+                        self.logger.exception(f"❌ Step 6 validator failed: {e} - stopping pipeline")
+                        return False
+
+                # Step 7: Feature Engineering (regime-specific)
+                self._heartbeat("Step 7: Feature Engineering")
+
+                should_run_step7 = _should_run("step7_feature_engineering")
+                if not should_run_step7:
+                    self.logger.info(
+                        f"⏭️ Skipping Step 7: Feature Engineering (starting from '{start_step_key}')",
+                    )
+                    pipeline_state["feature_engineering"] = {
+                        "status": "SKIPPED",
+                        "success": True,
+                        "skipped": True,
+                        "reason": f"start_step={start_step_key}",
+                    }
+                else:
+                    # Verify previous step artifacts BEFORE execution
+                    if not await self.verify_previous_step_artifacts("step7_feature_engineering", symbol, exchange, timeframe):
+                        self.logger.error("❌ Previous step artifacts not found for step7, stopping pipeline")
+                        return False
+
+                    # Validate step dependencies BEFORE execution
+                    if not await self.validate_step_dependencies("step7_feature_engineering", pipeline_state, self.force_rerun):
+                        self.logger.error("❌ Step 7 dependencies not met, stopping pipeline")
+                        return False
+
+                    step_start_7 = time.time()
+                    try:
+                        from src.training.steps import step7_feature_engineering
+
+                        step7_success = await step7_feature_engineering.run_step(
+                            symbol=symbol,
+                            exchange=exchange,
+                            timeframe=timeframe,
+                            data_dir=data_dir,
+                            force_rerun=self.force_rerun,
+                            config=self.config,
+                        )
+                    except Exception as e:
+                        self.logger.exception(f"❌ Error in Step 7: {e}")
+                        step7_success = False
+
+                    if not step7_success:
+                        self._log_step_completion(
+                            "Step 7: Feature Engineering",
+                            step_start_7,
+                            step_times,
+                            success=False,
+                        )
+                        return False
+                    self._log_step_completion(
+                        "Step 7: Feature Engineering",
+                        step_start_7,
+                        step_times,
+                        success=True,
+                    )
+
+                    pipeline_state["feature_engineering"] = {
+                        "status": "SUCCESS" if step7_success else "FAILED",
+                        "success": bool(step7_success),
+                        "completed": bool(step7_success),
+                    }
+                    self._save_checkpoint("step7_feature_engineering", pipeline_state)
+                    step_times["step7_feature_engineering"] = time.time() - step_start_7
+
+                    # Run validator for Step 7
+                    try:
+                        step7_validation = await self._run_step_validator(
+                            "step7_feature_engineering", training_input, pipeline_state,
+                        )
+                        if step7_validation and step7_validation.get("validation_passed", False):
+                            self.logger.info(
+                                "🎉 Step 7: Feature Engineering completed successfully and validation passed",
+                            )
+                        else:
+                            self.logger.error("❌ Step 7 validation failed - stopping pipeline")
+                            return False
+                    except Exception as e:
+                        self.logger.exception(f"❌ Step 7 validator failed: {e} - stopping pipeline")
+                        return False
+
+                # Step 8: HMM-Based Training (now uses regime-specific data)
+                self._heartbeat("Step 8: HMM-Based Training")
+
+                should_run_step7 = _should_run("step7_regime_data_splitting")
+                if not should_run_step7:
+                    self.logger.info(
+                        f"⏭️ Skipping Step 7: Regime Data Splitting (starting from '{start_step_key}')",
+                    )
+                    pipeline_state["regime_data_splitting"] = {
+                        "status": "SKIPPED",
+                        "success": True,
+                        "skipped": True,
+                        "reason": f"start_step={start_step_key}",
+                    }
+                else:
+                    # Verify previous step artifacts BEFORE execution
+                    if not await self.verify_previous_step_artifacts("step7_regime_data_splitting", symbol, exchange, timeframe):
+                        self.logger.error("❌ Previous step artifacts not found for step7, stopping pipeline")
+                        return False
+
+                    # Validate step dependencies BEFORE execution
+                    if not await self.validate_step_dependencies("step7_regime_data_splitting", pipeline_state, self.force_rerun):
+                        self.logger.error("❌ Step 7 dependencies not met, stopping pipeline")
+                        return False
+
+                    step_start_7 = time.time()
+                    try:
+                        from src.training.steps import step7_regime_data_splitting
+
+                        step7_success = await step7_regime_data_splitting.run_step(
+                            symbol=symbol,
+                            exchange=exchange,
+                            timeframe=timeframe,
+                            data_dir=data_dir,
+                            force_rerun=self.force_rerun,
+                            config=self.config,
+                        )
+                    except Exception as e:
+                        self.logger.exception(f"❌ Error in Step 7: {e}")
+                        step7_success = False
+
+                    if not step7_success:
+                        self._log_step_completion(
+                            "Step 7: Regime Data Splitting",
+                            step_start_7,
+                            step_times,
+                            success=False,
+                        )
+                        return False
+                    self._log_step_completion(
+                        "Step 7: Regime Data Splitting",
+                        step_start_7,
+                        step_times,
+                        success=True,
+                    )
+
+                    pipeline_state["regime_data_splitting"] = {
+                        "status": "SUCCESS" if step7_success else "FAILED",
+                        "success": bool(step7_success),
+                        "completed": bool(step7_success),
+                    }
+                    self._save_checkpoint("step7_regime_data_splitting", pipeline_state)
+                    step_times["step7_regime_data_splitting"] = time.time() - step_start_7
+
+                    # Run validator for Step 7
+                    try:
+                        step7_validation = await self._run_step_validator(
+                            "step7_regime_data_splitting", training_input, pipeline_state,
+                        )
+                        if step7_validation and step7_validation.get("validation_passed", False):
+                            self.logger.info(
+                                "🎉 Step 7: Regime Data Splitting completed successfully and validation passed",
+                            )
+                        else:
+                            self.logger.error("❌ Step 7 validation failed - stopping pipeline")
+                            return False
+                    except Exception as e:
+                        self.logger.exception(f"❌ Step 7 validator failed: {e} - stopping pipeline")
+                        return False
+
+                # Step 8: HMM-Based Training (enable Method A experts via config)
+                self._heartbeat("Step 8: HMM-Based Training")
+
+                should_run_step8 = _should_run("step8_hmm_based_training")
+                if not should_run_step8:
+                    self.logger.info(
+                        f"⏭️ Skipping Step 8: HMM-Based Training (starting from '{start_step_key}')",
                     )
                     pipeline_state["hmm_based_training"] = {
                         "status": "SKIPPED",
@@ -2070,58 +2324,68 @@ class EnhancedTrainingManager:
                         "reason": f"start_step={start_step_key}",
                     }
                 else:
-                    # Validate step dependencies before execution
-                    if not await self.validate_step_dependencies("step6_regime_specific_training", pipeline_state, self.force_rerun):
-                        self.logger.error("❌ Step 6 dependencies not met, skipping")
+                    # Verify previous step artifacts BEFORE execution
+                    if not await self.verify_previous_step_artifacts("step8_hmm_based_training", symbol, exchange, timeframe):
+                        self.logger.error("❌ Previous step artifacts not found for step8, stopping pipeline")
                         return False
 
-                    step_start_6 = time.time()
+                    # Validate step dependencies BEFORE execution
+                    if not await self.validate_step_dependencies("step8_hmm_based_training", pipeline_state, self.force_rerun):
+                        self.logger.error("❌ Step 8 dependencies not met, stopping pipeline")
+                        return False
+
+                    step_start_8 = time.time()
                     try:
                         from src.training.steps import step6_hmm_based_training
 
                         method_a_cfg = self.config.get("method_a_mixture_of_experts", {})
-                        step6_success = await step6_hmm_based_training.run_step(
+                        step8_success = await step6_hmm_based_training.run_step(
                             symbol=symbol,
                             data_dir=data_dir,
                             method_a_mixture_of_experts=method_a_cfg,
                         )
                     except Exception as e:
-                        self.logger.exception(f"❌ Error in Step 6: {e}")
-                        step6_success = False
+                        self.logger.exception(f"❌ Error in Step 8: {e}")
+                        step8_success = False
 
-                    if not step6_success:
+                    if not step8_success:
                         self._log_step_completion(
-                            "Step 6: HMM-Based Training",
-                            step_start_6,
+                            "Step 8: HMM-Based Training",
+                            step_start_8,
                             step_times,
                             success=False,
                         )
                         return False
                     self._log_step_completion(
-                        "Step 6: HMM-Based Training",
-                        step_start_6,
+                        "Step 8: HMM-Based Training",
+                        step_start_8,
                         step_times,
                         success=True,
                     )
 
                     pipeline_state["hmm_based_training"] = {
-                        "status": "SUCCESS" if step6_success else "FAILED",
-                        "success": bool(step6_success),
-                        "completed": bool(step6_success),
+                        "status": "SUCCESS" if step8_success else "FAILED",
+                        "success": bool(step8_success),
+                        "completed": bool(step8_success),
                     }
+                    self._save_checkpoint("step8_hmm_based_training", pipeline_state)
+                    step_times["step8_hmm_based_training"] = time.time() - step_start_8
 
-                    # Run validator for Step 6
-                    step6_validation = await self._run_step_validator(
-                        "step6_hmm_based_training", training_input, pipeline_state,
-                    )
-                    if step6_validation and step6_validation.get("validation_passed", False):
-                        self.logger.info(
-                            "🎉 Step 6: HMM-Based Training completed successfully and validation passed",
+                    # Run validator for Step 8
+                    try:
+                        step8_validation = await self._run_step_validator(
+                            "step8_hmm_based_training", training_input, pipeline_state,
                         )
-                    else:
-                        self.logger.error("❌ Step 6 validation failed — stopping before Step 6_5")
+                        if step8_validation and step8_validation.get("validation_passed", False):
+                            self.logger.info(
+                                "🎉 Step 8: HMM-Based Training completed successfully and validation passed",
+                            )
+                        else:
+                            self.logger.error("❌ Step 8 validation failed - stopping pipeline")
+                            return False
+                    except Exception as e:
+                        self.logger.exception(f"❌ Step 8 validator failed: {e} - stopping pipeline")
                         return False
-                    self.logger.info("➡️ Proceeding to Step 6_5: Unified Regime Intelligence")
 
                 # Step 6_5: Unified Regime Intelligence
                 should_run_step6_5 = _should_run("step6_5_unified_regime_intelligence")

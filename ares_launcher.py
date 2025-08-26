@@ -2070,7 +2070,7 @@ class AresLauncher:
             os.environ["LIGHT_TRAINING_MODE"] = "0"
             os.environ["FULL_TRAINING_MODE"] = "0"
             self.logger.info(
-                "🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training (60 days)"
+                "🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training (180 days)"
             )
         elif training_mode == "full":
             os.environ["FULL_TRAINING_MODE"] = "1"
@@ -2297,7 +2297,7 @@ Examples:
         type=str,
         choices=["light", "blank", "full"],
         default="blank",
-        help="Training mode for step-based commands: light (30 days), blank (60 days), full (730 days). Default: blank",
+        help="Training mode for step-based commands: light (30 days), blank (180 days), full (730 days). Default: blank",
     )
 
     parser.add_argument(

@@ -21,11 +21,13 @@ python ares_launcher.py step10 --symbol ETHUSDT --exchange BINANCE --training-mo
 
 ### 2. Training Modes
 
-Three training modes are available for step-based commands:
+Three training modes are available for step-based commands, each with pre-configured parameter values:
 
-- **Light Mode** (`--training-mode light`): 30 days of data for quick testing
-- **Blank Mode** (`--training-mode blank`): 60 days of data for development (default)
-- **Full Mode** (`--training-mode full`): 730 days of data for production training
+- **Light Mode** (`--training-mode light`): 30 days of data for quick testing and development
+- **Blank Mode** (`--training-mode blank`): 180 days of data for development and validation (default)
+- **Full Mode** (`--training-mode full`): 730 days of data for production training and backtesting
+
+Each mode has optimized parameter configurations for its specific use case, including lookback periods, feature engineering parameters, and model training settings.
 
 ### 3. Available Step Commands
 
@@ -113,11 +115,11 @@ step4_triple_barrier_method              ✅ PASSED
 # Start from step4 with blank mode (default)
 python ares_launcher.py step4 --symbol ETHUSDT --exchange BINANCE
 
-# Start from step8 with light mode for quick testing
-python ares_launcher.py step8 --symbol ETHUSDT --exchange BINANCE --training-mode light
+    # Start from step8 with light mode for quick testing (30 days)
+    python ares_launcher.py step8 --symbol ETHUSDT --exchange BINANCE --training-mode light
 
-# Start from step12 with full mode for production
-python ares_launcher.py step12 --symbol ETHUSDT --exchange BINANCE --training-mode full
+    # Start from step12 with full mode for production (730 days)
+    python ares_launcher.py step12 --symbol ETHUSDT --exchange BINANCE --training-mode full
 ```
 
 ### Force Rerun
@@ -208,20 +210,20 @@ except Exception as e:
 The system sets appropriate environment variables based on training mode:
 
 ```python
-# Light mode
-os.environ["LIGHT_TRAINING_MODE"] = "1"
-os.environ["BLANK_TRAINING_MODE"] = "0"
-os.environ["FULL_TRAINING_MODE"] = "0"
+    # Light mode (30 days)
+    os.environ["LIGHT_TRAINING_MODE"] = "1"
+    os.environ["BLANK_TRAINING_MODE"] = "0"
+    os.environ["FULL_TRAINING_MODE"] = "0"
 
-# Blank mode
-os.environ["BLANK_TRAINING_MODE"] = "1"
-os.environ["LIGHT_TRAINING_MODE"] = "0"
-os.environ["FULL_TRAINING_MODE"] = "0"
+    # Blank mode (180 days)
+    os.environ["BLANK_TRAINING_MODE"] = "1"
+    os.environ["LIGHT_TRAINING_MODE"] = "0"
+    os.environ["FULL_TRAINING_MODE"] = "0"
 
-# Full mode
-os.environ["FULL_TRAINING_MODE"] = "1"
-os.environ["LIGHT_TRAINING_MODE"] = "0"
-os.environ["BLANK_TRAINING_MODE"] = "0"
+    # Full mode (730 days)
+    os.environ["FULL_TRAINING_MODE"] = "1"
+    os.environ["LIGHT_TRAINING_MODE"] = "0"
+    os.environ["BLANK_TRAINING_MODE"] = "0"
 ```
 
 ## Backward Compatibility

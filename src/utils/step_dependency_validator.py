@@ -66,25 +66,27 @@ class StepDependencyValidator:
                 "required_columns": ["composite_cluster_id"],
                 "min_rows": 100
             },
-            "step4_triple_barrier_method": {
-                "required_files": ["data/training/*_triple_barrier_labels.parquet"],
+            "step4_regime_data_splitting": {
+                "required_files": ["data/training/regimes/*/regime_*/regime_data.parquet"],
+                "required_columns": ["composite_cluster_id"],
+                "min_rows": 50,
+                "min_regimes": 3,
+                "max_regimes": 20
+            },
+            "step5_triple_barrier_method": {
+                "required_files": ["data/training/regimes/*/regime_*/triple_barrier_labels.parquet"],
                 "required_columns": ["triple_barrier_label"],
-                "min_rows": 100
+                "min_rows": 50
             },
-            "step5_labeling": {
-                "required_files": ["data/training/*_labeled_data.parquet"],
+            "step6_labeling": {
+                "required_files": ["data/training/regimes/*/regime_*/labeled_data.parquet"],
                 "required_columns": ["label", "triple_barrier_label"],
-                "min_rows": 100
+                "min_rows": 50
             },
-            "step6_feature_engineering": {
-                "required_files": ["data/training/*_features_train.parquet"],
+            "step7_feature_engineering": {
+                "required_files": ["data/training/regimes/*/regime_*/features.parquet"],
                 "required_columns": ["open", "high", "low", "close", "volume"],
-                "min_rows": 100
-            },
-            "step7_regime_data_splitting": {
-                "required_files": ["data/training/*_regime_splits_train.parquet"],
-                "required_columns": ["label", "composite_cluster_id"],
-                "min_rows": 100
+                "min_rows": 50
             },
             "step8_hmm_based_training": {
                 "required_files": ["data/training/*_hmm_models.pkl"],

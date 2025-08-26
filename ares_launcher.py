@@ -2459,7 +2459,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step4_triple_barrier_method",
+                start_step="step4_regime_data_splitting",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,

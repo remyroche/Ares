@@ -496,26 +496,43 @@ class MultiOutputProfitPredictor:
         else:
             confidence = np.ones(len(X)) * 0.5
         
-        # Identify high-value trades as categorical factors
-        high_value_factors = []
+        # Calculate high-value trade factors as continuous values between -1 and 1
+        high_value_factors = np.zeros(len(X))
+        
         for i in range(len(X)):
-            if direction_pred[i] == 1 and profit_pred[i] > self.config.high_profit_threshold:
-                high_value_factors.append("HIGH_PROFIT_BUY")
-            elif direction_pred[i] == 0 and profit_pred[i] < self.config.high_loss_threshold:
-                high_value_factors.append("HIGH_PROFIT_SELL")
-            elif direction_pred[i] == 1 and profit_pred[i] > 0:
-                high_value_factors.append("LOW_PROFIT_BUY")
-            elif direction_pred[i] == 0 and profit_pred[i] < 0:
-                high_value_factors.append("LOW_PROFIT_SELL")
-            else:
-                high_value_factors.append("NEUTRAL")
+            if direction_pred[i] == 1:  # BUY signal
+                if profit_pred[i] > self.config.high_profit_threshold:
+                    # High profit buy: scale from threshold to max expected profit (e.g., 0.05)
+                    factor = min(1.0, profit_pred[i] / 0.05)  # Normalize to [0, 1]
+                    high_value_factors[i] = factor
+                elif profit_pred[i] > 0:
+                    # Low profit buy: scale from 0 to threshold
+                    factor = profit_pred[i] / self.config.high_profit_threshold
+                    high_value_factors[i] = factor * 0.5  # Scale to [0, 0.5]
+                else:
+                    # Negative profit buy: scale from negative to 0
+                    factor = max(-1.0, profit_pred[i] / self.config.high_loss_threshold)
+                    high_value_factors[i] = factor * 0.5  # Scale to [-0.5, 0]
+            else:  # SELL signal
+                if profit_pred[i] < self.config.high_loss_threshold:
+                    # High profit sell: scale from threshold to max expected loss (e.g., -0.03)
+                    factor = max(-1.0, profit_pred[i] / -0.03)  # Normalize to [-1, 0]
+                    high_value_factors[i] = factor
+                elif profit_pred[i] < 0:
+                    # Low loss sell: scale from 0 to threshold
+                    factor = profit_pred[i] / self.config.high_loss_threshold
+                    high_value_factors[i] = factor * 0.5  # Scale to [-0.5, 0]
+                else:
+                    # Positive profit sell: scale from positive to 0
+                    factor = min(1.0, profit_pred[i] / self.config.high_profit_threshold)
+                    high_value_factors[i] = -factor * 0.5  # Scale to [0, -0.5]
         
         return {
             "direction": direction_pred,
             "direction_proba": direction_proba,
             "profit": profit_pred,
             "confidence": confidence,
-            "high_value_trades": high_value_factors,  # Now categorical factors
+            "high_value_trades": high_value_factors,  # Now continuous values between -1 and 1
             "method": "direct_profit" if self.can_predict_profit else "profit_weighted"
         }
     

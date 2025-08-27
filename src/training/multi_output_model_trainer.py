@@ -20,6 +20,21 @@ import pandas as pd
 import torch
 import torch.nn as nn
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+
+# Optional imports for additional model types
+try:
+    import xgboost as xgb
+    XGBOOST_AVAILABLE = True
+except ImportError:
+    XGBOOST_AVAILABLE = False
+    xgb = None
+
+try:
+    import catboost as cb
+    CATBOOST_AVAILABLE = True
+except ImportError:
+    CATBOOST_AVAILABLE = False
+    cb = None
 from sklearn.metrics import (
     accuracy_score, f1_score, precision_score, recall_score,
     mean_squared_error, mean_absolute_error, r2_score
@@ -60,6 +75,8 @@ class MultiOutputModelConfig:
         n_splits: int = 5,
         test_size: float = 0.2,
         random_state: int = 42,
+        use_enhanced_feature_selection: bool = True,  # NEW: Use enhanced feature selection
+        supported_model_types: List[str] = None,  # NEW: Supported model types
     ):
         self.model_type = model_type
         self.direction_target = direction_target
@@ -73,6 +90,15 @@ class MultiOutputModelConfig:
         self.n_splits = n_splits
         self.test_size = test_size
         self.random_state = random_state
+        self.use_enhanced_feature_selection = use_enhanced_feature_selection
+        
+        # Supported model types for multi-output training
+        if supported_model_types is None:
+            self.supported_model_types = [
+                "LightGBM", "RandomForest", "XGBoost", "CatBoost", "NeuralNetwork"
+            ]
+        else:
+            self.supported_model_types = supported_model_types
 
 
 class MultiOutputNeuralNetwork(nn.Module):
@@ -172,20 +198,22 @@ class MultiOutputModelTrainer:
         data: pd.DataFrame,
         direction_column: str = "direction",
         profit_column: str = "potential_profit_pct",
-        feature_columns: Optional[List[str]] = None
+        feature_columns: Optional[List[str]] = None,
+        use_enhanced_feature_selection: bool = True
     ) -> Tuple[pd.DataFrame, pd.Series, pd.Series]:
-        """Prepare data for multi-output training with profit-based features.
+        """Prepare data for multi-output training with ALL available features.
         
         Args:
             data: Input DataFrame with features and targets
             direction_column: Column name for direction target
             profit_column: Column name for profit target
             feature_columns: List of feature columns to use
+            use_enhanced_feature_selection: Whether to use enhanced feature selection with autoencoder features
             
         Returns:
             Tuple of (features, direction_target, profit_target)
         """
-        self.logger.info("📊 Preparing multi-output training data...")
+        self.logger.info("📊 Preparing multi-output training data with ALL available features...")
         
         # Validate input data
         if data.empty:
@@ -196,11 +224,49 @@ class MultiOutputModelTrainer:
         if missing_columns:
             raise ValueError(f"Missing required columns: {missing_columns}")
         
-        # Apply profit-based feature engineering if enabled
-        if self.config.use_profit_features:
+        # Use enhanced feature selection if enabled
+        if use_enhanced_feature_selection:
+            try:
+                from src.training.feature_selection_manager import FeatureSelectionManager
+                
+                self.logger.info("🔧 Using enhanced feature selection with autoencoder features...")
+                
+                # Create feature selection manager with enhanced features
+                feature_selector = FeatureSelectionManager(self.config.__dict__ if hasattr(self.config, '__dict__') else {})
+                
+                # Create dummy target for feature selection (it will be replaced)
+                dummy_target = pd.Series(0, index=data.index)
+                if direction_column in data.columns:
+                    dummy_target = data[direction_column]
+                
+                # Use enhanced feature selection with autoencoder features
+                selected_features, metadata = feature_selector.select_features_step2(
+                    features_df=data,
+                    target=dummy_target,
+                    symbol="default",
+                    exchange="default",
+                    data_dir="temp",
+                    use_autoencoder_features=True,  # Use autoencoder features
+                    use_regularization=True         # Use regularization
+                )
+                
+                self.logger.info(f"✅ Enhanced feature selection completed: {selected_features.shape[1]} features selected")
+                self.logger.info(f"   - Autoencoder features: {metadata.get('stages', {}).get('stage0_autoencoder', {}).get('autoencoder_features_added', 0)}")
+                self.logger.info(f"   - Regularization applied: {metadata.get('stages', {}).get('stage6_regularization', {}).get('regularization_applied', False)}")
+                
+                # Use selected features
+                data = selected_features
+                
+            except Exception as e:
+                self.logger.warning(f"⚠️ Enhanced feature selection failed: {e}")
+                self.logger.info("📊 Falling back to basic feature preparation")
+                use_enhanced_feature_selection = False
+        
+        # Apply profit-based feature engineering if enabled and not using enhanced selection
+        if self.config.use_profit_features and not use_enhanced_feature_selection:
             self.logger.info("🔧 Applying profit-based feature engineering...")
             data = self.profit_feature_engine.apply_all_features(data)
-            self.logger.info(f"✅ Added {len(data.columns) - len(data.columns)} profit-based features")
+            self.logger.info(f"✅ Added profit-based features")
         
         # Select features
         if feature_columns is None:
@@ -231,6 +297,177 @@ class MultiOutputModelTrainer:
         self.logger.info(f"   - Profit target: mean={profit_target.mean():.6f}, std={profit_target.std():.6f}")
         
         return features, direction_target, profit_target
+    
+    def _train_xgboost_multi_output(
+        self,
+        X_train: np.ndarray,
+        X_val: np.ndarray,
+        y_dir_train: np.ndarray,
+        y_dir_val: np.ndarray,
+        y_prof_train: np.ndarray,
+        y_prof_val: np.ndarray,
+        feature_names: List[str]
+    ) -> Dict[str, Any]:
+        """Train XGBoost multi-output model."""
+        if not XGBOOST_AVAILABLE:
+            raise ImportError("XGBoost is not available. Please install xgboost package.")
+        
+        self.logger.info("🌳 Training XGBoost multi-output model...")
+        
+        # Train direction classifier
+        direction_model = xgb.XGBClassifier(
+            n_estimators=100,
+            max_depth=6,
+            learning_rate=0.1,
+            random_state=self.config.random_state,
+            eval_metric='logloss',
+            use_label_encoder=False
+        )
+        direction_model.fit(
+            X_train, y_dir_train,
+            eval_set=[(X_val, y_dir_val)],
+            early_stopping_rounds=10,
+            verbose=False
+        )
+        
+        # Train profit regressor
+        profit_model = xgb.XGBRegressor(
+            n_estimators=100,
+            max_depth=6,
+            learning_rate=0.1,
+            random_state=self.config.random_state,
+            eval_metric='rmse'
+        )
+        profit_model.fit(
+            X_train, y_prof_train,
+            eval_set=[(X_val, y_prof_val)],
+            early_stopping_rounds=10,
+            verbose=False
+        )
+        
+        # Evaluate models
+        direction_pred = direction_model.predict(X_val)
+        profit_pred = profit_model.predict(X_val)
+        
+        direction_accuracy = accuracy_score(y_dir_val, direction_pred)
+        profit_rmse = np.sqrt(mean_squared_error(y_prof_val, profit_pred))
+        
+        # Calculate metrics
+        direction_metrics = {
+            "accuracy": direction_accuracy,
+            "f1": f1_score(y_dir_val, direction_pred),
+            "precision": precision_score(y_dir_val, direction_pred),
+            "recall": recall_score(y_dir_val, direction_pred)
+        }
+        
+        profit_metrics = {
+            "rmse": profit_rmse,
+            "mae": mean_absolute_error(y_prof_val, profit_pred),
+            "r2": r2_score(y_prof_val, profit_pred)
+        }
+        
+        combined_metrics = {
+            "direction_accuracy": direction_accuracy,
+            "profit_rmse": profit_rmse,
+            "overall_score": direction_accuracy - profit_rmse  # Simple combination
+        }
+        
+        return {
+            "direction_model": direction_model,
+            "profit_model": profit_model,
+            "model_type": "XGBoost",
+            "direction_metrics": direction_metrics,
+            "profit_metrics": profit_metrics,
+            "combined_metrics": combined_metrics,
+            "feature_importance": {
+                "direction": direction_model.feature_importances_,
+                "profit": profit_model.feature_importances_
+            }
+        }
+    
+    def _train_catboost_multi_output(
+        self,
+        X_train: np.ndarray,
+        X_val: np.ndarray,
+        y_dir_train: np.ndarray,
+        y_dir_val: np.ndarray,
+        y_prof_train: np.ndarray,
+        y_prof_val: np.ndarray,
+        feature_names: List[str]
+    ) -> Dict[str, Any]:
+        """Train CatBoost multi-output model."""
+        if not CATBOOST_AVAILABLE:
+            raise ImportError("CatBoost is not available. Please install catboost package.")
+        
+        self.logger.info("🐱 Training CatBoost multi-output model...")
+        
+        # Train direction classifier
+        direction_model = cb.CatBoostClassifier(
+            iterations=100,
+            depth=6,
+            learning_rate=0.1,
+            random_state=self.config.random_state,
+            verbose=False
+        )
+        direction_model.fit(
+            X_train, y_dir_train,
+            eval_set=(X_val, y_dir_val),
+            early_stopping_rounds=10
+        )
+        
+        # Train profit regressor
+        profit_model = cb.CatBoostRegressor(
+            iterations=100,
+            depth=6,
+            learning_rate=0.1,
+            random_state=self.config.random_state,
+            verbose=False
+        )
+        profit_model.fit(
+            X_train, y_prof_train,
+            eval_set=(X_val, y_prof_val),
+            early_stopping_rounds=10
+        )
+        
+        # Evaluate models
+        direction_pred = direction_model.predict(X_val)
+        profit_pred = profit_model.predict(X_val)
+        
+        direction_accuracy = accuracy_score(y_dir_val, direction_pred)
+        profit_rmse = np.sqrt(mean_squared_error(y_prof_val, profit_pred))
+        
+        # Calculate metrics
+        direction_metrics = {
+            "accuracy": direction_accuracy,
+            "f1": f1_score(y_dir_val, direction_pred),
+            "precision": precision_score(y_dir_val, direction_pred),
+            "recall": recall_score(y_dir_val, direction_pred)
+        }
+        
+        profit_metrics = {
+            "rmse": profit_rmse,
+            "mae": mean_absolute_error(y_prof_val, profit_pred),
+            "r2": r2_score(y_prof_val, profit_pred)
+        }
+        
+        combined_metrics = {
+            "direction_accuracy": direction_accuracy,
+            "profit_rmse": profit_rmse,
+            "overall_score": direction_accuracy - profit_rmse  # Simple combination
+        }
+        
+        return {
+            "direction_model": direction_model,
+            "profit_model": profit_model,
+            "model_type": "CatBoost",
+            "direction_metrics": direction_metrics,
+            "profit_metrics": profit_metrics,
+            "combined_metrics": combined_metrics,
+            "feature_importance": {
+                "direction": direction_model.feature_importances_,
+                "profit": profit_model.feature_importances_
+            }
+        }
     
     @handle_errors(
         exceptions=(ValueError, RuntimeError),
@@ -301,6 +538,20 @@ class MultiOutputModelTrainer:
                     y_prof_train, y_prof_val,
                     features.columns
                 )
+            elif self.config.model_type == "XGBoost":
+                model_result = self._train_xgboost_multi_output(
+                    X_train_scaled, X_val_scaled,
+                    y_dir_train, y_dir_val,
+                    y_prof_train, y_prof_val,
+                    features.columns
+                )
+            elif self.config.model_type == "CatBoost":
+                model_result = self._train_catboost_multi_output(
+                    X_train_scaled, X_val_scaled,
+                    y_dir_train, y_dir_val,
+                    y_prof_train, y_prof_val,
+                    features.columns
+                )
             elif self.config.model_type == "NeuralNetwork":
                 model_result = self._train_neural_network_multi_output(
                     X_train_scaled, X_val_scaled,
@@ -309,7 +560,7 @@ class MultiOutputModelTrainer:
                     features.columns
                 )
             else:
-                raise ValueError(f"Unsupported model type: {self.config.model_type}")
+                raise ValueError(f"Unsupported model type: {self.config.model_type}. Supported types: {self.config.supported_model_types}")
             
             if model_result:
                 direction_metrics.append(model_result["direction_metrics"])

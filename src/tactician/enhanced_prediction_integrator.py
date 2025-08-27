@@ -866,55 +866,10 @@ class TacticianEnhancedPredictionIntegrator:
         else:
             return "low"
 
-    def _analyze_market_conditions(self, market_data: pd.DataFrame) -> dict[str, Any]:
-        """Analyze current market conditions for exit decisions."""
-        try:
-            if market_data.empty:
-                return {"volatility": "unknown", "trend": "unknown", "volume": "unknown"}
-            
-            # Calculate volatility
-            returns = market_data["close"].pct_change().dropna()
-            volatility = returns.std()
-            
-            # Calculate trend
-            sma_short = market_data["close"].rolling(5).mean().iloc[-1]
-            sma_long = market_data["close"].rolling(20).mean().iloc[-1]
-            trend = "bullish" if sma_short > sma_long else "bearish"
-            
-            # Calculate volume trend
-            avg_volume = market_data["volume"].rolling(10).mean().iloc[-1]
-            current_volume = market_data["volume"].iloc[-1]
-            volume_trend = "high" if current_volume > avg_volume * 1.2 else "normal"
-            
-            return {
-                "volatility": "high" if volatility > 0.02 else "low",
-                "trend": trend,
-                "volume": volume_trend,
-                "volatility_value": float(volatility)
-            }
+    # REMOVED: Market condition analysis method
+    # This technical analysis should be handled by the ML models in steps 6-14
+    # The integrator should focus on integrating predictions, not generating market analysis
 
-        except Exception as e:
-            self.logger.error(error(f"❌ Error analyzing market conditions: {e}"))
-            return {"volatility": "unknown", "trend": "unknown", "volume": "unknown"}
-
-    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
-        """Calculate RSI indicator."""
-        try:
-            delta = prices.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-            rs = gain / loss
-            rsi = 100 - (100 / (1 + rs))
-            return rsi
-        except Exception:
-            return pd.Series([50.0] * len(prices), index=prices.index)
-
-    def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
-        """Calculate MACD indicator."""
-        try:
-            ema_fast = prices.ewm(span=fast).mean()
-            ema_slow = prices.ewm(span=slow).mean()
-            macd = ema_fast - ema_slow
-            return macd
-        except Exception:
-            return pd.Series([0.0] * len(prices), index=prices.index)
+    # REMOVED: RSI and MACD calculation methods
+    # These technical indicators should be handled by the ML models in steps 6-14
+    # The integrator should focus on integrating predictions, not generating features

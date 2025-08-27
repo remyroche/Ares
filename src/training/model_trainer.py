@@ -20,6 +20,7 @@ from sklearn.preprocessing import StandardScaler
 
 from src.training.data_cleaning import handle_missing_data
 from src.training.feature_engineering import FeatureGenerator
+from src.training.multi_output_model_trainer import create_multi_output_trainer, MultiOutputModelConfig
 from src.utils.decorators import (
     guard_dataframe_nulls,
     validate_call_or_runtime_types,
@@ -113,6 +114,10 @@ class RayModelTrainer:
         self.is_training: bool = False
         self.trained_models: dict[str, Any] = {}
         self.model_metadata: dict[str, Any] = {}
+        
+        # Multi-output model trainer
+        self.multi_output_trainer = None
+        self.enable_multi_output = self.model_trainer_config.get("enable_multi_output", True)
 
         # Configuration
         self.model_trainer_config: dict[str, Any] = self.config.get("model_trainer", {})
@@ -471,32 +476,69 @@ class RayModelTrainer:
                     return None
             data = handle_missing_data(data)
             FeatureGenerator()
-            # Use all columns except label as features, and 'label' as target
-            feature_cols = [
-                col
-                for col in data.columns
-                if col not in ("label", "tactician_label", "target")
-            ]
-            label_col = (
-                "label"
-                if "label" in data.columns
-                else (
-                    "tactician_label" if "tactician_label" in data.columns else "target"
-                )
+                    # Check if we have multi-output targets (direction and profit)
+        has_direction = "direction" in data.columns
+        has_profit = "potential_profit_pct" in data.columns
+        
+        # Use all columns except labels as features
+        exclude_cols = ["label", "tactician_label", "target", "direction", "potential_profit_pct"]
+        feature_cols = [col for col in data.columns if col not in exclude_cols]
+        
+        # Prepare single-output data (backward compatibility)
+        label_col = (
+            "label"
+            if "label" in data.columns
+            else (
+                "tactician_label" if "tactician_label" in data.columns else "target"
             )
-            features = data[feature_cols]
-            labels = data[label_col]
-            prepared_data["tactician_1m"] = TrainingData(
-                features=features,
-                labels=labels,
-                timeframe="1m",
-                model_type="tactician",
-                data_info={
+        )
+        features = data[feature_cols]
+        labels = data[label_col]
+        
+        prepared_data["tactician_1m"] = TrainingData(
+            features=features,
+            labels=labels,
+            timeframe="1m",
+            model_type="tactician",
+            data_info={
+                "rows": len(data),
+                "columns": len(features.columns),
+                "timeframe": "1m",
+                "has_multi_output": has_direction and has_profit,
+            },
+        )
+        
+        # Prepare multi-output data if available
+        if has_direction and has_profit and self.enable_multi_output:
+            self.logger.info("🔧 Multi-output targets detected - preparing multi-output training data")
+            
+            # Initialize multi-output trainer if not already done
+            if self.multi_output_trainer is None:
+                multi_output_config = MultiOutputModelConfig(
+                    model_type="LightGBM",
+                    use_profit_features=True,
+                    direction_target="direction",
+                    profit_target="potential_profit_pct"
+                )
+                self.multi_output_trainer = create_multi_output_trainer(
+                    model_type="LightGBM",
+                    use_profit_features=True
+                )
+            
+            # Store multi-output data
+            prepared_data["multi_output_1m"] = {
+                "features": features,
+                "direction_target": data["direction"],
+                "profit_target": data["potential_profit_pct"],
+                "timeframe": "1m",
+                "model_type": "multi_output",
+                "data_info": {
                     "rows": len(data),
                     "columns": len(features.columns),
                     "timeframe": "1m",
-                },
-            )
+                    "has_multi_output": True,
+                }
+            }
             self.logger.info(
                 "✅ Training data prepared successfully from labeled/enhanced pipeline output",
             )
@@ -530,6 +572,9 @@ class RayModelTrainer:
                 )
 
             model_configs: list[tuple[ModelConfig, TrainingData]] = []
+            multi_output_results: dict[str, Any] = {}
+            
+            # Train single-output models (backward compatibility)
             if self.enable_tactician_models:
                 data_key = "tactician_1m"
                 if data_key in training_data:
@@ -540,16 +585,42 @@ class RayModelTrainer:
                         target_column="target",
                     )
                     model_configs.append((config, training_data[data_key]))
+            
+            # Train multi-output models if available
+            if self.enable_multi_output and "multi_output_1m" in training_data:
+                self.logger.info("🚀 Training multi-output models for direction and profit prediction")
+                multi_output_data = training_data["multi_output_1m"]
+                
+                # Train multi-output model
+                multi_output_result = self.multi_output_trainer.train_multi_output_model(
+                    features=multi_output_data["features"],
+                    direction_target=multi_output_data["direction_target"],
+                    profit_target=multi_output_data["profit_target"],
+                    model_name="multi_output_tactician_1m"
+                )
+                
+                if multi_output_result:
+                    multi_output_results["multi_output_1m"] = multi_output_result
+                    self.logger.info("✅ Multi-output model training completed successfully")
+                else:
+                    self.logger.warning("⚠️ Multi-output model training failed")
+            
+            # Train single-output models using Ray
             training_futures = []
             for config, data in model_configs:
                 future = train_single_model.remote(config, data, best_params)
                 training_futures.append(future)
-            training_results = ray.get(training_futures)
-            tactician_results: dict[str, Any] = {}
-            for result in training_results:
-                tactician_results[result["timeframe"]] = result
+            
+            if training_futures:
+                training_results = ray.get(training_futures)
+                tactician_results: dict[str, Any] = {}
+                for result in training_results:
+                    tactician_results[result["timeframe"]] = result
+            else:
+                tactician_results = {}
             return {
                 "tactician_models": tactician_results,
+                "multi_output_models": multi_output_results,
                 "training_input": training_input,
                 "training_timestamp": datetime.now().isoformat(),
             }
@@ -688,6 +759,11 @@ class RayModelTrainer:
                 for model_result in training_results["tactician_models"].values():
                     if model_result["training_status"] == "completed":
                         self._store_model_metadata(model_result)
+            
+            # Store multi-output models metadata
+            if training_results.get("multi_output_models"):
+                for model_name, model_result in training_results["multi_output_models"].items():
+                    self._store_multi_output_model_metadata(model_name, model_result)
 
             # Save metadata file
             model_dir = self.model_trainer_config.get("model_directory", "models")
@@ -699,6 +775,43 @@ class RayModelTrainer:
 
         except Exception as e:
             self.logger.error(f"❌ Failed to store trained models metadata: {e}")
+
+    def _store_multi_output_model_metadata(self, model_name: str, model_result: dict[str, Any]) -> None:
+        """Store multi-output model metadata.
+        
+        Args:
+            model_name: Name of the multi-output model
+            model_result: Multi-output model training result
+        """
+        try:
+            self.logger.info(f"📁 Storing multi-output model metadata for {model_name}")
+            
+            # Save multi-output model
+            model_dir = self.model_trainer_config.get("model_directory", "models")
+            multi_output_dir = os.path.join(model_dir, "multi_output_models", model_name)
+            
+            if self.multi_output_trainer:
+                self.multi_output_trainer.save_model(model_name, multi_output_dir)
+            
+            # Store metadata
+            metadata = {
+                "model_name": model_name,
+                "model_type": "multi_output",
+                "direction_metrics": model_result.get("direction_metrics", {}),
+                "profit_metrics": model_result.get("profit_metrics", {}),
+                "combined_metrics": model_result.get("combined_metrics", {}),
+                "feature_columns": model_result.get("feature_columns", []),
+                "training_time": model_result.get("training_time", 0.0),
+                "config": model_result.get("config", {}),
+                "model_path": multi_output_dir,
+                "training_timestamp": datetime.now().isoformat()
+            }
+            
+            self.model_metadata[f"multi_output_{model_name}"] = metadata
+            self.logger.info(f"✅ Multi-output model metadata stored for {model_name}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to store multi-output model metadata: {e}")
 
     def _store_model_metadata(self, model_result: dict[str, Any]) -> None:
         """Store model metadata.

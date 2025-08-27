@@ -381,16 +381,16 @@ class FinalParametersOptimizationStep:
                         0.8,
                         step=0.02,
                     ),
-                    "ml_weight": trial.suggest_float(
-                        "ml_weight",
-                        0.5,
-                        0.9,
+                    "analyst_ml_weight": trial.suggest_float(
+                        "analyst_ml_weight",
+                        0.4,
+                        0.8,
                         step=0.05,
                     ),
-                    "analyst_weight": trial.suggest_float(
-                        "analyst_weight",
-                        0.1,
-                        0.5,
+                    "tactician_ml_weight": trial.suggest_float(
+                        "tactician_ml_weight",
+                        0.2,
+                        0.6,
                         step=0.05,
                     ),
                     "position_sizing_confidence_multiplier": trial.suggest_float(
@@ -1132,14 +1132,14 @@ class FinalParametersOptimizationStep:
                     "Consider increasing enhanced prediction price threshold for more selective trades",
                 )
 
-            if conf_params.get("ml_weight", 0) < 0.6:
+            if conf_params.get("analyst_ml_weight", 0) < 0.4:
                 recommendations.append(
-                    "Consider increasing ML weight for better model integration",
+                    "Consider increasing analyst ML weight for better market analysis integration",
                 )
 
-            if conf_params.get("analyst_weight", 0) < 0.2:
+            if conf_params.get("tactician_ml_weight", 0) < 0.2:
                 recommendations.append(
-                    "Consider increasing analyst weight for better signal balance",
+                    "Consider increasing tactician ML weight for better execution optimization",
                 )
 
             if conf_params.get("position_sizing_confidence_multiplier", 0) > 2.0:
@@ -1253,10 +1253,10 @@ class FinalParametersOptimizationStep:
             price_threshold = params.get("enhanced_prediction_price_threshold", 0.6)
             price_factor = price_threshold * 0.15
             
-            # ML weight vs analyst weight balance
-            ml_weight = params.get("ml_weight", 0.7)
-            analyst_weight = params.get("analyst_weight", 0.3)
-            weight_balance = min(ml_weight, analyst_weight) * 0.1
+            # ML weight balance between different ML model types
+            analyst_ml_weight = params.get("analyst_ml_weight", 0.6)
+            tactician_ml_weight = params.get("tactician_ml_weight", 0.4)
+            weight_balance = min(analyst_ml_weight, tactician_ml_weight) * 0.1
             
             # Position sizing enhancement
             position_multiplier = params.get("position_sizing_confidence_multiplier", 1.5)
@@ -1454,8 +1454,8 @@ class FinalParametersOptimizationStep:
                 # Enhanced prediction integrator parameters
                 "enhanced_prediction_confidence_threshold": 0.7,
                 "enhanced_prediction_price_threshold": 0.6,
-                "ml_weight": 0.7,
-                "analyst_weight": 0.3,
+                "analyst_ml_weight": 0.6,
+                "tactician_ml_weight": 0.4,
                 "position_sizing_confidence_multiplier": 1.5,
                 "leverage_sizing_risk_multiplier": 1.0,
                 "base_position_size": 0.1,

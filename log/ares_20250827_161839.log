@@ -1,0 +1,133 @@
+2025-08-27 16:18:39,702 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-27 16:18:39,724 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering 🔧 Exit strategy feature engineering system initialized - -
+2025-08-27 16:18:39,724 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering 🐍 Using Python vectorized operations - -
+2025-08-27 16:18:39,725 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering ➡️ ExitStrategy.apply_all start 653f9492 - -
+2025-08-27 16:18:39,725 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering 🚀 Applying exit strategy feature engineering 653f9492 - -
+2025-08-27 16:18:39,725 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Input shape: (1000, 8) 653f9492 - -
+2025-08-27 16:18:39,725 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Feature categories: ['momentum_reversal', 'volatility_reversal', 'volume_reversal', 'support_resistance', 'trend_strength', 'profit_decay', 'time_decay', 'market_regime'] 653f9492 - -
+2025-08-27 16:18:39,895 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied momentum_reversal features 653f9492 - -
+2025-08-27 16:18:39,899 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied volatility_reversal features 653f9492 - -
+2025-08-27 16:18:39,903 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied volume_reversal features 653f9492 - -
+2025-08-27 16:18:39,906 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied support_resistance features 653f9492 - -
+2025-08-27 16:18:40,174 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied trend_strength features 653f9492 - -
+2025-08-27 16:18:40,177 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied profit_decay features 653f9492 - -
+2025-08-27 16:18:40,177 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied time_decay features 653f9492 - -
+2025-08-27 16:18:40,195 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied market_regime features 653f9492 - -
+2025-08-27 16:18:40,195 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering ✅ Exit strategy feature engineering completed 653f9492 - -
+2025-08-27 16:18:40,195 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Output shape: (1000, 74) 653f9492 - -
+2025-08-27 16:18:40,195 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Features added: 66 653f9492 - -
+2025-08-27 16:18:40,195 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Total features: 74 653f9492 - -
+2025-08-27 16:18:40,196 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering ✅ ExitStrategy.apply_all done 653f9492 - -
+2025-08-27 16:18:40,209 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering 🔧 Profit-based feature engineering system initialized - -
+2025-08-27 16:18:40,209 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering 🐍 Using Python vectorized operations - -
+2025-08-27 16:18:40,209 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering ➡️ ProfitFeatures.apply_all start 08be6e43 - -
+2025-08-27 16:18:40,209 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering 🚀 Applying profit-based feature engineering 08be6e43 - -
+2025-08-27 16:18:40,209 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering    - Input shape: (500, 8) 08be6e43 - -
+2025-08-27 16:18:40,209 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering    - Feature categories: ['basic_profit', 'categorical', 'risk_reward', 'momentum', 'volatility', 'volume', 'rolling', 'profit_bins', 'profit_labels'] 08be6e43 - -
+2025-08-27 16:18:40,210 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering    ✅ Applied basic_profit features 08be6e43 - -
+2025-08-27 16:18:40,211 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering    ✅ Applied categorical features 08be6e43 - -
+2025-08-27 16:18:40,213 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering    ✅ Applied risk_reward features 08be6e43 - -
+2025-08-27 16:18:40,214 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering    ✅ Applied momentum features 08be6e43 - -
+2025-08-27 16:18:40,216 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering    ✅ Applied volatility features 08be6e43 - -
+2025-08-27 16:18:40,218 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering    ✅ Applied volume features 08be6e43 - -
+2025-08-27 16:18:40,225 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering    ✅ Applied rolling features 08be6e43 - -
+2025-08-27 16:18:40,225 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering ✅ Feature engineering completed 08be6e43 - -
+2025-08-27 16:18:40,225 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering    - Output shape: (500, 69) 08be6e43 - -
+2025-08-27 16:18:40,225 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering    - Features added: 61 08be6e43 - -
+2025-08-27 16:18:40,225 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering    - Total features: 69 08be6e43 - -
+2025-08-27 16:18:40,227 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering ✅ ProfitFeatures.apply_all done 08be6e43 - -
+2025-08-27 16:18:40,227 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering 🔧 Exit strategy feature engineering system initialized - -
+2025-08-27 16:18:40,227 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering 🐍 Using Python vectorized operations - -
+2025-08-27 16:18:40,227 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering ➡️ ExitStrategy.apply_all start c8481240 - -
+2025-08-27 16:18:40,227 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering 🚀 Applying exit strategy feature engineering c8481240 - -
+2025-08-27 16:18:40,227 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Input shape: (500, 69) c8481240 - -
+2025-08-27 16:18:40,227 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Feature categories: ['momentum_reversal', 'volatility_reversal', 'volume_reversal', 'support_resistance', 'trend_strength', 'profit_decay', 'time_decay', 'market_regime'] c8481240 - -
+2025-08-27 16:18:40,315 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied momentum_reversal features c8481240 - -
+2025-08-27 16:18:40,318 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied volatility_reversal features c8481240 - -
+2025-08-27 16:18:40,322 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied volume_reversal features c8481240 - -
+2025-08-27 16:18:40,325 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied support_resistance features c8481240 - -
+2025-08-27 16:18:40,460 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied trend_strength features c8481240 - -
+2025-08-27 16:18:40,463 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied profit_decay features c8481240 - -
+2025-08-27 16:18:40,463 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied time_decay features c8481240 - -
+2025-08-27 16:18:40,473 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied market_regime features c8481240 - -
+2025-08-27 16:18:40,473 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering ✅ Exit strategy feature engineering completed c8481240 - -
+2025-08-27 16:18:40,473 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Output shape: (500, 135) c8481240 - -
+2025-08-27 16:18:40,473 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Features added: 66 c8481240 - -
+2025-08-27 16:18:40,473 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Total features: 135 c8481240 - -
+2025-08-27 16:18:40,477 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering ✅ ExitStrategy.apply_all done c8481240 - -
+2025-08-27 16:18:40,482 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering 🔧 Exit strategy feature engineering system initialized - -
+2025-08-27 16:18:40,483 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering 🐍 Using Python vectorized operations - -
+2025-08-27 16:18:40,483 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering ➡️ ExitStrategy.apply_all start 11f83ae5 - -
+2025-08-27 16:18:40,483 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering 🚀 Applying exit strategy feature engineering 11f83ae5 - -
+2025-08-27 16:18:40,483 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Input shape: (100, 8) 11f83ae5 - -
+2025-08-27 16:18:40,483 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Feature categories: ['momentum_reversal', 'volatility_reversal', 'volume_reversal', 'support_resistance', 'trend_strength', 'profit_decay', 'time_decay', 'market_regime'] 11f83ae5 - -
+2025-08-27 16:18:40,504 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied momentum_reversal features 11f83ae5 - -
+2025-08-27 16:18:40,508 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied volatility_reversal features 11f83ae5 - -
+2025-08-27 16:18:40,511 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied volume_reversal features 11f83ae5 - -
+2025-08-27 16:18:40,514 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied support_resistance features 11f83ae5 - -
+2025-08-27 16:18:40,543 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied trend_strength features 11f83ae5 - -
+2025-08-27 16:18:40,546 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied profit_decay features 11f83ae5 - -
+2025-08-27 16:18:40,547 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied time_decay features 11f83ae5 - -
+2025-08-27 16:18:40,550 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied market_regime features 11f83ae5 - -
+2025-08-27 16:18:40,550 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering ✅ Exit strategy feature engineering completed 11f83ae5 - -
+2025-08-27 16:18:40,550 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Output shape: (100, 74) 11f83ae5 - -
+2025-08-27 16:18:40,550 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Features added: 66 11f83ae5 - -
+2025-08-27 16:18:40,550 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Total features: 74 11f83ae5 - -
+2025-08-27 16:18:40,551 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering ✅ ExitStrategy.apply_all done 11f83ae5 - -
+2025-08-27 16:18:40,559 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering 🔧 Exit strategy feature engineering system initialized - -
+2025-08-27 16:18:40,559 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering 🐍 Using Python vectorized operations - -
+2025-08-27 16:18:40,559 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering ➡️ ExitStrategy.apply_all start ec29de75 - -
+2025-08-27 16:18:40,559 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering 🚀 Applying exit strategy feature engineering ec29de75 - -
+2025-08-27 16:18:40,559 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Input shape: (500, 8) ec29de75 - -
+2025-08-27 16:18:40,559 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Feature categories: ['momentum_reversal', 'volatility_reversal', 'volume_reversal', 'support_resistance', 'trend_strength', 'profit_decay', 'time_decay', 'market_regime'] ec29de75 - -
+2025-08-27 16:18:40,650 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied momentum_reversal features ec29de75 - -
+2025-08-27 16:18:40,653 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied volatility_reversal features ec29de75 - -
+2025-08-27 16:18:40,657 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied volume_reversal features ec29de75 - -
+2025-08-27 16:18:40,660 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied support_resistance features ec29de75 - -
+2025-08-27 16:18:40,794 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied trend_strength features ec29de75 - -
+2025-08-27 16:18:40,797 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied profit_decay features ec29de75 - -
+2025-08-27 16:18:40,798 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied time_decay features ec29de75 - -
+2025-08-27 16:18:40,807 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied market_regime features ec29de75 - -
+2025-08-27 16:18:40,807 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering ✅ Exit strategy feature engineering completed ec29de75 - -
+2025-08-27 16:18:40,808 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Output shape: (500, 74) ec29de75 - -
+2025-08-27 16:18:40,808 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Features added: 66 ec29de75 - -
+2025-08-27 16:18:40,808 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Total features: 74 ec29de75 - -
+2025-08-27 16:18:40,808 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering ✅ ExitStrategy.apply_all done ec29de75 - -
+2025-08-27 16:18:40,817 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering 🔧 Exit strategy feature engineering system initialized - -
+2025-08-27 16:18:40,817 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering 🐍 Using Python vectorized operations - -
+2025-08-27 16:18:40,817 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering ➡️ ExitStrategy.apply_all start 673ce408 - -
+2025-08-27 16:18:40,817 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering 🚀 Applying exit strategy feature engineering 673ce408 - -
+2025-08-27 16:18:40,817 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Input shape: (1000, 8) 673ce408 - -
+2025-08-27 16:18:40,817 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Feature categories: ['momentum_reversal', 'volatility_reversal', 'volume_reversal', 'support_resistance', 'trend_strength', 'profit_decay', 'time_decay', 'market_regime'] 673ce408 - -
+2025-08-27 16:18:40,985 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied momentum_reversal features 673ce408 - -
+2025-08-27 16:18:40,989 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied volatility_reversal features 673ce408 - -
+2025-08-27 16:18:40,993 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied volume_reversal features 673ce408 - -
+2025-08-27 16:18:40,996 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied support_resistance features 673ce408 - -
+2025-08-27 16:18:41,264 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied trend_strength features 673ce408 - -
+2025-08-27 16:18:41,267 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied profit_decay features 673ce408 - -
+2025-08-27 16:18:41,267 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied time_decay features 673ce408 - -
+2025-08-27 16:18:41,284 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied market_regime features 673ce408 - -
+2025-08-27 16:18:41,285 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering ✅ Exit strategy feature engineering completed 673ce408 - -
+2025-08-27 16:18:41,285 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Output shape: (1000, 74) 673ce408 - -
+2025-08-27 16:18:41,285 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Features added: 66 673ce408 - -
+2025-08-27 16:18:41,285 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Total features: 74 673ce408 - -
+2025-08-27 16:18:41,286 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering ✅ ExitStrategy.apply_all done 673ce408 - -
+2025-08-27 16:18:41,303 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering 🔧 Exit strategy feature engineering system initialized - -
+2025-08-27 16:18:41,303 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering 🐍 Using Python vectorized operations - -
+2025-08-27 16:18:41,303 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering ➡️ ExitStrategy.apply_all start 13db1157 - -
+2025-08-27 16:18:41,303 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering 🚀 Applying exit strategy feature engineering 13db1157 - -
+2025-08-27 16:18:41,304 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Input shape: (2000, 8) 13db1157 - -
+2025-08-27 16:18:41,304 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Feature categories: ['momentum_reversal', 'volatility_reversal', 'volume_reversal', 'support_resistance', 'trend_strength', 'profit_decay', 'time_decay', 'market_regime'] 13db1157 - -
+2025-08-27 16:18:41,636 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied momentum_reversal features 13db1157 - -
+2025-08-27 16:18:41,640 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied volatility_reversal features 13db1157 - -
+2025-08-27 16:18:41,644 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied volume_reversal features 13db1157 - -
+2025-08-27 16:18:41,647 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied support_resistance features 13db1157 - -
+2025-08-27 16:18:42,175 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied trend_strength features 13db1157 - -
+2025-08-27 16:18:42,179 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied profit_decay features 13db1157 - -
+2025-08-27 16:18:42,179 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied time_decay features 13db1157 - -
+2025-08-27 16:18:42,212 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    ✅ Applied market_regime features 13db1157 - -
+2025-08-27 16:18:42,212 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering ✅ Exit strategy feature engineering completed 13db1157 - -
+2025-08-27 16:18:42,212 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Output shape: (2000, 74) 13db1157 - -
+2025-08-27 16:18:42,212 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Features added: 66 13db1157 - -
+2025-08-27 16:18:42,212 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering    - Total features: 74 13db1157 - -
+2025-08-27 16:18:42,213 INFO AresTradingSystem.System.System.ExitStrategyFeatureEngineering ✅ ExitStrategy.apply_all done 13db1157 - -

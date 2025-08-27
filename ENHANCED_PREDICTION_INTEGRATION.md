@@ -25,10 +25,11 @@ Two main integrator components have been created:
    - Uses optimization weights for final predictions
 
 2. **`TacticianEnhancedPredictionIntegrator`** (Tactician)
-   - Integrates HMM-based and tactician specialist predictions
-   - Generates position sizing and risk management predictions
-   - Provides exit prediction capabilities
-   - Incorporates analyst signals for enhanced decision-making
+   - Enhances existing PositionSizer and LeverageSizer components
+   - Provides ML-based confidence predictions for existing components
+   - Integrates HMM-based model predictions (step 6-8)
+   - Applies confidence calibration and optimization weights
+   - Augments existing tactician decision-making without duplication
 
 ### Integration Flow
 
@@ -67,18 +68,18 @@ Trading Decisions & Execution
 **File**: `src/tactician/enhanced_prediction_integrator.py`
 
 **Key Features**:
-- Loads HMM-based models from steps 6-8
-- Loads tactician specialist models from step 9
-- Loads tactician labeling models from step 10
-- Generates position sizing predictions
-- Provides risk management predictions
-- Creates exit prediction signals
-- Incorporates analyst signals for enhanced decision-making
+- Loads HMM-based models from step 6-8
+- Integrates with existing PositionSizer and LeverageSizer components
+- Provides ML-based confidence predictions for enhancement
+- Applies confidence calibration and optimization weights
+- Enhances existing tactician decision-making without duplication
 
 **Integration Points**:
 - Integrated into `Tactician` initialization
 - Available through `_get_enhanced_predictions()` method
-- Provides comprehensive trading execution guidance
+- Provides enhancement methods for existing components:
+  - `enhance_position_sizer()` - Enhances position sizing with ML confidence
+  - `enhance_leverage_sizer()` - Enhances leverage sizing with ML risk predictions
 
 ## Configuration
 
@@ -158,10 +159,22 @@ predictions = await tactician._get_enhanced_predictions(
 )
 
 # Access specific prediction types
-entry_predictions = predictions.get("entry_predictions", {})
-exit_predictions = predictions.get("exit_predictions", {})
-position_sizing = predictions.get("position_sizing_predictions", {})
-risk_management = predictions.get("risk_management_predictions", {})
+ml_confidence = predictions.get("ml_confidence_predictions", {})
+calibrated_confidence = predictions.get("calibrated_confidence_scores", {})
+hmm_predictions = predictions.get("hmm_predictions", {})
+
+# Enhance existing components
+enhanced_position = await tactician.enhanced_prediction_integrator.enhance_position_sizer(
+    base_position_size=0.1,
+    analyst_confidence=0.8,
+    enhanced_predictions=predictions
+)
+
+enhanced_leverage = await tactician.enhanced_prediction_integrator.enhance_leverage_sizer(
+    base_leverage=50.0,
+    risk_score=0.3,
+    enhanced_predictions=predictions
+)
 ```
 
 ## Prediction Types
@@ -194,50 +207,45 @@ Calibrated confidence scores with optimization weights:
 }
 ```
 
-### 3. Position Sizing Predictions
+### 3. ML Confidence Predictions
 
-Tactician-specific position sizing recommendations:
-
-```python
-{
-    "base_size": 0.1,
-    "confidence_multiplier": 1.7,
-    "analyst_multiplier": 0.9,
-    "final_size": 0.153,
-    "avg_confidence": 0.85,
-    "analyst_confidence": 0.8
-}
-```
-
-### 4. Risk Management Predictions
-
-Risk parameters based on predictions and market conditions:
+ML-based confidence predictions to enhance existing components:
 
 ```python
 {
-    "avg_risk_score": 0.25,
-    "stop_loss_pct": 0.025,
-    "take_profit_pct": 0.05,
-    "risk_multiplier": 1.25,
-    "max_position_size": 0.1625
-}
-```
-
-### 5. Exit Predictions
-
-Exit signals based on entry predictions and market conditions:
-
-```python
-{
-    "exit_signal": -0.45,
-    "should_exit": true,
-    "exit_direction": "sell",
-    "exit_confidence": 0.45,
-    "market_conditions": {
-        "volatility": "high",
-        "trend": "bearish",
-        "volume": "normal"
+    "aggregate_ml_confidence": {
+        "hmm_avg_confidence": 0.85,
+        "analyst_confidence": 0.82,
+        "weighted_ml_confidence": 0.84,
+        "ml_weight": 0.7,
+        "analyst_weight": 0.3,
+        "prediction_count": 3
     }
+}
+```
+
+### 4. Enhanced Position Sizing
+
+Enhanced position sizing recommendations for existing PositionSizer:
+
+```python
+{
+    "enhanced_position_size": 0.153,
+    "ml_confidence_multiplier": 1.7,
+    "weighted_ml_confidence": 0.84,
+    "original_position_size": 0.1
+}
+```
+
+### 5. Enhanced Leverage Sizing
+
+Enhanced leverage sizing recommendations for existing LeverageSizer:
+
+```python
+{
+    "enhanced_leverage": 75.0,
+    "ml_risk_multiplier": 1.5,
+    "original_leverage": 50.0
 }
 ```
 

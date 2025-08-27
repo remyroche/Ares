@@ -229,33 +229,37 @@ async def test_tactician_enhanced_predictions():
                 
                 # Show prediction categories
                 print("🎯 Prediction categories:")
-                print(f"   - Entry predictions: {len(predictions.get('entry_predictions', {}))}")
-                print(f"   - Exit predictions: {len(predictions.get('exit_predictions', {}))}")
-                print(f"   - Position sizing: {len(predictions.get('position_sizing_predictions', {}))}")
-                print(f"   - Risk management: {len(predictions.get('risk_management_predictions', {}))}")
-                print(f"   - Confidence scores: {len(predictions.get('confidence_scores', {}))}")
-                print(f"   - Tactician labels: {len(predictions.get('tactician_labels', {}))}")
+                print(f"   - ML confidence predictions: {len(predictions.get('ml_confidence_predictions', {}))}")
+                print(f"   - Calibrated confidence scores: {len(predictions.get('calibrated_confidence_scores', {}))}")
+                print(f"   - Optimization weights: {len(predictions.get('optimization_weights', {}))}")
+                print(f"   - HMM predictions: {len(predictions.get('hmm_predictions', {}))}")
                 
-                # Show sample predictions
-                entry_predictions = predictions.get("entry_predictions", {})
-                if entry_predictions:
-                    print("   📈 Sample entry predictions:")
-                    for name, pred in list(entry_predictions.items())[:3]:
-                        print(f"      {name}: {pred.get('prediction', 'N/A')} (confidence: {pred.get('confidence', 'N/A')})")
+                # Show ML confidence predictions
+                ml_confidence = predictions.get("ml_confidence_predictions", {})
+                if ml_confidence:
+                    aggregate_ml = ml_confidence.get("aggregate_ml_confidence", {})
+                    print(f"   📈 ML Confidence:")
+                    print(f"      - Weighted ML confidence: {aggregate_ml.get('weighted_ml_confidence', 'N/A')}")
+                    print(f"      - HMM avg confidence: {aggregate_ml.get('hmm_avg_confidence', 'N/A')}")
+                    print(f"      - Analyst confidence: {aggregate_ml.get('analyst_confidence', 'N/A')}")
                 
-                # Show position sizing
-                sizing_predictions = predictions.get("position_sizing_predictions", {})
-                if sizing_predictions:
-                    position_size = sizing_predictions.get("position_size", {})
-                    print(f"   📏 Position size: {position_size.get('final_size', 'N/A')}")
+                # Test position sizer enhancement
+                print("🔄 Testing position sizer enhancement...")
+                enhanced_position = await tactician.enhanced_prediction_integrator.enhance_position_sizer(
+                    base_position_size=0.1,
+                    analyst_confidence=0.8,
+                    enhanced_predictions=predictions
+                )
+                print(f"   📏 Enhanced position size: {enhanced_position.get('enhanced_position_size', 'N/A')}")
                 
-                # Show risk management
-                risk_predictions = predictions.get("risk_management_predictions", {})
-                if risk_predictions:
-                    risk_mgmt = risk_predictions.get("risk_management", {})
-                    print(f"   🛡️ Risk management:")
-                    print(f"      - Stop loss: {risk_mgmt.get('stop_loss_pct', 'N/A')}")
-                    print(f"      - Take profit: {risk_mgmt.get('take_profit_pct', 'N/A')}")
+                # Test leverage sizer enhancement
+                print("🔄 Testing leverage sizer enhancement...")
+                enhanced_leverage = await tactician.enhanced_prediction_integrator.enhance_leverage_sizer(
+                    base_leverage=50.0,
+                    risk_score=0.3,
+                    enhanced_predictions=predictions
+                )
+                print(f"   ⚡ Enhanced leverage: {enhanced_leverage.get('enhanced_leverage', 'N/A')}")
                 
                 return True
             else:
@@ -345,30 +349,34 @@ async def test_integration_workflow():
         
         if tactician_predictions:
             print("✅ Tactician predictions completed")
-            print(f"   - Entry predictions: {len(tactician_predictions.get('entry_predictions', {}))}")
-            print(f"   - Position sizing: {len(tactician_predictions.get('position_sizing_predictions', {}))}")
-            print(f"   - Risk management: {len(tactician_predictions.get('risk_management_predictions', {}))}")
+            print(f"   - ML confidence predictions: {len(tactician_predictions.get('ml_confidence_predictions', {}))}")
+            print(f"   - Calibrated confidence scores: {len(tactician_predictions.get('calibrated_confidence_scores', {}))}")
+            print(f"   - HMM predictions: {len(tactician_predictions.get('hmm_predictions', {}))}")
             
             # Show integration results
             print("\n🎯 Integration Results:")
             
-            # Entry decision
-            entry_predictions = tactician_predictions.get("entry_predictions", {})
-            if entry_predictions:
-                avg_entry_signal = sum(p.get("prediction", 0) for p in entry_predictions.values()) / len(entry_predictions)
-                print(f"   📈 Average entry signal: {avg_entry_signal:.3f}")
+            # ML confidence
+            ml_confidence = tactician_predictions.get("ml_confidence_predictions", {})
+            if ml_confidence:
+                aggregate_ml = ml_confidence.get("aggregate_ml_confidence", {})
+                print(f"   📈 ML Confidence: {aggregate_ml.get('weighted_ml_confidence', 'N/A')}")
             
-            # Position sizing
-            sizing = tactician_predictions.get("position_sizing_predictions", {}).get("position_size", {})
-            if sizing:
-                print(f"   📏 Recommended position size: {sizing.get('final_size', 'N/A')}")
+            # Enhanced position sizing
+            enhanced_position = await tactician.enhanced_prediction_integrator.enhance_position_sizer(
+                base_position_size=0.1,
+                analyst_confidence=0.8,
+                enhanced_predictions=tactician_predictions
+            )
+            print(f"   📏 Enhanced position size: {enhanced_position.get('enhanced_position_size', 'N/A')}")
             
-            # Risk management
-            risk_mgmt = tactician_predictions.get("risk_management_predictions", {}).get("risk_management", {})
-            if risk_mgmt:
-                print(f"   🛡️ Risk parameters:")
-                print(f"      - Stop loss: {risk_mgmt.get('stop_loss_pct', 'N/A')}")
-                print(f"      - Take profit: {risk_mgmt.get('take_profit_pct', 'N/A')}")
+            # Enhanced leverage sizing
+            enhanced_leverage = await tactician.enhanced_prediction_integrator.enhance_leverage_sizer(
+                base_leverage=50.0,
+                risk_score=0.3,
+                enhanced_predictions=tactician_predictions
+            )
+            print(f"   ⚡ Enhanced leverage: {enhanced_leverage.get('enhanced_leverage', 'N/A')}")
             
             return True
         else:

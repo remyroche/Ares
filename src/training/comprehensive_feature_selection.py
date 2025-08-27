@@ -100,13 +100,17 @@ class ComprehensiveFeatureSelector:
     def generate_all_features(
         self,
         data: pd.DataFrame,
-        target_columns: Optional[List[str]] = None
+        target_columns: Optional[List[str]] = None,
+        use_autoencoder_features: bool = True,
+        regime_name: str = "default"
     ) -> pd.DataFrame:
-        """Generate ALL possible features from the data.
+        """Generate ALL possible features from the data including autoencoder features.
         
         Args:
             data: Input DataFrame
             target_columns: Target columns to exclude from features
+            use_autoencoder_features: Whether to use autoencoder feature generator
+            regime_name: Market regime name for autoencoder features
             
         Returns:
             DataFrame with all generated features
@@ -125,6 +129,40 @@ class ComprehensiveFeatureSelector:
         
         feature_columns = [col for col in all_features.columns if col not in exclude_columns]
         self.logger.info(f"📊 Base features: {len(feature_columns)}")
+        
+        # Apply autoencoder feature generation (if enabled and available)
+        if use_autoencoder_features:
+            try:
+                from src.analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
+                
+                self.logger.info("🔧 Applying autoencoder feature generation...")
+                autoencoder_generator = AutoencoderFeatureGenerator()
+                
+                # Create dummy labels for autoencoder (it needs labels for feature filtering)
+                dummy_labels = np.zeros(len(all_features))
+                if "direction" in all_features.columns:
+                    dummy_labels = all_features["direction"].values
+                
+                # Generate autoencoder features
+                autoencoder_features = autoencoder_generator.generate_features(
+                    features_df=all_features[feature_columns],
+                    regime_name=regime_name,
+                    labels=dummy_labels,
+                    enable_analysis=True
+                )
+                
+                # If autoencoder features were generated, add them
+                if not autoencoder_features.empty and len(autoencoder_features.columns) > 0:
+                    # Add autoencoder features with prefix
+                    autoencoder_features = autoencoder_features.add_prefix("ae_")
+                    all_features = pd.concat([all_features, autoencoder_features], axis=1)
+                    self.logger.info(f"📊 After autoencoder features: {len(all_features.columns)}")
+                else:
+                    self.logger.info("📊 No autoencoder features generated, continuing with base features")
+                    
+            except Exception as e:
+                self.logger.warning(f"⚠️ Autoencoder feature generation failed: {e}")
+                self.logger.info("📊 Continuing without autoencoder features")
         
         # Apply profit-based feature engineering
         if self.config.use_profit_features and "potential_profit_pct" in data.columns:
@@ -188,15 +226,17 @@ class ComprehensiveFeatureSelector:
         features: pd.DataFrame,
         direction_target: pd.Series,
         profit_target: pd.Series,
-        price_target: Optional[pd.Series] = None
+        price_target: Optional[pd.Series] = None,
+        use_pipeline_regularization: bool = True
     ) -> Tuple[pd.DataFrame, List[str], Dict[str, float]]:
-        """Comprehensive feature selection using multiple methods.
+        """Comprehensive feature selection using multiple methods with pipeline regularization.
         
         Args:
             features: Feature DataFrame
             direction_target: Direction target series
             profit_target: Profit target series
             price_target: Price target series (optional)
+            use_pipeline_regularization: Whether to use pipeline regularization
             
         Returns:
             Tuple of (selected_features, selected_feature_names, feature_scores)
@@ -206,6 +246,17 @@ class ComprehensiveFeatureSelector:
         # Initialize feature scores
         feature_scores = {}
         selected_features = features.copy()
+        
+        # Load regularization configuration from pipeline
+        regularization_config = None
+        if use_pipeline_regularization:
+            try:
+                from src.training.regularization import RegularizationManager
+                reg_manager = RegularizationManager()
+                regularization_config = reg_manager.regularization_config
+                self.logger.info("🔧 Loaded pipeline regularization configuration")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to load regularization config: {e}")
         
         # 1. Variance threshold
         if "variance_threshold" in self.config.selection_methods:
@@ -227,19 +278,19 @@ class ComprehensiveFeatureSelector:
             )
             feature_scores['mutual_info'] = mi_scores
         
-        # 4. Random Forest importance
+        # 4. Random Forest importance with regularization
         if "rf_importance" in self.config.selection_methods:
-            self.logger.info("📊 Applying Random Forest importance...")
-            selected_features, rf_scores = self._apply_rf_importance(
-                selected_features, direction_target, profit_target, price_target
+            self.logger.info("📊 Applying Random Forest importance with regularization...")
+            selected_features, rf_scores = self._apply_rf_importance_with_regularization(
+                selected_features, direction_target, profit_target, price_target, regularization_config
             )
             feature_scores['rf_importance'] = rf_scores
         
-        # 5. Recursive Feature Elimination
+        # 5. Recursive Feature Elimination with regularization
         if "rfe" in self.config.selection_methods:
-            self.logger.info("📊 Applying Recursive Feature Elimination...")
-            selected_features, rfe_scores = self._apply_rfe(
-                selected_features, direction_target, profit_target, price_target
+            self.logger.info("📊 Applying Recursive Feature Elimination with regularization...")
+            selected_features, rfe_scores = self._apply_rfe_with_regularization(
+                selected_features, direction_target, profit_target, price_target, regularization_config
             )
             feature_scores['rfe'] = rfe_scores
         
@@ -250,6 +301,14 @@ class ComprehensiveFeatureSelector:
                 selected_features, direction_target, profit_target, price_target
             )
             feature_scores['ensemble'] = ensemble_scores
+        
+        # 7. Pipeline feature selection integration
+        if use_pipeline_regularization:
+            self.logger.info("📊 Applying pipeline feature selection integration...")
+            selected_features, pipeline_scores = self._apply_pipeline_feature_selection(
+                selected_features, direction_target, profit_target, price_target, regularization_config
+            )
+            feature_scores['pipeline'] = pipeline_scores
         
         # Final feature selection based on scores
         final_features, final_scores = self._select_final_features(
@@ -326,29 +385,34 @@ class ComprehensiveFeatureSelector:
         
         return selected_features, scores
     
-    def _apply_rf_importance(
+    def _apply_rf_importance_with_regularization(
         self,
         features: pd.DataFrame,
         direction_target: pd.Series,
         profit_target: pd.Series,
-        price_target: Optional[pd.Series] = None
+        price_target: Optional[pd.Series] = None,
+        regularization_config: Optional[Dict] = None
     ) -> Tuple[pd.DataFrame, Dict[str, float]]:
-        """Apply Random Forest importance selection."""
+        """Apply Random Forest importance selection with regularization."""
+        # Apply regularization parameters if available
+        rf_params = {
+            'n_estimators': self.config.rf_n_estimators,
+            'max_depth': self.config.rf_max_depth,
+            'random_state': 42,
+            'n_jobs': -1
+        }
+        
+        if regularization_config and 'lightgbm' in regularization_config:
+            # Apply L1/L2 regularization equivalent for RF
+            rf_params['max_features'] = 'sqrt'  # Reduce feature usage
+            rf_params['min_samples_split'] = max(2, int(len(features) * 0.01))  # Increase split threshold
+            rf_params['min_samples_leaf'] = max(1, int(len(features) * 0.005))  # Increase leaf threshold
+        
         # Train RF models for each target
-        rf_direction = RandomForestClassifier(
-            n_estimators=self.config.rf_n_estimators,
-            max_depth=self.config.rf_max_depth,
-            random_state=42,
-            n_jobs=-1
-        )
+        rf_direction = RandomForestClassifier(**rf_params)
         rf_direction.fit(features, direction_target)
         
-        rf_profit = RandomForestRegressor(
-            n_estimators=self.config.rf_n_estimators,
-            max_depth=self.config.rf_max_depth,
-            random_state=42,
-            n_jobs=-1
-        )
+        rf_profit = RandomForestRegressor(**rf_params)
         rf_profit.fit(features, profit_target)
         
         # Combine importance scores
@@ -356,12 +420,7 @@ class ComprehensiveFeatureSelector:
         importance_profit = rf_profit.feature_importances_
         
         if price_target is not None:
-            rf_price = RandomForestRegressor(
-                n_estimators=self.config.rf_n_estimators,
-                max_depth=self.config.rf_max_depth,
-                random_state=42,
-                n_jobs=-1
-            )
+            rf_price = RandomForestRegressor(**rf_params)
             rf_price.fit(features, price_target)
             importance_price = rf_price.feature_importances_
         else:
@@ -374,6 +433,15 @@ class ComprehensiveFeatureSelector:
             self.config.price_weight * importance_price
         )
         
+        # Apply regularization penalty to importance scores
+        if regularization_config:
+            # Reduce importance of features with high correlation (L1-like effect)
+            corr_matrix = features.corr().abs()
+            for i, feature in enumerate(features.columns):
+                max_corr = corr_matrix.loc[feature, features.columns].max()
+                if max_corr > 0.8:  # High correlation penalty
+                    combined_importance[i] *= 0.8
+        
         # Select top features
         top_indices = np.argsort(combined_importance)[-self.config.max_features:]
         selected_features = features.iloc[:, top_indices]
@@ -383,20 +451,41 @@ class ComprehensiveFeatureSelector:
         
         return selected_features, scores
     
-    def _apply_rfe(
+    def _apply_rf_importance(
         self,
         features: pd.DataFrame,
         direction_target: pd.Series,
         profit_target: pd.Series,
         price_target: Optional[pd.Series] = None
     ) -> Tuple[pd.DataFrame, Dict[str, float]]:
-        """Apply Recursive Feature Elimination."""
-        # Use Random Forest as base estimator
-        base_estimator = RandomForestClassifier(
-            n_estimators=50,
-            max_depth=5,
-            random_state=42
+        """Apply Random Forest importance selection (legacy method)."""
+        return self._apply_rf_importance_with_regularization(
+            features, direction_target, profit_target, price_target, None
         )
+    
+    def _apply_rfe_with_regularization(
+        self,
+        features: pd.DataFrame,
+        direction_target: pd.Series,
+        profit_target: pd.Series,
+        price_target: Optional[pd.Series] = None,
+        regularization_config: Optional[Dict] = None
+    ) -> Tuple[pd.DataFrame, Dict[str, float]]:
+        """Apply Recursive Feature Elimination with regularization."""
+        # Use Random Forest as base estimator with regularization
+        rf_params = {
+            'n_estimators': 50,
+            'max_depth': 5,
+            'random_state': 42
+        }
+        
+        if regularization_config and 'lightgbm' in regularization_config:
+            # Apply regularization parameters
+            rf_params['max_features'] = 'sqrt'
+            rf_params['min_samples_split'] = max(2, int(len(features) * 0.01))
+            rf_params['min_samples_leaf'] = max(1, int(len(features) * 0.005))
+        
+        base_estimator = RandomForestClassifier(**rf_params)
         
         # Apply RFE
         rfe = RFE(
@@ -416,6 +505,108 @@ class ComprehensiveFeatureSelector:
         scores = {features.columns[i]: 1.0 / (rfe.ranking_[i] + 1) for i in range(len(features.columns)) if selected_mask[i]}
         
         return selected_features, scores
+    
+    def _apply_rfe(
+        self,
+        features: pd.DataFrame,
+        direction_target: pd.Series,
+        profit_target: pd.Series,
+        price_target: Optional[pd.Series] = None
+    ) -> Tuple[pd.DataFrame, Dict[str, float]]:
+        """Apply Recursive Feature Elimination (legacy method)."""
+        return self._apply_rfe_with_regularization(
+            features, direction_target, profit_target, price_target, None
+        )
+    
+    def _apply_pipeline_feature_selection(
+        self,
+        features: pd.DataFrame,
+        direction_target: pd.Series,
+        profit_target: pd.Series,
+        price_target: Optional[pd.Series] = None,
+        regularization_config: Optional[Dict] = None
+    ) -> Tuple[pd.DataFrame, Dict[str, float]]:
+        """Apply pipeline-specific feature selection methods."""
+        self.logger.info("🔧 Applying pipeline feature selection methods...")
+        
+        # Initialize scores
+        pipeline_scores = {}
+        
+        # 1. Apply regularization-aware feature selection
+        if regularization_config:
+            # Use regularization parameters to guide feature selection
+            l1_alpha = regularization_config.get('l1_alpha', 0.01)
+            l2_alpha = regularization_config.get('l2_alpha', 0.001)
+            
+            # Calculate feature stability scores
+            stability_scores = self._calculate_feature_stability(features, direction_target)
+            
+            # Apply regularization penalty
+            for feature in features.columns:
+                base_score = stability_scores.get(feature, 0.0)
+                # Higher regularization = lower feature scores
+                regularization_penalty = 1.0 / (1.0 + l1_alpha + l2_alpha)
+                pipeline_scores[feature] = base_score * regularization_penalty
+        
+        # 2. Apply feature importance from pipeline models
+        try:
+            # Try to get feature importance from existing pipeline models
+            pipeline_importance = self._get_pipeline_feature_importance()
+            if pipeline_importance:
+                for feature in features.columns:
+                    if feature in pipeline_importance:
+                        pipeline_scores[feature] = pipeline_scores.get(feature, 0.0) + pipeline_importance[feature]
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not get pipeline feature importance: {e}")
+        
+        # Select features based on pipeline scores
+        if pipeline_scores:
+            sorted_features = sorted(pipeline_scores.items(), key=lambda x: x[1], reverse=True)
+            top_features = [f[0] for f in sorted_features[:self.config.max_features]]
+            selected_features = features[top_features]
+        else:
+            selected_features = features
+        
+        return selected_features, pipeline_scores
+    
+    def _calculate_feature_stability(
+        self,
+        features: pd.DataFrame,
+        target: pd.Series
+    ) -> Dict[str, float]:
+        """Calculate feature stability scores."""
+        stability_scores = {}
+        
+        # Use cross-validation to assess feature stability
+        from sklearn.model_selection import cross_val_score
+        from sklearn.linear_model import LogisticRegression
+        
+        for feature in features.columns:
+            try:
+                # Use single feature for prediction
+                X_single = features[[feature]]
+                
+                # Calculate cross-validation score
+                cv_scores = cross_val_score(
+                    LogisticRegression(random_state=42),
+                    X_single,
+                    target,
+                    cv=3,
+                    scoring='accuracy'
+                )
+                
+                # Stability score is the mean CV score
+                stability_scores[feature] = np.mean(cv_scores)
+            except Exception:
+                stability_scores[feature] = 0.0
+        
+        return stability_scores
+    
+    def _get_pipeline_feature_importance(self) -> Optional[Dict[str, float]]:
+        """Get feature importance from existing pipeline models."""
+        # This method can be extended to load feature importance from saved models
+        # For now, return None to indicate no pipeline importance available
+        return None
     
     def _apply_ensemble_selection(
         self,

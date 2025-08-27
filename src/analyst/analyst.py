@@ -517,57 +517,76 @@ class Analyst:
         current_price: float,
         trading_decision: dict[str, Any],
     ) -> dict[str, Any]:
-        """Make profit predictions using dual model system with profit tracking."""
+        """Make profit predictions using ML models with profit tracking."""
         try:
-            # Extract profit information from features if available
-            profit_info = self._extract_profit_from_features(features_df)
+            # Import multi-output prediction system
+            from src.training.steps.step4_analyst_labeling_feature_engineering_components.multi_output_profit_prediction import MultiOutputProfitPredictor, MultiOutputConfig
             
-            # Create profit predictions based on trading decision and profit info
-            profit_predictions = {
-                "direction": trading_decision.get("direction", 0),
-                "profit": profit_info.get("profit_potential", 0.0),
-                "confidence": trading_decision.get("confidence", 0.5),
-                "high_value_trades": profit_info.get("high_value_factor", 0.0)
-            }
+            # Initialize multi-output predictor if not already done
+            if not hasattr(self, 'multi_output_predictor'):
+                config = MultiOutputConfig()
+                self.multi_output_predictor = MultiOutputProfitPredictor(config)
             
-            self.logger.info("✅ Profit predictions made successfully")
+            # Prepare data for prediction
+            # Use recent data for prediction (last 100 samples)
+            recent_features = features_df.tail(100).copy()
+            
+            # Check if we have profit information for training
+            if "potential_profit_pct" in recent_features.columns and "label" in recent_features.columns:
+                # Train the multi-output model if we have enough data
+                if len(recent_features) >= 50:  # Minimum samples for training
+                    self.logger.info("Training multi-output profit prediction model...")
+                    
+                    # Train the model with the full DataFrame
+                    training_results = self.multi_output_predictor.train(recent_features)
+                    
+                    if training_results and training_results.get("method"):
+                        self.logger.info(f"✅ Multi-output model trained successfully using {training_results['method']}")
+                    else:
+                        self.logger.warning("Multi-output model training failed, using fallback")
+                        return self._get_fallback_profit_predictions(trading_decision)
+                else:
+                    self.logger.warning("Insufficient data for training, using fallback")
+                    return self._get_fallback_profit_predictions(trading_decision)
+            else:
+                self.logger.warning("No profit data available for training, using fallback")
+                return self._get_fallback_profit_predictions(trading_decision)
+            
+            # Make predictions using the trained model
+            if self.multi_output_predictor.is_trained:
+                # Use the most recent data point for prediction
+                latest_features = features_df.iloc[-1:].copy()
+                
+                # Make prediction
+                predictions = self.multi_output_predictor.predict(latest_features)
+                
+                # Extract results
+                profit_predictions = {
+                    "direction": predictions.get("direction", [trading_decision.get("direction", 0)])[0],
+                    "profit": predictions.get("profit", [0.0])[0],
+                    "confidence": predictions.get("confidence", [trading_decision.get("confidence", 0.5)])[0],
+                    "high_value_trades": predictions.get("high_value_trades", [0.0])[0]
+                }
+            else:
+                # Model not trained, use fallback
+                self.logger.warning("Multi-output model not trained, using fallback predictions")
+                profit_predictions = self._get_fallback_profit_predictions(trading_decision)
+            
+            self.logger.info("✅ ML-based profit predictions made successfully")
             return profit_predictions
             
         except Exception as e:
-            self.logger.error(f"Failed to make profit predictions: {e}")
-            # Return fallback predictions
-            return {
-                "direction": trading_decision.get("direction", 0),
-                "profit": 0.0,
-                "confidence": trading_decision.get("confidence", 0.5),
-                "high_value_trades": 0.0
-            }
+            self.logger.error(f"Failed to make ML-based profit predictions: {e}")
+            return self._get_fallback_profit_predictions(trading_decision)
 
-    def _extract_profit_from_features(self, features_df: pd.DataFrame) -> dict[str, Any]:
-        """Extract profit information from features for predictions."""
-        try:
-            profit_info = {
-                "profit_potential": 0.0,
-                "high_value_factor": 0.0
-            }
-            
-            # Check for potential_profit_pct column
-            if "potential_profit_pct" in features_df.columns:
-                profit_values = features_df["potential_profit_pct"].values
-                profit_info["profit_potential"] = np.mean(profit_values) if len(profit_values) > 0 else 0.0
-                
-                # Calculate high value factor based on profit magnitude
-                profit_magnitude = abs(profit_info["profit_potential"])
-                if profit_magnitude > 0.03:  # 3% profit potential
-                    profit_info["high_value_factor"] = min(1.0, profit_magnitude / 0.05)
-                elif profit_magnitude > 0.01:  # 1% profit potential
-                    profit_info["high_value_factor"] = profit_magnitude / 0.03 * 0.5
-            
-            return profit_info
-            
-        except Exception as e:
-            self.logger.warning(f"Error extracting profit from features: {e}")
-            return {"profit_potential": 0.0, "high_value_factor": 0.0}
+    def _get_fallback_profit_predictions(self, trading_decision: dict[str, Any]) -> dict[str, Any]:
+        """Get fallback profit predictions when ML models are not available."""
+        return {
+            "direction": trading_decision.get("direction", 0),
+            "profit": 0.0,
+            "confidence": trading_decision.get("confidence", 0.5),
+            "high_value_trades": 0.0
+        }
 
     def _enhance_confidence_with_profit(self, base_confidence: float, profit_pred: float) -> float:
         """Enhance confidence score with profit prediction information."""

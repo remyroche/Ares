@@ -27,15 +27,17 @@ This document summarizes the cleanup performed on the two-tier profit tracking i
 **File**: `src/analyst/analyst.py`
 
 **Changes Made**:
-- Removed dependency on `ProfitTrackingMLIntegrator`
-- Simplified `_make_profit_predictions()` to extract profit from features directly
-- Added `_extract_profit_from_features()` method for simple profit extraction
-- Removed complex model integration that wasn't directly used
+- Updated `_make_profit_predictions()` to use ML models for profit prediction
+- Integrated with `MultiOutputProfitPredictor` for proper ML-based predictions
+- Added training logic using recent data with profit information
+- Added fallback mechanism when ML models are not available
+- Removed direct feature extraction for profit predictions
 
 **Benefits**:
-- Reduced dependencies
-- Simplified profit prediction logic
-- More maintainable code
+- Proper ML-based profit predictions instead of feature engineering
+- Uses trained models to predict profit from market features
+- Maintains fallback for robustness
+- More accurate profit predictions
 
 ### 2. **Tactician Coordination**
 **File**: `src/tactician/tactician.py`
@@ -101,7 +103,7 @@ This document summarizes the cleanup performed on the two-tier profit tracking i
 
 ```
 Analyst Tier:
-├── Profit predictions from features
+├── ML-based profit predictions (using MultiOutputProfitPredictor)
 ├── Enhanced confidence with profit
 └── Integration with dual model system
 
@@ -114,7 +116,7 @@ Tactician Tier:
 Profit Tracking Components:
 ├── Triple barrier labeling (profit calculation)
 ├── Profit-based feature engineering
-├── Multi-output prediction
+├── Multi-output prediction (ML models for profit)
 ├── Confidence calibration with profit
 └── Two-tier profit coordinator (optional)
 ```

@@ -1,0 +1,202 @@
+# Enhanced Prediction Integration Configuration
+# This configuration enables the integration of price and confidence predictions
+# from the enhanced training manager steps 6-14 into the Analyst and Tactician
+
+# Analyst Enhanced Prediction Integrator Configuration
+analyst:
+  enable_enhanced_predictions: true
+  enhanced_prediction_integrator:
+    data_dir: "data/training"
+    models_dir: "models"
+    confidence_threshold: 0.7
+    price_prediction_threshold: 0.6
+    
+    # Model loading settings
+    load_hmm_models: true
+    load_analyst_enhanced_models: true
+    load_calibration_results: true
+    load_optimization_results: true
+    
+    # Prediction processing settings
+    enable_feature_engineering: true
+    enable_technical_indicators: true
+    enable_regime_integration: true
+    
+    # Confidence calibration settings
+    enable_calibration: true
+    calibration_method: "isotonic_prefit"
+    calibration_cv_folds: 5
+    
+    # Optimization settings
+    enable_optimization_weights: true
+    optimization_method: "weighted_average"
+    
+    # Output settings
+    enable_detailed_logging: true
+    save_predictions: true
+    prediction_output_format: "json"
+
+# Tactician Enhanced Prediction Integrator Configuration
+tactician:
+  enable_enhanced_predictions: true
+  tactician_enhanced_prediction_integrator:
+    data_dir: "data/training"
+    models_dir: "models"
+    confidence_threshold: 0.7
+    price_prediction_threshold: 0.6
+    entry_threshold: 0.65
+    exit_threshold: 0.55
+    
+    # Model loading settings
+    load_hmm_models: true
+    load_tactician_specialist_models: true
+    load_tactician_labeling_models: true
+    load_calibration_results: true
+    load_optimization_results: true
+    
+    # Prediction processing settings
+    enable_feature_engineering: true
+    enable_technical_indicators: true
+    enable_regime_integration: true
+    enable_analyst_signal_integration: true
+    
+    # Position sizing settings
+    enable_position_sizing_predictions: true
+    base_position_size: 0.1
+    max_position_size: 0.2
+    confidence_multiplier_max: 2.0
+    
+    # Risk management settings
+    enable_risk_management_predictions: true
+    base_stop_loss: 0.02
+    base_take_profit: 0.04
+    risk_multiplier_max: 2.0
+    
+    # Exit prediction settings
+    enable_exit_predictions: true
+    exit_signal_threshold: 0.55
+    market_condition_analysis: true
+    
+    # Confidence calibration settings
+    enable_calibration: true
+    calibration_method: "isotonic_prefit"
+    calibration_cv_folds: 5
+    
+    # Optimization settings
+    enable_optimization_weights: true
+    optimization_method: "weighted_average"
+    
+    # Output settings
+    enable_detailed_logging: true
+    save_predictions: true
+    prediction_output_format: "json"
+
+# Enhanced Training Manager Integration Settings
+enhanced_training_integration:
+  # Step 6-8: HMM-based model training
+  enable_hmm_predictions: true
+  hmm_model_paths:
+    - "data/training/hmm_models"
+    - "models/hmm_models"
+  
+  # Step 9: Analyst enhancement
+  enable_analyst_enhancement: true
+  analyst_enhanced_model_paths:
+    - "data/training/enhanced_analyst_models"
+    - "models/enhanced_analyst_models"
+  
+  # Step 9: Tactician specialist training
+  enable_tactician_specialist: true
+  tactician_specialist_model_paths:
+    - "data/training/tactician_specialist_models"
+    - "models/tactician_specialist_models"
+  
+  # Step 10: Tactician labeling
+  enable_tactician_labeling: true
+  tactician_labeling_paths:
+    - "data/training/tactician_labeling"
+    - "models/tactician_labeling"
+  
+  # Step 11: Confidence calibration
+  enable_confidence_calibration: true
+  calibration_result_paths:
+    - "data/training/calibration_results"
+    - "models/calibration_results"
+  
+  # Step 12-14: Final parameter optimization
+  enable_parameter_optimization: true
+  optimization_result_paths:
+    - "data/training/optimization_results"
+    - "models/optimization_results"
+
+# Feature Engineering Settings
+feature_engineering:
+  enable_technical_indicators: true
+  technical_indicators:
+    - "rsi"
+    - "macd"
+    - "bollinger_bands"
+    - "moving_averages"
+    - "volume_indicators"
+  
+  enable_regime_features: true
+  regime_features:
+    - "regime"
+    - "regime_confidence"
+    - "regime_transition_probability"
+  
+  enable_analyst_signal_features: true
+  analyst_signal_features:
+    - "analyst_signal"
+    - "analyst_confidence"
+    - "analyst_prediction"
+
+# Model Validation Settings
+model_validation:
+  enable_prediction_validation: true
+  validation_thresholds:
+    confidence_min: 0.3
+    confidence_max: 0.95
+    prediction_range_min: -1.0
+    prediction_range_max: 1.0
+  
+  enable_feature_validation: true
+  feature_validation:
+    check_missing_values: true
+    check_infinite_values: true
+    check_data_types: true
+  
+  enable_model_health_checks: true
+  model_health_checks:
+    check_model_availability: true
+    check_prediction_consistency: true
+    check_confidence_calibration: true
+
+# Logging and Monitoring Settings
+logging:
+  enable_enhanced_logging: true
+  log_level: "INFO"
+  log_predictions: true
+  log_confidence_scores: true
+  log_model_performance: true
+  
+  monitoring:
+    enable_performance_monitoring: true
+    monitor_prediction_accuracy: true
+    monitor_confidence_calibration: true
+    monitor_model_health: true
+
+# Performance Optimization Settings
+performance:
+  enable_caching: true
+  cache_predictions: true
+  cache_models: true
+  
+  enable_parallel_processing: true
+  max_workers: 4
+  
+  enable_memory_optimization: true
+  memory_limit_mb: 1024
+  
+  enable_batch_processing: true
+  batch_size: 100

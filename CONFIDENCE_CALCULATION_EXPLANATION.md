@@ -168,28 +168,23 @@ final_confidence = 0.583  # Below 0.7 threshold = 0.0 (no trade signal)
 ## Usage
 
 ```python
-from src.training.enhanced_confidence_scoring import create_enhanced_confidence_scorer
+from src.utils.confidence import calculate_multi_output_confidence_batch, get_confidence_threshold_signals
 
-# Create confidence scorer
-scorer = create_enhanced_confidence_scorer(
+# Calculate confidence using existing utility
+confidence_scores = calculate_multi_output_confidence_batch(
+    direction_probabilities=direction_prob,
+    direction_predictions=direction_pred,
+    profit_predictions=profit_pred,
+    current_prices=current_prices,
+    predicted_prices=price_pred,
     direction_threshold=0.6,
     profit_threshold=0.001,
     price_threshold=0.005,
     min_ensemble_confidence=0.7
 )
 
-# Calculate comprehensive confidence
-confidence_scores = scorer.calculate_comprehensive_confidence(
-    direction_probability=direction_prob,
-    direction_prediction=direction_pred,
-    profit_prediction=profit_pred,
-    current_price=current_prices,
-    predicted_price=price_pred,
-    risk_metrics=risk_metrics
-)
-
 # Get trading signals
-trading_signals = scorer.get_confidence_threshold_signals(
+trading_signals = get_confidence_threshold_signals(
     confidence_scores, threshold=0.7
 )
 ```

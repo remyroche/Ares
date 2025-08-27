@@ -738,7 +738,7 @@ class MultiOutputModelTrainer:
         current_prices: Optional[np.ndarray] = None,
         confidence_threshold: float = 0.7
     ) -> Dict[str, np.ndarray]:
-        """Make predictions with confidence scoring.
+        """Make predictions with confidence scoring using existing confidence utility.
         
         Args:
             features: Feature DataFrame
@@ -749,7 +749,7 @@ class MultiOutputModelTrainer:
         Returns:
             Dictionary containing predictions and confidence scores
         """
-        from src.training.enhanced_confidence_scoring import create_enhanced_confidence_scorer
+        from src.utils.confidence import calculate_multi_output_confidence_batch, get_confidence_threshold_signals
         
         # Make basic predictions
         direction_pred, profit_pred, price_pred = self.predict(
@@ -767,25 +767,25 @@ class MultiOutputModelTrainer:
             # Fallback: use prediction as probability
             direction_prob = direction_pred.astype(float)
         
-        # Create confidence scorer
-        confidence_scorer = create_enhanced_confidence_scorer(
+        # Use current prices or default to ones
+        if current_prices is None:
+            current_prices = np.ones_like(profit_pred)
+        
+        # Calculate confidence using existing utility
+        confidence_scores = calculate_multi_output_confidence_batch(
+            direction_probabilities=direction_prob,
+            direction_predictions=direction_pred,
+            profit_predictions=profit_pred,
+            current_prices=current_prices,
+            predicted_prices=price_pred,
             direction_threshold=0.6,
             profit_threshold=0.001,
             price_threshold=0.005,
             min_ensemble_confidence=confidence_threshold
         )
         
-        # Calculate comprehensive confidence
-        confidence_scores = confidence_scorer.calculate_comprehensive_confidence(
-            direction_probability=direction_prob,
-            direction_prediction=direction_pred,
-            profit_prediction=profit_pred,
-            current_price=current_prices if current_prices is not None else np.ones_like(profit_pred),
-            predicted_price=price_pred
-        )
-        
         # Get trading signals based on confidence threshold
-        trading_signals = confidence_scorer.get_confidence_threshold_signals(
+        trading_signals = get_confidence_threshold_signals(
             confidence_scores, threshold=confidence_threshold
         )
         

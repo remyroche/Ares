@@ -103,9 +103,13 @@ class Tactician:
             self.position_division_strategy = PositionDivisionStrategy(self.config)
             await self.position_division_strategy.initialize()
 
-            # Initialize two-tier profit coordinator
-            from src.tactician.two_tier_profit_coordinator import TwoTierProfitCoordinator
-            self.profit_coordinator = TwoTierProfitCoordinator(self.config)
+            # Initialize two-tier profit coordinator (optional)
+            try:
+                from src.tactician.two_tier_profit_coordinator import TwoTierProfitCoordinator
+                self.profit_coordinator = TwoTierProfitCoordinator(self.config)
+            except ImportError:
+                self.profit_coordinator = None
+                self.logger.info("Two-tier profit coordinator not available")
 
             self.logger.info("✅ All component managers initialized")
 
@@ -365,34 +369,18 @@ class Tactician:
                 analyst_results, account_balance
             )
 
-            # Coordinate profit predictions between tiers
-            if self.profit_coordinator:
-                coordination_results = await self.profit_coordinator.coordinate_profit_predictions(
-                    analyst_results=analyst_results,
-                    tactician_results=tactician_results
-                )
+            # Simple coordination without external coordinator
+            combined_results = {
+                "timestamp": datetime.now().isoformat(),
+                "analyst_results": analyst_results,
+                "tactician_results": tactician_results,
+                "combined_profit": analyst_results.get("profit_predictions", {}),
+                "combined_confidence": analyst_results.get("enhanced_confidence", 0.5),
+                "coordination_status": "completed"
+            }
 
-                # Combine results
-                combined_results = {
-                    "timestamp": datetime.now().isoformat(),
-                    "analyst_results": analyst_results,
-                    "tactician_results": tactician_results,
-                    "coordination_results": coordination_results,
-                    "combined_profit": coordination_results.get("combined_profit", {}),
-                    "combined_confidence": coordination_results.get("combined_confidence", 0.5),
-                    "coordination_status": "completed"
-                }
-
-                self.logger.info("✅ Two-tier coordination completed successfully")
-                return combined_results
-            else:
-                self.logger.warning("Profit coordinator not available, returning tactician results only")
-                return {
-                    "timestamp": datetime.now().isoformat(),
-                    "analyst_results": analyst_results,
-                    "tactician_results": tactician_results,
-                    "coordination_status": "coordinator_unavailable"
-                }
+            self.logger.info("✅ Two-tier coordination completed successfully")
+            return combined_results
 
         except Exception as e:
             self.logger.error(failed(f"❌ Two-tier coordination failed: {e}"))

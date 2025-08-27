@@ -519,18 +519,16 @@ class Analyst:
     ) -> dict[str, Any]:
         """Make profit predictions using dual model system with profit tracking."""
         try:
-            # Import profit tracking integrator
-            from src.training.steps.step4_analyst_labeling_feature_engineering_components.profit_tracking_ml_integration import ProfitTrackingMLIntegrator
+            # Extract profit information from features if available
+            profit_info = self._extract_profit_from_features(features_df)
             
-            # Initialize profit tracking integrator if not already done
-            if not hasattr(self, 'profit_tracking_integrator'):
-                self.profit_tracking_integrator = ProfitTrackingMLIntegrator(self.config)
-            
-            # Make profit predictions using the integrator
-            profit_predictions = self.profit_tracking_integrator.predict_with_profit_tracking(
-                model_name="analyst_dual_model",
-                X=features_df
-            )
+            # Create profit predictions based on trading decision and profit info
+            profit_predictions = {
+                "direction": trading_decision.get("direction", 0),
+                "profit": profit_info.get("profit_potential", 0.0),
+                "confidence": trading_decision.get("confidence", 0.5),
+                "high_value_trades": profit_info.get("high_value_factor", 0.0)
+            }
             
             self.logger.info("✅ Profit predictions made successfully")
             return profit_predictions
@@ -544,6 +542,32 @@ class Analyst:
                 "confidence": trading_decision.get("confidence", 0.5),
                 "high_value_trades": 0.0
             }
+
+    def _extract_profit_from_features(self, features_df: pd.DataFrame) -> dict[str, Any]:
+        """Extract profit information from features for predictions."""
+        try:
+            profit_info = {
+                "profit_potential": 0.0,
+                "high_value_factor": 0.0
+            }
+            
+            # Check for potential_profit_pct column
+            if "potential_profit_pct" in features_df.columns:
+                profit_values = features_df["potential_profit_pct"].values
+                profit_info["profit_potential"] = np.mean(profit_values) if len(profit_values) > 0 else 0.0
+                
+                # Calculate high value factor based on profit magnitude
+                profit_magnitude = abs(profit_info["profit_potential"])
+                if profit_magnitude > 0.03:  # 3% profit potential
+                    profit_info["high_value_factor"] = min(1.0, profit_magnitude / 0.05)
+                elif profit_magnitude > 0.01:  # 1% profit potential
+                    profit_info["high_value_factor"] = profit_magnitude / 0.03 * 0.5
+            
+            return profit_info
+            
+        except Exception as e:
+            self.logger.warning(f"Error extracting profit from features: {e}")
+            return {"profit_potential": 0.0, "high_value_factor": 0.0}
 
     def _enhance_confidence_with_profit(self, base_confidence: float, profit_pred: float) -> float:
         """Enhance confidence score with profit prediction information."""

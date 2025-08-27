@@ -105,8 +105,7 @@ class Analyst:
             True,
         )
 
-        # Enhanced Prediction Integrator integration
-        self.enhanced_prediction_integrator = None
+        # Enhanced predictions from supervisor
         self.enable_enhanced_predictions: bool = self.analyst_config.get(
             "enable_enhanced_predictions",
             True,
@@ -168,9 +167,8 @@ class Analyst:
         if self.enable_ml_predictions:
             await self._initialize_ml_confidence_predictor()
 
-        # Initialize Enhanced Prediction Integrator
-        if self.enable_enhanced_predictions:
-            await self._initialize_enhanced_prediction_integrator()
+        # Enhanced predictions are now handled by the supervisor
+        # No local initialization needed
 
         # Initialize Unified Regime Classifier
         if self.enable_regime_classification:
@@ -449,10 +447,10 @@ class Analyst:
                     current_position,
                 )
 
-            # 5. Get enhanced predictions if available
+            # 5. Get enhanced predictions from supervisor if available
             enhanced_predictions = {}
-            if self.enhanced_prediction_integrator:
-                enhanced_predictions = await self._get_enhanced_predictions(
+            if self.enable_enhanced_predictions and hasattr(self, 'supervisor'):
+                enhanced_predictions = await self.supervisor.get_analyst_predictions(
                     features_df, regime_info, symbol, exchange, timeframe
                 )
 
@@ -959,46 +957,8 @@ class Analyst:
             is not None,
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="enhanced prediction integrator initialization",
-    )
-    async def _initialize_enhanced_prediction_integrator(self) -> None:
-        """Initialize Enhanced Prediction Integrator."""
-        self.logger.info("Initializing Enhanced Prediction Integrator...")
-        try:
-            from src.analyst.enhanced_prediction_integrator import EnhancedPredictionIntegrator
-            self.enhanced_prediction_integrator = EnhancedPredictionIntegrator(self.config)
-            await self.enhanced_prediction_integrator.initialize()
-            self.logger.info("Enhanced Prediction Integrator initialized successfully")
-        except Exception as e:
-            self.logger.error(f"Failed to initialize Enhanced Prediction Integrator: {e}")
-            self.enhanced_prediction_integrator = None
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="getting enhanced predictions",
-    )
-    async def _get_enhanced_predictions(
-        self,
-        market_data: pd.DataFrame,
-        regime_info: dict[str, Any],
-        symbol: str,
-        exchange: str,
-        timeframe: str
-    ) -> dict[str, Any]:
-        """Get enhanced predictions from the enhanced prediction integrator."""
-        try:
-            if self.enhanced_prediction_integrator:
-                return await self.enhanced_prediction_integrator.generate_enhanced_predictions(
-                    market_data, regime_info, symbol, exchange, timeframe
-                )
-            return {}
-        except Exception as e:
-            self.logger.error(f"Error getting enhanced predictions: {e}")
-            return {}
+    # Enhanced predictions are now handled by the supervisor
+    # No local methods needed
 
     @handle_errors(
         exceptions=(Exception,),

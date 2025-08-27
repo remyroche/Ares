@@ -171,6 +171,9 @@ class Supervisor:
             self.supervisor_config.get("online_learning", {}),
         )
 
+        # Enhanced prediction service for ML model integration
+        self.enhanced_prediction_service = None
+
         # Health monitoring - Updated to include new component features
         self.health_checks: dict[str , bool] = {}
         self.critical_components: list[str] = [
@@ -299,6 +302,9 @@ class Supervisor:
                 "enhanced_training_manager": None , "model_manager": None,
                 "state_manager": None}
 
+            # Initialize enhanced prediction service
+            await self._initialize_enhanced_prediction_service()
+
             self.logger.info("Components initialized successfully")
         except Exception:
             self.print(initialization_error("Error initializing components: {e}"))
@@ -357,6 +363,83 @@ class Supervisor:
             self.logger.info("Component monitors setup complete")
         except Exception:
             self.print(error("Error setting up component monitors: {e}"))
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="enhanced prediction service initialization",
+    )
+    async def _initialize_enhanced_prediction_service(self) -> bool:
+        """Initialize the enhanced prediction service."""
+        try:
+            from src.supervisor.enhanced_prediction_service import EnhancedPredictionService
+            
+            self.enhanced_prediction_service = EnhancedPredictionService(self.config)
+            success = await self.enhanced_prediction_service.initialize()
+            
+            if success:
+                self.logger.info("✅ Enhanced Prediction Service initialized successfully")
+            else:
+                self.logger.warning("⚠️ Enhanced Prediction Service initialization failed")
+            
+            return success
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error initializing Enhanced Prediction Service: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="getting analyst predictions",
+    )
+    async def get_analyst_predictions(
+        self,
+        market_data,
+        regime_info,
+        symbol,
+        exchange,
+        timeframe
+    ) -> dict[str, Any]:
+        """Get enhanced predictions for the Analyst component."""
+        try:
+            if self.enhanced_prediction_service and self.enhanced_prediction_service.is_initialized:
+                return await self.enhanced_prediction_service.generate_analyst_predictions(
+                    market_data, regime_info, symbol, exchange, timeframe
+                )
+            else:
+                self.logger.warning("⚠️ Enhanced Prediction Service not available")
+                return {}
+        except Exception as e:
+            self.logger.error(f"❌ Error getting analyst predictions: {e}")
+            return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="getting tactician predictions",
+    )
+    async def get_tactician_predictions(
+        self,
+        market_data,
+        regime_info,
+        analyst_signals,
+        symbol,
+        exchange,
+        timeframe
+    ) -> dict[str, Any]:
+        """Get enhanced predictions for the Tactician component."""
+        try:
+            if self.enhanced_prediction_service and self.enhanced_prediction_service.is_initialized:
+                return await self.enhanced_prediction_service.generate_tactician_predictions(
+                    market_data, regime_info, analyst_signals, symbol, exchange, timeframe
+                )
+            else:
+                self.logger.warning("⚠️ Enhanced Prediction Service not available")
+                return {}
+        except Exception as e:
+            self.logger.error(f"❌ Error getting tactician predictions: {e}")
+            return {}
 
     @handle_specific_errors(
         error_handlers={

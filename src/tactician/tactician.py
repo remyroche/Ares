@@ -40,8 +40,7 @@ class Tactician:
         self.leverage_sizer = None
         self.position_division_strategy = None
 
-        # Enhanced Prediction Integrator integration
-        self.enhanced_prediction_integrator = None
+        # Enhanced predictions from supervisor
         self.enable_enhanced_predictions: bool = self.tactician_config.get(
             "enable_enhanced_predictions",
             True,
@@ -109,15 +108,8 @@ class Tactician:
             self.position_division_strategy = PositionDivisionStrategy(self.config)
             await self.position_division_strategy.initialize()
 
-            # Initialize Enhanced Prediction Integrator
-            if self.enable_enhanced_predictions:
-                await self._initialize_enhanced_prediction_integrator()
-                
-                # Integrate with existing components
-                if self.enhanced_prediction_integrator:
-                    await self.enhanced_prediction_integrator.integrate_with_tactician_components(
-                        self.position_sizer, self.leverage_sizer
-                    )
+            # Enhanced predictions are now handled by the supervisor
+            # No local initialization needed
 
             self.logger.info("✅ All component managers initialized")
 
@@ -355,47 +347,8 @@ class Tactician:
             "leverage_sizer": self.leverage_sizer is not None, "position_division_strategy": self.position_division_strategy is not None,
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="enhanced prediction integrator initialization",
-    )
-    async def _initialize_enhanced_prediction_integrator(self) -> None:
-        """Initialize Enhanced Prediction Integrator."""
-        self.logger.info("Initializing Enhanced Prediction Integrator...")
-        try:
-            from src.tactician.enhanced_prediction_integrator import TacticianEnhancedPredictionIntegrator
-            self.enhanced_prediction_integrator = TacticianEnhancedPredictionIntegrator(self.config)
-            await self.enhanced_prediction_integrator.initialize()
-            self.logger.info("Enhanced Prediction Integrator initialized successfully")
-        except Exception as e:
-            self.logger.error(f"Failed to initialize Enhanced Prediction Integrator: {e}")
-            self.enhanced_prediction_integrator = None
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="getting enhanced predictions",
-    )
-    async def _get_enhanced_predictions(
-        self,
-        market_data: pd.DataFrame,
-        regime_info: dict[str, Any],
-        analyst_signals: dict[str, Any],
-        symbol: str,
-        exchange: str,
-        timeframe: str
-    ) -> dict[str, Any]:
-        """Get enhanced predictions from the enhanced prediction integrator."""
-        try:
-            if self.enhanced_prediction_integrator:
-                return await self.enhanced_prediction_integrator.generate_tactician_enhanced_predictions(
-                    market_data, regime_info, analyst_signals, symbol, exchange, timeframe
-                )
-            return {}
-        except Exception as e:
-            self.logger.error(f"Error getting enhanced predictions: {e}")
-            return {}
+    # Enhanced predictions are now handled by the supervisor
+    # No local methods needed
 
     @handle_errors(
         exceptions=(Exception,),

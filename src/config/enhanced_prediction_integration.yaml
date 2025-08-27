@@ -47,6 +47,11 @@ tactician:
     entry_threshold: 0.65
     exit_threshold: 0.55
     
+    # Timeframe configuration for Tactician
+    timeframes: ["1m", "5m"]  # Tactician uses shorter timeframes for execution
+    primary_timeframe: "1m"   # Primary timeframe for real-time execution
+    secondary_timeframe: "5m" # Secondary timeframe for confirmation
+    
     # Model loading settings
     load_hmm_models: true
     load_tactician_specialist_models: true
@@ -90,6 +95,45 @@ tactician:
     enable_detailed_logging: true
     save_predictions: true
     prediction_output_format: "json"
+
+# Enhanced Prediction Service Configuration (Supervisor)
+enhanced_prediction_service:
+  # Service configuration
+  data_dir: "data/training"
+  models_dir: "models"
+  confidence_threshold: 0.7
+  price_prediction_threshold: 0.6
+  
+  # Timeframe configuration
+  timeframes: ["1m", "5m"]  # Tactician timeframes
+  primary_timeframe: "1m"   # Primary timeframe for Tactician
+  secondary_timeframe: "5m" # Secondary timeframe for Tactician
+  
+  # Model loading settings
+  load_hmm_models: true
+  load_analyst_enhanced_models: true
+  load_tactician_specialist_models: true
+  load_calibration_results: true
+  load_optimization_results: true
+  
+  # Prediction processing settings
+  enable_feature_engineering: true
+  enable_regime_integration: true
+  enable_analyst_signal_integration: true
+  
+  # Confidence calibration settings
+  enable_calibration: true
+  calibration_method: "isotonic_prefit"
+  calibration_cv_folds: 5
+  
+  # Optimization settings
+  enable_optimization_weights: true
+  optimization_method: "weighted_average"
+  
+  # Output settings
+  enable_detailed_logging: true
+  save_predictions: true
+  prediction_output_format: "json"
 
 # Enhanced Training Manager Integration Settings
 enhanced_training_integration:

@@ -99,6 +99,11 @@ class EnhancedHMMBasedTrainingStep:
             self.model_architectures[timeframe] = model_config.get(
                 "architecture", "LightGBM",
             )
+        
+        # Supported model types for multi-output training
+        self.supported_model_types = [
+            "LightGBM", "RandomForest", "XGBoost", "CatBoost", "NeuralNetwork"
+        ]
 
         # Fallback to default if config not available
         if not self.model_architectures:
@@ -267,11 +272,29 @@ class EnhancedHMMBasedTrainingStep:
         
         # Initialize multi-output trainer if enabled
         if self.enable_multi_output:
-            self.multi_output_trainer = create_multi_output_trainer(
-                model_type="LightGBM",
-                use_profit_features=True
+            # Get model type from config or default to LightGBM
+            model_type = self.config.get("multi_output_model_type", "LightGBM")
+            if model_type not in self.supported_model_types:
+                self.logger.warning(f"⚠️ Unsupported model type {model_type}, falling back to LightGBM")
+                model_type = "LightGBM"
+            
+            multi_output_config = MultiOutputModelConfig(
+                model_type=model_type,
+                use_profit_features=True,
+                direction_threshold=0.0,
+                profit_scaling="standard",
+                ensemble_method="stacking",
+                validation_method="time_series_cv",
+                n_splits=5,
+                test_size=0.2,
+                random_state=42,
+                use_enhanced_feature_selection=True,  # Use enhanced feature selection
+                supported_model_types=self.supported_model_types
             )
-            self.logger.info("✅ Multi-output trainer initialized")
+            self.multi_output_trainer = create_multi_output_trainer(
+                multi_output_config, use_profit_features=True
+            )
+            self.logger.info(f"✅ Multi-output trainer initialized with {model_type}")
         
         self.logger.info("✅ Enhanced HMM-Based Training Step initialized successfully")
 
@@ -305,11 +328,47 @@ class EnhancedHMMBasedTrainingStep:
         has_profit = "potential_profit_pct" in data.columns
         has_single_target = "target" in data.columns or "label" in data.columns
         
-        # Apply profit-based feature engineering if profit data is available
+        # Use enhanced feature selection if multi-output is enabled
         if has_profit and self.enable_multi_output:
-            self.logger.info("🔧 Applying profit-based feature engineering...")
-            data = self.profit_feature_engine.apply_all_features(data)
-            self.logger.info(f"✅ Added profit-based features")
+            try:
+                from src.training.feature_selection_manager import FeatureSelectionManager
+                
+                self.logger.info("🔧 Using enhanced feature selection with autoencoder features...")
+                
+                # Create feature selection manager
+                feature_selector = FeatureSelectionManager(self.config)
+                
+                # Create dummy target for feature selection
+                dummy_target = pd.Series(0, index=data.index)
+                if "direction" in data.columns:
+                    dummy_target = data["direction"]
+                
+                # Use enhanced feature selection with autoencoder features
+                selected_features, metadata = feature_selector.select_features_step2(
+                    features_df=data,
+                    target=dummy_target,
+                    symbol="default",
+                    exchange="default",
+                    data_dir="temp",
+                    use_autoencoder_features=True,  # Use autoencoder features
+                    use_regularization=True         # Use regularization
+                )
+                
+                self.logger.info(f"✅ Enhanced feature selection completed: {selected_features.shape[1]} features selected")
+                self.logger.info(f"   - Autoencoder features: {metadata.get('stages', {}).get('stage0_autoencoder', {}).get('autoencoder_features_added', 0)}")
+                self.logger.info(f"   - Regularization applied: {metadata.get('stages', {}).get('stage6_regularization', {}).get('regularization_applied', False)}")
+                
+                # Use selected features
+                data = selected_features
+                
+            except Exception as e:
+                self.logger.warning(f"⚠️ Enhanced feature selection failed: {e}")
+                self.logger.info("📊 Falling back to basic feature preparation")
+                
+                # Apply profit-based feature engineering as fallback
+                self.logger.info("🔧 Applying profit-based feature engineering...")
+                data = self.profit_feature_engine.apply_all_features(data)
+                self.logger.info(f"✅ Added profit-based features")
         
         # Prepare features
         exclude_columns = [

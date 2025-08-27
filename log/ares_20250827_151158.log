@@ -1,0 +1,19 @@
+2025-08-27 15:11:58,539 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-27 15:11:58,551 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering 🔧 Profit-based feature engineering system initialized - -
+2025-08-27 15:11:58,551 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering 🐍 Using Python vectorized operations - -
+2025-08-27 15:11:58,551 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering ➡️ ProfitFeatures.apply_all start 22050439 - -
+2025-08-27 15:11:58,551 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering 🚀 Applying profit-based feature engineering 22050439 - -
+2025-08-27 15:11:58,551 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering    - Input shape: (1000, 7) 22050439 - -
+2025-08-27 15:11:58,551 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering    - Feature categories: ['basic_profit', 'categorical', 'risk_reward', 'momentum', 'volatility', 'volume', 'rolling', 'profit_bins', 'profit_labels'] 22050439 - -
+2025-08-27 15:11:58,552 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering    ✅ Applied basic_profit features 22050439 - -
+2025-08-27 15:11:58,554 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering    ✅ Applied categorical features 22050439 - -
+2025-08-27 15:11:58,556 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering    ✅ Applied risk_reward features 22050439 - -
+2025-08-27 15:11:58,558 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering    ✅ Applied momentum features 22050439 - -
+2025-08-27 15:11:58,560 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering    ✅ Applied volatility features 22050439 - -
+2025-08-27 15:11:58,562 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering    ✅ Applied volume features 22050439 - -
+2025-08-27 15:11:58,571 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering    ✅ Applied rolling features 22050439 - -
+2025-08-27 15:11:58,571 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering ✅ Feature engineering completed 22050439 - -
+2025-08-27 15:11:58,571 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering    - Output shape: (1000, 68) 22050439 - -
+2025-08-27 15:11:58,571 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering    - Features added: 61 22050439 - -
+2025-08-27 15:11:58,571 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering    - Total features: 68 22050439 - -
+2025-08-27 15:11:58,573 INFO AresTradingSystem.System.System.ProfitBasedFeatureEngineering ✅ ProfitFeatures.apply_all done 22050439 - -

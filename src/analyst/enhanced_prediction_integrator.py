@@ -548,21 +548,19 @@ class EnhancedPredictionIntegrator:
             # Create a copy of market data
             features = market_data.copy()
             
-            # Add regime information
+            # Add regime information (contextual, not technical indicators)
             features["regime"] = regime_info.get("regime", "unknown")
             features["regime_confidence"] = regime_info.get("confidence", 0.5)
             
-            # Add technical indicators if not present
-            if "rsi" not in features.columns:
-                features["rsi"] = self._calculate_rsi(features["close"])
+            # IMPORTANT: Do NOT add technical indicators here
+            # The ML models in steps 6-14 already have comprehensive feature engineering
+            # Adding RSI/MACD here would be redundant and potentially inconsistent
+            # The models were trained with specific feature sets - we should respect that
             
-            if "macd" not in features.columns:
-                features["macd"] = self._calculate_macd(features["close"])
-            
-            # Select relevant features for prediction
+            # Select relevant features for prediction (basic market data + regime info only)
             feature_columns = [
                 "open", "high", "low", "close", "volume",
-                "rsi", "macd", "regime", "regime_confidence"
+                "regime", "regime_confidence"
             ]
             
             available_features = [col for col in feature_columns if col in features.columns]
@@ -666,24 +664,6 @@ class EnhancedPredictionIntegrator:
         else:
             return "low"
 
-    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
-        """Calculate RSI indicator."""
-        try:
-            delta = prices.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-            rs = gain / loss
-            rsi = 100 - (100 / (1 + rs))
-            return rsi
-        except Exception:
-            return pd.Series([50.0] * len(prices), index=prices.index)
-
-    def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
-        """Calculate MACD indicator."""
-        try:
-            ema_fast = prices.ewm(span=fast).mean()
-            ema_slow = prices.ewm(span=slow).mean()
-            macd = ema_fast - ema_slow
-            return macd
-        except Exception:
-            return pd.Series([0.0] * len(prices), index=prices.index)
+    # REMOVED: RSI and MACD calculation methods
+    # These technical indicators should be handled by the ML models in steps 6-14
+    # The integrator should focus on integrating predictions, not generating features

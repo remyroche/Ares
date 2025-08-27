@@ -1,0 +1,7 @@
+2025-08-27 14:16:38,214 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-27 14:16:38,283 INFO AresTradingSystem.System.ProfitBasedFeatureEngineering 🔧 Profit-based feature engineering system initialized - -
+2025-08-27 14:16:38,283 INFO AresTradingSystem.System.ProfitBasedFeatureEngineering 🐍 Using Python vectorized operations - -
+2025-08-27 14:16:38,284 INFO AresTradingSystem.System.ProfitBasedFeatureEngineering ➡️ ProfitFeatures.apply_all start 5d33c866d38742c2b8db30c31c04d60c -
+2025-08-27 14:16:38,284 INFO AresTradingSystem.System.ProfitBasedFeatureEngineering 🚀 Applying profit-based feature engineering 5d33c866d38742c2b8db30c31c04d60c -
+2025-08-27 14:16:38,284 INFO AresTradingSystem.System.ProfitBasedFeatureEngineering    - Input shape: (1000, 7) 5d33c866d38742c2b8db30c31c04d60c -
+2025-08-27 14:16:38,284 INFO AresTradingSystem.System.ProfitBasedFeatureEngineering    - Feature categories: ['basic_profit', 'categorical', 'risk_reward', 'momentum', 'volatility', 'volume', 'rolling'] 5d33c866d38742c2b8db30c31c04d60c -

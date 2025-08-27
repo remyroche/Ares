@@ -152,12 +152,12 @@ class TripleBarrierMethodStep:
             # Apply triple barrier method
             if self.triple_barrier_labeler:
                 # Use optimized triple barrier labeling
-                labels = await self._apply_optimized_triple_barrier(data)
+                labeled_data = await self._apply_optimized_triple_barrier(data)
             else:
                 # Fallback to basic implementation
-                labels = await self._apply_basic_triple_barrier(data)
+                labeled_data = await self._apply_basic_triple_barrier(data)
 
-            if labels is None:
+            if labeled_data is None:
                 self.logger.error("❌ Failed to generate triple barrier labels")
                 return False
 
@@ -167,7 +167,11 @@ class TripleBarrierMethodStep:
             
             # Combine data with labels
             result_data = data.copy()
-            result_data['triple_barrier_label'] = labels
+            result_data['label'] = labeled_data['label']
+            result_data['potential_profit_pct'] = labeled_data['potential_profit_pct']
+            
+            # Create enhanced labels that include profit information
+            result_data = self._create_enhanced_labels(result_data)
             
             result_data.to_parquet(output_path)
             self.logger.info(f"✅ Triple barrier labels saved to {output_path}")
@@ -179,8 +183,8 @@ class TripleBarrierMethodStep:
             self.logger.exception(f"❌ Error in triple barrier method: {e}")
             return False
 
-    async def _apply_optimized_triple_barrier(self, data: pd.DataFrame) -> Optional[pd.Series]:
-        """Apply optimized triple barrier labeling."""
+    async def _apply_optimized_triple_barrier(self, data: pd.DataFrame) -> Optional[pd.DataFrame]:
+        """Apply optimized triple barrier labeling with profit tracking."""
         try:
             # Configure triple barrier parameters
             profit_take_multiplier = self.config.get("triple_barrier", {}).get("profit_take_multiplier", 0.002)
@@ -201,26 +205,40 @@ class TripleBarrierMethodStep:
                 binary_classification=True
             )
 
-            # Apply triple barrier labeling
-            labels = labeler.apply_triple_barrier_labels(data)
+            # Apply triple barrier labeling with profit tracking
+            labeled_data = labeler.apply_triple_barrier_labeling_vectorized(data)
             
-            self.logger.info(f"✅ Generated {len(labels)} triple barrier labels")
-            self.logger.info(f"   - Buy signals: {(labels == 1).sum()}")
-            self.logger.info(f"   - Sell signals: {(labels == -1).sum()}")
+            # Extract labels and profit percentages
+            labels = labeled_data['label']
+            profit_pcts = labeled_data['potential_profit_pct']
+            
+            self.logger.info(f"✅ Generated {len(labels)} triple barrier labels with profit tracking")
+            self.logger.info(f"   - Long positions: {(labels == 1).sum()}")
+            self.logger.info(f"   - Short positions: {(labels == -1).sum()}")
             self.logger.info(f"   - Hold signals: {(labels == 0).sum()}")
             
-            return labels
+            # Log profit statistics
+            if len(labeled_data) > 0:
+                long_profits = labeled_data[labeled_data['label'] == 1]['potential_profit_pct']
+                short_profits = labeled_data[labeled_data['label'] == -1]['potential_profit_pct']
+                
+                self.logger.info("💰 Profit tracking statistics:")
+                self.logger.info(f"   - LONG positions avg profit: {long_profits.mean():.4f} ({long_profits.std():.4f} std)")
+                self.logger.info(f"   - SHORT positions avg profit: {short_profits.mean():.4f} ({short_profits.std():.4f} std)")
+                self.logger.info(f"   - Overall avg profit: {labeled_data['potential_profit_pct'].mean():.4f}")
+            
+            return labeled_data
 
         except Exception as e:
             self.logger.exception(f"❌ Error in optimized triple barrier: {e}")
             return None
 
-    async def _apply_basic_triple_barrier(self, data: pd.DataFrame) -> Optional[pd.Series]:
-        """Apply basic triple barrier labeling as fallback."""
+    async def _apply_basic_triple_barrier(self, data: pd.DataFrame) -> Optional[pd.DataFrame]:
+        """Apply basic triple barrier labeling as fallback with profit tracking."""
         try:
-            self.logger.warning("⚠️ Using basic triple barrier implementation")
+            self.logger.warning("⚠️ Using basic triple barrier implementation with profit tracking")
             
-            # Simple triple barrier implementation
+            # Simple triple barrier implementation with profit tracking
             close_prices = data['close'].values
             high_prices = data['high'].values
             low_prices = data['low'].values
@@ -230,6 +248,7 @@ class TripleBarrierMethodStep:
             max_lookahead = self.config.get("triple_barrier", {}).get("max_lookahead", 100)
             
             labels = np.zeros(len(close_prices), dtype=np.int8)
+            profit_pcts = np.zeros(len(close_prices), dtype=np.float64)
             
             for i in range(len(close_prices) - 1):
                 entry_price = close_prices[i]
@@ -239,19 +258,107 @@ class TripleBarrierMethodStep:
                 # Look ahead for barrier hits
                 for j in range(i + 1, min(i + max_lookahead, len(close_prices))):
                     if high_prices[j] >= profit_barrier:
-                        labels[i] = 1  # Buy signal
+                        labels[i] = 1  # LONG position - price moved up, take profit
+                        profit_pcts[i] = profit_take_multiplier  # Profit take hit
                         break
                     elif low_prices[j] <= stop_barrier:
-                        labels[i] = -1  # Sell signal
+                        labels[i] = -1  # SHORT position - price moved down, take profit
+                        profit_pcts[i] = -stop_loss_multiplier  # Stop loss hit
                         break
-                    # If no barrier hit, label remains 0 (hold)
+                    # If no barrier hit, label remains 0 (hold) and profit_pct remains 0.0
             
-            self.logger.info(f"✅ Generated {len(labels)} basic triple barrier labels")
-            return pd.Series(labels, index=data.index)
+            # Create result DataFrame with both labels and profit percentages
+            result_data = data.copy()
+            result_data['label'] = labels
+            result_data['potential_profit_pct'] = profit_pcts
+            
+            # Filter out HOLD samples for binary classification
+            original_count = len(result_data)
+            result_data = result_data[result_data['label'] != 0].copy()
+            filtered_count = len(result_data)
+            
+            # Create enhanced labels that include profit information
+            result_data = self._create_enhanced_labels(result_data)
+            
+            self.logger.info(f"✅ Generated {len(labels)} basic triple barrier labels with profit tracking")
+            self.logger.info(f"   - Long positions: {(labels == 1).sum()}")
+            self.logger.info(f"   - Short positions: {(labels == -1).sum()}")
+            self.logger.info(f"   - Hold signals: {(labels == 0).sum()}")
+            self.logger.info(f"   - Filtered samples: {filtered_count} (from {original_count})")
+            
+            # Log profit statistics
+            if len(result_data) > 0:
+                long_profits = result_data[result_data['label'] == 1]['potential_profit_pct']
+                short_profits = result_data[result_data['label'] == -1]['potential_profit_pct']
+                
+                self.logger.info("💰 Basic profit tracking statistics:")
+                self.logger.info(f"   - LONG positions avg profit: {long_profits.mean():.4f}")
+                self.logger.info(f"   - SHORT positions avg profit: {short_profits.mean():.4f}")
+                self.logger.info(f"   - Overall avg profit: {result_data['potential_profit_pct'].mean():.4f}")
+            
+            return result_data
 
         except Exception as e:
             self.logger.exception(f"❌ Error in basic triple barrier: {e}")
             return None
+
+    def _create_enhanced_labels(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Create enhanced labels that include profit information alongside direction labels.
+        
+        This method creates additional columns that combine direction and profit information
+        for more comprehensive trading signal analysis.
+        
+        Args:
+            data: DataFrame with 'label' and 'potential_profit_pct' columns
+            
+        Returns:
+            DataFrame with enhanced label columns
+        """
+        try:
+            enhanced_data = data.copy()
+            
+            # Create profit-binned labels (categorize profits into bins)
+            profit_bins = [-np.inf, -0.005, -0.002, 0, 0.002, 0.005, np.inf]
+            profit_labels = ['Large Loss', 'Medium Loss', 'Small Loss', 'No Profit', 'Small Profit', 'Large Profit']
+            enhanced_data['profit_category'] = pd.cut(
+                enhanced_data['potential_profit_pct'], 
+                bins=profit_bins, 
+                labels=profit_labels, 
+                include_lowest=True
+            )
+            
+            # Create combined direction-profit labels
+            enhanced_data['direction_profit_label'] = enhanced_data.apply(
+                lambda row: f"{'LONG' if row['label'] == 1 else 'SHORT'}_{row['profit_category']}", 
+                axis=1
+            )
+            
+            # Create profit-weighted labels (for regression tasks)
+            enhanced_data['profit_weighted_label'] = enhanced_data['label'] * enhanced_data['potential_profit_pct']
+            
+            # Create risk-adjusted labels (profit divided by time to barrier hit)
+            # For now, we'll use a simple approach - can be enhanced later
+            enhanced_data['risk_adjusted_profit'] = enhanced_data['potential_profit_pct'].abs()
+            
+            # Create confidence scores based on profit magnitude
+            max_profit = enhanced_data['potential_profit_pct'].abs().max()
+            if max_profit > 0:
+                enhanced_data['signal_confidence'] = enhanced_data['potential_profit_pct'].abs() / max_profit
+            else:
+                enhanced_data['signal_confidence'] = 0.0
+            
+            # Log enhanced labeling statistics
+            self.logger.info("🎯 Enhanced labeling statistics:")
+            self.logger.info(f"   - Profit categories: {enhanced_data['profit_category'].value_counts().to_dict()}")
+            self.logger.info(f"   - Direction-profit combinations: {enhanced_data['direction_profit_label'].value_counts().to_dict()}")
+            self.logger.info(f"   - Average signal confidence: {enhanced_data['signal_confidence'].mean():.4f}")
+            self.logger.info(f"   - Risk-adjusted profit range: {enhanced_data['risk_adjusted_profit'].min():.4f} to {enhanced_data['risk_adjusted_profit'].max():.4f}")
+            
+            return enhanced_data
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not create enhanced labels: {e}")
+            return data
 
 
 async def run_step(

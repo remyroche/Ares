@@ -198,7 +198,6 @@ class ProfitBasedFeatureEngineering:
         
         return result_data
 
-    @memory_efficient
     def _apply_basic_profit_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply basic profit features.
         
@@ -217,7 +216,6 @@ class ProfitBasedFeatureEngineering:
         
         return data
 
-    @memory_efficient
     def _apply_categorical_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply categorical profit features.
         
@@ -250,7 +248,6 @@ class ProfitBasedFeatureEngineering:
         
         return data
 
-    @memory_efficient
     def _apply_risk_reward_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply risk-reward features.
         
@@ -273,29 +270,35 @@ class ProfitBasedFeatureEngineering:
         # Sortino ratio (profit per unit of downside risk)
         downside_returns = np.where(profit_pcts < 0, profit_pcts, 0)
         downside_std = pd.Series(downside_returns).rolling(window=window, min_periods=1).std()
-        data[f"{self.profit_column}_sortino"] = np.where(
+        downside_std = downside_std.reindex(rolling_mean.index)
+        
+        sortino_ratio = np.where(
             downside_std > 0,
             rolling_mean / downside_std,
             0.0
         )
+        data[f"{self.profit_column}_sortino"] = pd.Series(sortino_ratio, index=data.index).fillna(0.0)
         
         # Kelly criterion approximation
-        win_rate = (profit_pcts > 0).rolling(window=window, min_periods=1).mean()
-        avg_win = np.where(profit_pcts > 0, profit_pcts, 0).rolling(window=window, min_periods=1).mean()
-        avg_loss = np.where(profit_pcts < 0, np.abs(profit_pcts), 0).rolling(window=window, min_periods=1).mean()
+        profit_series = pd.Series(profit_pcts, index=data.index)
+        win_rate = (profit_series > 0).rolling(window=window, min_periods=1).mean()
+        avg_win = np.where(profit_pcts > 0, profit_pcts, 0)
+        avg_win_series = pd.Series(avg_win, index=data.index).rolling(window=window, min_periods=1).mean()
+        avg_loss = np.where(profit_pcts < 0, np.abs(profit_pcts), 0)
+        avg_loss_series = pd.Series(avg_loss, index=data.index).rolling(window=window, min_periods=1).mean()
         
-        data[f"{self.profit_column}_kelly"] = np.where(
-            avg_loss > 0,
-            (win_rate * avg_win - (1 - win_rate) * avg_loss) / avg_win,
+        kelly_ratio = np.where(
+            avg_loss_series > 0,
+            (win_rate * avg_win_series - (1 - win_rate) * avg_loss_series) / avg_win_series,
             0.0
         )
+        data[f"{self.profit_column}_kelly"] = pd.Series(kelly_ratio, index=data.index).fillna(0.0)
         
         # Risk-adjusted return
         data[f"{self.profit_column}_risk_adjusted"] = profit_pcts / (1 + rolling_std)
         
         return data
 
-    @memory_efficient
     def _apply_momentum_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply momentum features.
         
@@ -338,7 +341,6 @@ class ProfitBasedFeatureEngineering:
         
         return data
 
-    @memory_efficient
     def _apply_volatility_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply volatility features.
         
@@ -379,7 +381,6 @@ class ProfitBasedFeatureEngineering:
         
         return data
 
-    @memory_efficient
     def _apply_volume_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply volume-based profit features.
         
@@ -420,7 +421,6 @@ class ProfitBasedFeatureEngineering:
         
         return data
 
-    @memory_efficient
     def _apply_rolling_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply rolling profit features.
         
@@ -540,28 +540,64 @@ class ProfitBasedFeatureEngineering:
         
         if method == "correlation":
             # Select features based on correlation with target
-            correlations = data[profit_features].corrwith(data[self.profit_column]).abs()
-            selected = correlations[correlations > threshold].index.tolist()
+            # Filter out categorical features for correlation
+            numerical_features = []
+            for feature in profit_features:
+                if data[feature].dtype in ['int64', 'float64']:
+                    numerical_features.append(feature)
+            
+            if numerical_features:
+                correlations = data[numerical_features].corrwith(data[self.profit_column]).abs()
+                selected = correlations[correlations > threshold].index.tolist()
+            else:
+                selected = []
         
         elif method == "variance":
             # Select features based on variance
-            variances = data[profit_features].var()
-            selected = variances[variances > threshold].index.tolist()
+            # Filter out categorical features for variance
+            numerical_features = []
+            for feature in profit_features:
+                if data[feature].dtype in ['int64', 'float64']:
+                    numerical_features.append(feature)
+            
+            if numerical_features:
+                variances = data[numerical_features].var()
+                selected = variances[variances > threshold].index.tolist()
+            else:
+                selected = []
         
         elif method == "mutual_info":
             # Select features based on mutual information (requires scikit-learn)
             try:
                 from sklearn.feature_selection import mutual_info_regression
-                mi_scores = mutual_info_regression(
-                    data[profit_features].fillna(0), 
-                    data[self.profit_column]
-                )
-                mi_series = pd.Series(mi_scores, index=profit_features)
-                selected = mi_series[mi_series > threshold].index.tolist()
+                # Filter out categorical features for mutual info
+                numerical_features = []
+                for feature in profit_features:
+                    if data[feature].dtype in ['int64', 'float64']:
+                        numerical_features.append(feature)
+                
+                if numerical_features:
+                    mi_scores = mutual_info_regression(
+                        data[numerical_features].fillna(0), 
+                        data[self.profit_column]
+                    )
+                    mi_series = pd.Series(mi_scores, index=numerical_features)
+                    selected = mi_series[mi_series > threshold].index.tolist()
+                else:
+                    selected = []
             except ImportError:
                 self.logger.warning("scikit-learn not available, falling back to correlation method")
-                correlations = data[profit_features].corrwith(data[self.profit_column]).abs()
-                selected = correlations[correlations > threshold].index.tolist()
+                # Filter out categorical features for correlation
+                numerical_features = []
+                for feature in profit_features:
+                    if data[feature].dtype in ['int64', 'float64']:
+                        numerical_features.append(feature)
+                
+                if numerical_features:
+                    correlations = data[numerical_features].corrwith(data[self.profit_column]).abs()
+                    selected = correlations[correlations > threshold].index.tolist()
+                else:
+                    selected = []
         
         else:
             raise ValueError(f"Unknown feature selection method: {method}")

@@ -2309,15 +2309,15 @@ class EnhancedTrainingManager:
                         self.logger.exception(f"❌ Step 7 validator failed: {e} - stopping pipeline")
                         return False
 
-                # Step 8: HMM-Based Training (enable Method A experts via config)
-                self._heartbeat("Step 8: HMM-Based Training")
+                # Step 8: Enhanced HMM-Based Training with Multi-Output Support
+                self._heartbeat("Step 8: Enhanced HMM-Based Training")
 
-                should_run_step8 = _should_run("step8_hmm_based_training")
+                should_run_step8 = _should_run("step8_enhanced_hmm_based_training")
                 if not should_run_step8:
                     self.logger.info(
-                        f"⏭️ Skipping Step 8: HMM-Based Training (starting from '{start_step_key}')",
+                        f"⏭️ Skipping Step 8: Enhanced HMM-Based Training (starting from '{start_step_key}')",
                     )
-                    pipeline_state["hmm_based_training"] = {
+                    pipeline_state["enhanced_hmm_based_training"] = {
                         "status": "SKIPPED",
                         "success": True,
                         "skipped": True,
@@ -2325,24 +2325,27 @@ class EnhancedTrainingManager:
                     }
                 else:
                     # Verify previous step artifacts BEFORE execution
-                    if not await self.verify_previous_step_artifacts("step8_hmm_based_training", symbol, exchange, timeframe):
+                    if not await self.verify_previous_step_artifacts("step8_enhanced_hmm_based_training", symbol, exchange, timeframe):
                         self.logger.error("❌ Previous step artifacts not found for step8, stopping pipeline")
                         return False
 
                     # Validate step dependencies BEFORE execution
-                    if not await self.validate_step_dependencies("step8_hmm_based_training", pipeline_state, self.force_rerun):
+                    if not await self.validate_step_dependencies("step8_enhanced_hmm_based_training", pipeline_state, self.force_rerun):
                         self.logger.error("❌ Step 8 dependencies not met, stopping pipeline")
                         return False
 
                     step_start_8 = time.time()
                     try:
-                        from src.training.steps import step6_hmm_based_training
+                        from src.training.steps import step6_hmm_based_training_enhanced
 
                         method_a_cfg = self.config.get("method_a_mixture_of_experts", {})
-                        step8_success = await step6_hmm_based_training.run_step(
+                        enable_multi_output = self.config.get("enable_multi_output", True)
+                        
+                        step8_success = await step6_hmm_based_training_enhanced.run_enhanced_step(
                             symbol=symbol,
                             data_dir=data_dir,
                             method_a_mixture_of_experts=method_a_cfg,
+                            enable_multi_output=enable_multi_output,
                         )
                     except Exception as e:
                         self.logger.exception(f"❌ Error in Step 8: {e}")
@@ -2350,35 +2353,35 @@ class EnhancedTrainingManager:
 
                     if not step8_success:
                         self._log_step_completion(
-                            "Step 8: HMM-Based Training",
+                            "Step 8: Enhanced HMM-Based Training",
                             step_start_8,
                             step_times,
                             success=False,
                         )
                         return False
                     self._log_step_completion(
-                        "Step 8: HMM-Based Training",
+                        "Step 8: Enhanced HMM-Based Training",
                         step_start_8,
                         step_times,
                         success=True,
                     )
 
-                    pipeline_state["hmm_based_training"] = {
+                    pipeline_state["enhanced_hmm_based_training"] = {
                         "status": "SUCCESS" if step8_success else "FAILED",
                         "success": bool(step8_success),
                         "completed": bool(step8_success),
                     }
-                    self._save_checkpoint("step8_hmm_based_training", pipeline_state)
-                    step_times["step8_hmm_based_training"] = time.time() - step_start_8
+                    self._save_checkpoint("step8_enhanced_hmm_based_training", pipeline_state)
+                    step_times["step8_enhanced_hmm_based_training"] = time.time() - step_start_8
 
                     # Run validator for Step 8
                     try:
                         step8_validation = await self._run_step_validator(
-                            "step8_hmm_based_training", training_input, pipeline_state,
+                            "step8_enhanced_hmm_based_training", training_input, pipeline_state,
                         )
                         if step8_validation and step8_validation.get("validation_passed", False):
                             self.logger.info(
-                                "🎉 Step 8: HMM-Based Training completed successfully and validation passed",
+                                "🎉 Step 8: Enhanced HMM-Based Training completed successfully and validation passed",
                             )
                         else:
                             self.logger.error("❌ Step 8 validation failed - stopping pipeline")

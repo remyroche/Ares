@@ -1411,9 +1411,6 @@ class VectorizedAdvancedFeatureEngineering:
         
         # Initialize profit-based feature engineering
         self.profit_feature_engineer = None
-        
-        # Initialize exit strategy feature engineering
-        self.exit_strategy_feature_engineer = None
 
         # Initialize optimized resampler
         self.optimized_resampler = OptimizedResampler()
@@ -1594,25 +1591,6 @@ class VectorizedAdvancedFeatureEngineering:
             except Exception as e:
                 self.logger.warning(f"⚠️ Failed to initialize profit-based feature engineering: {e}")
                 self.profit_feature_engineer = None
-
-            # Initialize exit strategy feature engineering
-            try:
-                from src.training.steps.exit_strategy_feature_engineering import (
-                    ExitStrategyFeatureEngineering
-                )
-                self.exit_strategy_feature_engineer = ExitStrategyFeatureEngineering(
-                    price_column="close",
-                    volume_column="volume",
-                    position_column="position",  # 1 for LONG, -1 for SHORT, 0 for no position
-                    profit_column="potential_profit_pct",
-                    confidence_threshold=0.6,
-                    use_numba=True,
-                    memory_efficient=True
-                )
-                self.logger.info("✅ Exit strategy feature engineering initialized successfully")
-            except Exception as e:
-                self.logger.warning(f"⚠️ Failed to initialize exit strategy feature engineering: {e}")
-                self.exit_strategy_feature_engineer = None
 
             # Meta-labeling system removed - using only HMM market regimes
             self.logger.info(
@@ -2870,35 +2848,6 @@ class VectorizedAdvancedFeatureEngineering:
                 self.logger.warning(f"⚠️ Failed to generate profit-based features: {e}")
         else:
             self.logger.info("ℹ️ Profit-based feature engineering not available or profit data not present")
-
-        # Add exit strategy features if available
-        if self.exit_strategy_feature_engineer and "position" in price_data.columns:
-            self.logger.info("🔍 Generating exit strategy features...")
-            try:
-                # Create a combined DataFrame for exit strategy feature engineering
-                exit_data = price_data.copy()
-                if volume_data is not None and not volume_data.empty:
-                    # Merge volume data if available
-                    exit_data = exit_data.join(volume_data, how='left')
-                
-                exit_features = self.exit_strategy_feature_engineer.apply_all_features(exit_data)
-                
-                # Extract only the new exit strategy features (excluding original columns)
-                original_columns = set(price_data.columns)
-                exit_feature_columns = [col for col in exit_features.columns if col not in original_columns]
-                
-                if exit_feature_columns:
-                    exit_feature_dict = {col: exit_features[col] for col in exit_feature_columns}
-                    self.logger.info(f"🔍 Generated {len(exit_feature_dict)} exit strategy features")
-                    self.logger.info(f"🔍 Exit strategy feature names: {list(exit_feature_dict.keys())}")
-                    selected_features.update(exit_feature_dict)
-                    self.logger.info(f"🔍 Total features after exit strategy: {len(selected_features)}")
-                else:
-                    self.logger.warning("⚠️ No exit strategy features generated")
-            except Exception as e:
-                self.logger.warning(f"⚠️ Failed to generate exit strategy features: {e}")
-        else:
-            self.logger.info("ℹ️ Exit strategy feature engineering not available or position data not present")
 
         # Add multi-timeframe features if enabled
         if self.enable_multi_timeframe:

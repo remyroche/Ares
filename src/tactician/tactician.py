@@ -112,6 +112,12 @@ class Tactician:
             # Initialize Enhanced Prediction Integrator
             if self.enable_enhanced_predictions:
                 await self._initialize_enhanced_prediction_integrator()
+                
+                # Integrate with existing components
+                if self.enhanced_prediction_integrator:
+                    await self.enhanced_prediction_integrator.integrate_with_tactician_components(
+                        self.position_sizer, self.leverage_sizer
+                    )
 
             self.logger.info("✅ All component managers initialized")
 

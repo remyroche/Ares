@@ -14,19 +14,29 @@ import pandas as pd
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, warning, failed, missing
+from src.utils.centralized_decorators import (
+    validate_data_quality,
+    with_tracing_span,
+    comprehensive_validation,
+    intelligent_caching,
+    performance_monitor,
+    ValidationLevel,
+    PerformanceLevel,
+)
 
 
 class TacticianEnhancedPredictionIntegrator:
     """
-    Enhanced Prediction Integrator for Tactician that integrates price and confidence predictions
-    from the enhanced training manager steps 6-14, with focus on tactician-specific predictions.
+    Enhanced Prediction Integrator for Tactician that enhances existing position and leverage sizers
+    with predictions from the enhanced training manager steps 6-14.
     
-    This component loads and integrates:
-    - HMM-based model predictions (step 6-8)
-    - Tactician specialist training predictions (step 9)
-    - Tactician labeling predictions (step 10)
-    - Confidence calibration results (step 11)
-    - Final parameter optimization results (step 12-14)
+    This component enhances existing tactician components:
+    - Enhances PositionSizer with ML-based confidence predictions
+    - Enhances LeverageSizer with calibrated risk predictions
+    - Provides additional context for existing tactician decision-making
+    - Integrates HMM-based model predictions (step 6-8)
+    - Integrates confidence calibration results (step 11)
+    - Integrates optimization results (steps 12-14)
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
@@ -46,10 +56,12 @@ class TacticianEnhancedPredictionIntegrator:
 
         # Loaded models and predictions
         self.hmm_models: dict[str, Any] = {}
-        self.tactician_specialist_models: dict[str, Any] = {}
-        self.tactician_labeling_models: dict[str, Any] = {}
         self.calibration_results: dict[str, Any] = {}
         self.optimization_results: dict[str, Any] = {}
+        
+        # References to existing tactician components (will be set during integration)
+        self.position_sizer = None
+        self.leverage_sizer = None
 
         # Configuration
         self.integrator_config: dict[str, Any] = self.config.get("tactician_enhanced_prediction_integrator", {})
@@ -67,6 +79,8 @@ class TacticianEnhancedPredictionIntegrator:
         default_return=False,
         context="tactician enhanced prediction integrator initialization",
     )
+    @comprehensive_validation(validation_level=ValidationLevel.STRICT)
+    @performance_monitor(performance_level=PerformanceLevel.HIGH)
     async def initialize(self) -> bool:
         """
         Initialize the tactician enhanced prediction integrator.
@@ -79,12 +93,6 @@ class TacticianEnhancedPredictionIntegrator:
 
             # Load HMM-based models (step 6-8)
             await self._load_hmm_models()
-
-            # Load tactician specialist models (step 9)
-            await self._load_tactician_specialist_models()
-
-            # Load tactician labeling models (step 10)
-            await self._load_tactician_labeling_models()
 
             # Load confidence calibration results (step 11)
             await self._load_calibration_results()
@@ -105,6 +113,8 @@ class TacticianEnhancedPredictionIntegrator:
         default_return={},
         context="loading HMM models",
     )
+    @with_tracing_span("load_hmm_models")
+    @intelligent_caching(cache_key="hmm_models")
     async def _load_hmm_models(self) -> None:
         """Load HMM-based models from step 6-8."""
         try:
@@ -252,6 +262,9 @@ class TacticianEnhancedPredictionIntegrator:
         default_return={},
         context="generating tactician enhanced predictions",
     )
+    @validate_data_quality(validation_level="WARNING")
+    @with_tracing_span("generate_tactician_enhanced_predictions")
+    @performance_monitor(performance_level=PerformanceLevel.HIGH)
     async def generate_tactician_enhanced_predictions(
         self, 
         market_data: pd.DataFrame,
@@ -262,7 +275,7 @@ class TacticianEnhancedPredictionIntegrator:
         timeframe: str
     ) -> dict[str, Any]:
         """
-        Generate enhanced tactician predictions using all loaded models and calibration.
+        Generate enhanced predictions to augment existing tactician components.
 
         Args:
             market_data: Market data for prediction
@@ -273,80 +286,46 @@ class TacticianEnhancedPredictionIntegrator:
             timeframe: Timeframe
 
         Returns:
-            dict: Enhanced tactician predictions with confidence scores
+            dict: Enhanced predictions to augment existing tactician components
         """
         try:
             if not self.is_initialized:
                 self.logger.error(error("❌ Tactician Enhanced Prediction Integrator not initialized"))
                 return {}
 
-            predictions = {
-                "entry_predictions": {},
-                "exit_predictions": {},
-                "position_sizing_predictions": {},
-                "risk_management_predictions": {},
-                "confidence_scores": {},
-                "tactician_labels": {},
-                "calibrated_predictions": {},
+            enhanced_predictions = {
+                "ml_confidence_predictions": {},
+                "calibrated_confidence_scores": {},
                 "optimization_weights": {},
+                "hmm_predictions": {},
                 "timestamp": datetime.now().isoformat()
             }
 
-            # Generate HMM-based predictions
+            # Generate HMM-based predictions for additional context
             hmm_predictions = await self._generate_hmm_predictions(
                 market_data, regime_info, symbol, exchange, timeframe
             )
-            predictions["entry_predictions"].update(hmm_predictions)
+            enhanced_predictions["hmm_predictions"] = hmm_predictions
 
-            # Generate tactician specialist predictions
-            specialist_predictions = await self._generate_tactician_specialist_predictions(
-                market_data, regime_info, analyst_signals, symbol, exchange, timeframe
+            # Generate ML confidence predictions to enhance existing components
+            ml_confidence = await self._generate_ml_confidence_predictions(
+                hmm_predictions, analyst_signals, symbol, exchange
             )
-            predictions["entry_predictions"].update(specialist_predictions)
-
-            # Generate tactician labeling predictions
-            labeling_predictions = await self._generate_tactician_labeling_predictions(
-                market_data, regime_info, analyst_signals, symbol, exchange, timeframe
-            )
-            predictions["tactician_labels"] = labeling_predictions
-
-            # Generate position sizing predictions
-            sizing_predictions = await self._generate_position_sizing_predictions(
-                predictions["entry_predictions"], analyst_signals, symbol, exchange
-            )
-            predictions["position_sizing_predictions"] = sizing_predictions
-
-            # Generate risk management predictions
-            risk_predictions = await self._generate_risk_management_predictions(
-                predictions["entry_predictions"], predictions["tactician_labels"], symbol, exchange
-            )
-            predictions["risk_management_predictions"] = risk_predictions
+            enhanced_predictions["ml_confidence_predictions"] = ml_confidence
 
             # Apply confidence calibration
-            calibrated_predictions = await self._apply_confidence_calibration(
-                predictions["entry_predictions"], symbol, exchange
+            calibrated_confidence = await self._apply_confidence_calibration(
+                ml_confidence, symbol, exchange
             )
-            predictions["calibrated_predictions"] = calibrated_predictions
+            enhanced_predictions["calibrated_confidence_scores"] = calibrated_confidence
 
             # Apply optimization weights
-            optimized_predictions = await self._apply_optimization_weights(
-                predictions["calibrated_predictions"], symbol, exchange
+            optimization_weights = await self._apply_optimization_weights(
+                calibrated_confidence, symbol, exchange
             )
-            predictions["optimization_weights"] = optimized_predictions
+            enhanced_predictions["optimization_weights"] = optimization_weights
 
-            # Generate final confidence scores
-            final_confidence = await self._generate_final_confidence_scores(
-                predictions["calibrated_predictions"], predictions["optimization_weights"]
-            )
-            predictions["confidence_scores"] = final_confidence
-
-            # Generate exit predictions based on entry predictions and market conditions
-            exit_predictions = await self._generate_exit_predictions(
-                predictions["entry_predictions"], predictions["confidence_scores"], market_data
-            )
-            predictions["exit_predictions"] = exit_predictions
-
-            return predictions
+            return enhanced_predictions
 
         except Exception as e:
             self.logger.error(error(f"❌ Error generating tactician enhanced predictions: {e}"))
@@ -357,6 +336,8 @@ class TacticianEnhancedPredictionIntegrator:
         default_return={},
         context="generating HMM predictions",
     )
+    @with_tracing_span("generate_hmm_predictions")
+    @validate_data_quality(validation_level="WARNING")
     async def _generate_hmm_predictions(
         self,
         market_data: pd.DataFrame,
@@ -397,116 +378,26 @@ class TacticianEnhancedPredictionIntegrator:
     @handle_errors(
         exceptions=(Exception,),
         default_return={},
-        context="generating tactician specialist predictions",
+        context="generating ML confidence predictions",
     )
-    async def _generate_tactician_specialist_predictions(
+    @with_tracing_span("generate_ml_confidence_predictions")
+    @validate_data_quality(validation_level="WARNING")
+    async def _generate_ml_confidence_predictions(
         self,
-        market_data: pd.DataFrame,
-        regime_info: dict[str, Any],
-        analyst_signals: dict[str, Any],
-        symbol: str,
-        exchange: str,
-        timeframe: str
-    ) -> dict[str, Any]:
-        """Generate predictions using tactician specialist models."""
-        try:
-            predictions = {}
-            
-            current_regime = regime_info.get("regime", "default")
-            regime_models = self.tactician_specialist_models.get(current_regime, {})
-            
-            for model_name, model_data in regime_models.items():
-                if "model" in model_data and hasattr(model_data["model"], "predict"):
-                    try:
-                        # Prepare features for prediction with analyst signals
-                        features = self._prepare_features_with_analyst_signals(
-                            market_data, regime_info, analyst_signals
-                        )
-                        
-                        # Generate prediction
-                        raw_prediction = model_data["model"].predict(features)
-                        
-                        # Apply model-specific post-processing
-                        processed_prediction = self._process_tactician_specialist_prediction(
-                            raw_prediction, model_data, model_name
-                        )
-                        
-                        predictions[f"tactician_specialist_{current_regime}_{model_name}"] = processed_prediction
-                        
-                    except Exception as e:
-                        self.logger.warning(warning(f"⚠️ Failed to generate tactician specialist prediction for {model_name}: {e}"))
-
-            return predictions
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error generating tactician specialist predictions: {e}"))
-            return {}
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="generating tactician labeling predictions",
-    )
-    async def _generate_tactician_labeling_predictions(
-        self,
-        market_data: pd.DataFrame,
-        regime_info: dict[str, Any],
-        analyst_signals: dict[str, Any],
-        symbol: str,
-        exchange: str,
-        timeframe: str
-    ) -> dict[str, Any]:
-        """Generate tactician labeling predictions."""
-        try:
-            predictions = {}
-            
-            for labeling_name, labeling_data in self.tactician_labeling_models.items():
-                try:
-                    # Prepare features for labeling
-                    features = self._prepare_features_with_analyst_signals(
-                        market_data, regime_info, analyst_signals
-                    )
-                    
-                    # Generate labeling prediction
-                    if "model" in labeling_data and hasattr(labeling_data["model"], "predict"):
-                        raw_prediction = labeling_data["model"].predict(features)
-                        
-                        processed_prediction = self._process_tactician_labeling_prediction(
-                            raw_prediction, labeling_data, labeling_name
-                        )
-                        
-                        predictions[f"tactician_labeling_{labeling_name}"] = processed_prediction
-                    
-                except Exception as e:
-                    self.logger.warning(warning(f"⚠️ Failed to generate tactician labeling prediction for {labeling_name}: {e}"))
-
-            return predictions
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error generating tactician labeling predictions: {e}"))
-            return {}
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="generating position sizing predictions",
-    )
-    async def _generate_position_sizing_predictions(
-        self,
-        entry_predictions: dict[str, Any],
+        hmm_predictions: dict[str, Any],
         analyst_signals: dict[str, Any],
         symbol: str,
         exchange: str
     ) -> dict[str, Any]:
-        """Generate position sizing predictions based on entry predictions and analyst signals."""
+        """Generate ML confidence predictions to enhance existing tactician components."""
         try:
-            sizing_predictions = {}
+            ml_confidence = {}
             
-            # Calculate aggregate confidence from entry predictions
+            # Calculate aggregate confidence from HMM predictions
             total_confidence = 0.0
             valid_predictions = 0
             
-            for prediction_name, prediction_data in entry_predictions.items():
+            for prediction_name, prediction_data in hmm_predictions.items():
                 confidence = prediction_data.get("confidence", 0.0)
                 if confidence > 0:
                     total_confidence += confidence
@@ -514,132 +405,28 @@ class TacticianEnhancedPredictionIntegrator:
             
             avg_confidence = total_confidence / max(valid_predictions, 1)
             
-            # Calculate position size based on confidence
-            base_position_size = 0.1  # 10% base position size
-            confidence_multiplier = min(avg_confidence * 2, 2.0)  # Max 2x multiplier
-            position_size = base_position_size * confidence_multiplier
-            
-            # Adjust based on analyst signals
+            # Combine with analyst signals
             analyst_confidence = analyst_signals.get("confidence", 0.5)
-            analyst_multiplier = 0.5 + (analyst_confidence * 0.5)  # 0.5x to 1.0x multiplier
             
-            final_position_size = position_size * analyst_multiplier
+            # Calculate weighted ML confidence
+            ml_weight = 0.7  # Weight for ML predictions
+            analyst_weight = 0.3  # Weight for analyst signals
             
-            sizing_predictions["position_size"] = {
-                "base_size": base_position_size,
-                "confidence_multiplier": confidence_multiplier,
-                "analyst_multiplier": analyst_multiplier,
-                "final_size": final_position_size,
-                "avg_confidence": avg_confidence,
-                "analyst_confidence": analyst_confidence
+            weighted_ml_confidence = (avg_confidence * ml_weight) + (analyst_confidence * analyst_weight)
+            
+            ml_confidence["aggregate_ml_confidence"] = {
+                "hmm_avg_confidence": avg_confidence,
+                "analyst_confidence": analyst_confidence,
+                "weighted_ml_confidence": weighted_ml_confidence,
+                "ml_weight": ml_weight,
+                "analyst_weight": analyst_weight,
+                "prediction_count": valid_predictions
             }
             
-            return sizing_predictions
+            return ml_confidence
 
         except Exception as e:
-            self.logger.error(error(f"❌ Error generating position sizing predictions: {e}"))
-            return {}
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="generating risk management predictions",
-    )
-    async def _generate_risk_management_predictions(
-        self,
-        entry_predictions: dict[str, Any],
-        tactician_labels: dict[str, Any],
-        symbol: str,
-        exchange: str
-    ) -> dict[str, Any]:
-        """Generate risk management predictions."""
-        try:
-            risk_predictions = {}
-            
-            # Calculate risk metrics based on predictions
-            total_risk_score = 0.0
-            prediction_count = 0
-            
-            for prediction_name, prediction_data in entry_predictions.items():
-                confidence = prediction_data.get("confidence", 0.0)
-                prediction_value = prediction_data.get("prediction", 0.0)
-                
-                # Risk score is inverse of confidence
-                risk_score = 1.0 - confidence
-                total_risk_score += risk_score
-                prediction_count += 1
-            
-            avg_risk_score = total_risk_score / max(prediction_count, 1)
-            
-            # Calculate stop loss and take profit levels
-            base_stop_loss = 0.02  # 2% base stop loss
-            base_take_profit = 0.04  # 4% base take profit
-            
-            # Adjust based on risk score
-            risk_multiplier = 1.0 + avg_risk_score  # 1.0x to 2.0x multiplier
-            
-            stop_loss = base_stop_loss * risk_multiplier
-            take_profit = base_take_profit * risk_multiplier
-            
-            risk_predictions["risk_management"] = {
-                "avg_risk_score": avg_risk_score,
-                "stop_loss_pct": stop_loss,
-                "take_profit_pct": take_profit,
-                "risk_multiplier": risk_multiplier,
-                "max_position_size": max(0.05, 0.2 - (avg_risk_score * 0.15))  # 5% to 20% based on risk
-            }
-            
-            return risk_predictions
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error generating risk management predictions: {e}"))
-            return {}
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="generating exit predictions",
-    )
-    async def _generate_exit_predictions(
-        self,
-        entry_predictions: dict[str, Any],
-        confidence_scores: dict[str, Any],
-        market_data: pd.DataFrame
-    ) -> dict[str, Any]:
-        """Generate exit predictions based on entry predictions and market conditions."""
-        try:
-            exit_predictions = {}
-            
-            # Calculate aggregate exit signal
-            total_exit_signal = 0.0
-            valid_signals = 0
-            
-            for prediction_name, prediction_data in entry_predictions.items():
-                confidence = confidence_scores.get(prediction_name, {}).get("normalized_confidence", 0.0)
-                prediction_value = prediction_data.get("prediction", 0.0)
-                
-                # Exit signal is inverse of entry signal
-                exit_signal = -prediction_value * confidence
-                total_exit_signal += exit_signal
-                valid_signals += 1
-            
-            avg_exit_signal = total_exit_signal / max(valid_signals, 1)
-            
-            # Determine exit conditions
-            exit_conditions = {
-                "exit_signal": avg_exit_signal,
-                "should_exit": abs(avg_exit_signal) > self.exit_threshold,
-                "exit_direction": "sell" if avg_exit_signal > 0 else "buy",
-                "exit_confidence": abs(avg_exit_signal),
-                "market_conditions": self._analyze_market_conditions(market_data)
-            }
-            
-            exit_predictions["exit_conditions"] = exit_conditions
-            
-            return exit_predictions
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error generating exit predictions: {e}"))
+            self.logger.error(error(f"❌ Error generating ML confidence predictions: {e}"))
             return {}
 
     @handle_errors(
@@ -647,6 +434,8 @@ class TacticianEnhancedPredictionIntegrator:
         default_return={},
         context="applying confidence calibration",
     )
+    @with_tracing_span("apply_confidence_calibration")
+    @validate_data_quality(validation_level="WARNING")
     async def _apply_confidence_calibration(
         self,
         predictions: dict[str, Any],
@@ -683,6 +472,8 @@ class TacticianEnhancedPredictionIntegrator:
         default_return={},
         context="applying optimization weights",
     )
+    @with_tracing_span("apply_optimization_weights")
+    @validate_data_quality(validation_level="WARNING")
     async def _apply_optimization_weights(
         self,
         calibrated_predictions: dict[str, Any],
@@ -715,9 +506,112 @@ class TacticianEnhancedPredictionIntegrator:
 
     @handle_errors(
         exceptions=(Exception,),
+        default_return=False,
+        context="integrating with existing tactician components",
+    )
+    @with_tracing_span("integrate_with_tactician_components")
+    async def integrate_with_tactician_components(
+        self,
+        position_sizer,
+        leverage_sizer
+    ) -> bool:
+        """Integrate with existing tactician components to enhance their functionality."""
+        try:
+            self.position_sizer = position_sizer
+            self.leverage_sizer = leverage_sizer
+            
+            self.logger.info("✅ Integrated with existing tactician components")
+            return True
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Error integrating with tactician components: {e}"))
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="enhancing position sizer with ML predictions",
+    )
+    @with_tracing_span("enhance_position_sizer")
+    @validate_data_quality(validation_level="WARNING")
+    async def enhance_position_sizer(
+        self,
+        base_position_size: float,
+        analyst_confidence: float,
+        enhanced_predictions: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Enhance position sizer with ML-based confidence predictions."""
+        try:
+            if not self.position_sizer:
+                return {"enhanced_position_size": base_position_size}
+            
+            # Get ML confidence from enhanced predictions
+            ml_confidence = enhanced_predictions.get("ml_confidence_predictions", {})
+            aggregate_ml_confidence = ml_confidence.get("aggregate_ml_confidence", {})
+            weighted_ml_confidence = aggregate_ml_confidence.get("weighted_ml_confidence", 0.5)
+            
+            # Enhance position size calculation with ML confidence
+            ml_confidence_multiplier = min(weighted_ml_confidence * 1.5, 2.0)  # Max 2x multiplier
+            enhanced_position_size = base_position_size * ml_confidence_multiplier
+            
+            return {
+                "enhanced_position_size": enhanced_position_size,
+                "ml_confidence_multiplier": ml_confidence_multiplier,
+                "weighted_ml_confidence": weighted_ml_confidence,
+                "original_position_size": base_position_size
+            }
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Error enhancing position sizer: {e}"))
+            return {"enhanced_position_size": base_position_size}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="enhancing leverage sizer with ML predictions",
+    )
+    @with_tracing_span("enhance_leverage_sizer")
+    @validate_data_quality(validation_level="WARNING")
+    async def enhance_leverage_sizer(
+        self,
+        base_leverage: float,
+        risk_score: float,
+        enhanced_predictions: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Enhance leverage sizer with ML-based risk predictions."""
+        try:
+            if not self.leverage_sizer:
+                return {"enhanced_leverage": base_leverage}
+            
+            # Get calibrated confidence from enhanced predictions
+            calibrated_confidence = enhanced_predictions.get("calibrated_confidence_scores", {})
+            
+            # Calculate ML-based risk adjustment
+            ml_risk_multiplier = 1.0
+            if calibrated_confidence:
+                # Higher confidence = lower risk = higher leverage
+                avg_confidence = sum(cal.values() for cal in calibrated_confidence.values()) / max(len(calibrated_confidence), 1)
+                ml_risk_multiplier = 0.5 + (avg_confidence * 0.5)  # 0.5x to 1.0x multiplier
+            
+            enhanced_leverage = base_leverage * ml_risk_multiplier
+            
+            return {
+                "enhanced_leverage": enhanced_leverage,
+                "ml_risk_multiplier": ml_risk_multiplier,
+                "original_leverage": base_leverage
+            }
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Error enhancing leverage sizer: {e}"))
+            return {"enhanced_leverage": base_leverage}
+
+    @handle_errors(
+        exceptions=(Exception,),
         default_return={},
         context="generating final confidence scores",
     )
+    @with_tracing_span("generate_final_confidence_scores")
+    @validate_data_quality(validation_level="WARNING")
     async def _generate_final_confidence_scores(
         self,
         calibrated_predictions: dict[str, Any],
@@ -754,6 +648,7 @@ class TacticianEnhancedPredictionIntegrator:
             self.logger.error(error(f"❌ Error generating final confidence scores: {e}"))
             return {}
 
+    @validate_data_quality(validation_level="WARNING")
     def _prepare_features_for_prediction(
         self,
         market_data: pd.DataFrame,
@@ -788,6 +683,7 @@ class TacticianEnhancedPredictionIntegrator:
             self.logger.error(error(f"❌ Error preparing features: {e}"))
             return pd.DataFrame()
 
+    @validate_data_quality(validation_level="WARNING")
     def _prepare_features_with_analyst_signals(
         self,
         market_data: pd.DataFrame,
@@ -809,6 +705,7 @@ class TacticianEnhancedPredictionIntegrator:
             self.logger.error(error(f"❌ Error preparing features with analyst signals: {e}"))
             return pd.DataFrame()
 
+    @validate_data_quality(validation_level="WARNING")
     def _process_hmm_prediction(
         self,
         raw_prediction: Any,
@@ -884,6 +781,7 @@ class TacticianEnhancedPredictionIntegrator:
             self.logger.error(error(f"❌ Error processing tactician labeling prediction: {e}"))
             return {"prediction": 0.0, "confidence": 0.0, "model_type": "tactician_labeling", "model_name": labeling_name}
 
+    @validate_data_quality(validation_level="WARNING")
     def _calibrate_prediction(
         self,
         prediction_data: dict[str, Any],

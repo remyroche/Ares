@@ -14,6 +14,15 @@ import pandas as pd
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, warning, failed, missing
+from src.utils.centralized_decorators import (
+    validate_data_quality,
+    with_tracing_span,
+    comprehensive_validation,
+    intelligent_caching,
+    performance_monitor,
+    ValidationLevel,
+    PerformanceLevel,
+)
 
 
 class EnhancedPredictionIntegrator:
@@ -63,6 +72,8 @@ class EnhancedPredictionIntegrator:
         default_return=False,
         context="enhanced prediction integrator initialization",
     )
+    @comprehensive_validation(validation_level=ValidationLevel.STRICT)
+    @performance_monitor(performance_level=PerformanceLevel.HIGH)
     async def initialize(self) -> bool:
         """
         Initialize the enhanced prediction integrator.
@@ -98,6 +109,8 @@ class EnhancedPredictionIntegrator:
         default_return={},
         context="loading HMM models",
     )
+    @with_tracing_span("load_hmm_models")
+    @intelligent_caching(cache_key="hmm_models")
     async def _load_hmm_models(self) -> None:
         """Load HMM-based models from step 6-8."""
         try:
@@ -217,6 +230,9 @@ class EnhancedPredictionIntegrator:
         default_return={},
         context="generating enhanced predictions",
     )
+    @validate_data_quality(validation_level="WARNING")
+    @with_tracing_span("generate_enhanced_predictions")
+    @performance_monitor(performance_level=PerformanceLevel.HIGH)
     async def generate_enhanced_predictions(
         self, 
         market_data: pd.DataFrame,

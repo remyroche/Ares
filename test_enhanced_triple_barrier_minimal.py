@@ -137,27 +137,27 @@ def test_enhanced_triple_barrier():
     )
     
     print(f"✅ Generated {len(labeled_data)} labeled samples")
-    print(f"   - BUY signals: {(labeled_data['label'] == 1).sum()}")
-    print(f"   - SELL signals: {(labeled_data['label'] == -1).sum()}")
+    print(f"   - LONG positions: {(labeled_data['label'] == 1).sum()}")
+    print(f"   - SHORT positions: {(labeled_data['label'] == -1).sum()}")
     
     # Analyze profit tracking
     print("\n💰 Profit Tracking Analysis:")
-    buy_profits = labeled_data[labeled_data['label'] == 1]['potential_profit_pct']
-    sell_profits = labeled_data[labeled_data['label'] == -1]['potential_profit_pct']
+    long_profits = labeled_data[labeled_data['label'] == 1]['potential_profit_pct']
+    short_profits = labeled_data[labeled_data['label'] == -1]['potential_profit_pct']
     
-    print(f"   BUY signals:")
-    print(f"     - Count: {len(buy_profits)}")
-    print(f"     - Avg profit: {buy_profits.mean():.4f}")
-    print(f"     - Std profit: {buy_profits.std():.4f}")
-    print(f"     - Min profit: {buy_profits.min():.4f}")
-    print(f"     - Max profit: {buy_profits.max():.4f}")
+    print(f"   LONG positions:")
+    print(f"     - Count: {len(long_profits)}")
+    print(f"     - Avg profit: {long_profits.mean():.4f}")
+    print(f"     - Std profit: {long_profits.std():.4f}")
+    print(f"     - Min profit: {long_profits.min():.4f}")
+    print(f"     - Max profit: {long_profits.max():.4f}")
     
-    print(f"   SELL signals:")
-    print(f"     - Count: {len(sell_profits)}")
-    print(f"     - Avg profit: {sell_profits.mean():.4f}")
-    print(f"     - Std profit: {sell_profits.std():.4f}")
-    print(f"     - Min profit: {sell_profits.min():.4f}")
-    print(f"     - Max profit: {sell_profits.max():.4f}")
+    print(f"   SHORT positions:")
+    print(f"     - Count: {len(short_profits)}")
+    print(f"     - Avg profit: {short_profits.mean():.4f}")
+    print(f"     - Std profit: {short_profits.std():.4f}")
+    print(f"     - Min profit: {short_profits.min():.4f}")
+    print(f"     - Max profit: {short_profits.max():.4f}")
     
     # Test enhanced labeling
     print("\n🎯 Testing Enhanced Labeling...")
@@ -175,10 +175,10 @@ def test_enhanced_triple_barrier():
     
     # Verify profit calculations
     print("\n🔍 Verifying Profit Calculations:")
-    print("   - All BUY signals should have positive profit percentages")
-    print(f"   - BUY signals with positive profits: {(buy_profits > 0).sum()}/{len(buy_profits)}")
-    print("   - All SELL signals should have negative profit percentages")
-    print(f"   - SELL signals with negative profits: {(sell_profits < 0).sum()}/{len(sell_profits)}")
+    print("   - All LONG positions should have positive profit percentages")
+    print(f"   - LONG positions with positive profits: {(long_profits > 0).sum()}/{len(long_profits)}")
+    print("   - All SHORT positions should have negative profit percentages")
+    print(f"   - SHORT positions with negative profits: {(short_profits < 0).sum()}/{len(short_profits)}")
     
     # Test performance
     print("\n⚡ Performance Test:")
@@ -202,8 +202,8 @@ if __name__ == "__main__":
     
     # Additional analysis
     print("\n📈 Additional Analysis:")
-    print(f"   - Total profitable signals: {(enhanced_data['potential_profit_pct'] > 0).sum()}")
-    print(f"   - Total loss signals: {(enhanced_data['potential_profit_pct'] < 0).sum()}")
+    print(f"   - Total profitable positions: {(enhanced_data['potential_profit_pct'] > 0).sum()}")
+    print(f"   - Total loss positions: {(enhanced_data['potential_profit_pct'] < 0).sum()}")
     print(f"   - Overall profit distribution:")
     print(f"     * Large Profit: {(enhanced_data['profit_category'] == 'Large Profit').sum()}")
     print(f"     * Small Profit: {(enhanced_data['profit_category'] == 'Small Profit').sum()}")

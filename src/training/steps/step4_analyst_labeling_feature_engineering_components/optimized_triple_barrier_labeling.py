@@ -29,7 +29,12 @@ if "numba" in globals() and numba is not None:
         sl_mult: float, 
         end_idx_arr: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Numba-accelerated triple barrier labeling with profit tracking."""
+        """Numba-accelerated triple barrier labeling with profit tracking.
+        
+        Returns:
+            labels: 1 for LONG position, -1 for SHORT position, 0 for HOLD
+            profit_pcts: Actual profit/loss percentages at barrier hits
+        """
         labels = np.zeros(close.shape[0], dtype=np.int8)
         profit_pcts = np.zeros(close.shape[0], dtype=np.float64)
         n = close.shape[0]
@@ -41,7 +46,7 @@ if "numba" in globals() and numba is not None:
             end_idx = int(end_idx_arr[i])
             
             if end_idx <= i + 1:
-                labels[i] = 0
+                labels[i] = 0  # HOLD - no position
                 profit_pcts[i] = 0.0
                 continue
                 
@@ -51,12 +56,12 @@ if "numba" in globals() and numba is not None:
             for j in range(i + 1, end_idx):
                 # Profit check first to match tie handling with vectorized baseline
                 if high[j] >= profit_barrier:
-                    lab = 1
+                    lab = 1  # LONG position - price moved up, take profit
                     # Calculate actual profit percentage at barrier hit
                     profit_pct = pt_mult
                     break
                 if low[j] <= stop_barrier:
-                    lab = -1
+                    lab = -1  # SHORT position - price moved down, take profit
                     # Calculate actual loss percentage at barrier hit
                     profit_pct = -sl_mult
                     break
@@ -263,21 +268,21 @@ class OptimizedTripleBarrierLabeling:
                     
                 if profit_hits.size == 0:
                     labels[i] = -1
-                    profit_pcts[i] = -sl_mult  # Stop loss hit
+                    profit_pcts[i] = -sl_mult  # SHORT position - stop loss hit
                     continue
                     
                 if stop_hits.size == 0:
                     labels[i] = 1
-                    profit_pcts[i] = pt_mult  # Profit take hit
+                    profit_pcts[i] = pt_mult  # LONG position - profit take hit
                     continue
                     
                 # Both barriers hit - check which came first
                 if profit_hits[0] <= stop_hits[0]:
                     labels[i] = 1
-                    profit_pcts[i] = pt_mult  # Profit take hit first
+                    profit_pcts[i] = pt_mult  # LONG position - profit take hit first
                 else:
                     labels[i] = -1
-                    profit_pcts[i] = -sl_mult  # Stop loss hit first
+                    profit_pcts[i] = -sl_mult  # SHORT position - stop loss hit first
 
         labeled_data["label"] = labels
         labeled_data["potential_profit_pct"] = profit_pcts
@@ -290,8 +295,8 @@ class OptimizedTripleBarrierLabeling:
 
         # Log the filtering results with profit statistics
         self.logger.info("📊 Label distribution after filtering:")
-        self.logger.info(f"   BUY (1): {(labeled_data['label'] == 1).sum()} samples")
-        self.logger.info(f"   SELL (-1): {(labeled_data['label'] == -1).sum()} samples")
+        self.logger.info(f"   LONG (1): {(labeled_data['label'] == 1).sum()} samples")
+        self.logger.info(f"   SHORT (-1): {(labeled_data['label'] == -1).sum()} samples")
         self.logger.info(f"   HOLD (0): {hold_samples} samples (removed)")
         self.logger.info(f"   Total samples: {filtered_count} (from {original_count})")
         self.logger.info(
@@ -300,18 +305,18 @@ class OptimizedTripleBarrierLabeling:
         
         # Log profit statistics
         if len(labeled_data) > 0:
-            buy_profits = labeled_data[labeled_data['label'] == 1]['potential_profit_pct']
-            sell_profits = labeled_data[labeled_data['label'] == -1]['potential_profit_pct']
+            long_profits = labeled_data[labeled_data['label'] == 1]['potential_profit_pct']
+            short_profits = labeled_data[labeled_data['label'] == -1]['potential_profit_pct']
             
             self.logger.info("💰 Profit statistics:")
-            self.logger.info(f"   BUY signals - Avg profit: {buy_profits.mean():.4f}, Max: {buy_profits.max():.4f}, Min: {buy_profits.min():.4f}")
-            self.logger.info(f"   SELL signals - Avg profit: {sell_profits.mean():.4f}, Max: {sell_profits.max():.4f}, Min: {sell_profits.min():.4f}")
+            self.logger.info(f"   LONG signals - Avg profit: {long_profits.mean():.4f}, Max: {long_profits.max():.4f}, Min: {long_profits.min():.4f}")
+            self.logger.info(f"   SHORT signals - Avg profit: {short_profits.mean():.4f}, Max: {short_profits.max():.4f}, Min: {short_profits.min():.4f}")
             self.logger.info(f"   Overall - Avg profit: {labeled_data['potential_profit_pct'].mean():.4f}, Std: {labeled_data['potential_profit_pct'].std():.4f}")
         
         if self.binary_classification:
             self.logger.info(
                 "   Reason: binary_classification=True. HOLDs occur when neither profit-take nor stop-loss was hit before the time barrier;"
-                " removing them balances the dataset for BUY vs SELL classification.",
+                " removing them balances the dataset for LONG vs SHORT classification.",
             )
 
         # Diagnostics: distribution and basic directional alignment with next-bar return
@@ -354,7 +359,7 @@ class OptimizedTripleBarrierLabeling:
             },
         )
         self.logger.info(
-            "Diagnostics meaning: 'distribution' is BUY/SELL counts after HOLD removal;"
+            "Diagnostics meaning: 'distribution' is LONG/SHORT counts after HOLD removal;"
             " '*_nextbar_agree' is the fraction of signals whose direction matches the immediate next-bar return;"
             " 'overall' aggregates both sides. Profit tracking shows actual profit/loss percentages at barrier hits.",
         )
@@ -479,5 +484,5 @@ if __name__ == "__main__":
     
     # Show profit tracking results
     print(f"\nProfit tracking results:")
-    print(f"BUY signals: {labeled_data[labeled_data['label'] == 1]['potential_profit_pct'].describe()}")
-    print(f"SELL signals: {labeled_data[labeled_data['label'] == -1]['potential_profit_pct'].describe()}")
+    print(f"LONG signals: {labeled_data[labeled_data['label'] == 1]['potential_profit_pct'].describe()}")
+    print(f"SHORT signals: {labeled_data[labeled_data['label'] == -1]['potential_profit_pct'].describe()}")

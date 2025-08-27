@@ -213,18 +213,18 @@ class TripleBarrierMethodStep:
             profit_pcts = labeled_data['potential_profit_pct']
             
             self.logger.info(f"✅ Generated {len(labels)} triple barrier labels with profit tracking")
-            self.logger.info(f"   - Buy signals: {(labels == 1).sum()}")
-            self.logger.info(f"   - Sell signals: {(labels == -1).sum()}")
+            self.logger.info(f"   - Long positions: {(labels == 1).sum()}")
+            self.logger.info(f"   - Short positions: {(labels == -1).sum()}")
             self.logger.info(f"   - Hold signals: {(labels == 0).sum()}")
             
             # Log profit statistics
             if len(labeled_data) > 0:
-                buy_profits = labeled_data[labeled_data['label'] == 1]['potential_profit_pct']
-                sell_profits = labeled_data[labeled_data['label'] == -1]['potential_profit_pct']
+                long_profits = labeled_data[labeled_data['label'] == 1]['potential_profit_pct']
+                short_profits = labeled_data[labeled_data['label'] == -1]['potential_profit_pct']
                 
                 self.logger.info("💰 Profit tracking statistics:")
-                self.logger.info(f"   - BUY signals avg profit: {buy_profits.mean():.4f} ({buy_profits.std():.4f} std)")
-                self.logger.info(f"   - SELL signals avg profit: {sell_profits.mean():.4f} ({sell_profits.std():.4f} std)")
+                self.logger.info(f"   - LONG positions avg profit: {long_profits.mean():.4f} ({long_profits.std():.4f} std)")
+                self.logger.info(f"   - SHORT positions avg profit: {short_profits.mean():.4f} ({short_profits.std():.4f} std)")
                 self.logger.info(f"   - Overall avg profit: {labeled_data['potential_profit_pct'].mean():.4f}")
             
             return labeled_data
@@ -258,11 +258,11 @@ class TripleBarrierMethodStep:
                 # Look ahead for barrier hits
                 for j in range(i + 1, min(i + max_lookahead, len(close_prices))):
                     if high_prices[j] >= profit_barrier:
-                        labels[i] = 1  # Buy signal
+                        labels[i] = 1  # LONG position - price moved up, take profit
                         profit_pcts[i] = profit_take_multiplier  # Profit take hit
                         break
                     elif low_prices[j] <= stop_barrier:
-                        labels[i] = -1  # Sell signal
+                        labels[i] = -1  # SHORT position - price moved down, take profit
                         profit_pcts[i] = -stop_loss_multiplier  # Stop loss hit
                         break
                     # If no barrier hit, label remains 0 (hold) and profit_pct remains 0.0
@@ -281,19 +281,19 @@ class TripleBarrierMethodStep:
             result_data = self._create_enhanced_labels(result_data)
             
             self.logger.info(f"✅ Generated {len(labels)} basic triple barrier labels with profit tracking")
-            self.logger.info(f"   - Buy signals: {(labels == 1).sum()}")
-            self.logger.info(f"   - Sell signals: {(labels == -1).sum()}")
+            self.logger.info(f"   - Long positions: {(labels == 1).sum()}")
+            self.logger.info(f"   - Short positions: {(labels == -1).sum()}")
             self.logger.info(f"   - Hold signals: {(labels == 0).sum()}")
             self.logger.info(f"   - Filtered samples: {filtered_count} (from {original_count})")
             
             # Log profit statistics
             if len(result_data) > 0:
-                buy_profits = result_data[result_data['label'] == 1]['potential_profit_pct']
-                sell_profits = result_data[result_data['label'] == -1]['potential_profit_pct']
+                long_profits = result_data[result_data['label'] == 1]['potential_profit_pct']
+                short_profits = result_data[result_data['label'] == -1]['potential_profit_pct']
                 
                 self.logger.info("💰 Basic profit tracking statistics:")
-                self.logger.info(f"   - BUY signals avg profit: {buy_profits.mean():.4f}")
-                self.logger.info(f"   - SELL signals avg profit: {sell_profits.mean():.4f}")
+                self.logger.info(f"   - LONG positions avg profit: {long_profits.mean():.4f}")
+                self.logger.info(f"   - SHORT positions avg profit: {short_profits.mean():.4f}")
                 self.logger.info(f"   - Overall avg profit: {result_data['potential_profit_pct'].mean():.4f}")
             
             return result_data
@@ -329,7 +329,7 @@ class TripleBarrierMethodStep:
             
             # Create combined direction-profit labels
             enhanced_data['direction_profit_label'] = enhanced_data.apply(
-                lambda row: f"{'BUY' if row['label'] == 1 else 'SELL'}_{row['profit_category']}", 
+                lambda row: f"{'LONG' if row['label'] == 1 else 'SHORT'}_{row['profit_category']}", 
                 axis=1
             )
             

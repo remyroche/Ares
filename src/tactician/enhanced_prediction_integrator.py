@@ -447,17 +447,20 @@ class TacticianEnhancedPredictionIntegrator:
             analyst_confidence = analyst_signals.get("confidence", 0.5)
             
             # Calculate weighted ML confidence using optimized parameters if available
-            ml_weight = getattr(self, 'optimized_params', {}).get("ml_weight", 0.7)
-            analyst_weight = getattr(self, 'optimized_params', {}).get("analyst_weight", 0.3)
+            # This balances different ML model types (Analyst vs Tactician ML models)
+            analyst_ml_weight = getattr(self, 'optimized_params', {}).get("analyst_ml_weight", 0.6)
+            tactician_ml_weight = getattr(self, 'optimized_params', {}).get("tactician_ml_weight", 0.4)
             
-            weighted_ml_confidence = (avg_confidence * ml_weight) + (analyst_confidence * analyst_weight)
+            # Analyst ML models focus on market analysis and regime detection
+            # Tactician ML models focus on execution and position sizing
+            weighted_ml_confidence = (avg_confidence * tactician_ml_weight) + (analyst_confidence * analyst_ml_weight)
             
             ml_confidence["aggregate_ml_confidence"] = {
                 "hmm_avg_confidence": avg_confidence,
                 "analyst_confidence": analyst_confidence,
                 "weighted_ml_confidence": weighted_ml_confidence,
-                "ml_weight": ml_weight,
-                "analyst_weight": analyst_weight,
+                "analyst_ml_weight": analyst_ml_weight,
+                "tactician_ml_weight": tactician_ml_weight,
                 "prediction_count": valid_predictions
             }
             

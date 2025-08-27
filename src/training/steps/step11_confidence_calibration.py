@@ -450,6 +450,217 @@ class ConfidenceCalibrationStep:
         X = X.fillna(0)
         return X, y
 
+    def _extract_profit_information(self, df: pd.DataFrame, model_name: str) -> dict[str, Any]:
+        """Extract profit information for enhanced calibration."""
+        try:
+            profit_info = {}
+            
+            # Check for potential_profit_pct column (from triple barrier labeling)
+            if "potential_profit_pct" in df.columns:
+                profit_info["potential_profit_pct"] = df["potential_profit_pct"].values
+                profit_info["profit_available"] = True
+            else:
+                profit_info["profit_available"] = False
+                profit_info["potential_profit_pct"] = np.zeros(len(df))
+            
+            # Check for profit-based features
+            profit_features = [col for col in df.columns if "profit" in col.lower()]
+            if profit_features:
+                profit_info["profit_features"] = df[profit_features].values
+                profit_info["profit_features_available"] = True
+            else:
+                profit_info["profit_features_available"] = False
+                profit_info["profit_features"] = None
+            
+            # Calculate profit statistics
+            if profit_info["profit_available"]:
+                profit_info["profit_mean"] = np.mean(profit_info["potential_profit_pct"])
+                profit_info["profit_std"] = np.std(profit_info["potential_profit_pct"])
+                profit_info["profit_range"] = np.max(profit_info["potential_profit_pct"]) - np.min(profit_info["potential_profit_pct"])
+            else:
+                profit_info["profit_mean"] = 0.0
+                profit_info["profit_std"] = 0.0
+                profit_info["profit_range"] = 0.0
+            
+            return profit_info
+            
+        except Exception as e:
+            self.logger.warning(f"Error extracting profit information: {e}")
+            return {
+                "profit_available": False,
+                "potential_profit_pct": np.zeros(len(df)),
+                "profit_features_available": False,
+                "profit_features": None,
+                "profit_mean": 0.0,
+                "profit_std": 0.0,
+                "profit_range": 0.0
+            }
+
+    def _create_enhanced_calibrator(
+        self, 
+        base_model: Any, 
+        X_val: pd.DataFrame, 
+        y_val: pd.Series, 
+        profit_info: dict[str, Any]
+    ) -> Any:
+        """Create enhanced calibrator with profit predictions."""
+        try:
+            # Create base calibrator
+            calibrator = CalibratedClassifierCV(
+                estimator=base_model,
+                cv="prefit",
+                method="isotonic",
+            )
+            
+            # Fit the calibrator
+            calibrator.fit(X_val, y_val)
+            
+            # If profit information is available, enhance the calibrator
+            if profit_info.get("profit_available", False):
+                # Create profit-enhanced predictions
+                base_predictions = calibrator.predict_proba(X_val)
+                profit_enhanced_predictions = self._enhance_predictions_with_profit(
+                    base_predictions, profit_info
+                )
+                
+                # Store enhanced predictions in calibrator
+                calibrator.profit_enhanced_predictions = profit_enhanced_predictions
+                calibrator.profit_info = profit_info
+                calibrator.is_profit_enhanced = True
+            else:
+                calibrator.is_profit_enhanced = False
+            
+            return calibrator
+            
+        except Exception as e:
+            self.logger.warning(f"Error creating enhanced calibrator: {e}")
+            # Fallback to standard calibrator
+            calibrator = CalibratedClassifierCV(
+                estimator=base_model,
+                cv="prefit",
+                method="isotonic",
+            )
+            calibrator.fit(X_val, y_val)
+            calibrator.is_profit_enhanced = False
+            return calibrator
+
+    def _enhance_predictions_with_profit(
+        self, 
+        base_predictions: np.ndarray, 
+        profit_info: dict[str, Any]
+    ) -> np.ndarray:
+        """Enhance predictions with profit information."""
+        try:
+            if not profit_info.get("profit_available", False):
+                return base_predictions
+            
+            profit_values = profit_info["potential_profit_pct"]
+            enhanced_predictions = base_predictions.copy()
+            
+            # Enhance predictions based on profit magnitude
+            for i in range(len(enhanced_predictions)):
+                profit_magnitude = abs(profit_values[i])
+                
+                # Higher profit magnitude = higher confidence boost
+                if profit_magnitude > 0.01:  # 1% profit potential
+                    confidence_boost = min(0.2, profit_magnitude * 10)  # Up to 20% boost
+                    
+                    # Apply boost to the predicted class
+                    predicted_class = np.argmax(enhanced_predictions[i])
+                    enhanced_predictions[i][predicted_class] += confidence_boost
+                    
+                    # Normalize probabilities
+                    enhanced_predictions[i] = np.clip(enhanced_predictions[i], 0.0, 1.0)
+                    enhanced_predictions[i] /= np.sum(enhanced_predictions[i])
+            
+            return enhanced_predictions
+            
+        except Exception as e:
+            self.logger.warning(f"Error enhancing predictions with profit: {e}")
+            return base_predictions
+
+    def _calculate_enhanced_metrics(
+        self, 
+        calibrator: Any, 
+        X_val: pd.DataFrame, 
+        y_val: pd.Series, 
+        profit_info: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Calculate enhanced metrics with profit tracking."""
+        try:
+            # Standard metrics
+            y_pred = calibrator.predict(X_val)
+            y_proba = calibrator.predict_proba(X_val)
+            
+            acc = accuracy_score(y_val, y_pred)
+            f1 = f1_score(y_val, y_pred, average="weighted")
+            
+            # Enhanced metrics with profit tracking
+            enhanced_metrics = {
+                "accuracy": acc,
+                "f1": f1,
+                "profit_integration": calibrator.is_profit_enhanced
+            }
+            
+            # Add profit-specific metrics if available
+            if profit_info.get("profit_available", False) and calibrator.is_profit_enhanced:
+                profit_metrics = self._calculate_profit_metrics(
+                    y_val, y_pred, y_proba, profit_info
+                )
+                enhanced_metrics.update(profit_metrics)
+            
+            return enhanced_metrics
+            
+        except Exception as e:
+            self.logger.warning(f"Error calculating enhanced metrics: {e}")
+            return {
+                "accuracy": 0.0,
+                "f1": 0.0,
+                "profit_integration": False
+            }
+
+    def _calculate_profit_metrics(
+        self, 
+        y_val: pd.Series, 
+        y_pred: np.ndarray, 
+        y_proba: np.ndarray, 
+        profit_info: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Calculate profit-specific metrics."""
+        try:
+            profit_values = profit_info["potential_profit_pct"]
+            
+            # Calculate profit-weighted accuracy
+            profit_weights = np.abs(profit_values) + 0.01  # Add small constant to avoid division by zero
+            weighted_accuracy = np.average(y_val == y_pred, weights=profit_weights)
+            
+            # Calculate profit correlation with prediction confidence
+            max_proba = np.max(y_proba, axis=1)
+            profit_confidence_correlation = np.corrcoef(profit_weights, max_proba)[0, 1]
+            
+            # Calculate high-profit prediction accuracy
+            high_profit_threshold = np.percentile(profit_values, 75)  # Top 25% profit predictions
+            high_profit_mask = np.abs(profit_values) >= high_profit_threshold
+            high_profit_accuracy = np.mean(y_val[high_profit_mask] == y_pred[high_profit_mask]) if np.any(high_profit_mask) else 0.0
+            
+            return {
+                "profit_weighted_accuracy": weighted_accuracy,
+                "profit_confidence_correlation": profit_confidence_correlation,
+                "high_profit_accuracy": high_profit_accuracy,
+                "profit_mean": profit_info["profit_mean"],
+                "profit_std": profit_info["profit_std"]
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Error calculating profit metrics: {e}")
+            return {
+                "profit_weighted_accuracy": 0.0,
+                "profit_confidence_correlation": 0.0,
+                "high_profit_accuracy": 0.0,
+                "profit_mean": 0.0,
+                "profit_std": 0.0
+            }
+
     async def _calibrate_analyst_models(
         self,
         models: dict[str, dict[str, Any]],
@@ -481,23 +692,32 @@ class ConfidenceCalibrationStep:
                     if base_model is None:
                         continue
                     X_val, y_val = self._extract_features(regime_df, base_model)
+                    
+                    # ✅ NEW: Extract profit information for enhanced calibration
+                    profit_info = self._extract_profit_information(regime_df, model_name)
+                    
                     # Baseline metrics before calibration
                     base_metrics = self._calculate_base_metrics(
                         base_model, X_val, y_val,
                     )
-                    calibrator = CalibratedClassifierCV(
-                        estimator=base_model,
-                        cv="prefit",
-                        method="isotonic",
+                    
+                    # ✅ NEW: Enhanced calibration with profit predictions
+                    calibrator = self._create_enhanced_calibrator(
+                        base_model, X_val, y_val, profit_info
                     )
-                    calibrator.fit(X_val, y_val)
-                    acc = accuracy_score(y_val, calibrator.predict(X_val))
-                    f1 = f1_score(y_val, calibrator.predict(X_val), average="weighted")
+                    
+                    # Calculate enhanced metrics with profit tracking
+                    enhanced_metrics = self._calculate_enhanced_metrics(
+                        calibrator, X_val, y_val, profit_info
+                    )
+                    
                     regime_res[model_name] = {
                         "calibrated_model": calibrator,
-                        "metrics": {"accuracy": acc, "f1": f1},
+                        "metrics": enhanced_metrics,
                         "base_metrics": base_metrics,
-                        "calibration_method": "isotonic_prefit",
+                        "calibration_method": "enhanced_isotonic_prefit_with_profit",
+                        "profit_integration": True
+                    }
                         "regime": regime_name,
                     }
                     # Log comparison

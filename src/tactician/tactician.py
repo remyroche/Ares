@@ -39,6 +39,7 @@ class Tactician:
         self.position_sizer = None
         self.leverage_sizer = None
         self.position_division_strategy = None
+        self.profit_coordinator = None  # ✅ NEW: Two-tier profit coordinator
 
     @handle_specific_errors(
         error_handlers={
@@ -101,6 +102,10 @@ class Tactician:
             from src.tactician.position_division_strategy import PositionDivisionStrategy
             self.position_division_strategy = PositionDivisionStrategy(self.config)
             await self.position_division_strategy.initialize()
+
+            # Initialize two-tier profit coordinator
+            from src.tactician.two_tier_profit_coordinator import TwoTierProfitCoordinator
+            self.profit_coordinator = TwoTierProfitCoordinator(self.config)
 
             self.logger.info("✅ All component managers initialized")
 
@@ -222,6 +227,176 @@ class Tactician:
         except Exception as e:
             self.logger.error(failed(f"Tactics input validation failed: {e}"))
             return False
+
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Invalid analyst results"),
+            AttributeError: (False, "Missing analyst components"),
+            KeyError: (False, "Missing required analyst data"),
+        },
+        default_return=False,
+        context="analyst results execution",
+    )
+    async def execute_tactics_with_analyst_results(
+        self, analyst_results: dict[str, Any], account_balance: float = 10000.0
+    ) -> dict[str, Any]:
+        """
+        Execute tactics using enhanced Analyst data with profit tracking.
+
+        Args:
+            analyst_results: Enhanced analysis results from Analyst
+            account_balance: Current account balance
+
+        Returns:
+            dict: Tactics execution results with profit tracking
+        """
+        try:
+            self.logger.info("🚀 Starting tactics execution with enhanced Analyst data...")
+
+            # Extract profit information from Analyst
+            profit_predictions = analyst_results.get("profit_predictions", {})
+            enhanced_confidence = analyst_results.get("enhanced_confidence", 0.5)
+            current_price = analyst_results.get("current_price", 0.0)
+            trading_decision = analyst_results.get("trading_decision", {})
+            market_health = analyst_results.get("market_health", {})
+            liquidation_risk = analyst_results.get("liquidation_risk", {})
+
+            # Create ML predictions dict for Tactician's sizers
+            ml_predictions = {
+                "price_target_confidences": {
+                    "0.5%": enhanced_confidence * 0.8,
+                    "1.0%": enhanced_confidence * 0.9,
+                    "1.5%": enhanced_confidence * 0.95,
+                    "2.0%": enhanced_confidence
+                },
+                "adversarial_confidences": {
+                    "0.5%": (1.0 - enhanced_confidence) * 0.8,
+                    "1.0%": (1.0 - enhanced_confidence) * 0.9,
+                    "1.5%": (1.0 - enhanced_confidence) * 0.95,
+                    "2.0%": (1.0 - enhanced_confidence)
+                },
+                "directional_confidence": {
+                    "confidence": enhanced_confidence,
+                    "profit_potential": profit_predictions.get("profit", 0.0)
+                }
+            }
+
+            # Calculate position size using Tactician's position sizer
+            position_info = {}
+            if self.position_sizer:
+                position_info = await self.position_sizer.calculate_position_size(
+                    ml_predictions=ml_predictions,
+                    current_price=current_price,
+                    account_balance=account_balance,
+                    analyst_confidence=enhanced_confidence,  # ✅ Uses Analyst's enhanced confidence
+                    tactician_confidence=enhanced_confidence,  # ✅ Uses Analyst's enhanced confidence
+                    market_health_analysis=market_health,
+                    strategist_risk_parameters=liquidation_risk
+                )
+
+            # Calculate leverage using Tactician's leverage sizer
+            leverage_info = {}
+            if self.leverage_sizer:
+                leverage_info = await self.leverage_sizer.calculate_leverage(
+                    ml_predictions=ml_predictions,
+                    current_price=current_price,
+                    account_balance=account_balance,
+                    analyst_confidence=enhanced_confidence,  # ✅ Uses Analyst's enhanced confidence
+                    tactician_confidence=enhanced_confidence,  # ✅ Uses Analyst's enhanced confidence
+                    market_health_analysis=market_health,
+                    strategist_risk_parameters=liquidation_risk
+                )
+
+            # Compile comprehensive tactics results
+            tactics_results = {
+                "timestamp": datetime.now().isoformat(),
+                "position_sizing": position_info,
+                "leverage_sizing": leverage_info,
+                "profit_predictions": profit_predictions,
+                "enhanced_confidence": enhanced_confidence,
+                "trading_decision": trading_decision,
+                "market_health": market_health,
+                "liquidation_risk": liquidation_risk,
+                "current_price": current_price,
+                "account_balance": account_balance,
+                "execution_status": "completed"
+            }
+
+            # Store results
+            self.tactics_results = tactics_results
+            await self._store_tactics_results({"analyst_results": analyst_results})
+
+            self.logger.info("✅ Tactics execution with enhanced Analyst data completed successfully")
+            return tactics_results
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Tactics execution with Analyst data failed: {e}"))
+            return {}
+
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Invalid coordination parameters"),
+            AttributeError: (False, "Missing coordination components"),
+            KeyError: (False, "Missing required coordination data"),
+        },
+        default_return={},
+        context="two-tier coordination",
+    )
+    async def coordinate_with_analyst(
+        self, 
+        analyst_results: dict[str, Any], 
+        account_balance: float = 10000.0
+    ) -> dict[str, Any]:
+        """
+        Coordinate with Analyst using two-tier profit coordination.
+
+        Args:
+            analyst_results: Enhanced analysis results from Analyst
+            account_balance: Current account balance
+
+        Returns:
+            dict: Coordinated results from both tiers
+        """
+        try:
+            self.logger.info("🔄 Starting two-tier coordination with Analyst...")
+
+            # Execute tactics with Analyst data
+            tactician_results = await self.execute_tactics_with_analyst_results(
+                analyst_results, account_balance
+            )
+
+            # Coordinate profit predictions between tiers
+            if self.profit_coordinator:
+                coordination_results = await self.profit_coordinator.coordinate_profit_predictions(
+                    analyst_results=analyst_results,
+                    tactician_results=tactician_results
+                )
+
+                # Combine results
+                combined_results = {
+                    "timestamp": datetime.now().isoformat(),
+                    "analyst_results": analyst_results,
+                    "tactician_results": tactician_results,
+                    "coordination_results": coordination_results,
+                    "combined_profit": coordination_results.get("combined_profit", {}),
+                    "combined_confidence": coordination_results.get("combined_confidence", 0.5),
+                    "coordination_status": "completed"
+                }
+
+                self.logger.info("✅ Two-tier coordination completed successfully")
+                return combined_results
+            else:
+                self.logger.warning("Profit coordinator not available, returning tactician results only")
+                return {
+                    "timestamp": datetime.now().isoformat(),
+                    "analyst_results": analyst_results,
+                    "tactician_results": tactician_results,
+                    "coordination_status": "coordinator_unavailable"
+                }
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Two-tier coordination failed: {e}"))
+            return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),

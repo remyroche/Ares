@@ -438,12 +438,32 @@ class Analyst:
                     current_position,
                 )
 
-            # 5. Compile comprehensive analysis results
+            # 5. NEW: Make profit predictions using dual model system
+            profit_predictions = {}
+            enhanced_confidence = 0.5
+            if self.dual_model_system:
+                self.logger.info("Making profit predictions with dual model system...")
+                profit_predictions = await self._make_profit_predictions(
+                    features_df,
+                    current_price,
+                    trading_decision
+                )
+                
+                # Calculate enhanced confidence with profit predictions
+                if profit_predictions and "profit" in profit_predictions:
+                    enhanced_confidence = self._enhance_confidence_with_profit(
+                        base_confidence=trading_decision.get("confidence", 0.5),
+                        profit_pred=profit_predictions.get("profit", 0.0)
+                    )
+
+            # 6. Compile comprehensive analysis results
             self.analysis_results = {
                 "timestamp": datetime.now().isoformat(),
                 "market_health": market_health_results,
                 "liquidation_risk": liquidation_risk_results,
                 "trading_decision": trading_decision,
+                "profit_predictions": profit_predictions,  # ✅ NEW: Profit predictions
+                "enhanced_confidence": enhanced_confidence,  # ✅ NEW: Enhanced confidence
                 "features_shape": features_df.shape
                 if features_df is not None
                 else None,
@@ -485,6 +505,67 @@ class Analyst:
             "increase_probabilities": {0.1: 0.3, 0.2: 0.2, 0.3: 0.1},
             "decrease_probabilities": {0.1: 0.3, 0.2: 0.2, 0.3: 0.1},
         }
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="profit predictions",
+    )
+    async def _make_profit_predictions(
+        self,
+        features_df: pd.DataFrame,
+        current_price: float,
+        trading_decision: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Make profit predictions using dual model system with profit tracking."""
+        try:
+            # Import profit tracking integrator
+            from src.training.steps.step4_analyst_labeling_feature_engineering_components.profit_tracking_ml_integration import ProfitTrackingMLIntegrator
+            
+            # Initialize profit tracking integrator if not already done
+            if not hasattr(self, 'profit_tracking_integrator'):
+                self.profit_tracking_integrator = ProfitTrackingMLIntegrator(self.config)
+            
+            # Make profit predictions using the integrator
+            profit_predictions = self.profit_tracking_integrator.predict_with_profit_tracking(
+                model_name="analyst_dual_model",
+                X=features_df
+            )
+            
+            self.logger.info("✅ Profit predictions made successfully")
+            return profit_predictions
+            
+        except Exception as e:
+            self.logger.error(f"Failed to make profit predictions: {e}")
+            # Return fallback predictions
+            return {
+                "direction": trading_decision.get("direction", 0),
+                "profit": 0.0,
+                "confidence": trading_decision.get("confidence", 0.5),
+                "high_value_trades": 0.0
+            }
+
+    def _enhance_confidence_with_profit(self, base_confidence: float, profit_pred: float) -> float:
+        """Enhance confidence score with profit prediction information."""
+        if profit_pred is None:
+            return base_confidence
+        
+        # Calculate profit-based confidence boost
+        profit_magnitude = abs(profit_pred)
+        profit_confidence_boost = 0.0
+        
+        # Higher profit magnitude = higher confidence boost
+        if profit_magnitude > 0.01:  # 1% profit potential
+            profit_confidence_boost = min(0.2, profit_magnitude * 10)  # Up to 20% boost
+        
+        if profit_magnitude > 0.03:  # 3% profit potential
+            profit_confidence_boost += min(0.1, (profit_magnitude - 0.03) * 5)  # Additional 10% boost
+        
+        # Combine base confidence with profit boost
+        enhanced_confidence = base_confidence + profit_confidence_boost
+        
+        # Ensure confidence stays within [0, 1] range
+        return min(1.0, max(0.0, enhanced_confidence))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),

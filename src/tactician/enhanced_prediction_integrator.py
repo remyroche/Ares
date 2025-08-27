@@ -97,12 +97,15 @@ class TacticianEnhancedPredictionIntegrator:
             # Load confidence calibration results (step 11)
             await self._load_calibration_results()
 
-            # Load optimization results (step 12-14)
-            await self._load_optimization_results()
+                    # Load optimization results (step 12-14)
+        await self._load_optimization_results()
 
-            self.is_initialized = True
-            self.logger.info("✅ Tactician Enhanced Prediction Integrator initialized successfully")
-            return True
+        # Apply optimized parameters if available
+        await self._apply_optimized_parameters()
+
+        self.is_initialized = True
+        self.logger.info("✅ Tactician Enhanced Prediction Integrator initialized successfully")
+        return True
 
         except Exception as e:
             self.logger.error(failed(f"❌ Tactician Enhanced Prediction Integrator initialization failed: {e}"))
@@ -259,6 +262,41 @@ class TacticianEnhancedPredictionIntegrator:
 
     @handle_errors(
         exceptions=(Exception,),
+        default_return=False,
+        context="applying optimized parameters",
+    )
+    @with_tracing_span("apply_optimized_parameters")
+    async def _apply_optimized_parameters(self) -> bool:
+        """Apply optimized parameters from step 12 optimization."""
+        try:
+            if not self.optimization_results:
+                self.logger.info("ℹ️ No optimization results available, using default parameters")
+                return True
+
+            # Get confidence thresholds from optimization
+            confidence_thresholds = self.optimization_results.get("confidence_thresholds", {})
+            optimized_params = confidence_thresholds.get("optimized_parameters", {})
+
+            # Apply enhanced prediction integrator parameters
+            if "enhanced_prediction_confidence_threshold" in optimized_params:
+                self.confidence_threshold = optimized_params["enhanced_prediction_confidence_threshold"]
+                self.logger.info(f"✅ Applied optimized confidence threshold: {self.confidence_threshold}")
+
+            if "enhanced_prediction_price_threshold" in optimized_params:
+                self.price_prediction_threshold = optimized_params["enhanced_prediction_price_threshold"]
+                self.logger.info(f"✅ Applied optimized price threshold: {self.price_prediction_threshold}")
+
+            # Store optimized parameters for use in enhancement methods
+            self.optimized_params = optimized_params
+
+            return True
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error applying optimized parameters: {e}"))
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
         default_return={},
         context="generating tactician enhanced predictions",
     )
@@ -408,9 +446,9 @@ class TacticianEnhancedPredictionIntegrator:
             # Combine with analyst signals
             analyst_confidence = analyst_signals.get("confidence", 0.5)
             
-            # Calculate weighted ML confidence
-            ml_weight = 0.7  # Weight for ML predictions
-            analyst_weight = 0.3  # Weight for analyst signals
+            # Calculate weighted ML confidence using optimized parameters if available
+            ml_weight = getattr(self, 'optimized_params', {}).get("ml_weight", 0.7)
+            analyst_weight = getattr(self, 'optimized_params', {}).get("analyst_weight", 0.3)
             
             weighted_ml_confidence = (avg_confidence * ml_weight) + (analyst_confidence * analyst_weight)
             
@@ -550,8 +588,9 @@ class TacticianEnhancedPredictionIntegrator:
             aggregate_ml_confidence = ml_confidence.get("aggregate_ml_confidence", {})
             weighted_ml_confidence = aggregate_ml_confidence.get("weighted_ml_confidence", 0.5)
             
-            # Enhance position size calculation with ML confidence
-            ml_confidence_multiplier = min(weighted_ml_confidence * 1.5, 2.0)  # Max 2x multiplier
+            # Enhance position size calculation with ML confidence using optimized parameters
+            confidence_multiplier = getattr(self, 'optimized_params', {}).get("position_sizing_confidence_multiplier", 1.5)
+            ml_confidence_multiplier = min(weighted_ml_confidence * confidence_multiplier, 2.0)  # Max 2x multiplier
             enhanced_position_size = base_position_size * ml_confidence_multiplier
             
             return {
@@ -586,12 +625,13 @@ class TacticianEnhancedPredictionIntegrator:
             # Get calibrated confidence from enhanced predictions
             calibrated_confidence = enhanced_predictions.get("calibrated_confidence_scores", {})
             
-            # Calculate ML-based risk adjustment
+            # Calculate ML-based risk adjustment using optimized parameters
+            risk_multiplier = getattr(self, 'optimized_params', {}).get("leverage_sizing_risk_multiplier", 1.0)
             ml_risk_multiplier = 1.0
             if calibrated_confidence:
                 # Higher confidence = lower risk = higher leverage
                 avg_confidence = sum(cal.values() for cal in calibrated_confidence.values()) / max(len(calibrated_confidence), 1)
-                ml_risk_multiplier = 0.5 + (avg_confidence * 0.5)  # 0.5x to 1.0x multiplier
+                ml_risk_multiplier = 0.5 + (avg_confidence * risk_multiplier)  # Use optimized risk multiplier
             
             enhanced_leverage = base_leverage * ml_risk_multiplier
             

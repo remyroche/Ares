@@ -93,12 +93,15 @@ class EnhancedPredictionIntegrator:
             # Load confidence calibration results (step 11)
             await self._load_calibration_results()
 
-            # Load optimization results (step 12-14)
-            await self._load_optimization_results()
+                    # Load optimization results (step 12-14)
+        await self._load_optimization_results()
 
-            self.is_initialized = True
-            self.logger.info("✅ Enhanced Prediction Integrator initialized successfully")
-            return True
+        # Apply optimized parameters if available
+        await self._apply_optimized_parameters()
+
+        self.is_initialized = True
+        self.logger.info("✅ Enhanced Prediction Integrator initialized successfully")
+        return True
 
         except Exception as e:
             self.logger.error(failed(f"❌ Enhanced Prediction Integrator initialization failed: {e}"))
@@ -224,6 +227,38 @@ class EnhancedPredictionIntegrator:
 
         except Exception as e:
             self.logger.error(error(f"❌ Error loading optimization results: {e}"))
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="applying optimized parameters",
+    )
+    @with_tracing_span("apply_optimized_parameters")
+    async def _apply_optimized_parameters(self) -> bool:
+        """Apply optimized parameters from step 12 optimization."""
+        try:
+            if not self.optimization_results:
+                self.logger.info("ℹ️ No optimization results available, using default parameters")
+                return True
+
+            # Get confidence thresholds from optimization
+            confidence_thresholds = self.optimization_results.get("confidence_thresholds", {})
+            optimized_params = confidence_thresholds.get("optimized_parameters", {})
+
+            # Apply enhanced prediction integrator parameters
+            if "enhanced_prediction_confidence_threshold" in optimized_params:
+                self.confidence_threshold = optimized_params["enhanced_prediction_confidence_threshold"]
+                self.logger.info(f"✅ Applied optimized confidence threshold: {self.confidence_threshold}")
+
+            if "enhanced_prediction_price_threshold" in optimized_params:
+                self.price_prediction_threshold = optimized_params["enhanced_prediction_price_threshold"]
+                self.logger.info(f"✅ Applied optimized price threshold: {self.price_prediction_threshold}")
+
+            return True
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error applying optimized parameters: {e}"))
+            return False
 
     @handle_errors(
         exceptions=(Exception,),

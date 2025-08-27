@@ -23,6 +23,13 @@ from sklearn.feature_selection import SelectKBest, f_classif, f_regression
 
 from src.utils.logging import get_logger
 from src.utils.decorators import handle_errors, with_tracing_span
+from src.utils.training_pipeline_decorators import (
+    validate_data_quality,
+    validate_step_output,
+    memory_efficient,
+    quality_gate,
+    prevent_data_leakage
+)
 
 
 @dataclass
@@ -395,6 +402,13 @@ class MultiOutputProfitPredictor:
         context="multi_output_profit_prediction.train"
     )
     @with_tracing_span("MultiOutputProfitPredictor.train", log_args=False)
+    @validate_data_quality(
+        data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
+        validation_score_requirements={"feature_quality": 0.7}
+    )
+    @prevent_data_leakage
+    @memory_efficient
+    @quality_gate
     def train(self, data: pd.DataFrame) -> Dict[str, Any]:
         """
         Train the multi-output prediction system.
@@ -440,6 +454,13 @@ class MultiOutputProfitPredictor:
         self.logger.info(f"Multi-output training completed using method: {results['method']}")
         return results
     
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="multi_output_profit_prediction.predict"
+    )
+    @with_tracing_span("MultiOutputProfitPredictor.predict", log_args=False)
+    @validate_step_output
     def predict(self, X: pd.DataFrame) -> Dict[str, Any]:
         """
         Make predictions using trained models.
@@ -574,6 +595,19 @@ class MultiOutputProfitPredictor:
             return False
 
 
+@handle_errors(
+    exceptions=(Exception,),
+    default_return={},
+    context="multi_output_profit_prediction.integrate"
+)
+@with_tracing_span("MultiOutputProfitPrediction.integrate", log_args=False)
+@validate_data_quality(
+    data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
+    validation_score_requirements={"feature_quality": 0.7}
+)
+@prevent_data_leakage
+@memory_efficient
+@quality_gate
 def integrate_multi_output_prediction(data: pd.DataFrame, config: Optional[MultiOutputConfig] = None) -> Dict[str, Any]:
     """
     Integrate multi-output prediction into the existing pipeline.

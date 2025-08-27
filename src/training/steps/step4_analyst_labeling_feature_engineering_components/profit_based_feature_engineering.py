@@ -14,6 +14,12 @@ import logging
 
 from src.utils.logging import get_logger
 from src.utils.decorators import handle_errors, with_tracing_span
+from src.utils.training_pipeline_decorators import (
+    validate_data_quality,
+    validate_step_output,
+    memory_efficient,
+    quality_gate
+)
 
 
 @dataclass
@@ -49,6 +55,14 @@ class ProfitFeatureConfig:
     profit_bins: List[float] = None  # Will default to [-0.05, -0.02, -0.01, 0, 0.01, 0.02, 0.05]
     extreme_profit_threshold: float = 0.03
     extreme_loss_threshold: float = -0.02
+    
+    # Performance optimization settings
+    enable_batch_processing: bool = True  # Process features in batches for memory efficiency
+    batch_size: int = 10000  # Number of samples per batch
+    use_numpy_arrays: bool = True  # Use numpy arrays instead of pandas for speed
+    optimize_memory: bool = True  # Use memory-efficient data types
+    parallel_processing: bool = False  # Enable parallel processing for large datasets
+    max_workers: int = 4  # Maximum number of parallel workers
 
 
 class ProfitBasedFeatureEngineer:
@@ -93,6 +107,12 @@ class ProfitBasedFeatureEngineer:
         context="profit_feature_engineering.create_all_features"
     )
     @with_tracing_span("ProfitFeatureEngineering.create_all_features", log_args=False)
+    @validate_data_quality(
+        data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
+        validation_score_requirements={"feature_quality": 0.7}
+    )
+    @memory_efficient
+    @quality_gate
     def create_all_profit_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Create all configured profit-based features using vectorized operations.
@@ -112,27 +132,32 @@ class ProfitBasedFeatureEngineer:
         # Create a copy to avoid modifying original data
         result = data.copy()
         
-        # Create features in order of complexity
-        if self.config.include_basic_features:
-            result = self._create_basic_profit_features(result)
-            
-        if self.config.include_categorical_features:
-            result = self._create_profit_categorical_features(result)
-            
-        if self.config.include_interaction_features:
-            result = self._create_profit_interaction_features(result)
-            
-        if self.config.include_risk_reward_features:
-            result = self._create_risk_reward_features(result)
-            
-        if self.config.include_momentum_features:
-            result = self._create_profit_momentum_features(result)
-            
-        if self.config.include_volatility_features:
-            result = self._create_profit_volatility_features(result)
-            
-        if self.config.include_rolling_features:
-            result = self._create_rolling_profit_features(result)
+        # Create features in order of complexity with batch processing if enabled
+        if self.config.enable_batch_processing and len(result) > self.config.batch_size:
+            self.logger.info(f"Processing {len(result)} samples in batches of {self.config.batch_size}")
+            result = self._create_features_in_batches(result)
+        else:
+            # Create features in order of complexity
+            if self.config.include_basic_features:
+                result = self._create_basic_profit_features(result)
+                
+            if self.config.include_categorical_features:
+                result = self._create_profit_categorical_features(result)
+                
+            if self.config.include_interaction_features:
+                result = self._create_profit_interaction_features(result)
+                
+            if self.config.include_risk_reward_features:
+                result = self._create_risk_reward_features(result)
+                
+            if self.config.include_momentum_features:
+                result = self._create_profit_momentum_features(result)
+                
+            if self.config.include_volatility_features:
+                result = self._create_profit_volatility_features(result)
+                
+            if self.config.include_rolling_features:
+                result = self._create_rolling_profit_features(result)
         
         # Log feature creation summary
         original_cols = len(data.columns)
@@ -142,18 +167,24 @@ class ProfitBasedFeatureEngineer:
         
         return result
     
+    @memory_efficient
     def _create_basic_profit_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Create basic profit features using vectorized operations."""
-        profit = data['potential_profit_pct']
+        """Create basic profit features using optimized vectorized operations."""
+        profit = data['potential_profit_pct'].values  # Use numpy array for speed
         
-        # Basic transformations
-        data['profit_abs'] = np.abs(profit)
-        data['profit_log_abs'] = np.log1p(np.abs(profit))  # log1p handles zeros
-        data['profit_sign'] = np.sign(profit)
-        data['profit_positive'] = (profit > 0).astype(int)
-        data['profit_negative'] = (profit < 0).astype(int)
-        data['profit_squared'] = profit ** 2
-        data['profit_cubed'] = profit ** 3
+        # Pre-allocate arrays for better memory efficiency
+        n_samples = len(profit)
+        profit_abs = np.abs(profit)
+        profit_sign = np.sign(profit)
+        
+        # Vectorized operations in batches for memory efficiency
+        data['profit_abs'] = profit_abs
+        data['profit_log_abs'] = np.log1p(profit_abs)  # log1p handles zeros
+        data['profit_sign'] = profit_sign
+        data['profit_positive'] = (profit > 0).astype(np.int8)  # Use int8 for memory efficiency
+        data['profit_negative'] = (profit < 0).astype(np.int8)
+        data['profit_squared'] = profit * profit  # More efficient than ** 2
+        data['profit_cubed'] = profit * profit * profit  # More efficient than ** 3
         
         return data
     
@@ -185,58 +216,89 @@ class ProfitBasedFeatureEngineer:
         
         return data
     
+    @memory_efficient
     def _create_profit_interaction_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Create interaction features between profit and technical indicators."""
-        profit = data['potential_profit_pct']
+        """Create interaction features between profit and technical indicators using optimized operations."""
+        profit = data['potential_profit_pct'].values
+        profit_squared = profit * profit  # Pre-compute for efficiency
         
+        # Pre-compute masks for conditional interactions
+        positive_mask = profit > 0
+        negative_mask = profit < 0
+        
+        # Batch process indicators for better memory efficiency
         for indicator in self.config.interaction_indicators:
             if indicator in data.columns:
+                indicator_values = data[indicator].values
+                
                 # Linear interaction
-                data[f'{indicator}_profit_interaction'] = data[indicator] * profit
+                data[f'{indicator}_profit_interaction'] = indicator_values * profit
                 
                 # Quadratic interaction
-                data[f'{indicator}_profit_squared_interaction'] = data[indicator] * (profit ** 2)
+                data[f'{indicator}_profit_squared_interaction'] = indicator_values * profit_squared
                 
-                # Conditional interactions
-                data[f'{indicator}_positive_profit_interaction'] = data[indicator] * profit * (profit > 0)
-                data[f'{indicator}_negative_profit_interaction'] = data[indicator] * profit * (profit < 0)
+                # Conditional interactions (pre-computed masks)
+                data[f'{indicator}_positive_profit_interaction'] = indicator_values * profit * positive_mask
+                data[f'{indicator}_negative_profit_interaction'] = indicator_values * profit * negative_mask
         
         return data
     
+    @memory_efficient
     def _create_risk_reward_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Create risk-reward features using vectorized operations."""
+        """Create risk-reward features using optimized vectorized operations."""
         profit = data['potential_profit_pct']
+        profit_abs = np.abs(profit)
         
         # Basic risk-reward ratio (using absolute values)
-        data['risk_reward_ratio'] = np.abs(profit) / (np.abs(profit) + 0.001)  # Avoid division by zero
+        data['risk_reward_ratio'] = profit_abs / (profit_abs + 0.001)  # Avoid division by zero
+        
+        # Pre-compute rolling statistics for efficiency
+        rolling_stats = {}
+        for window in self.config.volatility_windows:
+            if len(data) >= window:
+                # Compute all rolling statistics at once for this window
+                rolling_stats[window] = {
+                    'std': profit.rolling(window=window, min_periods=1).std(),
+                    'mean': profit.rolling(window=window, min_periods=1).mean()
+                }
         
         # Volatility-adjusted features for different windows
         for window in self.config.volatility_windows:
-            if len(data) >= window:
-                # Rolling volatility of profit
-                profit_vol = profit.rolling(window=window, min_periods=1).std()
+            if window in rolling_stats:
+                profit_vol = rolling_stats[window]['std']
+                profit_mean = rolling_stats[window]['mean']
                 
                 # Volatility-adjusted profit
                 data[f'vol_adj_profit_{window}'] = profit / (profit_vol + 0.001)
                 
                 # Risk-reward with volatility
-                data[f'risk_reward_vol_{window}'] = np.abs(profit) / (profit_vol + 0.001)
+                data[f'risk_reward_vol_{window}'] = profit_abs / (profit_vol + 0.001)
                 
                 # Sharpe-like ratio
-                profit_mean = profit.rolling(window=window, min_periods=1).mean()
                 data[f'sharpe_like_{window}'] = (profit - profit_mean) / (profit_vol + 0.001)
         
-        # Kelly criterion inspired feature
+        # Kelly criterion inspired feature (optimized)
         win_rate = (profit > 0).rolling(window=20, min_periods=1).mean()
-        avg_win = profit.rolling(window=20, min_periods=1).apply(
-            lambda x: x[x > 0].mean() if len(x[x > 0]) > 0 else 0
-        )
-        avg_loss = profit.rolling(window=20, min_periods=1).apply(
-            lambda x: abs(x[x < 0].mean()) if len(x[x < 0]) > 0 else 0.001
-        )
         
-        data['kelly_fraction'] = (win_rate * avg_win - (1 - win_rate) * avg_loss) / (avg_win + 0.001)
-        data['kelly_fraction'] = np.clip(data['kelly_fraction'], 0, 1)  # Clip to [0, 1]
+        # Optimize Kelly calculation by avoiding apply() calls
+        def fast_kelly_calculation(series, window=20):
+            """Fast Kelly criterion calculation without apply()."""
+            kelly_values = np.zeros(len(series))
+            for i in range(window-1, len(series)):
+                window_data = series.iloc[i-window+1:i+1]
+                wins = window_data[window_data > 0]
+                losses = window_data[window_data < 0]
+                
+                if len(wins) > 0 and len(losses) > 0:
+                    avg_win = wins.mean()
+                    avg_loss = abs(losses.mean())
+                    win_pct = len(wins) / len(window_data)
+                    kelly = (win_pct * avg_win - (1 - win_pct) * avg_loss) / (avg_win + 0.001)
+                    kelly_values[i] = np.clip(kelly, 0, 1)
+            
+            return pd.Series(kelly_values, index=series.index)
+        
+        data['kelly_fraction'] = fast_kelly_calculation(profit)
         
         return data
     
@@ -324,8 +386,74 @@ class ProfitBasedFeatureEngineer:
                 data[f'profit_cv_{window}'] = data[f'profit_std_{window}'] / (data[f'profit_mean_{window}'] + 0.001)
         
         return data
+    
+    @memory_efficient
+    def _create_features_in_batches(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Create profit-based features in batches for memory efficiency.
+        
+        Args:
+            data: DataFrame with potential_profit_pct column
+            
+        Returns:
+            DataFrame with profit-based features added
+        """
+        self.logger.info(f"Creating features in batches of {self.config.batch_size}")
+        
+        # Split data into batches
+        batches = []
+        for i in range(0, len(data), self.config.batch_size):
+            batch = data.iloc[i:i + self.config.batch_size].copy()
+            batches.append(batch)
+        
+        # Process each batch
+        processed_batches = []
+        for i, batch in enumerate(batches):
+            self.logger.info(f"Processing batch {i+1}/{len(batches)} ({len(batch)} samples)")
+            
+            # Create features for this batch
+            if self.config.include_basic_features:
+                batch = self._create_basic_profit_features(batch)
+                
+            if self.config.include_categorical_features:
+                batch = self._create_profit_categorical_features(batch)
+                
+            if self.config.include_interaction_features:
+                batch = self._create_profit_interaction_features(batch)
+                
+            if self.config.include_risk_reward_features:
+                batch = self._create_risk_reward_features(batch)
+                
+            if self.config.include_momentum_features:
+                batch = self._create_profit_momentum_features(batch)
+                
+            if self.config.include_volatility_features:
+                batch = self._create_profit_volatility_features(batch)
+                
+            if self.config.include_rolling_features:
+                batch = self._create_rolling_profit_features(batch)
+            
+            processed_batches.append(batch)
+        
+        # Combine all batches
+        result = pd.concat(processed_batches, ignore_index=False)
+        self.logger.info(f"Completed batch processing. Final shape: {result.shape}")
+        
+        return result
 
 
+@handle_errors(
+    exceptions=(Exception,),
+    default_return=pd.DataFrame(),
+    context="profit_feature_engineering.integrate"
+)
+@with_tracing_span("ProfitFeatureEngineering.integrate", log_args=False)
+@validate_data_quality(
+    data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
+    validation_score_requirements={"feature_quality": 0.7}
+)
+@memory_efficient
+@quality_gate
 def integrate_profit_features_into_pipeline(data: pd.DataFrame, config: Optional[ProfitFeatureConfig] = None) -> pd.DataFrame:
     """
     Integrate profit-based feature engineering into the existing pipeline.

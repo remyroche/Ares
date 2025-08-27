@@ -501,31 +501,92 @@ class ProfitTrackingMLIntegrator:
         return confidence
     
     def _calculate_position_sizing(self, direction_pred, profit_pred, confidence_scores, high_value_factors) -> Dict[str, np.ndarray]:
-        """Calculate position sizing recommendations based on profit tracking."""
+        """Calculate position sizing recommendations based on profit tracking using Tactician's leverage sizer."""
         n_samples = len(direction_pred)
         
-        # Base position size (percentage of capital)
-        base_position_size = np.full(n_samples, 0.02)  # 2% base position
+        # Import Tactician's position sizer
+        try:
+            from src.tactician.position_sizer import PositionSizer
+            position_sizer = PositionSizer()
+            use_tactician_sizer = True
+        except ImportError:
+            self.logger.warning("Tactician position sizer not found, using fallback sizing")
+            use_tactician_sizer = False
         
-        # Leverage recommendations
-        leverage = np.full(n_samples, 1.0)  # 1x base leverage
+        # Base position size (will be calculated by position sizer)
+        base_position_size = np.full(n_samples, 0.0)
+        
+        # Leverage recommendations (10-100x range)
+        leverage = np.full(n_samples, 10.0)  # 10x base leverage
         
         # Risk-adjusted position size
-        risk_adjusted_size = np.full(n_samples, 0.02)
+        risk_adjusted_size = np.full(n_samples, 0.0)
         
         for i in range(n_samples):
             if profit_pred is not None and confidence_scores[i] > 0.6:
                 # Adjust position size based on profit prediction
                 profit_magnitude = abs(profit_pred[i])
                 
-                # Scale position size with profit magnitude (up to 5% max)
-                if profit_magnitude > 0.02:  # High profit potential
-                    position_multiplier = min(2.5, 1.0 + profit_magnitude * 50)
-                    base_position_size[i] = min(0.05, 0.02 * position_multiplier)
+                # Use Tactician's position sizer if available
+                if use_tactician_sizer:
+                    try:
+                        # Create ML predictions dict for Tactician's sizer
+                        ml_predictions = {
+                            "price_target_confidences": {
+                                "0.5%": confidence_scores[i] * 0.8,
+                                "1.0%": confidence_scores[i] * 0.9,
+                                "1.5%": confidence_scores[i] * 0.95,
+                                "2.0%": confidence_scores[i]
+                            },
+                            "adversarial_confidences": {
+                                "0.5%": (1.0 - confidence_scores[i]) * 0.8,
+                                "1.0%": (1.0 - confidence_scores[i]) * 0.9,
+                                "1.5%": (1.0 - confidence_scores[i]) * 0.95,
+                                "2.0%": (1.0 - confidence_scores[i])
+                            },
+                            "directional_confidence": {
+                                "confidence": confidence_scores[i],
+                                "profit_potential": profit_pred[i]
+                            }
+                        }
+                        
+                        # Calculate position size using Tactician's sizer
+                        position_info = await position_sizer.calculate_position_size(
+                            ml_predictions=ml_predictions,
+                            current_price=100.0,  # Placeholder, should be actual price
+                            account_balance=10000.0,  # Placeholder, should be actual balance
+                            analyst_confidence=confidence_scores[i],
+                            tactician_confidence=confidence_scores[i]
+                        )
+                        
+                        if position_info:
+                            base_position_size[i] = position_info.get('final_position_size', 0.02)
+                            # Tactician doesn't return leverage, so we calculate it separately
+                            leverage[i] = self._calculate_tactician_leverage(confidence_scores[i], profit_pred[i])
+                        else:
+                            # Fallback to basic calculation
+                            base_position_size[i] = self._calculate_fallback_position_size(profit_pred[i], confidence_scores[i])
+                            leverage[i] = self._calculate_tactician_leverage(confidence_scores[i], profit_pred[i])
+                            
+                    except Exception as e:
+                        self.logger.warning(f"Failed to use Tactician position sizer: {e}")
+                        # Fallback to basic calculation
+                        base_position_size[i] = self._calculate_fallback_position_size(profit_pred[i], confidence_scores[i])
+                        leverage[i] = self._calculate_tactician_leverage(confidence_scores[i], profit_pred[i])
+                else:
+                    # Fallback position sizing
+                    base_position_size[i] = self._calculate_fallback_position_size(profit_pred[i], confidence_scores[i])
+                    leverage[i] = self._calculate_tactician_leverage(confidence_scores[i], profit_pred[i])
                 
-                # Adjust leverage based on confidence and profit
-                if confidence_scores[i] > 0.8 and profit_magnitude > 0.03:
-                    leverage[i] = min(3.0, 1.0 + confidence_scores[i] * 2.0)
+                # Adjust leverage based on confidence and profit (10-100x range)
+                if confidence_scores[i] > 0.7 and profit_magnitude > 0.02:
+                    # Base leverage starts at 10x, scales up to 100x
+                    leverage_multiplier = 1.0 + (confidence_scores[i] - 0.7) * 3.0  # 0.3 to 1.9
+                    leverage[i] = min(100.0, 10.0 * leverage_multiplier)
+                
+                # Additional leverage boost for very high profit potential
+                if profit_magnitude > 0.05 and confidence_scores[i] > 0.8:
+                    leverage[i] = min(100.0, leverage[i] * 1.5)
                 
                 # Risk-adjusted sizing using Kelly criterion principles
                 if profit_pred[i] > 0:
@@ -542,18 +603,78 @@ class ProfitTrackingMLIntegrator:
                     # For negative profit predictions (short positions)
                     risk_adjusted_size[i] = min(0.03, abs(profit_pred[i]) * 2.0)
             
-            # Adjust based on high-value trade factors
-            if abs(high_value_factors[i]) > 0.7:
-                # Boost position size for high-value trades
-                base_position_size[i] *= 1.5
-                leverage[i] = min(leverage[i] * 1.2, 3.0)
+            # Incremental high-value boost based on high-value factors
+            high_value_boost = self._calculate_incremental_high_value_boost(high_value_factors[i])
+            
+            # Apply incremental boost to position size and leverage
+            base_position_size[i] *= high_value_boost['position_multiplier']
+            leverage[i] = min(100.0, leverage[i] * high_value_boost['leverage_multiplier'])
         
         return {
             "base_position_size": base_position_size,
             "leverage": leverage,
             "risk_adjusted_size": risk_adjusted_size,
-            "recommended_size": np.minimum(base_position_size, risk_adjusted_size)
+            "recommended_size": np.minimum(base_position_size, risk_adjusted_size),
+            "high_value_boost": high_value_boost if 'high_value_boost' in locals() else None
         }
+    
+    def _calculate_fallback_position_size(self, profit_pred: float, confidence: float) -> float:
+        """Calculate fallback position size when Tactician sizer is not available."""
+        # Base position size calculation (replaces 2-5% rule)
+        base_size = 0.01  # 1% base
+        
+        # Scale with profit magnitude
+        profit_magnitude = abs(profit_pred)
+        if profit_magnitude > 0.01:
+            size_multiplier = 1.0 + profit_magnitude * 20  # Scale up to 5x for high profit
+            base_size *= min(5.0, size_multiplier)
+        
+        # Scale with confidence
+        confidence_multiplier = 0.5 + confidence * 0.5  # 0.5x to 1.0x
+        base_size *= confidence_multiplier
+        
+        return base_size
+    
+    def _calculate_incremental_high_value_boost(self, high_value_factor: float) -> Dict[str, float]:
+        """Calculate incremental high-value boost based on continuous factor value."""
+        # Convert high-value factor (-1 to 1) to incremental multipliers
+        factor_abs = abs(high_value_factor)
+        
+        # Incremental position size multiplier (1.0 to 3.0)
+        position_multiplier = 1.0 + factor_abs * 2.0
+        
+        # Incremental leverage multiplier (1.0 to 2.0)
+        leverage_multiplier = 1.0 + factor_abs * 1.0
+        
+        return {
+            "position_multiplier": position_multiplier,
+            "leverage_multiplier": leverage_multiplier,
+            "high_value_strength": factor_abs
+        }
+    
+    def _calculate_tactician_leverage(self, confidence: float, profit_pred: float) -> float:
+        """Calculate leverage using Tactician's approach (10-100x range)."""
+        # Base leverage starts at 10x
+        base_leverage = 10.0
+        
+        # Scale leverage with confidence (10x to 50x)
+        confidence_leverage = base_leverage + (confidence - 0.5) * 80  # 10x to 50x
+        
+        # Additional leverage boost for high profit potential
+        profit_magnitude = abs(profit_pred)
+        profit_leverage_boost = 0.0
+        
+        if profit_magnitude > 0.02:  # 2% profit potential
+            profit_leverage_boost = (profit_magnitude - 0.02) * 1000  # Up to 30x additional
+        
+        if profit_magnitude > 0.05:  # 5% profit potential
+            profit_leverage_boost += (profit_magnitude - 0.05) * 2000  # Up to 20x more
+        
+        # Combine confidence and profit leverage
+        total_leverage = confidence_leverage + profit_leverage_boost
+        
+        # Cap at 100x maximum
+        return min(100.0, max(10.0, total_leverage))
     
     def _calculate_high_value_factors(self, direction_pred, profit_pred) -> np.ndarray:
         """Calculate high-value trade factors as continuous values between -1 and 1."""

@@ -5,7 +5,7 @@ Test script to verify ML-based profit prediction functionality.
 
 import pandas as pd
 import numpy as np
-from src.training.steps.step4_analyst_labeling_feature_engineering_components.multi_output_profit_prediction import MultiOutputProfitPredictor, MultiOutputConfig
+from src.training.steps.step4_analyst_labeling_feature_engineering_components.universal_ml_profit_integration import UniversalMLProfitIntegrator, UniversalMLConfig
 
 def test_ml_profit_prediction():
     """Test the ML-based profit prediction system."""
@@ -36,19 +36,26 @@ def test_ml_profit_prediction():
     print(f"   - Features: {len(data.columns) - 3}")  # Exclude timestamp, label, profit
     print(f"   - Profit range: {data['potential_profit_pct'].min():.4f} to {data['potential_profit_pct'].max():.4f}")
     
-    # Initialize multi-output predictor
-    config = MultiOutputConfig()
-    predictor = MultiOutputProfitPredictor(config)
+    # Initialize universal ML predictor
+    config = UniversalMLConfig()
+    predictor = UniversalMLProfitIntegrator(config)
     
-    print("\n🚀 Training Multi-Output Profit Prediction Model...")
+    print("\n🚀 Training Universal ML Profit Prediction Model...")
     
     # Train the model
     training_results = predictor.train(data)
     
-    if training_results and training_results.get("method"):
-        print(f"✅ Training successful using method: {training_results['method']}")
-        print(f"   - Direction accuracy: {training_results.get('direction_accuracy', 0):.4f}")
-        print(f"   - High-value accuracy: {training_results.get('high_value_accuracy', 0):.4f}")
+    if training_results and training_results.get("direction_models"):
+        print(f"✅ Training successful with ensemble models:")
+        print(f"   - Direction models: {len(training_results['direction_models'])}")
+        print(f"   - Profit models: {len(training_results['profit_models'])}")
+        
+        # Show individual model performance
+        for model_type, metrics in training_results['direction_models'].items():
+            print(f"     {model_type} direction: {metrics.get('cv_accuracy', 0):.4f} ± {metrics.get('cv_std', 0):.4f}")
+        
+        for model_type, metrics in training_results['profit_models'].items():
+            print(f"     {model_type} profit: R² = {metrics.get('cv_r2', 0):.4f} ± {metrics.get('cv_std', 0):.4f}")
     else:
         print("❌ Training failed")
         return False

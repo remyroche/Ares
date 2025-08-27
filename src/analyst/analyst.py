@@ -519,31 +519,27 @@ class Analyst:
     ) -> dict[str, Any]:
         """Make profit predictions using ML models with profit tracking."""
         try:
-            # Import multi-output prediction system
-            from src.training.steps.step4_analyst_labeling_feature_engineering_components.multi_output_profit_prediction import MultiOutputProfitPredictor, MultiOutputConfig
+            # Import universal ML profit prediction system
+            from src.training.steps.step4_analyst_labeling_feature_engineering_components.universal_ml_profit_integration import UniversalMLProfitIntegrator, UniversalMLConfig
             
-            # Initialize multi-output predictor if not already done
-            if not hasattr(self, 'multi_output_predictor'):
-                config = MultiOutputConfig()
-                self.multi_output_predictor = MultiOutputProfitPredictor(config)
-            
-            # Prepare data for prediction
-            # Use recent data for prediction (last 100 samples)
-            recent_features = features_df.tail(100).copy()
+            # Initialize universal ML predictor if not already done
+            if not hasattr(self, 'universal_ml_predictor'):
+                config = UniversalMLConfig()
+                self.universal_ml_predictor = UniversalMLProfitIntegrator(config)
             
             # Check if we have profit information for training
-            if "potential_profit_pct" in recent_features.columns and "label" in recent_features.columns:
+            if "potential_profit_pct" in features_df.columns and "label" in features_df.columns:
                 # Train the multi-output model if we have enough data
-                if len(recent_features) >= 50:  # Minimum samples for training
-                    self.logger.info("Training multi-output profit prediction model...")
+                if len(features_df) >= 50:  # Minimum samples for training
+                    self.logger.info(f"Training universal ML profit prediction model with {len(features_df)} samples...")
                     
-                    # Train the model with the full DataFrame
-                    training_results = self.multi_output_predictor.train(recent_features)
+                    # Train the model with the full dataset
+                    training_results = self.universal_ml_predictor.train(features_df)
                     
-                    if training_results and training_results.get("method"):
-                        self.logger.info(f"✅ Multi-output model trained successfully using {training_results['method']}")
+                    if training_results and training_results.get("direction_models"):
+                        self.logger.info(f"✅ Universal ML model trained successfully with {len(training_results['direction_models'])} direction models and {len(training_results['profit_models'])} profit models")
                     else:
-                        self.logger.warning("Multi-output model training failed, using fallback")
+                        self.logger.warning("Universal ML model training failed, using fallback")
                         return self._get_fallback_profit_predictions(trading_decision)
                 else:
                     self.logger.warning("Insufficient data for training, using fallback")
@@ -553,12 +549,12 @@ class Analyst:
                 return self._get_fallback_profit_predictions(trading_decision)
             
             # Make predictions using the trained model
-            if self.multi_output_predictor.is_trained:
+            if self.universal_ml_predictor.is_trained:
                 # Use the most recent data point for prediction
                 latest_features = features_df.iloc[-1:].copy()
                 
                 # Make prediction
-                predictions = self.multi_output_predictor.predict(latest_features)
+                predictions = self.universal_ml_predictor.predict(latest_features)
                 
                 # Extract results
                 profit_predictions = {
@@ -569,7 +565,7 @@ class Analyst:
                 }
             else:
                 # Model not trained, use fallback
-                self.logger.warning("Multi-output model not trained, using fallback predictions")
+                self.logger.warning("Universal ML model not trained, using fallback predictions")
                 profit_predictions = self._get_fallback_profit_predictions(trading_decision)
             
             self.logger.info("✅ ML-based profit predictions made successfully")

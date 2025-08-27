@@ -250,21 +250,53 @@ class MultiOutputProfitPredictor:
         """
         self.logger.info("Training direct profit prediction models...")
         
-        # Initialize simple models
-        self.direction_model = RandomForestClassifier(n_estimators=100, random_state=42)
-        self.profit_model = RandomForestRegressor(n_estimators=100, random_state=42)
+        # Initialize models based on configuration
+        if self.config.direction_model_type == "RandomForest":
+            self.direction_model = RandomForestClassifier(**self.config.direction_model_params)
+        elif self.config.direction_model_type == "LogisticRegression":
+            self.direction_model = LogisticRegression(random_state=self.config.random_state)
+        else:
+            raise ValueError(f"Unsupported direction model type: {self.config.direction_model_type}")
+        
+        if self.config.profit_model_type == "RandomForest":
+            self.profit_model = RandomForestRegressor(**self.config.profit_model_params)
+        elif self.config.profit_model_type == "LinearRegression":
+            self.profit_model = LinearRegression()
+        else:
+            raise ValueError(f"Unsupported profit model type: {self.config.profit_model_type}")
         
         # Initialize scaler
         self.feature_scaler = StandardScaler()
         
-        # Simple training on full dataset
+        # Time series cross-validation
+        tscv = TimeSeriesSplit(n_splits=self.config.n_splits)
+        
+        direction_scores = []
+        profit_scores = []
+        
+        for train_idx, val_idx in tscv.split(X):
+            X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
+            y_dir_train, y_dir_val = y_direction.iloc[train_idx], y_direction.iloc[val_idx]
+            y_prof_train, y_prof_val = y_profit.iloc[train_idx], y_profit.iloc[val_idx]
+            
+            # Scale features
+            X_train_scaled = self.feature_scaler.fit_transform(X_train)
+            X_val_scaled = self.feature_scaler.transform(X_val)
+            
+            # Train direction model
+            self.direction_model.fit(X_train_scaled, y_dir_train)
+            dir_pred = self.direction_model.predict(X_val_scaled)
+            direction_scores.append(accuracy_score(y_dir_val, dir_pred))
+            
+            # Train profit model
+            self.profit_model.fit(X_train_scaled, y_prof_train)
+            prof_pred = self.profit_model.predict(X_val_scaled)
+            profit_scores.append(r2_score(y_prof_val, prof_pred))
+        
+        # Final training on full dataset
         X_scaled = self.feature_scaler.fit_transform(X)
         self.direction_model.fit(X_scaled, y_direction)
         self.profit_model.fit(X_scaled, y_profit)
-        
-        # Calculate simple metrics
-        direction_scores = [accuracy_score(y_direction, self.direction_model.predict(X_scaled))]
-        profit_scores = [r2_score(y_profit, self.profit_model.predict(X_scaled))]
         
         # Calculate final metrics
         dir_pred_final = self.direction_model.predict(X_scaled)

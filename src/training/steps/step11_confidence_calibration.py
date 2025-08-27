@@ -515,9 +515,20 @@ class ConfidenceCalibrationStep:
             # Fit the calibrator
             calibrator.fit(X_val, y_val)
             
-            # Store profit info for metrics calculation
-            calibrator.profit_info = profit_info
-            calibrator.is_profit_enhanced = profit_info.get("profit_available", False)
+            # If profit information is available, enhance the calibrator
+            if profit_info.get("profit_available", False):
+                # Create profit-enhanced predictions
+                base_predictions = calibrator.predict_proba(X_val)
+                profit_enhanced_predictions = self._enhance_predictions_with_profit(
+                    base_predictions, profit_info
+                )
+                
+                # Store enhanced predictions in calibrator
+                calibrator.profit_enhanced_predictions = profit_enhanced_predictions
+                calibrator.profit_info = profit_info
+                calibrator.is_profit_enhanced = True
+            else:
+                calibrator.is_profit_enhanced = False
             
             return calibrator
             
@@ -532,6 +543,41 @@ class ConfidenceCalibrationStep:
             calibrator.fit(X_val, y_val)
             calibrator.is_profit_enhanced = False
             return calibrator
+
+    def _enhance_predictions_with_profit(
+        self, 
+        base_predictions: np.ndarray, 
+        profit_info: dict[str, Any]
+    ) -> np.ndarray:
+        """Enhance predictions with profit information."""
+        try:
+            if not profit_info.get("profit_available", False):
+                return base_predictions
+            
+            profit_values = profit_info["potential_profit_pct"]
+            enhanced_predictions = base_predictions.copy()
+            
+            # Enhance predictions based on profit magnitude
+            for i in range(len(enhanced_predictions)):
+                profit_magnitude = abs(profit_values[i])
+                
+                # Higher profit magnitude = higher confidence boost
+                if profit_magnitude > 0.01:  # 1% profit potential
+                    confidence_boost = min(0.2, profit_magnitude * 10)  # Up to 20% boost
+                    
+                    # Apply boost to the predicted class
+                    predicted_class = np.argmax(enhanced_predictions[i])
+                    enhanced_predictions[i][predicted_class] += confidence_boost
+                    
+                    # Normalize probabilities
+                    enhanced_predictions[i] = np.clip(enhanced_predictions[i], 0.0, 1.0)
+                    enhanced_predictions[i] /= np.sum(enhanced_predictions[i])
+            
+            return enhanced_predictions
+            
+        except Exception as e:
+            self.logger.warning(f"Error enhancing predictions with profit: {e}")
+            return base_predictions
 
     def _calculate_enhanced_metrics(
         self, 
@@ -588,25 +634,93 @@ class ConfidenceCalibrationStep:
             profit_weights = np.abs(profit_values) + 0.01  # Add small constant to avoid division by zero
             weighted_accuracy = np.average(y_val == y_pred, weights=profit_weights)
             
+            # Calculate profit correlation with prediction confidence
+            max_proba = np.max(y_proba, axis=1)
+            profit_confidence_correlation = np.corrcoef(profit_weights, max_proba)[0, 1]
+            
             # Calculate high-profit prediction accuracy
             high_profit_threshold = np.percentile(profit_values, 75)  # Top 25% profit predictions
             high_profit_mask = np.abs(profit_values) >= high_profit_threshold
             high_profit_accuracy = np.mean(y_val[high_profit_mask] == y_pred[high_profit_mask]) if np.any(high_profit_mask) else 0.0
             
+            # Calculate profit-based precision and recall
+            profit_precision = self._calculate_profit_precision(y_val, y_pred, profit_values)
+            profit_recall = self._calculate_profit_recall(y_val, y_pred, profit_values)
+            
+            # Calculate profit distribution metrics
+            profit_distribution = self._calculate_profit_distribution_metrics(profit_values)
+            
             return {
                 "profit_weighted_accuracy": weighted_accuracy,
+                "profit_confidence_correlation": profit_confidence_correlation,
                 "high_profit_accuracy": high_profit_accuracy,
+                "profit_precision": profit_precision,
+                "profit_recall": profit_recall,
                 "profit_mean": profit_info["profit_mean"],
-                "profit_std": profit_info["profit_std"]
+                "profit_std": profit_info["profit_std"],
+                "profit_distribution": profit_distribution
             }
             
         except Exception as e:
             self.logger.warning(f"Error calculating profit metrics: {e}")
             return {
                 "profit_weighted_accuracy": 0.0,
+                "profit_confidence_correlation": 0.0,
                 "high_profit_accuracy": 0.0,
+                "profit_precision": 0.0,
+                "profit_recall": 0.0,
                 "profit_mean": 0.0,
-                "profit_std": 0.0
+                "profit_std": 0.0,
+                "profit_distribution": {}
+            }
+
+    def _calculate_profit_precision(self, y_val: pd.Series, y_pred: np.ndarray, profit_values: np.ndarray) -> float:
+        """Calculate profit-weighted precision."""
+        try:
+            # Calculate precision for high-profit predictions
+            high_profit_threshold = np.percentile(profit_values, 75)
+            high_profit_mask = np.abs(profit_values) >= high_profit_threshold
+            
+            if np.any(high_profit_mask):
+                high_profit_correct = (y_val[high_profit_mask] == y_pred[high_profit_mask]).sum()
+                high_profit_total = high_profit_mask.sum()
+                return high_profit_correct / high_profit_total if high_profit_total > 0 else 0.0
+            return 0.0
+        except Exception:
+            return 0.0
+
+    def _calculate_profit_recall(self, y_val: pd.Series, y_pred: np.ndarray, profit_values: np.ndarray) -> float:
+        """Calculate profit-weighted recall."""
+        try:
+            # Calculate recall for high-profit predictions
+            high_profit_threshold = np.percentile(profit_values, 75)
+            high_profit_mask = np.abs(profit_values) >= high_profit_threshold
+            
+            if np.any(high_profit_mask):
+                high_profit_correct = (y_val[high_profit_mask] == y_pred[high_profit_mask]).sum()
+                high_profit_actual = high_profit_mask.sum()
+                return high_profit_correct / high_profit_actual if high_profit_actual > 0 else 0.0
+            return 0.0
+        except Exception:
+            return 0.0
+
+    def _calculate_profit_distribution_metrics(self, profit_values: np.ndarray) -> dict[str, float]:
+        """Calculate profit distribution metrics."""
+        try:
+            return {
+                "profit_skewness": float(pd.Series(profit_values).skew()),
+                "profit_kurtosis": float(pd.Series(profit_values).kurtosis()),
+                "profit_q25": float(np.percentile(profit_values, 25)),
+                "profit_q75": float(np.percentile(profit_values, 75)),
+                "profit_iqr": float(np.percentile(profit_values, 75) - np.percentile(profit_values, 25))
+            }
+        except Exception:
+            return {
+                "profit_skewness": 0.0,
+                "profit_kurtosis": 0.0,
+                "profit_q25": 0.0,
+                "profit_q75": 0.0,
+                "profit_iqr": 0.0
             }
 
     async def _calibrate_analyst_models(

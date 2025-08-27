@@ -27,17 +27,18 @@ This document summarizes the cleanup performed on the two-tier profit tracking i
 **File**: `src/analyst/analyst.py`
 
 **Changes Made**:
-- Updated `_make_profit_predictions()` to use ML models for profit prediction
-- Integrated with `MultiOutputProfitPredictor` for proper ML-based predictions
-- Added training logic using recent data with profit information
+- Updated `_make_profit_predictions()` to use universal ML models for profit prediction
+- Integrated with `UniversalMLProfitIntegrator` for ensemble ML-based predictions
+- Added training logic using full dataset with profit information (not limited to 100 samples)
 - Added fallback mechanism when ML models are not available
 - Removed direct feature extraction for profit predictions
 
 **Benefits**:
 - Proper ML-based profit predictions instead of feature engineering
-- Uses trained models to predict profit from market features
+- Uses ensemble of multiple ML models (RandomForest, LightGBM, XGBoost, etc.)
+- Trains on full dataset for better model performance
 - Maintains fallback for robustness
-- More accurate profit predictions
+- More accurate and robust profit predictions
 
 ### 2. **Tactician Coordination**
 **File**: `src/tactician/tactician.py`
@@ -56,55 +57,65 @@ This document summarizes the cleanup performed on the two-tier profit tracking i
 **File**: `src/training/steps/step11_confidence_calibration.py`
 
 **Changes Made**:
-- Simplified `_create_enhanced_calibrator()` to remove complex profit enhancement
-- Removed `_enhance_predictions_with_profit()` method
-- Simplified `_calculate_profit_metrics()` to remove correlation calculations
-- Kept essential profit metrics (weighted accuracy, high-profit accuracy)
+- Restored `_create_enhanced_calibrator()` with complex profit enhancement
+- Restored `_enhance_predictions_with_profit()` method for confidence boosting
+- Enhanced `_calculate_profit_metrics()` with comprehensive metrics:
+  - Profit-weighted accuracy
+  - Profit-confidence correlation
+  - High-profit prediction accuracy
+  - Profit-based precision and recall
+  - Profit distribution metrics (skewness, kurtosis, IQR)
+- Added profit-based precision and recall calculations
+- Added profit distribution analysis
 
 **Benefits**:
-- Cleaner calibration process
-- Focused on essential metrics
-- Reduced computational complexity
+- Comprehensive profit-based confidence calibration
+- Enhanced confidence scoring with profit information
+- Detailed profit metrics for model evaluation
+- Better understanding of profit prediction quality
 
 ### 4. **Multi-Output Prediction**
 **File**: `src/training/steps/step4_analyst_labeling_feature_engineering_components/multi_output_profit_prediction.py`
 
 **Changes Made**:
-- Simplified `_train_direct_profit_models()` to use basic RandomForest models
-- Removed complex cross-validation and model selection
-- Simplified training to use full dataset
-- Removed unused sample weighting methods
+- Restored `_train_direct_profit_models()` with comprehensive model support
+- Restored complex cross-validation with TimeSeriesSplit
+- Enhanced training with multiple model types and parameters
+- Restored sample weighting methods for profit-based training
 
 **Benefits**:
-- Faster training
-- Simpler model selection
-- Reduced complexity
+- Robust model training with cross-validation
+- Support for multiple model types (RandomForest, LogisticRegression, etc.)
+- Proper time series validation
+- Profit-weighted training for better performance
 
 ## Retained Core Functionality
 
 ### 1. **Essential Components**
 - ✅ Triple barrier labeling with profit tracking (`potential_profit_pct`)
 - ✅ Profit-based feature engineering
-- ✅ Multi-output prediction system
+- ✅ Universal ML profit prediction system (ensemble of multiple models)
 - ✅ Two-tier profit coordination
-- ✅ Enhanced confidence calibration
-- ✅ Analyst profit predictions
+- ✅ Enhanced confidence calibration with comprehensive profit metrics
+- ✅ Analyst profit predictions using full dataset training
 - ✅ Tactician enhanced execution
 
 ### 2. **Key Features**
-- ✅ Profit prediction integration
-- ✅ Enhanced confidence scoring
+- ✅ Universal ML profit prediction (ensemble of RandomForest, LightGBM, XGBoost, etc.)
+- ✅ Enhanced confidence scoring with profit-based calibration
 - ✅ Position sizing with profit tracking
 - ✅ Leverage calculation with profit enhancement
 - ✅ Performance feedback loops
 - ✅ Quality and error handling decorators
+- ✅ Full dataset training (not limited to recent samples)
+- ✅ Comprehensive profit metrics and analysis
 
 ## Architecture After Cleanup
 
 ```
 Analyst Tier:
-├── ML-based profit predictions (using MultiOutputProfitPredictor)
-├── Enhanced confidence with profit
+├── Universal ML profit predictions (ensemble of multiple models)
+├── Enhanced confidence with comprehensive profit metrics
 └── Integration with dual model system
 
 Tactician Tier:
@@ -116,8 +127,8 @@ Tactician Tier:
 Profit Tracking Components:
 ├── Triple barrier labeling (profit calculation)
 ├── Profit-based feature engineering
-├── Multi-output prediction (ML models for profit)
-├── Confidence calibration with profit
+├── Universal ML prediction (ensemble of RandomForest, LightGBM, XGBoost, etc.)
+├── Enhanced confidence calibration with profit metrics
 └── Two-tier profit coordinator (optional)
 ```
 

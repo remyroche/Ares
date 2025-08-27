@@ -40,6 +40,12 @@ class Tactician:
         self.leverage_sizer = None
         self.position_division_strategy = None
 
+        # Enhanced predictions from supervisor
+        self.enable_enhanced_predictions: bool = self.tactician_config.get(
+            "enable_enhanced_predictions",
+            True,
+        )
+
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid tactician configuration"),
@@ -101,6 +107,9 @@ class Tactician:
             from src.tactician.position_division_strategy import PositionDivisionStrategy
             self.position_division_strategy = PositionDivisionStrategy(self.config)
             await self.position_division_strategy.initialize()
+
+            # Enhanced predictions are now handled by the supervisor
+            # No local initialization needed
 
             self.logger.info("✅ All component managers initialized")
 
@@ -337,6 +346,9 @@ class Tactician:
             "tactics_orchestrator": self.tactics_orchestrator is not None, "position_sizer": self.position_sizer is not None,
             "leverage_sizer": self.leverage_sizer is not None, "position_division_strategy": self.position_division_strategy is not None,
         }
+
+    # Enhanced predictions are now handled by the supervisor
+    # No local methods needed
 
     @handle_errors(
         exceptions=(Exception,),

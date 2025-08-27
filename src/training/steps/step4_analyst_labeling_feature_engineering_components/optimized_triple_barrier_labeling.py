@@ -28,9 +28,10 @@ if "numba" in globals() and numba is not None:
         pt_mult: float, 
         sl_mult: float, 
         end_idx_arr: np.ndarray,
-    ) -> np.ndarray:
-        """Numba-accelerated triple barrier labeling."""
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Numba-accelerated triple barrier labeling with profit tracking."""
         labels = np.zeros(close.shape[0], dtype=np.int8)
+        profits = np.zeros(close.shape[0], dtype=np.float64)
         n = close.shape[0]
         for i in range(n - 1):
             profit_barrier = close[i] * (1.0 + pt_mult)
@@ -38,18 +39,41 @@ if "numba" in globals() and numba is not None:
             end_idx = int(end_idx_arr[i])
             if end_idx <= i + 1:
                 labels[i] = 0
+                profits[i] = 0.0
                 continue
             lab = 0
+            max_profit = 0.0
+            max_loss = 0.0
             for j in range(i + 1, end_idx):
+                # Calculate current profit/loss at this point
+                current_profit_pct = (high[j] - close[i]) / close[i]
+                current_loss_pct = (low[j] - close[i]) / close[i]
+                
+                # Track maximum profit and loss achieved
+                max_profit = max(max_profit, current_profit_pct)
+                max_loss = min(max_loss, current_loss_pct)
+                
                 # Profit check first to match tie handling with vectorized baseline
                 if high[j] >= profit_barrier:
                     lab = 1
+                    profits[i] = max_profit  # Use maximum profit achieved
                     break
                 if low[j] <= stop_barrier:
                     lab = -1
+                    profits[i] = max_loss  # Use maximum loss (negative value)
                     break
-            labels[i] = lab
-        return labels
+            
+            # If no barrier hit, use the best opportunity within the window
+            if lab == 0:
+                if max_profit > abs(max_loss):
+                    profits[i] = max_profit
+                else:
+                    profits[i] = max_loss
+            else:
+                # If barrier was hit, profit is already set above
+                pass
+                
+        return labels, profits
 
 
 class OptimizedTripleBarrierLabeling:
@@ -58,6 +82,7 @@ class OptimizedTripleBarrierLabeling:
     This implementation provides significant performance improvements over the
     original O(n²) implementation by using NumPy vectorized operations.
     Focuses specifically on triple barrier labeling without feature engineering.
+    Now includes potential profit tracking when going beyond thresholds.
     """
 
     def __init__(
@@ -67,6 +92,7 @@ class OptimizedTripleBarrierLabeling:
         time_barrier_minutes: int = 30, 
         max_lookahead: int = 100, 
         binary_classification: bool = True,  # Default to True to fix label imbalance
+        include_profit_tracking: bool = True,  # New parameter to include profit tracking
     ) -> None:
         """Initialize the optimized triple barrier labeling.
 
@@ -77,16 +103,19 @@ class OptimizedTripleBarrierLabeling:
             max_lookahead: Maximum number of points to look ahead (default: 100)
             binary_classification: If True, only generate buy (1) and sell (-1) labels
                                   no hold (0) labels. If False, include hold labels (default: True)
+            include_profit_tracking: If True, include potential profit/loss tracking when going beyond thresholds (default: True)
 
         Note:
             binary_classification=True is now the default to address label imbalance issues.
             This automatically filters out HOLD samples to create a balanced binary classification.
+            include_profit_tracking=True adds a 'potential_profit_pct' column with the actual profit/loss percentage achieved.
         """
         self.profit_take_multiplier = profit_take_multiplier
         self.stop_loss_multiplier = stop_loss_multiplier
         self.time_barrier_minutes = time_barrier_minutes
         self.max_lookahead = max_lookahead
         self.binary_classification = binary_classification
+        self.include_profit_tracking = include_profit_tracking
         self.logger = get_logger("OptimizedTripleBarrierLabeling")
 
         if self.binary_classification:
@@ -103,6 +132,13 @@ class OptimizedTripleBarrierLabeling:
             self.logger.warning(
                 "   → Consider using binary_classification=True for better results"
             )
+            
+        if self.include_profit_tracking:
+            self.logger.info(
+                "💰 Profit tracking enabled - will include potential profit/loss when going beyond thresholds"
+            )
+            self.logger.info("   → Adds 'potential_profit_pct' column with actual profit/loss percentage achieved")
+            self.logger.info("   → Positive values = profit, negative values = loss")
 
     @handle_errors(
         exceptions=(Exception,),
@@ -120,6 +156,7 @@ class OptimizedTripleBarrierLabeling:
         Scans forward up to the earlier of the time barrier and max_lookahead
         to find the first barrier hit (profit-take or stop-loss). If neither is
         hit within the window, the label remains 0 (time barrier).
+        Now includes potential profit tracking when going beyond thresholds.
         """
         # Debug
         self.logger.info(
@@ -163,6 +200,8 @@ class OptimizedTripleBarrierLabeling:
         n = len(labeled_data)
         if n < 2:
             labeled_data["label"] = 0  # Default to hold signal
+            if self.include_profit_tracking:
+                labeled_data["potential_profit_pct"] = 0.0
             return labeled_data
 
         close = labeled_data["close"].to_numpy()
@@ -200,6 +239,8 @@ class OptimizedTripleBarrierLabeling:
         sl_mult = float(self.stop_loss_multiplier)
 
         labels: np.ndarray
+        profits: np.ndarray
+        
         use_numba = (
             "numba" in globals()
             and numba is not None
@@ -207,7 +248,7 @@ class OptimizedTripleBarrierLabeling:
         )
         if use_numba and n >= 512:
             self.logger.info("⚡ Using Numba-accelerated triple barrier labeling")
-            labels = _numba_triple_barrier_labels(
+            labels, profits = _numba_triple_barrier_labels(
                 close.astype(np.float64),
                 high.astype(np.float64),
                 low.astype(np.float64),
@@ -216,31 +257,68 @@ class OptimizedTripleBarrierLabeling:
                 end_idx_arr.astype(np.int64),
             )
         else:
-            # Fallback to vectorized Python implementation
+            # Fallback to vectorized Python implementation with profit tracking
             labels = np.zeros(n, dtype=np.int8)
+            profits = np.zeros(n, dtype=np.float64)
+            
             for i in range(n - 1):
                 profit_barrier = close[i] * (1.0 + pt_mult)
                 stop_barrier = close[i] * (1.0 - sl_mult)
                 end_idx = int(end_idx_arr[i])
+                
                 if end_idx <= i + 1:
                     labels[i] = 0
+                    profits[i] = 0.0
                     continue
+                    
                 win_high = high[i + 1 : end_idx]
                 win_low = low[i + 1 : end_idx]
+                
+                # Calculate potential profits and losses at each point
+                profit_pcts = (win_high - close[i]) / close[i]
+                loss_pcts = (win_low - close[i]) / close[i]
+                
+                # Find barrier hits
                 profit_hits = np.where(win_high >= profit_barrier)[0]
                 stop_hits = np.where(win_low <= stop_barrier)[0]
+                
+                # Track maximum profit and loss achieved within the window
+                max_profit_pct = np.max(profit_pcts) if len(profit_pcts) > 0 else 0.0
+                max_loss_pct = np.min(loss_pcts) if len(loss_pcts) > 0 else 0.0
+                
                 if profit_hits.size == 0 and stop_hits.size == 0:
+                    # No barrier hit - use the best opportunity within the window
                     labels[i] = 0
+                    if max_profit_pct > abs(max_loss_pct):
+                        profits[i] = max_profit_pct
+                    else:
+                        profits[i] = max_loss_pct
                     continue
+                    
                 if profit_hits.size == 0:
+                    # Only stop loss hit
                     labels[i] = -1
+                    profits[i] = max_loss_pct  # Use the maximum loss achieved
                     continue
+                    
                 if stop_hits.size == 0:
+                    # Only profit take hit
                     labels[i] = 1
+                    profits[i] = max_profit_pct  # Use the maximum profit achieved
                     continue
-                labels[i] = 1 if profit_hits[0] <= stop_hits[0] else -1
+                    
+                # Both barriers hit - determine which came first
+                if profit_hits[0] <= stop_hits[0]:
+                    labels[i] = 1
+                    profits[i] = max_profit_pct  # Use the maximum profit achieved
+                else:
+                    labels[i] = -1
+                    profits[i] = max_loss_pct  # Use the maximum loss achieved
 
         labeled_data["label"] = labels
+        
+        if self.include_profit_tracking:
+            labeled_data["potential_profit_pct"] = profits
 
         # Filter out HOLD samples (label == 0) to create binary classification
         original_count = len(labeled_data)
@@ -262,6 +340,16 @@ class OptimizedTripleBarrierLabeling:
                 "   Reason: binary_classification=True. HOLDs occur when neither profit-take nor stop-loss was hit before the time barrier;"
                 " removing them balances the dataset for BUY vs SELL classification.",
             )
+            
+        # Log profit tracking statistics if enabled
+        if self.include_profit_tracking:
+            buy_profits = labeled_data[labeled_data["label"] == 1]["potential_profit_pct"]
+            sell_profits = labeled_data[labeled_data["label"] == -1]["potential_profit_pct"]
+            
+            self.logger.info("💰 Profit tracking statistics:")
+            self.logger.info(f"   BUY signals - Avg profit: {buy_profits.mean():.4f}, Max: {buy_profits.max():.4f}, Min: {buy_profits.min():.4f}")
+            self.logger.info(f"   SELL signals - Avg profit: {sell_profits.mean():.4f}, Max: {sell_profits.max():.4f}, Min: {sell_profits.min():.4f}")
+            self.logger.info(f"   Overall - Avg profit: {labeled_data['potential_profit_pct'].mean():.4f}, Std: {labeled_data['potential_profit_pct'].std():.4f}")
 
         # Diagnostics: distribution and basic directional alignment with next-bar return
         distribution = dict(pd.Series(labeled_data["label"]).value_counts())

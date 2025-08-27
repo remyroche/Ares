@@ -187,6 +187,7 @@ class TripleBarrierMethodStep:
             stop_loss_multiplier = self.config.get("triple_barrier", {}).get("stop_loss_multiplier", 0.001)
             time_barrier_minutes = self.config.get("triple_barrier", {}).get("time_barrier_minutes", 30)
             max_lookahead = self.config.get("triple_barrier", {}).get("max_lookahead", 100)
+            include_profit_tracking = self.config.get("triple_barrier", {}).get("include_profit_tracking", True)
 
             # Create triple barrier labeler with configuration
             from .step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
@@ -198,18 +199,22 @@ class TripleBarrierMethodStep:
                 stop_loss_multiplier=stop_loss_multiplier,
                 time_barrier_minutes=time_barrier_minutes,
                 max_lookahead=max_lookahead,
-                binary_classification=True
+                binary_classification=True,
+                include_profit_tracking=include_profit_tracking
             )
 
             # Apply triple barrier labeling
-            labels = labeler.apply_triple_barrier_labels(data)
+            labeled_data = labeler.apply_triple_barrier_labeling_vectorized(data)
             
-            self.logger.info(f"✅ Generated {len(labels)} triple barrier labels")
-            self.logger.info(f"   - Buy signals: {(labels == 1).sum()}")
-            self.logger.info(f"   - Sell signals: {(labels == -1).sum()}")
-            self.logger.info(f"   - Hold signals: {(labels == 0).sum()}")
+            self.logger.info(f"✅ Generated {len(labeled_data)} triple barrier labels")
+            self.logger.info(f"   - Buy signals: {(labeled_data['label'] == 1).sum()}")
+            self.logger.info(f"   - Sell signals: {(labeled_data['label'] == -1).sum()}")
             
-            return labels
+            # Check if profit tracking is enabled
+            if 'potential_profit_pct' in labeled_data.columns:
+                self.logger.info(f"   - Profit tracking enabled: {labeled_data['potential_profit_pct'].mean():.4f} avg profit")
+            
+            return labeled_data['label']
 
         except Exception as e:
             self.logger.exception(f"❌ Error in optimized triple barrier: {e}")

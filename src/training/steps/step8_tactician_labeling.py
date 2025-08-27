@@ -26,6 +26,7 @@ class TacticianTripleBarrierLabeler:
 
     This labeler uses FIXED PERCENTAGE barriers and a short time horizon to reward
     models that can accurately predict immediate, favorable price action under strict risk parameters.
+    Now includes potential profit tracking when going beyond thresholds.
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
@@ -43,7 +44,7 @@ class TacticianTripleBarrierLabeler:
                                as values, indicating when the Analyst has identified a setup.
 
         Returns:
-            A DataFrame with the new 'tactician_label' column.
+            A DataFrame with the new 'tactician_label' column and 'tactician_potential_profit_pct' column.
         """
         self.logger.info(
             "🔧 Applying specialized Tactician triple barrier labels using fixed percentages...",
@@ -56,6 +57,7 @@ class TacticianTripleBarrierLabeler:
             "time_barrier_periods",
             30,
         )  # 30-minute time horizon
+        include_profit_tracking = self.config.get("include_profit_tracking", True)
 
         # Align signals with the data index
         entry_points = (
@@ -68,6 +70,8 @@ class TacticianTripleBarrierLabeler:
             data[
                 "tactician_label"
             ] = -1  # Default to sell signal for binary classification
+            if include_profit_tracking:
+                data["tactician_potential_profit_pct"] = 0.0
             return data
 
         entry_indices = data.index.get_indexer_for(entry_points.index)
@@ -81,8 +85,11 @@ class TacticianTripleBarrierLabeler:
         labels = pd.Series(
             -1, index=data.index
         )  # Default to sell signal for binary classification
+        
+        if include_profit_tracking:
+            profits = pd.Series(0.0, index=data.index)
 
-        # Vectorized barrier check
+        # Vectorized barrier check with profit tracking
         for i, entry_idx in enumerate(entry_indices):
             if entry_idx >= len(data) - 1:
                 continue
@@ -90,12 +97,25 @@ class TacticianTripleBarrierLabeler:
             signal = entry_points.iloc[i]
             pt = profit_barriers.iloc[i]
             sl = stop_barriers.iloc[i]
+            entry_price = entry_prices.iloc[i]
 
             path = data.iloc[entry_idx + 1 : entry_idx + 1 + time_barrier]
             if path.empty:
                 continue
 
-            # Check for hits
+            # Calculate potential profits and losses at each point in the path
+            if signal == 1:  # BUY signal
+                profit_pcts = (path["high"] - entry_price) / entry_price
+                loss_pcts = (path["low"] - entry_price) / entry_price
+            else:  # SELL signal
+                profit_pcts = (entry_price - path["low"]) / entry_price
+                loss_pcts = (entry_price - path["high"]) / entry_price
+
+            # Track maximum profit and loss achieved within the window
+            max_profit_pct = profit_pcts.max() if len(profit_pcts) > 0 else 0.0
+            max_loss_pct = loss_pcts.min() if len(loss_pcts) > 0 else 0.0
+
+            # Check for barrier hits
             pt_hit_mask = (path["high"] >= pt) if signal == 1 else (path["low"] <= pt)
             sl_hit_mask = (path["low"] <= sl) if signal == 1 else (path["high"] >= sl)
 
@@ -107,10 +127,37 @@ class TacticianTripleBarrierLabeler:
                 pd.isna(sl_hit_time) or pt_hit_time <= sl_hit_time
             ):
                 labels.iloc[entry_idx] = 1  # Profit take
+                if include_profit_tracking:
+                    profits.iloc[entry_idx] = max_profit_pct  # Use maximum profit achieved
             elif pd.notna(sl_hit_time):
                 labels.iloc[entry_idx] = -1  # Stop loss
+                if include_profit_tracking:
+                    profits.iloc[entry_idx] = max_loss_pct  # Use maximum loss achieved
+            else:
+                # No barrier hit - use the best opportunity within the window
+                if include_profit_tracking:
+                    if max_profit_pct > abs(max_loss_pct):
+                        profits.iloc[entry_idx] = max_profit_pct
+                    else:
+                        profits.iloc[entry_idx] = max_loss_pct
 
         data["tactician_label"] = labels
+        
+        if include_profit_tracking:
+            data["tactician_potential_profit_pct"] = profits
+            
+            # Log profit tracking statistics
+            buy_profits = data[data["tactician_label"] == 1]["tactician_potential_profit_pct"]
+            sell_profits = data[data["tactician_label"] == -1]["tactician_potential_profit_pct"]
+            
+            self.logger.info("💰 Tactician profit tracking statistics:")
+            if len(buy_profits) > 0:
+                self.logger.info(f"   BUY signals - Avg profit: {buy_profits.mean():.4f}, Max: {buy_profits.max():.4f}, Min: {buy_profits.min():.4f}")
+            if len(sell_profits) > 0:
+                self.logger.info(f"   SELL signals - Avg profit: {sell_profits.mean():.4f}, Max: {sell_profits.max():.4f}, Min: {sell_profits.min():.4f}")
+            if len(profits) > 0:
+                self.logger.info(f"   Overall - Avg profit: {profits.mean():.4f}, Std: {profits.std():.4f}")
+
         self.logger.info(
             f"Tactician labeling complete. Label distribution:\n{labels.value_counts()}",
         )

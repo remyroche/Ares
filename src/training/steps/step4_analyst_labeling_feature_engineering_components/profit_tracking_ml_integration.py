@@ -217,8 +217,75 @@ class ProfitTrackingMLIntegrator:
         model_type = type(model).__name__
         self.logger.info(f"Adapting {model_type} model")
         
-        if hasattr(model, 'fit'):
-            # For sklearn-style models, retrain with profit features and weights
+        # Check if model is None (not yet created)
+        if model is None:
+            self.logger.info(f"Model {model_name} is None - will create new model with profit tracking")
+            return self._create_new_model_with_profit_tracking(X, y, sample_weights, model_name)
+        
+        # Supported sklearn-style models
+        if hasattr(model, 'fit') and hasattr(model, 'predict'):
+            self.logger.info(f"Adapting sklearn-style model: {model_type}")
+            return self._adapt_sklearn_model(model, X, y, sample_weights, model_name)
+        
+        # Supported LightGBM models
+        elif hasattr(model, 'train') and hasattr(model, 'predict'):
+            self.logger.info(f"Adapting LightGBM model: {model_type}")
+            return self._adapt_lightgbm_model(model, X, y, sample_weights, model_name)
+        
+        # PyTorch models (CNN, TCN, Transformer)
+        elif hasattr(model, 'forward') and hasattr(model, 'parameters'):
+            self.logger.info(f"Adapting PyTorch model: {model_type}")
+            return self._adapt_pytorch_model(model, X, y, sample_weights, model_name)
+        
+        # Custom trainer classes (CNNTrainer, TCNTrainer, etc.)
+        elif hasattr(model, 'train') and hasattr(model, 'model'):
+            self.logger.info(f"Adapting custom trainer: {model_type}")
+            return self._adapt_custom_trainer(model, X, y, sample_weights, model_name)
+        
+        else:
+            # For unsupported model types, log warning and return as-is
+            self.logger.warning(f"Unsupported model type {model_type} for profit tracking adaptation")
+            self.logger.warning(f"Model {model_name} will be used as-is without profit tracking features")
+            return model
+    
+    def _create_new_model_with_profit_tracking(self, X: pd.DataFrame, y: pd.Series, sample_weights: Optional[np.ndarray], model_name: str):
+        """Create a new model with profit tracking capabilities."""
+        # Determine model type based on name
+        if 'lightgbm' in model_name.lower():
+            import lightgbm as lgb
+            model = lgb.LGBMClassifier(
+                n_estimators=100,
+                learning_rate=0.1,
+                max_depth=6,
+                random_state=42,
+                n_jobs=-1
+            )
+            return self._adapt_lightgbm_model(model, X, y, sample_weights, model_name)
+        
+        elif 'randomforest' in model_name.lower() or 'rf' in model_name.lower():
+            from sklearn.ensemble import RandomForestClassifier
+            model = RandomForestClassifier(
+                n_estimators=100,
+                max_depth=10,
+                random_state=42,
+                n_jobs=-1
+            )
+            return self._adapt_sklearn_model(model, X, y, sample_weights, model_name)
+        
+        else:
+            # Default to RandomForest
+            from sklearn.ensemble import RandomForestClassifier
+            model = RandomForestClassifier(
+                n_estimators=100,
+                max_depth=10,
+                random_state=42,
+                n_jobs=-1
+            )
+            return self._adapt_sklearn_model(model, X, y, sample_weights, model_name)
+    
+    def _adapt_sklearn_model(self, model, X: pd.DataFrame, y: pd.Series, sample_weights: Optional[np.ndarray], model_name: str):
+        """Adapt sklearn-style models with profit tracking."""
+        try:
             if sample_weights is not None:
                 adapted_model = model.fit(X, y, sample_weight=sample_weights)
             else:
@@ -230,25 +297,59 @@ class ProfitTrackingMLIntegrator:
                     'feature_names': adapted_model.feature_names_in_.tolist()
                 }
             
+            self.logger.info(f"Successfully adapted sklearn model {model_name}")
             return adapted_model
-        
-        elif hasattr(model, 'train'):
-            # For LightGBM/XGBoost models
-            if sample_weights is not None:
-                # Add sample weights to training data
-                train_data = model.train_data
-                if hasattr(train_data, 'set_weight'):
-                    train_data.set_weight(sample_weights)
-                adapted_model = model
-            else:
-                adapted_model = model
             
-            return adapted_model
-        
-        else:
-            # For other model types, return as-is
-            self.logger.warning(f"Unknown model type {model_type}, returning as-is")
+        except Exception as e:
+            self.logger.error(f"Failed to adapt sklearn model {model_name}: {e}")
             return model
+    
+    def _adapt_lightgbm_model(self, model, X: pd.DataFrame, y: pd.Series, sample_weights: Optional[np.ndarray], model_name: str):
+        """Adapt LightGBM models with profit tracking."""
+        try:
+            if sample_weights is not None:
+                # LightGBM supports sample_weight parameter
+                adapted_model = model.fit(X, y, sample_weight=sample_weights)
+            else:
+                adapted_model = model.fit(X, y)
+            
+            self.logger.info(f"Successfully adapted LightGBM model {model_name}")
+            return adapted_model
+            
+        except Exception as e:
+            self.logger.error(f"Failed to adapt LightGBM model {model_name}: {e}")
+            return model
+    
+    def _adapt_pytorch_model(self, model, X: pd.DataFrame, y: pd.Series, sample_weights: Optional[np.ndarray], model_name: str):
+        """Adapt PyTorch models with profit tracking."""
+        try:
+            # For PyTorch models, we need to handle them differently
+            # Since they require custom training loops, we'll create a wrapper
+            self.logger.info(f"PyTorch model {model_name} detected - profit tracking will be limited")
+            self.logger.info(f"PyTorch models require custom training loops for profit tracking")
+            
+            # Store the model as-is for now
+            # In a full implementation, we would need to modify the training loop
+            return model
+            
+        except Exception as e:
+            self.logger.error(f"Failed to adapt PyTorch model {model_name}: {e}")
+            return model
+    
+    def _adapt_custom_trainer(self, trainer, X: pd.DataFrame, y: pd.Series, sample_weights: Optional[np.ndarray], model_name: str):
+        """Adapt custom trainer classes with profit tracking."""
+        try:
+            # For custom trainers (CNNTrainer, TCNTrainer, etc.), we need to modify the training process
+            self.logger.info(f"Custom trainer {model_name} detected - profit tracking will be limited")
+            self.logger.info(f"Custom trainers require modification of training loops for profit tracking")
+            
+            # Store the trainer as-is for now
+            # In a full implementation, we would need to modify the training method
+            return trainer
+            
+        except Exception as e:
+            self.logger.error(f"Failed to adapt custom trainer {model_name}: {e}")
+            return trainer
     
     def _create_profit_prediction_model(self, X: pd.DataFrame, profit: pd.Series, model_name: str) -> RandomForestRegressor:
         """Create a profit prediction model."""
@@ -317,7 +418,7 @@ class ProfitTrackingMLIntegrator:
             X: Feature DataFrame
             
         Returns:
-            Dictionary with predictions including profit estimates
+            Dictionary with predictions including profit estimates, confidence, and position sizing
         """
         if model_name not in self.adapted_models:
             raise ValueError(f"Model {model_name} not found in adapted models")
@@ -338,15 +439,120 @@ class ProfitTrackingMLIntegrator:
         if profit_model:
             profit_pred = profit_model.predict(X)
         
+        # Calculate confidence scores
+        confidence_scores = self._calculate_confidence_scores(direction_pred, direction_proba, profit_pred)
+        
         # Calculate high-value trade factors
         high_value_factors = self._calculate_high_value_factors(direction_pred, profit_pred)
+        
+        # Calculate position sizing recommendations
+        position_sizing = self._calculate_position_sizing(direction_pred, profit_pred, confidence_scores, high_value_factors)
         
         return {
             "direction": direction_pred,
             "direction_proba": direction_proba,
             "profit": profit_pred,
             "high_value_trades": high_value_factors,
+            "confidence": confidence_scores,
+            "position_sizing": position_sizing,
             "model_name": model_name
+        }
+    
+    def _calculate_confidence_scores(self, direction_pred, direction_proba, profit_pred) -> np.ndarray:
+        """Calculate confidence scores based on model probabilities and profit predictions."""
+        confidence_scores = np.zeros(len(direction_pred))
+        
+        for i in range(len(direction_pred)):
+            # Base confidence from model probabilities
+            if direction_proba is not None:
+                prob = direction_proba[i]
+                if len(prob) > 1:  # Multi-class case
+                    max_prob = np.max(prob)
+                    confidence_scores[i] = max_prob
+                else:  # Binary case
+                    confidence_scores[i] = prob[0] if direction_pred[i] == 1 else 1 - prob[0]
+            else:
+                # Default confidence if no probabilities available
+                confidence_scores[i] = 0.7
+            
+            # Adjust confidence based on profit prediction
+            if profit_pred is not None:
+                profit_confidence = self._calculate_profit_based_confidence(profit_pred[i])
+                # Combine model confidence with profit confidence
+                confidence_scores[i] = 0.7 * confidence_scores[i] + 0.3 * profit_confidence
+            
+            # Ensure confidence is between 0 and 1
+            confidence_scores[i] = np.clip(confidence_scores[i], 0.0, 1.0)
+        
+        return confidence_scores
+    
+    def _calculate_profit_based_confidence(self, profit_pred: float) -> float:
+        """Calculate confidence based on predicted profit magnitude."""
+        if profit_pred is None:
+            return 0.5
+        
+        # Higher confidence for larger profit predictions (positive or negative)
+        profit_abs = abs(profit_pred)
+        
+        # Sigmoid-like function to map profit to confidence
+        # Higher profit magnitude = higher confidence
+        confidence = 1.0 / (1.0 + np.exp(-10 * (profit_abs - 0.02)))
+        
+        return confidence
+    
+    def _calculate_position_sizing(self, direction_pred, profit_pred, confidence_scores, high_value_factors) -> Dict[str, np.ndarray]:
+        """Calculate position sizing recommendations based on profit tracking."""
+        n_samples = len(direction_pred)
+        
+        # Base position size (percentage of capital)
+        base_position_size = np.full(n_samples, 0.02)  # 2% base position
+        
+        # Leverage recommendations
+        leverage = np.full(n_samples, 1.0)  # 1x base leverage
+        
+        # Risk-adjusted position size
+        risk_adjusted_size = np.full(n_samples, 0.02)
+        
+        for i in range(n_samples):
+            if profit_pred is not None and confidence_scores[i] > 0.6:
+                # Adjust position size based on profit prediction
+                profit_magnitude = abs(profit_pred[i])
+                
+                # Scale position size with profit magnitude (up to 5% max)
+                if profit_magnitude > 0.02:  # High profit potential
+                    position_multiplier = min(2.5, 1.0 + profit_magnitude * 50)
+                    base_position_size[i] = min(0.05, 0.02 * position_multiplier)
+                
+                # Adjust leverage based on confidence and profit
+                if confidence_scores[i] > 0.8 and profit_magnitude > 0.03:
+                    leverage[i] = min(3.0, 1.0 + confidence_scores[i] * 2.0)
+                
+                # Risk-adjusted sizing using Kelly criterion principles
+                if profit_pred[i] > 0:
+                    # For positive profit predictions
+                    win_rate = confidence_scores[i]
+                    avg_win = profit_pred[i]
+                    avg_loss = 0.02  # Assume 2% average loss
+                    
+                    if avg_loss > 0:
+                        kelly_fraction = (win_rate * avg_win - (1 - win_rate) * avg_loss) / avg_win
+                        kelly_fraction = np.clip(kelly_fraction, 0.0, 0.25)  # Cap at 25%
+                        risk_adjusted_size[i] = kelly_fraction
+                else:
+                    # For negative profit predictions (short positions)
+                    risk_adjusted_size[i] = min(0.03, abs(profit_pred[i]) * 2.0)
+            
+            # Adjust based on high-value trade factors
+            if abs(high_value_factors[i]) > 0.7:
+                # Boost position size for high-value trades
+                base_position_size[i] *= 1.5
+                leverage[i] = min(leverage[i] * 1.2, 3.0)
+        
+        return {
+            "base_position_size": base_position_size,
+            "leverage": leverage,
+            "risk_adjusted_size": risk_adjusted_size,
+            "recommended_size": np.minimum(base_position_size, risk_adjusted_size)
         }
     
     def _calculate_high_value_factors(self, direction_pred, profit_pred) -> np.ndarray:

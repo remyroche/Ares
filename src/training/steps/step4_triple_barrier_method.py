@@ -189,16 +189,6 @@ class TripleBarrierMethodStep:
             time_barrier_minutes = triple_barrier_config.get("time_barrier_minutes", 30)
             max_lookahead = triple_barrier_config.get("max_lookahead", 100)
             include_profit_tracking = triple_barrier_config.get("include_profit_tracking", True)
-            
-            # Dynamic TPSL parameters
-            enable_dynamic_tpsl = triple_barrier_config.get("enable_dynamic_tpsl", False)
-            dynamic_tpsl_high_profit_threshold = triple_barrier_config.get("dynamic_tpsl_high_profit_threshold", 0.02)
-            dynamic_tpsl_medium_profit_threshold = triple_barrier_config.get("dynamic_tpsl_medium_profit_threshold", 0.01)
-            dynamic_tpsl_high_multiplier = triple_barrier_config.get("dynamic_tpsl_high_multiplier", 1.5)
-            dynamic_tpsl_medium_multiplier = triple_barrier_config.get("dynamic_tpsl_medium_multiplier", 1.0)
-            dynamic_tpsl_low_multiplier = triple_barrier_config.get("dynamic_tpsl_low_multiplier", 0.8)
-            dynamic_tpsl_stop_loss_tightening = triple_barrier_config.get("dynamic_tpsl_stop_loss_tightening", 0.8)
-            dynamic_tpsl_stop_loss_loosening = triple_barrier_config.get("dynamic_tpsl_stop_loss_loosening", 1.2)
 
             # Create triple barrier labeler with configuration
             from .step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
@@ -211,15 +201,7 @@ class TripleBarrierMethodStep:
                 time_barrier_minutes=time_barrier_minutes,
                 max_lookahead=max_lookahead,
                 binary_classification=True,
-                include_profit_tracking=include_profit_tracking,
-                enable_dynamic_tpsl=enable_dynamic_tpsl,
-                dynamic_tpsl_high_profit_threshold=dynamic_tpsl_high_profit_threshold,
-                dynamic_tpsl_medium_profit_threshold=dynamic_tpsl_medium_profit_threshold,
-                dynamic_tpsl_high_multiplier=dynamic_tpsl_high_multiplier,
-                dynamic_tpsl_medium_multiplier=dynamic_tpsl_medium_multiplier,
-                dynamic_tpsl_low_multiplier=dynamic_tpsl_low_multiplier,
-                dynamic_tpsl_stop_loss_tightening=dynamic_tpsl_stop_loss_tightening,
-                dynamic_tpsl_stop_loss_loosening=dynamic_tpsl_stop_loss_loosening
+                include_profit_tracking=include_profit_tracking
             )
 
             # Apply triple barrier labeling

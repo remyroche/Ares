@@ -3008,6 +3008,63 @@ class VectorizedAdvancedFeatureEngineering:
         except Exception as e:
         self.logger.warning(f"⚠️ Lookahead bias detection failed: {e}")
 
+        # Profit-based feature engineering (if potential_profit_pct column exists)
+        self.logger.info("🔍 Checking for profit-based feature engineering...")
+        try:
+            # Check if we have potential_profit_pct column in the data
+            # This would come from triple barrier labeling
+            if hasattr(price_data, 'potential_profit_pct') or 'potential_profit_pct' in price_data.columns:
+                self.logger.info("💰 Found potential_profit_pct column - adding profit-based features")
+                
+                # Import profit-based feature engineering
+                from .step4_analyst_labeling_feature_engineering_components.profit_based_feature_engineering import (
+                    integrate_profit_features_into_pipeline,
+                    ProfitFeatureConfig
+                )
+                
+                # Create DataFrame with potential_profit_pct for feature engineering
+                profit_data = price_data.copy()
+                if 'potential_profit_pct' not in profit_data.columns:
+                    # If it's an attribute, add it as a column
+                    profit_data['potential_profit_pct'] = getattr(price_data, 'potential_profit_pct', pd.Series(0.0, index=price_data.index))
+                
+                # Configure profit feature engineering
+                profit_config = ProfitFeatureConfig(
+                    include_basic_features=True,
+                    include_interaction_features=True,
+                    include_risk_reward_features=True,
+                    include_momentum_features=True,
+                    include_volatility_features=True,
+                    include_rolling_features=True,
+                    include_categorical_features=True
+                )
+                
+                # Generate profit-based features
+                profit_enhanced_data = integrate_profit_features_into_pipeline(profit_data, profit_config)
+                
+                # Extract only the new profit-based features (excluding original columns)
+                original_columns = set(profit_data.columns)
+                profit_features = {}
+                
+                for col in profit_enhanced_data.columns:
+                    if col not in original_columns:
+                        profit_features[col] = profit_enhanced_data[col]
+                
+                if profit_features:
+                    self.logger.info(f"💰 Generated {len(profit_features)} profit-based features")
+                    self.logger.info(f"💰 Profit feature names: {list(profit_features.keys())}")
+                    
+                    # Add profit features to sanitized features
+                    sanitized.update(profit_features)
+                    self.logger.info(f"🔍 Total features after profit-based features: {len(sanitized)}")
+                else:
+                    self.logger.info("ℹ️ No profit-based features generated")
+            else:
+                self.logger.info("ℹ️ No potential_profit_pct column found - skipping profit-based features")
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Profit-based feature engineering failed: {e}")
+
         # Final summary logging
         self.logger.info(
                 f"✅ Engineered {len(sanitized)} vectorized advanced features including wavelet transforms",
@@ -3016,7 +3073,9 @@ class VectorizedAdvancedFeatureEngineering:
         # Log feature categories summary
             feature_categories = {}
         for feature_name in sanitized:
-        if "wavelet" in feature_name.lower():
+        if "profit" in feature_name.lower():
+                    feature_categories["profit"] = feature_categories.get("profit", 0) + 1
+                elif "wavelet" in feature_name.lower():
                     feature_categories["wavelet"] = feature_categories.get("wavelet", 0) + 1
                 elif "momentum" in feature_name.lower() or "rsi" in feature_name.lower() or "macd" in feature_name.lower():
                     feature_categories["momentum"] = feature_categories.get("momentum", 0) + 1

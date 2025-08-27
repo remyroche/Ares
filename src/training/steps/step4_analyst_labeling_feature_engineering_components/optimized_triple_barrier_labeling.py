@@ -93,15 +93,6 @@ class OptimizedTripleBarrierLabeling:
         max_lookahead: int = 100, 
         binary_classification: bool = True,  # Default to True to fix label imbalance
         include_profit_tracking: bool = True,  # New parameter to include profit tracking
-        # Dynamic TPSL parameters
-        enable_dynamic_tpsl: bool = False,  # Enable dynamic TPSL based on profit potential
-        dynamic_tpsl_high_profit_threshold: float = 0.02,  # Threshold for high profit potential
-        dynamic_tpsl_medium_profit_threshold: float = 0.01,  # Threshold for medium profit potential
-        dynamic_tpsl_high_multiplier: float = 1.5,  # Multiplier for high profit potential
-        dynamic_tpsl_medium_multiplier: float = 1.0,  # Multiplier for medium profit potential
-        dynamic_tpsl_low_multiplier: float = 0.8,  # Multiplier for low profit potential
-        dynamic_tpsl_stop_loss_tightening: float = 0.8,  # Stop loss tightening for high profit
-        dynamic_tpsl_stop_loss_loosening: float = 1.2,  # Stop loss loosening for low profit
     ) -> None:
         """Initialize the optimized triple barrier labeling.
 
@@ -113,20 +104,11 @@ class OptimizedTripleBarrierLabeling:
             binary_classification: If True, only generate buy (1) and sell (-1) labels
                                   no hold (0) labels. If False, include hold labels (default: True)
             include_profit_tracking: If True, include potential profit/loss tracking when going beyond thresholds (default: True)
-            enable_dynamic_tpsl: If True, use dynamic TPSL based on profit potential (default: False)
-            dynamic_tpsl_high_profit_threshold: Threshold for high profit potential (default: 2%)
-            dynamic_tpsl_medium_profit_threshold: Threshold for medium profit potential (default: 1%)
-            dynamic_tpsl_high_multiplier: Take profit multiplier for high profit potential (default: 1.5x)
-            dynamic_tpsl_medium_multiplier: Take profit multiplier for medium profit potential (default: 1.0x)
-            dynamic_tpsl_low_multiplier: Take profit multiplier for low profit potential (default: 0.8x)
-            dynamic_tpsl_stop_loss_tightening: Stop loss tightening for high profit (default: 0.8x)
-            dynamic_tpsl_stop_loss_loosening: Stop loss loosening for low profit (default: 1.2x)
 
         Note:
             binary_classification=True is now the default to address label imbalance issues.
             This automatically filters out HOLD samples to create a balanced binary classification.
             include_profit_tracking=True adds a 'potential_profit_pct' column with the actual profit/loss percentage achieved.
-            enable_dynamic_tpsl=True adjusts TPSL levels based on profit potential for better risk management.
         """
         self.profit_take_multiplier = profit_take_multiplier
         self.stop_loss_multiplier = stop_loss_multiplier
@@ -134,16 +116,6 @@ class OptimizedTripleBarrierLabeling:
         self.max_lookahead = max_lookahead
         self.binary_classification = binary_classification
         self.include_profit_tracking = include_profit_tracking
-        
-        # Dynamic TPSL parameters
-        self.enable_dynamic_tpsl = enable_dynamic_tpsl
-        self.dynamic_tpsl_high_profit_threshold = dynamic_tpsl_high_profit_threshold
-        self.dynamic_tpsl_medium_profit_threshold = dynamic_tpsl_medium_profit_threshold
-        self.dynamic_tpsl_high_multiplier = dynamic_tpsl_high_multiplier
-        self.dynamic_tpsl_medium_multiplier = dynamic_tpsl_medium_multiplier
-        self.dynamic_tpsl_low_multiplier = dynamic_tpsl_low_multiplier
-        self.dynamic_tpsl_stop_loss_tightening = dynamic_tpsl_stop_loss_tightening
-        self.dynamic_tpsl_stop_loss_loosening = dynamic_tpsl_stop_loss_loosening
         
         self.logger = get_logger("OptimizedTripleBarrierLabeling")
 
@@ -168,73 +140,8 @@ class OptimizedTripleBarrierLabeling:
             )
             self.logger.info("   → Adds 'potential_profit_pct' column with actual profit/loss percentage achieved")
             self.logger.info("   → Positive values = profit, negative values = loss")
-            
-        if self.enable_dynamic_tpsl:
-            self.logger.info(
-                "⚙️ Dynamic TPSL enabled - will adjust take profit and stop loss based on profit potential"
-            )
-            self.logger.info(f"   → High profit threshold: {self.dynamic_tpsl_high_profit_threshold:.1%}")
-            self.logger.info(f"   → Medium profit threshold: {self.dynamic_tpsl_medium_profit_threshold:.1%}")
-            self.logger.info(f"   → High profit multiplier: {self.dynamic_tpsl_high_multiplier}x")
-            self.logger.info(f"   → Medium profit multiplier: {self.dynamic_tpsl_medium_multiplier}x")
-            self.logger.info(f"   → Low profit multiplier: {self.dynamic_tpsl_low_multiplier}x")
 
-    def calculate_dynamic_tpsl_levels(self, profit_potential: float, base_price: float) -> tuple[float, float]:
-        """
-        Calculate dynamic take profit and stop loss levels based on profit potential.
-        
-        Args:
-            profit_potential: Expected profit potential (percentage)
-            base_price: Entry price
-            
-        Returns:
-            Tuple of (take_profit_price, stop_loss_price)
-        """
-        if not self.enable_dynamic_tpsl:
-            # Use fixed TPSL levels
-            take_profit = base_price * (1 + self.profit_take_multiplier)
-            stop_loss = base_price * (1 - self.stop_loss_multiplier)
-            return take_profit, stop_loss
-        
-        # Determine TPSL multipliers based on profit potential
-        if profit_potential > self.dynamic_tpsl_high_profit_threshold:
-            # High profit potential: more aggressive take profit, tighter stop loss
-            take_profit_mult = self.profit_take_multiplier * self.dynamic_tpsl_high_multiplier
-            stop_loss_mult = self.stop_loss_multiplier * self.dynamic_tpsl_stop_loss_tightening
-        elif profit_potential > self.dynamic_tpsl_medium_profit_threshold:
-            # Medium profit potential: standard TPSL
-            take_profit_mult = self.profit_take_multiplier * self.dynamic_tpsl_medium_multiplier
-            stop_loss_mult = self.stop_loss_multiplier
-        else:
-            # Low profit potential: conservative TPSL
-            take_profit_mult = self.profit_take_multiplier * self.dynamic_tpsl_low_multiplier
-            stop_loss_mult = self.stop_loss_multiplier * self.dynamic_tpsl_stop_loss_loosening
-        
-        take_profit = base_price * (1 + take_profit_mult)
-        stop_loss = base_price * (1 - stop_loss_mult)
-        
-        return take_profit, stop_loss
 
-    def calculate_position_size(self, profit_potential: float, base_size: float = 1.0, max_size: float = 3.0) -> float:
-        """
-        Calculate position size based on profit potential.
-        
-        Args:
-            profit_potential: Expected profit potential (percentage)
-            base_size: Base position size
-            max_size: Maximum position size multiplier
-            
-        Returns:
-            Adjusted position size
-        """
-        if not self.enable_dynamic_tpsl:
-            return base_size
-        
-        # Scale position size with profit potential
-        profit_factor = np.clip(profit_potential * 20, 0.5, max_size)
-        position_size = base_size * profit_factor
-        
-        return position_size
 
     @handle_errors(
         exceptions=(Exception,),

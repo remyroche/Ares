@@ -105,6 +105,12 @@ class Analyst:
             True,
         )
 
+        # Enhanced predictions from supervisor
+        self.enable_enhanced_predictions: bool = self.analyst_config.get(
+            "enable_enhanced_predictions",
+            True,
+        )
+
         # Unified Regime Classifier integration
         self.regime_classifier = None
         self.enable_regime_classification: bool = self.analyst_config.get(
@@ -160,6 +166,9 @@ class Analyst:
         # Initialize ML Confidence Predictor
         if self.enable_ml_predictions:
             await self._initialize_ml_confidence_predictor()
+
+        # Enhanced predictions are now handled by the supervisor
+        # No local initialization needed
 
         # Initialize Unified Regime Classifier
         if self.enable_regime_classification:
@@ -438,12 +447,20 @@ class Analyst:
                     current_position,
                 )
 
-            # 5. Compile comprehensive analysis results
+            # 5. Get enhanced predictions from supervisor if available
+            enhanced_predictions = {}
+            if self.enable_enhanced_predictions and hasattr(self, 'supervisor'):
+                enhanced_predictions = await self.supervisor.get_analyst_predictions(
+                    features_df, regime_info, symbol, exchange, timeframe
+                )
+
+            # 6. Compile comprehensive analysis results
             self.analysis_results = {
                 "timestamp": datetime.now().isoformat(),
                 "market_health": market_health_results,
                 "liquidation_risk": liquidation_risk_results,
                 "trading_decision": trading_decision,
+                "enhanced_predictions": enhanced_predictions,
                 "features_shape": features_df.shape
                 if features_df is not None
                 else None,
@@ -939,6 +956,9 @@ class Analyst:
             "feature_engineering_orchestrator_initialized": self.feature_engineering_orchestrator
             is not None,
         }
+
+    # Enhanced predictions are now handled by the supervisor
+    # No local methods needed
 
     @handle_errors(
         exceptions=(Exception,),

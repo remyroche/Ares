@@ -160,11 +160,11 @@ class EnhancedConfidenceScorer:
         threshold_mask = price_movement >= self.config.price_threshold
         price_confidence = base_confidence * threshold_mask
         
-        # Apply volatility adjustment
-        if price_volatility is not None and self.config.volatility_adjustment:
-            # Higher confidence for predictions in stable volatility periods
-            volatility_factor = np.exp(-price_volatility / np.mean(price_volatility))
-            price_confidence *= volatility_factor
+        # Note: Volatility adjustment removed as requested
+        # if price_volatility is not None and self.config.volatility_adjustment:
+        #     # Higher confidence for predictions in stable volatility periods
+        #     volatility_factor = np.exp(-price_volatility / np.mean(price_volatility))
+        #     price_confidence *= volatility_factor
         
         # Apply time decay
         if time_horizon is not None:
@@ -181,7 +181,7 @@ class EnhancedConfidenceScorer:
         profit_prediction: np.ndarray,
         risk_metrics: Optional[Dict[str, np.ndarray]] = None
     ) -> np.ndarray:
-        """Calculate risk-adjusted confidence score.
+        """Calculate risk-adjusted confidence score (volatility and market regime removed).
         
         Args:
             direction_confidence: Direction confidence scores
@@ -200,7 +200,7 @@ class EnhancedConfidenceScorer:
             self.config.price_weight * price_confidence
         )
         
-        # Apply risk adjustments
+        # Apply risk adjustments (volatility and market regime removed)
         if risk_metrics is not None:
             # Sharpe ratio adjustment
             if 'sharpe_ratio' in risk_metrics:
@@ -222,11 +222,8 @@ class EnhancedConfidenceScorer:
                 )
                 weighted_confidence *= drawdown_factor
             
-            # Volatility adjustment
-            if 'volatility' in risk_metrics:
-                volatility = risk_metrics['volatility']
-                volatility_factor = np.exp(-volatility / np.mean(volatility))
-                weighted_confidence *= volatility_factor
+            # Note: Volatility adjustment removed as requested
+            # Note: Market regime adjustment removed as requested
         
         # Apply risk-free rate adjustment
         expected_return = profit_prediction
@@ -357,16 +354,16 @@ class EnhancedConfidenceScorer:
             profit_prediction, risk_metrics
         )
         
-        # Apply market regime adjustment
-        if market_regime is not None:
-            # Boost confidence in favorable regimes
-            regime_boost = np.where(
-                market_regime > 0,
-                self.config.regime_confidence_boost,
-                0.0
-            )
-            risk_adjusted_confidence += regime_boost
-            risk_adjusted_confidence = np.clip(risk_adjusted_confidence, 0, 1)
+        # Note: Market regime adjustment removed as requested
+        # if market_regime is not None:
+        #     # Boost confidence in favorable regimes
+        #     regime_boost = np.where(
+        #         market_regime > 0,
+        #         self.config.regime_confidence_boost,
+        #         0.0
+        #     )
+        #     risk_adjusted_confidence += regime_boost
+        #     risk_adjusted_confidence = np.clip(risk_adjusted_confidence, 0, 1)
         
         # Apply minimum ensemble confidence threshold
         final_confidence = np.where(

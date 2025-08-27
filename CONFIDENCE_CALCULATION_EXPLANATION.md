@@ -52,61 +52,37 @@ price_confidence = base_confidence * threshold_mask
 
 **Formula**: `price_confidence = tanh(|price_movement| * 50) * threshold_mask`
 
-### 2. **Weighted Combination**
+### 2. **Simple Average Combination**
 
-The individual confidence scores are combined using configurable weights:
+Since all predictions (direction, profit, price) come from the same model, we use a simple average instead of arbitrary weighting:
 
 ```python
-weighted_confidence = (
-    direction_weight * direction_confidence +
-    profit_weight * profit_confidence +
-    price_weight * price_confidence
-)
+simple_confidence = (
+    direction_confidence + profit_confidence + price_confidence
+) / 3.0
 ```
 
-**Default Weights**:
-- Direction: 40% (0.4)
-- Profit: 30% (0.3)
-- Price: 30% (0.3)
+**Rationale**: No weighting is applied since all predictions are from the same model and are inherently related.
 
-### 3. **Risk Adjustments (Volatility and Market Regime Removed)**
+### 3. **No Risk Adjustments**
 
-The system applies risk adjustments but **excludes volatility and market regime** as requested:
+**All risk adjustments have been removed** as requested:
 
-#### **Sharpe Ratio Adjustment**
-```python
-if sharpe >= sharpe_threshold:
-    sharpe_factor = 1.0
-else:
-    sharpe_factor = exp(-(sharpe_threshold - sharpe))
+- ❌ **Sharpe ratio adjustment** - REMOVED
+- ❌ **Drawdown adjustment** - REMOVED  
+- ❌ **Volatility adjustment** - REMOVED
+- ❌ **Market regime adjustment** - REMOVED
+- ❌ **Risk-free rate adjustment** - REMOVED
 
-weighted_confidence *= sharpe_factor
-```
-
-#### **Drawdown Adjustment**
-```python
-if drawdown <= max_drawdown_threshold:
-    drawdown_factor = 1.0
-else:
-    drawdown_factor = exp(-(drawdown - max_drawdown_threshold))
-
-weighted_confidence *= drawdown_factor
-```
-
-#### **Risk-Free Rate Adjustment**
-```python
-risk_premium = expected_return - risk_free_rate / 252
-risk_adjustment = tanh(risk_premium * 100)
-weighted_confidence *= (1 + risk_adjustment * 0.2)
-```
+The confidence calculation is now purely based on the model predictions without any external risk factors.
 
 ### 4. **Final Confidence Calculation**
 
 ```python
 # Apply minimum ensemble confidence threshold
 final_confidence = np.where(
-    risk_adjusted_confidence >= min_ensemble_confidence,
-    risk_adjusted_confidence,
+    simple_confidence >= min_ensemble_confidence,
+    simple_confidence,
     0.0
 )
 
@@ -158,15 +134,13 @@ signals = np.where(
 ### **✅ What's Included**
 1. **Multi-dimensional confidence** (direction, profit, price)
 2. **Threshold-based filtering** for quality trades
-3. **Sharpe ratio adjustment** for risk-adjusted returns
-4. **Drawdown adjustment** for capital preservation
-5. **Risk-free rate adjustment** for opportunity cost
-6. **Ensemble confidence** from multiple models
-7. **Uncertainty penalty** for ambiguous predictions
+3. **Simple average combination** (no arbitrary weighting)
+4. **Ensemble confidence** from multiple models
+5. **Uncertainty penalty** for ambiguous predictions
 
 ### **❌ What's Removed (as requested)**
-1. **Volatility adjustment** - No longer penalizes high volatility periods
-2. **Market regime adjustment** - No longer boosts confidence in favorable regimes
+1. **All risk adjustments** - No Sharpe, drawdown, volatility, or market regime adjustments
+2. **Arbitrary weighting** - No weighting since all predictions come from the same model
 
 ## Example Calculation
 
@@ -182,14 +156,13 @@ direction_confidence = |0.8 - 0.5| * 2 * 1.0 * exp(-10 * |0.8 - 0.5|) = 0.6 * 1.
 profit_confidence = tanh(0.02 * 100) * 1.0 = 0.96 * 1.0 = 0.96
 price_confidence = tanh(0.02 * 50) * 1.0 = 0.76 * 1.0 = 0.76
 
-# Weighted combination
-weighted_confidence = 0.4 * 0.03 + 0.3 * 0.96 + 0.3 * 0.76 = 0.012 + 0.288 + 0.228 = 0.528
+# Simple average combination
+simple_confidence = (0.03 + 0.96 + 0.76) / 3.0 = 1.75 / 3.0 = 0.583
 
-# Apply risk adjustments (assuming good Sharpe and low drawdown)
-risk_adjusted_confidence = 0.528 * 1.0 * 1.0 * 1.1 = 0.581
+# No risk adjustments applied
 
 # Final confidence (if above threshold)
-final_confidence = 0.581  # Above 0.7 threshold = 0.0 (no trade signal)
+final_confidence = 0.583  # Below 0.7 threshold = 0.0 (no trade signal)
 ```
 
 ## Usage

@@ -181,57 +181,26 @@ class EnhancedConfidenceScorer:
         profit_prediction: np.ndarray,
         risk_metrics: Optional[Dict[str, np.ndarray]] = None
     ) -> np.ndarray:
-        """Calculate risk-adjusted confidence score (volatility and market regime removed).
+        """Calculate simplified confidence score (no weighting since all from same model).
         
         Args:
             direction_confidence: Direction confidence scores
             profit_confidence: Profit confidence scores
             price_confidence: Price confidence scores
             profit_prediction: Predicted profit percentages
-            risk_metrics: Dictionary of risk metrics (optional)
+            risk_metrics: Dictionary of risk metrics (optional) - IGNORED
             
         Returns:
-            Risk-adjusted confidence scores (0-1)
+            Simplified confidence scores (0-1)
         """
-        # Calculate weighted average confidence
-        weighted_confidence = (
-            self.config.direction_weight * direction_confidence +
-            self.config.profit_weight * profit_confidence +
-            self.config.price_weight * price_confidence
-        )
+        # Since all predictions come from the same model, use simple average
+        # This avoids arbitrary weighting of related predictions
+        simple_confidence = (direction_confidence + profit_confidence + price_confidence) / 3.0
         
-        # Apply risk adjustments (volatility and market regime removed)
-        if risk_metrics is not None:
-            # Sharpe ratio adjustment
-            if 'sharpe_ratio' in risk_metrics:
-                sharpe = risk_metrics['sharpe_ratio']
-                sharpe_factor = np.where(
-                    sharpe >= self.config.sharpe_threshold,
-                    1.0,
-                    np.exp(-(self.config.sharpe_threshold - sharpe))
-                )
-                weighted_confidence *= sharpe_factor
-            
-            # Drawdown adjustment
-            if 'max_drawdown' in risk_metrics:
-                drawdown = risk_metrics['max_drawdown']
-                drawdown_factor = np.where(
-                    drawdown <= self.config.max_drawdown_threshold,
-                    1.0,
-                    np.exp(-(drawdown - self.config.max_drawdown_threshold))
-                )
-                weighted_confidence *= drawdown_factor
-            
-            # Note: Volatility adjustment removed as requested
-            # Note: Market regime adjustment removed as requested
+        # Note: All risk adjustments removed as requested
+        # No weighting since all predictions come from the same model
         
-        # Apply risk-free rate adjustment
-        expected_return = profit_prediction
-        risk_premium = expected_return - self.config.risk_free_rate / 252  # Daily risk-free rate
-        risk_adjustment = np.tanh(risk_premium * 100)  # Higher confidence for positive risk premium
-        weighted_confidence *= (1 + risk_adjustment * 0.2)  # 20% boost for positive risk premium
-        
-        return np.clip(weighted_confidence, 0, 1)
+        return np.clip(simple_confidence, 0, 1)
     
     def calculate_ensemble_confidence(
         self,
@@ -348,8 +317,8 @@ class EnhancedConfidenceScorer:
             current_price, predicted_price, price_volatility
         )
         
-        # Calculate risk-adjusted confidence
-        risk_adjusted_confidence = self.calculate_risk_adjusted_confidence(
+        # Calculate simplified confidence (no risk adjustments, no weighting)
+        simple_confidence = self.calculate_risk_adjusted_confidence(
             direction_confidence, profit_confidence, price_confidence,
             profit_prediction, risk_metrics
         )
@@ -362,13 +331,13 @@ class EnhancedConfidenceScorer:
         #         self.config.regime_confidence_boost,
         #         0.0
         #     )
-        #     risk_adjusted_confidence += regime_boost
-        #     risk_adjusted_confidence = np.clip(risk_adjusted_confidence, 0, 1)
+        #     simple_confidence += regime_boost
+        #     simple_confidence = np.clip(simple_confidence, 0, 1)
         
         # Apply minimum ensemble confidence threshold
         final_confidence = np.where(
-            risk_adjusted_confidence >= self.config.min_ensemble_confidence,
-            risk_adjusted_confidence,
+            simple_confidence >= self.config.min_ensemble_confidence,
+            simple_confidence,
             0.0
         )
         
@@ -377,7 +346,7 @@ class EnhancedConfidenceScorer:
             'direction_confidence': direction_confidence,
             'profit_confidence': profit_confidence,
             'price_confidence': price_confidence,
-            'risk_adjusted_confidence': risk_adjusted_confidence,
+            'simple_confidence': simple_confidence,
             'final_confidence': final_confidence
         })
         
@@ -385,7 +354,7 @@ class EnhancedConfidenceScorer:
             'direction_confidence': direction_confidence,
             'profit_confidence': profit_confidence,
             'price_confidence': price_confidence,
-            'risk_adjusted_confidence': risk_adjusted_confidence,
+            'simple_confidence': simple_confidence,
             'final_confidence': final_confidence,
             'direction_prediction': direction_prediction,
             'profit_prediction': profit_prediction,

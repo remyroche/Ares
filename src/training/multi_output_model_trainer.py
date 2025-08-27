@@ -692,16 +692,18 @@ class MultiOutputModelTrainer:
     def predict(
         self,
         features: pd.DataFrame,
-        model_name: str = "multi_output_model"
-    ) -> Tuple[np.ndarray, np.ndarray]:
+        model_name: str = "multi_output_model",
+        current_prices: Optional[np.ndarray] = None
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Make predictions using trained multi-output model.
         
         Args:
             features: Feature DataFrame
             model_name: Name of the model to use
+            current_prices: Current price levels for price prediction (optional)
             
         Returns:
-            Tuple of (direction_predictions, profit_predictions)
+            Tuple of (direction_predictions, profit_predictions, price_predictions)
         """
         if model_name not in self.models:
             raise ValueError(f"Model '{model_name}' not found")
@@ -716,10 +718,86 @@ class MultiOutputModelTrainer:
         if model["model_type"] in ["LightGBM", "RandomForest"]:
             direction_pred = model["direction_model"].predict(X_scaled)
             profit_pred = model["profit_model"].predict(X_scaled)
+            
+            # Calculate price predictions if current prices are provided
+            if current_prices is not None:
+                # Price prediction = current_price * (1 + profit_prediction)
+                price_pred = current_prices * (1 + profit_pred)
+            else:
+                # If no current prices, return profit predictions as price changes
+                price_pred = profit_pred
         else:
             raise ValueError(f"Unsupported model type for prediction: {model['model_type']}")
         
-        return direction_pred, profit_pred
+        return direction_pred, profit_pred, price_pred
+    
+    def predict_with_confidence(
+        self,
+        features: pd.DataFrame,
+        model_name: str = "multi_output_model",
+        current_prices: Optional[np.ndarray] = None,
+        confidence_threshold: float = 0.7
+    ) -> Dict[str, np.ndarray]:
+        """Make predictions with confidence scoring.
+        
+        Args:
+            features: Feature DataFrame
+            model_name: Name of the model to use
+            current_prices: Current price levels for price prediction (optional)
+            confidence_threshold: Minimum confidence threshold
+            
+        Returns:
+            Dictionary containing predictions and confidence scores
+        """
+        from src.training.enhanced_confidence_scoring import create_enhanced_confidence_scorer
+        
+        # Make basic predictions
+        direction_pred, profit_pred, price_pred = self.predict(
+            features, model_name, current_prices
+        )
+        
+        # Get direction probabilities (for confidence calculation)
+        model = self.models[model_name]
+        scaler = self.scalers[model_name]
+        X_scaled = scaler.transform(features.values)
+        
+        if model["model_type"] in ["LightGBM", "RandomForest"]:
+            direction_prob = model["direction_model"].predict_proba(X_scaled)[:, 1]
+        else:
+            # Fallback: use prediction as probability
+            direction_prob = direction_pred.astype(float)
+        
+        # Create confidence scorer
+        confidence_scorer = create_enhanced_confidence_scorer(
+            direction_threshold=0.6,
+            profit_threshold=0.001,
+            price_threshold=0.005,
+            min_ensemble_confidence=confidence_threshold
+        )
+        
+        # Calculate comprehensive confidence
+        confidence_scores = confidence_scorer.calculate_comprehensive_confidence(
+            direction_probability=direction_prob,
+            direction_prediction=direction_pred,
+            profit_prediction=profit_pred,
+            current_price=current_prices if current_prices is not None else np.ones_like(profit_pred),
+            predicted_price=price_pred
+        )
+        
+        # Get trading signals based on confidence threshold
+        trading_signals = confidence_scorer.get_confidence_threshold_signals(
+            confidence_scores, threshold=confidence_threshold
+        )
+        
+        return {
+            'direction_prediction': direction_pred,
+            'profit_prediction': profit_pred,
+            'price_prediction': price_pred,
+            'direction_probability': direction_prob,
+            'confidence_scores': confidence_scores,
+            'trading_signals': trading_signals,
+            'final_confidence': confidence_scores['final_confidence']
+        }
     
     def save_model(
         self,

@@ -1,207 +1,167 @@
-#!/usr/bin/env python3
-"""Validator for Step 6: Feature Engineering.
+# src/training/steps/step7_feature_engineering_validator.py
 
-This module validates the feature engineering step outputs.
-"""
-
-import asyncio
-import sys
+import json
+import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
-# Add project root to path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
+import pandas as pd
 
 from src.utils.logger import system_logger
-from src.utils.centralized_decorators import (
-    comprehensive_data_validation,
-    handle_errors,
-    memory_efficient,
-    resource_monitor,
-    secure_data_processing,
-    validate_data_structure,
-    with_tracing_span,
-    quality_gate,
+from src.utils.validation_decorators import (
+    validate_file_operation,
+    validate_dataframe_operation,
+    validate_step2_operation,
 )
 
-logger = system_logger.getChild("Step6FeatureEngineeringValidator")
+logger = system_logger.getChild("Step7FeatureEngineeringValidator")
 
 
-@with_tracing_span("validate_feature_engineering")
-@quality_gate(
-    min_quality_score=0.7,
-    max_correlation=0.95,
-    required_grade="C"
-)
-@comprehensive_data_validation
-@handle_errors
-@memory_efficient
-@resource_monitor
-@secure_data_processing
-@validate_data_structure
-async def run_validator(
-    training_input: Dict[str, Any],
-    pipeline_state: Dict[str, Any],
-) -> Dict[str, Any]:
-    """Run validation for Step 6: Feature Engineering.
+class Step7FeatureEngineeringValidator:
+    """Validator for Step 7: Advanced Feature Engineering (After Regime Discovery)."""
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config = config
+        self.logger = logger
+
+    @validate_step2_operation
+    def validate_step7_feature_engineering(
+        self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any]
+    ) -> bool:
+        """Validate Step 7: Advanced Feature Engineering.
+
+        Args:
+            symbol: Trading symbol
+            exchange: Exchange name
+            data_dir: Data directory
+            training_input: Training input data
+
+        Returns:
+            bool: True if validation passes
+        """
+        self.logger.info("🔍 Starting Step 7: Advanced Feature Engineering validation")
+
+        try:
+            # Check if regime-aware features exist
+            regime_features_dir = Path(data_dir) / "training" / "regime_features"
+            if not regime_features_dir.exists():
+                self.logger.warning(
+                    f"⚠️ Regime features directory not found: {regime_features_dir}"
+                )
+                return False
+
+            # Validate regime-specific feature files
+            regime_dirs = [d for d in regime_features_dir.iterdir() if d.is_dir()]
+            if not regime_dirs:
+                self.logger.warning("⚠️ No regime-specific feature directories found")
+                return False
+
+            # Validate each regime's features
+            for regime_dir in regime_dirs:
+                regime_name = regime_dir.name
+                self.logger.info(f"📊 Validating features for regime: {regime_name}")
+
+                # Check for feature files
+                feature_files = list(regime_dir.glob("*.parquet"))
+                if not feature_files:
+                    self.logger.warning(
+                        f"⚠️ No feature files found for regime: {regime_name}"
+                    )
+                    continue
+
+                # Validate feature file
+                for feature_file in feature_files:
+                    if not self._validate_feature_file(feature_file, regime_name):
+                        return False
+
+            self.logger.info("✅ Step 7: Advanced Feature Engineering validation passed")
+            return True
+
+        except Exception as e:
+            self.logger.exception(f"❌ Step 7 validation failed: {e}")
+            return False
+
+    @validate_file_operation
+    def _validate_feature_file(self, feature_file: Path, regime_name: str) -> bool:
+        """Validate a feature file for a specific regime."""
+        try:
+            self.logger.info(f"📁 Validating feature file: {feature_file.name}")
+
+            # Load and validate the feature file
+            df = pd.read_parquet(feature_file)
+
+            # Check basic requirements
+            if df.empty:
+                self.logger.warning(f"⚠️ Feature file is empty: {feature_file.name}")
+                return False
+
+            # Check for required columns
+            required_columns = ["timestamp", "label"]
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                self.logger.warning(
+                    f"⚠️ Missing required columns in {feature_file.name}: {missing_columns}"
+                )
+                return False
+
+            # Check for feature columns (should have more than just timestamp and label)
+            feature_columns = [col for col in df.columns if col not in required_columns]
+            if len(feature_columns) < 5:  # Minimum number of features
+                self.logger.warning(
+                    f"⚠️ Insufficient features in {feature_file.name}: {len(feature_columns)} features"
+                )
+                return False
+
+            # Check for regime-specific features
+            regime_specific_features = [
+                col for col in feature_columns if regime_name.lower() in col.lower()
+            ]
+            if not regime_specific_features:
+                self.logger.info(
+                    f"📊 No regime-specific features found for {regime_name} (this is acceptable)"
+                )
+
+            self.logger.info(
+                f"✅ Feature file validated: {len(df)} rows, {len(feature_columns)} features"
+            )
+            return True
+
+        except Exception as e:
+            self.logger.exception(f"❌ Error validating feature file {feature_file}: {e}")
+            return False
+
+
+@validate_step2_operation
+def step7_feature_engineering_validator(
+    symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any], config: dict[str, Any]
+) -> bool:
+    """Step 7: Advanced Feature Engineering Validator.
 
     Args:
-        training_input: Training input parameters
-        pipeline_state: Current pipeline state
+        symbol: Trading symbol
+        exchange: Exchange name
+        data_dir: Data directory
+        training_input: Training input data
+        config: Configuration dictionary
 
     Returns:
-        Dictionary containing validation results
+        bool: True if validation passes
     """
-    logger.info("🔍 Validating Step 6: Feature Engineering")
-    
+    logger.info("🔍 Starting Step 7: Advanced Feature Engineering validation")
+
     try:
-        # Extract parameters
-        symbol = training_input.get("symbol", "ETHUSDT")
-        exchange = training_input.get("exchange", "BINANCE")
-        timeframe = training_input.get("timeframe", "1m")
-        data_dir = training_input.get("data_dir", "data_cache")
-        
-        # Check if feature engineering files exist
-        features_train_path = Path(data_dir) / "training" / f"{exchange}_{symbol}_features_train.parquet"
-        features_metadata_path = Path(data_dir) / "training" / f"{exchange}_{symbol}_features_metadata.json"
-        
-        if not features_train_path.exists():
-            logger.error(f"❌ Features train file not found: {features_train_path}")
-            return {
-                "step_name": "step6_feature_engineering",
-                "validation_passed": False,
-                "error": f"Features train file not found: {features_train_path}",
-            }
-        
-        if not features_metadata_path.exists():
-            logger.error(f"❌ Features metadata file not found: {features_metadata_path}")
-            return {
-                "step_name": "step6_feature_engineering",
-                "validation_passed": False,
-                "error": f"Features metadata file not found: {features_metadata_path}",
-            }
-        
-        # Check file sizes
-        train_file_size = features_train_path.stat().st_size
-        metadata_file_size = features_metadata_path.stat().st_size
-        
-        if train_file_size == 0:
-            logger.error(f"❌ Features train file is empty: {features_train_path}")
-            return {
-                "step_name": "step6_feature_engineering",
-                "validation_passed": False,
-                "error": "Features train file is empty",
-            }
-        
-        if metadata_file_size == 0:
-            logger.error(f"❌ Features metadata file is empty: {features_metadata_path}")
-            return {
-                "step_name": "step6_feature_engineering",
-                "validation_passed": False,
-                "error": "Features metadata file is empty",
-            }
-        
-        # Try to read the files to validate structure
-        try:
-            import pandas as pd
-            import json
-            
-            # Read features data
-            features_data = pd.read_parquet(features_train_path)
-            
-            # Read metadata
-            with open(features_metadata_path, 'r') as f:
-                metadata = json.load(f)
-            
-            # Check data quality
-            if len(features_data) == 0:
-                logger.error("❌ No data rows found in features")
-                return {
-                    "step_name": "step6_feature_engineering",
-                    "validation_passed": False,
-                    "error": "No data rows found in features",
-                }
-            
-            # Check for reasonable number of features
-            num_features = len(features_data.columns)
-            if num_features < 10:
-                logger.warning(f"⚠️ Very few features generated: {num_features}")
-            
-            # Check for basic OHLCV columns
-            basic_columns = ["open", "high", "low", "close", "volume"]
-            missing_basic = [col for col in basic_columns if col not in features_data.columns]
-            if missing_basic:
-                logger.warning(f"⚠️ Missing basic OHLCV columns: {missing_basic}")
-            
-            # Check for label column
-            if "label" not in features_data.columns:
-                logger.warning("⚠️ Label column not found in features data")
-            
-            # Check metadata structure
-            if not isinstance(metadata, dict):
-                logger.error("❌ Metadata is not a dictionary")
-                return {
-                    "step_name": "step6_feature_engineering",
-                    "validation_passed": False,
-                    "error": "Metadata is not a dictionary",
-                }
-            
-            # Check for NaN values
-            nan_count = features_data.isna().sum().sum()
-            if nan_count > 0:
-                logger.warning(f"⚠️ Found {nan_count} NaN values in features data")
-            
-            # Check for infinite values
-            inf_count = features_data.isin([float('inf'), float('-inf')]).sum().sum()
-            if inf_count > 0:
-                logger.warning(f"⚠️ Found {inf_count} infinite values in features data")
-            
-            logger.info(f"✅ Features data shape: {features_data.shape}")
-            logger.info(f"✅ Number of features: {num_features}")
-            logger.info(f"✅ Metadata keys: {list(metadata.keys())}")
-            
-            logger.info("✅ Step 6: Feature Engineering validation passed")
-            return {
-                "step_name": "step6_feature_engineering",
-                "validation_passed": True,
-                "features_file_path": str(features_train_path),
-                "metadata_file_path": str(features_metadata_path),
-                "data_shape": features_data.shape,
-                "num_features": num_features,
-                "nan_count": nan_count,
-                "inf_count": inf_count,
-            }
-            
-        except Exception as e:
-            logger.error(f"❌ Error reading feature engineering files: {e}")
-            return {
-                "step_name": "step6_feature_engineering",
-                "validation_passed": False,
-                "error": f"Error reading files: {e}",
-            }
-            
+        validator = Step7FeatureEngineeringValidator(config)
+        result = validator.validate_step7_feature_engineering(
+            symbol, exchange, data_dir, training_input
+        )
+
+        if result:
+            logger.info("✅ Step 7: Advanced Feature Engineering validation passed")
+            return True
+        else:
+            logger.warning("⚠️ Step 7: Advanced Feature Engineering validation failed")
+            return False
+
     except Exception as e:
-        logger.exception(f"❌ Error in Step 6 validation: {e}")
-        return {
-            "step_name": "step6_feature_engineering",
-            "validation_passed": False,
-            "error": f"Validation error: {e}",
-        }
-
-
-if __name__ == "__main__":
-    # Test the validator
-    async def test():
-        test_input = {
-            "symbol": "ETHUSDT",
-            "exchange": "BINANCE",
-            "timeframe": "1m",
-            "data_dir": "data_cache"
-        }
-        test_state = {}
-        
-        result = await run_validator(test_input, test_state)
-        print(f"Validation result: {result}")
-
-    asyncio.run(test())
+        logger.exception(f"❌ Step 7 validation failed: {e}")
+        return False

@@ -44,7 +44,7 @@ FeatureEngineeringStep = None
 #     UnifiedRegimeIntelligenceStep, None
 
 # try:
-#     from .step6_hmm_based_training import HMMBasedTrainingStep
+#     from .step9_hmm_based_training import HMMBasedTrainingStep
 # except ImportError:
 #     HMMBasedTrainingStep, None
 

@@ -25,23 +25,28 @@ class StepDependencyValidator:
         self.step_dependencies = {
             "step1_data_collection": [],
             "step1_5_data_converter": ["step1_data_collection"],
-            "step2_data_reading": ["step1_5_data_converter"],
-            "step3_hmm_regime_discovery": ["step2_data_reading"],
-            "step4_triple_barrier_method": ["step3_hmm_regime_discovery"],
-            "step5_labeling": ["step4_triple_barrier_method"],
-            "step6_feature_engineering": ["step5_labeling"],
-            "step7_regime_data_splitting": ["step6_feature_engineering"],
-            "step8_hmm_based_training": ["step7_regime_data_splitting"],
-            "step8_5_unified_regime_intelligence": ["step8_hmm_based_training"],
-            "step9_analyst_enhancement": ["step8_5_unified_regime_intelligence"],
-            "step10_tactician_labeling": ["step9_analyst_enhancement"],
-            "step11_tactician_specialist_training": ["step10_tactician_labeling"],
-            "step12_confidence_calibration": ["step11_tactician_specialist_training"],
-            "step13_final_parameters_optimization": ["step12_confidence_calibration"],
-            "step14_walk_forward_validation": ["step13_final_parameters_optimization"],
-            "step15_monte_carlo_validation": ["step14_walk_forward_validation"],
-            "step16_ab_testing": ["step15_monte_carlo_validation"],
-            "step17_saving": ["step16_ab_testing"],
+                    "step2_data_reading": ["step1_5_data_converter"],
+    "step3_hmm_regime_discovery": ["step2_data_reading"],
+    "step4_triple_barrier_method": ["step3_hmm_regime_discovery"],
+    "step4_regime_data_splitting": ["step4_triple_barrier_method"],
+    "step5_labeling": ["step4_triple_barrier_method"],
+    "step6_feature_engineering": ["step5_labeling"],
+    "step7_enhanced_matrix_operations": ["step6_feature_engineering"],
+            "step8_regime_data_splitting": ["step7_enhanced_matrix_operations"],
+            "step9_hmm_based_training": ["step8_regime_data_splitting"],
+            "step9_5_hmm_lm_generalist_training": ["step9_hmm_based_training"],
+            "step10_unified_regime_intelligence": ["step9_5_hmm_lm_generalist_training"],
+            "step11_analyst_creation": ["step10_unified_regime_intelligence"],
+            "step12_analyst_enhancement": ["step11_analyst_creation"],
+            "step13_analyst_ensemble_creation": ["step12_analyst_enhancement"],
+            "step14_tactician_labeling": ["step13_analyst_ensemble_creation"],
+            "step15_tactician_specialist_training": ["step14_tactician_labeling"],
+            "step16_confidence_calibration": ["step15_tactician_specialist_training"],
+            "step17_final_parameters_optimization": ["step16_confidence_calibration"],
+            "step18_walk_forward_validation": ["step17_final_parameters_optimization"],
+            "step19_monte_carlo_validation": ["step18_walk_forward_validation"],
+            "step20_ab_testing": ["step19_monte_carlo_validation"],
+            "step21_saving": ["step20_ab_testing"],
         }
         
         # Define critical data requirements for each step
@@ -66,27 +71,25 @@ class StepDependencyValidator:
                 "required_columns": ["composite_cluster_id"],
                 "min_rows": 100
             },
-            "step4_regime_data_splitting": {
-                "required_files": ["data/training/regimes/*/regime_*/regime_data.parquet"],
-                "required_columns": ["composite_cluster_id"],
-                "min_rows": 50,
-                "min_regimes": 3,
-                "max_regimes": 20
-            },
-            "step5_triple_barrier_method": {
-                "required_files": ["data/training/regimes/*/regime_*/triple_barrier_labels.parquet"],
+            "step4_triple_barrier_method": {
+                "required_files": ["data/training/*_triple_barrier_*.parquet"],
                 "required_columns": ["triple_barrier_label"],
                 "min_rows": 50
             },
-            "step6_labeling": {
-                "required_files": ["data/training/regimes/*/regime_*/labeled_data.parquet"],
-                "required_columns": ["label", "triple_barrier_label"],
+            "step5_labeling": {
+                "required_files": ["data/training/*_labeled_*.parquet"],
+                "required_columns": ["label"],
                 "min_rows": 50
             },
-            "step7_feature_engineering": {
-                "required_files": ["data/training/regimes/*/regime_*/features.parquet"],
-                "required_columns": ["open", "high", "low", "close", "volume"],
-                "min_rows": 50
+            "step6_feature_engineering": {
+                "required_files": ["data/training/*_features_train.parquet", "data/training/*_features_val.parquet"],
+                "required_columns": ["timestamp", "returns", "volatility"],
+                "min_rows": 1000
+            },
+            "step7_enhanced_matrix_operations": {
+                "required_files": ["data/matrix_operations/*_matrix_operations_*.json"],
+                "required_columns": [],
+                "min_rows": 0
             },
             "step8_hmm_based_training": {
                 "required_files": ["data/training/*_hmm_models.pkl"],

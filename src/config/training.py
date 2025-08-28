@@ -79,6 +79,34 @@ def get_training_config() -> dict[str, Any]:
             "enable_computational_optimization": True,  # Enable computational optimization strategies
             "enable_validators": True,  # Enable step validators
         },
+        # --- Step 6 Feature Engineering Configuration ---
+        "step6_feature_engineering": {
+            "enable_basic_features": True,
+            "enable_advanced_features": True,
+            "enable_regime_aware_features": True,
+            "enable_technical_indicators": True,
+            "enable_statistical_features": True,
+            "feature_selection_method": "variance_threshold",
+            "correlation_threshold": 0.8,
+            "min_variance": 0.01,
+            "max_features": 500,
+            "output_dir": "data/training",
+        },
+        # --- Step 7 Enhanced Matrix Operations Configuration ---
+        "step7_enhanced_matrix_operations": {
+            "enable_gpu_acceleration": False,
+            "enable_sparse_optimizations": True,
+            "enable_memory_optimization": True,
+            "enable_parallel_processing": True,
+            "condition_number_threshold": 1e12,
+            "min_eigenvalue_threshold": 1e-10,
+            "correlation_threshold": 0.8,
+            "memory_threshold_gb": 8.0,
+            "batch_size": 1000,
+            "max_iterations": 1000,
+            "tolerance": 1e-6,
+            "output_dir": "data/matrix_operations",
+        },
         # --- HMM-LM Model Configuration ---
         "HMM_LM": {
             "generalist": {

@@ -1644,25 +1644,30 @@ class AresLauncher:
         
         # Use a simple approach: validate all steps that come before the start step
         step_order = [
-            "step1_data_collection",
-            "step1_5_data_converter", 
-            "step2_data_reading",
-            "step3_hmm_regime_discovery",
-            "step4_triple_barrier_method",
-            "step5_labeling",
-            "step6_feature_engineering",
-            "step7_regime_data_splitting",
-            "step8_hmm_based_training",
-            "step8_5_unified_regime_intelligence",
-            "step9_analyst_enhancement",
-            "step10_tactician_labeling",
-            "step11_tactician_specialist_training",
-            "step12_confidence_calibration",
-            "step13_final_parameters_optimization",
-            "step14_walk_forward_validation",
-            "step15_monte_carlo_validation",
-            "step16_ab_testing",
-            "step17_saving",
+            "step1_data_collection",           # Download and prepare market data
+            "step1_5_data_converter",          # Convert data to unified format
+            "step2_data_reading",              # Read and validate data quality
+            "step3_hmm_regime_discovery",      # Define HMM regime clusters (with basic features)
+            "step4_triple_barrier_method",     # Apply triple barrier method
+            "step4_regime_data_splitting",     # Regime data splitting (legacy step)
+            "step5_labeling",                  # Create labels
+            "step6_feature_engineering",       # Complete feature engineering (simple + advanced)
+            "step7_enhanced_matrix_operations", # Enhanced matrix operations for analysis
+            "step8_regime_data_splitting",     # Split data by regimes
+            "step9_hmm_based_training",        # HMM-based model training
+            "step9_5_hmm_lm_generalist_training", # HMM LM generalist training
+            "step10_unified_regime_intelligence", # Unified regime intelligence
+            "step11_analyst_creation",         # Analyst creation (NEW STEP)
+            "step12_analyst_enhancement",      # Analyst enhancement
+            "step13_analyst_ensemble_creation", # Analyst ensemble creation
+            "step14_tactician_labeling",       # Tactician labeling
+            "step15_tactician_specialist_training", # Tactician specialist training
+            "step16_confidence_calibration",   # Confidence calibration
+            "step17_final_parameters_optimization", # Final parameters optimization
+            "step18_walk_forward_validation",  # Walk forward validation
+            "step19_monte_carlo_validation",   # Monte Carlo validation
+            "step20_ab_testing",               # A/B testing
+            "step21_saving",                   # Save final models
         ]
         
         try:

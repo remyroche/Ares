@@ -380,12 +380,12 @@ class EnhancedHMMBasedTrainingStep:
         # Use enhanced feature selection if multi-output is enabled
         if has_profit and self.enable_multi_output:
             try:
-                from src.training.feature_selection_manager import FeatureSelectionManager
+                from src.training.enhanced_matrix_operations import EnhancedMatrixOperations
                 
                 self.logger.info("🔧 Using enhanced feature selection with autoencoder features...")
                 
-                # Create feature selection manager
-                feature_selector = FeatureSelectionManager(self.config)
+                # Create enhanced matrix operations manager
+                feature_selector = EnhancedMatrixOperations(self.config)
                 
                 # Create dummy target for feature selection
                 dummy_target = pd.Series(0, index=data.index)

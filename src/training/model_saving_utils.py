@@ -59,7 +59,9 @@ def save_model_with_probabilities(
         }
         
         # Ensure directory exists
-        os.makedirs(os.path.dirname(model_path), exist_ok=True)
+        model_dir = os.path.dirname(model_path)
+        if model_dir:  # Only create directory if path is not empty
+            os.makedirs(model_dir, exist_ok=True)
         
         # Save model based on format
         if save_format.lower() == "joblib":
@@ -137,7 +139,9 @@ def save_multi_output_model_with_probabilities(
         }
         
         # Ensure directory exists
-        os.makedirs(os.path.dirname(model_path), exist_ok=True)
+        model_dir = os.path.dirname(model_path)
+        if model_dir:  # Only create directory if path is not empty
+            os.makedirs(model_dir, exist_ok=True)
         
         # Save model based on format
         if save_format.lower() == "joblib":

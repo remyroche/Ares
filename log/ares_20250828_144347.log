@@ -1,0 +1,197 @@
+2025-08-28 14:43:47,418 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-28 14:43:47,424 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for prepare_multi_output_targets - -
+2025-08-28 14:43:47,424 INFO AresTradingSystem.System Preparing multi-output targets for training - -
+2025-08-28 14:43:47,424 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_all_targets - -
+2025-08-28 14:43:47,424 INFO AresTradingSystem.System Generating all probability targets for multi-output training - -
+2025-08-28 14:43:47,424 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_triple_barrier_targets - -
+2025-08-28 14:43:47,441 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_triple_barrier_targets - -
+2025-08-28 14:43:47,441 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_direction_targets - -
+2025-08-28 14:43:47,441 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_direction_targets - -
+2025-08-28 14:43:47,441 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_magnitude_targets - -
+2025-08-28 14:43:47,469 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_magnitude_targets - -
+2025-08-28 14:43:47,469 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_barrier_avoidance_targets - -
+2025-08-28 14:43:47,503 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_barrier_avoidance_targets - -
+2025-08-28 14:43:47,503 INFO AresTradingSystem.System Target triple_barrier validated and converted to binary - -
+2025-08-28 14:43:47,503 INFO AresTradingSystem.System Target direction validated and converted to binary - -
+2025-08-28 14:43:47,503 INFO AresTradingSystem.System Target magnitude validated and converted to binary - -
+2025-08-28 14:43:47,503 INFO AresTradingSystem.System Target barrier_avoidance validated and converted to binary - -
+2025-08-28 14:43:47,503 INFO AresTradingSystem.System Generated targets for 200 samples - -
+2025-08-28 14:43:47,503 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_all_targets - -
+2025-08-28 14:43:47,504 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for prepare_multi_output_targets - -
+2025-08-28 14:43:47,504 INFO AresTradingSystem.System.PerformanceMonitor 📊 [PERF] Starting performance monitoring for train_multi_output_model - -
+2025-08-28 14:43:47,504 INFO AresTradingSystem.System Starting multi-output model training - -
+2025-08-28 14:43:47,504 INFO AresTradingSystem.System.PerformanceMonitor 📊 [PERF] Starting performance monitoring for fit - -
+2025-08-28 14:43:47,504 INFO AresTradingSystem.System Starting multi-output model training - -
+2025-08-28 14:43:47,504 INFO AresTradingSystem.System Training triple_barrier model... - -
+2025-08-28 14:43:47,534 INFO AresTradingSystem.System Training direction model... - -
+2025-08-28 14:43:47,554 INFO AresTradingSystem.System Training magnitude model... - -
+2025-08-28 14:43:47,578 INFO AresTradingSystem.System Training barrier_avoidance model... - -
+2025-08-28 14:43:47,609 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,619 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,630 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,640 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,651 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,660 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,678 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,688 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,698 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,709 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,719 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,729 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,739 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,749 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,760 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,771 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,779 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,789 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,800 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,810 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,823 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,832 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,843 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,854 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,865 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,877 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,888 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,900 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,910 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,920 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:47,921 INFO AresTradingSystem.System Optimized ensemble weights: {'triple_barrier': np.float64(0.1), 'direction': np.float64(0.1), 'magnitude': np.float64(0.1), 'barrier_avoidance': np.float64(0.1)} - -
+2025-08-28 14:43:47,921 INFO AresTradingSystem.System Multi-output model training completed - -
+2025-08-28 14:43:47,921 INFO AresTradingSystem.System Successfully trained 4 out of 4 models - -
+2025-08-28 14:43:47,921 INFO AresTradingSystem.System Multi-output model training completed - -
+2025-08-28 14:43:47,922 INFO AresTradingSystem.System Generating probability predictions - -
+2025-08-28 14:43:47,945 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for prepare_multi_output_targets - -
+2025-08-28 14:43:47,946 INFO AresTradingSystem.System Preparing multi-output targets for training - -
+2025-08-28 14:43:47,946 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_all_targets - -
+2025-08-28 14:43:47,946 INFO AresTradingSystem.System Generating all probability targets for multi-output training - -
+2025-08-28 14:43:47,946 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_triple_barrier_targets - -
+2025-08-28 14:43:47,958 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_triple_barrier_targets - -
+2025-08-28 14:43:47,958 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_direction_targets - -
+2025-08-28 14:43:47,958 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_direction_targets - -
+2025-08-28 14:43:47,958 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_magnitude_targets - -
+2025-08-28 14:43:47,979 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_magnitude_targets - -
+2025-08-28 14:43:47,979 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_barrier_avoidance_targets - -
+2025-08-28 14:43:48,004 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_barrier_avoidance_targets - -
+2025-08-28 14:43:48,004 INFO AresTradingSystem.System Target triple_barrier validated and converted to binary - -
+2025-08-28 14:43:48,004 INFO AresTradingSystem.System Target direction validated and converted to binary - -
+2025-08-28 14:43:48,004 INFO AresTradingSystem.System Target magnitude validated and converted to binary - -
+2025-08-28 14:43:48,004 INFO AresTradingSystem.System Target barrier_avoidance validated and converted to binary - -
+2025-08-28 14:43:48,004 INFO AresTradingSystem.System Generated targets for 150 samples - -
+2025-08-28 14:43:48,004 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_all_targets - -
+2025-08-28 14:43:48,004 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for prepare_multi_output_targets - -
+2025-08-28 14:43:48,004 INFO AresTradingSystem.System.PerformanceMonitor 📊 [PERF] Starting performance monitoring for train_multi_output_model - -
+2025-08-28 14:43:48,004 INFO AresTradingSystem.System Starting multi-output model training - -
+2025-08-28 14:43:48,004 INFO AresTradingSystem.System.PerformanceMonitor 📊 [PERF] Starting performance monitoring for fit - -
+2025-08-28 14:43:48,004 INFO AresTradingSystem.System Starting multi-output model training - -
+2025-08-28 14:43:48,004 INFO AresTradingSystem.System Training triple_barrier model... - -
+2025-08-28 14:43:48,009 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mCalibration failed for triple_barrier, using original model: Requesting 5-fold cross-validation but provided less than 5 examples for at least one class.[0m - -
+2025-08-28 14:43:48,009 INFO AresTradingSystem.System Training direction model... - -
+2025-08-28 14:43:48,026 INFO AresTradingSystem.System Training magnitude model... - -
+2025-08-28 14:43:48,046 INFO AresTradingSystem.System Training barrier_avoidance model... - -
+2025-08-28 14:43:48,067 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,076 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,081 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,098 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,104 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,115 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,121 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,132 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,138 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,148 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,154 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,164 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,170 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,180 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,186 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,197 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,203 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,213 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,219 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,230 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,230 INFO AresTradingSystem.System Optimized ensemble weights: {'triple_barrier': np.float64(0.1), 'direction': np.float64(0.1), 'magnitude': np.float64(0.1), 'barrier_avoidance': np.float64(0.1)} - -
+2025-08-28 14:43:48,230 INFO AresTradingSystem.System Multi-output model training completed - -
+2025-08-28 14:43:48,230 INFO AresTradingSystem.System Successfully trained 4 out of 4 models - -
+2025-08-28 14:43:48,231 INFO AresTradingSystem.System Multi-output model training completed - -
+2025-08-28 14:43:48,231 INFO AresTradingSystem.System Generating probability predictions - -
+2025-08-28 14:43:48,282 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for prepare_multi_output_targets - -
+2025-08-28 14:43:48,282 INFO AresTradingSystem.System Preparing multi-output targets for training - -
+2025-08-28 14:43:48,282 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_all_targets - -
+2025-08-28 14:43:48,282 INFO AresTradingSystem.System Generating all probability targets for multi-output training - -
+2025-08-28 14:43:48,282 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_triple_barrier_targets - -
+2025-08-28 14:43:48,300 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_triple_barrier_targets - -
+2025-08-28 14:43:48,300 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_direction_targets - -
+2025-08-28 14:43:48,300 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_direction_targets - -
+2025-08-28 14:43:48,300 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_magnitude_targets - -
+2025-08-28 14:43:48,338 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_magnitude_targets - -
+2025-08-28 14:43:48,338 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_barrier_avoidance_targets - -
+2025-08-28 14:43:48,376 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_barrier_avoidance_targets - -
+2025-08-28 14:43:48,376 INFO AresTradingSystem.System Target triple_barrier validated and converted to binary - -
+2025-08-28 14:43:48,376 INFO AresTradingSystem.System Target direction validated and converted to binary - -
+2025-08-28 14:43:48,376 INFO AresTradingSystem.System Target magnitude validated and converted to binary - -
+2025-08-28 14:43:48,376 INFO AresTradingSystem.System Target barrier_avoidance validated and converted to binary - -
+2025-08-28 14:43:48,376 INFO AresTradingSystem.System Generated targets for 200 samples - -
+2025-08-28 14:43:48,377 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_all_targets - -
+2025-08-28 14:43:48,377 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for prepare_multi_output_targets - -
+2025-08-28 14:43:48,377 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for prepare_multi_output_targets - -
+2025-08-28 14:43:48,377 INFO AresTradingSystem.System Preparing multi-output targets for training - -
+2025-08-28 14:43:48,377 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_all_targets - -
+2025-08-28 14:43:48,377 INFO AresTradingSystem.System Generating all probability targets for multi-output training - -
+2025-08-28 14:43:48,377 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_triple_barrier_targets - -
+2025-08-28 14:43:48,384 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_triple_barrier_targets - -
+2025-08-28 14:43:48,384 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_direction_targets - -
+2025-08-28 14:43:48,384 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_direction_targets - -
+2025-08-28 14:43:48,385 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_magnitude_targets - -
+2025-08-28 14:43:48,398 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_magnitude_targets - -
+2025-08-28 14:43:48,398 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_barrier_avoidance_targets - -
+2025-08-28 14:43:48,414 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_barrier_avoidance_targets - -
+2025-08-28 14:43:48,414 INFO AresTradingSystem.System Target triple_barrier validated and converted to binary - -
+2025-08-28 14:43:48,414 INFO AresTradingSystem.System Target direction validated and converted to binary - -
+2025-08-28 14:43:48,414 INFO AresTradingSystem.System Target magnitude validated and converted to binary - -
+2025-08-28 14:43:48,414 INFO AresTradingSystem.System Target barrier_avoidance validated and converted to binary - -
+2025-08-28 14:43:48,414 INFO AresTradingSystem.System Generated targets for 100 samples - -
+2025-08-28 14:43:48,414 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_all_targets - -
+2025-08-28 14:43:48,414 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for prepare_multi_output_targets - -
+2025-08-28 14:43:48,414 INFO AresTradingSystem.System.PerformanceMonitor 📊 [PERF] Starting performance monitoring for train_multi_output_model - -
+2025-08-28 14:43:48,414 INFO AresTradingSystem.System Starting multi-output model training - -
+2025-08-28 14:43:48,414 INFO AresTradingSystem.System.PerformanceMonitor 📊 [PERF] Starting performance monitoring for fit - -
+2025-08-28 14:43:48,414 INFO AresTradingSystem.System Starting multi-output model training - -
+2025-08-28 14:43:48,414 INFO AresTradingSystem.System Training triple_barrier model... - -
+2025-08-28 14:43:48,450 INFO AresTradingSystem.System Training direction model... - -
+2025-08-28 14:43:48,466 INFO AresTradingSystem.System Training magnitude model... - -
+2025-08-28 14:43:48,496 INFO AresTradingSystem.System Training barrier_avoidance model... - -
+2025-08-28 14:43:48,522 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,531 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,540 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,548 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,558 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,569 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,579 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,590 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,602 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,617 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,632 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,643 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,654 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,666 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,677 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,689 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,700 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,711 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,723 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,733 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,747 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,758 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,770 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,781 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,791 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,802 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,814 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,825 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,835 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for direction: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,847 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mError calculating loss for barrier_avoidance: index 1 is out of bounds for axis 1 with size 1[0m - -
+2025-08-28 14:43:48,847 INFO AresTradingSystem.System Optimized ensemble weights: {'triple_barrier': np.float64(0.1), 'direction': np.float64(0.1), 'magnitude': np.float64(0.1), 'barrier_avoidance': np.float64(0.1)} - -
+2025-08-28 14:43:48,848 INFO AresTradingSystem.System Multi-output model training completed - -
+2025-08-28 14:43:48,848 INFO AresTradingSystem.System Successfully trained 4 out of 4 models - -
+2025-08-28 14:43:48,848 INFO AresTradingSystem.System Multi-output model training completed - -
+2025-08-28 14:43:48,849 INFO AresTradingSystem.System Generating probability predictions - -

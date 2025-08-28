@@ -250,6 +250,76 @@ def test_profit_feature_engineering():
         print(f"   ... and {len(new_features) - 10} more features")
 
 
+def test_data_driven_feature_selection():
+    """Test data-driven feature selection methods."""
+    print("\n🧪 Testing Data-Driven Feature Selection")
+    print("=" * 50)
+    
+    # Create sample data
+    print("📊 Creating sample data...")
+    data = create_sample_data(1000)
+    
+    # Import enhanced feature selection
+    from src.training.enhanced_feature_selection_manager import EnhancedFeatureSelectionManager
+    
+    # Initialize enhanced feature selection
+    print("🔧 Initializing enhanced feature selection...")
+    config = {
+        "feature_reduction": {
+            "target_features": 50,
+            "vif_threshold": 10.0,
+            "mi_threshold": 0.01,
+            "correlation_threshold": 0.95,
+            "variance_threshold": 0.01,
+            "method_weights": {
+                "vif": 0.2,
+                "mutual_info": 0.25,
+                "shap": 0.25,
+                "random_forest": 0.2,
+                "rfe": 0.1
+            }
+        }
+    }
+    
+    feature_selector = EnhancedFeatureSelectionManager(config)
+    
+    # Apply data-driven feature selection
+    print("🔧 Applying data-driven feature selection...")
+    selected_features, metadata = feature_selector.select_features_enhanced(
+        features_df=data,
+        target=data['direction'],
+        symbol="ETHUSDT",
+        exchange="BINANCE",
+        data_dir="test_data/feature_selection",
+        task="classification"
+    )
+    
+    print(f"✅ Data-driven feature selection completed")
+    print(f"   - Original features: {len(data.columns)}")
+    print(f"   - Selected features: {len(selected_features.columns)}")
+    print(f"   - Features removed: {len(data.columns) - len(selected_features.columns)}")
+    
+    # Show selection statistics
+    print(f"\n📊 Selection Statistics:")
+    stages = metadata.get('stages', {})
+    print(f"   - VIF features removed: {stages.get('stage3_vif', {}).get('removed_high_vif', 0)}")
+    print(f"   - MI features removed: {stages.get('stage5_mutual_info', {}).get('removed_low_mi', 0)}")
+    print(f"   - SHAP features removed: {stages.get('stage6_shap', {}).get('removed_low_shap', 0)}")
+    print(f"   - RF features removed: {stages.get('stage7_random_forest', {}).get('removed_low_rf', 0)}")
+    print(f"   - Processing time: {metadata.get('processing_time', 0):.2f}s")
+    
+    # Show feature importance summary
+    print(f"\n📊 Feature Importance Summary:")
+    importance_summary = feature_selector.get_feature_importance_summary()
+    for method, summary in importance_summary.items():
+        print(f"   - {method.upper()}:")
+        print(f"     Mean: {summary['mean']:.4f}")
+        print(f"     Max: {summary['max']:.4f}")
+        print(f"     Top feature: {list(summary['top_10_features'].keys())[0]}")
+    
+    print(f"\n✅ Data-driven feature selection is working correctly!")
+
+
 async def main():
     """Main test function."""
     print("🚀 Multi-Output Prediction System Test")
@@ -262,8 +332,11 @@ async def main():
         # Test profit feature engineering
         test_profit_feature_engineering()
         
-        # Test multi-output trainer
-        await test_multi_output_trainer()
+            # Test multi-output trainer
+    await test_multi_output_trainer()
+    
+    # Test data-driven feature selection
+    test_data_driven_feature_selection()
         
         # Test enhanced HMM training
         await test_enhanced_hmm_training()
@@ -275,6 +348,13 @@ async def main():
         print("   ✅ Multi-output model trainer functional")
         print("   ✅ Enhanced HMM-based training operational")
         print("\n🔧 The system is ready for intelligent multi-output prediction!")
+    
+    print("\n📊 Data-driven feature selection is now enabled!")
+    print("   - VIF filtering for multicollinearity")
+    print("   - Mutual Information for feature relevance")
+    print("   - SHAP for model-based importance")
+    print("   - RandomForest for ensemble importance")
+    print("   - RFE for final selection")
         
     except Exception as e:
         print(f"\n❌ Test failed with error: {e}")

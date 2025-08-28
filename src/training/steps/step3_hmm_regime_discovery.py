@@ -37,6 +37,13 @@ except ImportError:
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# Import enhanced HMM regime manager for improved functionality
+try:
+    from src.utils.enhanced_hmm_regime_manager import EnhancedHMMRegimeManager
+    ENHANCED_HMM_AVAILABLE = True
+except ImportError:
+    ENHANCED_HMM_AVAILABLE = False
+
 from src.utils.centralized_decorators import (
     comprehensive_data_validation,
     handle_errors,
@@ -71,6 +78,16 @@ class HMMRegimeDiscoveryStep:
     def _initialize_components(self) -> None:
         """Initialize HMM and data quality components."""
         self.logger.info("🔧 Initializing HMM regime discovery components...")
+        
+        # Initialize enhanced HMM regime manager if available
+        self.enhanced_hmm_manager = None
+        if ENHANCED_HMM_AVAILABLE:
+            try:
+                self.enhanced_hmm_manager = EnhancedHMMRegimeManager(self.config)
+                self.logger.info("✅ Enhanced HMM regime manager initialized successfully")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Could not initialize EnhancedHMMRegimeManager: {e}")
+        
         try:
             from .step1.enhanced_data_quality_manager import EnhancedDataQualityManager
             self.data_quality_manager = EnhancedDataQualityManager()
@@ -198,9 +215,19 @@ class HMMRegimeDiscoveryStep:
             self.logger.info("STEP 3: HMM Regime Discovery")
             self.logger.info("=" * 60)
             hmm_start = time.time()
-            regime_results = await self._perform_hmm_regime_discovery(
-                training_input, data_loaded["data"]
-            )
+            
+            # Use enhanced HMM manager if available
+            if self.enhanced_hmm_manager:
+                self.logger.info("🧠 Using enhanced HMM regime manager...")
+                regime_results = await self._perform_enhanced_hmm_regime_discovery(
+                    training_input, data_loaded["data"]
+                )
+            else:
+                self.logger.info("🧠 Using standard HMM regime discovery...")
+                regime_results = await self._perform_hmm_regime_discovery(
+                    training_input, data_loaded["data"]
+                )
+            
             hmm_elapsed = time.time() - hmm_start
             self.logger.info(f"⏱️ HMM Regime Discovery completed in {hmm_elapsed:.2f} seconds")
 
@@ -866,6 +893,65 @@ class HMMRegimeDiscoveryStep:
         
         except Exception as e:
             self.logger.warning(f"Could not log feature categories: {e}")
+
+    @with_tracing_span("perform_enhanced_hmm_regime_discovery")
+    @resource_monitor
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={"success": False, "error": "Enhanced HMM regime discovery failed"},
+        context="perform_enhanced_hmm_regime_discovery"
+    )
+    async def _perform_enhanced_hmm_regime_discovery(
+        self, 
+        training_input: dict[str, Any], 
+        data: Any
+    ) -> dict[str, Any]:
+        """Perform enhanced HMM regime discovery using the enhanced HMM manager."""
+        try:
+            self.logger.info("🧠 Starting enhanced HMM regime discovery...")
+            
+            # Train regime models
+            training_result = await self.enhanced_hmm_manager.train_regime_models(data)
+            
+            if not training_result.get("success", False):
+                error_msg = training_result.get("error", "Enhanced HMM training failed")
+                self.logger.error(f"❌ Enhanced HMM training failed: {error_msg}")
+                return {"success": False, "error": error_msg}
+            
+            # Predict regime changes
+            prediction_result = await self.enhanced_hmm_manager.predict_regime_changes(data)
+            
+            if not prediction_result.get("success", False):
+                error_msg = prediction_result.get("error", "Enhanced HMM prediction failed")
+                self.logger.error(f"❌ Enhanced HMM prediction failed: {error_msg}")
+                return {"success": False, "error": error_msg}
+            
+            # Get regime summary
+            regime_summary = self.enhanced_hmm_manager.get_regime_summary()
+            
+            # Format results for pipeline compatibility
+            regime_results = {
+                "success": True,
+                "regime_states": prediction_result.get("cluster_labels", []),
+                "regime_transitions": {
+                    "transitions": prediction_result.get("regime_changes", []),
+                    "probabilities": prediction_result.get("transition_probabilities", [])
+                },
+                "metrics": {
+                    "training_report": training_result.get("training_report", {}),
+                    "regime_summary": regime_summary,
+                    "current_regime": prediction_result.get("current_regime"),
+                    "enhanced_features": True
+                },
+                "enhanced_analysis": True
+            }
+            
+            self.logger.info("✅ Enhanced HMM regime discovery completed successfully")
+            return regime_results
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in enhanced HMM regime discovery: {e}")
+            return {"success": False, "error": str(e)}
 
     @with_tracing_span("perform_hmm_regime_discovery")
     @resource_monitor

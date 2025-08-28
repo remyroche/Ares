@@ -8,6 +8,13 @@ import pandas as pd
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.centralized_decorators import validate_data_quality
 
+# Import centralized S/R logic for enhanced functionality
+try:
+    from src.utils.centralized_sr_logic import CentralizedSRAnalyzer
+    CENTRALIZED_SR_AVAILABLE = True
+except ImportError:
+    CENTRALIZED_SR_AVAILABLE = False
+
 class SRBreakoutPredictor:
     """
     SR Breakout Predictor responsible for predicting support/resistance breakouts.
@@ -198,6 +205,15 @@ class SRBreakoutPredictor:
         # Performance tracking
         self.performance_metrics: dict[str, Any] = {}
         self.prediction_history: list[dict[str, Any]] = []
+        
+        # Initialize centralized S/R analyzer if available
+        self.centralized_sr_analyzer = None
+        if CENTRALIZED_SR_AVAILABLE:
+            try:
+                self.centralized_sr_analyzer = CentralizedSRAnalyzer(config)
+                self.logger.info("✅ Centralized S/R analyzer initialized")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to initialize centralized S/R analyzer: {e}")
 
     @handle_specific_errors(
         error_handlers={
@@ -364,6 +380,28 @@ class SRBreakoutPredictor:
     async def _detect_support_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect support levels using configured method."""
         try:
+            # Use centralized S/R analyzer if available
+            if self.centralized_sr_analyzer:
+                self.logger.info("Using centralized S/R analyzer for support levels")
+                sr_analysis = self.centralized_sr_analyzer.analyze_sr_levels(market_data)
+                if sr_analysis.get("success", False):
+                    supports = sr_analysis.get("supports", [])
+                    # Convert to expected format
+                    return [
+                        {
+                            "price": level["price"],
+                            "strength": level["strength"],
+                            "timestamp": market_data.index[-1],  # Use current timestamp
+                            "method": level["type"],
+                            "confidence": level["confidence"],
+                            "touches": level["touches"],
+                            "volume": level["volume"],
+                            "age": level["age"]
+                        }
+                        for level in supports
+                    ]
+            
+            # Fallback to original methods
             if self.sr_detection_method == "fractal":
                 return await self._detect_fractal_support_levels(market_data)
             elif self.sr_detection_method == "volume":
@@ -383,6 +421,28 @@ class SRBreakoutPredictor:
     async def _detect_resistance_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect resistance levels using configured method."""
         try:
+            # Use centralized S/R analyzer if available
+            if self.centralized_sr_analyzer:
+                self.logger.info("Using centralized S/R analyzer for resistance levels")
+                sr_analysis = self.centralized_sr_analyzer.analyze_sr_levels(market_data)
+                if sr_analysis.get("success", False):
+                    resistances = sr_analysis.get("resistances", [])
+                    # Convert to expected format
+                    return [
+                        {
+                            "price": level["price"],
+                            "strength": level["strength"],
+                            "timestamp": market_data.index[-1],  # Use current timestamp
+                            "method": level["type"],
+                            "confidence": level["confidence"],
+                            "touches": level["touches"],
+                            "volume": level["volume"],
+                            "age": level["age"]
+                        }
+                        for level in resistances
+                    ]
+            
+            # Fallback to original methods
             if self.sr_detection_method == "fractal":
                 return await self._detect_fractal_resistance_levels(market_data)
             elif self.sr_detection_method == "volume":

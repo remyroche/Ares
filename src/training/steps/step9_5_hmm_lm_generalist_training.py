@@ -38,6 +38,13 @@ from src.utils.centralized_decorators import (
 )
 from src.utils.logger import system_logger
 
+# Import enhanced HMM regime manager for improved functionality
+try:
+    from src.utils.enhanced_hmm_regime_manager import EnhancedHMMRegimeManager
+    ENHANCED_HMM_AVAILABLE = True
+except ImportError:
+    ENHANCED_HMM_AVAILABLE = False
+
 # Suppress warnings
 warnings.filterwarnings("ignore")
 
@@ -74,6 +81,15 @@ class HMMLMGeneralistTrainingStep:
 
         # Regime change vocabulary
         self.regime_change_vocab = self._create_regime_change_vocabulary()
+        
+        # Initialize enhanced HMM regime manager if available
+        self.enhanced_hmm_manager = None
+        if ENHANCED_HMM_AVAILABLE:
+            try:
+                self.enhanced_hmm_manager = EnhancedHMMRegimeManager(config)
+                self.logger.info("✅ Enhanced HMM regime manager initialized for step 9.5")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Could not initialize EnhancedHMMRegimeManager: {e}")
 
     def _create_regime_change_vocabulary(self) -> dict[str, int]:
         """Create vocabulary for regime change events."""

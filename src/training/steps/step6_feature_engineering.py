@@ -21,6 +21,13 @@ from src.training.steps.vectorized_advanced_feature_engineering import (
     VectorizedAdvancedFeatureEngineering,
 )
 
+# Import optimized feature engineering for enhanced functionality
+try:
+    from src.utils.optimized_feature_engineering import OptimizedFeatureEngineering
+    OPTIMIZED_FE_AVAILABLE = True
+except ImportError:
+    OPTIMIZED_FE_AVAILABLE = False
+
 # Import SR breakout predictor for comprehensive SR features
 from src.tactician.sr_breakout_predictor import setup_sr_breakout_predictor
 
@@ -191,18 +198,36 @@ async def run_step(
             logger.error("❌ Failed to load labeled data")
             return False
 
-        # 4) Initialize vectorized feature engineering
-        logger.info("🔧 Initializing vectorized feature engineering...")
-        feature_engineer = VectorizedAdvancedFeatureEngineering(
-            config={
-                "symbol": symbol,
-                "exchange": exchange,
-                "timeframe": timeframe,
-                "enable_regime_aware_features": regime_data is not None,
-                "enable_advanced_features": True,
-                "enable_basic_features": True,
-            }
-        )
+        # 4) Initialize feature engineering (optimized if available)
+        logger.info("🔧 Initializing feature engineering...")
+        
+        if OPTIMIZED_FE_AVAILABLE:
+            logger.info("🚀 Using optimized feature engineering...")
+            feature_engineer = OptimizedFeatureEngineering(
+                config={
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "timeframe": timeframe,
+                    "enable_regime_features": regime_data is not None,
+                    "enable_sr_features": True,
+                    "enable_wavelet_features": True,
+                    "enable_interaction_features": True,
+                    "min_feature_quality": 0.3,
+                    "max_correlation_threshold": 0.95,
+                }
+            )
+        else:
+            logger.info("🔧 Using vectorized advanced feature engineering...")
+            feature_engineer = VectorizedAdvancedFeatureEngineering(
+                config={
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "timeframe": timeframe,
+                    "enable_regime_aware_features": regime_data is not None,
+                    "enable_advanced_features": True,
+                    "enable_basic_features": True,
+                }
+            )
 
         # 5) Create comprehensive features
         logger.info("🔧 Creating comprehensive features...")
@@ -295,12 +320,12 @@ async def _create_comprehensive_features(
     unified_data: pd.DataFrame,
     labeled_data: pd.DataFrame,
     regime_data: pd.DataFrame,
-    feature_engineer: VectorizedAdvancedFeatureEngineering,
+    feature_engineer: Any,  # Can be either OptimizedFeatureEngineering or VectorizedAdvancedFeatureEngineering
     symbol: str,
     exchange: str,
     timeframe: str
 ) -> Dict[str, Any]:
-    """Create comprehensive features using vectorized feature engineering."""
+    """Create comprehensive features using optimized or vectorized feature engineering."""
     
     try:
         # Merge data
@@ -326,26 +351,33 @@ async def _create_comprehensive_features(
                 )
                 system_logger.info(f"✅ Merged labeled data with {len(label_columns)} label columns")
         
-        # Create features using vectorized feature engineering
-        system_logger.info("🔧 Creating features with vectorized feature engineering...")
-        
-        # This would call the actual feature engineering logic
-        # For now, we'll create a basic feature set
-        features_df = _create_basic_features(merged_data)
-        
-        # Add advanced features if regime data is available
-        if regime_data is not None:
-            features_df = _add_regime_aware_features(features_df, merged_data)
-        
-        # Add technical indicators
-        features_df = _add_technical_indicators(features_df)
-        
-        # Add statistical features
-        features_df = _add_statistical_features(features_df)
-        
-        # Add HMM feature enhancement if regime data is available
-        if regime_data is not None:
-            features_df = _enhance_hmm_features(features_df, regime_data)
+        # Create features using the appropriate feature engineering method
+        if hasattr(feature_engineer, 'generate_features') and callable(getattr(feature_engineer, 'generate_features')):
+            # Use optimized feature engineering if available
+            system_logger.info("🚀 Using optimized feature engineering...")
+            features_df = await feature_engineer.generate_features(
+                merged_data,
+                include_sr_analysis=True,
+                include_regime_analysis=regime_data is not None
+            )
+        else:
+            # Fallback to basic feature creation
+            system_logger.info("🔧 Using basic feature engineering...")
+            features_df = _create_basic_features(merged_data)
+            
+            # Add advanced features if regime data is available
+            if regime_data is not None:
+                features_df = _add_regime_aware_features(features_df, merged_data)
+            
+            # Add technical indicators
+            features_df = _add_technical_indicators(features_df)
+            
+            # Add statistical features
+            features_df = _add_statistical_features(features_df)
+            
+            # Add HMM feature enhancement if regime data is available
+            if regime_data is not None:
+                features_df = _enhance_hmm_features(features_df, regime_data)
         
         # Split into train/validation
         split_point = int(len(features_df) * 0.8)
@@ -362,6 +394,7 @@ async def _create_comprehensive_features(
                 "val_samples": len(features_val),
                 "feature_columns": list(features_df.columns),
                 "regime_aware": regime_data is not None,
+                "optimized_engineering": hasattr(feature_engineer, 'generate_features'),
                 "timestamp": datetime.now().isoformat()
             }
         }

@@ -98,8 +98,11 @@ class ProbabilityTargetGenerator:
                 elif stop_hit and not profit_hit:
                     target = 0  # Failure
                 else:
-                    # Partial success or no clear outcome - convert to binary
-                    target = 1 if np.random.random() > 0.5 else 0
+                    # Partial success or no clear outcome - use deterministic approach
+                    # If profit target is closer than stop loss, consider it success
+                    max_profit = (future_prices.max() - entry_price) / entry_price
+                    max_loss = (entry_price - future_prices.min()) / entry_price
+                    target = 1 if max_profit > max_loss else 0
             
             targets.append(target)
         
@@ -161,7 +164,7 @@ class ProbabilityTargetGenerator:
         for i in range(len(X)):
             if i >= len(market_data) - 1:
                 # Not enough future data
-                target = 0.5
+                target = 0
             else:
                 # Calculate actual magnitude outcome
                 predicted_magnitude = abs(y[i])
@@ -203,7 +206,7 @@ class ProbabilityTargetGenerator:
         for i in range(len(X)):
             if i >= len(market_data) - self.avoidance_look_ahead:
                 # Not enough future data
-                target = 0.5
+                target = 0
             else:
                 # Calculate actual avoidance outcome
                 future_returns = market_data['close'].pct_change().iloc[i+1:i+self.avoidance_look_ahead+1]
@@ -250,8 +253,11 @@ class ProbabilityTargetGenerator:
         for target_name, target_values in targets.items():
             if len(target_values) != len(X):
                 raise ValueError(f"Target length mismatch for {target_name}")
-            if not np.all(np.isin(target_values, [0, 1])):
-                self.logger.warning(f"Target values not binary for {target_name}")
+            # Convert any non-binary values to binary
+            target_values = np.array(target_values)
+            target_values = np.where(target_values > 0.5, 1, 0)
+            targets[target_name] = target_values
+            self.logger.info(f"Target {target_name} validated and converted to binary")
         
         self.logger.info(f"Generated targets for {len(X)} samples")
         return targets
@@ -286,7 +292,7 @@ class MultiOutputModel:
     
     def _initialize_models(self):
         """Initialize individual models for each probability type."""
-        for output_type in ['triple_barrier', 'direction', 'magnitude', 'avoidance']:
+        for output_type in ['triple_barrier', 'direction', 'magnitude', 'barrier_avoidance']:
             self.models[output_type] = self._create_model(output_type)
     
     def _create_model(self, output_type: str):
@@ -307,7 +313,6 @@ class MultiOutputModel:
                 random_state=self.random_state
             )
     
-    @handle_errors(default_return={}, context="fit_multi_output_models")
     @performance_monitor()
     def fit(
         self, 
@@ -331,7 +336,7 @@ class MultiOutputModel:
         self.logger.info("Starting multi-output model training")
         trained_models = {}
         
-        for output_type in ['triple_barrier', 'direction', 'magnitude', 'avoidance']:
+        for output_type in ['triple_barrier', 'direction', 'magnitude', 'barrier_avoidance']:
             self.logger.info(f"Training {output_type} model...")
             
             # Get model and targets
@@ -341,7 +346,7 @@ class MultiOutputModel:
             
             # Handle class imbalance for certain targets
             sample_weights = None
-            if output_type in ['triple_barrier', 'avoidance']:
+            if output_type in ['triple_barrier', 'barrier_avoidance']:
                 # These targets are often imbalanced
                 try:
                     class_weights = compute_class_weight(
@@ -354,21 +359,30 @@ class MultiOutputModel:
                     self.logger.warning(f"Could not compute class weights for {output_type}: {e}")
             
             # Train model
-            if hasattr(model, 'fit'):
-                if sample_weights is not None:
-                    model.fit(X_train, y_train_target, sample_weight=sample_weights)
-                else:
-                    model.fit(X_train, y_train_target)
-            
-            # Calibrate probabilities
             try:
-                calibrator = CalibratedClassifierCV(model, cv=5, method='isotonic')
-                calibrator.fit(X_val, y_val_target)
-                self.calibrators[output_type] = calibrator
-                trained_models[output_type] = calibrator
+                if hasattr(model, 'fit'):
+                    if sample_weights is not None:
+                        model.fit(X_train, y_train_target, sample_weight=sample_weights)
+                    else:
+                        model.fit(X_train, y_train_target)
+                    
+                    # Calibrate probabilities
+                    try:
+                        calibrator = CalibratedClassifierCV(model, cv=5, method='isotonic')
+                        calibrator.fit(X_val, y_val_target)
+                        self.calibrators[output_type] = calibrator
+                        trained_models[output_type] = calibrator
+                    except Exception as e:
+                        self.logger.warning(f"Calibration failed for {output_type}, using original model: {e}")
+                        trained_models[output_type] = model
+                else:
+                    self.logger.error(f"Model {output_type} does not have fit method")
+                    raise ValueError(f"Model {output_type} does not have fit method")
             except Exception as e:
-                self.logger.warning(f"Calibration failed for {output_type}, using original model: {e}")
-                trained_models[output_type] = model
+                self.logger.error(f"Training failed for {output_type}: {e}")
+                # Continue with other models instead of failing completely
+                self.logger.warning(f"Skipping {output_type} model due to training failure")
+                continue
         
         # Optimize ensemble weights
         self.ensemble_weights = self._optimize_ensemble_weights(
@@ -376,6 +390,7 @@ class MultiOutputModel:
         )
         
         self.logger.info("Multi-output model training completed")
+        self.logger.info(f"Successfully trained {len(trained_models)} out of 4 models")
         return trained_models
     
     @handle_errors(default_return=None, context="optimize_ensemble_weights")
@@ -400,7 +415,7 @@ class MultiOutputModel:
             """Objective function to minimize."""
             total_loss = 0
             
-            for i, output_type in enumerate(['triple_barrier', 'direction', 'magnitude', 'avoidance']):
+            for i, output_type in enumerate(['triple_barrier', 'direction', 'magnitude', 'barrier_avoidance']):
                 model = models[output_type]
                 y_true = y_val_multi[output_type]
                 
@@ -428,7 +443,7 @@ class MultiOutputModel:
             )
             
             optimized_weights = dict(zip(
-                ['triple_barrier', 'direction', 'magnitude', 'avoidance'], 
+                ['triple_barrier', 'direction', 'magnitude', 'barrier_avoidance'], 
                 result.x
             ))
             
@@ -438,7 +453,7 @@ class MultiOutputModel:
         except Exception as e:
             self.logger.warning(f"Ensemble weight optimization failed: {e}")
             return dict(zip(
-                ['triple_barrier', 'direction', 'magnitude', 'avoidance'], 
+                ['triple_barrier', 'direction', 'magnitude', 'barrier_avoidance'], 
                 initial_weights
             ))
     
@@ -460,7 +475,13 @@ class MultiOutputModel:
         """
         probabilities = {}
         
-        for output_type in ['triple_barrier', 'direction', 'magnitude', 'avoidance']:
+        for output_type in ['triple_barrier', 'direction', 'magnitude', 'barrier_avoidance']:
+            # Check if model exists
+            if output_type not in self.models or self.models[output_type] is None:
+                self.logger.warning(f"Model for {output_type} not available, using default probability")
+                probabilities[f"{output_type}_probability"] = 0.5
+                continue
+                
             model = self.calibrators.get(output_type, self.models[output_type])
             
             try:
@@ -485,7 +506,7 @@ class MultiOutputModel:
                 
             except Exception as e:
                 self.logger.error(f"Error predicting {output_type} probability: {e}")
-                probabilities[f"{output_type}_probability"] = 0.5
+                probabilities[f"{output_type}_probability"] = 0.5  # Default fallback
         
         # Add metadata
         probabilities["generation_timestamp"] = datetime.now().isoformat()
@@ -538,7 +559,6 @@ class MultiOutputProbabilityTrainer:
         self.logger.info("Preparing multi-output targets for training")
         return self.target_generator.generate_all_targets(X, y, market_data)
     
-    @handle_errors(default_return={}, context="train_multi_output_model")
     @performance_monitor()
     def train_multi_output_model(
         self, 
@@ -591,12 +611,18 @@ class MultiOutputProbabilityTrainer:
         Returns:
             Dictionary containing all 4 probability outputs
         """
-        if not self.is_trained:
+        if not self.is_trained or self.trained_models is None:
             self.logger.error("Model not trained. Call train_multi_output_model first.")
             return self._get_default_probabilities()
         
         self.logger.info("Generating probability predictions")
-        return self.multi_output_model.predict_probabilities(X_test, market_data)
+        
+        # Use the multi-output model's prediction method
+        try:
+            return self.multi_output_model.predict_probabilities(X_test, market_data)
+        except Exception as e:
+            self.logger.error(f"Error in multi-output model prediction: {e}")
+            return self._get_default_probabilities()
     
     def _get_default_probabilities(self) -> Dict[str, float]:
         """Get default probabilities when training fails."""

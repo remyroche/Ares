@@ -848,63 +848,55 @@ class EnhancedPredictionService:
         exchange: str
     ) -> dict[str, Any]:
         """
-        Generate enhanced confidence scores with barrier analysis.
+        Generate enhanced confidence scores based on ML model outputs.
         
-        This function calculates the confidence that price will move AT LEAST by x% 
-        in a direction without hitting the barrier in the other direction first.
+        This function integrates confidence scores from different ML models
+        and applies calibration/optimization, but does NOT calculate confidence
+        internally - confidence comes from the ML models themselves.
         """
         try:
             enhanced_confidence = {}
             
-            # Extract current price and volatility
+            # Extract current price and volatility for context
             current_price = market_data['close'].iloc[-1]
             price_volatility = market_data['close'].pct_change().std()
             
-            # Calculate price movement thresholds
-            profit_threshold_pct = self.profit_threshold
-            barrier_threshold_pct = self.barrier_threshold
-            
-            profit_threshold_price = current_price * (1 + profit_threshold_pct)
-            barrier_threshold_price = current_price * (1 - barrier_threshold_pct)
-            
             for prediction_name, prediction_data in ml_profit_predictions.items():
                 try:
-                    # Extract prediction components
-                    predicted_direction = prediction_data.get("direction", 0)  # -1, 0, 1
+                    # Get confidence from ML model (this is the key - confidence comes from models)
+                    model_confidence = prediction_data.get("confidence", 0.5)
+                    predicted_direction = prediction_data.get("direction", 0)
                     predicted_magnitude = prediction_data.get("magnitude", 0.0)
-                    base_confidence = prediction_data.get("confidence", 0.5)
                     
-                    # Calculate enhanced confidence with barrier analysis
-                    enhanced_confidence_score = await self._calculate_directional_confidence_with_barriers(
-                        predicted_direction=predicted_direction,
-                        predicted_magnitude=predicted_magnitude,
-                        base_confidence=base_confidence,
-                        current_price=current_price,
-                        profit_threshold_price=profit_threshold_price,
-                        barrier_threshold_price=barrier_threshold_price,
-                        price_volatility=price_volatility,
-                        prediction_name=prediction_name
+                    # Apply calibration if available (but don't recalculate confidence)
+                    calibrated_confidence = await self._apply_model_confidence_calibration(
+                        model_confidence, prediction_name, symbol, exchange
+                    )
+                    
+                    # Apply optimization weights if available
+                    optimized_confidence = await self._apply_optimization_weights_to_confidence(
+                        calibrated_confidence, prediction_name, symbol, exchange
                     )
                     
                     enhanced_confidence[prediction_name] = {
-                        "enhanced_confidence": enhanced_confidence_score,
-                        "base_confidence": base_confidence,
+                        "model_confidence": model_confidence,  # Original ML model confidence
+                        "calibrated_confidence": calibrated_confidence,  # After calibration
+                        "optimized_confidence": optimized_confidence,  # After optimization
                         "direction": predicted_direction,
                         "magnitude": predicted_magnitude,
-                        "profit_threshold": profit_threshold_pct,
-                        "barrier_threshold": barrier_threshold_pct,
                         "current_price": current_price,
-                        "profit_target": profit_threshold_price,
-                        "barrier_price": barrier_threshold_price,
                         "volatility": price_volatility,
-                        "calculation_method": "directional_with_barriers"
+                        "confidence_source": "ml_model",  # Indicates confidence comes from ML model
+                        "calibration_applied": calibrated_confidence != model_confidence,
+                        "optimization_applied": optimized_confidence != calibrated_confidence
                     }
                     
                 except Exception as e:
-                    self.logger.warning(warning(f"⚠️ Failed to calculate enhanced confidence for {prediction_name}: {e}"))
+                    self.logger.warning(warning(f"⚠️ Failed to process confidence for {prediction_name}: {e}"))
                     enhanced_confidence[prediction_name] = {
-                        "enhanced_confidence": 0.5,
-                        "base_confidence": prediction_data.get("confidence", 0.5),
+                        "model_confidence": prediction_data.get("confidence", 0.5),
+                        "calibrated_confidence": prediction_data.get("confidence", 0.5),
+                        "optimized_confidence": prediction_data.get("confidence", 0.5),
                         "error": str(e)
                     }
 
@@ -917,179 +909,95 @@ class EnhancedPredictionService:
     @handle_errors(
         exceptions=(Exception,),
         default_return=0.5,
-        context="calculating directional confidence with barriers",
+        context="applying model confidence calibration",
     )
-    @with_tracing_span("calculate_directional_confidence_with_barriers")
-    async def _calculate_directional_confidence_with_barriers(
+    @with_tracing_span("apply_model_confidence_calibration")
+    async def _apply_model_confidence_calibration(
         self,
-        predicted_direction: int,
-        predicted_magnitude: float,
-        base_confidence: float,
-        current_price: float,
-        profit_threshold_price: float,
-        barrier_threshold_price: float,
-        price_volatility: float,
-        prediction_name: str
+        model_confidence: float,
+        prediction_name: str,
+        symbol: str,
+        exchange: str
     ) -> float:
         """
-        Calculate confidence that price will move AT LEAST by x% in a direction 
-        without hitting the barrier in the other direction first.
+        Apply calibration to ML model confidence scores.
         
-        This is the enhanced confidence calculation function that considers:
-        1. Directional probability
-        2. Magnitude probability
-        3. Barrier avoidance probability
-        4. Volatility-adjusted confidence
+        This function applies calibration transformations to the confidence
+        scores that come from the ML models, but does NOT calculate confidence.
         """
         try:
-            if predicted_direction == 0:
-                return 0.5  # Neutral direction
+            # Find relevant calibration data
+            calibration_key = f"{exchange}_{symbol}_calibration_results"
+            calibration_data = self.calibration_results.get(calibration_key, {})
             
-            # Calculate directional probability
-            directional_prob = self._calculate_directional_probability(
-                predicted_direction, base_confidence, price_volatility
-            )
+            # Get model-specific calibration
+            model_calibration = calibration_data.get("model_calibrations", {}).get(prediction_name, {})
             
-            # Calculate magnitude probability (probability of reaching profit target)
-            magnitude_prob = self._calculate_magnitude_probability(
-                predicted_magnitude, profit_threshold_price, current_price, price_volatility
-            )
-            
-            # Calculate barrier avoidance probability
-            barrier_avoidance_prob = self._calculate_barrier_avoidance_probability(
-                predicted_direction, barrier_threshold_price, current_price, price_volatility
-            )
-            
-            # Combine probabilities using Bayesian approach
-            # P(success) = P(direction) * P(magnitude) * P(no_barrier)
-            combined_probability = directional_prob * magnitude_prob * barrier_avoidance_prob
-            
-            # Apply volatility adjustment
-            volatility_adjustment = self._calculate_volatility_adjustment(price_volatility)
-            adjusted_confidence = combined_probability * volatility_adjustment
-            
-            # Ensure confidence is within bounds
-            final_confidence = max(0.0, min(1.0, adjusted_confidence))
-            
-            self.logger.debug(f"Enhanced confidence calculation for {prediction_name}:")
-            self.logger.debug(f"  Directional prob: {directional_prob:.4f}")
-            self.logger.debug(f"  Magnitude prob: {magnitude_prob:.4f}")
-            self.logger.debug(f"  Barrier avoidance prob: {barrier_avoidance_prob:.4f}")
-            self.logger.debug(f"  Volatility adjustment: {volatility_adjustment:.4f}")
-            self.logger.debug(f"  Final confidence: {final_confidence:.4f}")
-            
-            return final_confidence
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error calculating directional confidence with barriers: {e}"))
-            return base_confidence
-
-    def _calculate_directional_probability(
-        self,
-        predicted_direction: int,
-        base_confidence: float,
-        price_volatility: float
-    ) -> float:
-        """Calculate probability of correct direction prediction."""
-        try:
-            # Base directional probability from model confidence
-            base_directional_prob = base_confidence
-            
-            # Adjust for volatility (higher volatility = lower directional confidence)
-            volatility_factor = 1.0 / (1.0 + price_volatility * 10)  # Scale volatility impact
-            
-            # Adjust for direction strength
-            direction_strength = abs(predicted_direction)
-            direction_factor = min(1.0, direction_strength)
-            
-            # Combine factors
-            directional_probability = base_directional_prob * volatility_factor * direction_factor
-            
-            return max(0.1, min(0.95, directional_probability))  # Bounded between 0.1 and 0.95
-            
-        except Exception as e:
-            self.logger.error(error(f"❌ Error calculating directional probability: {e}"))
-            return 0.5
-
-    def _calculate_magnitude_probability(
-        self,
-        predicted_magnitude: float,
-        profit_threshold_price: float,
-        current_price: float,
-        price_volatility: float
-    ) -> float:
-        """Calculate probability of reaching the profit target."""
-        try:
-            # Calculate required price movement
-            required_movement = abs(profit_threshold_price - current_price) / current_price
-            
-            # Use predicted magnitude as base probability
-            if predicted_magnitude > 0:
-                # Normalize predicted magnitude to probability
-                magnitude_prob = min(1.0, predicted_magnitude / required_movement)
+            if model_calibration:
+                # Apply calibration transformation to the model's confidence
+                calibration_params = model_calibration.get("calibration_parameters", {})
+                
+                # Apply temperature scaling or other calibration methods
+                temperature = calibration_params.get("temperature", 1.0)
+                calibrated_confidence = model_confidence ** (1.0 / temperature)
+                
+                # Ensure bounds
+                calibrated_confidence = max(0.0, min(1.0, calibrated_confidence))
+                
+                self.logger.debug(f"Applied calibration to {prediction_name}: {model_confidence:.3f} -> {calibrated_confidence:.3f}")
+                return calibrated_confidence
             else:
-                magnitude_prob = 0.1  # Low probability if no magnitude prediction
-            
-            # Adjust for volatility (higher volatility = higher chance of large moves)
-            volatility_boost = min(0.3, price_volatility * 5)  # Cap volatility boost at 30%
-            adjusted_prob = magnitude_prob + volatility_boost
-            
-            return max(0.05, min(0.9, adjusted_prob))  # Bounded between 0.05 and 0.9
-            
-        except Exception as e:
-            self.logger.error(error(f"❌ Error calculating magnitude probability: {e}"))
-            return 0.5
+                # No calibration available, return original model confidence
+                return model_confidence
 
-    def _calculate_barrier_avoidance_probability(
+        except Exception as e:
+            self.logger.error(error(f"❌ Error applying model confidence calibration: {e}"))
+            return model_confidence
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=0.5,
+        context="applying optimization weights to confidence",
+    )
+    @with_tracing_span("apply_optimization_weights_to_confidence")
+    async def _apply_optimization_weights_to_confidence(
         self,
-        predicted_direction: int,
-        barrier_threshold_price: float,
-        current_price: float,
-        price_volatility: float
+        calibrated_confidence: float,
+        prediction_name: str,
+        symbol: str,
+        exchange: str
     ) -> float:
-        """Calculate probability of avoiding the barrier price."""
+        """
+        Apply optimization weights to calibrated confidence scores.
+        
+        This function applies optimization weights to the calibrated confidence
+        scores, but does NOT calculate confidence - it only adjusts existing confidence.
+        """
         try:
-            # Calculate distance to barrier
-            barrier_distance = abs(barrier_threshold_price - current_price) / current_price
+            # Find relevant optimization results
+            optimization_key = f"{exchange}_{symbol}_optimization_results"
+            optimization_data = self.optimization_results.get(optimization_key, {})
             
-            # Base probability of avoiding barrier (further barrier = higher probability)
-            base_avoidance_prob = min(0.95, barrier_distance * 10)  # Scale distance to probability
-            
-            # Adjust for volatility (higher volatility = lower barrier avoidance probability)
-            volatility_penalty = min(0.4, price_volatility * 8)  # Cap volatility penalty at 40%
-            adjusted_prob = base_avoidance_prob - volatility_penalty
-            
-            # Direction-specific adjustment
-            if predicted_direction > 0:  # Bullish prediction
-                # More likely to avoid downside barrier if bullish
-                direction_boost = 0.1
-            elif predicted_direction < 0:  # Bearish prediction
-                # More likely to avoid upside barrier if bearish
-                direction_boost = 0.1
+            if optimization_data:
+                # Get model-specific optimization weight
+                model_weights = optimization_data.get("model_weights", {})
+                weight = model_weights.get(prediction_name, 1.0)
+                
+                # Apply weight to confidence (but don't recalculate it)
+                weighted_confidence = calibrated_confidence * weight
+                
+                # Ensure bounds
+                optimized_confidence = max(0.0, min(1.0, weighted_confidence))
+                
+                self.logger.debug(f"Applied optimization weight to {prediction_name}: {calibrated_confidence:.3f} * {weight:.3f} = {optimized_confidence:.3f}")
+                return optimized_confidence
             else:
-                direction_boost = 0.0
-            
-            final_prob = adjusted_prob + direction_boost
-            
-            return max(0.1, min(0.95, final_prob))  # Bounded between 0.1 and 0.95
-            
-        except Exception as e:
-            self.logger.error(error(f"❌ Error calculating barrier avoidance probability: {e}"))
-            return 0.7
+                # No optimization available, return calibrated confidence
+                return calibrated_confidence
 
-    def _calculate_volatility_adjustment(self, price_volatility: float) -> float:
-        """Calculate volatility adjustment factor for confidence."""
-        try:
-            # Higher volatility generally reduces confidence in predictions
-            # Use a sigmoid-like function to smooth the adjustment
-            volatility_factor = 1.0 / (1.0 + np.exp(price_volatility * 20 - 5))
-            
-            # Ensure adjustment is reasonable
-            return max(0.5, min(1.2, volatility_factor))
-            
         except Exception as e:
-            self.logger.error(error(f"❌ Error calculating volatility adjustment: {e}"))
-            return 1.0
+            self.logger.error(error(f"❌ Error applying optimization weights to confidence: {e}"))
+            return calibrated_confidence
 
     @handle_errors(
         exceptions=(Exception,),
@@ -1104,7 +1012,13 @@ class EnhancedPredictionService:
         symbol: str,
         exchange: str
     ) -> dict[str, Any]:
-        """Generate barrier analysis for risk management."""
+        """
+        Generate barrier analysis for risk management.
+        
+        This function provides barrier analysis information to help with
+        risk management decisions, but does NOT make risk decisions itself.
+        Risk decisions are made by the Tactician component.
+        """
         try:
             barrier_analysis = {}
             
@@ -1113,10 +1027,14 @@ class EnhancedPredictionService:
             
             for prediction_name, prediction_data in ml_profit_predictions.items():
                 try:
-                    # Calculate barrier metrics
+                    # Calculate barrier metrics for informational purposes
                     barrier_metrics = self._calculate_barrier_metrics(
                         prediction_data, current_price, price_volatility
                     )
+                    
+                    # Add ML model confidence to barrier analysis
+                    barrier_metrics["model_confidence"] = prediction_data.get("confidence", 0.5)
+                    barrier_metrics["prediction_name"] = prediction_name
                     
                     barrier_analysis[prediction_name] = barrier_metrics
                     

@@ -1,6 +1,7 @@
 import asyncio
 import time
 from collections import defaultdict
+from datetime import datetime
 from src.utils.logger import system_logger
 from typing import Any
 
@@ -395,23 +396,44 @@ class Supervisor:
     )
     async def get_analyst_predictions(
         self,
-        market_data,
-        regime_info,
-        symbol,
-        exchange,
-        timeframe
+        market_data: pd.DataFrame,
+        regime_info: dict[str, Any],
+        symbol: str,
+        exchange: str,
+        timeframe: str = "1m"
     ) -> dict[str, Any]:
-        """Get enhanced predictions for the Analyst component."""
+        """
+        Get enhanced analyst predictions with ML profit integration.
+
+        Args:
+            market_data: Market data for prediction
+            regime_info: Current regime information
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframe: Timeframe
+
+        Returns:
+            dict: Enhanced analyst predictions with ML profit integration
+        """
         try:
             if self.enhanced_prediction_service and self.enhanced_prediction_service.is_initialized:
-                return await self.enhanced_prediction_service.generate_analyst_predictions(
+                # Get ML profit predictions from enhanced prediction service
+                ml_profit_predictions = await self.enhanced_prediction_service.generate_analyst_predictions(
                     market_data, regime_info, symbol, exchange, timeframe
                 )
+                
+                # Integrate with existing analyst components
+                integrated_predictions = await self._integrate_analyst_ml_profit_predictions(
+                    ml_profit_predictions, market_data, regime_info, symbol, exchange
+                )
+                
+                return integrated_predictions
             else:
-                self.logger.warning("⚠️ Enhanced Prediction Service not available")
+                self.logger.warning("⚠️ Enhanced Prediction Service not available, using fallback")
                 return {}
+
         except Exception as e:
-            self.logger.error(f"❌ Error getting analyst predictions: {e}")
+            self.logger.error(error(f"❌ Error getting analyst predictions: {e}"))
             return {}
 
     @handle_errors(
@@ -421,24 +443,661 @@ class Supervisor:
     )
     async def get_tactician_predictions(
         self,
-        market_data,
-        regime_info,
-        analyst_signals,
-        symbol,
-        exchange,
-        timeframe
+        market_data: pd.DataFrame,
+        regime_info: dict[str, Any],
+        analyst_signals: dict[str, Any],
+        symbol: str,
+        exchange: str,
+        timeframe: str = "1m"
     ) -> dict[str, Any]:
-        """Get enhanced predictions for the Tactician component."""
+        """
+        Get enhanced tactician predictions with ML profit integration.
+
+        Args:
+            market_data: Market data for prediction
+            regime_info: Current regime information
+            analyst_signals: Analyst signals and predictions
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframe: Timeframe
+
+        Returns:
+            dict: Enhanced tactician predictions with ML profit integration
+        """
         try:
             if self.enhanced_prediction_service and self.enhanced_prediction_service.is_initialized:
-                return await self.enhanced_prediction_service.generate_tactician_predictions(
+                # Get ML profit predictions from enhanced prediction service
+                ml_profit_predictions = await self.enhanced_prediction_service.generate_tactician_predictions(
                     market_data, regime_info, analyst_signals, symbol, exchange, timeframe
                 )
+                
+                # Integrate with existing tactician components
+                integrated_predictions = await self._integrate_tactician_ml_profit_predictions(
+                    ml_profit_predictions, market_data, analyst_signals, symbol, exchange
+                )
+                
+                return integrated_predictions
             else:
-                self.logger.warning("⚠️ Enhanced Prediction Service not available")
+                self.logger.warning("⚠️ Enhanced Prediction Service not available, using fallback")
                 return {}
+
         except Exception as e:
-            self.logger.error(f"❌ Error getting tactician predictions: {e}")
+            self.logger.error(error(f"❌ Error getting tactician predictions: {e}"))
+            return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="integrating analyst ML profit predictions",
+    )
+    async def _integrate_analyst_ml_profit_predictions(
+        self,
+        ml_profit_predictions: dict[str, Any],
+        market_data: pd.DataFrame,
+        regime_info: dict[str, Any],
+        symbol: str,
+        exchange: str
+    ) -> dict[str, Any]:
+        """
+        Integrate ML profit predictions with existing Analyst components.
+        
+        This function enhances the Analyst's decision-making by incorporating:
+        1. ML profit predictions from steps 6-14
+        2. Enhanced confidence scores with barrier analysis
+        3. Risk-reward metrics
+        4. Directional probability assessments
+        """
+        try:
+            integrated_predictions = {
+                "ml_profit_integration": ml_profit_predictions,
+                "enhanced_analyst_signals": {},
+                "risk_metrics": {},
+                "confidence_enhancement": {},
+                "timestamp": datetime.now().isoformat()
+            }
+
+            # Extract key components from ML profit predictions
+            ml_profit_data = ml_profit_predictions.get("ml_profit_predictions", {})
+            enhanced_confidence = ml_profit_predictions.get("enhanced_confidence_scores", {})
+            barrier_analysis = ml_profit_predictions.get("barrier_analysis", {})
+            regime_predictions = ml_profit_predictions.get("regime_predictions", {})
+
+            # Generate enhanced analyst signals
+            enhanced_signals = await self._generate_enhanced_analyst_signals(
+                ml_profit_data, enhanced_confidence, barrier_analysis, regime_predictions
+            )
+            integrated_predictions["enhanced_analyst_signals"] = enhanced_signals
+
+            # Calculate risk metrics
+            risk_metrics = await self._calculate_analyst_risk_metrics(
+                ml_profit_data, barrier_analysis, market_data
+            )
+            integrated_predictions["risk_metrics"] = risk_metrics
+
+            # Generate confidence enhancement
+            confidence_enhancement = await self._generate_confidence_enhancement(
+                enhanced_confidence, ml_profit_data, symbol, exchange
+            )
+            integrated_predictions["confidence_enhancement"] = confidence_enhancement
+
+            return integrated_predictions
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error integrating analyst ML profit predictions: {e}"))
+            return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="integrating tactician ML profit predictions",
+    )
+    async def _integrate_tactician_ml_profit_predictions(
+        self,
+        ml_profit_predictions: dict[str, Any],
+        market_data: pd.DataFrame,
+        analyst_signals: dict[str, Any],
+        symbol: str,
+        exchange: str
+    ) -> dict[str, Any]:
+        """
+        Integrate ML profit predictions with existing Tactician components.
+        
+        This function enhances the Tactician's execution by incorporating:
+        1. ML profit predictions for position sizing
+        2. Enhanced confidence for leverage decisions
+        3. Barrier analysis for stop-loss placement
+        4. Risk-adjusted execution parameters
+        """
+        try:
+            integrated_predictions = {
+                "ml_profit_integration": ml_profit_predictions,
+                "enhanced_tactician_signals": {},
+                "execution_parameters": {},
+                "position_sizing_enhancement": {},
+                "timestamp": datetime.now().isoformat()
+            }
+
+            # Extract key components from ML profit predictions
+            ml_profit_data = ml_profit_predictions.get("ml_profit_predictions", {})
+            enhanced_confidence = ml_profit_predictions.get("enhanced_confidence_scores", {})
+            barrier_analysis = ml_profit_predictions.get("barrier_analysis", {})
+
+            # Generate enhanced tactician signals
+            enhanced_signals = await self._generate_enhanced_tactician_signals(
+                ml_profit_data, enhanced_confidence, barrier_analysis, analyst_signals
+            )
+            integrated_predictions["enhanced_tactician_signals"] = enhanced_signals
+
+            # Calculate execution parameters
+            execution_params = await self._calculate_tactician_execution_parameters(
+                ml_profit_data, enhanced_confidence, barrier_analysis
+            )
+            integrated_predictions["execution_parameters"] = execution_params
+
+            # Generate position sizing enhancement
+            position_sizing = await self._generate_position_sizing_enhancement(
+                ml_profit_data, enhanced_confidence, barrier_analysis
+            )
+            integrated_predictions["position_sizing_enhancement"] = position_sizing
+
+            return integrated_predictions
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error integrating tactician ML profit predictions: {e}"))
+            return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="generating enhanced analyst signals",
+    )
+    async def _generate_enhanced_analyst_signals(
+        self,
+        ml_profit_data: dict[str, Any],
+        enhanced_confidence: dict[str, Any],
+        barrier_analysis: dict[str, Any],
+        regime_predictions: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Generate enhanced analyst signals with ML profit integration."""
+        try:
+            enhanced_signals = {
+                "directional_signals": {},
+                "confidence_signals": {},
+                "risk_signals": {},
+                "regime_signals": {}
+            }
+
+            # Process directional signals from ML profit predictions
+            for prediction_name, prediction_data in ml_profit_data.items():
+                direction = prediction_data.get("direction", 0)
+                magnitude = prediction_data.get("magnitude", 0.0)
+                confidence = enhanced_confidence.get(prediction_name, {}).get("enhanced_confidence", 0.5)
+                
+                enhanced_signals["directional_signals"][prediction_name] = {
+                    "direction": direction,
+                    "magnitude": magnitude,
+                    "confidence": confidence,
+                    "signal_strength": abs(direction) * confidence
+                }
+
+            # Process confidence signals
+            for prediction_name, confidence_data in enhanced_confidence.items():
+                enhanced_signals["confidence_signals"][prediction_name] = {
+                    "enhanced_confidence": confidence_data.get("enhanced_confidence", 0.5),
+                    "base_confidence": confidence_data.get("base_confidence", 0.5),
+                    "confidence_improvement": confidence_data.get("enhanced_confidence", 0.5) - confidence_data.get("base_confidence", 0.5)
+                }
+
+            # Process risk signals from barrier analysis
+            for prediction_name, barrier_data in barrier_analysis.items():
+                enhanced_signals["risk_signals"][prediction_name] = {
+                    "risk_reward_ratio": barrier_data.get("risk_reward_ratio", 0.0),
+                    "expected_value": barrier_data.get("expected_value", 0.0),
+                    "barrier_distance": barrier_data.get("barrier_distance", 0.0),
+                    "profit_distance": barrier_data.get("profit_distance", 0.0)
+                }
+
+            # Process regime signals
+            for prediction_name, regime_data in regime_predictions.items():
+                enhanced_signals["regime_signals"][prediction_name] = {
+                    "regime": regime_data.get("regime", "unknown"),
+                    "prediction": regime_data.get("prediction", 0.0),
+                    "confidence": regime_data.get("confidence", 0.5)
+                }
+
+            return enhanced_signals
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error generating enhanced analyst signals: {e}"))
+            return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="generating enhanced tactician signals",
+    )
+    async def _generate_enhanced_tactician_signals(
+        self,
+        ml_profit_data: dict[str, Any],
+        enhanced_confidence: dict[str, Any],
+        barrier_analysis: dict[str, Any],
+        analyst_signals: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Generate enhanced tactician signals with ML profit integration."""
+        try:
+            enhanced_signals = {
+                "execution_signals": {},
+                "position_signals": {},
+                "risk_signals": {},
+                "timing_signals": {}
+            }
+
+            # Process execution signals
+            for prediction_name, prediction_data in ml_profit_data.items():
+                direction = prediction_data.get("direction", 0)
+                magnitude = prediction_data.get("magnitude", 0.0)
+                confidence = enhanced_confidence.get(prediction_name, {}).get("enhanced_confidence", 0.5)
+                
+                # Determine execution urgency based on confidence and magnitude
+                execution_urgency = confidence * magnitude
+                
+                enhanced_signals["execution_signals"][prediction_name] = {
+                    "direction": direction,
+                    "magnitude": magnitude,
+                    "confidence": confidence,
+                    "execution_urgency": execution_urgency,
+                    "should_execute": confidence > self.enhanced_prediction_service.direction_confidence_threshold
+                }
+
+            # Process position signals
+            for prediction_name, prediction_data in ml_profit_data.items():
+                confidence = enhanced_confidence.get(prediction_name, {}).get("enhanced_confidence", 0.5)
+                magnitude = prediction_data.get("magnitude", 0.0)
+                
+                # Calculate position size based on confidence and magnitude
+                position_size_factor = confidence * min(1.0, magnitude * 10)  # Scale magnitude
+                
+                enhanced_signals["position_signals"][prediction_name] = {
+                    "position_size_factor": position_size_factor,
+                    "confidence": confidence,
+                    "magnitude": magnitude,
+                    "recommended_size": "large" if position_size_factor > 0.7 else "medium" if position_size_factor > 0.4 else "small"
+                }
+
+            # Process risk signals
+            for prediction_name, barrier_data in barrier_analysis.items():
+                enhanced_signals["risk_signals"][prediction_name] = {
+                    "stop_loss_level": barrier_data.get("barrier_level", 0.0),
+                    "take_profit_level": barrier_data.get("profit_target", 0.0),
+                    "risk_reward_ratio": barrier_data.get("risk_reward_ratio", 0.0),
+                    "expected_value": barrier_data.get("expected_value", 0.0)
+                }
+
+            # Process timing signals
+            for prediction_name, prediction_data in ml_profit_data.items():
+                confidence = enhanced_confidence.get(prediction_name, {}).get("enhanced_confidence", 0.5)
+                
+                # Determine timing based on confidence and volatility
+                timing_urgency = "immediate" if confidence > 0.8 else "normal" if confidence > 0.6 else "cautious"
+                
+                enhanced_signals["timing_signals"][prediction_name] = {
+                    "timing_urgency": timing_urgency,
+                    "confidence": confidence,
+                    "wait_for_confirmation": confidence < 0.6
+                }
+
+            return enhanced_signals
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error generating enhanced tactician signals: {e}"))
+            return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="calculating analyst risk metrics",
+    )
+    async def _calculate_analyst_risk_metrics(
+        self,
+        ml_profit_data: dict[str, Any],
+        barrier_analysis: dict[str, Any],
+        market_data: pd.DataFrame
+    ) -> dict[str, Any]:
+        """Calculate risk metrics for analyst decision making."""
+        try:
+            risk_metrics = {
+                "aggregate_risk": {},
+                "individual_risks": {},
+                "portfolio_implications": {}
+            }
+
+            # Calculate aggregate risk metrics
+            total_confidence = 0.0
+            total_expected_value = 0.0
+            total_risk_reward = 0.0
+            prediction_count = 0
+
+            for prediction_name, prediction_data in ml_profit_data.items():
+                confidence = prediction_data.get("confidence", 0.5)
+                barrier_data = barrier_analysis.get(prediction_name, {})
+                
+                total_confidence += confidence
+                total_expected_value += barrier_data.get("expected_value", 0.0)
+                total_risk_reward += barrier_data.get("risk_reward_ratio", 0.0)
+                prediction_count += 1
+
+            if prediction_count > 0:
+                avg_confidence = total_confidence / prediction_count
+                avg_expected_value = total_expected_value / prediction_count
+                avg_risk_reward = total_risk_reward / prediction_count
+            else:
+                avg_confidence = 0.5
+                avg_expected_value = 0.0
+                avg_risk_reward = 0.0
+
+            risk_metrics["aggregate_risk"] = {
+                "average_confidence": avg_confidence,
+                "average_expected_value": avg_expected_value,
+                "average_risk_reward_ratio": avg_risk_reward,
+                "prediction_count": prediction_count,
+                "overall_risk_level": "low" if avg_confidence > 0.7 else "medium" if avg_confidence > 0.5 else "high"
+            }
+
+            # Calculate individual risk metrics
+            for prediction_name, prediction_data in ml_profit_data.items():
+                barrier_data = barrier_analysis.get(prediction_name, {})
+                
+                risk_metrics["individual_risks"][prediction_name] = {
+                    "confidence": prediction_data.get("confidence", 0.5),
+                    "expected_value": barrier_data.get("expected_value", 0.0),
+                    "risk_reward_ratio": barrier_data.get("risk_reward_ratio", 0.0),
+                    "risk_level": "low" if prediction_data.get("confidence", 0.5) > 0.7 else "medium" if prediction_data.get("confidence", 0.5) > 0.5 else "high"
+                }
+
+            # Calculate portfolio implications
+            current_volatility = market_data['close'].pct_change().std()
+            
+            risk_metrics["portfolio_implications"] = {
+                "market_volatility": current_volatility,
+                "recommended_position_size": "reduced" if current_volatility > 0.03 else "normal" if current_volatility > 0.02 else "increased",
+                "risk_adjustment_factor": max(0.5, min(1.5, 1.0 / (1.0 + current_volatility * 10)))
+            }
+
+            return risk_metrics
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error calculating analyst risk metrics: {e}"))
+            return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="calculating tactician execution parameters",
+    )
+    async def _calculate_tactician_execution_parameters(
+        self,
+        ml_profit_data: dict[str, Any],
+        enhanced_confidence: dict[str, Any],
+        barrier_analysis: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Calculate execution parameters for tactician."""
+        try:
+            execution_params = {
+                "position_sizing": {},
+                "leverage_adjustment": {},
+                "timing_parameters": {},
+                "risk_management": {}
+            }
+
+            # Calculate position sizing parameters
+            for prediction_name, prediction_data in ml_profit_data.items():
+                confidence = enhanced_confidence.get(prediction_name, {}).get("enhanced_confidence", 0.5)
+                magnitude = prediction_data.get("magnitude", 0.0)
+                
+                # Base position size based on confidence
+                base_position_size = confidence * 100  # Percentage of available capital
+                
+                # Adjust for magnitude
+                magnitude_adjustment = min(1.5, max(0.5, magnitude * 5))
+                adjusted_position_size = base_position_size * magnitude_adjustment
+                
+                execution_params["position_sizing"][prediction_name] = {
+                    "base_position_size": base_position_size,
+                    "magnitude_adjustment": magnitude_adjustment,
+                    "adjusted_position_size": adjusted_position_size,
+                    "recommended_size": adjusted_position_size
+                }
+
+            # Calculate leverage adjustment
+            for prediction_name, prediction_data in ml_profit_data.items():
+                confidence = enhanced_confidence.get(prediction_name, {}).get("enhanced_confidence", 0.5)
+                barrier_data = barrier_analysis.get(prediction_name, {})
+                
+                # Base leverage based on confidence
+                base_leverage = 1.0 + (confidence - 0.5) * 2  # 0.5 to 1.5 range
+                
+                # Adjust for risk-reward ratio
+                risk_reward = barrier_data.get("risk_reward_ratio", 1.0)
+                leverage_adjustment = min(1.5, max(0.5, risk_reward / 2))
+                
+                final_leverage = base_leverage * leverage_adjustment
+                
+                execution_params["leverage_adjustment"][prediction_name] = {
+                    "base_leverage": base_leverage,
+                    "leverage_adjustment": leverage_adjustment,
+                    "final_leverage": final_leverage,
+                    "recommended_leverage": min(3.0, max(1.0, final_leverage))
+                }
+
+            # Calculate timing parameters
+            for prediction_name, prediction_data in ml_profit_data.items():
+                confidence = enhanced_confidence.get(prediction_name, {}).get("enhanced_confidence", 0.5)
+                
+                # Execution timing based on confidence
+                if confidence > 0.8:
+                    execution_delay = 0  # Immediate execution
+                    confirmation_required = False
+                elif confidence > 0.6:
+                    execution_delay = 30  # 30 seconds delay
+                    confirmation_required = False
+                else:
+                    execution_delay = 120  # 2 minutes delay
+                    confirmation_required = True
+                
+                execution_params["timing_parameters"][prediction_name] = {
+                    "execution_delay_seconds": execution_delay,
+                    "confirmation_required": confirmation_required,
+                    "confidence": confidence
+                }
+
+            # Calculate risk management parameters
+            for prediction_name, barrier_data in barrier_analysis.items():
+                execution_params["risk_management"][prediction_name] = {
+                    "stop_loss_level": barrier_data.get("barrier_level", 0.0),
+                    "take_profit_level": barrier_data.get("profit_target", 0.0),
+                    "trailing_stop": barrier_data.get("risk_reward_ratio", 1.0) > 2.0,
+                    "position_monitoring": "high" if barrier_data.get("expected_value", 0.0) > 0 else "normal"
+                }
+
+            return execution_params
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error calculating tactician execution parameters: {e}"))
+            return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="generating confidence enhancement",
+    )
+    async def _generate_confidence_enhancement(
+        self,
+        enhanced_confidence: dict[str, Any],
+        ml_profit_data: dict[str, Any],
+        symbol: str,
+        exchange: str
+    ) -> dict[str, Any]:
+        """Generate confidence enhancement metrics."""
+        try:
+            confidence_enhancement = {
+                "confidence_improvements": {},
+                "aggregate_confidence": {},
+                "confidence_trends": {}
+            }
+
+            # Calculate confidence improvements
+            for prediction_name, confidence_data in enhanced_confidence.items():
+                base_confidence = confidence_data.get("base_confidence", 0.5)
+                enhanced_confidence_score = confidence_data.get("enhanced_confidence", 0.5)
+                
+                improvement = enhanced_confidence_score - base_confidence
+                improvement_percentage = (improvement / base_confidence) * 100 if base_confidence > 0 else 0
+                
+                confidence_enhancement["confidence_improvements"][prediction_name] = {
+                    "base_confidence": base_confidence,
+                    "enhanced_confidence": enhanced_confidence_score,
+                    "improvement": improvement,
+                    "improvement_percentage": improvement_percentage,
+                    "improvement_category": "significant" if improvement_percentage > 20 else "moderate" if improvement_percentage > 10 else "minimal"
+                }
+
+            # Calculate aggregate confidence metrics
+            total_base_confidence = 0.0
+            total_enhanced_confidence = 0.0
+            prediction_count = 0
+
+            for prediction_name, confidence_data in enhanced_confidence.items():
+                total_base_confidence += confidence_data.get("base_confidence", 0.5)
+                total_enhanced_confidence += confidence_data.get("enhanced_confidence", 0.5)
+                prediction_count += 1
+
+            if prediction_count > 0:
+                avg_base_confidence = total_base_confidence / prediction_count
+                avg_enhanced_confidence = total_enhanced_confidence / prediction_count
+                overall_improvement = avg_enhanced_confidence - avg_base_confidence
+            else:
+                avg_base_confidence = 0.5
+                avg_enhanced_confidence = 0.5
+                overall_improvement = 0.0
+
+            confidence_enhancement["aggregate_confidence"] = {
+                "average_base_confidence": avg_base_confidence,
+                "average_enhanced_confidence": avg_enhanced_confidence,
+                "overall_improvement": overall_improvement,
+                "prediction_count": prediction_count,
+                "confidence_quality": "high" if avg_enhanced_confidence > 0.7 else "medium" if avg_enhanced_confidence > 0.5 else "low"
+            }
+
+            # Calculate confidence trends
+            confidence_enhancement["confidence_trends"] = {
+                "high_confidence_predictions": len([c for c in enhanced_confidence.values() if c.get("enhanced_confidence", 0.5) > 0.7]),
+                "medium_confidence_predictions": len([c for c in enhanced_confidence.values() if 0.5 < c.get("enhanced_confidence", 0.5) <= 0.7]),
+                "low_confidence_predictions": len([c for c in enhanced_confidence.values() if c.get("enhanced_confidence", 0.5) <= 0.5]),
+                "recommended_action": "proceed" if avg_enhanced_confidence > 0.6 else "caution" if avg_enhanced_confidence > 0.4 else "avoid"
+            }
+
+            return confidence_enhancement
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error generating confidence enhancement: {e}"))
+            return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="generating position sizing enhancement",
+    )
+    async def _generate_position_sizing_enhancement(
+        self,
+        ml_profit_data: dict[str, Any],
+        enhanced_confidence: dict[str, Any],
+        barrier_analysis: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Generate position sizing enhancement recommendations."""
+        try:
+            position_sizing = {
+                "size_recommendations": {},
+                "risk_adjustments": {},
+                "aggregate_sizing": {}
+            }
+
+            # Generate size recommendations for each prediction
+            for prediction_name, prediction_data in ml_profit_data.items():
+                confidence = enhanced_confidence.get(prediction_name, {}).get("enhanced_confidence", 0.5)
+                magnitude = prediction_data.get("magnitude", 0.0)
+                barrier_data = barrier_analysis.get(prediction_name, {})
+                
+                # Calculate base size based on confidence
+                base_size = confidence * 100  # Percentage of available capital
+                
+                # Adjust for magnitude
+                magnitude_factor = min(1.5, max(0.5, magnitude * 5))
+                
+                # Adjust for risk-reward ratio
+                risk_reward = barrier_data.get("risk_reward_ratio", 1.0)
+                risk_factor = min(1.3, max(0.7, risk_reward / 2))
+                
+                # Final recommended size
+                recommended_size = base_size * magnitude_factor * risk_factor
+                
+                position_sizing["size_recommendations"][prediction_name] = {
+                    "base_size": base_size,
+                    "magnitude_factor": magnitude_factor,
+                    "risk_factor": risk_factor,
+                    "recommended_size": recommended_size,
+                    "size_category": "large" if recommended_size > 70 else "medium" if recommended_size > 30 else "small"
+                }
+
+            # Calculate risk adjustments
+            for prediction_name, barrier_data in barrier_analysis.items():
+                expected_value = barrier_data.get("expected_value", 0.0)
+                risk_reward = barrier_data.get("risk_reward_ratio", 1.0)
+                
+                # Risk adjustment based on expected value and risk-reward
+                if expected_value > 0 and risk_reward > 1.5:
+                    risk_adjustment = "increase"
+                    adjustment_factor = 1.2
+                elif expected_value < 0 or risk_reward < 1.0:
+                    risk_adjustment = "decrease"
+                    adjustment_factor = 0.8
+                else:
+                    risk_adjustment = "maintain"
+                    adjustment_factor = 1.0
+                
+                position_sizing["risk_adjustments"][prediction_name] = {
+                    "risk_adjustment": risk_adjustment,
+                    "adjustment_factor": adjustment_factor,
+                    "expected_value": expected_value,
+                    "risk_reward_ratio": risk_reward
+                }
+
+            # Calculate aggregate sizing metrics
+            total_recommended_size = 0.0
+            high_confidence_count = 0
+            prediction_count = 0
+
+            for prediction_name, size_data in position_sizing["size_recommendations"].items():
+                total_recommended_size += size_data["recommended_size"]
+                confidence = enhanced_confidence.get(prediction_name, {}).get("enhanced_confidence", 0.5)
+                if confidence > 0.7:
+                    high_confidence_count += 1
+                prediction_count += 1
+
+            avg_recommended_size = total_recommended_size / max(prediction_count, 1)
+            high_confidence_ratio = high_confidence_count / max(prediction_count, 1)
+
+            position_sizing["aggregate_sizing"] = {
+                "total_recommended_size": total_recommended_size,
+                "average_recommended_size": avg_recommended_size,
+                "high_confidence_ratio": high_confidence_ratio,
+                "prediction_count": prediction_count,
+                "overall_sizing_strategy": "aggressive" if avg_recommended_size > 50 and high_confidence_ratio > 0.6 else "moderate" if avg_recommended_size > 30 else "conservative"
+            }
+
+            return position_sizing
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error generating position sizing enhancement: {e}"))
             return {}
 
     @handle_specific_errors(

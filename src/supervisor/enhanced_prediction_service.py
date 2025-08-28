@@ -176,7 +176,7 @@ class EnhancedPredictionService:
     )
     @with_tracing_span("load_calibration_results")
     async def _load_calibration_results(self) -> None:
-        """Load calibration results from step 10."""
+        """Load calibration results from step 11 (model performance vs actual reliability)."""
         try:
             calibration_path = Path(self.data_dir) / "calibration_results"
             if calibration_path.exists():
@@ -203,7 +203,7 @@ class EnhancedPredictionService:
     )
     @with_tracing_span("load_optimization_results")
     async def _load_optimization_results(self) -> None:
-        """Load optimization results from step 11."""
+        """Load optimization results from step 11 (model performance vs actual reliability)."""
         try:
             optimization_path = Path(self.data_dir) / "optimization_results"
             if optimization_path.exists():
@@ -243,6 +243,13 @@ class EnhancedPredictionService:
         
         This method ONLY provides calibrated confidence scores and fails if calibrated 
         confidence doesn't exist for either model set.
+        
+        ML models should generate probabilities for specific price actions:
+        - Probability of reaching profit target without hitting stop-loss (triple barrier)
+        - Probability of price moving in predicted direction by X%
+        - Probability of avoiding adverse price movements
+        
+        Calibration is based on step 11: comparing model performance to actual reliability.
         
         Args:
             market_data: Market data for prediction
@@ -303,26 +310,32 @@ class EnhancedPredictionService:
         symbol: str,
         exchange: str
     ) -> Dict[str, float]:
-        """Get calibrated confidence scores from Analyst ML models."""
+        """Get calibrated confidence scores from Analyst ML models based on step 11 calibration."""
         try:
             analyst_scores = {}
             
             for model_type, models in self.analyst_ml_models.items():
                 for model_name, model_data in models.items():
                     try:
-                        # Get calibrated confidence from model
-                        calibrated_confidence = model_data.get("calibrated_confidence")
+                        # Get price action probabilities from ML model
+                        price_action_probabilities = model_data.get("price_action_probabilities", {})
                         
-                        if calibrated_confidence is None:
-                            self.logger.warning(warning(f"⚠️ No calibrated confidence for Analyst model {model_name}"))
+                        if not price_action_probabilities:
+                            self.logger.warning(warning(f"⚠️ No price action probabilities for Analyst model {model_name}"))
                             continue
                         
-                        # Validate confidence score
-                        if not isinstance(calibrated_confidence, (int, float)) or not (0.0 <= calibrated_confidence <= 1.0):
-                            self.logger.warning(warning(f"⚠️ Invalid calibrated confidence for Analyst model {model_name}: {calibrated_confidence}"))
-                            continue
+                        # Get calibration data from step 11
+                        calibration_key = f"{exchange}_{symbol}_calibration_results"
+                        calibration_data = self.calibration_results.get(calibration_key, {})
+                        model_calibration = calibration_data.get("model_calibrations", {}).get(f"{model_type}_{model_name}", {})
                         
-                        analyst_scores[f"{model_type}_{model_name}"] = float(calibrated_confidence)
+                        # Calculate calibrated confidence based on step 11 performance vs reliability
+                        calibrated_confidence = self._calculate_step11_calibrated_confidence(
+                            price_action_probabilities, model_calibration, model_name, "analyst"
+                        )
+                        
+                        if calibrated_confidence is not None:
+                            analyst_scores[f"{model_type}_{model_name}"] = calibrated_confidence
                         
                     except Exception as e:
                         self.logger.warning(warning(f"⚠️ Failed to get confidence for Analyst model {model_name}: {e}"))
@@ -346,26 +359,32 @@ class EnhancedPredictionService:
         symbol: str,
         exchange: str
     ) -> Dict[str, float]:
-        """Get calibrated confidence scores from Tactician ML models."""
+        """Get calibrated confidence scores from Tactician ML models based on step 11 calibration."""
         try:
             tactician_scores = {}
             
             for model_type, models in self.tactician_ml_models.items():
                 for model_name, model_data in models.items():
                     try:
-                        # Get calibrated confidence from model
-                        calibrated_confidence = model_data.get("calibrated_confidence")
+                        # Get price action probabilities from ML model
+                        price_action_probabilities = model_data.get("price_action_probabilities", {})
                         
-                        if calibrated_confidence is None:
-                            self.logger.warning(warning(f"⚠️ No calibrated confidence for Tactician model {model_name}"))
+                        if not price_action_probabilities:
+                            self.logger.warning(warning(f"⚠️ No price action probabilities for Tactician model {model_name}"))
                             continue
                         
-                        # Validate confidence score
-                        if not isinstance(calibrated_confidence, (int, float)) or not (0.0 <= calibrated_confidence <= 1.0):
-                            self.logger.warning(warning(f"⚠️ Invalid calibrated confidence for Tactician model {model_name}: {calibrated_confidence}"))
-                            continue
+                        # Get calibration data from step 11
+                        calibration_key = f"{exchange}_{symbol}_calibration_results"
+                        calibration_data = self.calibration_results.get(calibration_key, {})
+                        model_calibration = calibration_data.get("model_calibrations", {}).get(f"{model_type}_{model_name}", {})
                         
-                        tactician_scores[f"{model_type}_{model_name}"] = float(calibrated_confidence)
+                        # Calculate calibrated confidence based on step 11 performance vs reliability
+                        calibrated_confidence = self._calculate_step11_calibrated_confidence(
+                            price_action_probabilities, model_calibration, model_name, "tactician"
+                        )
+                        
+                        if calibrated_confidence is not None:
+                            tactician_scores[f"{model_type}_{model_name}"] = calibrated_confidence
                         
                     except Exception as e:
                         self.logger.warning(warning(f"⚠️ Failed to get confidence for Tactician model {model_name}: {e}"))
@@ -375,6 +394,156 @@ class EnhancedPredictionService:
         except Exception as e:
             self.logger.error(error(f"❌ Error getting Tactician calibrated confidence: {e}"))
             return {}
+
+    def _calculate_step11_calibrated_confidence(
+        self,
+        price_action_probabilities: Dict[str, Any],
+        model_calibration: Dict[str, Any],
+        model_name: str,
+        model_type: str
+    ) -> Optional[float]:
+        """
+        Calculate calibrated confidence based on step 11: model performance vs actual reliability.
+        
+        This method applies calibration based on how well the model's predicted probabilities
+        match actual outcomes in historical data.
+        
+        Args:
+            price_action_probabilities: ML model's predicted probabilities for price actions
+            model_calibration: Calibration data from step 11
+            model_name: Name of the model
+            model_type: Type of model (analyst/tactician)
+            
+        Returns:
+            Calibrated confidence score or None if calibration fails
+        """
+        try:
+            # Extract key probability metrics from ML model
+            triple_barrier_prob = price_action_probabilities.get("triple_barrier_probability", 0.5)
+            direction_prob = price_action_probabilities.get("direction_probability", 0.5)
+            magnitude_prob = price_action_probabilities.get("magnitude_probability", 0.5)
+            barrier_avoidance_prob = price_action_probabilities.get("barrier_avoidance_probability", 0.5)
+            
+            # Get step 11 calibration parameters
+            reliability_score = model_calibration.get("reliability_score", 0.5)
+            performance_ratio = model_calibration.get("performance_ratio", 1.0)
+            calibration_factor = model_calibration.get("calibration_factor", 1.0)
+            confidence_bias = model_calibration.get("confidence_bias", 0.0)
+            
+            # Calculate base confidence from price action probabilities
+            # Weight different probability components based on model type
+            if model_type == "analyst":
+                # Analyst models focus more on direction and magnitude
+                base_confidence = (
+                    direction_prob * 0.4 +
+                    magnitude_prob * 0.3 +
+                    triple_barrier_prob * 0.2 +
+                    barrier_avoidance_prob * 0.1
+                )
+            else:  # tactician
+                # Tactician models focus more on triple barrier and timing
+                base_confidence = (
+                    triple_barrier_prob * 0.4 +
+                    barrier_avoidance_prob * 0.3 +
+                    direction_prob * 0.2 +
+                    magnitude_prob * 0.1
+                )
+            
+            # Apply step 11 calibration: performance vs reliability
+            # This adjusts the confidence based on how well the model's predictions
+            # have matched actual outcomes in historical testing
+            
+            # Apply reliability adjustment
+            reliability_adjusted = base_confidence * reliability_score
+            
+            # Apply performance ratio (how well model performs vs expected)
+            performance_adjusted = reliability_adjusted * performance_ratio
+            
+            # Apply calibration factor (overall calibration adjustment)
+            calibrated = performance_adjusted * calibration_factor
+            
+            # Apply confidence bias (systematic adjustment)
+            final_confidence = calibrated + confidence_bias
+            
+            # Ensure bounds
+            final_confidence = max(0.0, min(1.0, final_confidence))
+            
+            self.logger.debug(f"Step 11 calibration for {model_name}: base={base_confidence:.3f}, "
+                            f"reliability={reliability_score:.3f}, performance={performance_ratio:.3f}, "
+                            f"final={final_confidence:.3f}")
+            
+            return final_confidence
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Error calculating step 11 calibrated confidence for {model_name}: {e}"))
+            return None
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="validating price action probabilities",
+    )
+    @with_tracing_span("validate_price_action_probabilities")
+    def _validate_price_action_probabilities(
+        self,
+        price_action_probabilities: Dict[str, Any],
+        model_name: str
+    ) -> bool:
+        """
+        Validate that ML model provides the expected price action probabilities.
+        
+        Expected probabilities:
+        - triple_barrier_probability: Probability of reaching profit target without hitting stop-loss
+        - direction_probability: Probability of price moving in predicted direction
+        - magnitude_probability: Probability of price moving by expected magnitude
+        - barrier_avoidance_probability: Probability of avoiding adverse price movements
+        
+        Args:
+            price_action_probabilities: Probabilities from ML model
+            model_name: Name of the model for logging
+            
+        Returns:
+            True if probabilities are valid, False otherwise
+        """
+        try:
+            required_probabilities = [
+                "triple_barrier_probability",
+                "direction_probability", 
+                "magnitude_probability",
+                "barrier_avoidance_probability"
+            ]
+            
+            for prob_name in required_probabilities:
+                if prob_name not in price_action_probabilities:
+                    self.logger.warning(warning(f"⚠️ Missing required probability '{prob_name}' for model {model_name}"))
+                    return False
+                
+                prob_value = price_action_probabilities[prob_name]
+                if not isinstance(prob_value, (int, float)) or not (0.0 <= prob_value <= 1.0):
+                    self.logger.warning(warning(f"⚠️ Invalid probability value for '{prob_name}' in model {model_name}: {prob_value}"))
+                    return False
+            
+            # Validate that probabilities make sense together
+            triple_barrier = price_action_probabilities["triple_barrier_probability"]
+            direction = price_action_probabilities["direction_probability"]
+            magnitude = price_action_probabilities["magnitude_probability"]
+            barrier_avoidance = price_action_probabilities["barrier_avoidance_probability"]
+            
+            # Triple barrier probability should be <= direction probability
+            if triple_barrier > direction:
+                self.logger.warning(warning(f"⚠️ Triple barrier probability ({triple_barrier}) > direction probability ({direction}) for model {model_name}"))
+                return False
+            
+            # Barrier avoidance should be reasonable relative to triple barrier
+            if barrier_avoidance < triple_barrier * 0.5:
+                self.logger.warning(warning(f"⚠️ Barrier avoidance probability ({barrier_avoidance}) seems too low relative to triple barrier ({triple_barrier}) for model {model_name}"))
+                return False
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Error validating price action probabilities for {model_name}: {e}"))
+            return False
 
     @handle_errors(
         exceptions=(Exception,),

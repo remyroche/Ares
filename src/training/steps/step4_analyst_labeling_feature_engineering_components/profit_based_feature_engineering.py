@@ -319,7 +319,7 @@ class ProfitBasedFeatureEngineering:
     def _apply_risk_reward_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply risk-reward features.
         
-        Features: profit_sharpe, profit_kelly, profit_sortino
+        Features: profit_sharpe, profit_sortino, profit_risk_adjusted
         """
         profit_pcts = data[self.profit_column].values
         
@@ -347,20 +347,7 @@ class ProfitBasedFeatureEngineering:
         )
         data[f"{self.profit_column}_sortino"] = pd.Series(sortino_ratio, index=data.index).fillna(0.0)
         
-        # Kelly criterion approximation
-        profit_series = pd.Series(profit_pcts, index=data.index)
-        win_rate = (profit_series > 0).rolling(window=window, min_periods=1).mean()
-        avg_win = np.where(profit_pcts > 0, profit_pcts, 0)
-        avg_win_series = pd.Series(avg_win, index=data.index).rolling(window=window, min_periods=1).mean()
-        avg_loss = np.where(profit_pcts < 0, np.abs(profit_pcts), 0)
-        avg_loss_series = pd.Series(avg_loss, index=data.index).rolling(window=window, min_periods=1).mean()
-        
-        kelly_ratio = np.where(
-            avg_loss_series > 0,
-            (win_rate * avg_win_series - (1 - win_rate) * avg_loss_series) / avg_win_series,
-            0.0
-        )
-        data[f"{self.profit_column}_kelly"] = pd.Series(kelly_ratio, index=data.index).fillna(0.0)
+        # Kelly criterion removed - it's for position sizing, not ML features
         
         # Risk-adjusted return
         data[f"{self.profit_column}_risk_adjusted"] = profit_pcts / (1 + rolling_std)
@@ -569,7 +556,7 @@ class ProfitBasedFeatureEngineering:
                 feature_categories["basic_profit"].append(feature)
             elif "sign" in feature or "magnitude" in feature or "bins" in feature or "direction_strength" in feature:
                 feature_categories["categorical"].append(feature)
-            elif "sharpe" in feature or "sortino" in feature or "kelly" in feature or "risk_adjusted" in feature:
+            elif "sharpe" in feature or "sortino" in feature or "risk_adjusted" in feature:
                 feature_categories["risk_reward"].append(feature)
             elif "momentum" in feature or "acceleration" in feature:
                 feature_categories["momentum"].append(feature)

@@ -11,7 +11,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-import lightgbm as lgb
+try:
+    import lightgbm as lgb
+    _LIGHTGBM_AVAILABLE = True
+except ImportError:
+    _LIGHTGBM_AVAILABLE = False
+    lgb = None
 import numpy as np
 import pandas as pd
 import scipy.linalg as la
@@ -1366,25 +1371,61 @@ class EnhancedMatrixOperations:
             # Already at or below target, return as is
             return features_df, {"final_selection": "no_change", "features_after_stage": len(features_df.columns)}
 
-        # Use Recursive Feature Elimination with LightGBM
-        estimator = lgb.LGBMClassifier(n_estimators=100, random_state=42, verbose=-1)
-        rfe = RFE(estimator=estimator, n_features_to_select=self.target_features, step=1)
+        # Use Recursive Feature Elimination with LightGBM if available
+        if _LIGHTGBM_AVAILABLE and lgb is not None:
+            try:
+                estimator = lgb.LGBMClassifier(n_estimators=100, random_state=42, verbose=-1)
+                rfe = RFE(estimator=estimator, n_features_to_select=self.target_features, step=1)
 
-        # Fit RFE
-        rfe.fit(features_df, target)
+                # Fit RFE
+                rfe.fit(features_df, target)
 
-        # Get selected features
-        selected_features = features_df.columns[rfe.support_].tolist()
-        features_df = features_df[selected_features]
+                # Get selected features
+                selected_features = features_df.columns[rfe.support_].tolist()
+                features_df = features_df[selected_features]
 
-        metadata = {
-            "final_selection": "rfe_lightgbm",
-            "rfe_ranking": rfe.ranking_.tolist(),
-            "features_after_stage": len(features_df.columns),
-        }
+                metadata = {
+                    "final_selection": "rfe_lightgbm",
+                    "rfe_ranking": rfe.ranking_.tolist(),
+                    "features_after_stage": len(features_df.columns),
+                }
 
-        self.logger.info("Stage 6: Final selection using RFE-LightGBM")
-        return features_df, metadata
+                self.logger.info("Stage 6: Final selection using RFE-LightGBM")
+                return features_df, metadata
+            except Exception as e:
+                self.logger.warning(f"⚠️ LightGBM RFE failed: {e}")
+                # Fall back to mutual info selection
+                return self._fallback_final_selection(features_df, target)
+        else:
+            self.logger.info("📊 LightGBM not available, using fallback selection")
+            return self._fallback_final_selection(features_df, target)
+
+    def _fallback_final_selection(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
+        """Fallback final selection using mutual information scores."""
+        if "mutual_info" in self.feature_importance_cache:
+            mi_scores = self.feature_importance_cache["mutual_info"]
+            top_features = mi_scores.nlargest(self.target_features).index.tolist()
+            features_df = features_df[top_features]
+            
+            metadata = {
+                "final_selection": "mutual_info_fallback",
+                "features_after_stage": len(features_df.columns),
+            }
+            
+            self.logger.info("Stage 6: Final selection using mutual info fallback")
+            return features_df, metadata
+        else:
+            # If no mutual info scores, just take first N features
+            if len(features_df.columns) > self.target_features:
+                features_df = features_df.iloc[:, :self.target_features]
+            
+            metadata = {
+                "final_selection": "simple_truncation",
+                "features_after_stage": len(features_df.columns),
+            }
+            
+            self.logger.info("Stage 6: Final selection using simple truncation")
+            return features_df, metadata
 
     def _categorize_features(self, feature_names: list[str]) -> dict[str, list[str]]:
         """Categorize features by type."""

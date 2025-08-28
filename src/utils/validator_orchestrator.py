@@ -412,8 +412,9 @@ class ValidatorOrchestrator:
             validator_mapping = {
         "step1_data_collection": "step1_data_collection_validator",
         "step1_5_data_converter": "step1_5_data_converter_validator",
-        "step2_data_reading": "step2_data_reading_validator",
-        "step3_hmm_regime_discovery": "step3_hmm_regime_discovery_validator",
+            "step2_data_reading": "step2_data_reading_validator",
+    "step2_5_enhanced_matrix_operations": "step2_5_enhanced_matrix_operations_validator",
+    "step3_hmm_regime_discovery": "step3_hmm_regime_discovery_validator",
         "step4_triple_barrier_method": "step4_triple_barrier_method_validator",
         "step4_regime_data_splitting": "step4_regime_data_splitting_validator",
         "step5_labeling": "step5_labeling_validator",

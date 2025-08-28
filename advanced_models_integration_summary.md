@@ -11,13 +11,12 @@ The multi-output training framework has been **fully extended** to include all a
 - ✅ **RandomForest** - Ensemble of decision trees  
 - ✅ **XGBoost** - Extreme gradient boosting
 - ✅ **CatBoost** - Categorical boosting
+- ✅ **HMM Regime** - Hidden Markov Model for regime definition
 
 ### **2. Advanced Neural Network Models**
 - ✅ **TCN (Temporal Convolutional Network)** - For temporal data processing
 - ✅ **CNN (Convolutional Neural Network)** - For pattern recognition
 - ✅ **Transformer** - Attention-based architecture
-- ✅ **LSTM (Long Short-Term Memory)** - Recurrent neural network
-- ✅ **GRU (Gated Recurrent Unit)** - Simplified recurrent network
 
 ## 🏗️ **IMPLEMENTED COMPONENTS**
 
@@ -53,9 +52,7 @@ The multi-output training framework has been **fully extended** to include all a
 | 5m | TCN | Analyst (temporal patterns) | Temporal convolutions + dilation |
 | 15m | Transformer | Enhanced analysis (attention) | Self-attention + positional encoding |
 | 30m | LightGBM | Traditional ML | Gradient boosting trees |
-| 1h | LSTM | Long-term dependencies | Bidirectional LSTM |
-| 4h | GRU | Medium-term patterns | Bidirectional GRU |
-| 1d | RandomForest | Daily analysis | Ensemble of decision trees |
+| 1h | HMM Regime | Regime definition only | Hidden Markov Model |
 
 ## 🔧 **TECHNICAL IMPLEMENTATION**
 
@@ -157,9 +154,9 @@ config = {
 - ❌ Limited model architecture options
 
 ### **After Integration:**
-- ✅ **9 different model types** supported
-- ✅ **5 neural network architectures** (TCN, CNN, Transformer, LSTM, GRU)
-- ✅ **4 traditional ML models** (LightGBM, RandomForest, XGBoost, CatBoost)
+- ✅ **8 different model types** supported
+- ✅ **3 neural network architectures** (TCN, CNN, Transformer)
+- ✅ **5 traditional ML models** (LightGBM, RandomForest, XGBoost, CatBoost, HMM Regime)
 - ✅ **Automatic model selection** based on timeframe
 - ✅ **Complete neural network training** pipeline
 - ✅ **Production-ready** multi-output training system
@@ -168,7 +165,7 @@ config = {
 
 The advanced models integration has been **successfully completed** with all requirements met and all tests passing. The system now:
 
-1. **Supports all 9 model types** from the existing training pipeline
+1. **Supports all 8 model types** from the existing training pipeline
 2. **Automatically selects appropriate models** based on timeframe
 3. **Provides complete neural network training** capabilities
 4. **Maintains compatibility** with existing scikit-learn workflows

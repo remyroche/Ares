@@ -1,0 +1,141 @@
+2025-08-28 13:57:35,940 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-28 13:57:35,946 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for prepare_multi_output_targets - -
+2025-08-28 13:57:35,946 INFO AresTradingSystem.System Preparing multi-output targets for training - -
+2025-08-28 13:57:35,946 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_all_targets - -
+2025-08-28 13:57:35,946 INFO AresTradingSystem.System Generating all probability targets for multi-output training - -
+2025-08-28 13:57:35,946 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_triple_barrier_targets - -
+2025-08-28 13:57:35,959 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_triple_barrier_targets - -
+2025-08-28 13:57:35,959 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_direction_targets - -
+2025-08-28 13:57:35,960 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_direction_targets - -
+2025-08-28 13:57:35,960 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_magnitude_targets - -
+2025-08-28 13:57:35,988 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_magnitude_targets - -
+2025-08-28 13:57:35,988 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_barrier_avoidance_targets - -
+2025-08-28 13:57:36,023 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_barrier_avoidance_targets - -
+2025-08-28 13:57:36,023 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mTarget values not binary for triple_barrier[0m - -
+2025-08-28 13:57:36,023 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mTarget values not binary for magnitude[0m - -
+2025-08-28 13:57:36,023 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mTarget values not binary for barrier_avoidance[0m - -
+2025-08-28 13:57:36,023 INFO AresTradingSystem.System Generated targets for 200 samples - -
+2025-08-28 13:57:36,023 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_all_targets - -
+2025-08-28 13:57:36,023 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for prepare_multi_output_targets - -
+2025-08-28 13:57:36,023 INFO AresTradingSystem.System.PerformanceMonitor 📊 [PERF] Starting performance monitoring for train_multi_output_model - -
+2025-08-28 13:57:36,024 INFO AresTradingSystem.System Starting multi-output model training - -
+2025-08-28 13:57:36,024 INFO AresTradingSystem.System.PerformanceMonitor 📊 [PERF] Starting performance monitoring for fit - -
+2025-08-28 13:57:36,024 INFO AresTradingSystem.System Starting multi-output model training - -
+2025-08-28 13:57:36,024 INFO AresTradingSystem.System Training triple_barrier model... - -
+2025-08-28 13:57:36,041 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mCalibration failed for triple_barrier, using original model: Unknown label type: continuous. Maybe you are trying to fit a classifier, which expects discrete classes on a regression target with continuous values.[0m - -
+2025-08-28 13:57:36,041 INFO AresTradingSystem.System Training direction model... - -
+2025-08-28 13:57:36,062 INFO AresTradingSystem.System Training magnitude model... - -
+2025-08-28 13:57:36,070 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mCalibration failed for magnitude, using original model: Unknown label type: continuous. Maybe you are trying to fit a classifier, which expects discrete classes on a regression target with continuous values.[0m - -
+2025-08-28 13:57:36,070 INFO AresTradingSystem.System Training avoidance model... - -
+2025-08-28 13:57:36,071 ERROR AresTradingSystem.System.PerformanceMonitor ❌ [PERF] fit failed after 0.05s: 'avoidance' - -
+2025-08-28 13:57:36,071 INFO AresTradingSystem.System Multi-output model training completed - -
+2025-08-28 13:57:36,073 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for prepare_multi_output_targets - -
+2025-08-28 13:57:36,073 INFO AresTradingSystem.System Preparing multi-output targets for training - -
+2025-08-28 13:57:36,074 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_all_targets - -
+2025-08-28 13:57:36,074 INFO AresTradingSystem.System Generating all probability targets for multi-output training - -
+2025-08-28 13:57:36,074 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_triple_barrier_targets - -
+2025-08-28 13:57:36,079 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_triple_barrier_targets - -
+2025-08-28 13:57:36,079 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_direction_targets - -
+2025-08-28 13:57:36,079 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_direction_targets - -
+2025-08-28 13:57:36,080 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_magnitude_targets - -
+2025-08-28 13:57:36,093 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_magnitude_targets - -
+2025-08-28 13:57:36,093 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_barrier_avoidance_targets - -
+2025-08-28 13:57:36,110 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_barrier_avoidance_targets - -
+2025-08-28 13:57:36,110 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mTarget values not binary for triple_barrier[0m - -
+2025-08-28 13:57:36,110 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mTarget values not binary for magnitude[0m - -
+2025-08-28 13:57:36,110 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mTarget values not binary for barrier_avoidance[0m - -
+2025-08-28 13:57:36,110 INFO AresTradingSystem.System Generated targets for 100 samples - -
+2025-08-28 13:57:36,110 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_all_targets - -
+2025-08-28 13:57:36,110 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for prepare_multi_output_targets - -
+2025-08-28 13:57:36,110 INFO AresTradingSystem.System.PerformanceMonitor 📊 [PERF] Starting performance monitoring for train_multi_output_model - -
+2025-08-28 13:57:36,110 INFO AresTradingSystem.System Starting multi-output model training - -
+2025-08-28 13:57:36,110 INFO AresTradingSystem.System.PerformanceMonitor 📊 [PERF] Starting performance monitoring for fit - -
+2025-08-28 13:57:36,110 INFO AresTradingSystem.System Starting multi-output model training - -
+2025-08-28 13:57:36,110 INFO AresTradingSystem.System Training triple_barrier model... - -
+2025-08-28 13:57:36,114 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mCalibration failed for triple_barrier, using original model: Unknown label type: continuous. Maybe you are trying to fit a classifier, which expects discrete classes on a regression target with continuous values.[0m - -
+2025-08-28 13:57:36,114 INFO AresTradingSystem.System Training direction model... - -
+2025-08-28 13:57:36,132 INFO AresTradingSystem.System Training magnitude model... - -
+2025-08-28 13:57:36,135 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mCalibration failed for magnitude, using original model: Unknown label type: continuous. Maybe you are trying to fit a classifier, which expects discrete classes on a regression target with continuous values.[0m - -
+2025-08-28 13:57:36,135 INFO AresTradingSystem.System Training avoidance model... - -
+2025-08-28 13:57:36,135 ERROR AresTradingSystem.System.PerformanceMonitor ❌ [PERF] fit failed after 0.02s: 'avoidance' - -
+2025-08-28 13:57:36,135 INFO AresTradingSystem.System Multi-output model training completed - -
+2025-08-28 13:57:36,137 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for prepare_multi_output_targets - -
+2025-08-28 13:57:36,137 INFO AresTradingSystem.System Preparing multi-output targets for training - -
+2025-08-28 13:57:36,137 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_all_targets - -
+2025-08-28 13:57:36,137 INFO AresTradingSystem.System Generating all probability targets for multi-output training - -
+2025-08-28 13:57:36,137 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_triple_barrier_targets - -
+2025-08-28 13:57:36,156 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_triple_barrier_targets - -
+2025-08-28 13:57:36,156 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_direction_targets - -
+2025-08-28 13:57:36,156 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_direction_targets - -
+2025-08-28 13:57:36,156 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_magnitude_targets - -
+2025-08-28 13:57:36,198 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_magnitude_targets - -
+2025-08-28 13:57:36,198 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_barrier_avoidance_targets - -
+2025-08-28 13:57:36,251 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_barrier_avoidance_targets - -
+2025-08-28 13:57:36,251 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mTarget values not binary for triple_barrier[0m - -
+2025-08-28 13:57:36,251 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mTarget values not binary for magnitude[0m - -
+2025-08-28 13:57:36,251 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mTarget values not binary for barrier_avoidance[0m - -
+2025-08-28 13:57:36,251 INFO AresTradingSystem.System Generated targets for 300 samples - -
+2025-08-28 13:57:36,251 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_all_targets - -
+2025-08-28 13:57:36,251 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for prepare_multi_output_targets - -
+2025-08-28 13:57:36,251 INFO AresTradingSystem.System.PerformanceMonitor 📊 [PERF] Starting performance monitoring for train_multi_output_model - -
+2025-08-28 13:57:36,251 INFO AresTradingSystem.System Starting multi-output model training - -
+2025-08-28 13:57:36,251 INFO AresTradingSystem.System.PerformanceMonitor 📊 [PERF] Starting performance monitoring for fit - -
+2025-08-28 13:57:36,251 INFO AresTradingSystem.System Starting multi-output model training - -
+2025-08-28 13:57:36,251 INFO AresTradingSystem.System Training triple_barrier model... - -
+2025-08-28 13:57:36,307 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mCalibration failed for triple_barrier, using original model: Unknown label type: continuous. Maybe you are trying to fit a classifier, which expects discrete classes on a regression target with continuous values.[0m - -
+2025-08-28 13:57:36,307 INFO AresTradingSystem.System Training direction model... - -
+2025-08-28 13:57:36,331 INFO AresTradingSystem.System Training magnitude model... - -
+2025-08-28 13:57:36,342 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mCalibration failed for magnitude, using original model: Unknown label type: continuous. Maybe you are trying to fit a classifier, which expects discrete classes on a regression target with continuous values.[0m - -
+2025-08-28 13:57:36,343 INFO AresTradingSystem.System Training avoidance model... - -
+2025-08-28 13:57:36,343 ERROR AresTradingSystem.System.PerformanceMonitor ❌ [PERF] fit failed after 0.09s: 'avoidance' - -
+2025-08-28 13:57:36,343 INFO AresTradingSystem.System Multi-output model training completed - -
+2025-08-28 13:57:36,343 INFO AresTradingSystem.System Generating probability predictions - -
+2025-08-28 13:57:36,351 ERROR AresTradingSystem.System [91m[1m❌[0m [91m[1mError predicting avoidance probability: Estimator not fitted, call fit before exploiting the model.[0m - -
+2025-08-28 13:57:36,352 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for prepare_multi_output_targets - -
+2025-08-28 13:57:36,352 INFO AresTradingSystem.System Preparing multi-output targets for training - -
+2025-08-28 13:57:36,353 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_all_targets - -
+2025-08-28 13:57:36,353 INFO AresTradingSystem.System Generating all probability targets for multi-output training - -
+2025-08-28 13:57:36,353 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_triple_barrier_targets - -
+2025-08-28 13:57:36,378 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_triple_barrier_targets - -
+2025-08-28 13:57:36,378 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_direction_targets - -
+2025-08-28 13:57:36,378 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_direction_targets - -
+2025-08-28 13:57:36,378 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_magnitude_targets - -
+2025-08-28 13:57:36,433 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_magnitude_targets - -
+2025-08-28 13:57:36,433 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_barrier_avoidance_targets - -
+2025-08-28 13:57:36,504 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_barrier_avoidance_targets - -
+2025-08-28 13:57:36,504 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mTarget values not binary for triple_barrier[0m - -
+2025-08-28 13:57:36,505 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mTarget values not binary for magnitude[0m - -
+2025-08-28 13:57:36,505 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mTarget values not binary for barrier_avoidance[0m - -
+2025-08-28 13:57:36,505 INFO AresTradingSystem.System Generated targets for 400 samples - -
+2025-08-28 13:57:36,505 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_all_targets - -
+2025-08-28 13:57:36,505 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for prepare_multi_output_targets - -
+2025-08-28 13:57:36,505 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for prepare_multi_output_targets - -
+2025-08-28 13:57:36,505 INFO AresTradingSystem.System Preparing multi-output targets for training - -
+2025-08-28 13:57:36,505 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_all_targets - -
+2025-08-28 13:57:36,505 INFO AresTradingSystem.System Generating all probability targets for multi-output training - -
+2025-08-28 13:57:36,505 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_triple_barrier_targets - -
+2025-08-28 13:57:36,517 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_triple_barrier_targets - -
+2025-08-28 13:57:36,517 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_direction_targets - -
+2025-08-28 13:57:36,517 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_direction_targets - -
+2025-08-28 13:57:36,517 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_magnitude_targets - -
+2025-08-28 13:57:36,544 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_magnitude_targets - -
+2025-08-28 13:57:36,544 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_barrier_avoidance_targets - -
+2025-08-28 13:57:36,578 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_barrier_avoidance_targets - -
+2025-08-28 13:57:36,579 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mTarget values not binary for triple_barrier[0m - -
+2025-08-28 13:57:36,579 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mTarget values not binary for magnitude[0m - -
+2025-08-28 13:57:36,579 WARNING AresTradingSystem.System [93m[1m⚠️[0m [93m[1mTarget values not binary for barrier_avoidance[0m - -
+2025-08-28 13:57:36,579 INFO AresTradingSystem.System Generated targets for 200 samples - -
+2025-08-28 13:57:36,579 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_all_targets - -
+2025-08-28 13:57:36,579 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for prepare_multi_output_targets - -
+2025-08-28 13:57:36,579 INFO AresTradingSystem.System.PerformanceMonitor 📊 [PERF] Starting performance monitoring for train_multi_output_model - -
+2025-08-28 13:57:36,579 INFO AresTradingSystem.System Starting multi-output model training - -
+2025-08-28 13:57:36,579 INFO AresTradingSystem.System.PerformanceMonitor 📊 [PERF] Starting performance monitoring for fit - -
+2025-08-28 13:57:36,579 INFO AresTradingSystem.System Starting multi-output model training - -
+2025-08-28 13:57:36,579 INFO AresTradingSystem.System Training triple_barrier model... - -
+2025-08-28 13:57:36,580 ERROR AresTradingSystem.System.PerformanceMonitor ❌ [PERF] fit failed after 0.00s: Unknown label type: continuous. Maybe you are trying to fit a classifier, which expects discrete classes on a regression target with continuous values. - -
+2025-08-28 13:57:36,580 INFO AresTradingSystem.System Multi-output model training completed - -
+2025-08-28 13:57:36,580 INFO AresTradingSystem.System Generating probability predictions - -
+2025-08-28 13:57:36,580 ERROR AresTradingSystem.System [91m[1m❌[0m [91m[1mError predicting triple_barrier probability: Estimator not fitted, call fit before exploiting the model.[0m - -
+2025-08-28 13:57:36,580 ERROR AresTradingSystem.System [91m[1m❌[0m [91m[1mError predicting direction probability: Estimator not fitted, call fit before exploiting the model.[0m - -
+2025-08-28 13:57:36,580 ERROR AresTradingSystem.System [91m[1m❌[0m [91m[1mError predicting magnitude probability: Estimator not fitted, call fit before exploiting the model.[0m - -
+2025-08-28 13:57:36,580 ERROR AresTradingSystem.System [91m[1m❌[0m [91m[1mError predicting avoidance probability: Estimator not fitted, call fit before exploiting the model.[0m - -

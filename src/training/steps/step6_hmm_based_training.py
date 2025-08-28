@@ -2090,53 +2090,103 @@ class HMMBasedTrainingStep:
                 'volume': data.get('volume', np.random.randn(len(data)))
             })
 
-            # Initialize multi-output trainer with probability outputs enabled
-            from ..multi_output_model_trainer import create_multi_output_trainer
+            # Initialize multi-output probability trainer
+            from ..multi_output_probability_trainer import MultiOutputProbabilityTrainer
             
-            multi_output_trainer = create_multi_output_trainer(
-                model_type="LightGBM",
-                enable_probability_outputs=True,
-                use_profit_features=True,
-                probability_config={
-                    "profit_target": 0.02,
-                    "stop_loss": 0.01,
-                    "look_ahead_periods": 20,
-                    "magnitude_threshold_factor": 0.8,
-                    "adverse_threshold": 0.01,
-                    "avoidance_look_ahead": 10
+            # Configure multi-output training with advanced models
+            multi_output_config = {
+                "use_lightgbm": True,
+                "n_estimators": 1000,
+                "learning_rate": 0.01,
+                "max_depth": 8,
+                "profit_target": 0.02,
+                "stop_loss": 0.01,
+                "look_ahead_periods": 20,
+                "magnitude_threshold_factor": 0.8,
+                "adverse_threshold": 0.01,
+                "avoidance_look_ahead": 10,
+                # Advanced model configuration
+                "timeframe": "5m",  # Use TCN for 5-minute data
+                "model_architectures": {
+                    "1m": "cnn",      # CNN for 1-minute data (Tactician)
+                    "5m": "tcn",      # TCN for 5-minute data (Analyst)
+                    "15m": "transformer", # Transformer for 15-minute data (Enhanced)
+                    "30m": "lightgbm",    # LightGBM for 30-minute data (Analyst)
+                    "1h": "hmm_regime"    # HMM regime definition only
+                },
+                "neural_config": {
+                    "tcn": {
+                        "num_channels": [64, 128, 256],
+                        "kernel_size": 2,
+                        "dropout": 0.2,
+                        "batch_size": 32,
+                        "epochs": 50,
+                        "learning_rate": 0.001
+                    },
+                    "cnn": {
+                        "num_filters": [64, 128, 256],
+                        "kernel_sizes": [3, 3, 3],
+                        "dropout": 0.2,
+                        "batch_size": 32,
+                        "epochs": 50,
+                        "learning_rate": 0.001
+                    },
+                    "transformer": {
+                        "d_model": 128,
+                        "nhead": 8,
+                        "num_layers": 4,
+                        "dropout": 0.1,
+                        "batch_size": 32,
+                        "epochs": 50,
+                        "learning_rate": 0.001
+                    },
+                    "lstm": {
+                        "hidden_size": 128,
+                        "num_layers": 2,
+                        "bidirectional": True,
+                        "dropout": 0.2,
+                        "batch_size": 32,
+                        "epochs": 50,
+                        "learning_rate": 0.001
+                    },
+                    "gru": {
+                        "hidden_size": 128,
+                        "num_layers": 2,
+                        "bidirectional": True,
+                        "dropout": 0.2,
+                        "batch_size": 32,
+                        "epochs": 50,
+                        "learning_rate": 0.001
+                    }
                 }
-            )
-
-            # Train with probability targets
-            training_result = multi_output_trainer.train_with_probability_targets(
-                X_train=X_train,
-                X_val=X_test,
-                y_train=y_train,
-                y_val=y_test,
-                market_data=market_data,
-                feature_names=self.specialist_features
-            )
-
-            # Extract results
-            trained_models = training_result.get("trained_models", {})
-            probability_outputs = training_result.get("probability_outputs", {})
-            probability_metrics = training_result.get("probability_metrics", {})
-
-            # Create a composite model for backward compatibility
-            composite_model = {
-                "multi_output_trainer": multi_output_trainer,
-                "trained_models": trained_models,
-                "probability_outputs": probability_outputs,
-                "probability_metrics": probability_metrics
             }
-
+            
+            multi_output_trainer = MultiOutputProbabilityTrainer(multi_output_config)
+            
+            # Generate multi-output targets
+            y_train_multi = multi_output_trainer.prepare_multi_output_targets(
+                X_train, y_train, market_data.iloc[:len(X_train)]
+            )
+            y_test_multi = multi_output_trainer.prepare_multi_output_targets(
+                X_test, y_test, market_data.iloc[len(X_train):]
+            )
+            
+            # Train multi-output model
+            trained_models = multi_output_trainer.train_multi_output_model(
+                X_train, y_train_multi, X_test, y_test_multi
+            )
+            
+            # Generate probability outputs
+            price_action_probabilities = multi_output_trainer.predict_probabilities(
+                X_test, market_data.iloc[len(X_train):]
+            )
+            
             # Calculate overall metrics
             overall_metrics = {}
-            for prob_type, metrics in probability_metrics.items():
-                if isinstance(metrics, dict):
-                    overall_metrics[f"{prob_type}_accuracy"] = metrics.get("accuracy", 0.0)
-                    overall_metrics[f"{prob_type}_f1"] = metrics.get("f1", 0.0)
-
+            for prob_type, prob_value in price_action_probabilities.items():
+                if prob_type != "generation_timestamp" and prob_type != "model_type":
+                    overall_metrics[f"{prob_type}_value"] = prob_value
+            
             # Prepare model data for saving
             model_data = {
                 "multi_output_trainer": multi_output_trainer,
@@ -2148,13 +2198,9 @@ class HMMBasedTrainingStep:
                 "feature_columns": self.specialist_features,
                 "timeframe": timeframe,
                 "training_date": datetime.now().isoformat(),
-                "hyperparameters": {
-                    "model_type": "LightGBM",
-                    "enable_probability_outputs": True,
-                    "use_profit_features": True
-                },
+                "hyperparameters": multi_output_config,
                 "metrics": overall_metrics,
-                "probability_metrics": probability_metrics
+                "price_action_probabilities": price_action_probabilities
             }
 
             # Save model with probabilities using multi-output format

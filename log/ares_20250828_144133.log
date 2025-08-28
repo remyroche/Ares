@@ -1,0 +1,142 @@
+2025-08-28 14:41:33,394 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-28 14:41:33,405 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for prepare_multi_output_targets - -
+2025-08-28 14:41:33,405 INFO AresTradingSystem.System Preparing multi-output targets for training - -
+2025-08-28 14:41:33,405 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_all_targets - -
+2025-08-28 14:41:33,405 INFO AresTradingSystem.System Generating all probability targets for multi-output training - -
+2025-08-28 14:41:33,405 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_triple_barrier_targets - -
+2025-08-28 14:41:33,443 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_triple_barrier_targets - -
+2025-08-28 14:41:33,444 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_direction_targets - -
+2025-08-28 14:41:33,444 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_direction_targets - -
+2025-08-28 14:41:33,444 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_magnitude_targets - -
+2025-08-28 14:41:33,516 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_magnitude_targets - -
+2025-08-28 14:41:33,516 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_barrier_avoidance_targets - -
+2025-08-28 14:41:33,605 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_barrier_avoidance_targets - -
+2025-08-28 14:41:33,605 INFO AresTradingSystem.System Target triple_barrier validated and converted to binary - -
+2025-08-28 14:41:33,605 INFO AresTradingSystem.System Target direction validated and converted to binary - -
+2025-08-28 14:41:33,605 INFO AresTradingSystem.System Target magnitude validated and converted to binary - -
+2025-08-28 14:41:33,605 INFO AresTradingSystem.System Target barrier_avoidance validated and converted to binary - -
+2025-08-28 14:41:33,605 INFO AresTradingSystem.System Generated targets for 500 samples - -
+2025-08-28 14:41:33,605 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_all_targets - -
+2025-08-28 14:41:33,605 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for prepare_multi_output_targets - -
+2025-08-28 14:41:33,606 INFO AresTradingSystem.System.PerformanceMonitor 📊 [PERF] Starting performance monitoring for train_multi_output_model - -
+2025-08-28 14:41:33,606 INFO AresTradingSystem.System Starting multi-output model training - -
+2025-08-28 14:41:33,606 INFO AresTradingSystem.System.PerformanceMonitor 📊 [PERF] Starting performance monitoring for fit - -
+2025-08-28 14:41:33,606 INFO AresTradingSystem.System Starting multi-output model training - -
+2025-08-28 14:41:33,606 INFO AresTradingSystem.System Training triple_barrier model... - -
+2025-08-28 14:41:33,712 INFO AresTradingSystem.System Training direction model... - -
+2025-08-28 14:41:33,737 INFO AresTradingSystem.System Training magnitude model... - -
+2025-08-28 14:41:33,827 INFO AresTradingSystem.System Training avoidance model... - -
+2025-08-28 14:41:33,827 ERROR AresTradingSystem.System.PerformanceMonitor ❌ [PERF] fit failed after 0.22s: 'avoidance' - -
+2025-08-28 14:41:33,828 INFO AresTradingSystem.System Multi-output model training completed - -
+2025-08-28 14:41:33,832 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for prepare_multi_output_targets - -
+2025-08-28 14:41:33,832 INFO AresTradingSystem.System Preparing multi-output targets for training - -
+2025-08-28 14:41:33,832 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_all_targets - -
+2025-08-28 14:41:33,832 INFO AresTradingSystem.System Generating all probability targets for multi-output training - -
+2025-08-28 14:41:33,832 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_triple_barrier_targets - -
+2025-08-28 14:41:33,865 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_triple_barrier_targets - -
+2025-08-28 14:41:33,865 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_direction_targets - -
+2025-08-28 14:41:33,866 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_direction_targets - -
+2025-08-28 14:41:33,866 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_magnitude_targets - -
+2025-08-28 14:41:33,908 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_magnitude_targets - -
+2025-08-28 14:41:33,908 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_barrier_avoidance_targets - -
+2025-08-28 14:41:33,959 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_barrier_avoidance_targets - -
+2025-08-28 14:41:33,960 INFO AresTradingSystem.System Target triple_barrier validated and converted to binary - -
+2025-08-28 14:41:33,960 INFO AresTradingSystem.System Target direction validated and converted to binary - -
+2025-08-28 14:41:33,960 INFO AresTradingSystem.System Target magnitude validated and converted to binary - -
+2025-08-28 14:41:33,960 INFO AresTradingSystem.System Target barrier_avoidance validated and converted to binary - -
+2025-08-28 14:41:33,960 INFO AresTradingSystem.System Generated targets for 300 samples - -
+2025-08-28 14:41:33,960 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_all_targets - -
+2025-08-28 14:41:33,960 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for prepare_multi_output_targets - -
+2025-08-28 14:41:33,960 INFO AresTradingSystem.System.PerformanceMonitor 📊 [PERF] Starting performance monitoring for train_multi_output_model - -
+2025-08-28 14:41:33,960 INFO AresTradingSystem.System Starting multi-output model training - -
+2025-08-28 14:41:33,960 INFO AresTradingSystem.System.PerformanceMonitor 📊 [PERF] Starting performance monitoring for fit - -
+2025-08-28 14:41:33,960 INFO AresTradingSystem.System Starting multi-output model training - -
+2025-08-28 14:41:33,960 INFO AresTradingSystem.System Training triple_barrier model... - -
+2025-08-28 14:41:34,031 INFO AresTradingSystem.System Training direction model... - -
+2025-08-28 14:41:34,053 INFO AresTradingSystem.System Training magnitude model... - -
+2025-08-28 14:41:34,110 INFO AresTradingSystem.System Training avoidance model... - -
+2025-08-28 14:41:34,110 ERROR AresTradingSystem.System.PerformanceMonitor ❌ [PERF] fit failed after 0.15s: 'avoidance' - -
+2025-08-28 14:41:34,110 INFO AresTradingSystem.System Multi-output model training completed - -
+2025-08-28 14:41:34,110 INFO AresTradingSystem.System Generating probability predictions - -
+2025-08-28 14:41:34,126 ERROR AresTradingSystem.System [91m[1m❌[0m [91m[1mError predicting avoidance probability: Estimator not fitted, call fit before exploiting the model.[0m - -
+2025-08-28 14:41:34,129 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for prepare_multi_output_targets - -
+2025-08-28 14:41:34,129 INFO AresTradingSystem.System Preparing multi-output targets for training - -
+2025-08-28 14:41:34,129 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_all_targets - -
+2025-08-28 14:41:34,129 INFO AresTradingSystem.System Generating all probability targets for multi-output training - -
+2025-08-28 14:41:34,129 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_triple_barrier_targets - -
+2025-08-28 14:41:34,163 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_triple_barrier_targets - -
+2025-08-28 14:41:34,164 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_direction_targets - -
+2025-08-28 14:41:34,164 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_direction_targets - -
+2025-08-28 14:41:34,164 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_magnitude_targets - -
+2025-08-28 14:41:34,218 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_magnitude_targets - -
+2025-08-28 14:41:34,219 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_barrier_avoidance_targets - -
+2025-08-28 14:41:34,290 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_barrier_avoidance_targets - -
+2025-08-28 14:41:34,290 INFO AresTradingSystem.System Target triple_barrier validated and converted to binary - -
+2025-08-28 14:41:34,290 INFO AresTradingSystem.System Target direction validated and converted to binary - -
+2025-08-28 14:41:34,290 INFO AresTradingSystem.System Target magnitude validated and converted to binary - -
+2025-08-28 14:41:34,290 INFO AresTradingSystem.System Target barrier_avoidance validated and converted to binary - -
+2025-08-28 14:41:34,290 INFO AresTradingSystem.System Generated targets for 400 samples - -
+2025-08-28 14:41:34,290 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_all_targets - -
+2025-08-28 14:41:34,290 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for prepare_multi_output_targets - -
+2025-08-28 14:41:34,290 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for prepare_multi_output_targets - -
+2025-08-28 14:41:34,290 INFO AresTradingSystem.System Preparing multi-output targets for training - -
+2025-08-28 14:41:34,290 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_all_targets - -
+2025-08-28 14:41:34,290 INFO AresTradingSystem.System Generating all probability targets for multi-output training - -
+2025-08-28 14:41:34,290 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_triple_barrier_targets - -
+2025-08-28 14:41:34,306 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_triple_barrier_targets - -
+2025-08-28 14:41:34,307 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_direction_targets - -
+2025-08-28 14:41:34,307 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_direction_targets - -
+2025-08-28 14:41:34,307 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_magnitude_targets - -
+2025-08-28 14:41:34,334 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_magnitude_targets - -
+2025-08-28 14:41:34,334 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_barrier_avoidance_targets - -
+2025-08-28 14:41:34,367 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_barrier_avoidance_targets - -
+2025-08-28 14:41:34,367 INFO AresTradingSystem.System Target triple_barrier validated and converted to binary - -
+2025-08-28 14:41:34,367 INFO AresTradingSystem.System Target direction validated and converted to binary - -
+2025-08-28 14:41:34,367 INFO AresTradingSystem.System Target magnitude validated and converted to binary - -
+2025-08-28 14:41:34,367 INFO AresTradingSystem.System Target barrier_avoidance validated and converted to binary - -
+2025-08-28 14:41:34,368 INFO AresTradingSystem.System Generated targets for 200 samples - -
+2025-08-28 14:41:34,368 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_all_targets - -
+2025-08-28 14:41:34,368 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for prepare_multi_output_targets - -
+2025-08-28 14:41:34,368 INFO AresTradingSystem.System.PerformanceMonitor 📊 [PERF] Starting performance monitoring for train_multi_output_model - -
+2025-08-28 14:41:34,368 INFO AresTradingSystem.System Starting multi-output model training - -
+2025-08-28 14:41:34,368 INFO AresTradingSystem.System.PerformanceMonitor 📊 [PERF] Starting performance monitoring for fit - -
+2025-08-28 14:41:34,368 INFO AresTradingSystem.System Starting multi-output model training - -
+2025-08-28 14:41:34,368 INFO AresTradingSystem.System Training triple_barrier model... - -
+2025-08-28 14:41:34,477 INFO AresTradingSystem.System Training direction model... - -
+2025-08-28 14:41:34,499 INFO AresTradingSystem.System Training magnitude model... - -
+2025-08-28 14:41:34,614 INFO AresTradingSystem.System Training avoidance model... - -
+2025-08-28 14:41:34,614 ERROR AresTradingSystem.System.PerformanceMonitor ❌ [PERF] fit failed after 0.25s: 'avoidance' - -
+2025-08-28 14:41:34,614 INFO AresTradingSystem.System Multi-output model training completed - -
+2025-08-28 14:41:34,615 INFO AresTradingSystem.System Generating probability predictions - -
+2025-08-28 14:41:34,637 ERROR AresTradingSystem.System [91m[1m❌[0m [91m[1mError predicting avoidance probability: Estimator not fitted, call fit before exploiting the model.[0m - -
+2025-08-28 14:41:34,640 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for prepare_multi_output_targets - -
+2025-08-28 14:41:34,641 INFO AresTradingSystem.System Preparing multi-output targets for training - -
+2025-08-28 14:41:34,641 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_all_targets - -
+2025-08-28 14:41:34,641 INFO AresTradingSystem.System Generating all probability targets for multi-output training - -
+2025-08-28 14:41:34,641 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_triple_barrier_targets - -
+2025-08-28 14:41:34,729 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_triple_barrier_targets - -
+2025-08-28 14:41:34,729 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_direction_targets - -
+2025-08-28 14:41:34,730 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_direction_targets - -
+2025-08-28 14:41:34,730 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_magnitude_targets - -
+2025-08-28 14:41:34,869 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_magnitude_targets - -
+2025-08-28 14:41:34,869 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_barrier_avoidance_targets - -
+2025-08-28 14:41:35,053 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_barrier_avoidance_targets - -
+2025-08-28 14:41:35,053 INFO AresTradingSystem.System Target triple_barrier validated and converted to binary - -
+2025-08-28 14:41:35,053 INFO AresTradingSystem.System Target direction validated and converted to binary - -
+2025-08-28 14:41:35,053 INFO AresTradingSystem.System Target magnitude validated and converted to binary - -
+2025-08-28 14:41:35,053 INFO AresTradingSystem.System Target barrier_avoidance validated and converted to binary - -
+2025-08-28 14:41:35,053 INFO AresTradingSystem.System Generated targets for 1000 samples - -
+2025-08-28 14:41:35,053 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_all_targets - -
+2025-08-28 14:41:35,053 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for prepare_multi_output_targets - -
+2025-08-28 14:41:35,053 INFO AresTradingSystem.System.PerformanceMonitor 📊 [PERF] Starting performance monitoring for train_multi_output_model - -
+2025-08-28 14:41:35,053 INFO AresTradingSystem.System Starting multi-output model training - -
+2025-08-28 14:41:35,053 INFO AresTradingSystem.System.PerformanceMonitor 📊 [PERF] Starting performance monitoring for fit - -
+2025-08-28 14:41:35,053 INFO AresTradingSystem.System Starting multi-output model training - -
+2025-08-28 14:41:35,053 INFO AresTradingSystem.System Training triple_barrier model... - -
+2025-08-28 14:41:35,144 INFO AresTradingSystem.System Training direction model... - -
+2025-08-28 14:41:35,166 INFO AresTradingSystem.System Training magnitude model... - -
+2025-08-28 14:41:35,236 INFO AresTradingSystem.System Training avoidance model... - -
+2025-08-28 14:41:35,236 ERROR AresTradingSystem.System.PerformanceMonitor ❌ [PERF] fit failed after 0.18s: 'avoidance' - -
+2025-08-28 14:41:35,236 INFO AresTradingSystem.System Multi-output model training completed - -
+2025-08-28 14:41:35,237 INFO AresTradingSystem.System Generating probability predictions - -
+2025-08-28 14:41:35,261 ERROR AresTradingSystem.System [91m[1m❌[0m [91m[1mError predicting avoidance probability: Estimator not fitted, call fit before exploiting the model.[0m - -

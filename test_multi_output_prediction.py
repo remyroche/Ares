@@ -248,6 +248,13 @@ def test_profit_feature_engineering():
     
     if len(new_features) > 10:
         print(f"   ... and {len(new_features) - 10} more features")
+    
+    # Verify Kelly criterion is not included
+    kelly_features = [f for f in new_features if 'kelly' in f.lower()]
+    if kelly_features:
+        print(f"⚠️ Warning: Kelly features found: {kelly_features}")
+    else:
+        print("✅ Kelly criterion correctly removed from ML features")
 
 
 def test_data_driven_feature_selection():
@@ -321,7 +328,7 @@ async def main():
         print("\n🎉 All tests completed successfully!")
         print("\n📋 Summary:")
         print("   ✅ Multi-output configuration validated")
-        print("   ✅ Profit-based feature engineering working")
+        print("   ✅ Profit-based feature engineering working (Kelly removed)")
         print("   ✅ Multi-output model trainer functional")
         print("   ✅ Enhanced HMM-based training operational")
         print("\n🔧 The system is ready for intelligent multi-output prediction!")

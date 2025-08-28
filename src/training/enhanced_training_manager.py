@@ -170,11 +170,13 @@ class EnhancedTrainingManager:
             "step2_data_reading",              # Read and validate data quality
             "step3_hmm_regime_discovery",      # Define HMM regime clusters (with basic features)
             "step4_triple_barrier_method",     # Apply triple barrier method
+            "step4_regime_data_splitting",     # Regime data splitting (legacy step)
             "step5_labeling",                  # Create labels
             "step6_feature_engineering",       # Basic feature engineering
             "step7_feature_engineering",       # Advanced feature engineering (AFTER regimes are known)
             "step8_regime_data_splitting",     # Split data by regimes
             "step9_hmm_based_training",        # HMM-based model training
+            "step9_5_hmm_lm_generalist_training", # HMM LM generalist training
             "step10_unified_regime_intelligence", # Unified regime intelligence
             "step11_analyst_creation",         # Analyst creation (NEW STEP)
             "step12_analyst_enhancement",      # Analyst enhancement
@@ -2142,7 +2144,7 @@ class EnhancedTrainingManager:
 
                     step_start_8 = time.time()
                     try:
-                        from src.training.steps import step6_hmm_based_training_enhanced
+                        from src.training.steps import step9_hmm_based_training_enhanced
 
                         method_a_cfg = self.config.get("method_a_mixture_of_experts", {})
                         enable_multi_output = self.config.get("enable_multi_output", True)

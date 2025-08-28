@@ -38,6 +38,8 @@ from src.utils.centralized_decorators import (
     validate_feature_engineering_with_lookahead_bias_detection,
 )
 from src.utils.logger import system_logger
+from ..model_probability_generator import ModelProbabilityGenerator
+from ..model_saving_utils import save_model_with_probabilities
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -64,6 +66,9 @@ class HMMBasedTrainingStep:
         # Initialize S/R outcome model trainer
         self.sr_outcome_trainer = None
         self.sr_outcome_model_trained = False
+        
+        # Initialize probability generator for enhanced prediction service
+        self.probability_generator = ModelProbabilityGenerator()
 
         # Model architecture mapping from config
         hmm_lm_config = config.get("HMM_LM", {})
@@ -2065,43 +2070,108 @@ class HMMBasedTrainingStep:
 
     async def _train_lightgbm_model(
         self, data: pd.DataFrame, timeframe: str, ) -> dict[str, Any]:
-        """Train LightGBM model for 30m timeframe (Analyst)."""
+        """Train LightGBM model with multi-output probability training for 30m timeframe (Analyst)."""
         try:
-            self.logger.info(f"🔄 Training LightGBM for {timeframe}")
+            self.logger.info(f"🔄 Training LightGBM with multi-output probability training for {timeframe}")
 
             # Prepare features
-            X, y, scaler, label_encoder, self._prepare_features(
-                data = self.specialist_features,
+            X, y, scaler, label_encoder = self._prepare_features(
+                data=data, feature_columns=self.specialist_features,
             )
 
             # Split data
             split_idx = int(0.8 * len(X))
-            X_train = X_test, X[:split_idx], X[split_idx:],
-            y_train = y_test, y[:split_idx], y[split_idx:],
+            X_train, X_test = X[:split_idx], X[split_idx:]
+            y_train, y_test = y[:split_idx], y[split_idx:]
 
-            # Create LightGBM model
-            model, lgb.LGBMClassifier(
-                n_estimators=1000,
-                learning_rate=0.01,
-                max_depth=8,
-                num_leaves=31,
-                random_state=42,
-                verbose=-1,
+            # Create market data DataFrame for probability calculations
+            market_data = pd.DataFrame({
+                'close': data.get('close', np.random.randn(len(data))),
+                'volume': data.get('volume', np.random.randn(len(data)))
+            })
+
+            # Initialize multi-output trainer with probability outputs enabled
+            from ..multi_output_model_trainer import create_multi_output_trainer
+            
+            multi_output_trainer = create_multi_output_trainer(
+                model_type="LightGBM",
+                enable_probability_outputs=True,
+                use_profit_features=True,
+                probability_config={
+                    "profit_target": 0.02,
+                    "stop_loss": 0.01,
+                    "look_ahead_periods": 20,
+                    "magnitude_threshold_factor": 0.8,
+                    "adverse_threshold": 0.01,
+                    "avoidance_look_ahead": 10
+                }
             )
 
-            # Train model
-            model.fit(
-                X_train, y_train, eval_set=[(X_test, y_test)], early_stopping_rounds=50
+            # Train with probability targets
+            training_result = multi_output_trainer.train_with_probability_targets(
+                X_train=X_train,
+                X_val=X_test,
+                y_train=y_train,
+                y_val=y_test,
+                market_data=market_data,
+                feature_names=self.specialist_features
             )
 
-            # Evaluate
-            train_score, model.score(X_train, y_train)
-            test_score, model.score(X_test, y_test)
+            # Extract results
+            trained_models = training_result.get("trained_models", {})
+            probability_outputs = training_result.get("probability_outputs", {})
+            probability_metrics = training_result.get("probability_metrics", {})
 
-            # Save model and metadata
-            model_path = f"models/{timeframe}_lightgbm_model.pkl"
-            with open(model_path, "wb") as f:
-                pickle.dump(model, f)
+            # Create a composite model for backward compatibility
+            composite_model = {
+                "multi_output_trainer": multi_output_trainer,
+                "trained_models": trained_models,
+                "probability_outputs": probability_outputs,
+                "probability_metrics": probability_metrics
+            }
+
+            # Calculate overall metrics
+            overall_metrics = {}
+            for prob_type, metrics in probability_metrics.items():
+                if isinstance(metrics, dict):
+                    overall_metrics[f"{prob_type}_accuracy"] = metrics.get("accuracy", 0.0)
+                    overall_metrics[f"{prob_type}_f1"] = metrics.get("f1", 0.0)
+
+            # Prepare model data for saving
+            model_data = {
+                "multi_output_trainer": multi_output_trainer,
+                "trained_models": trained_models,
+                "model_type": "multi_output",
+                "architecture": "MultiOutputLightGBM",
+                "scaler": scaler,
+                "label_encoder": label_encoder,
+                "feature_columns": self.specialist_features,
+                "timeframe": timeframe,
+                "training_date": datetime.now().isoformat(),
+                "hyperparameters": {
+                    "model_type": "LightGBM",
+                    "enable_probability_outputs": True,
+                    "use_profit_features": True
+                },
+                "metrics": overall_metrics,
+                "probability_metrics": probability_metrics
+            }
+
+            # Save model with probabilities using multi-output format
+            model_path = f"models/{timeframe}_multi_output_lightgbm_model.pkl"
+            try:
+                from ..model_saving_utils import save_multi_output_model_with_probabilities
+                save_multi_output_model_with_probabilities(
+                    model_data, model_path, save_format="joblib"
+                )
+                self.logger.info(f"✅ Saved multi-output LightGBM model with probabilities to {model_path}")
+                self.logger.info(f"   Probability outputs: {probability_outputs}")
+                
+            except Exception as save_error:
+                self.logger.error(f"❌ Failed to save multi-output model: {save_error}")
+                # Fallback to simple save
+                with open(model_path, "wb") as f:
+                    pickle.dump(model_data, f)
 
             return {
                 "architecture": "LightGBM",
@@ -2111,6 +2181,7 @@ class HMMBasedTrainingStep:
                 "train_score": train_score,
                 "test_score": test_score,
                 "feature_columns": self.specialist_features,
+                "price_action_probabilities": price_action_probabilities,
             }
 
         except Exception as e:

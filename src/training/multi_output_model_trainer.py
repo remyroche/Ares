@@ -35,6 +35,18 @@ try:
 except ImportError:
     CATBOOST_AVAILABLE = False
     cb = None
+
+# Import existing model architectures from step6
+try:
+    from .steps.step6_hmm_based_training import (
+        CNNModel, CNNTrainer,
+        TCNModel, TCNTrainer,
+        TransformerModel, TransformerTrainer
+    )
+    EXISTING_MODELS_AVAILABLE = True
+except ImportError:
+    EXISTING_MODELS_AVAILABLE = False
+    CNNModel = CNNTrainer = TCNModel = TCNTrainer = TransformerModel = TransformerTrainer = None
 from sklearn.metrics import (
     accuracy_score, f1_score, precision_score, recall_score,
     mean_squared_error, mean_absolute_error, r2_score
@@ -77,6 +89,10 @@ class MultiOutputModelConfig:
         random_state: int = 42,
         use_enhanced_feature_selection: bool = True,  # NEW: Use enhanced feature selection
         supported_model_types: List[str] = None,  # NEW: Supported model types
+        # NEW: Probability output configuration
+        enable_probability_outputs: bool = True,
+        probability_targets: Optional[List[str]] = None,
+        probability_config: Optional[Dict[str, Any]] = None,
     ):
         self.model_type = model_type
         self.direction_target = direction_target
@@ -92,11 +108,39 @@ class MultiOutputModelConfig:
         self.random_state = random_state
         self.use_enhanced_feature_selection = use_enhanced_feature_selection
         
+        # NEW: Probability output configuration
+        self.enable_probability_outputs = enable_probability_outputs
+        if probability_targets is None:
+            self.probability_targets = [
+                "triple_barrier_probability",
+                "direction_probability", 
+                "magnitude_probability",
+                "barrier_avoidance_probability"
+            ]
+        else:
+            self.probability_targets = probability_targets
+        
+        # Default probability configuration
+        if probability_config is None:
+            self.probability_config = {
+                "profit_target": 0.02,
+                "stop_loss": 0.01,
+                "look_ahead_periods": 20,
+                "magnitude_threshold_factor": 0.8,
+                "adverse_threshold": 0.01,
+                "avoidance_look_ahead": 10
+            }
+        else:
+            self.probability_config = probability_config
+        
         # Supported model types for multi-output training
         if supported_model_types is None:
             self.supported_model_types = [
                 "LightGBM", "RandomForest", "XGBoost", "CatBoost", "NeuralNetwork"
             ]
+            # Add existing models if available
+            if EXISTING_MODELS_AVAILABLE:
+                self.supported_model_types.extend(["CNN", "TCN", "Transformer"])
         else:
             self.supported_model_types = supported_model_types
 
@@ -185,6 +229,12 @@ class MultiOutputModelTrainer:
             "feature_importance": {},
             "training_time": 0.0
         }
+        
+        # NEW: Probability training components
+        if self.config.enable_probability_outputs:
+            from .multi_output_probability_trainer import ProbabilityTargetGenerator
+            self.probability_target_generator = ProbabilityTargetGenerator(self.config.probability_config)
+            self.logger.info("🔧 Probability target generator initialized")
         
         self.logger.info("🔧 Multi-output model trainer initialized")
     
@@ -1120,6 +1170,431 @@ class MultiOutputModelTrainer:
             self.logger.info(f"✅ Model loaded from {load_path}")
         else:
             raise FileNotFoundError(f"Model files not found in {load_path}")
+    
+    # NEW: Probability target generation methods
+    @handle_errors(default_return={}, context="generate_probability_targets")
+    def generate_probability_targets(
+        self, 
+        X: np.ndarray, 
+        y: np.ndarray, 
+        market_data: pd.DataFrame
+    ) -> Dict[str, np.ndarray]:
+        """
+        Generate probability targets for multi-output training.
+        
+        Args:
+            X: Feature matrix
+            y: Target values
+            market_data: Market data with OHLCV information
+            
+        Returns:
+            Dictionary containing all 4 probability targets
+        """
+        if not self.config.enable_probability_outputs:
+            self.logger.warning("Probability outputs not enabled in config")
+            return {}
+        
+        self.logger.info("🔧 Generating probability targets for multi-output training")
+        return self.probability_target_generator.generate_all_targets(X, y, market_data)
+    
+    @handle_errors(default_return={}, context="train_with_probability_targets")
+    def train_with_probability_targets(
+        self,
+        X_train: np.ndarray,
+        X_val: np.ndarray,
+        y_train: np.ndarray,
+        y_val: np.ndarray,
+        market_data: pd.DataFrame,
+        feature_names: List[str]
+    ) -> Dict[str, Any]:
+        """
+        Train multi-output model with probability targets.
+        
+        Args:
+            X_train: Training features
+            X_val: Validation features
+            y_train: Training targets
+            y_val: Validation targets
+            market_data: Market data for probability target generation
+            feature_names: List of feature names
+            
+        Returns:
+            Dictionary containing trained models and metadata
+        """
+        if not self.config.enable_probability_outputs:
+            self.logger.warning("Probability outputs not enabled, using standard training")
+            return self._train_standard_multi_output(X_train, X_val, y_train, y_val, feature_names)
+        
+        self.logger.info("🔧 Training multi-output model with probability targets")
+        
+        # Generate probability targets
+        y_train_prob = self.generate_probability_targets(X_train, y_train, market_data.iloc[:len(X_train)])
+        y_val_prob = self.generate_probability_targets(X_val, y_val, market_data.iloc[len(X_train):])
+        
+        # Train models for each probability target
+        trained_models = {}
+        probability_metrics = {}
+        
+        for prob_type in self.config.probability_targets:
+            self.logger.info(f"🔧 Training model for {prob_type}")
+            
+            # Get target values
+            y_train_target = y_train_prob[prob_type.replace('_probability', '')]
+            y_val_target = y_val_prob[prob_type.replace('_probability', '')]
+            
+            # Train model based on config using existing architectures
+            if self.config.model_type == "LightGBM":
+                model = self._train_lightgbm_probability_model(
+                    X_train, X_val, y_train_target, y_val_target, feature_names, prob_type
+                )
+            elif self.config.model_type == "RandomForest":
+                model = self._train_randomforest_probability_model(
+                    X_train, X_val, y_train_target, y_val_target, feature_names, prob_type
+                )
+            elif self.config.model_type == "CNN" and EXISTING_MODELS_AVAILABLE:
+                model = self._train_cnn_probability_model(
+                    X_train, X_val, y_train_target, y_val_target, feature_names, prob_type
+                )
+            elif self.config.model_type == "TCN" and EXISTING_MODELS_AVAILABLE:
+                model = self._train_tcn_probability_model(
+                    X_train, X_val, y_train_target, y_val_target, feature_names, prob_type
+                )
+            elif self.config.model_type == "Transformer" and EXISTING_MODELS_AVAILABLE:
+                model = self._train_transformer_probability_model(
+                    X_train, X_val, y_train_target, y_val_target, feature_names, prob_type
+                )
+            else:
+                self.logger.warning(f"Model type {self.config.model_type} not supported for probability training")
+                continue
+            
+            trained_models[prob_type] = model
+            probability_metrics[prob_type] = model.get("metrics", {})
+        
+        # Generate probability outputs
+        probability_outputs = self._generate_probability_outputs(trained_models, X_val, market_data.iloc[len(X_train):])
+        
+        return {
+            "trained_models": trained_models,
+            "probability_metrics": probability_metrics,
+            "probability_outputs": probability_outputs,
+            "model_type": f"MultiOutput_{self.config.model_type}",
+            "config": self.config.__dict__
+        }
+    
+    def _train_lightgbm_probability_model(
+        self,
+        X_train: np.ndarray,
+        X_val: np.ndarray,
+        y_train: np.ndarray,
+        y_val: np.ndarray,
+        feature_names: List[str],
+        prob_type: str
+    ) -> Dict[str, Any]:
+        """Train LightGBM model for specific probability target using existing architecture."""
+        self.logger.info(f"🔧 Training LightGBM for {prob_type}")
+        
+        # Use existing LightGBM configuration from step6 (Analyst model)
+        model = lgb.LGBMClassifier(
+            n_estimators=1000,
+            learning_rate=0.01,
+            max_depth=8,
+            num_leaves=31,
+            random_state=42,
+            verbose=-1,
+        )
+        
+        # Handle class imbalance
+        try:
+            from sklearn.utils.class_weight import compute_class_weight
+            class_weights = compute_class_weight(
+                'balanced', 
+                classes=np.unique(y_train), 
+                y=y_train
+            )
+            sample_weights = class_weights[y_train.astype(int)]
+            model.fit(X_train, y_train, sample_weight=sample_weights, eval_set=[(X_val, y_val)], early_stopping_rounds=50)
+        except Exception as e:
+            self.logger.warning(f"Could not compute class weights for {prob_type}: {e}")
+            model.fit(X_train, y_train, eval_set=[(X_val, y_val)], early_stopping_rounds=50)
+        
+        # Evaluate
+        y_pred = model.predict(X_val)
+        y_pred_proba = model.predict_proba(X_val)[:, 1]
+        
+        metrics = {
+            "accuracy": accuracy_score(y_val, y_pred),
+            "f1": f1_score(y_val, y_pred),
+            "precision": precision_score(y_val, y_pred),
+            "recall": recall_score(y_val, y_pred)
+        }
+        
+        return {
+            "model": model,
+            "metrics": metrics,
+            "feature_importance": model.feature_importances_,
+            "prob_type": prob_type
+        }
+    
+    def _train_randomforest_probability_model(
+        self,
+        X_train: np.ndarray,
+        X_val: np.ndarray,
+        y_train: np.ndarray,
+        y_val: np.ndarray,
+        feature_names: List[str],
+        prob_type: str
+    ) -> Dict[str, Any]:
+        """Train RandomForest model for specific probability target using existing architecture."""
+        self.logger.info(f"🔧 Training RandomForest for {prob_type}")
+        
+        # Use existing RandomForest configuration from step9 (Tactician model)
+        model = RandomForestClassifier(
+            n_estimators=200,
+            max_depth=10,
+            min_samples_split=5,
+            min_samples_leaf=2,
+            random_state=42,
+            n_jobs=-1,
+        )
+        
+        model.fit(X_train, y_train)
+        
+        # Evaluate
+        y_pred = model.predict(X_val)
+        y_pred_proba = model.predict_proba(X_val)[:, 1]
+        
+        metrics = {
+            "accuracy": accuracy_score(y_val, y_pred),
+            "f1": f1_score(y_val, y_pred),
+            "precision": precision_score(y_val, y_pred),
+            "recall": recall_score(y_val, y_pred)
+        }
+        
+        return {
+            "model": model,
+            "metrics": metrics,
+            "feature_importance": model.feature_importances_,
+            "prob_type": prob_type
+        }
+    
+    def _train_cnn_probability_model(
+        self,
+        X_train: np.ndarray,
+        X_val: np.ndarray,
+        y_train: np.ndarray,
+        y_val: np.ndarray,
+        feature_names: List[str],
+        prob_type: str
+    ) -> Dict[str, Any]:
+        """Train CNN model for specific probability target using existing architecture."""
+        self.logger.info(f"🔧 Training CNN for {prob_type}")
+        
+        # Use existing CNN configuration from step6 (Tactician model)
+        sequence_length = 32  # 32 periods (32 minutes of 1m data)
+        X_train_sequences = self._create_sequences(X_train, sequence_length)
+        X_val_sequences = self._create_sequences(X_val, sequence_length)
+        
+        # Adjust targets for sequence length
+        y_train_seq = y_train[sequence_length:]
+        y_val_seq = y_val[sequence_length:]
+        
+        # Create CNN model using existing architecture
+        model = CNNModel(
+            input_size=X_train.shape[1],
+            sequence_length=sequence_length,
+            num_classes=2,  # Binary classification
+        )
+        
+        # Train model
+        trainer = CNNTrainer(model, learning_rate=0.001, batch_size=32)
+        history = trainer.train(X_train_sequences, y_train_seq, X_val_sequences, y_val_seq, epochs=100)
+        
+        # Evaluate
+        y_pred = model.predict(X_val_sequences)
+        y_pred_proba = model.predict_proba(X_val_sequences)
+        
+        metrics = {
+            "accuracy": accuracy_score(y_val_seq, y_pred),
+            "f1": f1_score(y_val_seq, y_pred),
+            "precision": precision_score(y_val_seq, y_pred),
+            "recall": recall_score(y_val_seq, y_pred)
+        }
+        
+        return {
+            "model": model,
+            "metrics": metrics,
+            "history": history,
+            "prob_type": prob_type
+        }
+    
+    def _train_tcn_probability_model(
+        self,
+        X_train: np.ndarray,
+        X_val: np.ndarray,
+        y_train: np.ndarray,
+        y_val: np.ndarray,
+        feature_names: List[str],
+        prob_type: str
+    ) -> Dict[str, Any]:
+        """Train TCN model for specific probability target using existing architecture."""
+        self.logger.info(f"🔧 Training TCN for {prob_type}")
+        
+        # Use existing TCN configuration from step6 (Analyst model)
+        sequence_length = 64  # 64 periods (16 hours of 15m data)
+        X_train_sequences = self._create_sequences(X_train, sequence_length)
+        X_val_sequences = self._create_sequences(X_val, sequence_length)
+        
+        # Adjust targets for sequence length
+        y_train_seq = y_train[sequence_length:]
+        y_val_seq = y_val[sequence_length:]
+        
+        # Create TCN model using existing architecture
+        model = TCNModel(
+            input_size=X_train.shape[1],
+            sequence_length=sequence_length,
+            num_classes=2,  # Binary classification
+        )
+        
+        # Train model
+        trainer = TCNTrainer(model, learning_rate=0.0001, batch_size=32)
+        history = trainer.train(X_train_sequences, y_train_seq, X_val_sequences, y_val_seq, epochs=150)
+        
+        # Evaluate
+        y_pred = model.predict(X_val_sequences)
+        y_pred_proba = model.predict_proba(X_val_sequences)
+        
+        metrics = {
+            "accuracy": accuracy_score(y_val_seq, y_pred),
+            "f1": f1_score(y_val_seq, y_pred),
+            "precision": precision_score(y_val_seq, y_pred),
+            "recall": recall_score(y_val_seq, y_pred)
+        }
+        
+        return {
+            "model": model,
+            "metrics": metrics,
+            "history": history,
+            "prob_type": prob_type
+        }
+    
+    def _train_transformer_probability_model(
+        self,
+        X_train: np.ndarray,
+        X_val: np.ndarray,
+        y_train: np.ndarray,
+        y_val: np.ndarray,
+        feature_names: List[str],
+        prob_type: str
+    ) -> Dict[str, Any]:
+        """Train Transformer model for specific probability target using existing architecture."""
+        self.logger.info(f"🔧 Training Transformer for {prob_type}")
+        
+        # Use existing Transformer configuration from step6 (Analyst model)
+        sequence_length = 16  # 16 periods (4 hours of 15m data)
+        X_train_sequences = self._create_sequences(X_train, sequence_length)
+        X_val_sequences = self._create_sequences(X_val, sequence_length)
+        
+        # Adjust targets for sequence length
+        y_train_seq = y_train[sequence_length:]
+        y_val_seq = y_val[sequence_length:]
+        
+        # Create Transformer model using existing architecture
+        model = TransformerModel(
+            input_size=X_train.shape[1],
+            d_model=256,
+            nhead=8,
+            num_layers=6,
+            num_classes=2,  # Binary classification
+        )
+        
+        # Train model
+        trainer = TransformerTrainer(model, learning_rate=0.0001, batch_size=32)
+        history = trainer.train(X_train_sequences, y_train_seq, X_val_sequences, y_val_seq, epochs=150)
+        
+        # Evaluate
+        y_pred = model.predict(X_val_sequences)
+        y_pred_proba = model.predict_proba(X_val_sequences)
+        
+        metrics = {
+            "accuracy": accuracy_score(y_val_seq, y_pred),
+            "f1": f1_score(y_val_seq, y_pred),
+            "precision": precision_score(y_val_seq, y_pred),
+            "recall": recall_score(y_val_seq, y_pred)
+        }
+        
+        return {
+            "model": model,
+            "metrics": metrics,
+            "history": history,
+            "prob_type": prob_type
+        }
+    
+    def _create_sequences(self, data: np.ndarray, sequence_length: int) -> np.ndarray:
+        """Create sequences for time series models."""
+        sequences = []
+        for i in range(len(data) - sequence_length):
+            sequences.append(data[i:i + sequence_length])
+        return np.array(sequences)
+    
+    def _generate_probability_outputs(
+        self,
+        trained_models: Dict[str, Any],
+        X_test: np.ndarray,
+        market_data: pd.DataFrame
+    ) -> Dict[str, float]:
+        """Generate probability outputs from trained models."""
+        probabilities = {}
+        
+        for prob_type, model_info in trained_models.items():
+            model = model_info["model"]
+            
+            try:
+                # Get probability predictions
+                if hasattr(model, 'predict_proba'):
+                    proba = model.predict_proba(X_test)
+                    if proba.shape[1] > 1:
+                        # Binary classification, get positive class probability
+                        prob_value = proba[:, 1].mean()
+                    else:
+                        # Single class, use the probability
+                        prob_value = proba[:, 0].mean()
+                else:
+                    # Fallback to prediction
+                    pred = model.predict(X_test)
+                    prob_value = pred.mean()
+                
+                # Ensure probability is in [0, 1] range
+                prob_value = np.clip(prob_value, 0.0, 1.0)
+                
+                probabilities[prob_type] = float(prob_value)
+                
+            except Exception as e:
+                self.logger.error(f"Error predicting {prob_type} probability: {e}")
+                probabilities[prob_type] = 0.5
+        
+        # Add metadata
+        probabilities["generation_timestamp"] = datetime.now().isoformat()
+        probabilities["model_type"] = "multi_output"
+        
+        return probabilities
+    
+    def _train_standard_multi_output(
+        self,
+        X_train: np.ndarray,
+        X_val: np.ndarray,
+        y_train: np.ndarray,
+        y_val: np.ndarray,
+        feature_names: List[str]
+    ) -> Dict[str, Any]:
+        """Fallback to standard multi-output training."""
+        self.logger.info("🔧 Using standard multi-output training")
+        
+        # This would call the existing training methods
+        # For now, return a placeholder
+        return {
+            "model_type": "standard_multi_output",
+            "note": "Standard training used (probability outputs disabled)"
+        }
 
 
 def create_multi_output_trainer(

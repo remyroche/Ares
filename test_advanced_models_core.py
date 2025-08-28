@@ -83,8 +83,8 @@ def test_model_configuration_framework():
         print("   ✅ Configuration structure is valid")
         
         # Test timeframe mapping
-        timeframes = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
-        expected_models = ["cnn", "tcn", "transformer", "lightgbm", "lstm", "gru", "randomforest"]
+        timeframes = ["1m", "5m", "15m", "30m", "1h"]
+        expected_models = ["cnn", "tcn", "transformer", "lightgbm", "hmm_regime"]
         
         for timeframe, expected_model in zip(timeframes, expected_models):
             if timeframe in config["model_architectures"]:
@@ -306,19 +306,16 @@ def test_model_type_coverage():
             "tcn",          # Temporal Convolutional Network
             "cnn",          # Convolutional Neural Network
             "transformer",   # Transformer with attention
-            "lstm",         # Long Short-Term Memory
-            "gru"           # Gated Recurrent Unit
+            "hmm_regime"    # Hidden Markov Model for regime definition
         ]
         
         # Test model architecture mapping
         model_architectures = {
-            "1m": "cnn",      # CNN for 1-minute data
-            "5m": "tcn",      # TCN for 5-minute data
-            "15m": "transformer", # Transformer for 15-minute data
-            "30m": "lightgbm",    # LightGBM for 30-minute data
-            "1h": "lstm",     # LSTM for 1-hour data
-            "4h": "gru",      # GRU for 4-hour data
-            "1d": "randomforest"  # RandomForest for daily data
+            "1m": "cnn",      # CNN for 1-minute data (Tactician)
+            "5m": "tcn",      # TCN for 5-minute data (Analyst)
+            "15m": "transformer", # Transformer for 15-minute data (Enhanced)
+            "30m": "lightgbm",    # LightGBM for 30-minute data (Analyst)
+            "1h": "hmm_regime"    # HMM regime definition only
         }
         
         # Check that all model types in the mapping are supported

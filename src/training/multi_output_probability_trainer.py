@@ -291,13 +291,11 @@ class MultiOutputModel:
         
         # Advanced model configuration
         self.model_architectures = self.config.get('model_architectures', {
-            "1m": "cnn",      # CNN for 1-minute data
-            "5m": "tcn",      # TCN for 5-minute data
-            "15m": "transformer", # Transformer for 15-minute data
-            "30m": "lightgbm",    # LightGBM for 30-minute data
-            "1h": "lstm",     # LSTM for 1-hour data
-            "4h": "gru",      # GRU for 4-hour data
-            "1d": "randomforest"  # RandomForest for daily data
+            "1m": "cnn",      # CNN for 1-minute data (Tactician)
+            "5m": "tcn",      # TCN for 5-minute data (Analyst)
+            "15m": "transformer", # Transformer for 15-minute data (Enhanced)
+            "30m": "lightgbm",    # LightGBM for 30-minute data (Analyst)
+            "1h": "hmm_regime"    # HMM regime definition only
         })
         
         # Neural network configuration
@@ -624,13 +622,11 @@ class MultiOutputProbabilityTrainer:
         
         # Advanced model configuration
         self.model_architectures = self.config.get('model_architectures', {
-            "1m": "cnn",      # CNN for 1-minute data
-            "5m": "tcn",      # TCN for 5-minute data
-            "15m": "transformer", # Transformer for 15-minute data
-            "30m": "lightgbm",    # LightGBM for 30-minute data
-            "1h": "lstm",     # LSTM for 1-hour data
-            "4h": "gru",      # GRU for 4-hour data
-            "1d": "randomforest"  # RandomForest for daily data
+            "1m": "cnn",      # CNN for 1-minute data (Tactician)
+            "5m": "tcn",      # TCN for 5-minute data (Analyst)
+            "15m": "transformer", # Transformer for 15-minute data (Enhanced)
+            "30m": "lightgbm",    # LightGBM for 30-minute data (Analyst)
+            "1h": "hmm_regime"    # HMM regime definition only
         })
         
         # Neural network configuration

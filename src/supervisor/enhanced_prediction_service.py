@@ -112,6 +112,12 @@ class EnhancedPredictionService:
                                 model_data = pickle.load(f)
                             
                             model_name = model_file.stem
+                            
+                            # Verify that the model has probability outputs
+                            if not self._verify_model_probability_outputs(model_data, f"{model_type}_{model_name}"):
+                                self.logger.warning(warning(f"⚠️ Skipping Analyst model {model_name} - missing probability outputs"))
+                                continue
+                            
                             self.analyst_ml_models[model_type][model_name] = model_data
                             self.logger.info(f"✅ Loaded Analyst ML model: {model_type}/{model_name}")
                         
@@ -156,6 +162,12 @@ class EnhancedPredictionService:
                                 model_data = pickle.load(f)
                             
                             model_name = model_file.stem
+                            
+                            # Verify that the model has probability outputs
+                            if not self._verify_model_probability_outputs(model_data, f"{model_type}_{model_name}"):
+                                self.logger.warning(warning(f"⚠️ Skipping Tactician model {model_name} - missing probability outputs"))
+                                continue
+                            
                             self.tactician_ml_models[model_type][model_name] = model_data
                             self.logger.info(f"✅ Loaded Tactician ML model: {model_type}/{model_name}")
                         
@@ -554,11 +566,117 @@ class EnhancedPredictionService:
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
+        context="verifying model probability outputs",
+    )
+    @with_tracing_span("verify_model_probability_outputs")
+    def _verify_model_probability_outputs(self, model_data: Dict[str, Any], model_name: str) -> bool:
+        """
+        Verify that a model has the required probability outputs.
+        
+        Args:
+            model_data: Model data loaded from file
+            model_name: Name of the model for logging
+            
+        Returns:
+            True if model has valid probability outputs, False otherwise
+        """
+        try:
+            # Check if model_data has price_action_probabilities
+            if "price_action_probabilities" not in model_data:
+                self.logger.warning(warning(f"⚠️ Model {model_name} missing 'price_action_probabilities' key"))
+                return False
+            
+            price_action_probabilities = model_data["price_action_probabilities"]
+            
+            # Validate the probability outputs
+            if not self._validate_price_action_probabilities(price_action_probabilities, model_name):
+                return False
+            
+            self.logger.debug(f"✅ Model {model_name} has valid probability outputs")
+            return True
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Error verifying probability outputs for {model_name}: {e}"))
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="verifying all models have probability outputs",
+    )
+    @with_tracing_span("verify_all_models_probability_outputs")
+    async def verify_all_models_probability_outputs(self) -> Dict[str, Any]:
+        """
+        Verify that ALL loaded models have probability outputs.
+        
+        Returns:
+            Dictionary with verification results for all models
+        """
+        try:
+            verification_results = {
+                "analyst_models": {},
+                "tactician_models": {},
+                "summary": {
+                    "total_analyst_models": 0,
+                    "total_tactician_models": 0,
+                    "analyst_models_with_probabilities": 0,
+                    "tactician_models_with_probabilities": 0,
+                    "all_models_verified": False
+                }
+            }
+            
+            # Verify Analyst models
+            for model_type, models in self.analyst_ml_models.items():
+                verification_results["analyst_models"][model_type] = {}
+                for model_name, model_data in models.items():
+                    has_probabilities = self._verify_model_probability_outputs(model_data, f"{model_type}_{model_name}")
+                    verification_results["analyst_models"][model_type][model_name] = {
+                        "has_probability_outputs": has_probabilities,
+                        "probability_keys": list(model_data.get("price_action_probabilities", {}).keys()) if has_probabilities else []
+                    }
+                    verification_results["summary"]["total_analyst_models"] += 1
+                    if has_probabilities:
+                        verification_results["summary"]["analyst_models_with_probabilities"] += 1
+            
+            # Verify Tactician models
+            for model_type, models in self.tactician_ml_models.items():
+                verification_results["tactician_models"][model_type] = {}
+                for model_name, model_data in models.items():
+                    has_probabilities = self._verify_model_probability_outputs(model_data, f"{model_type}_{model_name}")
+                    verification_results["tactician_models"][model_type][model_name] = {
+                        "has_probability_outputs": has_probabilities,
+                        "probability_keys": list(model_data.get("price_action_probabilities", {}).keys()) if has_probabilities else []
+                    }
+                    verification_results["summary"]["total_tactician_models"] += 1
+                    if has_probabilities:
+                        verification_results["summary"]["tactician_models_with_probabilities"] += 1
+            
+            # Check if all models have probabilities
+            total_models = verification_results["summary"]["total_analyst_models"] + verification_results["summary"]["total_tactician_models"]
+            models_with_probabilities = verification_results["summary"]["analyst_models_with_probabilities"] + verification_results["summary"]["tactician_models_with_probabilities"]
+            
+            verification_results["summary"]["all_models_verified"] = (total_models > 0 and total_models == models_with_probabilities)
+            
+            # Log verification results
+            if verification_results["summary"]["all_models_verified"]:
+                self.logger.info(f"✅ All {total_models} models have probability outputs")
+            else:
+                self.logger.warning(warning(f"⚠️ Only {models_with_probabilities}/{total_models} models have probability outputs"))
+            
+            return verification_results
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Error verifying all models probability outputs: {e}"))
+            return {"error": str(e)}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
         context="checking service health",
     )
     @with_tracing_span("check_service_health")
     async def check_service_health(self) -> bool:
-        """Check if the service is healthy and has loaded models."""
+        """Check if the service is healthy and has loaded models with probability outputs."""
         try:
             if not self.is_initialized:
                 return False
@@ -573,7 +691,15 @@ class EnhancedPredictionService:
             if not has_tactician_models:
                 self.logger.warning(warning("⚠️ No Tactician ML models loaded"))
             
-            return has_analyst_models and has_tactician_models
+            # Verify that all models have probability outputs
+            verification_results = await self.verify_all_models_probability_outputs()
+            all_models_verified = verification_results.get("summary", {}).get("all_models_verified", False)
+            
+            if not all_models_verified:
+                self.logger.warning(warning("⚠️ Not all models have probability outputs"))
+                return False
+            
+            return has_analyst_models and has_tactician_models and all_models_verified
             
         except Exception as e:
             self.logger.error(error(f"❌ Service health check failed: {e}"))

@@ -38,7 +38,7 @@ except ImportError:
 
 # Import existing model architectures from step6
 try:
-    from .steps.step6_hmm_based_training import (
+    from .steps.step9_hmm_based_training import (
         CNNModel, CNNTrainer,
         TCNModel, TCNTrainer,
         TransformerModel, TransformerTrainer
@@ -277,7 +277,7 @@ class MultiOutputModelTrainer:
         # Use enhanced data-driven feature selection if enabled
         if use_enhanced_feature_selection:
             try:
-                from src.training.steps.step6_hmm_based_training import Step6HMMBasedTraining
+                from src.training.steps.step9_hmm_based_training import HMMBasedTrainingStep
                 
                 self.logger.info("🔧 Using enhanced data-driven feature selection (VIF, MI, SHAP, RF)...")
                 

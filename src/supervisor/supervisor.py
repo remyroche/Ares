@@ -1,8 +1,9 @@
 import asyncio
 import time
 from collections import defaultdict
+from datetime import datetime
 from src.utils.logger import system_logger
-from typing import Any
+from typing import Any, Dict
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import (
@@ -11,6 +12,7 @@ from src.utils.warning_symbols import (
     initialization_error,
     invalid,
 )
+from src.utils.tracing import with_tracing_span
 
 DEFAULT_SUPERVISOR_CONFIG = {
     "supervisor": {"supervision_interval": 60, "max_history": 100},
@@ -173,49 +175,11 @@ class Supervisor:
 
         # Enhanced prediction service for ML model integration
         self.enhanced_prediction_service = None
+        self.is_initialized: bool = False
+        self.enhanced_prediction_service_config = self.supervisor_config.get("enhanced_prediction_service", {})
+        self.entry_threshold: float = self.enhanced_prediction_service_config.get("entry_threshold", 0.7)
+        self.max_confidence_threshold: float = self.enhanced_prediction_service_config.get("max_confidence_threshold", 0.9)
 
-        # Health monitoring - Updated to include new component features
-        self.health_checks: dict[str , bool] = {}
-        self.critical_components: list[str] = [
-            "database",
-            "exchange",
-            "analyst",
-            "strategist",
-            "tactician",
-            "enhanced_training_manager",
-        ]
-
-        # Component-specific monitoring
-        self.component_monitors: dict[str , dict[str, Any]] = {
-            "analyst": {
-                "dual_model_system": False,
-                "liquidation_risk_model": False,
-                "feature_engineering_orchestrator": False,  # Legacy S/R/Candle code removed
-                "ml_confidence_predictor": False,
-                "regime_classifier": False,
-            },
-            "strategist": {
-                "regime_classifier": False,
-                "ml_confidence_predictor": False,
-                "volatility_targeting": False,
-            },
-            "tactician": {
-                # Legacy S/R/Candle code removed
-                "position_sizer": False,
-                "leverage_sizer": False,
-                "position_division_strategy": False,
-                "ml_predictions": False,
-                "position_monitor": False,
-            },
-            "enhanced_training_manager": {
-                "advanced_model_training": False,
-                "ensemble_training": False,
-                "multi_timeframe_training": False,
-                "adaptive_training": False,
-                "multi_timeframe_manager": False,
-                "ensemble_creator": False,
-            },
-        }
 
     @handle_specific_errors(
         error_handlers={
@@ -238,6 +202,7 @@ class Supervisor:
             await self._setup_online_learning()
             await self._setup_component_monitors()
             self.logger.info("✅ Supervisor initialization completed successfully")
+            self.is_initialized = True
             return True
         except Exception:
             self.print(failed("❌ Supervisor initialization failed: {e}"))
@@ -393,25 +358,51 @@ class Supervisor:
         default_return={},
         context="getting analyst predictions",
     )
+    @with_tracing_span("get_analyst_predictions")
     async def get_analyst_predictions(
         self,
-        market_data,
-        regime_info,
-        symbol,
-        exchange,
-        timeframe
-    ) -> dict[str, Any]:
-        """Get enhanced predictions for the Analyst component."""
+        market_data: pd.DataFrame,
+        regime_info: Dict[str, Any],
+        symbol: str,
+        exchange: str,
+        timeframe: str = "1h"
+    ) -> Dict[str, Any]:
+        """
+        Get Analyst predictions using calibrated confidence scores from ML models.
+        
+        The Analyst decides if we enter a position based on calibrated confidence scores.
+        """
         try:
-            if self.enhanced_prediction_service and self.enhanced_prediction_service.is_initialized:
-                return await self.enhanced_prediction_service.generate_analyst_predictions(
-                    market_data, regime_info, symbol, exchange, timeframe
-                )
-            else:
-                self.logger.warning("⚠️ Enhanced Prediction Service not available")
+            if not self.is_initialized:
+                self.logger.error(error("❌ Supervisor not initialized"))
                 return {}
+
+            # Step 1: Get calibrated confidence scores from Enhanced Prediction Service
+            calibrated_confidence = await self.enhanced_prediction_service.get_calibrated_confidence_scores(
+                market_data, regime_info, symbol, exchange
+            )
+            
+            # Step 2: Analyst decides if we enter a position using Analyst models
+            analyst_decision = await self._analyst_decide_position_entry(
+                market_data, regime_info, calibrated_confidence["analyst_models"], symbol, exchange
+            )
+            
+            return {
+                "calibrated_confidence_scores": calibrated_confidence,
+                "analyst_decision": analyst_decision,
+                "timestamp": datetime.now().isoformat()
+            }
+
+        except ValueError as e:
+            # Enhanced Prediction Service failed - no calibrated confidence
+            self.logger.error(error(f"❌ Enhanced Prediction Service failed: {e}"))
+            return {
+                "error": str(e),
+                "analyst_decision": {"should_enter_position": False, "reason": "no_calibrated_confidence"},
+                "timestamp": datetime.now().isoformat()
+            }
         except Exception as e:
-            self.logger.error(f"❌ Error getting analyst predictions: {e}")
+            self.logger.error(error(f"❌ Error getting analyst predictions: {e}"))
             return {}
 
     @handle_errors(
@@ -419,27 +410,813 @@ class Supervisor:
         default_return={},
         context="getting tactician predictions",
     )
+    @with_tracing_span("get_tactician_predictions")
     async def get_tactician_predictions(
         self,
-        market_data,
-        regime_info,
-        analyst_signals,
-        symbol,
-        exchange,
-        timeframe
-    ) -> dict[str, Any]:
-        """Get enhanced predictions for the Tactician component."""
+        market_data: pd.DataFrame,
+        regime_info: Dict[str, Any],
+        analyst_signals: Dict[str, Any],
+        symbol: str,
+        exchange: str,
+        timeframe: str = "1m"
+    ) -> Dict[str, Any]:
+        """
+        Get Tactician predictions using calibrated confidence scores from ML models.
+        
+        The Tactician decides when, how much, and with what leverage based on calibrated confidence scores.
+        Must agree with Analyst on trade direction.
+        """
         try:
-            if self.enhanced_prediction_service and self.enhanced_prediction_service.is_initialized:
-                return await self.enhanced_prediction_service.generate_tactician_predictions(
-                    market_data, regime_info, analyst_signals, symbol, exchange, timeframe
-                )
-            else:
-                self.logger.warning("⚠️ Enhanced Prediction Service not available")
+            if not self.is_initialized:
+                self.logger.error(error("❌ Supervisor not initialized"))
                 return {}
+
+            # Step 1: Get calibrated confidence scores from Enhanced Prediction Service
+            calibrated_confidence = await self.enhanced_prediction_service.get_calibrated_confidence_scores(
+                market_data, regime_info, symbol, exchange
+            )
+            
+            # Step 2: Tactician decides execution parameters using Tactician models
+            tactician_decision = await self._tactician_calculate_execution_parameters(
+                market_data, analyst_signals, calibrated_confidence["tactician_models"], symbol, exchange
+            )
+            
+            return {
+                "calibrated_confidence_scores": calibrated_confidence,
+                "tactician_decision": tactician_decision,
+                "timestamp": datetime.now().isoformat()
+            }
+
+        except ValueError as e:
+            # Enhanced Prediction Service failed - no calibrated confidence
+            self.logger.error(error(f"❌ Enhanced Prediction Service failed: {e}"))
+            return {
+                "error": str(e),
+                "tactician_decision": {"should_execute": False, "reason": "no_calibrated_confidence"},
+                "timestamp": datetime.now().isoformat()
+            }
         except Exception as e:
-            self.logger.error(f"❌ Error getting tactician predictions: {e}")
+            self.logger.error(error(f"❌ Error getting tactician predictions: {e}"))
             return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="analyst deciding position entry",
+    )
+    @with_tracing_span("analyst_decide_position_entry")
+    async def _analyst_decide_position_entry(
+        self,
+        market_data: pd.DataFrame,
+        regime_info: Dict[str, Any],
+        analyst_confidence_scores: Dict[str, float],
+        symbol: str,
+        exchange: str
+    ) -> Dict[str, Any]:
+        """
+        Analyst decides if we enter a position and determines trade direction based on Analyst ML models.
+        """
+        try:
+            # Calculate aggregate Analyst confidence
+            if not analyst_confidence_scores:
+                return {
+                    "should_enter_position": False,
+                    "trade_direction": "neutral",
+                    "entry_confidence": 0.0,
+                    "max_confidence": 0.0,
+                    "individual_confidences": {},
+                    "entry_reason": "no_analyst_confidence"
+                }
+            
+            avg_confidence = sum(analyst_confidence_scores.values()) / len(analyst_confidence_scores)
+            max_confidence = max(analyst_confidence_scores.values())
+            
+            # Determine trade direction from Analyst models
+            trade_direction = self._analyst_determine_trade_direction(analyst_confidence_scores, market_data)
+            
+            # Decision logic
+            should_enter = (
+                avg_confidence > self.enhanced_prediction_service.entry_threshold and 
+                max_confidence > self.enhanced_prediction_service.max_confidence_threshold and
+                trade_direction != "neutral"
+            )
+            
+            return {
+                "should_enter_position": should_enter,
+                "trade_direction": trade_direction,
+                "entry_confidence": avg_confidence,
+                "max_confidence": max_confidence,
+                "individual_confidences": analyst_confidence_scores,
+                "entry_reason": "high_confidence" if should_enter else "low_confidence_or_neutral"
+            }
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error in analyst position decision: {e}"))
+            return {
+                "should_enter_position": False,
+                "trade_direction": "neutral",
+                "entry_confidence": 0.0,
+                "max_confidence": 0.0,
+                "individual_confidences": {},
+                "entry_reason": "error",
+                "error": str(e)
+            }
+
+    def _analyst_determine_trade_direction(
+        self, 
+        confidence_scores: Dict[str, float], 
+        market_data: pd.DataFrame
+    ) -> str:
+        """Determine trade direction based on Analyst model confidences."""
+        try:
+            # Logic to determine if models suggest long, short, or neutral
+            # This would be based on the specific Analyst model outputs
+            bullish_confidence = sum(
+                conf for name, conf in confidence_scores.items() 
+                if "bullish" in name.lower() or "long" in name.lower()
+            )
+            bearish_confidence = sum(
+                conf for name, conf in confidence_scores.items() 
+                if "bearish" in name.lower() or "short" in name.lower()
+            )
+            
+            # If no directional models, use overall confidence pattern
+            if bullish_confidence == 0 and bearish_confidence == 0:
+                # Use price momentum as fallback
+                if len(market_data) >= 2:
+                    price_change = (market_data['close'].iloc[-1] - market_data['close'].iloc[-2]) / market_data['close'].iloc[-2]
+                    if abs(price_change) > 0.001:  # 0.1% threshold
+                        return "long" if price_change > 0 else "short"
+                return "neutral"
+            
+            # Determine direction based on confidence
+            if bullish_confidence > bearish_confidence and bullish_confidence > 0.6:
+                return "long"
+            elif bearish_confidence > bullish_confidence and bearish_confidence > 0.6:
+                return "short"
+            else:
+                return "neutral"
+                
+        except Exception as e:
+            self.logger.error(error(f"❌ Error determining trade direction: {e}"))
+            return "neutral"
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="tactician calculating execution parameters",
+    )
+    @with_tracing_span("tactician_calculate_execution_parameters")
+    async def _tactician_calculate_execution_parameters(
+        self,
+        market_data: pd.DataFrame,
+        analyst_signals: Dict[str, Any],
+        tactician_confidence_scores: Dict[str, float],
+        symbol: str,
+        exchange: str
+    ) -> Dict[str, Any]:
+        """
+        Tactician decides when, how much, and what leverage based on Tactician ML models.
+        Must agree with Analyst on trade direction.
+        """
+        try:
+            # Check if Analyst wants to enter
+            analyst_decision = analyst_signals.get("analyst_decision", {})
+            if not analyst_decision.get("should_enter_position", False):
+                return {
+                    "should_execute": False,
+                    "reason": "analyst_no_entry"
+                }
+            
+            # Check direction agreement
+            tactician_direction = self._tactician_determine_direction(tactician_confidence_scores, market_data)
+            analyst_direction = analyst_decision.get("trade_direction", "neutral")
+            
+            if not self._directions_agree(analyst_direction, tactician_direction):
+                return {
+                    "should_execute": False,
+                    "reason": "direction_mismatch",
+                    "analyst_direction": analyst_direction,
+                    "tactician_direction": tactician_direction
+                }
+            
+            # Calculate execution parameters based on Tactician confidence
+            if not tactician_confidence_scores:
+                return {
+                    "should_execute": False,
+                    "reason": "no_tactician_confidence"
+                }
+            
+            avg_tactician_confidence = sum(tactician_confidence_scores.values()) / len(tactician_confidence_scores)
+            
+            leverage = self._tactician_calculate_leverage(avg_tactician_confidence)
+            position_size = self._tactician_calculate_position_size(avg_tactician_confidence, leverage)
+            entry_timing = self._tactician_calculate_entry_timing(market_data, avg_tactician_confidence)
+            
+            return {
+                "should_execute": True,
+                "trade_direction": analyst_direction,  # Use agreed direction
+                "leverage": leverage,
+                "position_size": position_size,
+                "entry_timing": entry_timing,
+                "tactician_confidence": avg_tactician_confidence,
+                "analyst_confidence": analyst_decision.get("entry_confidence", 0.0),
+                "combined_confidence": (avg_tactician_confidence + analyst_decision.get("entry_confidence", 0.0)) / 2
+            }
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error in tactician execution calculation: {e}"))
+            return {
+                "should_execute": False,
+                "reason": "error",
+                "error": str(e)
+            }
+
+    def _tactician_determine_direction(
+        self, 
+        confidence_scores: Dict[str, float], 
+        market_data: pd.DataFrame
+    ) -> str:
+        """Determine trade direction based on Tactician model confidences."""
+        try:
+            # Logic to determine if Tactician models suggest long, short, or neutral
+            # This would be based on the specific Tactician model outputs (lower timeframe)
+            bullish_confidence = sum(
+                conf for name, conf in confidence_scores.items() 
+                if "bullish" in name.lower() or "long" in name.lower()
+            )
+            bearish_confidence = sum(
+                conf for name, conf in confidence_scores.items() 
+                if "bearish" in name.lower() or "short" in name.lower()
+            )
+            
+            # If no directional models, use overall confidence pattern
+            if bullish_confidence == 0 and bearish_confidence == 0:
+                # Use short-term price momentum as fallback
+                if len(market_data) >= 3:
+                    recent_change = (market_data['close'].iloc[-1] - market_data['close'].iloc[-3]) / market_data['close'].iloc[-3]
+                    if abs(recent_change) > 0.0005:  # 0.05% threshold for short-term
+                        return "long" if recent_change > 0 else "short"
+                return "neutral"
+            
+            # Determine direction based on confidence
+            if bullish_confidence > bearish_confidence and bullish_confidence > 0.6:
+                return "long"
+            elif bearish_confidence > bullish_confidence and bearish_confidence > 0.6:
+                return "short"
+            else:
+                return "neutral"
+                
+        except Exception as e:
+            self.logger.error(error(f"❌ Error determining tactician direction: {e}"))
+            return "neutral"
+
+    def _directions_agree(self, analyst_direction: str, tactician_direction: str) -> bool:
+        """Check if Analyst and Tactician agree on trade direction."""
+        if analyst_direction == "neutral" or tactician_direction == "neutral":
+            return False
+        return analyst_direction == tactician_direction
+
+    def _tactician_calculate_leverage(self, confidence: float) -> float:
+        """Calculate leverage based on confidence score."""
+        if confidence > 0.9:
+            return 3.0  # High leverage for very high confidence
+        elif confidence > 0.8:
+            return 2.5
+        elif confidence > 0.7:
+            return 2.0
+        elif confidence > 0.6:
+            return 1.5
+        else:
+            return 1.0  # No leverage for low confidence
+
+    def _tactician_calculate_position_size(self, confidence: float, leverage: float) -> float:
+        """Calculate position size based on confidence and leverage."""
+        base_size = confidence * 100  # Base size as percentage
+        adjusted_size = base_size * leverage
+        return min(adjusted_size, 100.0)  # Cap at 100%
+
+    def _tactician_calculate_entry_timing(self, market_data: pd.DataFrame, confidence: float) -> str:
+        """Calculate optimal entry timing."""
+        if confidence > 0.8:
+            return "immediate"
+        elif confidence > 0.7:
+            return "within_5_minutes"
+        else:
+            return "wait_for_confirmation"
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="integrating analyst ML profit predictions",
+    )
+    async def _integrate_analyst_ml_profit_predictions(
+        self,
+        ml_profit_predictions: dict[str, Any],
+        market_data: pd.DataFrame,
+        regime_info: dict[str, Any],
+        symbol: str,
+        exchange: str
+    ) -> dict[str, Any]:
+        """
+        Integrate ML profit predictions with existing Analyst components.
+        
+        This function enhances the Analyst's decision-making by incorporating:
+        1. ML profit predictions from steps 6-14
+        2. Enhanced confidence scores with barrier analysis
+        3. Risk-reward metrics
+        4. Directional probability assessments
+        """
+        try:
+            integrated_predictions = {
+                "ml_profit_integration": ml_profit_predictions,
+                "enhanced_analyst_signals": {},
+                "risk_metrics": {},
+                "confidence_enhancement": {},
+                "timestamp": datetime.now().isoformat()
+            }
+
+            # Extract key components from ML profit predictions
+            ml_profit_data = ml_profit_predictions.get("ml_profit_predictions", {})
+            enhanced_confidence = ml_profit_predictions.get("enhanced_confidence_scores", {})
+            barrier_analysis = ml_profit_predictions.get("barrier_analysis", {})
+            regime_predictions = ml_profit_predictions.get("regime_predictions", {})
+
+            # Generate enhanced analyst signals
+            enhanced_signals = await self._generate_enhanced_analyst_signals(
+                ml_profit_data, enhanced_confidence, barrier_analysis, regime_predictions
+            )
+            integrated_predictions["enhanced_analyst_signals"] = enhanced_signals
+
+            # Calculate risk metrics
+            risk_metrics = await self._calculate_analyst_risk_metrics(
+                ml_profit_data, barrier_analysis, market_data
+            )
+            integrated_predictions["risk_metrics"] = risk_metrics
+
+            # Generate confidence enhancement
+            confidence_enhancement = await self._generate_confidence_enhancement(
+                enhanced_confidence, ml_profit_data, symbol, exchange
+            )
+            integrated_predictions["confidence_enhancement"] = confidence_enhancement
+
+            return integrated_predictions
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error integrating analyst ML profit predictions: {e}"))
+            return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="integrating tactician ML profit predictions",
+    )
+    async def _integrate_tactician_ml_profit_predictions(
+        self,
+        ml_profit_predictions: dict[str, Any],
+        market_data: pd.DataFrame,
+        analyst_signals: dict[str, Any],
+        symbol: str,
+        exchange: str
+    ) -> dict[str, Any]:
+        """
+        Integrate ML profit predictions with existing Tactician components.
+        
+        This function enhances the Tactician's execution by providing:
+        1. ML profit predictions with triple barrier probabilities
+        2. Enhanced confidence scores for leverage decisions
+        3. Barrier analysis for stop-loss placement
+        4. Position decision signals (but NOT position sizing - that's Tactician's job)
+        """
+        try:
+            integrated_predictions = {
+                "ml_profit_integration": ml_profit_predictions,
+                "enhanced_tactician_signals": {},
+                "position_decision_signals": {},
+                "leverage_inputs": {},
+                "timestamp": datetime.now().isoformat()
+            }
+
+            # Extract key components from ML profit predictions
+            ml_profit_data = ml_profit_predictions.get("ml_profit_predictions", {})
+            enhanced_confidence = ml_profit_predictions.get("enhanced_confidence_scores", {})
+            barrier_analysis = ml_profit_predictions.get("barrier_analysis", {})
+
+            # Generate enhanced tactician signals
+            enhanced_signals = await self._generate_enhanced_tactician_signals(
+                ml_profit_data, enhanced_confidence, barrier_analysis, analyst_signals
+            )
+            integrated_predictions["enhanced_tactician_signals"] = enhanced_signals
+
+            # Generate position decision signals (should we take a position?)
+            position_decisions = await self._generate_position_decision_signals(
+                ml_profit_data, enhanced_confidence, barrier_analysis
+            )
+            integrated_predictions["position_decision_signals"] = position_decisions
+
+            # Generate leverage inputs for Tactician
+            leverage_inputs = await self._generate_leverage_inputs(
+                ml_profit_data, enhanced_confidence, barrier_analysis
+            )
+            integrated_predictions["leverage_inputs"] = leverage_inputs
+
+            return integrated_predictions
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error integrating tactician ML profit predictions: {e}"))
+            return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="generating enhanced analyst signals",
+    )
+    async def _generate_enhanced_analyst_signals(
+        self,
+        ml_profit_data: dict[str, Any],
+        enhanced_confidence: dict[str, Any],
+        barrier_analysis: dict[str, Any],
+        regime_predictions: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Generate enhanced analyst signals with ML profit integration."""
+        try:
+            enhanced_signals = {
+                "directional_signals": {},
+                "confidence_signals": {},
+                "risk_signals": {},
+                "regime_signals": {}
+            }
+
+            # Process directional signals from ML profit predictions
+            for prediction_name, prediction_data in ml_profit_data.items():
+                direction = prediction_data.get("direction", 0)
+                magnitude = prediction_data.get("magnitude", 0.0)
+                confidence = enhanced_confidence.get(prediction_name, {}).get("enhanced_confidence", 0.5)
+                
+                enhanced_signals["directional_signals"][prediction_name] = {
+                    "direction": direction,
+                    "magnitude": magnitude,
+                    "confidence": confidence,
+                    "signal_strength": abs(direction) * confidence
+                }
+
+            # Process confidence signals
+            for prediction_name, confidence_data in enhanced_confidence.items():
+                enhanced_signals["confidence_signals"][prediction_name] = {
+                    "enhanced_confidence": confidence_data.get("enhanced_confidence", 0.5),
+                    "base_confidence": confidence_data.get("base_confidence", 0.5),
+                    "confidence_improvement": confidence_data.get("enhanced_confidence", 0.5) - confidence_data.get("base_confidence", 0.5)
+                }
+
+            # Process risk signals from barrier analysis
+            for prediction_name, barrier_data in barrier_analysis.items():
+                enhanced_signals["risk_signals"][prediction_name] = {
+                    "risk_reward_ratio": barrier_data.get("risk_reward_ratio", 0.0),
+                    "expected_value": barrier_data.get("expected_value", 0.0),
+                    "barrier_distance": barrier_data.get("barrier_distance", 0.0),
+                    "profit_distance": barrier_data.get("profit_distance", 0.0)
+                }
+
+            # Process regime signals
+            for prediction_name, regime_data in regime_predictions.items():
+                enhanced_signals["regime_signals"][prediction_name] = {
+                    "regime": regime_data.get("regime", "unknown"),
+                    "prediction": regime_data.get("prediction", 0.0),
+                    "confidence": regime_data.get("confidence", 0.5)
+                }
+
+            return enhanced_signals
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error generating enhanced analyst signals: {e}"))
+            return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="generating enhanced tactician signals",
+    )
+    async def _generate_enhanced_tactician_signals(
+        self,
+        ml_profit_data: dict[str, Any],
+        enhanced_confidence: dict[str, Any],
+        barrier_analysis: dict[str, Any],
+        analyst_signals: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Generate enhanced tactician signals with ML profit integration."""
+        try:
+            enhanced_signals = {
+                "execution_signals": {},
+                "timing_signals": {},
+                "risk_signals": {}
+            }
+
+            # Process execution signals
+            for prediction_name, prediction_data in ml_profit_data.items():
+                direction = prediction_data.get("direction", 0)
+                magnitude = prediction_data.get("magnitude", 0.0)
+                confidence = enhanced_confidence.get(prediction_name, {}).get("enhanced_confidence", 0.5)
+                
+                # Determine execution urgency based on confidence and magnitude
+                execution_urgency = confidence * magnitude
+                
+                enhanced_signals["execution_signals"][prediction_name] = {
+                    "direction": direction,
+                    "magnitude": magnitude,
+                    "confidence": confidence,
+                    "execution_urgency": execution_urgency,
+                    "should_execute": confidence > self.enhanced_prediction_service.direction_confidence_threshold
+                }
+
+            # Process position signals
+            for prediction_name, prediction_data in ml_profit_data.items():
+                confidence = enhanced_confidence.get(prediction_name, {}).get("enhanced_confidence", 0.5)
+                magnitude = prediction_data.get("magnitude", 0.0)
+                
+                # Calculate position size based on confidence and magnitude
+                position_size_factor = confidence * min(1.0, magnitude * 10)  # Scale magnitude
+                
+                enhanced_signals["position_signals"][prediction_name] = {
+                    "position_size_factor": position_size_factor,
+                    "confidence": confidence,
+                    "magnitude": magnitude,
+                    "recommended_size": "large" if position_size_factor > 0.7 else "medium" if position_size_factor > 0.4 else "small"
+                }
+
+            # Process risk signals
+            for prediction_name, barrier_data in barrier_analysis.items():
+                enhanced_signals["risk_signals"][prediction_name] = {
+                    "stop_loss_level": barrier_data.get("barrier_level", 0.0),
+                    "take_profit_level": barrier_data.get("profit_target", 0.0),
+                    "risk_reward_ratio": barrier_data.get("risk_reward_ratio", 0.0),
+                    "expected_value": barrier_data.get("expected_value", 0.0)
+                }
+
+            # Process timing signals
+            for prediction_name, prediction_data in ml_profit_data.items():
+                confidence = enhanced_confidence.get(prediction_name, {}).get("enhanced_confidence", 0.5)
+                
+                # Determine timing based on confidence and volatility
+                timing_urgency = "immediate" if confidence > 0.8 else "normal" if confidence > 0.6 else "cautious"
+                
+                enhanced_signals["timing_signals"][prediction_name] = {
+                    "timing_urgency": timing_urgency,
+                    "confidence": confidence,
+                    "wait_for_confirmation": confidence < 0.6
+                }
+
+            return enhanced_signals
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error generating enhanced tactician signals: {e}"))
+            return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="generating position decision signals",
+    )
+    async def _generate_position_decision_signals(
+        self,
+        ml_profit_data: dict[str, Any],
+        enhanced_confidence: dict[str, Any],
+        barrier_analysis: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Generate position decision signals (should we take a position?).
+        
+        This provides signals to the Tactician about whether to take positions,
+        but does NOT calculate position sizing - that's the Tactician's responsibility.
+        """
+        try:
+            position_decisions = {
+                "position_recommendations": {},
+                "aggregate_position_signal": {}
+            }
+
+            # Generate position recommendations for each prediction
+            for prediction_name, prediction_data in ml_profit_data.items():
+                confidence_data = enhanced_confidence.get(prediction_name, {})
+                optimized_confidence = confidence_data.get("optimized_confidence", 0.5)
+                triple_barrier_probs = confidence_data.get("triple_barrier_details", {})
+                
+                # Determine if we should take a position based on confidence
+                should_take_position = optimized_confidence > self.enhanced_prediction_service.direction_confidence_threshold
+                
+                # Get the best triple barrier probability for decision making
+                best_probability = 0.0
+                best_scenario = None
+                
+                if triple_barrier_probs:
+                    for scenario_name, scenario_data in triple_barrier_probs.items():
+                        if scenario_data["probability"] > best_probability:
+                            best_probability = scenario_data["probability"]
+                            best_scenario = scenario_name
+                
+                position_decisions["position_recommendations"][prediction_name] = {
+                    "should_take_position": should_take_position,
+                    "confidence": optimized_confidence,
+                    "best_triple_barrier_probability": best_probability,
+                    "best_scenario": best_scenario,
+                    "direction": prediction_data.get("direction", 0),
+                    "magnitude": prediction_data.get("magnitude", 0.0),
+                    "recommendation_strength": "strong" if optimized_confidence > 0.8 else "moderate" if optimized_confidence > 0.6 else "weak"
+                }
+
+            # Calculate aggregate position signal
+            total_recommendations = len(position_decisions["position_recommendations"])
+            strong_recommendations = sum(1 for rec in position_decisions["position_recommendations"].values() 
+                                       if rec["recommendation_strength"] == "strong")
+            moderate_recommendations = sum(1 for rec in position_decisions["position_recommendations"].values() 
+                                         if rec["recommendation_strength"] == "moderate")
+            
+            if total_recommendations > 0:
+                strong_ratio = strong_recommendations / total_recommendations
+                moderate_ratio = moderate_recommendations / total_recommendations
+                
+                if strong_ratio > 0.5:
+                    aggregate_signal = "strong_buy"
+                elif moderate_ratio > 0.5:
+                    aggregate_signal = "moderate_buy"
+                elif strong_ratio > 0.2:
+                    aggregate_signal = "weak_buy"
+                else:
+                    aggregate_signal = "hold"
+            else:
+                aggregate_signal = "hold"
+
+            position_decisions["aggregate_position_signal"] = {
+                "signal": aggregate_signal,
+                "total_recommendations": total_recommendations,
+                "strong_recommendations": strong_recommendations,
+                "moderate_recommendations": moderate_recommendations,
+                "strong_ratio": strong_ratio if total_recommendations > 0 else 0.0,
+                "moderate_ratio": moderate_ratio if total_recommendations > 0 else 0.0
+            }
+
+            return position_decisions
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error generating position decision signals: {e}"))
+            return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="generating leverage inputs",
+    )
+    async def _generate_leverage_inputs(
+        self,
+        ml_profit_data: dict[str, Any],
+        enhanced_confidence: dict[str, Any],
+        barrier_analysis: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Generate leverage inputs for the Tactician.
+        
+        This provides confidence and probability data to help the Tactician
+        make leverage decisions, but does NOT calculate leverage itself.
+        """
+        try:
+            leverage_inputs = {
+                "confidence_inputs": {},
+                "probability_inputs": {},
+                "risk_inputs": {}
+            }
+
+            # Generate confidence inputs for leverage decisions
+            for prediction_name, prediction_data in ml_profit_data.items():
+                confidence_data = enhanced_confidence.get(prediction_name, {})
+                optimized_confidence = confidence_data.get("optimized_confidence", 0.5)
+                triple_barrier_max_prob = confidence_data.get("triple_barrier_max_probability", 0.5)
+                
+                leverage_inputs["confidence_inputs"][prediction_name] = {
+                    "model_confidence": prediction_data.get("model_confidence", 0.5),
+                    "optimized_confidence": optimized_confidence,
+                    "triple_barrier_max_probability": triple_barrier_max_prob,
+                    "confidence_for_leverage": max(optimized_confidence, triple_barrier_max_prob),
+                    "leverage_confidence_level": "high" if optimized_confidence > 0.8 else "medium" if optimized_confidence > 0.6 else "low"
+                }
+
+            # Generate probability inputs
+            for prediction_name, prediction_data in ml_profit_data.items():
+                confidence_data = enhanced_confidence.get(prediction_name, {})
+                triple_barrier_probs = confidence_data.get("triple_barrier_details", {})
+                
+                # Extract probability information for leverage decisions
+                probabilities = []
+                scenarios = []
+                
+                for scenario_name, scenario_data in triple_barrier_probs.items():
+                    probabilities.append(scenario_data["probability"])
+                    scenarios.append({
+                        "name": scenario_name,
+                        "probability": scenario_data["probability"],
+                        "risk_reward_ratio": scenario_data["risk_reward_ratio"]
+                    })
+                
+                leverage_inputs["probability_inputs"][prediction_name] = {
+                    "all_probabilities": probabilities,
+                    "max_probability": max(probabilities) if probabilities else 0.5,
+                    "avg_probability": sum(probabilities) / len(probabilities) if probabilities else 0.5,
+                    "scenarios": scenarios,
+                    "probability_consistency": 1.0 - (max(probabilities) - min(probabilities)) if len(probabilities) > 1 else 1.0
+                }
+
+            # Generate risk inputs
+            for prediction_name, barrier_data in barrier_analysis.items():
+                leverage_inputs["risk_inputs"][prediction_name] = {
+                    "risk_reward_ratio": barrier_data.get("risk_reward_ratio", 1.0),
+                    "expected_value": barrier_data.get("expected_value", 0.0),
+                    "barrier_distance": barrier_data.get("barrier_distance", 0.0),
+                    "profit_distance": barrier_data.get("profit_distance", 0.0),
+                    "risk_level": "low" if barrier_data.get("risk_reward_ratio", 1.0) > 2.0 else "medium" if barrier_data.get("risk_reward_ratio", 1.0) > 1.5 else "high"
+                }
+
+            return leverage_inputs
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error generating leverage inputs: {e}"))
+            return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="calculating analyst risk metrics",
+    )
+    async def _calculate_analyst_risk_metrics(
+        self,
+        ml_profit_data: dict[str, Any],
+        barrier_analysis: dict[str, Any],
+        market_data: pd.DataFrame
+    ) -> dict[str, Any]:
+        """Calculate risk metrics for analyst decision making."""
+        try:
+            risk_metrics = {
+                "aggregate_risk": {},
+                "individual_risks": {},
+                "portfolio_implications": {}
+            }
+
+            # Calculate aggregate risk metrics
+            total_confidence = 0.0
+            total_expected_value = 0.0
+            total_risk_reward = 0.0
+            prediction_count = 0
+
+            for prediction_name, prediction_data in ml_profit_data.items():
+                confidence = prediction_data.get("confidence", 0.5)
+                barrier_data = barrier_analysis.get(prediction_name, {})
+                
+                total_confidence += confidence
+                total_expected_value += barrier_data.get("expected_value", 0.0)
+                total_risk_reward += barrier_data.get("risk_reward_ratio", 0.0)
+                prediction_count += 1
+
+            if prediction_count > 0:
+                avg_confidence = total_confidence / prediction_count
+                avg_expected_value = total_expected_value / prediction_count
+                avg_risk_reward = total_risk_reward / prediction_count
+            else:
+                avg_confidence = 0.5
+                avg_expected_value = 0.0
+                avg_risk_reward = 0.0
+
+            risk_metrics["aggregate_risk"] = {
+                "average_confidence": avg_confidence,
+                "average_expected_value": avg_expected_value,
+                "average_risk_reward_ratio": avg_risk_reward,
+                "prediction_count": prediction_count,
+                "overall_risk_level": "low" if avg_confidence > 0.7 else "medium" if avg_confidence > 0.5 else "high"
+            }
+
+            # Calculate individual risk metrics
+            for prediction_name, prediction_data in ml_profit_data.items():
+                barrier_data = barrier_analysis.get(prediction_name, {})
+                
+                risk_metrics["individual_risks"][prediction_name] = {
+                    "confidence": prediction_data.get("confidence", 0.5),
+                    "expected_value": barrier_data.get("expected_value", 0.0),
+                    "risk_reward_ratio": barrier_data.get("risk_reward_ratio", 0.0),
+                    "risk_level": "low" if prediction_data.get("confidence", 0.5) > 0.7 else "medium" if prediction_data.get("confidence", 0.5) > 0.5 else "high"
+                }
+
+            # Calculate portfolio implications
+            current_volatility = market_data['close'].pct_change().std()
+            
+            risk_metrics["portfolio_implications"] = {
+                "market_volatility": current_volatility,
+                "recommended_position_size": "reduced" if current_volatility > 0.03 else "normal" if current_volatility > 0.02 else "increased",
+                "risk_adjustment_factor": max(0.5, min(1.5, 1.0 / (1.0 + current_volatility * 10)))
+            }
+
+            return risk_metrics
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error calculating analyst risk metrics: {e}"))
+            return {}
+
+
 
     @handle_specific_errors(
         error_handlers={

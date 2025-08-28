@@ -1,857 +1,767 @@
-# src/supervisor/enhanced_prediction_service.py
-
 """
-Centralized Enhanced Prediction Service
-This service integrates price and confidence predictions from the enhanced training manager steps 6-14
-and provides them to both Analyst and Tactician components.
+Enhanced Prediction Service for ML Profit Integration System.
+
+This service provides calibrated confidence scores from ML models for both Analyst and Tactician.
+It ONLY provides calibrated confidence scores and fails if calibrated confidence doesn't exist.
 """
 
 import asyncio
-import json
-import os
 import pickle
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import error, warning, failed, missing
-from src.utils.centralized_decorators import (
-    validate_data_quality,
-    with_tracing_span,
-    comprehensive_validation,
-    intelligent_caching,
-    performance_monitor,
-    ValidationLevel,
-    PerformanceLevel,
-)
+from src.config.enhanced_prediction_service_config import get_enhanced_prediction_service_config
+from src.utils.logging_config import get_logger
+from src.utils.error_handling import handle_errors, handle_specific_errors, error, warning
+from src.utils.tracing import with_tracing_span
+from src.utils.validation import validate_data_quality, comprehensive_validation
+from src.utils.performance import performance_monitor
+from src.utils.caching import intelligent_caching
 
 
 class EnhancedPredictionService:
     """
-    Centralized Enhanced Prediction Service that provides ML-powered predictions
-    to both Analyst and Tactician components.
+    Enhanced Prediction Service that provides calibrated confidence scores from ML models.
     
-    This service loads and integrates:
-    - HMM-based model predictions (step 6-8)
-    - Analyst enhanced models (step 9)
-    - Tactician specialist models (step 9)
-    - Confidence calibration results (step 11)
-    - Final parameter optimization results (step 12-14)
+    This service ONLY provides calibrated confidence scores for both Analyst and Tactician ML models.
+    It fails if calibrated confidence doesn't exist for either model set.
     """
-
-    def __init__(self, config: dict[str, Any]) -> None:
-        self.config: dict[str, Any] = config
-        self.logger = system_logger.getChild("EnhancedPredictionService")
+    
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """Initialize the Enhanced Prediction Service."""
+        self.config = config or get_enhanced_prediction_service_config()
+        self.logger = get_logger(__name__)
         
         # Service state
-        self.is_initialized: bool = False
+        self.is_initialized = False
+        self.data_dir = self.config.get("data_directory", "data")
         
-        # Loaded models and predictions
-        self.hmm_models: dict[str, Any] = {}
-        self.analyst_enhanced_models: dict[str, Any] = {}
-        self.tactician_specialist_models: dict[str, Any] = {}
-        self.calibration_results: dict[str, Any] = {}
-        self.optimization_results: dict[str, Any] = {}
+        # ML model storage
+        self.analyst_ml_models: Dict[str, Dict[str, Any]] = {}
+        self.tactician_ml_models: Dict[str, Dict[str, Any]] = {}
         
-        # Configuration
-        self.service_config: dict[str, Any] = self.config.get("enhanced_prediction_service", {})
-        self.data_dir: str = self.service_config.get("data_dir", "data/training")
-        self.models_dir: str = self.service_config.get("models_dir", "models")
+        # Calibration and optimization results
+        self.calibration_results: Dict[str, Any] = {}
+        self.optimization_results: Dict[str, Any] = {}
         
-        # Prediction thresholds
-        self.confidence_threshold: float = self.service_config.get("confidence_threshold", 0.7)
-        self.price_prediction_threshold: float = self.service_config.get("price_prediction_threshold", 0.6)
+        # Configuration parameters
+        self.entry_threshold = self.config.get("entry_threshold", 0.6)
+        self.max_confidence_threshold = self.config.get("max_confidence_threshold", 0.7)
         
-        # Timeframe configuration
-        self.tactician_timeframes: list[str] = self.service_config.get("timeframes", ["1m", "5m"])
-        self.primary_timeframe: str = self.service_config.get("primary_timeframe", "1m")
-        self.secondary_timeframe: str = self.service_config.get("secondary_timeframe", "5m")
-        
-        # Optimized parameters (will be loaded during initialization)
-        self.optimized_params: dict[str, Any] = {}
+        self.logger.info("Enhanced Prediction Service initialized")
 
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="enhanced prediction service initialization",
+        context="initializing enhanced prediction service",
     )
-    @comprehensive_validation(validation_level=ValidationLevel.STRICT)
-    @performance_monitor(performance_level=PerformanceLevel.HIGH)
+    @with_tracing_span("initialize_enhanced_prediction_service")
     async def initialize(self) -> bool:
-        """
-        Initialize the enhanced prediction service.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
+        """Initialize the Enhanced Prediction Service."""
         try:
             self.logger.info("🚀 Initializing Enhanced Prediction Service...")
-
-            # Load HMM-based models (step 6-8)
-            await self._load_hmm_models()
-
-            # Load analyst enhanced models (step 9)
-            await self._load_analyst_enhanced_models()
-
-            # Load tactician specialist models (step 9)
-            await self._load_tactician_specialist_models()
-
-            # Load confidence calibration results (step 11)
+            
+            # Load ML models for both Analyst and Tactician
+            await self._load_analyst_ml_models()
+            await self._load_tactician_ml_models()
+            
+            # Load calibration and optimization results
             await self._load_calibration_results()
-
-            # Load optimization results (step 12-14)
             await self._load_optimization_results()
-
-            # Apply optimized parameters if available
-            await self._apply_optimized_parameters()
-
+            
             self.is_initialized = True
             self.logger.info("✅ Enhanced Prediction Service initialized successfully")
             return True
-
+            
         except Exception as e:
-            self.logger.error(failed(f"❌ Enhanced Prediction Service initialization failed: {e}"))
+            self.logger.error(error(f"❌ Failed to initialize Enhanced Prediction Service: {e}"))
             return False
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return={},
-        context="loading HMM models",
+        default_return=False,
+        context="loading analyst ML models",
     )
-    @with_tracing_span("load_hmm_models")
-    @intelligent_caching(cache_key="hmm_models")
-    async def _load_hmm_models(self) -> None:
-        """Load HMM-based models from step 6-8."""
+    @with_tracing_span("load_analyst_ml_models")
+    @intelligent_caching(cache_key="analyst_ml_models")
+    async def _load_analyst_ml_models(self) -> None:
+        """Load Analyst ML models (higher timeframe) from steps 6-14."""
         try:
-            hmm_models_path = Path(self.data_dir) / "hmm_models"
-            if not hmm_models_path.exists():
-                self.logger.warning(warning(f"⚠️ HMM models directory not found: {hmm_models_path}"))
-                return
-
-            for model_file in hmm_models_path.glob("*.pkl"):
-                try:
-                    with open(model_file, "rb") as f:
-                        model_data = pickle.load(f)
-                    
-                    model_name = model_file.stem
-                    self.hmm_models[model_name] = model_data
-                    self.logger.info(f"✅ Loaded HMM model: {model_name}")
-                
-                except Exception as e:
-                    self.logger.warning(warning(f"⚠️ Failed to load HMM model {model_file}: {e}"))
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error loading HMM models: {e}"))
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="loading analyst enhanced models",
-    )
-    async def _load_analyst_enhanced_models(self) -> None:
-        """Load analyst enhanced models from step 9."""
-        try:
-            analyst_models_path = Path(self.data_dir) / "enhanced_analyst_models"
+            analyst_models_path = Path(self.data_dir) / "ml_profit_models" / "analyst_models"
             if not analyst_models_path.exists():
-                self.logger.warning(warning(f"⚠️ Analyst enhanced models directory not found: {analyst_models_path}"))
-                return
+                raise ValueError(f"Analyst ML models directory not found: {analyst_models_path}")
 
-            for regime_dir in analyst_models_path.iterdir():
-                if regime_dir.is_dir():
-                    regime_name = regime_dir.name
-                    regime_models = {}
+            # Load different types of Analyst models
+            analyst_model_types = [
+                "hmm_profit", "analyst_profit", "calibrated", "optimized", 
+                "validated", "monte_carlo", "ab_tested"
+            ]
+            
+            for model_type in analyst_model_types:
+                type_path = analyst_models_path / model_type
+                if type_path.exists():
+                    self.analyst_ml_models[model_type] = {}
                     
-                    for model_file in regime_dir.glob("*.pkl"):
+                    for model_file in type_path.glob("*.pkl"):
                         try:
                             with open(model_file, "rb") as f:
                                 model_data = pickle.load(f)
                             
                             model_name = model_file.stem
-                            regime_models[model_name] = model_data
-                            self.logger.info(f"✅ Loaded analyst model: {regime_name}/{model_name}")
+                            
+                            # Verify that the model has probability outputs
+                            if not self._verify_model_probability_outputs(model_data, f"{model_type}_{model_name}"):
+                                self.logger.warning(warning(f"⚠️ Skipping Analyst model {model_name} - missing probability outputs"))
+                                continue
+                            
+                            self.analyst_ml_models[model_type][model_name] = model_data
+                            self.logger.info(f"✅ Loaded Analyst ML model: {model_type}/{model_name}")
                         
                         except Exception as e:
-                            self.logger.warning(warning(f"⚠️ Failed to load analyst model {model_file}: {e}"))
-                    
-                    self.analyst_enhanced_models[regime_name] = regime_models
+                            self.logger.warning(warning(f"⚠️ Failed to load Analyst ML model {model_file}: {e}"))
+
+            if not self.analyst_ml_models:
+                raise ValueError("No Analyst ML models loaded")
 
         except Exception as e:
-            self.logger.error(error(f"❌ Error loading analyst enhanced models: {e}"))
+            self.logger.error(error(f"❌ Error loading Analyst ML models: {e}"))
+            raise
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return={},
-        context="loading tactician specialist models",
+        default_return=False,
+        context="loading tactician ML models",
     )
-    async def _load_tactician_specialist_models(self) -> None:
-        """Load tactician specialist models from step 9."""
+    @with_tracing_span("load_tactician_ml_models")
+    @intelligent_caching(cache_key="tactician_ml_models")
+    async def _load_tactician_ml_models(self) -> None:
+        """Load Tactician ML models (lower timeframe) from steps 6-14."""
         try:
-            tactician_models_path = Path(self.data_dir) / "tactician_specialist_models"
+            tactician_models_path = Path(self.data_dir) / "ml_profit_models" / "tactician_models"
             if not tactician_models_path.exists():
-                self.logger.warning(warning(f"⚠️ Tactician specialist models directory not found: {tactician_models_path}"))
-                return
+                raise ValueError(f"Tactician ML models directory not found: {tactician_models_path}")
 
-            for regime_dir in tactician_models_path.iterdir():
-                if regime_dir.is_dir():
-                    regime_name = regime_dir.name
-                    regime_models = {}
+            # Load different types of Tactician models
+            tactician_model_types = [
+                "tactician_profit", "tactician_specialist", "calibrated", "optimized", 
+                "validated", "monte_carlo", "ab_tested"
+            ]
+            
+            for model_type in tactician_model_types:
+                type_path = tactician_models_path / model_type
+                if type_path.exists():
+                    self.tactician_ml_models[model_type] = {}
                     
-                    for model_file in regime_dir.glob("*.pkl"):
+                    for model_file in type_path.glob("*.pkl"):
                         try:
                             with open(model_file, "rb") as f:
                                 model_data = pickle.load(f)
                             
                             model_name = model_file.stem
-                            regime_models[model_name] = model_data
-                            self.logger.info(f"✅ Loaded tactician model: {regime_name}/{model_name}")
+                            
+                            # Verify that the model has probability outputs
+                            if not self._verify_model_probability_outputs(model_data, f"{model_type}_{model_name}"):
+                                self.logger.warning(warning(f"⚠️ Skipping Tactician model {model_name} - missing probability outputs"))
+                                continue
+                            
+                            self.tactician_ml_models[model_type][model_name] = model_data
+                            self.logger.info(f"✅ Loaded Tactician ML model: {model_type}/{model_name}")
                         
                         except Exception as e:
-                            self.logger.warning(warning(f"⚠️ Failed to load tactician model {model_file}: {e}"))
-                    
-                    self.tactician_specialist_models[regime_name] = regime_models
+                            self.logger.warning(warning(f"⚠️ Failed to load Tactician ML model {model_file}: {e}"))
+
+            if not self.tactician_ml_models:
+                raise ValueError("No Tactician ML models loaded")
 
         except Exception as e:
-            self.logger.error(error(f"❌ Error loading tactician specialist models: {e}"))
+            self.logger.error(error(f"❌ Error loading Tactician ML models: {e}"))
+            raise
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return={},
+        default_return=False,
         context="loading calibration results",
     )
+    @with_tracing_span("load_calibration_results")
     async def _load_calibration_results(self) -> None:
-        """Load confidence calibration results from step 11."""
+        """Load calibration results from step 11 (model performance vs actual reliability)."""
         try:
             calibration_path = Path(self.data_dir) / "calibration_results"
-            if not calibration_path.exists():
-                self.logger.warning(warning(f"⚠️ Calibration results directory not found: {calibration_path}"))
-                return
-
-            for calibration_file in calibration_path.glob("*.json"):
-                try:
-                    with open(calibration_file, "r") as f:
-                        calibration_data = json.load(f)
+            if calibration_path.exists():
+                for calibration_file in calibration_path.glob("*.json"):
+                    try:
+                        import json
+                        with open(calibration_file, "r") as f:
+                            calibration_data = json.load(f)
+                        
+                        key = calibration_file.stem
+                        self.calibration_results[key] = calibration_data
+                        self.logger.debug(f"Loaded calibration results: {key}")
                     
-                    symbol_exchange = calibration_file.stem
-                    self.calibration_results[symbol_exchange] = calibration_data
-                    self.logger.info(f"✅ Loaded calibration results: {symbol_exchange}")
-                
-                except Exception as e:
-                    self.logger.warning(warning(f"⚠️ Failed to load calibration results {calibration_file}: {e}"))
+                    except Exception as e:
+                        self.logger.warning(warning(f"⚠️ Failed to load calibration file {calibration_file}: {e}"))
 
         except Exception as e:
             self.logger.error(error(f"❌ Error loading calibration results: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return={},
+        default_return=False,
         context="loading optimization results",
     )
+    @with_tracing_span("load_optimization_results")
     async def _load_optimization_results(self) -> None:
-        """Load optimization results from step 12-14."""
+        """Load optimization results from step 11 (model performance vs actual reliability)."""
         try:
             optimization_path = Path(self.data_dir) / "optimization_results"
-            if not optimization_path.exists():
-                self.logger.warning(warning(f"⚠️ Optimization results directory not found: {optimization_path}"))
-                return
-
-            for optimization_file in optimization_path.glob("*.json"):
-                try:
-                    with open(optimization_file, "r") as f:
-                        optimization_data = json.load(f)
+            if optimization_path.exists():
+                for optimization_file in optimization_path.glob("*.json"):
+                    try:
+                        import json
+                        with open(optimization_file, "r") as f:
+                            optimization_data = json.load(f)
+                        
+                        key = optimization_file.stem
+                        self.optimization_results[key] = optimization_data
+                        self.logger.debug(f"Loaded optimization results: {key}")
                     
-                    symbol_exchange = optimization_file.stem
-                    self.optimization_results[symbol_exchange] = optimization_data
-                    self.logger.info(f"✅ Loaded optimization results: {symbol_exchange}")
-                
-                except Exception as e:
-                    self.logger.warning(warning(f"⚠️ Failed to load optimization results {optimization_file}: {e}"))
+                    except Exception as e:
+                        self.logger.warning(warning(f"⚠️ Failed to load optimization file {optimization_file}: {e}"))
 
         except Exception as e:
             self.logger.error(error(f"❌ Error loading optimization results: {e}"))
 
     @handle_errors(
+        exceptions=(ValueError,),
+        default_return={},
+        context="getting calibrated confidence scores",
+    )
+    @with_tracing_span("get_calibrated_confidence_scores")
+    @validate_data_quality(validation_level="ERROR")
+    @performance_monitor
+    async def get_calibrated_confidence_scores(
+        self, 
+        market_data: pd.DataFrame,
+        regime_info: Dict[str, Any],
+        symbol: str,
+        exchange: str
+    ) -> Dict[str, Dict[str, float]]:
+        """
+        Provide calibrated confidence scores for BOTH Analyst and Tactician ML models.
+        
+        This method ONLY provides calibrated confidence scores and fails if calibrated 
+        confidence doesn't exist for either model set.
+        
+        ML models should generate probabilities for specific price actions:
+        - Probability of reaching profit target without hitting stop-loss (triple barrier)
+        - Probability of price moving in predicted direction by X%
+        - Probability of avoiding adverse price movements
+        
+        Calibration is based on step 11: comparing model performance to actual reliability.
+        
+        Args:
+            market_data: Market data for prediction
+            regime_info: Market regime information
+            symbol: Trading symbol
+            exchange: Exchange name
+            
+        Returns:
+            Dictionary with calibrated confidence scores for both Analyst and Tactician models
+            
+        Raises:
+            ValueError: If calibrated confidence doesn't exist for either model set
+        """
+        try:
+            if not self.is_initialized:
+                raise ValueError("Enhanced Prediction Service not initialized")
+
+            calibrated_scores = {
+                "analyst_models": {},
+                "tactician_models": {}
+            }
+            
+            # Get Analyst calibrated confidence scores
+            analyst_scores = await self._get_analyst_calibrated_confidence(
+                market_data, regime_info, symbol, exchange
+            )
+            if not analyst_scores:
+                raise ValueError(f"No calibrated Analyst confidence scores available for {symbol} on {exchange}")
+            calibrated_scores["analyst_models"] = analyst_scores
+            
+            # Get Tactician calibrated confidence scores
+            tactician_scores = await self._get_tactician_calibrated_confidence(
+                market_data, regime_info, symbol, exchange
+            )
+            if not tactician_scores:
+                raise ValueError(f"No calibrated Tactician confidence scores available for {symbol} on {exchange}")
+            calibrated_scores["tactician_models"] = tactician_scores
+            
+            self.logger.info(f"✅ Retrieved calibrated confidence scores for {symbol} on {exchange}")
+            self.logger.debug(f"Analyst models: {len(analyst_scores)}, Tactician models: {len(tactician_scores)}")
+            
+            return calibrated_scores
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Failed to get calibrated confidence scores: {e}"))
+            raise
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="getting analyst calibrated confidence",
+    )
+    @with_tracing_span("get_analyst_calibrated_confidence")
+    async def _get_analyst_calibrated_confidence(
+        self,
+        market_data: pd.DataFrame,
+        regime_info: Dict[str, Any],
+        symbol: str,
+        exchange: str
+    ) -> Dict[str, float]:
+        """Get calibrated confidence scores from Analyst ML models based on step 11 calibration."""
+        try:
+            analyst_scores = {}
+            
+            for model_type, models in self.analyst_ml_models.items():
+                for model_name, model_data in models.items():
+                    try:
+                        # Get price action probabilities from ML model
+                        price_action_probabilities = model_data.get("price_action_probabilities", {})
+                        
+                        if not price_action_probabilities:
+                            self.logger.warning(warning(f"⚠️ No price action probabilities for Analyst model {model_name}"))
+                            continue
+                        
+                        # Get calibration data from step 11
+                        calibration_key = f"{exchange}_{symbol}_calibration_results"
+                        calibration_data = self.calibration_results.get(calibration_key, {})
+                        model_calibration = calibration_data.get("model_calibrations", {}).get(f"{model_type}_{model_name}", {})
+                        
+                        # Calculate calibrated confidence based on step 11 performance vs reliability
+                        calibrated_confidence = self._calculate_step11_calibrated_confidence(
+                            price_action_probabilities, model_calibration, model_name, "analyst"
+                        )
+                        
+                        if calibrated_confidence is not None:
+                            analyst_scores[f"{model_type}_{model_name}"] = calibrated_confidence
+                        
+                    except Exception as e:
+                        self.logger.warning(warning(f"⚠️ Failed to get confidence for Analyst model {model_name}: {e}"))
+            
+            return analyst_scores
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Error getting Analyst calibrated confidence: {e}"))
+            return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="getting tactician calibrated confidence",
+    )
+    @with_tracing_span("get_tactician_calibrated_confidence")
+    async def _get_tactician_calibrated_confidence(
+        self,
+        market_data: pd.DataFrame,
+        regime_info: Dict[str, Any],
+        symbol: str,
+        exchange: str
+    ) -> Dict[str, float]:
+        """Get calibrated confidence scores from Tactician ML models based on step 11 calibration."""
+        try:
+            tactician_scores = {}
+            
+            for model_type, models in self.tactician_ml_models.items():
+                for model_name, model_data in models.items():
+                    try:
+                        # Get price action probabilities from ML model
+                        price_action_probabilities = model_data.get("price_action_probabilities", {})
+                        
+                        if not price_action_probabilities:
+                            self.logger.warning(warning(f"⚠️ No price action probabilities for Tactician model {model_name}"))
+                            continue
+                        
+                        # Get calibration data from step 11
+                        calibration_key = f"{exchange}_{symbol}_calibration_results"
+                        calibration_data = self.calibration_results.get(calibration_key, {})
+                        model_calibration = calibration_data.get("model_calibrations", {}).get(f"{model_type}_{model_name}", {})
+                        
+                        # Calculate calibrated confidence based on step 11 performance vs reliability
+                        calibrated_confidence = self._calculate_step11_calibrated_confidence(
+                            price_action_probabilities, model_calibration, model_name, "tactician"
+                        )
+                        
+                        if calibrated_confidence is not None:
+                            tactician_scores[f"{model_type}_{model_name}"] = calibrated_confidence
+                        
+                    except Exception as e:
+                        self.logger.warning(warning(f"⚠️ Failed to get confidence for Tactician model {model_name}: {e}"))
+            
+            return tactician_scores
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Error getting Tactician calibrated confidence: {e}"))
+            return {}
+
+    def _calculate_step11_calibrated_confidence(
+        self,
+        price_action_probabilities: Dict[str, Any],
+        model_calibration: Dict[str, Any],
+        model_name: str,
+        model_type: str
+    ) -> Optional[float]:
+        """
+        Calculate calibrated confidence based on step 11: model performance vs actual reliability.
+        
+        This method applies calibration based on how well the model's predicted probabilities
+        match actual outcomes in historical data.
+        
+        Args:
+            price_action_probabilities: ML model's predicted probabilities for price actions
+            model_calibration: Calibration data from step 11
+            model_name: Name of the model
+            model_type: Type of model (analyst/tactician)
+            
+        Returns:
+            Calibrated confidence score or None if calibration fails
+        """
+        try:
+            # Extract key probability metrics from ML model
+            triple_barrier_prob = price_action_probabilities.get("triple_barrier_probability", 0.5)
+            direction_prob = price_action_probabilities.get("direction_probability", 0.5)
+            magnitude_prob = price_action_probabilities.get("magnitude_probability", 0.5)
+            barrier_avoidance_prob = price_action_probabilities.get("barrier_avoidance_probability", 0.5)
+            
+            # Get step 11 calibration parameters
+            reliability_score = model_calibration.get("reliability_score", 0.5)
+            performance_ratio = model_calibration.get("performance_ratio", 1.0)
+            calibration_factor = model_calibration.get("calibration_factor", 1.0)
+            confidence_bias = model_calibration.get("confidence_bias", 0.0)
+            
+            # Get step 12 optimized weights for probability components
+            # These weights are optimized based on historical performance
+            optimized_weights = model_calibration.get("step12_optimized_weights", {})
+            
+            # Use optimized weights if available, otherwise use defaults
+            if optimized_weights:
+                triple_barrier_weight = optimized_weights.get("triple_barrier_weight", 0.25)
+                direction_weight = optimized_weights.get("direction_weight", 0.25)
+                magnitude_weight = optimized_weights.get("magnitude_weight", 0.25)
+                barrier_avoidance_weight = optimized_weights.get("barrier_avoidance_weight", 0.25)
+            else:
+                # Default equal weights if step 12 optimization not available
+                triple_barrier_weight = 0.25
+                direction_weight = 0.25
+                magnitude_weight = 0.25
+                barrier_avoidance_weight = 0.25
+            
+            # Calculate base confidence using step 12 optimized weights
+            base_confidence = (
+                triple_barrier_prob * triple_barrier_weight +
+                direction_prob * direction_weight +
+                magnitude_prob * magnitude_weight +
+                barrier_avoidance_prob * barrier_avoidance_weight
+            )
+            
+            # Apply step 11 calibration: performance vs reliability
+            # This adjusts the confidence based on how well the model's predictions
+            # have matched actual outcomes in historical testing
+            
+            # Apply reliability adjustment
+            reliability_adjusted = base_confidence * reliability_score
+            
+            # Apply performance ratio (how well model performs vs expected)
+            performance_adjusted = reliability_adjusted * performance_ratio
+            
+            # Apply calibration factor (overall calibration adjustment)
+            calibrated = performance_adjusted * calibration_factor
+            
+            # Apply confidence bias (systematic adjustment)
+            final_confidence = calibrated + confidence_bias
+            
+            # Ensure bounds
+            final_confidence = max(0.0, min(1.0, final_confidence))
+            
+            self.logger.debug(f"Step 11 calibration for {model_name}: base={base_confidence:.3f}, "
+                            f"reliability={reliability_score:.3f}, performance={performance_ratio:.3f}, "
+                            f"weights={optimized_weights}, final={final_confidence:.3f}")
+            
+            return final_confidence
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Error calculating step 11 calibrated confidence for {model_name}: {e}"))
+            return None
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="validating price action probabilities",
+    )
+    @with_tracing_span("validate_price_action_probabilities")
+    def _validate_price_action_probabilities(
+        self,
+        price_action_probabilities: Dict[str, Any],
+        model_name: str
+    ) -> bool:
+        """
+        Validate that ML model provides the expected price action probabilities.
+        
+        Expected probabilities:
+        - triple_barrier_probability: Probability of reaching profit target without hitting stop-loss
+        - direction_probability: Probability of price moving in predicted direction
+        - magnitude_probability: Probability of price moving by expected magnitude
+        - barrier_avoidance_probability: Probability of avoiding adverse price movements
+        
+        Args:
+            price_action_probabilities: Probabilities from ML model
+            model_name: Name of the model for logging
+            
+        Returns:
+            True if probabilities are valid, False otherwise
+        """
+        try:
+            required_probabilities = [
+                "triple_barrier_probability",
+                "direction_probability", 
+                "magnitude_probability",
+                "barrier_avoidance_probability"
+            ]
+            
+            for prob_name in required_probabilities:
+                if prob_name not in price_action_probabilities:
+                    self.logger.warning(warning(f"⚠️ Missing required probability '{prob_name}' for model {model_name}"))
+                    return False
+                
+                prob_value = price_action_probabilities[prob_name]
+                if not isinstance(prob_value, (int, float)) or not (0.0 <= prob_value <= 1.0):
+                    self.logger.warning(warning(f"⚠️ Invalid probability value for '{prob_name}' in model {model_name}: {prob_value}"))
+                    return False
+            
+            # Validate that probabilities make sense together
+            triple_barrier = price_action_probabilities["triple_barrier_probability"]
+            direction = price_action_probabilities["direction_probability"]
+            magnitude = price_action_probabilities["magnitude_probability"]
+            barrier_avoidance = price_action_probabilities["barrier_avoidance_probability"]
+            
+            # Triple barrier probability should be <= direction probability
+            if triple_barrier > direction:
+                self.logger.warning(warning(f"⚠️ Triple barrier probability ({triple_barrier}) > direction probability ({direction}) for model {model_name}"))
+                return False
+            
+            # Barrier avoidance should be reasonable relative to triple barrier
+            if barrier_avoidance < triple_barrier * 0.5:
+                self.logger.warning(warning(f"⚠️ Barrier avoidance probability ({barrier_avoidance}) seems too low relative to triple barrier ({triple_barrier}) for model {model_name}"))
+                return False
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Error validating price action probabilities for {model_name}: {e}"))
+            return False
+
+    @handle_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="applying optimized parameters",
+        context="verifying model probability outputs",
     )
-    @with_tracing_span("apply_optimized_parameters")
-    async def _apply_optimized_parameters(self) -> bool:
-        """Apply optimized parameters from step 12 optimization."""
+    @with_tracing_span("verify_model_probability_outputs")
+    def _verify_model_probability_outputs(self, model_data: Dict[str, Any], model_name: str) -> bool:
+        """
+        Verify that a model has the required probability outputs.
+        
+        Args:
+            model_data: Model data loaded from file
+            model_name: Name of the model for logging
+            
+        Returns:
+            True if model has valid probability outputs, False otherwise
+        """
         try:
-            if not self.optimization_results:
-                self.logger.info("ℹ️ No optimization results available, using default parameters")
-                return True
-
-            # Get confidence thresholds from optimization
-            confidence_thresholds = self.optimization_results.get("confidence_thresholds", {})
-            optimized_params = confidence_thresholds.get("optimized_parameters", {})
-
-            # Apply enhanced prediction service parameters
-            if "enhanced_prediction_confidence_threshold" in optimized_params:
-                self.confidence_threshold = optimized_params["enhanced_prediction_confidence_threshold"]
-                self.logger.info(f"✅ Applied optimized confidence threshold: {self.confidence_threshold}")
-
-            if "enhanced_prediction_price_threshold" in optimized_params:
-                self.price_prediction_threshold = optimized_params["enhanced_prediction_price_threshold"]
-                self.logger.info(f"✅ Applied optimized price threshold: {self.price_prediction_threshold}")
-
-            # Store optimized parameters for use in prediction methods
-            self.optimized_params = optimized_params
-
+            # Check if model_data has price_action_probabilities
+            if "price_action_probabilities" not in model_data:
+                self.logger.warning(warning(f"⚠️ Model {model_name} missing 'price_action_probabilities' key"))
+                return False
+            
+            price_action_probabilities = model_data["price_action_probabilities"]
+            
+            # Validate the probability outputs
+            if not self._validate_price_action_probabilities(price_action_probabilities, model_name):
+                return False
+            
+            self.logger.debug(f"✅ Model {model_name} has valid probability outputs")
             return True
-
+            
         except Exception as e:
-            self.logger.error(error(f"❌ Error applying optimized parameters: {e}"))
+            self.logger.error(error(f"❌ Error verifying probability outputs for {model_name}: {e}"))
             return False
 
     @handle_errors(
         exceptions=(Exception,),
         default_return={},
-        context="generating analyst predictions",
+        context="verifying all models have probability outputs",
     )
-    @validate_data_quality(validation_level="WARNING")
-    @with_tracing_span("generate_analyst_predictions")
-    @performance_monitor(performance_level=PerformanceLevel.HIGH)
-    async def generate_analyst_predictions(
-        self, 
-        market_data: pd.DataFrame,
-        regime_info: dict[str, Any],
-        symbol: str,
-        exchange: str,
-        timeframe: str
-    ) -> dict[str, Any]:
+    @with_tracing_span("verify_all_models_probability_outputs")
+    async def verify_all_models_probability_outputs(self) -> Dict[str, Any]:
         """
-        Generate enhanced predictions for the Analyst component.
-
-        Args:
-            market_data: Market data for prediction
-            regime_info: Current regime information
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Timeframe
-
+        Verify that ALL loaded models have probability outputs.
+        
         Returns:
-            dict: Enhanced predictions for Analyst
+            Dictionary with verification results for all models
         """
         try:
-            if not self.is_initialized:
-                self.logger.error(error("❌ Enhanced Prediction Service not initialized"))
-                return {}
-
-            predictions = {
-                "price_predictions": {},
-                "confidence_scores": {},
-                "calibrated_predictions": {},
-                "optimization_weights": {},
-                "timestamp": datetime.now().isoformat()
-            }
-
-            # Generate HMM-based predictions
-            hmm_predictions = await self._generate_hmm_predictions(
-                market_data, regime_info, symbol, exchange, timeframe
-            )
-            predictions["price_predictions"].update(hmm_predictions)
-
-            # Generate analyst enhanced predictions
-            analyst_predictions = await self._generate_analyst_enhanced_predictions(
-                market_data, regime_info, symbol, exchange, timeframe
-            )
-            predictions["price_predictions"].update(analyst_predictions)
-
-            # Apply confidence calibration
-            calibrated_predictions = await self._apply_confidence_calibration(
-                predictions["price_predictions"], symbol, exchange
-            )
-            predictions["calibrated_predictions"] = calibrated_predictions
-
-            # Apply optimization weights
-            optimized_predictions = await self._apply_optimization_weights(
-                predictions["calibrated_predictions"], symbol, exchange
-            )
-            predictions["optimization_weights"] = optimized_predictions
-
-            # Generate final confidence scores
-            final_confidence = await self._generate_final_confidence_scores(
-                predictions["calibrated_predictions"], predictions["optimization_weights"]
-            )
-            predictions["confidence_scores"] = final_confidence
-
-            return predictions
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error generating analyst predictions: {e}"))
-            return {}
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="generating tactician predictions",
-    )
-    @validate_data_quality(validation_level="WARNING")
-    @with_tracing_span("generate_tactician_predictions")
-    @performance_monitor(performance_level=PerformanceLevel.HIGH)
-    async def generate_tactician_predictions(
-        self, 
-        market_data: pd.DataFrame,
-        regime_info: dict[str, Any],
-        analyst_signals: dict[str, Any],
-        symbol: str,
-        exchange: str,
-        timeframe: str = "1m"  # Default to 1m for Tactician
-    ) -> dict[str, Any]:
-        """
-        Generate enhanced predictions for the Tactician component.
-
-        Args:
-            market_data: Market data for prediction
-            regime_info: Current regime information
-            analyst_signals: Analyst signals and predictions
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Timeframe
-
-        Returns:
-            dict: Enhanced predictions for Tactician
-        """
-        try:
-            if not self.is_initialized:
-                self.logger.error(error("❌ Enhanced Prediction Service not initialized"))
-                return {}
-
-            # Validate timeframe for Tactician (should be 1m or 5m)
-            if timeframe not in self.tactician_timeframes:
-                self.logger.warning(warning(f"⚠️ Invalid timeframe for Tactician: {timeframe}. Using {self.primary_timeframe}"))
-                timeframe = self.primary_timeframe
-
-            predictions = {
-                "ml_confidence_predictions": {},
-                "calibrated_confidence_scores": {},
-                "optimization_weights": {},
-                "hmm_predictions": {},
-                "timeframe_used": timeframe,
-                "timestamp": datetime.now().isoformat()
-            }
-
-            # Generate HMM-based predictions for additional context
-            hmm_predictions = await self._generate_hmm_predictions(
-                market_data, regime_info, symbol, exchange, timeframe
-            )
-            predictions["hmm_predictions"] = hmm_predictions
-
-            # Generate ML confidence predictions to enhance existing components
-            ml_confidence = await self._generate_ml_confidence_predictions(
-                hmm_predictions, analyst_signals, symbol, exchange
-            )
-            predictions["ml_confidence_predictions"] = ml_confidence
-
-            # Apply confidence calibration
-            calibrated_confidence = await self._apply_confidence_calibration(
-                ml_confidence, symbol, exchange
-            )
-            predictions["calibrated_confidence_scores"] = calibrated_confidence
-
-            # Apply optimization weights
-            optimization_weights = await self._apply_optimization_weights(
-                calibrated_confidence, symbol, exchange
-            )
-            predictions["optimization_weights"] = optimization_weights
-
-            return predictions
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error generating tactician predictions: {e}"))
-            return {}
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="generating HMM predictions",
-    )
-    @with_tracing_span("generate_hmm_predictions")
-    @validate_data_quality(validation_level="WARNING")
-    async def _generate_hmm_predictions(
-        self,
-        market_data: pd.DataFrame,
-        regime_info: dict[str, Any],
-        symbol: str,
-        exchange: str,
-        timeframe: str
-    ) -> dict[str, Any]:
-        """Generate HMM-based predictions."""
-        try:
-            predictions = {}
-            
-            for model_name, model_data in self.hmm_models.items():
-                if "model" in model_data and hasattr(model_data["model"], "predict"):
-                    try:
-                        # Prepare features for prediction
-                        features = self._prepare_features_for_prediction(
-                            market_data, regime_info
-                        )
-                        
-                        # Generate prediction
-                        raw_prediction = model_data["model"].predict(features)
-                        
-                        # Process prediction
-                        processed_prediction = self._process_hmm_prediction(
-                            raw_prediction, model_data, model_name
-                        )
-                        
-                        predictions[f"hmm_{model_name}"] = processed_prediction
-                        
-                    except Exception as e:
-                        self.logger.warning(warning(f"⚠️ Failed to generate HMM prediction for {model_name}: {e}"))
-
-            return predictions
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error generating HMM predictions: {e}"))
-            return {}
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="generating analyst enhanced predictions",
-    )
-    async def _generate_analyst_enhanced_predictions(
-        self,
-        market_data: pd.DataFrame,
-        regime_info: dict[str, Any],
-        symbol: str,
-        exchange: str,
-        timeframe: str
-    ) -> dict[str, Any]:
-        """Generate analyst enhanced predictions."""
-        try:
-            predictions = {}
-            
-            current_regime = regime_info.get("regime", "default")
-            regime_models = self.analyst_enhanced_models.get(current_regime, {})
-            
-            for model_name, model_data in regime_models.items():
-                if "model" in model_data and hasattr(model_data["model"], "predict"):
-                    try:
-                        # Prepare features for prediction
-                        features = self._prepare_features_for_prediction(
-                            market_data, regime_info
-                        )
-                        
-                        # Generate prediction
-                        raw_prediction = model_data["model"].predict(features)
-                        
-                        # Process prediction
-                        processed_prediction = self._process_analyst_prediction(
-                            raw_prediction, model_data, model_name
-                        )
-                        
-                        predictions[f"analyst_{current_regime}_{model_name}"] = processed_prediction
-                        
-                    except Exception as e:
-                        self.logger.warning(warning(f"⚠️ Failed to generate analyst prediction for {model_name}: {e}"))
-
-            return predictions
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error generating analyst enhanced predictions: {e}"))
-            return {}
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="generating ML confidence predictions",
-    )
-    @with_tracing_span("generate_ml_confidence_predictions")
-    @validate_data_quality(validation_level="WARNING")
-    async def _generate_ml_confidence_predictions(
-        self,
-        hmm_predictions: dict[str, Any],
-        analyst_signals: dict[str, Any],
-        symbol: str,
-        exchange: str
-    ) -> dict[str, Any]:
-        """Generate ML confidence predictions to enhance existing tactician components."""
-        try:
-            ml_confidence = {}
-            
-            # Calculate aggregate confidence from HMM predictions
-            total_confidence = 0.0
-            valid_predictions = 0
-            
-            for prediction_name, prediction_data in hmm_predictions.items():
-                confidence = prediction_data.get("confidence", 0.0)
-                if confidence > 0:
-                    total_confidence += confidence
-                    valid_predictions += 1
-            
-            avg_confidence = total_confidence / max(valid_predictions, 1)
-            
-            # Combine with analyst signals
-            analyst_confidence = analyst_signals.get("confidence", 0.5)
-            
-            # Calculate weighted ML confidence using optimized parameters if available
-            # This balances different ML model types (Analyst vs Tactician ML models)
-            analyst_ml_weight = self.optimized_params.get("analyst_ml_weight", 0.6)
-            tactician_ml_weight = self.optimized_params.get("tactician_ml_weight", 0.4)
-            
-            # Analyst ML models focus on market analysis and regime detection
-            # Tactician ML models focus on execution and position sizing
-            weighted_ml_confidence = (avg_confidence * tactician_ml_weight) + (analyst_confidence * analyst_ml_weight)
-            
-            ml_confidence["aggregate_ml_confidence"] = {
-                "hmm_avg_confidence": avg_confidence,
-                "analyst_confidence": analyst_confidence,
-                "weighted_ml_confidence": weighted_ml_confidence,
-                "analyst_ml_weight": analyst_ml_weight,
-                "tactician_ml_weight": tactician_ml_weight,
-                "prediction_count": valid_predictions
-            }
-            
-            return ml_confidence
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error generating ML confidence predictions: {e}"))
-            return {}
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="applying confidence calibration",
-    )
-    @with_tracing_span("apply_confidence_calibration")
-    @validate_data_quality(validation_level="WARNING")
-    async def _apply_confidence_calibration(
-        self,
-        predictions: dict[str, Any],
-        symbol: str,
-        exchange: str
-    ) -> dict[str, Any]:
-        """Apply confidence calibration to predictions."""
-        try:
-            calibrated_predictions = {}
-            
-            # Find relevant calibration data
-            calibration_key = f"{exchange}_{symbol}_calibration_results"
-            calibration_data = self.calibration_results.get(calibration_key, {})
-            
-            for prediction_name, prediction_data in predictions.items():
-                calibrated_prediction = self._calibrate_prediction(
-                    prediction_data, calibration_data, prediction_name
-                )
-                calibrated_predictions[prediction_name] = calibrated_prediction
-
-            return calibrated_predictions
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error applying confidence calibration: {e}"))
-            return predictions
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="applying optimization weights",
-    )
-    @with_tracing_span("apply_optimization_weights")
-    @validate_data_quality(validation_level="WARNING")
-    async def _apply_optimization_weights(
-        self,
-        calibrated_predictions: dict[str, Any],
-        symbol: str,
-        exchange: str
-    ) -> dict[str, Any]:
-        """Apply optimization weights to calibrated predictions."""
-        try:
-            optimization_weights = {}
-            
-            # Find relevant optimization results
-            optimization_key = f"{exchange}_{symbol}_optimization_results"
-            optimization_data = self.optimization_results.get(optimization_key, {})
-            
-            if optimization_data:
-                # Apply optimization weights if available
-                for prediction_name in calibrated_predictions.keys():
-                    weight = optimization_data.get("model_weights", {}).get(prediction_name, 1.0)
-                    optimization_weights[prediction_name] = weight
-            else:
-                # Use equal weights if no optimization data available
-                for prediction_name in calibrated_predictions.keys():
-                    optimization_weights[prediction_name] = 1.0
-
-            return optimization_weights
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error applying optimization weights: {e}"))
-            return {name: 1.0 for name in calibrated_predictions.keys()}
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="generating final confidence scores",
-    )
-    @with_tracing_span("generate_final_confidence_scores")
-    @validate_data_quality(validation_level="WARNING")
-    async def _generate_final_confidence_scores(
-        self,
-        calibrated_predictions: dict[str, Any],
-        optimization_weights: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Generate final confidence scores."""
-        try:
-            confidence_scores = {}
-            
-            for prediction_name, prediction_data in calibrated_predictions.items():
-                base_confidence = prediction_data.get("confidence", 0.5)
-                weight = optimization_weights.get(prediction_name, 1.0)
-                
-                # Apply weight to confidence
-                weighted_confidence = base_confidence * weight
-                normalized_confidence = min(1.0, max(0.0, weighted_confidence))
-                
-                confidence_scores[prediction_name] = {
-                    "normalized_confidence": normalized_confidence,
-                    "confidence_level": self._get_confidence_level(normalized_confidence),
-                    "base_confidence": base_confidence,
-                    "applied_weight": weight
+            verification_results = {
+                "analyst_models": {},
+                "tactician_models": {},
+                "summary": {
+                    "total_analyst_models": 0,
+                    "total_tactician_models": 0,
+                    "analyst_models_with_probabilities": 0,
+                    "tactician_models_with_probabilities": 0,
+                    "all_models_verified": False
                 }
-
-            return confidence_scores
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error generating final confidence scores: {e}"))
-            return {}
-
-    @validate_data_quality(validation_level="WARNING")
-    def _prepare_features_for_prediction(
-        self,
-        market_data: pd.DataFrame,
-        regime_info: dict[str, Any]
-    ) -> pd.DataFrame:
-        """Prepare features for model prediction."""
-        try:
-            # Create a copy of market data
-            features = market_data.copy()
-            
-            # Add regime information (contextual, not technical indicators)
-            features["regime"] = regime_info.get("regime", "unknown")
-            features["regime_confidence"] = regime_info.get("confidence", 0.5)
-            
-            # IMPORTANT: Do NOT add technical indicators here
-            # The ML models in steps 6-14 already have comprehensive feature engineering
-            # Adding RSI/MACD here would be redundant and potentially inconsistent
-            # The models were trained with specific feature sets - we should respect that
-            
-            # Select relevant features for prediction (basic market data + regime info only)
-            feature_columns = [
-                "open", "high", "low", "close", "volume",
-                "regime", "regime_confidence"
-            ]
-            
-            available_features = [col for col in feature_columns if col in features.columns]
-            return features[available_features].iloc[-1:].fillna(0)
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error preparing features: {e}"))
-            return pd.DataFrame()
-
-    def _process_hmm_prediction(
-        self,
-        raw_prediction: Any,
-        model_data: dict[str, Any],
-        model_name: str
-    ) -> dict[str, Any]:
-        """Process HMM model prediction."""
-        try:
-            if isinstance(raw_prediction, np.ndarray):
-                prediction_value = float(raw_prediction[0]) if raw_prediction.size > 0 else 0.0
-            else:
-                prediction_value = float(raw_prediction)
-
-            return {
-                "prediction": prediction_value,
-                "confidence": model_data.get("confidence", 0.5),
-                "model_type": "hmm",
-                "model_name": model_name,
-                "timestamp": datetime.now().isoformat()
             }
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error processing HMM prediction: {e}"))
-            return {"prediction": 0.0, "confidence": 0.0, "model_type": "hmm", "model_name": model_name}
-
-    def _process_analyst_prediction(
-        self,
-        raw_prediction: Any,
-        model_data: dict[str, Any],
-        model_name: str
-    ) -> dict[str, Any]:
-        """Process analyst model prediction."""
-        try:
-            if isinstance(raw_prediction, np.ndarray):
-                prediction_value = float(raw_prediction[0]) if raw_prediction.size > 0 else 0.0
+            
+            # Verify Analyst models
+            for model_type, models in self.analyst_ml_models.items():
+                verification_results["analyst_models"][model_type] = {}
+                for model_name, model_data in models.items():
+                    has_probabilities = self._verify_model_probability_outputs(model_data, f"{model_type}_{model_name}")
+                    verification_results["analyst_models"][model_type][model_name] = {
+                        "has_probability_outputs": has_probabilities,
+                        "probability_keys": list(model_data.get("price_action_probabilities", {}).keys()) if has_probabilities else []
+                    }
+                    verification_results["summary"]["total_analyst_models"] += 1
+                    if has_probabilities:
+                        verification_results["summary"]["analyst_models_with_probabilities"] += 1
+            
+            # Verify Tactician models
+            for model_type, models in self.tactician_ml_models.items():
+                verification_results["tactician_models"][model_type] = {}
+                for model_name, model_data in models.items():
+                    has_probabilities = self._verify_model_probability_outputs(model_data, f"{model_type}_{model_name}")
+                    verification_results["tactician_models"][model_type][model_name] = {
+                        "has_probability_outputs": has_probabilities,
+                        "probability_keys": list(model_data.get("price_action_probabilities", {}).keys()) if has_probabilities else []
+                    }
+                    verification_results["summary"]["total_tactician_models"] += 1
+                    if has_probabilities:
+                        verification_results["summary"]["tactician_models_with_probabilities"] += 1
+            
+            # Check if all models have probabilities
+            total_models = verification_results["summary"]["total_analyst_models"] + verification_results["summary"]["total_tactician_models"]
+            models_with_probabilities = verification_results["summary"]["analyst_models_with_probabilities"] + verification_results["summary"]["tactician_models_with_probabilities"]
+            
+            verification_results["summary"]["all_models_verified"] = (total_models > 0 and total_models == models_with_probabilities)
+            
+            # Log verification results
+            if verification_results["summary"]["all_models_verified"]:
+                self.logger.info(f"✅ All {total_models} models have probability outputs")
             else:
-                prediction_value = float(raw_prediction)
+                self.logger.warning(warning(f"⚠️ Only {models_with_probabilities}/{total_models} models have probability outputs"))
+            
+            return verification_results
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Error verifying all models probability outputs: {e}"))
+            return {"error": str(e)}
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="checking service health",
+    )
+    @with_tracing_span("check_service_health")
+    async def check_service_health(self) -> bool:
+        """Check if the service is healthy and has loaded models with probability outputs."""
+        try:
+            if not self.is_initialized:
+                return False
+            
+            # Check if we have both Analyst and Tactician models
+            has_analyst_models = len(self.analyst_ml_models) > 0
+            has_tactician_models = len(self.tactician_ml_models) > 0
+            
+            if not has_analyst_models:
+                self.logger.warning(warning("⚠️ No Analyst ML models loaded"))
+            
+            if not has_tactician_models:
+                self.logger.warning(warning("⚠️ No Tactician ML models loaded"))
+            
+            # Verify that all models have probability outputs
+            verification_results = await self.verify_all_models_probability_outputs()
+            all_models_verified = verification_results.get("summary", {}).get("all_models_verified", False)
+            
+            if not all_models_verified:
+                self.logger.warning(warning("⚠️ Not all models have probability outputs"))
+                return False
+            
+            return has_analyst_models and has_tactician_models and all_models_verified
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Service health check failed: {e}"))
+            return False
+
+    def get_service_info(self) -> Dict[str, Any]:
+        """Get service information and statistics."""
+        try:
+            analyst_model_count = sum(len(models) for models in self.analyst_ml_models.values())
+            tactician_model_count = sum(len(models) for models in self.tactician_ml_models.values())
+            
             return {
-                "prediction": prediction_value,
-                "confidence": model_data.get("confidence", 0.5),
-                "model_type": "analyst",
-                "model_name": model_name,
-                "timestamp": datetime.now().isoformat()
+                "service_name": "Enhanced Prediction Service",
+                "is_initialized": self.is_initialized,
+                "analyst_models_loaded": analyst_model_count,
+                "tactician_models_loaded": tactician_model_count,
+                "analyst_model_types": list(self.analyst_ml_models.keys()),
+                "tactician_model_types": list(self.tactician_ml_models.keys()),
+                "calibration_results_loaded": len(self.calibration_results),
+                "optimization_results_loaded": len(self.optimization_results),
+                "entry_threshold": self.entry_threshold,
+                "max_confidence_threshold": self.max_confidence_threshold,
+                "probability_requirements": self._get_probability_requirements_info()
             }
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error processing analyst prediction: {e}"))
-            return {"prediction": 0.0, "confidence": 0.0, "model_type": "analyst", "model_name": model_name}
-
-    @validate_data_quality(validation_level="WARNING")
-    def _calibrate_prediction(
-        self,
-        prediction_data: dict[str, Any],
-        calibration_data: dict[str, Any],
-        prediction_name: str
-    ) -> dict[str, Any]:
-        """Apply calibration to prediction."""
-        try:
-            calibrated_prediction = prediction_data.copy()
             
-            # Find relevant calibration for this prediction
-            model_calibration = calibration_data.get("model_calibrations", {}).get(prediction_name, {})
-            
-            if model_calibration:
-                # Apply calibration transformation
-                original_confidence = prediction_data.get("confidence", 0.5)
-                calibrated_confidence = model_calibration.get("calibrated_confidence", original_confidence)
-                
-                calibrated_prediction["confidence"] = calibrated_confidence
-                calibrated_prediction["calibration_applied"] = True
-            else:
-                calibrated_prediction["calibration_applied"] = False
-
-            return calibrated_prediction
-
         except Exception as e:
-            self.logger.error(error(f"❌ Error calibrating prediction: {e}"))
-            return prediction_data
+            self.logger.error(error(f"❌ Failed to get service info: {e}"))
+            return {"error": str(e)}
 
-    def _get_confidence_level(self, confidence: float) -> str:
-        """Get confidence level description."""
-        if confidence >= 0.9:
-            return "very_high"
-        elif confidence >= 0.8:
-            return "high"
-        elif confidence >= 0.7:
-            return "medium_high"
-        elif confidence >= 0.6:
-            return "medium"
-        elif confidence >= 0.5:
-            return "medium_low"
-        else:
-            return "low"
-
-    # REMOVED: RSI and MACD calculation methods
-    # These technical indicators should be handled by the ML models in steps 6-14
-    # The integrator should focus on integrating predictions, not generating features
+    def _get_probability_requirements_info(self) -> Dict[str, Any]:
+        """Get information about required probability outputs from ML models."""
+        return {
+            "probability_outputs_location": "ML models in steps 6-14 of enhanced_training_manager",
+            "required_probabilities": {
+                "triple_barrier_probability": "Probability of reaching profit target without hitting stop-loss",
+                "direction_probability": "Probability of price moving in predicted direction",
+                "magnitude_probability": "Probability of price moving by expected magnitude", 
+                "barrier_avoidance_probability": "Probability of avoiding adverse price movements"
+            },
+            "model_structure": {
+                "expected_format": "price_action_probabilities dict in model_data",
+                "example": {
+                    "triple_barrier_probability": 0.75,
+                    "direction_probability": 0.80,
+                    "magnitude_probability": 0.65,
+                    "barrier_avoidance_probability": 0.70
+                }
+            },
+            "calibration_requirements": {
+                "step11_calibration": "Model performance vs actual reliability data",
+                "step12_optimization": "Optimized weights for probability components",
+                "calibration_data_structure": {
+                    "reliability_score": "Historical reliability of model predictions",
+                    "performance_ratio": "Actual vs expected performance ratio",
+                    "calibration_factor": "Overall calibration adjustment",
+                    "confidence_bias": "Systematic bias adjustment",
+                    "step12_optimized_weights": {
+                        "triple_barrier_weight": "Optimized weight for triple barrier probability",
+                        "direction_weight": "Optimized weight for direction probability",
+                        "magnitude_weight": "Optimized weight for magnitude probability",
+                        "barrier_avoidance_weight": "Optimized weight for barrier avoidance probability"
+                    }
+                }
+            }
+        }

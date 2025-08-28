@@ -281,11 +281,20 @@ def test_integration_with_existing_models():
     """Test integration with existing model architectures."""
     print("🧪 Testing integration with existing models...")
     
-    # Test with different model types
-    model_types = ["LightGBM", "RandomForest"]
+    # Test with different model types (using existing architectures)
+    model_types = ["LightGBM", "RandomForest"]  # Core models with existing architectures
+    
+    # Add neural network models if available
+    try:
+        from src.training.multi_output_model_trainer import EXISTING_MODELS_AVAILABLE
+        if EXISTING_MODELS_AVAILABLE:
+            model_types.extend(["CNN", "TCN", "Transformer"])
+            print("  Neural network models available for testing")
+    except ImportError:
+        print("  Neural network models not available for testing")
     
     for model_type in model_types:
-        print(f"  Testing {model_type}...")
+        print(f"  Testing {model_type} (using existing architecture)...")
         
         # Generate synthetic data
         np.random.seed(42)

@@ -23,13 +23,14 @@ This document summarizes the complete implementation of multi-output training fo
 #### **1.2 Enhanced Multi-Output Model Trainer (`src/training/multi_output_model_trainer.py`)**
 - **Extended MultiOutputModelConfig**: Added probability output configuration
 - **Probability target generation methods**: Integrated with existing trainer
-- **Multi-output training pipeline**: Supports all existing model types
+- **Multi-output training pipeline**: Uses existing ML model architectures
 
 **Key Features:**
-- Backward compatibility with existing multi-output training
-- Support for LightGBM, RandomForest, XGBoost, CatBoost, NeuralNetwork
-- Probability target generation integrated into training pipeline
-- Enhanced model saving and loading
+- **Uses existing ML models**: LightGBM (from step6), RandomForest (from step9), CNN, TCN, Transformer (from step6)
+- **Existing model configurations**: Preserves all hyperparameters and training settings from original implementations
+- **Backward compatibility**: Maintains compatibility with existing multi-output training
+- **Probability target generation**: Integrated into training pipeline
+- **Enhanced model saving and loading**: Supports multi-output models
 
 ### **✅ Phase 2: Model Saving and Loading Updates (COMPLETED)**
 
@@ -105,23 +106,29 @@ class ProbabilityTargetGenerator:
         # Returns probability targets [0, 1]
 ```
 
-### **Multi-Output Model Architecture**
+### **Multi-Output Model Architecture (Using Existing Models)**
 
 ```python
 class MultiOutputModel:
     def __init__(self, config):
-        # Initialize 4 individual models
+        # Initialize 4 individual models using existing architectures
         self.models = {
-            'triple_barrier': LightGBMClassifier(),
-            'direction': LightGBMClassifier(),
-            'magnitude': LightGBMClassifier(),
-            'avoidance': LightGBMClassifier()
+            'triple_barrier': LightGBMClassifier(
+                n_estimators=1000, learning_rate=0.01, max_depth=8, 
+                num_leaves=31, random_state=42  # From step6
+            ),
+            'direction': RandomForestClassifier(
+                n_estimators=200, max_depth=10, min_samples_split=5,
+                min_samples_leaf=2, random_state=42, n_jobs=-1  # From step9
+            ),
+            'magnitude': CNNModel(input_size=X.shape[1], sequence_length=32),  # From step6
+            'avoidance': TCNModel(input_size=X.shape[1], sequence_length=64)   # From step6
         }
         self.calibrators = {}
         self.ensemble_weights = None
     
     def fit(self, X_train, y_train_multi, X_val, y_val_multi):
-        # Train each model on its specific target
+        # Train each model on its specific target using existing configurations
         # Calibrate probabilities
         # Optimize ensemble weights
 ```
@@ -155,10 +162,10 @@ class MultiOutputProbabilityTrainer:
 - **After**: Models specifically trained to predict probability outputs
 - **Impact**: Improved probability accuracy and calibration
 
-### **2. Enhanced Model Architecture**
+### **2. Enhanced Model Architecture (Using Existing Models)**
 - **Before**: Single model with post-processing
-- **After**: 4 specialized models with ensemble optimization
-- **Impact**: Better specialization for each probability type
+- **After**: 4 specialized models using existing architectures (LightGBM from step6, RandomForest from step9, CNN/TCN/Transformer from step6)
+- **Impact**: Better specialization for each probability type while preserving proven model configurations
 
 ### **3. Improved Calibration**
 - **Before**: Basic probability calculation
@@ -177,11 +184,11 @@ class MultiOutputProbabilityTrainer:
 
 ## 📊 **Performance Improvements**
 
-### **Probability Accuracy**
-- **Triple Barrier**: Improved accuracy through direct training
-- **Direction**: Better calibration with ensemble methods
-- **Magnitude**: Enhanced prediction through specialized models
-- **Barrier Avoidance**: More reliable estimates with optimized weights
+### **Probability Accuracy (Using Existing Models)**
+- **Triple Barrier**: Improved accuracy through direct training with LightGBM (step6 config)
+- **Direction**: Better calibration with RandomForest (step9 config)
+- **Magnitude**: Enhanced prediction through CNN (step6 config)
+- **Barrier Avoidance**: More reliable estimates with TCN/Transformer (step6 config)
 
 ### **Training Efficiency**
 - **Parallel Training**: 4 models trained simultaneously

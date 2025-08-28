@@ -35,6 +35,18 @@ try:
 except ImportError:
     CATBOOST_AVAILABLE = False
     cb = None
+
+# Import existing model architectures from step6
+try:
+    from .steps.step6_hmm_based_training import (
+        CNNModel, CNNTrainer,
+        TCNModel, TCNTrainer,
+        TransformerModel, TransformerTrainer
+    )
+    EXISTING_MODELS_AVAILABLE = True
+except ImportError:
+    EXISTING_MODELS_AVAILABLE = False
+    CNNModel = CNNTrainer = TCNModel = TCNTrainer = TransformerModel = TransformerTrainer = None
 from sklearn.metrics import (
     accuracy_score, f1_score, precision_score, recall_score,
     mean_squared_error, mean_absolute_error, r2_score
@@ -126,6 +138,9 @@ class MultiOutputModelConfig:
             self.supported_model_types = [
                 "LightGBM", "RandomForest", "XGBoost", "CatBoost", "NeuralNetwork"
             ]
+            # Add existing models if available
+            if EXISTING_MODELS_AVAILABLE:
+                self.supported_model_types.extend(["CNN", "TCN", "Transformer"])
         else:
             self.supported_model_types = supported_model_types
 
@@ -1227,13 +1242,25 @@ class MultiOutputModelTrainer:
             y_train_target = y_train_prob[prob_type.replace('_probability', '')]
             y_val_target = y_val_prob[prob_type.replace('_probability', '')]
             
-            # Train model based on config
+            # Train model based on config using existing architectures
             if self.config.model_type == "LightGBM":
                 model = self._train_lightgbm_probability_model(
                     X_train, X_val, y_train_target, y_val_target, feature_names, prob_type
                 )
             elif self.config.model_type == "RandomForest":
                 model = self._train_randomforest_probability_model(
+                    X_train, X_val, y_train_target, y_val_target, feature_names, prob_type
+                )
+            elif self.config.model_type == "CNN" and EXISTING_MODELS_AVAILABLE:
+                model = self._train_cnn_probability_model(
+                    X_train, X_val, y_train_target, y_val_target, feature_names, prob_type
+                )
+            elif self.config.model_type == "TCN" and EXISTING_MODELS_AVAILABLE:
+                model = self._train_tcn_probability_model(
+                    X_train, X_val, y_train_target, y_val_target, feature_names, prob_type
+                )
+            elif self.config.model_type == "Transformer" and EXISTING_MODELS_AVAILABLE:
+                model = self._train_transformer_probability_model(
                     X_train, X_val, y_train_target, y_val_target, feature_names, prob_type
                 )
             else:
@@ -1263,15 +1290,17 @@ class MultiOutputModelTrainer:
         feature_names: List[str],
         prob_type: str
     ) -> Dict[str, Any]:
-        """Train LightGBM model for specific probability target."""
+        """Train LightGBM model for specific probability target using existing architecture."""
         self.logger.info(f"🔧 Training LightGBM for {prob_type}")
         
+        # Use existing LightGBM configuration from step6 (Analyst model)
         model = lgb.LGBMClassifier(
             n_estimators=1000,
             learning_rate=0.01,
             max_depth=8,
-            random_state=self.config.random_state,
-            verbose=-1
+            num_leaves=31,
+            random_state=42,
+            verbose=-1,
         )
         
         # Handle class imbalance
@@ -1283,10 +1312,10 @@ class MultiOutputModelTrainer:
                 y=y_train
             )
             sample_weights = class_weights[y_train.astype(int)]
-            model.fit(X_train, y_train, sample_weight=sample_weights)
+            model.fit(X_train, y_train, sample_weight=sample_weights, eval_set=[(X_val, y_val)], early_stopping_rounds=50)
         except Exception as e:
             self.logger.warning(f"Could not compute class weights for {prob_type}: {e}")
-            model.fit(X_train, y_train)
+            model.fit(X_train, y_train, eval_set=[(X_val, y_val)], early_stopping_rounds=50)
         
         # Evaluate
         y_pred = model.predict(X_val)
@@ -1315,13 +1344,17 @@ class MultiOutputModelTrainer:
         feature_names: List[str],
         prob_type: str
     ) -> Dict[str, Any]:
-        """Train RandomForest model for specific probability target."""
+        """Train RandomForest model for specific probability target using existing architecture."""
         self.logger.info(f"🔧 Training RandomForest for {prob_type}")
         
+        # Use existing RandomForest configuration from step9 (Tactician model)
         model = RandomForestClassifier(
             n_estimators=200,
             max_depth=10,
-            random_state=self.config.random_state
+            min_samples_split=5,
+            min_samples_leaf=2,
+            random_state=42,
+            n_jobs=-1,
         )
         
         model.fit(X_train, y_train)
@@ -1343,6 +1376,165 @@ class MultiOutputModelTrainer:
             "feature_importance": model.feature_importances_,
             "prob_type": prob_type
         }
+    
+    def _train_cnn_probability_model(
+        self,
+        X_train: np.ndarray,
+        X_val: np.ndarray,
+        y_train: np.ndarray,
+        y_val: np.ndarray,
+        feature_names: List[str],
+        prob_type: str
+    ) -> Dict[str, Any]:
+        """Train CNN model for specific probability target using existing architecture."""
+        self.logger.info(f"🔧 Training CNN for {prob_type}")
+        
+        # Use existing CNN configuration from step6 (Tactician model)
+        sequence_length = 32  # 32 periods (32 minutes of 1m data)
+        X_train_sequences = self._create_sequences(X_train, sequence_length)
+        X_val_sequences = self._create_sequences(X_val, sequence_length)
+        
+        # Adjust targets for sequence length
+        y_train_seq = y_train[sequence_length:]
+        y_val_seq = y_val[sequence_length:]
+        
+        # Create CNN model using existing architecture
+        model = CNNModel(
+            input_size=X_train.shape[1],
+            sequence_length=sequence_length,
+            num_classes=2,  # Binary classification
+        )
+        
+        # Train model
+        trainer = CNNTrainer(model, learning_rate=0.001, batch_size=32)
+        history = trainer.train(X_train_sequences, y_train_seq, X_val_sequences, y_val_seq, epochs=100)
+        
+        # Evaluate
+        y_pred = model.predict(X_val_sequences)
+        y_pred_proba = model.predict_proba(X_val_sequences)
+        
+        metrics = {
+            "accuracy": accuracy_score(y_val_seq, y_pred),
+            "f1": f1_score(y_val_seq, y_pred),
+            "precision": precision_score(y_val_seq, y_pred),
+            "recall": recall_score(y_val_seq, y_pred)
+        }
+        
+        return {
+            "model": model,
+            "metrics": metrics,
+            "history": history,
+            "prob_type": prob_type
+        }
+    
+    def _train_tcn_probability_model(
+        self,
+        X_train: np.ndarray,
+        X_val: np.ndarray,
+        y_train: np.ndarray,
+        y_val: np.ndarray,
+        feature_names: List[str],
+        prob_type: str
+    ) -> Dict[str, Any]:
+        """Train TCN model for specific probability target using existing architecture."""
+        self.logger.info(f"🔧 Training TCN for {prob_type}")
+        
+        # Use existing TCN configuration from step6 (Analyst model)
+        sequence_length = 64  # 64 periods (16 hours of 15m data)
+        X_train_sequences = self._create_sequences(X_train, sequence_length)
+        X_val_sequences = self._create_sequences(X_val, sequence_length)
+        
+        # Adjust targets for sequence length
+        y_train_seq = y_train[sequence_length:]
+        y_val_seq = y_val[sequence_length:]
+        
+        # Create TCN model using existing architecture
+        model = TCNModel(
+            input_size=X_train.shape[1],
+            sequence_length=sequence_length,
+            num_classes=2,  # Binary classification
+        )
+        
+        # Train model
+        trainer = TCNTrainer(model, learning_rate=0.0001, batch_size=32)
+        history = trainer.train(X_train_sequences, y_train_seq, X_val_sequences, y_val_seq, epochs=150)
+        
+        # Evaluate
+        y_pred = model.predict(X_val_sequences)
+        y_pred_proba = model.predict_proba(X_val_sequences)
+        
+        metrics = {
+            "accuracy": accuracy_score(y_val_seq, y_pred),
+            "f1": f1_score(y_val_seq, y_pred),
+            "precision": precision_score(y_val_seq, y_pred),
+            "recall": recall_score(y_val_seq, y_pred)
+        }
+        
+        return {
+            "model": model,
+            "metrics": metrics,
+            "history": history,
+            "prob_type": prob_type
+        }
+    
+    def _train_transformer_probability_model(
+        self,
+        X_train: np.ndarray,
+        X_val: np.ndarray,
+        y_train: np.ndarray,
+        y_val: np.ndarray,
+        feature_names: List[str],
+        prob_type: str
+    ) -> Dict[str, Any]:
+        """Train Transformer model for specific probability target using existing architecture."""
+        self.logger.info(f"🔧 Training Transformer for {prob_type}")
+        
+        # Use existing Transformer configuration from step6 (Analyst model)
+        sequence_length = 16  # 16 periods (4 hours of 15m data)
+        X_train_sequences = self._create_sequences(X_train, sequence_length)
+        X_val_sequences = self._create_sequences(X_val, sequence_length)
+        
+        # Adjust targets for sequence length
+        y_train_seq = y_train[sequence_length:]
+        y_val_seq = y_val[sequence_length:]
+        
+        # Create Transformer model using existing architecture
+        model = TransformerModel(
+            input_size=X_train.shape[1],
+            d_model=256,
+            nhead=8,
+            num_layers=6,
+            num_classes=2,  # Binary classification
+        )
+        
+        # Train model
+        trainer = TransformerTrainer(model, learning_rate=0.0001, batch_size=32)
+        history = trainer.train(X_train_sequences, y_train_seq, X_val_sequences, y_val_seq, epochs=150)
+        
+        # Evaluate
+        y_pred = model.predict(X_val_sequences)
+        y_pred_proba = model.predict_proba(X_val_sequences)
+        
+        metrics = {
+            "accuracy": accuracy_score(y_val_seq, y_pred),
+            "f1": f1_score(y_val_seq, y_pred),
+            "precision": precision_score(y_val_seq, y_pred),
+            "recall": recall_score(y_val_seq, y_pred)
+        }
+        
+        return {
+            "model": model,
+            "metrics": metrics,
+            "history": history,
+            "prob_type": prob_type
+        }
+    
+    def _create_sequences(self, data: np.ndarray, sequence_length: int) -> np.ndarray:
+        """Create sequences for time series models."""
+        sequences = []
+        for i in range(len(data) - sequence_length):
+            sequences.append(data[i:i + sequence_length])
+        return np.array(sequences)
     
     def _generate_probability_outputs(
         self,

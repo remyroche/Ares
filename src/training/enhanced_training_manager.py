@@ -176,6 +176,7 @@ class EnhancedTrainingManager:
             "step7_enhanced_matrix_operations", # Enhanced matrix operations for analysis
             "step8_regime_data_splitting",     # Split data by regimes
             "step9_hmm_based_training",        # HMM-based model training
+            "step9_5_multi_timeframe_hmm_ensemble", # Multi-timeframe HMM ensemble training
             "step9_5_hmm_lm_generalist_training", # HMM LM generalist training
             "step10_unified_regime_intelligence", # Unified regime intelligence
             "step11_analyst_creation",         # Analyst creation (NEW STEP)
@@ -217,6 +218,11 @@ class EnhancedTrainingManager:
             ],
             "step6_hmm_based_training": [
                 "data/training/{exchange}_{symbol}_{timeframe}_hmm_models.pkl",
+            ],
+            "step9_5_multi_timeframe_hmm_ensemble": [
+                "models/multi_timeframe_hmm_ensemble/{exchange}_{symbol}/ensemble_metadata.json",
+                "models/multi_timeframe_hmm_ensemble/{exchange}_{symbol}/meta_learner.joblib",
+            ],
             ],
             "step6_5_unified_regime_intelligence": [
                 "data/training/{exchange}_{symbol}_{timeframe}_unified_intelligence.parquet",
@@ -2196,6 +2202,64 @@ class EnhancedTrainingManager:
                             return False
                     except Exception as e:
                         self.logger.exception(f"❌ Step 8 validator failed: {e} - stopping pipeline")
+                        return False
+
+                # Step 9.5: Multi-Timeframe HMM Ensemble Training
+                should_run_step9_5 = _should_run("step9_5_multi_timeframe_hmm_ensemble")
+                if not should_run_step9_5:
+                    self.logger.info(
+                        f"⏭️ Skipping Step 9.5: Multi-Timeframe HMM Ensemble Training (starting from '{start_step_key}')",
+                    )
+                    pipeline_state["multi_timeframe_hmm_ensemble"] = {
+                        "status": "SKIPPED",
+                        "success": True,
+                        "skipped": True,
+                        "reason": f"start_step={start_step_key}",
+                    }
+                else:
+                    self._heartbeat("Step 9.5: Multi-Timeframe HMM Ensemble Training")
+                    step_start_9_5 = time.time()
+                    try:
+                        from src.training.steps import step9_5_multi_timeframe_hmm_ensemble
+
+                        step9_5_success = await step9_5_multi_timeframe_hmm_ensemble.run_step(
+                            symbol=symbol,
+                            exchange=exchange,
+                            data_dir=data_dir,
+                            timeframe=timeframe,
+                            lookback_days=self.lookback_days,
+                        )
+                    except Exception as e:
+                        self.logger.exception(f"❌ Error in Step 9.5: {e}")
+                        step9_5_success = False
+
+                    pipeline_state["multi_timeframe_hmm_ensemble"] = {
+                        "status": "SUCCESS" if step9_5_success else "FAILED",
+                        "success": bool(step9_5_success),
+                        "completed": bool(step9_5_success),
+                    }
+                    self._save_checkpoint("step9_5_multi_timeframe_hmm_ensemble", pipeline_state)
+                    self._log_step_completion(
+                        "Step 9.5: Multi-Timeframe HMM Ensemble Training",
+                        step_start_9_5,
+                        step_times,
+                        success=bool(step9_5_success),
+                    )
+
+                    # Run validator for Step 9.5
+                    try:
+                        step9_5_validation = await self._run_step_validator(
+                            "step9_5_multi_timeframe_hmm_ensemble", training_input, pipeline_state,
+                        )
+                        if step9_5_validation and step9_5_validation.get("validation_passed", False):
+                            self.logger.info(
+                                "🎉 Step 9.5: Multi-Timeframe HMM Ensemble Training completed successfully and validation passed",
+                            )
+                        else:
+                            self.logger.error("❌ Step 9.5 validation failed - stopping pipeline")
+                            return False
+                    except Exception as e:
+                        self.logger.exception(f"❌ Step 9.5 validator failed: {e} - stopping pipeline")
                         return False
 
                 # Step 6_5: Unified Regime Intelligence

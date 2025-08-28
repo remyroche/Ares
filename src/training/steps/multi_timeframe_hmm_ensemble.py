@@ -419,7 +419,7 @@ class MultiTimeframeHMMEnsemble:
                 if tf not in current_data or tf not in self.timeframe_models:
                     continue
 
-                tf_pred, self._get_timeframe_predictions(tf, current_data[tf])
+                tf_pred = self._get_timeframe_predictions(tf, current_data[tf])
                 if tf_pred is not None:
                     timeframe_predictions[tf] = tf_pred
                     # Calculate confidence as average of all cluster predictions

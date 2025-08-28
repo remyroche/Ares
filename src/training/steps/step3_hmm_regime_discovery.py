@@ -45,10 +45,14 @@ from src.utils.centralized_decorators import (
     secure_data_processing,
     validate_data_structure,
     with_tracing_span,
+    quality_gate,
+    monitor_feature_engineering,
+    ensure_data_integrity,
+    monitor_step_execution,
+    secure_step_execution,
+    validate_pipeline_step
 )
-from src.utils.centralized_decorators import quality_gate
 from src.utils.logger import system_logger
-from src.utils.centralized_decorators import monitor_feature_engineering
 
 logger = system_logger.getChild("Step3HMMRegimeDiscovery")
 
@@ -75,6 +79,11 @@ class HMMRegimeDiscoveryStep:
             self.logger.warning(f"⚠️ Could not import EnhancedDataQualityManager: {e}")
             self.logger.info("📝 Proceeding without enhanced data quality manager")
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="hmm_regime_discovery_initialization"
+    )
     async def initialize(self) -> None:
         """Initialize the HMM regime discovery step."""
         self.start_time = time.time()
@@ -92,6 +101,28 @@ class HMMRegimeDiscoveryStep:
         self.step_timings[step_name] = elapsed
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
+    @validate_pipeline_step(
+        step_name="hmm_regime_discovery",
+        validation_level="CRITICAL",
+        enable_rollback=True,
+        max_retries=2
+    )
+    @ensure_data_integrity(
+        check_schema=True,
+        check_constraints=True,
+        validate_relationships=True
+    )
+    @monitor_step_execution(
+        enable_timing=True,
+        enable_memory_monitoring=True,
+        enable_progress_tracking=True
+    )
+    @secure_step_execution(
+        error_handling=True,
+        rollback_on_failure=True,
+        data_validation=True,
+        resource_cleanup=True
+    )
     @with_tracing_span("execute_hmm_regime_discovery")
     @quality_gate(
         min_quality_score=0.7,
@@ -206,8 +237,9 @@ class HMMRegimeDiscoveryStep:
         self.logger.info(f"   - HMM Regime Discovery: {hmm_elapsed:.2f}s")
         
         # Memory usage summary
-        memory_usage = psutil.virtual_memory()
-        self.logger.info(f"💾 Memory usage: {memory_usage.percent:.1f}% ({memory_usage.used / 1024**3:.1f}GB / {memory_usage.total / 1024**3:.1f}GB)")
+        if PSUTIL_AVAILABLE:
+            memory_usage = psutil.virtual_memory()
+            self.logger.info(f"💾 Memory usage: {memory_usage.percent:.1f}% ({memory_usage.used / 1024**3:.1f}GB / {memory_usage.total / 1024**3:.1f}GB)")
         
         success = pipeline_state.get("hmm_regime_discovery_completed", False)
         self.logger.info(f"🎯 Final result: {'✅ SUCCESS' if success else '❌ FAILED'}")
@@ -240,6 +272,11 @@ class HMMRegimeDiscoveryStep:
 
     @with_tracing_span("ensure_data_quality")
     @secure_data_processing
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="data_quality_validation"
+    )
     async def _ensure_data_quality(self, training_input: dict[str, Any]) -> bool:
         """Ensure data quality and readiness for HMM regime discovery."""
         self.logger.info("🔍 Starting data quality validation...")
@@ -298,6 +335,11 @@ class HMMRegimeDiscoveryStep:
             return False
 
     @with_tracing_span("fix_missing_data")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={"success": False, "error": "Data fix failed"},
+        context="fix_missing_data"
+    )
     async def _fix_missing_data(self, training_input: dict[str, Any]) -> dict[str, Any]:
         """Fix missing data using step1 and step1_5 components."""
         try:
@@ -370,6 +412,12 @@ class HMMRegimeDiscoveryStep:
 
     @with_tracing_span("load_and_prepare_data")
     @memory_efficient
+    @comprehensive_data_validation
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={"success": False, "error": "Data loading failed"},
+        context="load_and_prepare_data"
+    )
     async def _load_and_prepare_data(self, training_input: dict[str, Any]) -> dict[str, Any]:
         """Load and prepare data for HMM regime discovery."""
         try:
@@ -451,6 +499,12 @@ class HMMRegimeDiscoveryStep:
 
     @with_tracing_span("prepare_hmm_features")
     @validate_data_structure
+    @monitor_feature_engineering()
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.DataFrame(),
+        context="prepare_hmm_features"
+    )
     async def _prepare_hmm_features(self, df: Any) -> Any:
         """Prepare features for HMM regime discovery."""
         try:
@@ -468,7 +522,7 @@ class HMMRegimeDiscoveryStep:
 
             # Calculate basic features
             self.logger.info("📊 Calculating price-based features...")
-            features = pd.DataFrame() if PANDAS_AVAILABLE else None
+            features = pd.DataFrame()
             features["timestamp"] = df["timestamp"]
 
             # Price-based features
@@ -520,6 +574,11 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f"❌ Error preparing HMM features: {e}")
             raise
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.Series(),
+        context="calculate_rsi"
+    )
     def _calculate_rsi(self, prices: Any, window: int = 14) -> Any:
         """Calculate Relative Strength Index."""
         self.logger.debug(f"Calculating RSI with window {window}...")
@@ -530,6 +589,11 @@ class HMMRegimeDiscoveryStep:
         rsi = 100 - (100 / (1 + rs))
         return rsi
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.Series(),
+        context="calculate_macd"
+    )
     def _calculate_macd(self, prices: Any, fast: int = 12, slow: int = 26, signal: int = 9) -> Any:
         """Calculate MACD (Moving Average Convergence Divergence)."""
         self.logger.debug(f"Calculating MACD (fast={fast}, slow={slow}, signal={signal})...")
@@ -540,6 +604,11 @@ class HMMRegimeDiscoveryStep:
 
     @with_tracing_span("perform_hmm_regime_discovery")
     @resource_monitor
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={"success": False, "error": "HMM regime discovery failed"},
+        context="perform_hmm_regime_discovery"
+    )
     async def _perform_hmm_regime_discovery(
         self, 
         training_input: dict[str, Any], 
@@ -658,6 +727,11 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f"❌ Error performing HMM regime discovery: {e}")
             return {"success": False, "error": str(e)}
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="calculate_regime_transitions"
+    )
     def _calculate_regime_transitions(self, regimes: List[str]) -> dict[str, Any]:
         """Calculate regime transition probabilities."""
         self.logger.info("🔄 Calculating regime transition probabilities...")

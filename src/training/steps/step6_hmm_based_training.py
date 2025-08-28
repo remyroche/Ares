@@ -3955,49 +3955,179 @@ class TCNTrainer:
 
     async def _pre_filter_features(
         self, X: pd.DataFrame, feature_columns: list, ) -> list:
-        """Pre-filter features based on variance and correlation."""
+        """Enhanced pre-filter features using data-driven methods (VIF, MI, SHAP, RF)."""
         try:
-            # Remove low variance features
-            variance = X.var()
-            high_variance_mask = variance > 1e-6  # More permissive threshold,
-            high_variance_features = [
-                col
-                for col in feature_columns
-                if col in X.columns and high_variance_mask[col]
-            ]
-
+            self.logger.info(f"🔍 Enhanced pre-filtering: {len(feature_columns)} features")
+            
+            # Stage 1: Data quality filtering
+            X_clean = X[feature_columns].copy()
+            
+            # Remove features with too many NaN values (>10%)
+            nan_ratio = X_clean.isna().sum() / len(X_clean)
+            high_nan_features = nan_ratio[nan_ratio > 0.1].index.tolist()
+            X_clean = X_clean.drop(columns=high_nan_features)
+            
+            # Remove features with infinite values
+            inf_features = []
+            for col in X_clean.columns:
+                if np.isinf(X_clean[col]).any():
+                    inf_features.append(col)
+            X_clean = X_clean.drop(columns=inf_features)
+            
+            # Fill remaining NaN values
+            X_clean = X_clean.fillna(method="ffill").fillna(method="bfill").fillna(0)
+            
             self.logger.info(
-                f"   Variance filtering: {len(feature_columns)} -> {len(high_variance_features)} features",
+                f"   Data quality filtering: {len(feature_columns)} -> {len(X_clean.columns)} features",
             )
-
-        # Remove highly correlated features
-            uncorr_features = high_variance_features
-            if len(high_variance_features) > 1:
-                X_high_var = X[high_variance_features]
-                corr_matrix = X_high_var.corr().abs()
+            
+            # Stage 2: Variance filtering
+            variance = X_clean.var()
+            high_variance_mask = variance > 1e-6
+            high_variance_features = [
+                col for col in X_clean.columns if high_variance_mask[col]
+            ]
+            
+            self.logger.info(
+                f"   Variance filtering: {len(X_clean.columns)} -> {len(high_variance_features)} features",
+            )
+            
+            # Stage 3: VIF filtering (multicollinearity)
+            try:
+                from src.utils.vif_calculator import calculate_vif_robust
+                
+                X_vif = X_clean[high_variance_features]
+                vif_scores = calculate_vif_robust(X_vif)
+                
+                # Remove features with high VIF (>10)
+                low_vif_features = vif_scores[vif_scores <= 10.0].index.tolist()
+                
+                self.logger.info(
+                    f"   VIF filtering: {len(high_variance_features)} -> {len(low_vif_features)} features",
+                )
+                
+            except Exception as e:
+                self.logger.warning(f"VIF filtering failed: {e}, skipping")
+                low_vif_features = high_variance_features
+            
+            # Stage 4: Correlation filtering
+            uncorr_features = low_vif_features
+            if len(low_vif_features) > 1:
+                X_corr = X_clean[low_vif_features]
+                corr_matrix = X_corr.corr().abs()
                 upper_tri = corr_matrix.where(
                     np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
                 )
-
+                
                 # Find features to drop
                 to_drop = [
-                    column
-                    for column in upper_tri.columns
+                    column for column in upper_tri.columns
                     if any(upper_tri[column] > 0.95)
                 ]
                 uncorr_features = [
-                    col for col in high_variance_features if col not in to_drop
+                    col for col in low_vif_features if col not in to_drop
                 ]
-
+            
             self.logger.info(
-                f"   Correlation filtering: {len(high_variance_features)} -> {len(uncorr_features)} features",
+                f"   Correlation filtering: {len(low_vif_features)} -> {len(uncorr_features)} features",
             )
+            
+            # Stage 5: Mutual Information filtering (if target available)
+            try:
+                # Try to get target from the data
+                target_col = None
+                for col in X.columns:
+                    if col.lower() in ['label', 'target', 'direction', 'y']:
+                        target_col = col
+                        break
+                
+                if target_col and target_col in X.columns:
+                    y = X[target_col]
+                    
+                    # Calculate mutual information
+                    from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
+                    
+                    # Determine task type
+                    task_type = "classification" if len(y.unique()) < 10 else "regression"
+                    
+                    if task_type == "classification":
+                        mi_scores = mutual_info_classif(X_clean[uncorr_features], y, random_state=42)
+                    else:
+                        mi_scores = mutual_info_regression(X_clean[uncorr_features], y, random_state=42)
+                    
+                    # Remove features with low MI (<0.01)
+                    mi_series = pd.Series(mi_scores, index=uncorr_features)
+                    high_mi_features = mi_series[mi_scores >= 0.01].index.tolist()
+                    
+                    self.logger.info(
+                        f"   MI filtering: {len(uncorr_features)} -> {len(high_mi_features)} features",
+                    )
+                    
+                    uncorr_features = high_mi_features
+                    
+            except Exception as e:
+                self.logger.warning(f"MI filtering failed: {e}, skipping")
+            
+            # Stage 6: SHAP-based filtering (if target available)
+            try:
+                if target_col and target_col in X.columns and len(uncorr_features) > 50:
+                    from src.analyst.meta_label_relevance import compute_shap_importance
+                    
+                    # Calculate SHAP importance
+                    shap_scores = compute_shap_importance(
+                        X_clean[uncorr_features], y, task=task_type
+                    )
+                    
+                    if shap_scores:
+                        # Remove bottom 20% of features by SHAP importance
+                        shap_series = pd.Series(shap_scores)
+                        threshold = shap_series.quantile(0.2)
+                        high_shap_features = shap_series[shap_series >= threshold].index.tolist()
+                        
+                        self.logger.info(
+                            f"   SHAP filtering: {len(uncorr_features)} -> {len(high_shap_features)} features",
+                        )
+                        
+                        uncorr_features = high_shap_features
+                        
+            except Exception as e:
+                self.logger.warning(f"SHAP filtering failed: {e}, skipping")
+            
+            # Stage 7: RandomForest importance filtering (if target available)
+            try:
+                if target_col and target_col in X.columns and len(uncorr_features) > 30:
+                    from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+                    
+                    # Train RF for feature importance
+                    if task_type == "classification":
+                        rf = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+                    else:
+                        rf = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
+                    
+                    rf.fit(X_clean[uncorr_features], y)
+                    rf_importance = pd.Series(rf.feature_importances_, index=uncorr_features)
+                    
+                    # Remove bottom 20% of features by RF importance
+                    threshold = rf_importance.quantile(0.2)
+                    high_rf_features = rf_importance[rf_importance >= threshold].index.tolist()
+                    
+                    self.logger.info(
+                        f"   RF filtering: {len(uncorr_features)} -> {len(high_rf_features)} features",
+                    )
+                    
+                    uncorr_features = high_rf_features
+                    
+            except Exception as e:
+                self.logger.warning(f"RF filtering failed: {e}, skipping")
+            
+            self.logger.info(
+                f"✅ Enhanced pre-filtering completed: {len(feature_columns)} -> {len(uncorr_features)} features",
+            )
+            
             return uncorr_features
 
-            return high_variance_features
-
         except Exception as e:
-            self.logger.warning(f"⚠️ Error in pre-filtering: {e}")
+            self.logger.warning(f"⚠️ Error in enhanced pre-filtering: {e}")
             return feature_columns
 
     async def _calculate_comprehensive_scores(

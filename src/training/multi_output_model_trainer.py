@@ -274,41 +274,34 @@ class MultiOutputModelTrainer:
         if missing_columns:
             raise ValueError(f"Missing required columns: {missing_columns}")
         
-        # Use enhanced feature selection if enabled
+        # Use enhanced data-driven feature selection if enabled
         if use_enhanced_feature_selection:
             try:
-                from src.training.feature_selection_manager import FeatureSelectionManager
+                from src.training.steps.step6_hmm_based_training import Step6HMMBasedTraining
                 
-                self.logger.info("🔧 Using enhanced feature selection with autoencoder features...")
+                self.logger.info("🔧 Using enhanced data-driven feature selection (VIF, MI, SHAP, RF)...")
                 
-                # Create feature selection manager with enhanced features
-                feature_selector = FeatureSelectionManager(self.config.__dict__ if hasattr(self.config, '__dict__') else {})
+                # Create step6 instance for feature selection
+                step6_config = {"symbol": "default", "exchange": "default", "data_dir": "temp"}
+                step6_instance = Step6HMMBasedTraining(step6_config)
                 
-                # Create dummy target for feature selection (it will be replaced)
-                dummy_target = pd.Series(0, index=data.index)
-                if direction_column in data.columns:
-                    dummy_target = data[direction_column]
-                
-                # Use enhanced feature selection with autoencoder features
-                selected_features, metadata = feature_selector.select_features_step2(
-                    features_df=data,
-                    target=dummy_target,
-                    symbol="default",
-                    exchange="default",
-                    data_dir="temp",
-                    use_autoencoder_features=True,  # Use autoencoder features
-                    use_regularization=True         # Use regularization
+                # Use the enhanced pre-filtering method
+                selected_features = await step6_instance._pre_filter_features(
+                    X=data,
+                    feature_columns=[col for col in data.columns if col not in [direction_column, profit_column]]
                 )
                 
-                self.logger.info(f"✅ Enhanced feature selection completed: {selected_features.shape[1]} features selected")
-                self.logger.info(f"   - Autoencoder features: {metadata.get('stages', {}).get('stage0_autoencoder', {}).get('autoencoder_features_added', 0)}")
-                self.logger.info(f"   - Regularization applied: {metadata.get('stages', {}).get('stage6_regularization', {}).get('regularization_applied', False)}")
+                # Add back target columns
+                selected_features.extend([direction_column, profit_column])
+                selected_features = [col for col in selected_features if col in data.columns]
+                
+                self.logger.info(f"✅ Enhanced data-driven feature selection completed: {len(selected_features)} features selected")
                 
                 # Use selected features
-                data = selected_features
+                data = data[selected_features]
                 
             except Exception as e:
-                self.logger.warning(f"⚠️ Enhanced feature selection failed: {e}")
+                self.logger.warning(f"⚠️ Enhanced data-driven feature selection failed: {e}")
                 self.logger.info("📊 Falling back to basic feature preparation")
                 use_enhanced_feature_selection = False
         
@@ -347,6 +340,30 @@ class MultiOutputModelTrainer:
         self.logger.info(f"   - Profit target: mean={profit_target.mean():.6f}, std={profit_target.std():.6f}")
         
         return features, direction_target, profit_target
+    
+    def get_feature_importance_summary(self) -> Dict[str, Any]:
+        """Get a summary of feature importance scores from data-driven selection.
+        
+        Returns:
+            Dictionary containing feature importance summaries by method
+        """
+        if not hasattr(self, 'feature_importance') or not self.feature_importance:
+            return {}
+        
+        summary = {}
+        
+        for method, scores in self.feature_importance.items():
+            if isinstance(scores, dict) and len(scores) > 0:
+                scores_series = pd.Series(scores)
+                summary[method] = {
+                    "mean": float(scores_series.mean()),
+                    "std": float(scores_series.std()),
+                    "min": float(scores_series.min()),
+                    "max": float(scores_series.max()),
+                    "top_10_features": scores_series.nlargest(10).to_dict()
+                }
+        
+        return summary
     
     def _train_xgboost_multi_output(
         self,

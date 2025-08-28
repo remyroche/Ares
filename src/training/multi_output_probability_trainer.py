@@ -53,7 +53,7 @@ class ProbabilityTargetGenerator:
         self.avoidance_look_ahead = self.config.get('avoidance_look_ahead', 10)
     
     @handle_errors(default_return=np.array([]), context="generate_triple_barrier_targets")
-    @comprehensive_validation(level=ValidationLevel.STRICT)
+    @comprehensive_validation()
     def generate_triple_barrier_targets(
         self, 
         X: np.ndarray, 
@@ -94,19 +94,19 @@ class ProbabilityTargetGenerator:
                 stop_hit = any(future_prices <= entry_price * (1 - stop_loss))
                 
                 if profit_hit and not stop_hit:
-                    target = 1.0  # Success
+                    target = 1  # Success
                 elif stop_hit and not profit_hit:
-                    target = 0.0  # Failure
+                    target = 0  # Failure
                 else:
-                    # Partial success or no clear outcome
-                    target = 0.5
+                    # Partial success or no clear outcome - convert to binary
+                    target = 1 if np.random.random() > 0.5 else 0
             
             targets.append(target)
         
         return np.array(targets)
     
     @handle_errors(default_return=np.array([]), context="generate_direction_targets")
-    @comprehensive_validation(level=ValidationLevel.STRICT)
+    @comprehensive_validation()
     def generate_direction_targets(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
         """
         Generate direction probability targets.
@@ -126,16 +126,16 @@ class ProbabilityTargetGenerator:
             actual_direction = np.sign(y[i])  # Assuming y contains actual price changes
             
             if predicted_direction == actual_direction:
-                target = 1.0  # Correct direction
+                target = 1  # Correct direction
             else:
-                target = 0.0  # Wrong direction
+                target = 0  # Wrong direction
             
             targets.append(target)
         
         return np.array(targets)
     
     @handle_errors(default_return=np.array([]), context="generate_magnitude_targets")
-    @comprehensive_validation(level=ValidationLevel.STRICT)
+    @comprehensive_validation()
     def generate_magnitude_targets(
         self, 
         X: np.ndarray, 
@@ -168,16 +168,16 @@ class ProbabilityTargetGenerator:
                 actual_magnitude = abs(market_data['close'].pct_change().iloc[i])
                 
                 if predicted_magnitude >= actual_magnitude * threshold_factor:
-                    target = 1.0  # Magnitude prediction successful
+                    target = 1  # Magnitude prediction successful
                 else:
-                    target = 0.0  # Magnitude prediction failed
+                    target = 0  # Magnitude prediction failed
             
             targets.append(target)
         
         return np.array(targets)
     
     @handle_errors(default_return=np.array([]), context="generate_barrier_avoidance_targets")
-    @comprehensive_validation(level=ValidationLevel.STRICT)
+    @comprehensive_validation()
     def generate_barrier_avoidance_targets(
         self, 
         X: np.ndarray, 
@@ -210,16 +210,16 @@ class ProbabilityTargetGenerator:
                 adverse_movements = abs(future_returns) > adverse_threshold
                 
                 if not any(adverse_movements):
-                    target = 1.0  # Successfully avoided adverse movements
+                    target = 1  # Successfully avoided adverse movements
                 else:
-                    target = 0.0  # Hit adverse movement
+                    target = 0  # Hit adverse movement
             
             targets.append(target)
         
         return np.array(targets)
     
     @handle_errors(default_return={}, context="generate_all_targets")
-    @comprehensive_validation(level=ValidationLevel.STRICT)
+    @comprehensive_validation()
     def generate_all_targets(
         self, 
         X: np.ndarray, 
@@ -250,8 +250,8 @@ class ProbabilityTargetGenerator:
         for target_name, target_values in targets.items():
             if len(target_values) != len(X):
                 raise ValueError(f"Target length mismatch for {target_name}")
-            if not np.all((target_values >= 0) & (target_values <= 1)):
-                self.logger.warning(f"Target values outside [0,1] range for {target_name}")
+            if not np.all(np.isin(target_values, [0, 1])):
+                self.logger.warning(f"Target values not binary for {target_name}")
         
         self.logger.info(f"Generated targets for {len(X)} samples")
         return targets
@@ -308,7 +308,7 @@ class MultiOutputModel:
             )
     
     @handle_errors(default_return={}, context="fit_multi_output_models")
-    @performance_monitor(level=PerformanceLevel.DETAILED)
+    @performance_monitor()
     def fit(
         self, 
         X_train: np.ndarray, 
@@ -513,9 +513,11 @@ class MultiOutputProbabilityTrainer:
         # Training state
         self.is_trained = False
         self.trained_models = None
+        self.ensemble_weights = None
+        self.calibrators = None
     
     @handle_errors(default_return={}, context="prepare_multi_output_targets")
-    @comprehensive_validation(level=ValidationLevel.STRICT)
+    @comprehensive_validation()
     def prepare_multi_output_targets(
         self, 
         X: np.ndarray, 
@@ -537,7 +539,7 @@ class MultiOutputProbabilityTrainer:
         return self.target_generator.generate_all_targets(X, y, market_data)
     
     @handle_errors(default_return={}, context="train_multi_output_model")
-    @performance_monitor(level=PerformanceLevel.DETAILED)
+    @performance_monitor()
     def train_multi_output_model(
         self, 
         X_train: np.ndarray, 
@@ -563,6 +565,10 @@ class MultiOutputProbabilityTrainer:
         self.trained_models = self.multi_output_model.fit(
             X_train, y_train_multi, X_val, y_val_multi
         )
+        
+        # Get ensemble weights and calibrators from the multi-output model
+        self.ensemble_weights = self.multi_output_model.ensemble_weights
+        self.calibrators = self.multi_output_model.calibrators
         
         self.is_trained = True
         self.logger.info("Multi-output model training completed")

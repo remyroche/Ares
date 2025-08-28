@@ -38,6 +38,8 @@ from src.utils.centralized_decorators import (
     validate_feature_engineering_with_lookahead_bias_detection,
 )
 from src.utils.logger import system_logger
+from ..model_probability_generator import ModelProbabilityGenerator
+from ..model_saving_utils import save_model_with_probabilities
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -64,6 +66,9 @@ class HMMBasedTrainingStep:
         # Initialize S/R outcome model trainer
         self.sr_outcome_trainer = None
         self.sr_outcome_model_trained = False
+        
+        # Initialize probability generator for enhanced prediction service
+        self.probability_generator = ModelProbabilityGenerator()
 
         # Model architecture mapping from config
         hmm_lm_config = config.get("HMM_LM", {})
@@ -2070,17 +2075,17 @@ class HMMBasedTrainingStep:
             self.logger.info(f"🔄 Training LightGBM for {timeframe}")
 
             # Prepare features
-            X, y, scaler, label_encoder, self._prepare_features(
-                data = self.specialist_features,
+            X, y, scaler, label_encoder = self._prepare_features(
+                data=data, feature_columns=self.specialist_features,
             )
 
             # Split data
             split_idx = int(0.8 * len(X))
-            X_train = X_test, X[:split_idx], X[split_idx:],
-            y_train = y_test, y[:split_idx], y[split_idx:],
+            X_train, X_test = X[:split_idx], X[split_idx:]
+            y_train, y_test = y[:split_idx], y[split_idx:]
 
             # Create LightGBM model
-            model, lgb.LGBMClassifier(
+            model = lgb.LGBMClassifier(
                 n_estimators=1000,
                 learning_rate=0.01,
                 max_depth=8,
@@ -2095,13 +2100,73 @@ class HMMBasedTrainingStep:
             )
 
             # Evaluate
-            train_score, model.score(X_train, y_train)
-            test_score, model.score(X_test, y_test)
+            train_score = model.score(X_train, y_train)
+            test_score = model.score(X_test, y_test)
 
-            # Save model and metadata
+            # Generate probability outputs for Enhanced Prediction Service
+            try:
+                # Create market data DataFrame for probability calculations
+                market_data = pd.DataFrame({
+                    'close': data.get('close', np.random.randn(len(data))),
+                    'volume': data.get('volume', np.random.randn(len(data)))
+                })
+                
+                price_action_probabilities = self.probability_generator.generate_price_action_probabilities(
+                    model, X_test, y_test, market_data, model_type="classification"
+                )
+                
+                self.logger.info(f"✅ Generated probability outputs for {timeframe} LightGBM model")
+                self.logger.info(f"   Probabilities: {price_action_probabilities}")
+                
+            except Exception as prob_error:
+                self.logger.warning(f"⚠️ Failed to generate probabilities: {prob_error}")
+                price_action_probabilities = {
+                    "triple_barrier_probability": 0.5,
+                    "direction_probability": 0.5,
+                    "magnitude_probability": 0.5,
+                    "barrier_avoidance_probability": 0.5,
+                    "generation_timestamp": datetime.now().isoformat(),
+                    "model_type": "classification",
+                    "note": "Default probabilities due to generation error"
+                }
+
+            # Prepare model data for saving
+            model_data = {
+                "model": model,
+                "model_type": "classification",
+                "architecture": "LightGBM",
+                "scaler": scaler,
+                "label_encoder": label_encoder,
+                "train_score": train_score,
+                "test_score": test_score,
+                "feature_columns": self.specialist_features,
+                "timeframe": timeframe,
+                "training_date": datetime.now().isoformat(),
+                "hyperparameters": {
+                    "n_estimators": 1000,
+                    "learning_rate": 0.01,
+                    "max_depth": 8,
+                    "num_leaves": 31,
+                    "random_state": 42
+                },
+                "metrics": {
+                    "train_score": train_score,
+                    "test_score": test_score
+                }
+            }
+
+            # Save model with probabilities using standardized format
             model_path = f"models/{timeframe}_lightgbm_model.pkl"
-            with open(model_path, "wb") as f:
-                pickle.dump(model, f)
+            try:
+                save_model_with_probabilities(
+                    model_data, model_path, price_action_probabilities, save_format="joblib"
+                )
+                self.logger.info(f"✅ Saved LightGBM model with probabilities to {model_path}")
+            except Exception as save_error:
+                self.logger.error(f"❌ Failed to save model with probabilities: {save_error}")
+                # Fallback to simple save
+                with open(model_path, "wb") as f:
+                    pickle.dump(model_data, f)
 
             return {
                 "architecture": "LightGBM",
@@ -2111,6 +2176,7 @@ class HMMBasedTrainingStep:
                 "train_score": train_score,
                 "test_score": test_score,
                 "feature_columns": self.specialist_features,
+                "price_action_probabilities": price_action_probabilities,
             }
 
         except Exception as e:

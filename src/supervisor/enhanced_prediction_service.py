@@ -430,24 +430,30 @@ class EnhancedPredictionService:
             calibration_factor = model_calibration.get("calibration_factor", 1.0)
             confidence_bias = model_calibration.get("confidence_bias", 0.0)
             
-            # Calculate base confidence from price action probabilities
-            # Weight different probability components based on model type
-            if model_type == "analyst":
-                # Analyst models focus more on direction and magnitude
-                base_confidence = (
-                    direction_prob * 0.4 +
-                    magnitude_prob * 0.3 +
-                    triple_barrier_prob * 0.2 +
-                    barrier_avoidance_prob * 0.1
-                )
-            else:  # tactician
-                # Tactician models focus more on triple barrier and timing
-                base_confidence = (
-                    triple_barrier_prob * 0.4 +
-                    barrier_avoidance_prob * 0.3 +
-                    direction_prob * 0.2 +
-                    magnitude_prob * 0.1
-                )
+            # Get step 12 optimized weights for probability components
+            # These weights are optimized based on historical performance
+            optimized_weights = model_calibration.get("step12_optimized_weights", {})
+            
+            # Use optimized weights if available, otherwise use defaults
+            if optimized_weights:
+                triple_barrier_weight = optimized_weights.get("triple_barrier_weight", 0.25)
+                direction_weight = optimized_weights.get("direction_weight", 0.25)
+                magnitude_weight = optimized_weights.get("magnitude_weight", 0.25)
+                barrier_avoidance_weight = optimized_weights.get("barrier_avoidance_weight", 0.25)
+            else:
+                # Default equal weights if step 12 optimization not available
+                triple_barrier_weight = 0.25
+                direction_weight = 0.25
+                magnitude_weight = 0.25
+                barrier_avoidance_weight = 0.25
+            
+            # Calculate base confidence using step 12 optimized weights
+            base_confidence = (
+                triple_barrier_prob * triple_barrier_weight +
+                direction_prob * direction_weight +
+                magnitude_prob * magnitude_weight +
+                barrier_avoidance_prob * barrier_avoidance_weight
+            )
             
             # Apply step 11 calibration: performance vs reliability
             # This adjusts the confidence based on how well the model's predictions
@@ -470,7 +476,7 @@ class EnhancedPredictionService:
             
             self.logger.debug(f"Step 11 calibration for {model_name}: base={base_confidence:.3f}, "
                             f"reliability={reliability_score:.3f}, performance={performance_ratio:.3f}, "
-                            f"final={final_confidence:.3f}")
+                            f"weights={optimized_weights}, final={final_confidence:.3f}")
             
             return final_confidence
             
@@ -589,9 +595,47 @@ class EnhancedPredictionService:
                 "calibration_results_loaded": len(self.calibration_results),
                 "optimization_results_loaded": len(self.optimization_results),
                 "entry_threshold": self.entry_threshold,
-                "max_confidence_threshold": self.max_confidence_threshold
+                "max_confidence_threshold": self.max_confidence_threshold,
+                "probability_requirements": self._get_probability_requirements_info()
             }
             
         except Exception as e:
             self.logger.error(error(f"❌ Failed to get service info: {e}"))
             return {"error": str(e)}
+
+    def _get_probability_requirements_info(self) -> Dict[str, Any]:
+        """Get information about required probability outputs from ML models."""
+        return {
+            "probability_outputs_location": "ML models in steps 6-14 of enhanced_training_manager",
+            "required_probabilities": {
+                "triple_barrier_probability": "Probability of reaching profit target without hitting stop-loss",
+                "direction_probability": "Probability of price moving in predicted direction",
+                "magnitude_probability": "Probability of price moving by expected magnitude", 
+                "barrier_avoidance_probability": "Probability of avoiding adverse price movements"
+            },
+            "model_structure": {
+                "expected_format": "price_action_probabilities dict in model_data",
+                "example": {
+                    "triple_barrier_probability": 0.75,
+                    "direction_probability": 0.80,
+                    "magnitude_probability": 0.65,
+                    "barrier_avoidance_probability": 0.70
+                }
+            },
+            "calibration_requirements": {
+                "step11_calibration": "Model performance vs actual reliability data",
+                "step12_optimization": "Optimized weights for probability components",
+                "calibration_data_structure": {
+                    "reliability_score": "Historical reliability of model predictions",
+                    "performance_ratio": "Actual vs expected performance ratio",
+                    "calibration_factor": "Overall calibration adjustment",
+                    "confidence_bias": "Systematic bias adjustment",
+                    "step12_optimized_weights": {
+                        "triple_barrier_weight": "Optimized weight for triple barrier probability",
+                        "direction_weight": "Optimized weight for direction probability",
+                        "magnitude_weight": "Optimized weight for magnitude probability",
+                        "barrier_avoidance_weight": "Optimized weight for barrier avoidance probability"
+                    }
+                }
+            }
+        }

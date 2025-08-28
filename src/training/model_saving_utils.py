@@ -81,6 +81,84 @@ def save_model_with_probabilities(
         raise
 
 
+def save_multi_output_model_with_probabilities(
+    model_data: Dict[str, Any],
+    model_path: str,
+    save_format: str = "joblib"
+) -> Dict[str, Any]:
+    """
+    Save multi-output model with probability outputs.
+    
+    Args:
+        model_data: Dictionary containing multi-output model and metadata
+        model_path: Path where to save the model
+        save_format: Format to save model ('joblib' or 'pickle')
+        
+    Returns:
+        Dict containing the standardized multi-output model data structure
+    """
+    try:
+        # Extract multi-output components
+        multi_output_trainer = model_data.get("multi_output_trainer")
+        multi_output_models = model_data.get("multi_output_models")
+        
+        # Generate probability outputs if trainer is available
+        if multi_output_trainer and multi_output_models:
+            # Use test data to generate probabilities
+            X_test = model_data.get("X_test", np.random.randn(100, 10))
+            market_data = model_data.get("market_data", pd.DataFrame({
+                'close': np.random.randn(100),
+                'volume': np.random.randn(100)
+            }))
+            
+            price_action_probabilities = multi_output_trainer.predict_probabilities(
+                X_test, market_data
+            )
+        else:
+            price_action_probabilities = model_data.get("price_action_probabilities", {})
+        
+        # Create standardized model data structure
+        standardized_model_data = {
+            "model_type": "multi_output",
+            "multi_output_trainer": multi_output_trainer,
+            "multi_output_models": multi_output_models,
+            "ensemble_weights": multi_output_trainer.ensemble_weights if multi_output_trainer else None,
+            "calibrators": multi_output_trainer.calibrators if multi_output_trainer else None,
+            "price_action_probabilities": price_action_probabilities,
+            "training_date": model_data.get("training_date", datetime.now().isoformat()),
+            "hyperparameters": model_data.get("hyperparameters", {}),
+            "metrics": model_data.get("metrics", {}),
+            "symbol": model_data.get("symbol", ""),
+            "exchange": model_data.get("exchange", ""),
+            "step_name": model_data.get("step_name", ""),
+            "version": model_data.get("version", "1.0"),
+            "save_timestamp": datetime.now().isoformat(),
+            "save_format": save_format
+        }
+        
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(model_path), exist_ok=True)
+        
+        # Save model based on format
+        if save_format.lower() == "joblib":
+            joblib.dump(standardized_model_data, model_path)
+        elif save_format.lower() == "pickle":
+            with open(model_path, 'wb') as f:
+                pickle.dump(standardized_model_data, f)
+        else:
+            raise ValueError(f"Unsupported save format: {save_format}")
+        
+        logger.info(f"Multi-output model saved successfully to {model_path}")
+        logger.info(f"Model type: {standardized_model_data['model_type']}")
+        logger.info(f"Probabilities: {price_action_probabilities}")
+        
+        return standardized_model_data
+        
+    except Exception as e:
+        logger.error(f"Error saving multi-output model: {e}")
+        raise
+
+
 def load_model_with_probabilities(model_path: str) -> Dict[str, Any]:
     """
     Load model with probability outputs from file.
@@ -107,19 +185,71 @@ def load_model_with_probabilities(model_path: str) -> Dict[str, Any]:
         if not isinstance(model_data, dict):
             raise ValueError("Loaded model data is not a dictionary")
         
-        # Check for required fields
-        required_fields = ["model", "model_type", "price_action_probabilities"]
-        for field in required_fields:
-            if field not in model_data:
-                logger.warning(f"Missing required field in loaded model: {field}")
+        # Check for required fields based on model type
+        model_type = model_data.get('model_type', 'unknown')
+        
+        if model_type == "multi_output":
+            # Multi-output model validation
+            required_fields = ["model_type", "price_action_probabilities"]
+            for field in required_fields:
+                if field not in model_data:
+                    logger.warning(f"Missing required field in multi-output model: {field}")
+            
+            # Check for multi-output specific components
+            multi_output_trainer = model_data.get("multi_output_trainer")
+            multi_output_models = model_data.get("multi_output_models")
+            
+            if multi_output_trainer and multi_output_models:
+                logger.info("✅ Loaded multi-output model successfully")
+            else:
+                logger.warning("⚠️ Multi-output model missing components")
+        else:
+            # Standard model validation
+            required_fields = ["model", "model_type", "price_action_probabilities"]
+            for field in required_fields:
+                if field not in model_data:
+                    logger.warning(f"Missing required field in loaded model: {field}")
         
         logger.info(f"Model loaded successfully from {model_path}")
-        logger.info(f"Model type: {model_data.get('model_type', 'unknown')}")
+        logger.info(f"Model type: {model_type}")
         
         return model_data
         
     except Exception as e:
         logger.error(f"Error loading model with probabilities: {e}")
+        raise
+
+
+def load_multi_output_model_with_probabilities(model_path: str) -> Dict[str, Any]:
+    """
+    Load multi-output model with probability outputs from file.
+    
+    Args:
+        model_path: Path to the saved multi-output model file
+        
+    Returns:
+        Dict containing the loaded multi-output model data and probabilities
+    """
+    try:
+        model_data = load_model_with_probabilities(model_path)
+        
+        # Check if it's a multi-output model
+        if model_data.get("model_type") == "multi_output":
+            multi_output_trainer = model_data.get("multi_output_trainer")
+            multi_output_models = model_data.get("multi_output_models")
+            
+            if multi_output_trainer and multi_output_models:
+                logger.info("✅ Loaded multi-output model successfully")
+                return model_data
+            else:
+                logger.warning("⚠️ Multi-output model missing components")
+                return model_data
+        else:
+            logger.info("ℹ️ Standard model loaded (not multi-output)")
+            return model_data
+        
+    except Exception as e:
+        logger.error(f"Error loading multi-output model: {e}")
         raise
 
 
@@ -140,6 +270,7 @@ def validate_model_probabilities(model_data: Dict[str, Any]) -> bool:
             return False
         
         probabilities = model_data["price_action_probabilities"]
+        model_type = model_data.get("model_type", "unknown")
         
         # Check required probability keys
         required_keys = [
@@ -158,6 +289,23 @@ def validate_model_probabilities(model_data: Dict[str, Any]) -> bool:
             if not isinstance(prob, (int, float)) or not 0.0 <= prob <= 1.0:
                 logger.error(f"Invalid probability value for {key}: {prob}")
                 return False
+        
+        # Additional validation for multi-output models
+        if model_type == "multi_output":
+            multi_output_trainer = model_data.get("multi_output_trainer")
+            multi_output_models = model_data.get("multi_output_models")
+            
+            if not multi_output_trainer:
+                logger.error("Multi-output model missing trainer")
+                return False
+            
+            if not multi_output_models:
+                logger.error("Multi-output model missing models")
+                return False
+            
+            # Check if trainer is trained
+            if not hasattr(multi_output_trainer, 'is_trained') or not multi_output_trainer.is_trained:
+                logger.warning("Multi-output trainer not trained")
         
         return True
         

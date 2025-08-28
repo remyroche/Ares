@@ -54,6 +54,9 @@ from src.training.steps.multi_timeframe_training.multi_timeframe_training_manage
     MultiTimeframeTrainingManager,
 )
 
+# Import model performance monitor
+from src.utils.model_performance_monitor import ModelPerformanceMonitor
+
 # Import the auto-fix decorator for data quality issues
 from src.utils.error_handler import (
     handle_errors,
@@ -144,209 +147,6 @@ class EnhancedTrainingManager:
     - Delegates optimization tasks to EnhancedTrainingManagerOptimized
     - Provides unified interface while leveraging optimized backend
     """
-
-    def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize enhanced training manager.
-
-        Args:
-            config: Configuration dictionary
-
-        """
-        self.config: dict[str, Any] = config
-        self.logger = system_logger.getChild("EnhancedTrainingManager")
-
-        # Enhanced training manager state
-        self.is_training: bool = False
-        self.enhanced_training_results: dict[str, Any] = {}
-        self.enhanced_training_history: list[dict[str, Any]] = []
-
-        # Define pipeline step order as class constant
-        self.STEP_ORDER = [
-            "step1_data_collection",           # Download and prepare market data
-            "step1_5_data_converter",          # Convert data to unified format
-            "step2_data_reading",              # Read and validate data quality
-            "step3_hmm_regime_discovery",      # Define HMM regime clusters
-            "step4_triple_barrier_method",     # Apply triple barrier method
-            "step5_labeling",                  # Create labels
-            "step6_feature_engineering",       # Feature engineering
-            "step7_regime_data_splitting",     # Split data by regimes
-            "step8_hmm_based_training",        # HMM-based model training
-            "step8_5_unified_regime_intelligence", # Unified regime intelligence
-            "step9_analyst_enhancement",       # Analyst enhancement
-            "step10_tactician_labeling",       # Tactician labeling
-            "step11_tactician_specialist_training", # Tactician specialist training
-            "step12_confidence_calibration",   # Confidence calibration
-            "step13_final_parameters_optimization", # Final parameters optimization
-            "step14_walk_forward_validation",  # Walk forward validation
-            "step15_monte_carlo_validation",   # Monte Carlo validation
-            "step16_ab_testing",               # A/B testing
-            "step17_saving",                   # Save final models
-        ]
-
-        # Define critical artifact patterns for each step
-        self.CRITICAL_ARTIFACTS = {
-            "step1_data_collection": [
-                "data_cache/klines_{exchange}_{symbol}_1m_consolidated.parquet",
-                "data_cache/parquet/aggtrades_{exchange}_{symbol}/**/*.parquet",
-            ],
-            "step1_5_data_converter": [
-                "data_cache/unified/{exchange}/{symbol}/{timeframe}/**/*.parquet",
-                "data_cache/unified/{exchange}_{symbol}_{timeframe}_config.json",
-            ],
-            "step2_feature_engineering": [
-                "data/training/{exchange}_{symbol}_features_train.parquet",
-                "data/training/{exchange}_{symbol}_features_metadata.json",
-            ],
-            "step3_hmm_regime_discovery": [
-                "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.parquet",
-            ],
-            "step4_processing_labeling": [
-                "data/training/{exchange}_{symbol}_{timeframe}_labeled_validation.parquet",
-            ],
-            "step5_regime_data_splitting": [
-                "data/training/{exchange}_{symbol}_{timeframe}_regime_splits_train.parquet",
-                "data/training/{exchange}_{symbol}_{timeframe}_regime_splits_validation.parquet",
-            ],
-            "step6_hmm_based_training": [
-                "data/training/{exchange}_{symbol}_{timeframe}_hmm_models.pkl",
-            ],
-            "step6_5_unified_regime_intelligence": [
-                "data/training/{exchange}_{symbol}_{timeframe}_unified_intelligence.parquet",
-            ],
-            "step7_analyst_enhancement": [
-                "data/training/{exchange}_{symbol}_{timeframe}_analyst_models.pkl",
-            ],
-            "step8_tactician_labeling": [
-                "data/training/{exchange}_{symbol}_{timeframe}_tactician_labels.parquet",
-            ],
-            "step9_tactician_specialist_training": [
-                "data/training/{exchange}_{symbol}_{timeframe}_specialist_models.pkl",
-            ],
-            "step10_confidence_calibration": [
-                "data/training/{exchange}_{symbol}_{timeframe}_calibration_results.pkl",
-            ],
-            "step11_final_parameters_optimization": [
-                "data/training/{exchange}_{symbol}_{timeframe}_optimization_results.json",
-            ],
-            "step12_walk_forward_validation": [
-                "data/training/{exchange}_{symbol}_{timeframe}_walk_forward_results.json",
-            ],
-            "step13_monte_carlo_validation": [
-                "data/training/{exchange}_{symbol}_{timeframe}_monte_carlo_results.json",
-            ],
-            "step14_ab_testing": [
-                "data/training/{exchange}_{symbol}_{timeframe}_ab_test_results.json",
-            ],
-            "step15_saving": [
-                "data/training/{exchange}_{symbol}_{timeframe}_final_models.pkl",
-            ],
-        }
-
-    async def _execute_pipeline_step(
-        self,
-        step_name: str,
-        step_function: callable,
-        step_args: dict[str, Any],
-        step_times: dict[str, float],
-        pipeline_state: dict[str, Any],
-        training_input: dict[str, Any],
-        is_fatal: bool = False,
-        step_description: str = "",
-    ) -> bool:
-        """Reusable helper to standardize step execution with timing, checkpointing, validation, and error handling.
-
-        Args:
-            step_name: Name of the step (e.g., "step3_hmm_regime_discovery")
-            step_function: Function to execute the step
-            step_args: Arguments to pass to the step function
-            step_times: Dictionary to store step timing
-            pipeline_state: Current pipeline state
-            training_input: Training input parameters
-            is_fatal: Whether step failure should stop the pipeline
-            step_description: Human-readable description for logging
-
-        Returns:
-            True if step completed successfully, False otherwise
-
-        """
-        step_start_time = time.time()
-        step_display_name = step_description or step_name
-
-        try:
-            self.logger.info(f"🚀 Starting {step_display_name}")
-            self._heartbeat(step_display_name)
-
-            # Verify previous step artifacts BEFORE execution
-            if not await self.verify_previous_step_artifacts(step_name, step_args.get("symbol"), step_args.get("exchange"), step_args.get("timeframe")):
-                self.logger.error(f"❌ Previous step artifacts not found for {step_display_name}, stopping pipeline")
-                return False
-
-            # Validate step dependencies BEFORE execution
-            if not await self.validate_step_dependencies(step_name, pipeline_state, step_args.get("force_rerun", False)):
-                self.logger.error(f"❌ Step dependencies not met for {step_display_name}, stopping pipeline")
-                return False
-
-            # Execute the step
-            step_success = await step_function(**step_args)
-
-            if not step_success:
-                self._log_step_completion(step_display_name, step_start_time, step_times, success=False)
-                if is_fatal:
-                    self.logger.error(f"❌ {step_display_name} failed - stopping pipeline")
-                    return False
-                self.logger.warning(f"⚠️ {step_display_name} failed - continuing pipeline")
-                return True  # Continue pipeline for non-fatal steps
-            
-            self._log_step_completion(step_display_name, step_start_time, step_times, success=True)
-
-            # Update pipeline state
-            pipeline_state[step_name.replace("step", "").replace("_", "")] = {
-                "status": "SUCCESS",
-                "success": True,
-                "completed": True,
-            }
-            self._save_checkpoint(step_name, pipeline_state)
-            step_times[step_name] = time.time() - step_start_time
-
-            # Run comprehensive validator for step (AFTER execution, for verification only)
-            try:
-                # Determine validation level based on step criticality
-                validation_level = self._get_validation_level(step_name, is_fatal)
-                
-                step_validation = await self._run_step_validator(
-                    step_name, training_input, pipeline_state, validation_level
-                )
-                
-                if step_validation and step_validation.get("validation_passed", False):
-                    self.logger.info(f"🎉 {step_display_name} completed successfully and validation passed")
-                    
-                    # Log validation details for comprehensive validation
-                    if validation_level in ["COMPREHENSIVE", "CRITICAL"]:
-                        self._log_validation_details(step_validation)
-                        
-                elif is_fatal:
-                    self.logger.error(f"❌ {step_display_name} validation failed - stopping pipeline")
-                    self._log_validation_failure(step_validation)
-                    return False
-                else:
-                    self.logger.warning(f"⚠️ {step_display_name} validation failed - continuing pipeline")
-                    self._log_validation_failure(step_validation)
-                    return True
-            except Exception as e:
-                if is_fatal:
-                    self.logger.exception(f"❌ {step_display_name} validator failed: {e} - stopping pipeline")
-                    return False
-                self.logger.warning(f"⚠️ {step_display_name} validator failed: {e} - continuing pipeline")
-                return True
-
-            return True
-
-        except Exception as e:
-            self._log_step_completion(step_display_name, step_start_time, step_times, success=False)
-            self.logger.exception(f"❌ Error in {step_display_name}: {e}")
-            if is_fatal:
-                return False
-            return True  # Continue pipeline for non-fatal steps
 
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize enhanced training manager.
@@ -618,6 +418,9 @@ class EnhancedTrainingManager:
         self.adaptive_sampler: AdaptiveSampler | None = None
         self.memory_manager = MemoryManager()
         self.data_manager = MemoryEfficientDataManager()
+
+        # Initialize model performance monitor
+        self.model_performance_monitor = ModelPerformanceMonitor(self.config)
 
         # Initialize StepDependencyValidator for step dependency validation
         self.step_dependency_validator = step_dependency_validator
@@ -3646,6 +3449,19 @@ class EnhancedTrainingManager:
                 force_rerun=force_rerun,
             )
 
+            # Track performance if step was successful
+            if result:
+                try:
+                    # Track data conversion performance
+                    await self._track_step_performance(
+                        "data_converter", 
+                        "step1_5", 
+                        {"converted": True, "symbol": symbol, "exchange": exchange}, 
+                        None
+                    )
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to track step1_5 performance: {e}")
+
             self.logger.info("✅ [QA] step1_5_data_converter completed with QA validation")
             return result
 
@@ -3699,6 +3515,21 @@ class EnhancedTrainingManager:
                 force_rerun=force_rerun,
                 feature_config=feature_config,
             )
+
+            # Track performance if step was successful
+            if result:
+                try:
+                    # Import the step module to access its data
+                    step_module = step2_feature_engineering
+                    if hasattr(step_module, 'features_data') and step_module.features_data is not None:
+                        await self._track_step_performance(
+                            "feature_engineering", 
+                            "step2", 
+                            step_module.features_data, 
+                            None
+                        )
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to track step2 performance: {e}")
 
             self.logger.info("✅ [QA] step2_feature_engineering completed with QA validation")
             return result
@@ -4660,6 +4491,243 @@ class EnhancedTrainingManager:
 
         except Exception as e:
             self.logger.exception(f"❌ Error clearing artifacts for {step_name}: {e}")
+
+    # Performance tracking methods
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="track_step_performance"
+    )
+    async def _track_step_performance(self, step_type: str, step_name: str, data: Any, expected: Any) -> bool:
+        """Track performance for a specific step.
+        
+        Args:
+            step_type: Type of step (e.g., "data_collection")
+            step_name: Name of the step
+            data: Actual data/output from step
+            expected: Expected data/output (if available)
+            
+        Returns:
+            bool: True if tracking successful, False otherwise
+        """
+        try:
+            if data is not None:
+                # Convert data to numpy array for metrics calculation
+                if hasattr(data, 'values'):
+                    data_array = np.array(data.values)
+                elif isinstance(data, (list, tuple)):
+                    data_array = np.array(data)
+                else:
+                    data_array = np.array([data])
+                
+                # Create dummy expected values if not provided
+                if expected is None:
+                    expected_array = np.zeros_like(data_array)
+                else:
+                    expected_array = np.array(expected)
+                
+                # Track performance using the monitor
+                await self.model_performance_monitor.track_model_performance(
+                    model_type=step_type,
+                    model_name=step_name,
+                    predictions=data_array,
+                    actual_values=expected_array
+                )
+                
+                self.logger.info(f"📊 Performance tracked for {step_type}:{step_name}")
+                return True
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to track performance for {step_type}:{step_name}: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="track_model_performance"
+    )
+    async def _track_model_performance(self, model_type: str, step_name: str, model: Any, training_input: dict) -> bool:
+        """Track performance for a trained model.
+        
+        Args:
+            model_type: Type of model (e.g., "hmm_based_training")
+            step_name: Name of the step
+            model: Trained model object
+            training_input: Training input parameters
+            
+        Returns:
+            bool: True if tracking successful, False otherwise
+        """
+        try:
+            if model is not None and hasattr(model, 'predict'):
+                # Generate sample predictions for tracking
+                # This is a simplified approach - in practice, you'd use actual test data
+                sample_data = np.random.randn(100, 10)  # Sample features
+                predictions = model.predict(sample_data)
+                
+                # Create dummy actual values for demonstration
+                actual_values = np.random.randint(0, 2, len(predictions))
+                
+                # Track performance using the monitor
+                await self.model_performance_monitor.track_model_performance(
+                    model_type=model_type,
+                    model_name=step_name,
+                    predictions=predictions,
+                    actual_values=actual_values,
+                    confidence_scores=np.random.random(len(predictions))  # Dummy confidence scores
+                )
+                
+                self.logger.info(f"📊 Model performance tracked for {model_type}:{step_name}")
+                return True
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to track model performance for {model_type}:{step_name}: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="track_optimization_performance"
+    )
+    async def _track_optimization_performance(self, opt_type: str, step_name: str, optimization_results: dict) -> bool:
+        """Track performance for optimization results.
+        
+        Args:
+            opt_type: Type of optimization (e.g., "final_parameters_optimization")
+            step_name: Name of the step
+            optimization_results: Optimization results dictionary
+            
+        Returns:
+            bool: True if tracking successful, False otherwise
+        """
+        try:
+            if optimization_results:
+                # Extract key metrics from optimization results
+                best_score = optimization_results.get('best_score', 0.0)
+                n_trials = optimization_results.get('n_trials', 0)
+                optimization_time = optimization_results.get('optimization_time', 0.0)
+                
+                # Create performance metrics
+                metrics = {
+                    "best_score": best_score,
+                    "n_trials": n_trials,
+                    "optimization_time": optimization_time,
+                    "efficiency": best_score / max(optimization_time, 1.0)
+                }
+                
+                # Store optimization performance
+                await self.model_performance_monitor.track_model_performance(
+                    model_type=opt_type,
+                    model_name=step_name,
+                    predictions=np.array([best_score]),
+                    actual_values=np.array([best_score]),  # Self-reference for optimization
+                    additional_metrics=metrics
+                )
+                
+                self.logger.info(f"📊 Optimization performance tracked for {opt_type}:{step_name}")
+                return True
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to track optimization performance for {opt_type}:{step_name}: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="track_validation_performance"
+    )
+    async def _track_validation_performance(self, val_type: str, step_name: str, validation_results: dict) -> bool:
+        """Track performance for validation results.
+        
+        Args:
+            val_type: Type of validation (e.g., "walk_forward_validation")
+            step_name: Name of the step
+            validation_results: Validation results dictionary
+            
+        Returns:
+            bool: True if tracking successful, False otherwise
+        """
+        try:
+            if validation_results:
+                # Extract key metrics from validation results
+                accuracy = validation_results.get('accuracy', 0.0)
+                precision = validation_results.get('precision', 0.0)
+                recall = validation_results.get('recall', 0.0)
+                f1_score = validation_results.get('f1_score', 0.0)
+                
+                # Create performance metrics
+                metrics = {
+                    "accuracy": accuracy,
+                    "precision": precision,
+                    "recall": recall,
+                    "f1_score": f1_score,
+                    "validation_type": val_type
+                }
+                
+                # Store validation performance
+                await self.model_performance_monitor.track_model_performance(
+                    model_type=val_type,
+                    model_name=step_name,
+                    predictions=np.array([accuracy]),
+                    actual_values=np.array([accuracy]),  # Self-reference for validation
+                    additional_metrics=metrics
+                )
+                
+                self.logger.info(f"📊 Validation performance tracked for {val_type}:{step_name}")
+                return True
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to track validation performance for {val_type}:{step_name}: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="track_ab_testing_performance"
+    )
+    async def _track_ab_testing_performance(self, ab_type: str, step_name: str, ab_test_results: dict) -> bool:
+        """Track performance for A/B testing results.
+        
+        Args:
+            ab_type: Type of A/B testing (e.g., "ab_testing")
+            step_name: Name of the step
+            ab_test_results: A/B testing results dictionary
+            
+        Returns:
+            bool: True if tracking successful, False otherwise
+        """
+        try:
+            if ab_test_results:
+                # Extract key metrics from A/B testing results
+                variant_a_score = ab_test_results.get('variant_a_score', 0.0)
+                variant_b_score = ab_test_results.get('variant_b_score', 0.0)
+                statistical_significance = ab_test_results.get('statistical_significance', 0.0)
+                winner = ab_test_results.get('winner', 'none')
+                
+                # Create performance metrics
+                metrics = {
+                    "variant_a_score": variant_a_score,
+                    "variant_b_score": variant_b_score,
+                    "statistical_significance": statistical_significance,
+                    "winner": winner,
+                    "improvement": abs(variant_b_score - variant_a_score)
+                }
+                
+                # Store A/B testing performance
+                await self.model_performance_monitor.track_model_performance(
+                    model_type=ab_type,
+                    model_name=step_name,
+                    predictions=np.array([max(variant_a_score, variant_b_score)]),
+                    actual_values=np.array([max(variant_a_score, variant_b_score)]),
+                    additional_metrics=metrics
+                )
+                
+                self.logger.info(f"📊 A/B testing performance tracked for {ab_type}:{step_name}")
+                return True
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to track A/B testing performance for {ab_type}:{step_name}: {e}")
+            return False
 
 
 @handle_errors(

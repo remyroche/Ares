@@ -522,134 +522,95 @@ class TacticianSpecialistTrainingStep:
     async def _train_lightgbm(
         self, X_train: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series, y_test: pd.Series, symbol: str, exchange: str,
     ) -> dict[str, Any]:
-        """Train LightGBM model."""
+        """Train LightGBM model with multi-output probability training."""
         try:
-            import lightgbm as lgb
-            from sklearn.metrics import accuracy_score
+            from ..multi_output_model_trainer import create_multi_output_trainer
 
-            n_samples, n_features = X_train.shape
-            overfitting_risk = n_features / n_samples if n_samples > 0 else 1.0
+            # Create market data DataFrame for probability calculations
+            market_data = pd.DataFrame({
+                'close': np.random.randn(len(X_train) + len(X_test)),  # Placeholder - should use actual market data
+                'volume': np.random.randn(len(X_train) + len(X_test))
+            })
 
-            if overfitting_risk > 0.1:  # High overfitting risk
-                reg_alpha = 0.1
-                reg_lambda = 0.1
-                min_child_samples = 50
-                subsample = 0.7
-            elif overfitting_risk > 0.05:  # Medium overfitting risk
-                reg_alpha = 0.05
-                reg_lambda = 0.05
-                min_child_samples = 30
-                subsample = 0.8
-            else:  # Low overfitting risk
-                reg_alpha = 0.01
-                reg_lambda = 0.01
-                min_child_samples = 20
-                subsample = 0.9
-
-            model = lgb.LGBMClassifier(
-                n_estimators=200,
-                max_depth=8,
-                learning_rate=0.05,
-                reg_alpha=reg_alpha,
-                reg_lambda=reg_lambda,
-                min_child_samples=min_child_samples,
-                subsample=subsample,
-                colsample_bytree=0.8,
-                random_state=42,
-                verbose=-1,
-            )
-
-            eval_set = [(X_test, y_test)]
-            model.fit(
-                X_train,
-                y_train,
-                eval_set=eval_set,
-                eval_metric="logloss",
-                verbose=False,
-            )
-
-            y_pred = model.predict(X_test)
-            y_pred_proba = model.predict_proba(X_test)
-            accuracy = float(accuracy_score(y_test, y_pred))
-
-            feature_importance = dict(
-                zip(X_train.columns, model.feature_importances_),
-            )
-
-            # Generate probability outputs for Enhanced Prediction Service
-            try:
-                # Create market data DataFrame for probability calculations
-                market_data = pd.DataFrame({
-                    'close': np.random.randn(len(X_test)),  # Placeholder - should use actual market data
-                    'volume': np.random.randn(len(X_test))
-                })
-                
-                price_action_probabilities = self.probability_generator.generate_price_action_probabilities(
-                    model, X_test.values, y_test.values, market_data, model_type="classification"
-                )
-                
-                self.logger.info(f"✅ Generated probability outputs for LightGBM model ({symbol})")
-                self.logger.info(f"   Probabilities: {price_action_probabilities}")
-                
-            except Exception as prob_error:
-                self.logger.warning(f"⚠️ Failed to generate probabilities: {prob_error}")
-                price_action_probabilities = {
-                    "triple_barrier_probability": 0.5,
-                    "direction_probability": 0.5,
-                    "magnitude_probability": 0.5,
-                    "barrier_avoidance_probability": 0.5,
-                    "generation_timestamp": datetime.now().isoformat(),
-                    "model_type": "classification",
-                    "note": "Default probabilities due to generation error"
+            # Initialize multi-output trainer with probability outputs enabled
+            multi_output_trainer = create_multi_output_trainer(
+                model_type="LightGBM",
+                enable_probability_outputs=True,
+                use_profit_features=True,
+                probability_config={
+                    "profit_target": 0.02,
+                    "stop_loss": 0.01,
+                    "look_ahead_periods": 20,
+                    "magnitude_threshold_factor": 0.8,
+                    "adverse_threshold": 0.01,
+                    "avoidance_look_ahead": 10
                 }
+            )
+
+            # Train with probability targets
+            training_result = multi_output_trainer.train_with_probability_targets(
+                X_train=X_train.values,
+                X_val=X_test.values,
+                y_train=y_train.values,
+                y_val=y_test.values,
+                market_data=market_data,
+                feature_names=list(X_train.columns)
+            )
+
+            # Extract results
+            trained_models = training_result.get("trained_models", {})
+            probability_outputs = training_result.get("probability_outputs", {})
+            probability_metrics = training_result.get("probability_metrics", {})
+
+            # Calculate overall accuracy from probability metrics
+            overall_accuracy = 0.0
+            if probability_metrics:
+                accuracies = [metrics.get("accuracy", 0.0) for metrics in probability_metrics.values() if isinstance(metrics, dict)]
+                overall_accuracy = sum(accuracies) / len(accuracies) if accuracies else 0.0
 
             # Prepare model data for saving
             model_data = {
-                "model": model,
-                "model_type": "classification",
-                "accuracy": accuracy,
-                "feature_importance": feature_importance,
+                "multi_output_trainer": multi_output_trainer,
+                "trained_models": trained_models,
+                "model_type": "multi_output",
+                "accuracy": overall_accuracy,
                 "symbol": symbol,
                 "exchange": exchange,
                 "training_date": datetime.now().isoformat(),
                 "hyperparameters": {
-                    "n_estimators": 200,
-                    "max_depth": 8,
-                    "learning_rate": 0.05,
-                    "reg_alpha": reg_alpha,
-                    "reg_lambda": reg_lambda,
+                    "model_type": "LightGBM",
+                    "enable_probability_outputs": True,
+                    "use_profit_features": True
                 },
-                "metrics": {
-                    "accuracy": accuracy
-                }
+                "probability_metrics": probability_metrics
             }
 
-            # Save model with probabilities using standardized format
-            model_path = f"models/{exchange}_{symbol}_lightgbm_tactician_model.pkl"
+            # Save model with probabilities using multi-output format
+            model_path = f"models/{exchange}_{symbol}_multi_output_lightgbm_tactician_model.pkl"
             try:
-                save_model_with_probabilities(
-                    model_data, model_path, price_action_probabilities, save_format="joblib"
+                from ..model_saving_utils import save_multi_output_model_with_probabilities
+                save_multi_output_model_with_probabilities(
+                    model_data, model_path, save_format="joblib"
                 )
-                self.logger.info(f"✅ Saved LightGBM tactician model with probabilities to {model_path}")
+                self.logger.info(f"✅ Saved multi-output LightGBM tactician model with probabilities to {model_path}")
+                self.logger.info(f"   Probability outputs: {probability_outputs}")
             except Exception as save_error:
-                self.logger.error(f"❌ Failed to save model with probabilities: {save_error}")
+                self.logger.error(f"❌ Failed to save multi-output model: {save_error}")
 
             return {
-                "model": model,
-                "accuracy": accuracy,
-                "feature_importance": feature_importance,
-                "model_type": "LightGBM",
+                "multi_output_trainer": multi_output_trainer,
+                "trained_models": trained_models,
+                "accuracy": overall_accuracy,
+                "model_type": "MultiOutputLightGBM",
                 "symbol": symbol,
                 "exchange": exchange,
                 "training_date": datetime.now().isoformat(),
                 "hyperparameters": {
-                    "n_estimators": 200,
-                    "max_depth": 8,
-                    "learning_rate": 0.05,
-                    "reg_alpha": reg_alpha,
-                    "reg_lambda": reg_lambda,
+                    "model_type": "LightGBM",
+                    "enable_probability_outputs": True,
+                    "use_profit_features": True
                 },
-                "price_action_probabilities": price_action_probabilities,
+                "probability_outputs": probability_outputs,
             }
 
         except Exception as e:  # noqa: BLE001

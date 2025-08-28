@@ -223,7 +223,6 @@ class EnhancedTrainingManager:
                 "models/multi_timeframe_hmm_ensemble/{exchange}_{symbol}/ensemble_metadata.json",
                 "models/multi_timeframe_hmm_ensemble/{exchange}_{symbol}/meta_learner.joblib",
             ],
-            ],
             "step6_5_unified_regime_intelligence": [
                 "data/training/{exchange}_{symbol}_{timeframe}_unified_intelligence.parquet",
             ],

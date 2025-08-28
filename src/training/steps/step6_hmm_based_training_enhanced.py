@@ -274,7 +274,7 @@ class EnhancedHMMBasedTrainingStep:
         if self.enable_multi_output:
             from ..multi_output_probability_trainer import MultiOutputProbabilityTrainer
             
-            # Configure multi-output training
+            # Configure multi-output training with advanced models
             multi_output_config = {
                 "use_lightgbm": True,
                 "n_estimators": 1000,
@@ -285,7 +285,63 @@ class EnhancedHMMBasedTrainingStep:
                 "look_ahead_periods": 20,
                 "magnitude_threshold_factor": 0.8,
                 "adverse_threshold": 0.01,
-                "avoidance_look_ahead": 10
+                "avoidance_look_ahead": 10,
+                # Advanced model configuration
+                "timeframe": "15m",  # Use Transformer for 15-minute data
+                "model_architectures": {
+                    "1m": "cnn",      # CNN for 1-minute data
+                    "5m": "tcn",      # TCN for 5-minute data
+                    "15m": "transformer", # Transformer for 15-minute data
+                    "30m": "lightgbm",    # LightGBM for 30-minute data
+                    "1h": "lstm",     # LSTM for 1-hour data
+                    "4h": "gru",      # GRU for 4-hour data
+                    "1d": "randomforest"  # RandomForest for daily data
+                },
+                "neural_config": {
+                    "tcn": {
+                        "num_channels": [64, 128, 256],
+                        "kernel_size": 2,
+                        "dropout": 0.2,
+                        "batch_size": 32,
+                        "epochs": 50,
+                        "learning_rate": 0.001
+                    },
+                    "cnn": {
+                        "num_filters": [64, 128, 256],
+                        "kernel_sizes": [3, 3, 3],
+                        "dropout": 0.2,
+                        "batch_size": 32,
+                        "epochs": 50,
+                        "learning_rate": 0.001
+                    },
+                    "transformer": {
+                        "d_model": 128,
+                        "nhead": 8,
+                        "num_layers": 4,
+                        "dropout": 0.1,
+                        "batch_size": 32,
+                        "epochs": 50,
+                        "learning_rate": 0.001
+                    },
+                    "lstm": {
+                        "hidden_size": 128,
+                        "num_layers": 2,
+                        "bidirectional": True,
+                        "dropout": 0.2,
+                        "batch_size": 32,
+                        "epochs": 50,
+                        "learning_rate": 0.001
+                    },
+                    "gru": {
+                        "hidden_size": 128,
+                        "num_layers": 2,
+                        "bidirectional": True,
+                        "dropout": 0.2,
+                        "batch_size": 32,
+                        "epochs": 50,
+                        "learning_rate": 0.001
+                    }
+                }
             }
             
             self.multi_output_trainer = MultiOutputProbabilityTrainer(multi_output_config)

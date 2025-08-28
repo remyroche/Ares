@@ -2654,7 +2654,7 @@ class AnalystEnhancementStep:
             return feature_names[:max_features]
 
     def _categorize_features_by_tier(self, feature_names: list) -> dict:
-        """Categorize features into tiers based on naming patterns."""
+        """Categorize features into tiers based on naming patterns (enhanced with data-driven methods)."""
         categories = {
             "tier_1": [],  # Core features
             "tier_2": [],  # Normalized features
@@ -2731,6 +2731,129 @@ class AnalystEnhancementStep:
                 categories["tier_1"].append(feature)
 
         return categories
+
+    async def _apply_data_driven_feature_selection(
+        self, data: pd.DataFrame, feature_columns: list, target_column: str = None
+    ) -> list:
+        """Apply data-driven feature selection using VIF, MI, SHAP, and RF methods."""
+        try:
+            self.logger.info(f"🔍 Applying data-driven feature selection to {len(feature_columns)} features")
+            
+            selected_features = feature_columns.copy()
+            
+            # Stage 1: Data quality filtering
+            X_clean = data[feature_columns].copy()
+            
+            # Remove features with too many NaN values (>10%)
+            nan_ratio = X_clean.isna().sum() / len(X_clean)
+            high_nan_features = nan_ratio[nan_ratio > 0.1].index.tolist()
+            X_clean = X_clean.drop(columns=high_nan_features)
+            
+            # Remove features with infinite values
+            inf_features = []
+            for col in X_clean.columns:
+                if np.isinf(X_clean[col]).any():
+                    inf_features.append(col)
+            X_clean = X_clean.drop(columns=inf_features)
+            
+            # Fill remaining NaN values
+            X_clean = X_clean.fillna(method="ffill").fillna(method="bfill").fillna(0)
+            
+            self.logger.info(f"   Data quality filtering: {len(feature_columns)} -> {len(X_clean.columns)} features")
+            
+            # Stage 2: VIF filtering (multicollinearity)
+            try:
+                from src.utils.vif_calculator import calculate_vif_robust
+                
+                vif_scores = calculate_vif_robust(X_clean)
+                
+                # Remove features with high VIF (>10)
+                low_vif_features = vif_scores[vif_scores <= 10.0].index.tolist()
+                
+                self.logger.info(f"   VIF filtering: {len(X_clean.columns)} -> {len(low_vif_features)} features")
+                X_clean = X_clean[low_vif_features]
+                
+            except Exception as e:
+                self.logger.warning(f"VIF filtering failed: {e}, skipping")
+            
+            # Stage 3: Mutual Information filtering (if target available)
+            if target_column and target_column in data.columns:
+                try:
+                    y = data[target_column]
+                    
+                    from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
+                    
+                    # Determine task type
+                    task_type = "classification" if len(y.unique()) < 10 else "regression"
+                    
+                    if task_type == "classification":
+                        mi_scores = mutual_info_classif(X_clean, y, random_state=42)
+                    else:
+                        mi_scores = mutual_info_regression(X_clean, y, random_state=42)
+                    
+                    # Remove features with low MI (<0.01)
+                    mi_series = pd.Series(mi_scores, index=X_clean.columns)
+                    high_mi_features = mi_series[mi_scores >= 0.01].index.tolist()
+                    
+                    self.logger.info(f"   MI filtering: {len(X_clean.columns)} -> {len(high_mi_features)} features")
+                    X_clean = X_clean[high_mi_features]
+                    
+                except Exception as e:
+                    self.logger.warning(f"MI filtering failed: {e}, skipping")
+            
+            # Stage 4: SHAP-based filtering (if target available)
+            if target_column and target_column in data.columns and len(X_clean.columns) > 50:
+                try:
+                    from src.analyst.meta_label_relevance import compute_shap_importance
+                    
+                    # Calculate SHAP importance
+                    shap_scores = compute_shap_importance(X_clean, y, task=task_type)
+                    
+                    if shap_scores:
+                        # Remove bottom 20% of features by SHAP importance
+                        shap_series = pd.Series(shap_scores)
+                        threshold = shap_series.quantile(0.2)
+                        high_shap_features = shap_series[shap_series >= threshold].index.tolist()
+                        
+                        self.logger.info(f"   SHAP filtering: {len(X_clean.columns)} -> {len(high_shap_features)} features")
+                        X_clean = X_clean[high_shap_features]
+                        
+                except Exception as e:
+                    self.logger.warning(f"SHAP filtering failed: {e}, skipping")
+            
+            # Stage 5: RandomForest importance filtering (if target available)
+            if target_column and target_column in data.columns and len(X_clean.columns) > 30:
+                try:
+                    from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+                    
+                    # Train RF for feature importance
+                    if task_type == "classification":
+                        rf = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+                    else:
+                        rf = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
+                    
+                    rf.fit(X_clean, y)
+                    rf_importance = pd.Series(rf.feature_importances_, index=X_clean.columns)
+                    
+                    # Remove bottom 20% of features by RF importance
+                    threshold = rf_importance.quantile(0.2)
+                    high_rf_features = rf_importance[rf_importance >= threshold].index.tolist()
+                    
+                    self.logger.info(f"   RF filtering: {len(X_clean.columns)} -> {len(high_rf_features)} features")
+                    X_clean = X_clean[high_rf_features]
+                    
+                except Exception as e:
+                    self.logger.warning(f"RF filtering failed: {e}, skipping")
+            
+            selected_features = X_clean.columns.tolist()
+            
+            self.logger.info(f"✅ Data-driven feature selection completed: {len(feature_columns)} -> {len(selected_features)} features")
+            
+            return selected_features
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error in data-driven feature selection: {e}")
+            return feature_columns
 
     def _save_enhanced_models(
         self, enhanced_models: dict, data_dir: str, training_input: dict, ) -> str:

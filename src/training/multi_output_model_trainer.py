@@ -277,39 +277,28 @@ class MultiOutputModelTrainer:
         # Use enhanced data-driven feature selection if enabled
         if use_enhanced_feature_selection:
             try:
-                from src.training.enhanced_feature_selection_manager import EnhancedFeatureSelectionManager
+                from src.training.steps.step6_hmm_based_training import Step6HMMBasedTraining
                 
                 self.logger.info("🔧 Using enhanced data-driven feature selection (VIF, MI, SHAP, RF)...")
                 
-                # Create enhanced feature selection manager
-                feature_selector = EnhancedFeatureSelectionManager(self.config.__dict__ if hasattr(self.config, '__dict__') else {})
+                # Create step6 instance for feature selection
+                step6_config = {"symbol": "default", "exchange": "default", "data_dir": "temp"}
+                step6_instance = Step6HMMBasedTraining(step6_config)
                 
-                # Create target for feature selection (use direction target for classification task)
-                selection_target = pd.Series(0, index=data.index)
-                if direction_column in data.columns:
-                    selection_target = data[direction_column]
-                
-                # Use enhanced data-driven feature selection
-                selected_features, metadata = feature_selector.select_features_enhanced(
-                    features_df=data,
-                    target=selection_target,
-                    symbol="default",
-                    exchange="default",
-                    data_dir="temp",
-                    task="classification"  # Use classification task for direction prediction
+                # Use the enhanced pre-filtering method
+                selected_features = await step6_instance._pre_filter_features(
+                    X=data,
+                    feature_columns=[col for col in data.columns if col not in [direction_column, profit_column]]
                 )
                 
-                self.logger.info(f"✅ Enhanced data-driven feature selection completed: {selected_features.shape[1]} features selected")
-                self.logger.info(f"   - VIF features removed: {metadata.get('stages', {}).get('stage3_vif', {}).get('removed_high_vif', 0)}")
-                self.logger.info(f"   - MI features removed: {metadata.get('stages', {}).get('stage5_mutual_info', {}).get('removed_low_mi', 0)}")
-                self.logger.info(f"   - SHAP features removed: {metadata.get('stages', {}).get('stage6_shap', {}).get('removed_low_shap', 0)}")
-                self.logger.info(f"   - RF features removed: {metadata.get('stages', {}).get('stage7_random_forest', {}).get('removed_low_rf', 0)}")
+                # Add back target columns
+                selected_features.extend([direction_column, profit_column])
+                selected_features = [col for col in selected_features if col in data.columns]
                 
-                # Store feature importance scores for later use
-                self.feature_importance = metadata.get('feature_importance_scores', {})
+                self.logger.info(f"✅ Enhanced data-driven feature selection completed: {len(selected_features)} features selected")
                 
                 # Use selected features
-                data = selected_features
+                data = data[selected_features]
                 
             except Exception as e:
                 self.logger.warning(f"⚠️ Enhanced data-driven feature selection failed: {e}")

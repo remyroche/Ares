@@ -512,7 +512,56 @@ async def run_step(
             VectorizedAdvancedFeatureEngineering,
         )
 
-        # 1) Load unified data from step1_5 using secure data loader
+        # 1) Load matrix operations results from step2_5
+        logger.info("📊 Loading matrix operations results from step2_5...")
+        logger.info("🔍 Attempting to load matrix operations from data/matrix_operations directory...")
+
+        try:
+            import json
+            from pathlib import Path
+            
+            # Load matrix operations results
+            matrix_ops_dir = Path("data/matrix_operations")
+            matrix_ops_config_file = matrix_ops_dir / f"{exchange}_{symbol}_{timeframe}_matrix_operations_config.json"
+            matrix_ops_results_file = matrix_ops_dir / f"{exchange}_{symbol}_{timeframe}_matrix_operations_results.json"
+            
+            if matrix_ops_config_file.exists() and matrix_ops_results_file.exists():
+                logger.info("📥 Loading matrix operations configuration and results...")
+                
+                with open(matrix_ops_config_file, 'r') as f:
+                    matrix_config = json.load(f)
+                
+                with open(matrix_ops_results_file, 'r') as f:
+                    matrix_results = json.load(f)
+                
+                logger.info(f"✅ Loaded matrix operations for {len(matrix_config.get('numeric_columns', []))} numeric columns")
+                logger.info(f"📊 Matrix operations performed: {list(matrix_results.keys())}")
+                
+                # Log matrix analysis insights
+                if "correlation_analysis" in matrix_results:
+                    high_corrs = matrix_results["correlation_analysis"].get("high_correlations", [])
+                    logger.info(f"🔗 Found {len(high_corrs)} high correlation pairs (threshold: {matrix_config.get('correlation_threshold', 0.8)})")
+                
+                if "condition_number_check" in matrix_results:
+                    condition_num = matrix_results["condition_number_check"].get("condition_number", float('inf'))
+                    is_well_conditioned = matrix_results["condition_number_check"].get("is_well_conditioned", False)
+                    logger.info(f"🔍 Matrix condition number: {condition_num:.2e} (well-conditioned: {is_well_conditioned})")
+                
+                if "eigenvalue_analysis" in matrix_results:
+                    small_eigenvalues = matrix_results["eigenvalue_analysis"].get("small_eigenvalues", 0)
+                    logger.info(f"📈 Found {small_eigenvalues} small eigenvalues (potential multicollinearity)")
+                
+            else:
+                logger.warning("⚠️ Matrix operations results not found - proceeding without matrix analysis")
+                matrix_config = {}
+                matrix_results = {}
+
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to load matrix operations: {str(e)} - proceeding without matrix analysis")
+            matrix_config = {}
+            matrix_results = {}
+
+        # 2) Load unified data from step1_5 using secure data loader
         logger.info("📊 Loading unified data from step1_5...")
         logger.info("🔍 Attempting to load unified data from data_cache directory...")
 

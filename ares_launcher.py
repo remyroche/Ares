@@ -1647,6 +1647,7 @@ class AresLauncher:
             "step1_data_collection",           # Download and prepare market data
             "step1_5_data_converter",          # Convert data to unified format
             "step2_data_reading",              # Read and validate data quality
+            "step2_5_enhanced_matrix_operations", # Enhanced matrix operations for feature engineering
             "step3_hmm_regime_discovery",      # Define HMM regime clusters (with basic features)
             "step4_triple_barrier_method",     # Apply triple barrier method
             "step4_regime_data_splitting",     # Regime data splitting (legacy step)

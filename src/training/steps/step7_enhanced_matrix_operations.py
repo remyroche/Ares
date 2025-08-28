@@ -84,21 +84,26 @@ class Step7EnhancedMatrixOperations:
             exchange = training_input.get("exchange", "UNKNOWN")
             timeframe = training_input.get("timeframe", "1m")
             
-            # Load data from step6_feature_engineering
-            feature_engineering_results = pipeline_state.get("step6_feature_engineering", {})
-            if not feature_engineering_results:
-                raise ValueError("Step 6 feature engineering results not found in pipeline state")
+            # Load engineered features from step6
+            features_train_path = f"data/training/{exchange}_{symbol}_{timeframe}_features_train.parquet"
+            features_val_path = f"data/training/{exchange}_{symbol}_{timeframe}_features_val.parquet"
             
-            # Get engineered features path
-            features_path = feature_engineering_results.get("features_path")
-            if not features_path or not os.path.exists(features_path):
-                raise ValueError(f"Engineered features path not found: {features_path}")
+            if not os.path.exists(features_train_path):
+                raise ValueError(f"Features train file not found: {features_train_path}")
             
-            self.logger.info(f"📊 Loading engineered features from: {features_path}")
+            if not os.path.exists(features_val_path):
+                raise ValueError(f"Features validation file not found: {features_val_path}")
             
-            # Load the engineered features
-            df = pd.read_parquet(features_path)
-            self.logger.info(f"📈 Loaded {len(df)} rows of data")
+            self.logger.info(f"📊 Loading engineered features from: {features_train_path}")
+            
+            # Load the engineered features (combine train and validation)
+            df_train = pd.read_parquet(features_train_path)
+            df_val = pd.read_parquet(features_val_path)
+            df = pd.concat([df_train, df_val], ignore_index=True)
+            
+            self.logger.info(f"📈 Loaded {len(df)} rows of engineered features")
+            self.logger.info(f"🔢 Features: {len(df.columns)} columns")
+
             
             # Prepare matrix operations configuration
             matrix_config = self._prepare_matrix_operations_config(df, symbol, exchange, timeframe)

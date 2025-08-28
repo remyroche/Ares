@@ -71,27 +71,25 @@ class StepDependencyValidator:
                 "required_columns": ["composite_cluster_id"],
                 "min_rows": 100
             },
-            "step4_regime_data_splitting": {
-                "required_files": ["data/training/regimes/*/regime_*/regime_data.parquet"],
-                "required_columns": ["composite_cluster_id"],
-                "min_rows": 50,
-                "min_regimes": 3,
-                "max_regimes": 20
-            },
-            "step5_triple_barrier_method": {
-                "required_files": ["data/training/regimes/*/regime_*/triple_barrier_labels.parquet"],
+            "step4_triple_barrier_method": {
+                "required_files": ["data/training/*_triple_barrier_*.parquet"],
                 "required_columns": ["triple_barrier_label"],
                 "min_rows": 50
             },
-            "step6_labeling": {
-                "required_files": ["data/training/regimes/*/regime_*/labeled_data.parquet"],
-                "required_columns": ["label", "triple_barrier_label"],
+            "step5_labeling": {
+                "required_files": ["data/training/*_labeled_*.parquet"],
+                "required_columns": ["label"],
                 "min_rows": 50
             },
-            "step7_feature_engineering": {
-                "required_files": ["data/training/regimes/*/regime_*/features.parquet"],
-                "required_columns": ["open", "high", "low", "close", "volume"],
-                "min_rows": 50
+            "step6_feature_engineering": {
+                "required_files": ["data/training/*_features_train.parquet", "data/training/*_features_val.parquet"],
+                "required_columns": ["timestamp", "returns", "volatility"],
+                "min_rows": 1000
+            },
+            "step7_enhanced_matrix_operations": {
+                "required_files": ["data/matrix_operations/*_matrix_operations_*.json"],
+                "required_columns": [],
+                "min_rows": 0
             },
             "step8_hmm_based_training": {
                 "required_files": ["data/training/*_hmm_models.pkl"],

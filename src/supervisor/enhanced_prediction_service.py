@@ -787,9 +787,21 @@ class EnhancedPredictionService:
         exchange: str,
         timeframe: str
     ) -> dict[str, Any]:
-        """Generate ML profit predictions from steps 6-14 models."""
+        """
+        Generate ML profit predictions with triple barrier probabilities.
+        
+        ML models deliver probabilities of reaching certain price targets
+        without hitting the opposite barrier first (triple barrier method).
+        """
         try:
             predictions = {}
+            
+            # Get current price for target calculations
+            current_price = market_data['close'].iloc[-1]
+            
+            # Define price targets and barriers based on configuration
+            profit_targets = self._calculate_profit_targets(current_price)
+            barrier_levels = self._calculate_barrier_levels(current_price)
             
             # Generate predictions from different ML model types
             for model_type, models in self.ml_profit_models.items():
@@ -801,26 +813,14 @@ class EnhancedPredictionService:
                                 market_data, regime_info
                             )
                             
-                            # Generate prediction
+                            # Generate prediction from ML model
                             raw_prediction = model_data["model"].predict(features)
                             
-                            # Process prediction based on model type
-                            if model_type == "hmm_profit":
-                                processed_prediction = self._process_hmm_profit_prediction(
-                                    raw_prediction, model_data, model_name
-                                )
-                            elif model_type == "analyst_profit":
-                                processed_prediction = self._process_analyst_profit_prediction(
-                                    raw_prediction, model_data, model_name
-                                )
-                            elif model_type == "tactician_profit":
-                                processed_prediction = self._process_tactician_profit_prediction(
-                                    raw_prediction, model_data, model_name
-                                )
-                            else:  # ensemble_profit
-                                processed_prediction = self._process_ensemble_profit_prediction(
-                                    raw_prediction, model_data, model_name
-                                )
+                            # Process prediction to extract triple barrier probabilities
+                            processed_prediction = self._process_triple_barrier_prediction(
+                                raw_prediction, model_data, model_name, 
+                                current_price, profit_targets, barrier_levels
+                            )
                             
                             predictions[f"{model_type}_{model_name}"] = processed_prediction
                             
@@ -832,6 +832,144 @@ class EnhancedPredictionService:
         except Exception as e:
             self.logger.error(error(f"❌ Error generating ML profit predictions: {e}"))
             return {}
+
+    def _calculate_profit_targets(self, current_price: float) -> dict[str, float]:
+        """Calculate profit targets for different confidence levels."""
+        return {
+            "conservative": current_price * (1 + self.profit_threshold * 0.5),  # 1% for conservative
+            "moderate": current_price * (1 + self.profit_threshold),           # 2% for moderate
+            "aggressive": current_price * (1 + self.profit_threshold * 2),     # 4% for aggressive
+        }
+
+    def _calculate_barrier_levels(self, current_price: float) -> dict[str, float]:
+        """Calculate barrier levels for stop-loss."""
+        return {
+            "tight": current_price * (1 - self.barrier_threshold * 0.5),       # 0.5% tight stop
+            "normal": current_price * (1 - self.barrier_threshold),            # 1% normal stop
+            "wide": current_price * (1 - self.barrier_threshold * 2),          # 2% wide stop
+        }
+
+    def _process_triple_barrier_prediction(
+        self,
+        raw_prediction: Any,
+        model_data: dict[str, Any],
+        model_name: str,
+        current_price: float,
+        profit_targets: dict[str, float],
+        barrier_levels: dict[str, float]
+    ) -> dict[str, Any]:
+        """
+        Process ML model prediction to extract triple barrier probabilities.
+        
+        The ML model should predict probabilities of reaching profit targets
+        without hitting the barrier first (triple barrier method).
+        """
+        try:
+            # Extract base prediction from model
+            if isinstance(raw_prediction, np.ndarray):
+                prediction_value = float(raw_prediction[0]) if raw_prediction.size > 0 else 0.0
+            else:
+                prediction_value = float(raw_prediction)
+
+            # Get model confidence (this comes from the ML model itself)
+            model_confidence = model_data.get("confidence", 0.5)
+            
+            # Extract direction and magnitude from prediction
+            direction = 1 if prediction_value > 0 else (-1 if prediction_value < 0 else 0)
+            magnitude = abs(prediction_value)
+
+            # Calculate triple barrier probabilities for different targets
+            triple_barrier_probabilities = {}
+            
+            for target_name, target_price in profit_targets.items():
+                for barrier_name, barrier_price in barrier_levels.items():
+                    # The ML model should provide probability of reaching target without hitting barrier
+                    # For now, we'll simulate this based on model confidence and magnitude
+                    probability = self._calculate_triple_barrier_probability(
+                        model_confidence, magnitude, direction,
+                        current_price, target_price, barrier_price
+                    )
+                    
+                    key = f"{target_name}_{barrier_name}"
+                    triple_barrier_probabilities[key] = {
+                        "probability": probability,
+                        "target_price": target_price,
+                        "barrier_price": barrier_price,
+                        "target_distance": abs(target_price - current_price) / current_price,
+                        "barrier_distance": abs(barrier_price - current_price) / current_price,
+                        "risk_reward_ratio": abs(target_price - current_price) / abs(barrier_price - current_price)
+                    }
+
+            return {
+                "prediction": prediction_value,
+                "direction": direction,
+                "magnitude": magnitude,
+                "model_confidence": model_confidence,  # Confidence from ML model
+                "current_price": current_price,
+                "triple_barrier_probabilities": triple_barrier_probabilities,
+                "model_type": model_data.get("model_type", "unknown"),
+                "model_name": model_name,
+                "timestamp": datetime.now().isoformat()
+            }
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error processing triple barrier prediction: {e}"))
+            return {
+                "prediction": 0.0,
+                "direction": 0,
+                "magnitude": 0.0,
+                "model_confidence": 0.5,
+                "current_price": current_price,
+                "triple_barrier_probabilities": {},
+                "model_type": model_data.get("model_type", "unknown"),
+                "model_name": model_name,
+                "error": str(e)
+            }
+
+    def _calculate_triple_barrier_probability(
+        self,
+        model_confidence: float,
+        magnitude: float,
+        direction: int,
+        current_price: float,
+        target_price: float,
+        barrier_price: float
+    ) -> float:
+        """
+        Calculate probability of reaching target price without hitting barrier first.
+        
+        This is a simplified implementation. In practice, the ML model should
+        directly output these probabilities based on triple barrier analysis.
+        """
+        try:
+            if direction == 0:
+                return 0.5  # Neutral direction
+            
+            # Calculate distances
+            target_distance = abs(target_price - current_price) / current_price
+            barrier_distance = abs(barrier_price - current_price) / current_price
+            
+            # Base probability from model confidence
+            base_probability = model_confidence
+            
+            # Adjust for magnitude (higher magnitude = higher probability of reaching target)
+            magnitude_factor = min(1.0, magnitude / target_distance) if target_distance > 0 else 0.5
+            
+            # Adjust for risk-reward ratio (better ratio = higher probability)
+            risk_reward_ratio = target_distance / barrier_distance if barrier_distance > 0 else 1.0
+            ratio_factor = min(1.0, risk_reward_ratio / 2.0)  # Normalize to 2:1 ratio
+            
+            # Combine factors
+            combined_probability = base_probability * magnitude_factor * ratio_factor
+            
+            # Ensure bounds
+            final_probability = max(0.0, min(1.0, combined_probability))
+            
+            return final_probability
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error calculating triple barrier probability: {e}"))
+            return 0.5
 
     @handle_errors(
         exceptions=(Exception,),
@@ -848,29 +986,39 @@ class EnhancedPredictionService:
         exchange: str
     ) -> dict[str, Any]:
         """
-        Generate enhanced confidence scores based on ML model outputs.
+        Generate enhanced confidence scores based on ML model triple barrier probabilities.
         
         This function integrates confidence scores from different ML models
-        and applies calibration/optimization, but does NOT calculate confidence
-        internally - confidence comes from the ML models themselves.
+        and applies calibration/optimization. The confidence comes from the ML models
+        and represents the probability of successful trades (reaching targets).
         """
         try:
             enhanced_confidence = {}
             
-            # Extract current price and volatility for context
-            current_price = market_data['close'].iloc[-1]
-            price_volatility = market_data['close'].pct_change().std()
-            
             for prediction_name, prediction_data in ml_profit_predictions.items():
                 try:
                     # Get confidence from ML model (this is the key - confidence comes from models)
-                    model_confidence = prediction_data.get("confidence", 0.5)
-                    predicted_direction = prediction_data.get("direction", 0)
-                    predicted_magnitude = prediction_data.get("magnitude", 0.0)
+                    model_confidence = prediction_data.get("model_confidence", 0.5)
+                    triple_barrier_probs = prediction_data.get("triple_barrier_probabilities", {})
                     
-                    # Apply calibration if available (but don't recalculate confidence)
+                    # Calculate aggregate confidence from triple barrier probabilities
+                    if triple_barrier_probs:
+                        # Use the highest probability as the primary confidence metric
+                        max_probability = max(prob["probability"] for prob in triple_barrier_probs.values())
+                        
+                        # Also calculate weighted average for different scenarios
+                        probabilities = [prob["probability"] for prob in triple_barrier_probs.values()]
+                        avg_probability = sum(probabilities) / len(probabilities)
+                        
+                        # Use the higher of max probability or model confidence
+                        primary_confidence = max(max_probability, model_confidence)
+                    else:
+                        primary_confidence = model_confidence
+                        avg_probability = model_confidence
+                    
+                    # Apply calibration if available
                     calibrated_confidence = await self._apply_model_confidence_calibration(
-                        model_confidence, prediction_name, symbol, exchange
+                        primary_confidence, prediction_name, symbol, exchange
                     )
                     
                     # Apply optimization weights if available
@@ -880,23 +1028,25 @@ class EnhancedPredictionService:
                     
                     enhanced_confidence[prediction_name] = {
                         "model_confidence": model_confidence,  # Original ML model confidence
+                        "triple_barrier_max_probability": max_probability if triple_barrier_probs else model_confidence,
+                        "triple_barrier_avg_probability": avg_probability,
                         "calibrated_confidence": calibrated_confidence,  # After calibration
                         "optimized_confidence": optimized_confidence,  # After optimization
-                        "direction": predicted_direction,
-                        "magnitude": predicted_magnitude,
-                        "current_price": current_price,
-                        "volatility": price_volatility,
-                        "confidence_source": "ml_model",  # Indicates confidence comes from ML model
-                        "calibration_applied": calibrated_confidence != model_confidence,
-                        "optimization_applied": optimized_confidence != calibrated_confidence
+                        "direction": prediction_data.get("direction", 0),
+                        "magnitude": prediction_data.get("magnitude", 0.0),
+                        "current_price": prediction_data.get("current_price", 0.0),
+                        "confidence_source": "ml_model_triple_barrier",  # Indicates confidence comes from ML model
+                        "calibration_applied": calibrated_confidence != primary_confidence,
+                        "optimization_applied": optimized_confidence != calibrated_confidence,
+                        "triple_barrier_details": triple_barrier_probs
                     }
                     
                 except Exception as e:
                     self.logger.warning(warning(f"⚠️ Failed to process confidence for {prediction_name}: {e}"))
                     enhanced_confidence[prediction_name] = {
-                        "model_confidence": prediction_data.get("confidence", 0.5),
-                        "calibrated_confidence": prediction_data.get("confidence", 0.5),
-                        "optimized_confidence": prediction_data.get("confidence", 0.5),
+                        "model_confidence": prediction_data.get("model_confidence", 0.5),
+                        "calibrated_confidence": prediction_data.get("model_confidence", 0.5),
+                        "optimized_confidence": prediction_data.get("model_confidence", 0.5),
                         "error": str(e)
                     }
 
@@ -1033,7 +1183,7 @@ class EnhancedPredictionService:
                     )
                     
                     # Add ML model confidence to barrier analysis
-                    barrier_metrics["model_confidence"] = prediction_data.get("confidence", 0.5)
+                    barrier_metrics["model_confidence"] = prediction_data.get("model_confidence", 0.5)
                     barrier_metrics["prediction_name"] = prediction_name
                     
                     barrier_analysis[prediction_name] = barrier_metrics

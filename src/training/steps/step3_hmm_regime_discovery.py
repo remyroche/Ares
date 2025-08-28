@@ -506,9 +506,9 @@ class HMMRegimeDiscoveryStep:
         context="prepare_hmm_features"
     )
     async def _prepare_hmm_features(self, df: Any) -> Any:
-        """Prepare features for HMM regime discovery."""
+        """Prepare comprehensive features for HMM regime discovery including momentum, S/R, volume, and volatility."""
         try:
-            self.logger.info("🔧 Starting feature preparation for HMM...")
+            self.logger.info("🔧 Starting comprehensive feature preparation for HMM...")
             
             # Ensure timestamp is datetime
             df = df.copy()
@@ -520,55 +520,167 @@ class HMMRegimeDiscoveryStep:
             self.logger.info("📅 Sorting data by timestamp...")
             df = df.sort_values("timestamp").reset_index(drop=True)
 
-            # Calculate basic features
-            self.logger.info("📊 Calculating price-based features...")
+            # Calculate comprehensive features
+            self.logger.info("📊 Calculating comprehensive features for HMM...")
             features = pd.DataFrame()
             features["timestamp"] = df["timestamp"]
 
-            # Price-based features
-            self.logger.info("   - Calculating returns...")
-            features["returns"] = df["close"].pct_change()
+            # === 1. MOMENTUM FEATURES ===
+            self.logger.info("🚀 Calculating momentum features...")
             
-            self.logger.info("   - Calculating log returns...")
-            features["log_returns"] = np.log(df["close"] / df["close"].shift(1))
+            # Price momentum
+            self.logger.info("   - Price momentum (5, 10, 20 periods)...")
+            features["price_momentum_5"] = df["close"].pct_change(5)
+            features["price_momentum_10"] = df["close"].pct_change(10)
+            features["price_momentum_20"] = df["close"].pct_change(20)
             
-            self.logger.info("   - Calculating volatility...")
-            features["volatility"] = features["returns"].rolling(window=20).std()
+            # Volume momentum
+            self.logger.info("   - Volume momentum...")
+            features["volume_momentum_5"] = df["volume"].pct_change(5)
+            features["volume_momentum_10"] = df["volume"].pct_change(10)
+            features["volume_momentum_20"] = df["volume"].pct_change(20)
             
-            self.logger.info("   - Calculating price range...")
-            features["price_range"] = (df["high"] - df["low"]) / df["close"]
-            
-            self.logger.info("   - Calculating volume ratio...")
-            features["volume_ratio"] = df["volume"] / df["volume"].rolling(window=20).mean()
-
-            # Technical indicators
-            self.logger.info("📈 Calculating technical indicators...")
-            self.logger.info("   - Calculating SMA 20...")
-            features["sma_20"] = df["close"].rolling(window=20).mean()
-            
-            self.logger.info("   - Calculating SMA 50...")
-            features["sma_50"] = df["close"].rolling(window=50).mean()
-            
-            self.logger.info("   - Calculating RSI...")
+            # RSI momentum
+            self.logger.info("   - RSI momentum...")
             features["rsi"] = self._calculate_rsi(df["close"])
+            features["rsi_momentum"] = features["rsi"].diff(5)
             
-            self.logger.info("   - Calculating MACD...")
+            # MACD momentum
+            self.logger.info("   - MACD momentum...")
             features["macd"] = self._calculate_macd(df["close"])
+            features["macd_momentum"] = features["macd"].diff(5)
 
-            # Remove NaN values
-            initial_rows = len(features)
-            self.logger.info(f"🧹 Removing NaN values (initial rows: {initial_rows:,})...")
-            features = features.dropna()
-            final_rows = len(features)
+            # === 2. VOLATILITY FEATURES ===
+            self.logger.info("📈 Calculating volatility features...")
+            
+            # Multiple timeframe volatility
+            self.logger.info("   - Multi-timeframe volatility...")
+            features["volatility_5"] = df["close"].pct_change().rolling(window=5).std()
+            features["volatility_10"] = df["close"].pct_change().rolling(window=10).std()
+            features["volatility_20"] = df["close"].pct_change().rolling(window=20).std()
+            
+            # EWMA volatility (smoother)
+            self.logger.info("   - EWMA volatility...")
+            features["ewma_volatility_20"] = df["close"].pct_change().ewm(span=20).std()
+            
+            # Volatility acceleration and momentum
+            self.logger.info("   - Volatility acceleration and momentum...")
+            features["volatility_acceleration"] = features["volatility_20"].diff()
+            features["volatility_momentum"] = features["volatility_20"] - features["volatility_20"].shift(5)
+            
+            # ATR-based volatility
+            self.logger.info("   - ATR volatility...")
+            features["atr"] = self._calculate_atr(df)
+            features["atr_normalized"] = features["atr"] / df["close"]
+
+            # === 3. VOLUME FEATURES ===
+            self.logger.info("📊 Calculating volume features...")
+            
+            # Volume ratios
+            self.logger.info("   - Volume ratios...")
+            features["volume_ratio_5"] = df["volume"] / df["volume"].rolling(window=5).mean()
+            features["volume_ratio_10"] = df["volume"] / df["volume"].rolling(window=10).mean()
+            features["volume_ratio_20"] = df["volume"] / df["volume"].rolling(window=20).mean()
+            
+            # Volume change
+            self.logger.info("   - Volume change...")
+            features["volume_change"] = df["volume"].pct_change()
+            
+            # Volume-price relationship
+            self.logger.info("   - Volume-price relationship...")
+            features["volume_price_trend"] = (df["close"] - df["close"].shift(1)) * df["volume"]
+            features["volume_price_trend_ratio"] = features["volume_price_trend"] / features["volume_price_trend"].rolling(20).mean()
+
+            # === 4. SUPPORT/RESISTANCE FEATURES ===
+            self.logger.info("🎯 Calculating support/resistance features...")
+            
+            # Pivot points
+            self.logger.info("   - Pivot points...")
+            features["pivot_point"] = (df["high"] + df["low"] + df["close"]) / 3
+            features["support_1"] = 2 * features["pivot_point"] - df["high"]
+            features["resistance_1"] = 2 * features["pivot_point"] - df["low"]
+            
+            # Distance to support/resistance
+            self.logger.info("   - Distance to S/R levels...")
+            features["distance_to_support"] = (df["close"] - features["support_1"]) / df["close"]
+            features["distance_to_resistance"] = (features["resistance_1"] - df["close"]) / df["close"]
+            
+            # S/R strength indicators
+            self.logger.info("   - S/R strength indicators...")
+            features["sr_strength"] = self._calculate_sr_strength(df)
+            
+            # Bollinger Bands (for S/R context)
+            self.logger.info("   - Bollinger Bands...")
+            bb_features = self._calculate_bollinger_bands(df["close"])
+            features = pd.concat([features, bb_features], axis=1)
+
+            # === 5. ADDITIONAL TECHNICAL FEATURES ===
+            self.logger.info("🔧 Calculating additional technical features...")
+            
+            # Moving averages
+            self.logger.info("   - Moving averages...")
+            features["sma_20"] = df["close"].rolling(window=20).mean()
+            features["sma_50"] = df["close"].rolling(window=50).mean()
+            features["ema_12"] = df["close"].ewm(span=12).mean()
+            features["ema_26"] = df["close"].ewm(span=26).mean()
+            
+            # Price position relative to MAs
+            self.logger.info("   - Price position relative to MAs...")
+            features["price_vs_sma20"] = (df["close"] - features["sma_20"]) / features["sma_20"]
+            features["price_vs_sma50"] = (df["close"] - features["sma_50"]) / features["sma_50"]
+            
+            # ADX for trend strength
+            self.logger.info("   - ADX trend strength...")
+            features["adx"] = self._calculate_adx(df)
+
+            # === 6. FEATURE INTERACTIONS ===
+            self.logger.info("🔄 Calculating feature interactions...")
+            
+            # Momentum × Volume interactions
+            self.logger.info("   - Momentum × Volume interactions...")
+            features["momentum_volume_interaction"] = features["price_momentum_10"] * features["volume_ratio_10"]
+            
+            # Volatility × Volume interactions
+            self.logger.info("   - Volatility × Volume interactions...")
+            features["volatility_volume_interaction"] = features["volatility_20"] * features["volume_ratio_20"]
+            
+            # RSI × Momentum interactions
+            self.logger.info("   - RSI × Momentum interactions...")
+            features["rsi_momentum_interaction"] = features["rsi"] * features["price_momentum_10"]
+
+            # === 7. CLEANUP AND VALIDATION ===
+            self.logger.info("🧹 Cleaning and validating features...")
+            
+            # Remove timestamp column for HMM analysis
+            hmm_features = features.drop("timestamp", axis=1)
+            
+            # Handle NaN values intelligently
+            initial_rows = len(hmm_features)
+            self.logger.info(f"   - Initial rows: {initial_rows:,}")
+            
+            # Forward fill for technical indicators
+            technical_cols = ["rsi", "macd", "adx", "bb_position", "bb_width"]
+            for col in technical_cols:
+                if col in hmm_features.columns:
+                    hmm_features[col] = hmm_features[col].ffill()
+            
+            # Fill remaining NaN with 0
+            hmm_features = hmm_features.fillna(0)
+            
+            # Final validation
+            final_rows = len(hmm_features)
             removed_rows = initial_rows - final_rows
             
-            self.logger.info(f"✅ Feature preparation completed:")
+            self.logger.info(f"✅ Comprehensive feature preparation completed:")
             self.logger.info(f"   - Initial rows: {initial_rows:,}")
             self.logger.info(f"   - Final rows: {final_rows:,}")
             self.logger.info(f"   - Removed rows: {removed_rows:,} ({removed_rows/initial_rows*100:.1f}%)")
-            self.logger.info(f"   - Features created: {len(features.columns)}")
+            self.logger.info(f"   - Features created: {len(hmm_features.columns)}")
             
-            return features
+            # Log feature categories
+            self._log_feature_categories(hmm_features)
+            
+            return hmm_features
 
         except Exception as e:
             self.logger.exception(f"❌ Error preparing HMM features: {e}")
@@ -602,6 +714,159 @@ class HMMRegimeDiscoveryStep:
         macd = ema_fast - ema_slow
         return macd
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.Series(),
+        context="calculate_atr"
+    )
+    def _calculate_atr(self, df: Any, window: int = 14) -> Any:
+        """Calculate Average True Range (ATR)."""
+        self.logger.debug(f"Calculating ATR with window {window}...")
+        high = df["high"]
+        low = df["low"]
+        close = df["close"]
+        
+        tr1 = high - low
+        tr2 = abs(high - close.shift(1))
+        tr3 = abs(low - close.shift(1))
+        
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr = tr.rolling(window=window).mean()
+        return atr
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.Series(),
+        context="calculate_bollinger_bands"
+    )
+    def _calculate_bollinger_bands(self, prices: Any, window: int = 20, num_std: float = 2) -> Any:
+        """Calculate Bollinger Bands."""
+        self.logger.debug(f"Calculating Bollinger Bands (window={window}, std={num_std})...")
+        sma = prices.rolling(window=window).mean()
+        std = prices.rolling(window=window).std()
+        
+        bb_upper = sma + (std * num_std)
+        bb_lower = sma - (std * num_std)
+        bb_width = (bb_upper - bb_lower) / sma
+        bb_position = (prices - bb_lower) / (bb_upper - bb_lower)
+        
+        bb_features = pd.DataFrame({
+            "bb_upper": bb_upper,
+            "bb_middle": sma,
+            "bb_lower": bb_lower,
+            "bb_width": bb_width,
+            "bb_position": bb_position
+        })
+        
+        return bb_features
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.Series(),
+        context="calculate_adx"
+    )
+    def _calculate_adx(self, df: Any, window: int = 14) -> Any:
+        """Calculate Average Directional Index (ADX)."""
+        self.logger.debug(f"Calculating ADX with window {window}...")
+        high = df["high"]
+        low = df["low"]
+        close = df["close"]
+        
+        # Calculate True Range
+        tr1 = high - low
+        tr2 = abs(high - close.shift(1))
+        tr3 = abs(low - close.shift(1))
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        
+        # Calculate Directional Movement
+        dm_plus = high - high.shift(1)
+        dm_minus = low.shift(1) - low
+        
+        dm_plus = dm_plus.where((dm_plus > dm_minus) & (dm_plus > 0), 0)
+        dm_minus = dm_minus.where((dm_minus > dm_plus) & (dm_minus > 0), 0)
+        
+        # Calculate smoothed values
+        tr_smooth = tr.rolling(window=window).mean()
+        dm_plus_smooth = dm_plus.rolling(window=window).mean()
+        dm_minus_smooth = dm_minus.rolling(window=window).mean()
+        
+        # Calculate DI+ and DI-
+        di_plus = 100 * (dm_plus_smooth / tr_smooth)
+        di_minus = 100 * (dm_minus_smooth / tr_smooth)
+        
+        # Calculate DX and ADX
+        dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
+        adx = dx.rolling(window=window).mean()
+        
+        return adx
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.Series(),
+        context="calculate_sr_strength"
+    )
+    def _calculate_sr_strength(self, df: Any, window: int = 20) -> Any:
+        """Calculate support/resistance strength indicator."""
+        self.logger.debug(f"Calculating S/R strength with window {window}...")
+        
+        # Calculate price swings
+        high_swing = df["high"].rolling(window=window, center=True).max()
+        low_swing = df["low"].rolling(window=window, center=True).min()
+        
+        # Calculate strength based on how close price is to swing levels
+        current_price = df["close"]
+        high_strength = (high_swing - current_price) / high_swing
+        low_strength = (current_price - low_swing) / low_swing
+        
+        # Combined strength indicator
+        sr_strength = (high_strength + low_strength) / 2
+        return sr_strength
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="log_feature_categories"
+    )
+    def _log_feature_categories(self, features: Any) -> None:
+        """Log feature categories for analysis."""
+        try:
+            feature_categories = {
+                "momentum": [],
+                "volatility": [],
+                "volume": [],
+                "support_resistance": [],
+                "technical": [],
+                "interactions": []
+            }
+            
+            for col in features.columns:
+                if "momentum" in col.lower():
+                    feature_categories["momentum"].append(col)
+                elif "volatility" in col.lower():
+                    feature_categories["volatility"].append(col)
+                elif "volume" in col.lower():
+                    feature_categories["volume"].append(col)
+                elif any(sr_term in col.lower() for sr_term in ["support", "resistance", "pivot", "sr_", "bb_"]):
+                    feature_categories["support_resistance"].append(col)
+                elif any(tech_term in col.lower() for tech_term in ["rsi", "macd", "adx", "atr", "sma", "ema"]):
+                    feature_categories["technical"].append(col)
+                elif "interaction" in col.lower():
+                    feature_categories["interactions"].append(col)
+                else:
+                    feature_categories["technical"].append(col)
+            
+            self.logger.info("📊 Feature categories:")
+            for category, cols in feature_categories.items():
+                if cols:
+                    self.logger.info(f"   - {category.capitalize()}: {len(cols)} features")
+                    if len(cols) <= 5:  # Show all if 5 or fewer
+                        self.logger.info(f"     {cols}")
+                    else:  # Show first 3 and last 2
+                        self.logger.info(f"     {cols[:3]} ... {cols[-2:]}")
+        
+        except Exception as e:
+            self.logger.warning(f"Could not log feature categories: {e}")
+
     @with_tracing_span("perform_hmm_regime_discovery")
     @resource_monitor
     @handle_errors(
@@ -614,71 +879,212 @@ class HMMRegimeDiscoveryStep:
         training_input: dict[str, Any], 
         data: Any
     ) -> dict[str, Any]:
-        """Perform HMM regime discovery on the prepared data."""
+        """Perform HMM regime discovery using hmmlearn with comprehensive features."""
         try:
             self.logger.info("🔍 Starting HMM regime discovery analysis...")
             self.logger.info(f"📊 Input data shape: {data.shape}")
 
-            # For now, implement a simple regime detection
-            # In a full implementation, this would use a proper HMM library like hmmlearn
-            
-            # Simple regime detection based on volatility and returns
-            self.logger.info("🔧 Preparing features for regime analysis...")
+            # Prepare comprehensive features
+            self.logger.info("🔧 Preparing comprehensive features for HMM analysis...")
             features = await self._prepare_hmm_features(data)
             
+            if features.empty:
+                self.logger.error("❌ No features available for HMM analysis")
+                return {"success": False, "error": "No features available"}
+
+            self.logger.info(f"📊 Features prepared: {len(features.columns)} features, {len(features)} samples")
+            
+            # Log feature statistics
             self.logger.info("📊 Feature statistics:")
             for col in features.columns:
-                if col != "timestamp":
-                    series = features[col].dropna()
-                    if len(series) > 0:
-                        self.logger.info(f"   - {col}: mean={series.mean():.6f}, std={series.std():.6f}, min={series.min():.6f}, max={series.max():.6f}")
+                series = features[col].dropna()
+                if len(series) > 0:
+                    self.logger.info(f"   - {col}: mean={series.mean():.6f}, std={series.std():.6f}, min={series.min():.6f}, max={series.max():.6f}")
+
+            # Try to import hmmlearn
+            try:
+                from hmmlearn import hmm
+                HMM_AVAILABLE = True
+                self.logger.info("✅ hmmlearn library available")
+            except ImportError:
+                HMM_AVAILABLE = False
+                self.logger.warning("⚠️ hmmlearn not available, falling back to simple regime detection")
+
+            if HMM_AVAILABLE:
+                # Use proper HMM implementation
+                return await self._perform_hmmlearn_regime_discovery(features)
+            else:
+                # Fallback to simple regime detection
+                return await self._perform_simple_regime_discovery(features)
+
+        except Exception as e:
+            self.logger.exception(f"❌ Error performing HMM regime discovery: {e}")
+            return {"success": False, "error": str(e)}
+
+    @with_tracing_span("perform_hmmlearn_regime_discovery")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={"success": False, "error": "HMMLearn regime discovery failed"},
+        context="perform_hmmlearn_regime_discovery"
+    )
+    async def _perform_hmmlearn_regime_discovery(self, features: Any) -> dict[str, Any]:
+        """Perform HMM regime discovery using hmmlearn library."""
+        try:
+            from hmmlearn import hmm
+            from sklearn.preprocessing import StandardScaler
             
-            # Define regimes based on volatility and returns
-            self.logger.info("🎯 Defining regimes based on volatility and returns...")
-            volatility = features["volatility"].fillna(0)
-            returns = features["returns"].fillna(0)
+            self.logger.info("🧠 Using hmmlearn for HMM regime discovery...")
             
-            self.logger.info(f"📊 Volatility quantiles:")
+            # Scale features for HMM
+            self.logger.info("📊 Scaling features for HMM...")
+            scaler = StandardScaler()
+            features_scaled = scaler.fit_transform(features)
+            
+            # Configure HMM parameters
+            n_states = 4  # BULL, BEAR, SIDEWAYS, VOLATILE
+            n_iter = 100
+            random_state = 42
+            
+            self.logger.info(f"🎯 Training HMM with {n_states} states, {n_iter} iterations...")
+            
+            # Train Gaussian HMM
+            hmm_model = hmm.GaussianHMM(
+                n_components=n_states,
+                n_iter=n_iter,
+                random_state=random_state,
+                covariance_type="full",
+                init_params="stmc",  # Initialize all parameters
+                params="stmc"  # Train all parameters
+            )
+            
+            # Fit the model
+            hmm_model.fit(features_scaled)
+            
+            # Get state sequence
+            state_sequence = hmm_model.predict(features_scaled)
+            
+            # Get state probabilities
+            state_probs = hmm_model.predict_proba(features_scaled)
+            
+            # Interpret states based on feature characteristics
+            self.logger.info("🔍 Interpreting HMM states...")
+            state_interpretation = self._interpret_hmm_states(features, state_sequence, state_probs)
+            
+            # Map states to regime names
+            regime_states = []
+            for state in state_sequence:
+                regime_name = state_interpretation["state_to_regime_map"].get(state, f"regime_{state}")
+                regime_states.append(regime_name)
+            
+            # Calculate regime statistics
+            regime_counts = {}
+            for regime in regime_states:
+                regime_counts[regime] = regime_counts.get(regime, 0) + 1
+            
+            # Calculate transition matrix
+            regime_transitions = self._calculate_regime_transitions(regime_states)
+            
+            # Calculate additional metrics
+            metrics = {
+                "total_periods": len(regime_states),
+                "unique_regimes": len(regime_counts),
+                "regime_distribution": regime_counts,
+                "hmm_score": hmm_model.score(features_scaled),
+                "state_interpretation": state_interpretation["state_analysis"]
+            }
+            
+            self.logger.info(f"✅ HMMLearn regime discovery completed successfully")
+            self.logger.info(f"📊 Discovered {len(regime_counts)} unique regimes:")
+            for regime, count in regime_counts.items():
+                percentage = (count / len(regime_states)) * 100
+                self.logger.info(f"   - {regime}: {count:,} periods ({percentage:.1f}%)")
+            
+            # Log HMM model score
+            self.logger.info(f"📈 HMM model score: {metrics['hmm_score']:.4f}")
+            
+            # Log transition matrix
+            if regime_transitions:
+                self.logger.info("🔄 Regime transition matrix:")
+                for from_regime, to_regimes in regime_transitions.items():
+                    self.logger.info(f"   From {from_regime}:")
+                    for to_regime, prob in to_regimes.items():
+                        self.logger.info(f"     → {to_regime}: {prob:.3f}")
+            
+            return {
+                "success": True,
+                "regime_states": regime_states,
+                "regime_transitions": regime_transitions,
+                "metrics": metrics,
+                "hmm_model": hmm_model,
+                "scaler": scaler,
+                "state_probs": state_probs
+            }
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error in HMMLearn regime discovery: {e}")
+            return {"success": False, "error": str(e)}
+
+    @with_tracing_span("perform_simple_regime_discovery")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={"success": False, "error": "Simple regime discovery failed"},
+        context="perform_simple_regime_discovery"
+    )
+    async def _perform_simple_regime_discovery(self, features: Any) -> dict[str, Any]:
+        """Perform simple regime discovery based on volatility and momentum."""
+        try:
+            self.logger.info("📊 Using simple regime detection (fallback method)...")
+            
+            # Use key features for regime classification
+            volatility = features.get("volatility_20", features.get("volatility", pd.Series([0] * len(features))))
+            momentum = features.get("price_momentum_10", pd.Series([0] * len(features)))
+            volume_ratio = features.get("volume_ratio_10", pd.Series([1] * len(features)))
+            
+            # Fill NaN values
+            volatility = volatility.fillna(0)
+            momentum = momentum.fillna(0)
+            volume_ratio = volume_ratio.fillna(1)
+            
+            # Calculate quantiles for classification
             vol_quantiles = volatility.quantile([0.2, 0.8])
-            self.logger.info(f"   - 20th percentile: {vol_quantiles[0.2]:.6f}")
-            self.logger.info(f"   - 80th percentile: {vol_quantiles[0.8]:.6f}")
+            mom_quantiles = momentum.quantile([0.3, 0.7])
+            vol_quantiles = volume_ratio.quantile([0.3, 0.7])
             
-            self.logger.info(f"📊 Returns quantiles:")
-            ret_quantiles = returns.quantile([0.3, 0.7])
-            self.logger.info(f"   - 30th percentile: {ret_quantiles[0.3]:.6f}")
-            self.logger.info(f"   - 70th percentile: {ret_quantiles[0.7]:.6f}")
+            self.logger.info(f"📊 Volatility quantiles: {vol_quantiles.to_dict()}")
+            self.logger.info(f"📊 Momentum quantiles: {mom_quantiles.to_dict()}")
+            self.logger.info(f"📊 Volume ratio quantiles: {vol_quantiles.to_dict()}")
             
-            # Simple regime classification
-            self.logger.info("🏷️ Classifying regimes...")
+            # Classify regimes
             regimes = []
             regime_counts = {}
             total_periods = len(features)
             
-            # Progress tracking
-            progress_interval = max(1, total_periods // 10)  # Log every 10% progress
+            progress_interval = max(1, total_periods // 10)
             
-            for i in range(len(features)):
-                vol = volatility.iloc[i]
-                ret = returns.iloc[i]
+            for i in range(total_periods):
+                vol = volatility.iloc[i] if hasattr(volatility, 'iloc') else volatility[i]
+                mom = momentum.iloc[i] if hasattr(momentum, 'iloc') else momentum[i]
+                vol_ratio = volume_ratio.iloc[i] if hasattr(volume_ratio, 'iloc') else volume_ratio[i]
                 
+                # Classify based on volatility and momentum
                 if vol > vol_quantiles[0.8]:
-                    if ret > ret_quantiles[0.7]:
+                    if mom > mom_quantiles[0.7]:
                         regime = "high_volatility_bull"
-                    elif ret < ret_quantiles[0.3]:
+                    elif mom < mom_quantiles[0.3]:
                         regime = "high_volatility_bear"
                     else:
                         regime = "high_volatility_neutral"
                 elif vol < vol_quantiles[0.2]:
-                    if ret > ret_quantiles[0.7]:
+                    if mom > mom_quantiles[0.7]:
                         regime = "low_volatility_bull"
-                    elif ret < ret_quantiles[0.3]:
+                    elif mom < mom_quantiles[0.3]:
                         regime = "low_volatility_bear"
                     else:
                         regime = "low_volatility_neutral"
                 else:
-                    if ret > ret_quantiles[0.7]:
+                    if mom > mom_quantiles[0.7]:
                         regime = "medium_volatility_bull"
-                    elif ret < ret_quantiles[0.3]:
+                    elif mom < mom_quantiles[0.3]:
                         regime = "medium_volatility_bear"
                     else:
                         regime = "medium_volatility_neutral"
@@ -690,42 +1096,135 @@ class HMMRegimeDiscoveryStep:
                 if (i + 1) % progress_interval == 0:
                     progress = ((i + 1) / total_periods) * 100
                     self.logger.info(f"📊 Regime classification progress: {progress:.1f}% ({i + 1:,}/{total_periods:,})")
-
+            
             # Calculate regime statistics
-            self.logger.info("📊 Calculating regime statistics...")
-            regime_counts_series = pd.Series(regime_counts) if PANDAS_AVAILABLE else None
             regime_transitions = self._calculate_regime_transitions(regimes)
-
-            self.logger.info(f"✅ HMM regime discovery completed successfully")
+            
+            metrics = {
+                "total_periods": len(regimes),
+                "unique_regimes": len(regime_counts),
+                "regime_distribution": regime_counts,
+                "method": "simple_classification"
+            }
+            
+            self.logger.info(f"✅ Simple regime discovery completed")
             self.logger.info(f"📊 Discovered {len(regime_counts)} unique regimes:")
             for regime, count in regime_counts.items():
                 percentage = (count / len(regimes)) * 100
                 self.logger.info(f"   - {regime}: {count:,} periods ({percentage:.1f}%)")
-
-            # Log transition matrix
-            if regime_transitions:
-                self.logger.info("🔄 Regime transition matrix:")
-                for from_regime, to_regimes in regime_transitions.items():
-                    self.logger.info(f"   From {from_regime}:")
-                    for to_regime, prob in to_regimes.items():
-                        self.logger.info(f"     → {to_regime}: {prob:.3f}")
-
+            
             return {
                 "success": True,
                 "regime_states": regimes,
                 "regime_transitions": regime_transitions,
-                "metrics": {
-                    "total_periods": len(regimes),
-                    "unique_regimes": len(regime_counts),
-                    "regime_distribution": regime_counts,
-                    "volatility_quantiles": vol_quantiles.to_dict(),
-                    "returns_quantiles": ret_quantiles.to_dict()
-                }
+                "metrics": metrics
             }
-
+            
         except Exception as e:
-            self.logger.exception(f"❌ Error performing HMM regime discovery: {e}")
+            self.logger.exception(f"❌ Error in simple regime discovery: {e}")
             return {"success": False, "error": str(e)}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={"state_to_regime_map": {}, "state_analysis": {}},
+        context="interpret_hmm_states"
+    )
+    def _interpret_hmm_states(self, features: Any, state_sequence: Any, state_probs: Any) -> dict[str, Any]:
+        """Interpret HMM states based on feature characteristics."""
+        try:
+            self.logger.info("🔍 Interpreting HMM states...")
+            
+            # Analyze each state's characteristics
+            state_analysis = {}
+            state_to_regime_map = {}
+            
+            unique_states = sorted(set(state_sequence))
+            
+            for state in unique_states:
+                # Get data points for this state
+                state_mask = state_sequence == state
+                state_data = features[state_mask]
+                
+                if len(state_data) == 0:
+                    continue
+                
+                # Calculate state characteristics
+                state_char = {
+                    "count": len(state_data),
+                    "percentage": len(state_data) / len(features) * 100
+                }
+                
+                # Analyze key features for this state
+                key_features = [
+                    "price_momentum_10", "volatility_20", "volume_ratio_10", 
+                    "rsi", "adx", "bb_position"
+                ]
+                
+                for feature in key_features:
+                    if feature in state_data.columns:
+                        feature_data = state_data[feature].dropna()
+                        if len(feature_data) > 0:
+                            state_char[f"{feature}_mean"] = feature_data.mean()
+                            state_char[f"{feature}_std"] = feature_data.std()
+                
+                state_analysis[state] = state_char
+                
+                # Map state to regime based on characteristics
+                regime_name = self._map_state_to_regime(state_char)
+                state_to_regime_map[state] = regime_name
+                
+                self.logger.info(f"   State {state} → {regime_name}: {len(state_data)} periods ({state_char['percentage']:.1f}%)")
+            
+            return {
+                "state_to_regime_map": state_to_regime_map,
+                "state_analysis": state_analysis
+            }
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error interpreting HMM states: {e}")
+            return {"state_to_regime_map": {}, "state_analysis": {}}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return="unknown_regime",
+        context="map_state_to_regime"
+    )
+    def _map_state_to_regime(self, state_char: dict[str, Any]) -> str:
+        """Map state characteristics to regime name."""
+        try:
+            # Extract key characteristics
+            momentum = state_char.get("price_momentum_10_mean", 0)
+            volatility = state_char.get("volatility_20_mean", 0)
+            volume_ratio = state_char.get("volume_ratio_10_mean", 1)
+            rsi = state_char.get("rsi_mean", 50)
+            adx = state_char.get("adx_mean", 25)
+            
+            # Classify based on characteristics
+            if volatility > 0.02:  # High volatility
+                if momentum > 0.001:  # Positive momentum
+                    return "high_volatility_bull"
+                elif momentum < -0.001:  # Negative momentum
+                    return "high_volatility_bear"
+                else:
+                    return "high_volatility_neutral"
+            elif volatility < 0.01:  # Low volatility
+                if momentum > 0.001:
+                    return "low_volatility_bull"
+                elif momentum < -0.001:
+                    return "low_volatility_bear"
+                else:
+                    return "low_volatility_neutral"
+            else:  # Medium volatility
+                if momentum > 0.001:
+                    return "medium_volatility_bull"
+                elif momentum < -0.001:
+                    return "medium_volatility_bear"
+                else:
+                    return "medium_volatility_neutral"
+                    
+        except Exception as e:
+            self.logger.warning(f"Error mapping state to regime: {e}")
+            return "unknown_regime"
 
     @handle_errors(
         exceptions=(Exception,),

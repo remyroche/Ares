@@ -1,0 +1,17 @@
+2025-08-28 13:55:34,839 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-28 13:55:34,845 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for prepare_multi_output_targets - -
+2025-08-28 13:55:34,845 INFO AresTradingSystem.System Preparing multi-output targets for training - -
+2025-08-28 13:55:34,846 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_all_targets - -
+2025-08-28 13:55:34,846 INFO AresTradingSystem.System Generating all probability targets for multi-output training - -
+2025-08-28 13:55:34,846 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_triple_barrier_targets - -
+2025-08-28 13:55:34,852 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_triple_barrier_targets - -
+2025-08-28 13:55:34,852 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_direction_targets - -
+2025-08-28 13:55:34,852 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_direction_targets - -
+2025-08-28 13:55:34,852 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_magnitude_targets - -
+2025-08-28 13:55:34,866 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_magnitude_targets - -
+2025-08-28 13:55:34,866 INFO AresTradingSystem.System.ComprehensiveValidator 🔍 [VALID] Starting comprehensive validation for generate_barrier_avoidance_targets - -
+2025-08-28 13:55:34,883 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_barrier_avoidance_targets - -
+2025-08-28 13:55:34,883 INFO AresTradingSystem.System Generated targets for 100 samples - -
+2025-08-28 13:55:34,883 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for generate_all_targets - -
+2025-08-28 13:55:34,883 INFO AresTradingSystem.System.ComprehensiveValidator ✅ [VALID] Comprehensive validation completed for prepare_multi_output_targets - -
+2025-08-28 13:55:34,883 ERROR AresTradingSystem.System [91m[1m❌[0m [91m[1mModel not trained. Call train_multi_output_model first.[0m - -

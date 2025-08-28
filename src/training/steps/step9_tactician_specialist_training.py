@@ -524,7 +524,7 @@ class TacticianSpecialistTrainingStep:
     ) -> dict[str, Any]:
         """Train LightGBM model with multi-output probability training."""
         try:
-            from ..multi_output_model_trainer import create_multi_output_trainer
+            from ..multi_output_probability_trainer import MultiOutputProbabilityTrainer
 
             # Create market data DataFrame for probability calculations
             market_data = pd.DataFrame({
@@ -532,41 +532,46 @@ class TacticianSpecialistTrainingStep:
                 'volume': np.random.randn(len(X_train) + len(X_test))
             })
 
-            # Initialize multi-output trainer with probability outputs enabled
-            multi_output_trainer = create_multi_output_trainer(
-                model_type="LightGBM",
-                enable_probability_outputs=True,
-                use_profit_features=True,
-                probability_config={
-                    "profit_target": 0.02,
-                    "stop_loss": 0.01,
-                    "look_ahead_periods": 20,
-                    "magnitude_threshold_factor": 0.8,
-                    "adverse_threshold": 0.01,
-                    "avoidance_look_ahead": 10
-                }
+            # Configure multi-output training
+            multi_output_config = {
+                "use_lightgbm": True,
+                "n_estimators": 1000,
+                "learning_rate": 0.01,
+                "max_depth": 8,
+                "profit_target": 0.02,
+                "stop_loss": 0.01,
+                "look_ahead_periods": 20,
+                "magnitude_threshold_factor": 0.8,
+                "adverse_threshold": 0.01,
+                "avoidance_look_ahead": 10
+            }
+            
+            multi_output_trainer = MultiOutputProbabilityTrainer(multi_output_config)
+            
+            # Generate multi-output targets
+            y_train_multi = multi_output_trainer.prepare_multi_output_targets(
+                X_train.values, y_train.values, market_data.iloc[:len(X_train)]
             )
-
-            # Train with probability targets
-            training_result = multi_output_trainer.train_with_probability_targets(
-                X_train=X_train.values,
-                X_val=X_test.values,
-                y_train=y_train.values,
-                y_val=y_test.values,
-                market_data=market_data,
-                feature_names=list(X_train.columns)
+            y_test_multi = multi_output_trainer.prepare_multi_output_targets(
+                X_test.values, y_test.values, market_data.iloc[len(X_train):]
             )
-
-            # Extract results
-            trained_models = training_result.get("trained_models", {})
-            probability_outputs = training_result.get("probability_outputs", {})
-            probability_metrics = training_result.get("probability_metrics", {})
-
-            # Calculate overall accuracy from probability metrics
+            
+            # Train multi-output model
+            trained_models = multi_output_trainer.train_multi_output_model(
+                X_train.values, y_train_multi, X_test.values, y_test_multi
+            )
+            
+            # Generate probability outputs
+            price_action_probabilities = multi_output_trainer.predict_probabilities(
+                X_test.values, market_data.iloc[len(X_train):]
+            )
+            
+            # Calculate overall accuracy from probability outputs
             overall_accuracy = 0.0
-            if probability_metrics:
-                accuracies = [metrics.get("accuracy", 0.0) for metrics in probability_metrics.values() if isinstance(metrics, dict)]
-                overall_accuracy = sum(accuracies) / len(accuracies) if accuracies else 0.0
+            prob_values = [v for k, v in price_action_probabilities.items() 
+                          if k not in ["generation_timestamp", "model_type"]]
+            if prob_values:
+                overall_accuracy = sum(prob_values) / len(prob_values)
 
             # Prepare model data for saving
             model_data = {
@@ -577,12 +582,8 @@ class TacticianSpecialistTrainingStep:
                 "symbol": symbol,
                 "exchange": exchange,
                 "training_date": datetime.now().isoformat(),
-                "hyperparameters": {
-                    "model_type": "LightGBM",
-                    "enable_probability_outputs": True,
-                    "use_profit_features": True
-                },
-                "probability_metrics": probability_metrics
+                "hyperparameters": multi_output_config,
+                "price_action_probabilities": price_action_probabilities
             }
 
             # Save model with probabilities using multi-output format
@@ -605,12 +606,8 @@ class TacticianSpecialistTrainingStep:
                 "symbol": symbol,
                 "exchange": exchange,
                 "training_date": datetime.now().isoformat(),
-                "hyperparameters": {
-                    "model_type": "LightGBM",
-                    "enable_probability_outputs": True,
-                    "use_profit_features": True
-                },
-                "probability_outputs": probability_outputs,
+                "hyperparameters": multi_output_config,
+                "price_action_probabilities": price_action_probabilities,
             }
 
         except Exception as e:  # noqa: BLE001

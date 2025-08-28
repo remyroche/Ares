@@ -1,7 +1,7 @@
-# src/training/steps/step2_5_enhanced_matrix_operations.py
+# src/training/steps/step7_enhanced_matrix_operations.py
 
-"""Step 2.5: Enhanced Matrix Operations for Feature Engineering Preparation.
-This step prepares advanced matrix operations that will be used by feature engineering steps.
+"""Step 7: Enhanced Matrix Operations for Data Analysis.
+This step performs advanced matrix operations for comprehensive data analysis after feature engineering.
 """
 
 import asyncio
@@ -29,19 +29,19 @@ from src.utils.training_pipeline_decorators import (
 )
 
 
-class Step2_5EnhancedMatrixOperations:
-    """Step 2.5: Enhanced Matrix Operations for Feature Engineering Preparation."""
+class Step7EnhancedMatrixOperations:
+    """Step 7: Enhanced Matrix Operations for Data Analysis."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize Step 2.5 Enhanced Matrix Operations."""
         self.config = config
-        self.logger = system_logger.getChild("Step2_5EnhancedMatrixOperations")
+        self.logger = system_logger.getChild("Step7EnhancedMatrixOperations")
         
         # Initialize enhanced matrix operations
         self.matrix_ops = EnhancedMatrixOperations(config)
         
         # Step-specific configuration
-        self.step_config = config.get("step2_5_enhanced_matrix_operations", {})
+        self.step_config = config.get("step7_enhanced_matrix_operations", {})
         self.output_dir = Path(self.step_config.get("output_dir", "data/matrix_operations"))
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -66,7 +66,7 @@ class Step2_5EnhancedMatrixOperations:
         pipeline_state: dict[str, Any]
     ) -> dict[str, Any]:
         """
-        Execute Step 2.5: Enhanced Matrix Operations.
+        Execute Step 7: Enhanced Matrix Operations.
         
         Args:
             training_input: Input data from previous steps
@@ -77,27 +77,27 @@ class Step2_5EnhancedMatrixOperations:
         """
         try:
             start_time = datetime.now()
-            self.logger.info("🚀 Starting Step 2.5: Enhanced Matrix Operations...")
+            self.logger.info("🚀 Starting Step 7: Enhanced Matrix Operations...")
             
             # Extract parameters
             symbol = training_input.get("symbol", "UNKNOWN")
             exchange = training_input.get("exchange", "UNKNOWN")
             timeframe = training_input.get("timeframe", "1m")
             
-            # Load data from step2_data_reading
-            data_reading_results = pipeline_state.get("step2_data_reading", {})
-            if not data_reading_results:
-                raise ValueError("Step 2 data reading results not found in pipeline state")
+            # Load data from step6_feature_engineering
+            feature_engineering_results = pipeline_state.get("step6_feature_engineering", {})
+            if not feature_engineering_results:
+                raise ValueError("Step 6 feature engineering results not found in pipeline state")
             
-            # Get unified data path
-            unified_data_path = data_reading_results.get("unified_data_path")
-            if not unified_data_path or not os.path.exists(unified_data_path):
-                raise ValueError(f"Unified data path not found: {unified_data_path}")
+            # Get engineered features path
+            features_path = feature_engineering_results.get("features_path")
+            if not features_path or not os.path.exists(features_path):
+                raise ValueError(f"Engineered features path not found: {features_path}")
             
-            self.logger.info(f"📊 Loading unified data from: {unified_data_path}")
+            self.logger.info(f"📊 Loading engineered features from: {features_path}")
             
-            # Load the unified data
-            df = pd.read_parquet(unified_data_path)
+            # Load the engineered features
+            df = pd.read_parquet(features_path)
             self.logger.info(f"📈 Loaded {len(df)} rows of data")
             
             # Prepare matrix operations configuration
@@ -112,7 +112,7 @@ class Step2_5EnhancedMatrixOperations:
             )
             
             # Update pipeline state
-            pipeline_state["step2_5_enhanced_matrix_operations"] = {
+            pipeline_state["step7_enhanced_matrix_operations"] = {
                 "status": "completed",
                 "start_time": start_time.isoformat(),
                 "end_time": datetime.now().isoformat(),
@@ -125,12 +125,12 @@ class Step2_5EnhancedMatrixOperations:
                 "timeframe": timeframe
             }
             
-            self.logger.info("✅ Step 2.5: Enhanced Matrix Operations completed successfully")
+            self.logger.info("✅ Step 7: Enhanced Matrix Operations completed successfully")
             return pipeline_state
             
         except Exception as e:
-            self.logger.error(f"❌ Step 2.5 failed: {str(e)}")
-            pipeline_state["step2_5_enhanced_matrix_operations"] = {
+            self.logger.error(f"❌ Step 7 failed: {str(e)}")
+            pipeline_state["step7_enhanced_matrix_operations"] = {
                 "status": "failed",
                 "error": str(e),
                 "timestamp": datetime.now().isoformat()
@@ -335,7 +335,7 @@ async def run_step(
     **kwargs: Any,
 ) -> bool:
     """
-    Run Step 2.5: Enhanced Matrix Operations.
+    Run Step 7: Enhanced Matrix Operations.
     
     Args:
         symbol: Trading symbol
@@ -354,7 +354,7 @@ async def run_step(
         config = get_training_config()
         
         # Create step instance
-        step = Step2_5EnhancedMatrixOperations(config)
+        step = Step7EnhancedMatrixOperations(config)
         
         # Prepare training input
         training_input = {
@@ -371,13 +371,13 @@ async def run_step(
         result = await step.execute(training_input, pipeline_state)
         
         # Check if step was successful
-        step_result = result.get("step2_5_enhanced_matrix_operations", {})
+        step_result = result.get("step7_enhanced_matrix_operations", {})
         return step_result.get("status") == "completed"
         
     except Exception as e:
-        system_logger.error(f"❌ Step 2.5 failed: {str(e)}")
+        system_logger.error(f"❌ Step 7 failed: {str(e)}")
         return False
 
 
 # Export the main class for external use
-__all__ = ["Step2_5EnhancedMatrixOperations", "run_step"]
+__all__ = ["Step7EnhancedMatrixOperations", "run_step"]

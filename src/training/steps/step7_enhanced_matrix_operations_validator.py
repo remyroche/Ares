@@ -1,6 +1,6 @@
-# src/training/steps/step2_5_enhanced_matrix_operations_validator.py
+# src/training/steps/step7_enhanced_matrix_operations_validator.py
 
-"""Validator for Step 2.5: Enhanced Matrix Operations."""
+"""Validator for Step 7: Enhanced Matrix Operations."""
 
 import json
 import os
@@ -14,13 +14,13 @@ from src.utils.base_validator import BaseValidator
 from src.utils.logger import system_logger
 
 
-class Step2_5EnhancedMatrixOperationsValidator(BaseValidator):
-    """Validator for Step 2.5: Enhanced Matrix Operations."""
+class Step7EnhancedMatrixOperationsValidator(BaseValidator):
+    """Validator for Step 7: Enhanced Matrix Operations."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize the validator."""
-        super().__init__("step2_5_enhanced_matrix_operations", config)
-        self.logger = system_logger.getChild("Step2_5EnhancedMatrixOperationsValidator")
+        super().__init__("step7_enhanced_matrix_operations", config)
+        self.logger = system_logger.getChild("Step7EnhancedMatrixOperationsValidator")
 
     def validate_step_prerequisites(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate prerequisites for Step 2.5."""
@@ -32,18 +32,18 @@ class Step2_5EnhancedMatrixOperationsValidator(BaseValidator):
         }
 
         try:
-            # Check if step2_data_reading output exists
-            step2_output_dir = Path("data/unified")
-            step2_files = list(step2_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*.parquet"))
+            # Check if step6_feature_engineering output exists
+            step6_output_dir = Path("data/training")
+            step6_files = list(step6_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*features*.parquet"))
             
-            if not step2_files:
+            if not step6_files:
                 validation_result["validation_passed"] = False
                 validation_result["errors"].append(
-                    f"Step 2 data reading output not found for {exchange}_{symbol}_{timeframe}"
+                    f"Step 6 feature engineering output not found for {exchange}_{symbol}_{timeframe}"
                 )
             else:
-                validation_result["details"]["step2_files_found"] = len(step2_files)
-                validation_result["details"]["step2_files"] = [str(f) for f in step2_files]
+                validation_result["details"]["step6_files_found"] = len(step6_files)
+                validation_result["details"]["step6_files"] = [str(f) for f in step6_files]
 
             # Check if matrix operations directory exists
             matrix_ops_dir = Path("data/matrix_operations")
@@ -387,7 +387,7 @@ class Step2_5EnhancedMatrixOperationsValidator(BaseValidator):
         output = self.validate_step_output(symbol, exchange, timeframe)
 
         return {
-            "step_name": "step2_5_enhanced_matrix_operations",
+            "step_name": "step7_enhanced_matrix_operations",
             "symbol": symbol,
             "exchange": exchange,
             "timeframe": timeframe,

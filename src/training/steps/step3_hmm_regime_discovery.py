@@ -506,9 +506,9 @@ class HMMRegimeDiscoveryStep:
         context="prepare_hmm_features"
     )
     async def _prepare_hmm_features(self, df: Any) -> Any:
-        """Prepare features for HMM regime discovery."""
+        """Prepare comprehensive features for HMM regime discovery including momentum, S/R, volume, and volatility."""
         try:
-            self.logger.info("🔧 Starting feature preparation for HMM...")
+            self.logger.info("🔧 Starting comprehensive feature preparation for HMM...")
             
             # Ensure timestamp is datetime
             df = df.copy()
@@ -520,55 +520,167 @@ class HMMRegimeDiscoveryStep:
             self.logger.info("📅 Sorting data by timestamp...")
             df = df.sort_values("timestamp").reset_index(drop=True)
 
-            # Calculate basic features
-            self.logger.info("📊 Calculating price-based features...")
+            # Calculate comprehensive features
+            self.logger.info("📊 Calculating comprehensive features for HMM...")
             features = pd.DataFrame()
             features["timestamp"] = df["timestamp"]
 
-            # Price-based features
-            self.logger.info("   - Calculating returns...")
-            features["returns"] = df["close"].pct_change()
+            # === 1. MOMENTUM FEATURES ===
+            self.logger.info("🚀 Calculating momentum features...")
             
-            self.logger.info("   - Calculating log returns...")
-            features["log_returns"] = np.log(df["close"] / df["close"].shift(1))
+            # Price momentum
+            self.logger.info("   - Price momentum (5, 10, 20 periods)...")
+            features["price_momentum_5"] = df["close"].pct_change(5)
+            features["price_momentum_10"] = df["close"].pct_change(10)
+            features["price_momentum_20"] = df["close"].pct_change(20)
             
-            self.logger.info("   - Calculating volatility...")
-            features["volatility"] = features["returns"].rolling(window=20).std()
+            # Volume momentum
+            self.logger.info("   - Volume momentum...")
+            features["volume_momentum_5"] = df["volume"].pct_change(5)
+            features["volume_momentum_10"] = df["volume"].pct_change(10)
+            features["volume_momentum_20"] = df["volume"].pct_change(20)
             
-            self.logger.info("   - Calculating price range...")
-            features["price_range"] = (df["high"] - df["low"]) / df["close"]
-            
-            self.logger.info("   - Calculating volume ratio...")
-            features["volume_ratio"] = df["volume"] / df["volume"].rolling(window=20).mean()
-
-            # Technical indicators
-            self.logger.info("📈 Calculating technical indicators...")
-            self.logger.info("   - Calculating SMA 20...")
-            features["sma_20"] = df["close"].rolling(window=20).mean()
-            
-            self.logger.info("   - Calculating SMA 50...")
-            features["sma_50"] = df["close"].rolling(window=50).mean()
-            
-            self.logger.info("   - Calculating RSI...")
+            # RSI momentum
+            self.logger.info("   - RSI momentum...")
             features["rsi"] = self._calculate_rsi(df["close"])
+            features["rsi_momentum"] = features["rsi"].diff(5)
             
-            self.logger.info("   - Calculating MACD...")
+            # MACD momentum
+            self.logger.info("   - MACD momentum...")
             features["macd"] = self._calculate_macd(df["close"])
+            features["macd_momentum"] = features["macd"].diff(5)
 
-            # Remove NaN values
-            initial_rows = len(features)
-            self.logger.info(f"🧹 Removing NaN values (initial rows: {initial_rows:,})...")
-            features = features.dropna()
-            final_rows = len(features)
+            # === 2. VOLATILITY FEATURES ===
+            self.logger.info("📈 Calculating volatility features...")
+            
+            # Multiple timeframe volatility
+            self.logger.info("   - Multi-timeframe volatility...")
+            features["volatility_5"] = df["close"].pct_change().rolling(window=5).std()
+            features["volatility_10"] = df["close"].pct_change().rolling(window=10).std()
+            features["volatility_20"] = df["close"].pct_change().rolling(window=20).std()
+            
+            # EWMA volatility (smoother)
+            self.logger.info("   - EWMA volatility...")
+            features["ewma_volatility_20"] = df["close"].pct_change().ewm(span=20).std()
+            
+            # Volatility acceleration and momentum
+            self.logger.info("   - Volatility acceleration and momentum...")
+            features["volatility_acceleration"] = features["volatility_20"].diff()
+            features["volatility_momentum"] = features["volatility_20"] - features["volatility_20"].shift(5)
+            
+            # ATR-based volatility
+            self.logger.info("   - ATR volatility...")
+            features["atr"] = self._calculate_atr(df)
+            features["atr_normalized"] = features["atr"] / df["close"]
+
+            # === 3. VOLUME FEATURES ===
+            self.logger.info("📊 Calculating volume features...")
+            
+            # Volume ratios
+            self.logger.info("   - Volume ratios...")
+            features["volume_ratio_5"] = df["volume"] / df["volume"].rolling(window=5).mean()
+            features["volume_ratio_10"] = df["volume"] / df["volume"].rolling(window=10).mean()
+            features["volume_ratio_20"] = df["volume"] / df["volume"].rolling(window=20).mean()
+            
+            # Volume change
+            self.logger.info("   - Volume change...")
+            features["volume_change"] = df["volume"].pct_change()
+            
+            # Volume-price relationship
+            self.logger.info("   - Volume-price relationship...")
+            features["volume_price_trend"] = (df["close"] - df["close"].shift(1)) * df["volume"]
+            features["volume_price_trend_ratio"] = features["volume_price_trend"] / features["volume_price_trend"].rolling(20).mean()
+
+            # === 4. SUPPORT/RESISTANCE FEATURES ===
+            self.logger.info("🎯 Calculating support/resistance features...")
+            
+            # Pivot points
+            self.logger.info("   - Pivot points...")
+            features["pivot_point"] = (df["high"] + df["low"] + df["close"]) / 3
+            features["support_1"] = 2 * features["pivot_point"] - df["high"]
+            features["resistance_1"] = 2 * features["pivot_point"] - df["low"]
+            
+            # Distance to support/resistance
+            self.logger.info("   - Distance to S/R levels...")
+            features["distance_to_support"] = (df["close"] - features["support_1"]) / df["close"]
+            features["distance_to_resistance"] = (features["resistance_1"] - df["close"]) / df["close"]
+            
+            # S/R strength indicators
+            self.logger.info("   - S/R strength indicators...")
+            features["sr_strength"] = self._calculate_sr_strength(df)
+            
+            # Bollinger Bands (for S/R context)
+            self.logger.info("   - Bollinger Bands...")
+            bb_features = self._calculate_bollinger_bands(df["close"])
+            features = pd.concat([features, bb_features], axis=1)
+
+            # === 5. ADDITIONAL TECHNICAL FEATURES ===
+            self.logger.info("🔧 Calculating additional technical features...")
+            
+            # Moving averages
+            self.logger.info("   - Moving averages...")
+            features["sma_20"] = df["close"].rolling(window=20).mean()
+            features["sma_50"] = df["close"].rolling(window=50).mean()
+            features["ema_12"] = df["close"].ewm(span=12).mean()
+            features["ema_26"] = df["close"].ewm(span=26).mean()
+            
+            # Price position relative to MAs
+            self.logger.info("   - Price position relative to MAs...")
+            features["price_vs_sma20"] = (df["close"] - features["sma_20"]) / features["sma_20"]
+            features["price_vs_sma50"] = (df["close"] - features["sma_50"]) / features["sma_50"]
+            
+            # ADX for trend strength
+            self.logger.info("   - ADX trend strength...")
+            features["adx"] = self._calculate_adx(df)
+
+            # === 6. FEATURE INTERACTIONS ===
+            self.logger.info("🔄 Calculating feature interactions...")
+            
+            # Momentum × Volume interactions
+            self.logger.info("   - Momentum × Volume interactions...")
+            features["momentum_volume_interaction"] = features["price_momentum_10"] * features["volume_ratio_10"]
+            
+            # Volatility × Volume interactions
+            self.logger.info("   - Volatility × Volume interactions...")
+            features["volatility_volume_interaction"] = features["volatility_20"] * features["volume_ratio_20"]
+            
+            # RSI × Momentum interactions
+            self.logger.info("   - RSI × Momentum interactions...")
+            features["rsi_momentum_interaction"] = features["rsi"] * features["price_momentum_10"]
+
+            # === 7. CLEANUP AND VALIDATION ===
+            self.logger.info("🧹 Cleaning and validating features...")
+            
+            # Remove timestamp column for HMM analysis
+            hmm_features = features.drop("timestamp", axis=1)
+            
+            # Handle NaN values intelligently
+            initial_rows = len(hmm_features)
+            self.logger.info(f"   - Initial rows: {initial_rows:,}")
+            
+            # Forward fill for technical indicators
+            technical_cols = ["rsi", "macd", "adx", "bb_position", "bb_width"]
+            for col in technical_cols:
+                if col in hmm_features.columns:
+                    hmm_features[col] = hmm_features[col].ffill()
+            
+            # Fill remaining NaN with 0
+            hmm_features = hmm_features.fillna(0)
+            
+            # Final validation
+            final_rows = len(hmm_features)
             removed_rows = initial_rows - final_rows
             
-            self.logger.info(f"✅ Feature preparation completed:")
+            self.logger.info(f"✅ Comprehensive feature preparation completed:")
             self.logger.info(f"   - Initial rows: {initial_rows:,}")
             self.logger.info(f"   - Final rows: {final_rows:,}")
             self.logger.info(f"   - Removed rows: {removed_rows:,} ({removed_rows/initial_rows*100:.1f}%)")
-            self.logger.info(f"   - Features created: {len(features.columns)}")
+            self.logger.info(f"   - Features created: {len(hmm_features.columns)}")
             
-            return features
+            # Log feature categories
+            self._log_feature_categories(hmm_features)
+            
+            return hmm_features
 
         except Exception as e:
             self.logger.exception(f"❌ Error preparing HMM features: {e}")
@@ -602,6 +714,159 @@ class HMMRegimeDiscoveryStep:
         macd = ema_fast - ema_slow
         return macd
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.Series(),
+        context="calculate_atr"
+    )
+    def _calculate_atr(self, df: Any, window: int = 14) -> Any:
+        """Calculate Average True Range (ATR)."""
+        self.logger.debug(f"Calculating ATR with window {window}...")
+        high = df["high"]
+        low = df["low"]
+        close = df["close"]
+        
+        tr1 = high - low
+        tr2 = abs(high - close.shift(1))
+        tr3 = abs(low - close.shift(1))
+        
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr = tr.rolling(window=window).mean()
+        return atr
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.Series(),
+        context="calculate_bollinger_bands"
+    )
+    def _calculate_bollinger_bands(self, prices: Any, window: int = 20, num_std: float = 2) -> Any:
+        """Calculate Bollinger Bands."""
+        self.logger.debug(f"Calculating Bollinger Bands (window={window}, std={num_std})...")
+        sma = prices.rolling(window=window).mean()
+        std = prices.rolling(window=window).std()
+        
+        bb_upper = sma + (std * num_std)
+        bb_lower = sma - (std * num_std)
+        bb_width = (bb_upper - bb_lower) / sma
+        bb_position = (prices - bb_lower) / (bb_upper - bb_lower)
+        
+        bb_features = pd.DataFrame({
+            "bb_upper": bb_upper,
+            "bb_middle": sma,
+            "bb_lower": bb_lower,
+            "bb_width": bb_width,
+            "bb_position": bb_position
+        })
+        
+        return bb_features
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.Series(),
+        context="calculate_adx"
+    )
+    def _calculate_adx(self, df: Any, window: int = 14) -> Any:
+        """Calculate Average Directional Index (ADX)."""
+        self.logger.debug(f"Calculating ADX with window {window}...")
+        high = df["high"]
+        low = df["low"]
+        close = df["close"]
+        
+        # Calculate True Range
+        tr1 = high - low
+        tr2 = abs(high - close.shift(1))
+        tr3 = abs(low - close.shift(1))
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        
+        # Calculate Directional Movement
+        dm_plus = high - high.shift(1)
+        dm_minus = low.shift(1) - low
+        
+        dm_plus = dm_plus.where((dm_plus > dm_minus) & (dm_plus > 0), 0)
+        dm_minus = dm_minus.where((dm_minus > dm_plus) & (dm_minus > 0), 0)
+        
+        # Calculate smoothed values
+        tr_smooth = tr.rolling(window=window).mean()
+        dm_plus_smooth = dm_plus.rolling(window=window).mean()
+        dm_minus_smooth = dm_minus.rolling(window=window).mean()
+        
+        # Calculate DI+ and DI-
+        di_plus = 100 * (dm_plus_smooth / tr_smooth)
+        di_minus = 100 * (dm_minus_smooth / tr_smooth)
+        
+        # Calculate DX and ADX
+        dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
+        adx = dx.rolling(window=window).mean()
+        
+        return adx
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.Series(),
+        context="calculate_sr_strength"
+    )
+    def _calculate_sr_strength(self, df: Any, window: int = 20) -> Any:
+        """Calculate support/resistance strength indicator."""
+        self.logger.debug(f"Calculating S/R strength with window {window}...")
+        
+        # Calculate price swings
+        high_swing = df["high"].rolling(window=window, center=True).max()
+        low_swing = df["low"].rolling(window=window, center=True).min()
+        
+        # Calculate strength based on how close price is to swing levels
+        current_price = df["close"]
+        high_strength = (high_swing - current_price) / high_swing
+        low_strength = (current_price - low_swing) / low_swing
+        
+        # Combined strength indicator
+        sr_strength = (high_strength + low_strength) / 2
+        return sr_strength
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="log_feature_categories"
+    )
+    def _log_feature_categories(self, features: Any) -> None:
+        """Log feature categories for analysis."""
+        try:
+            feature_categories = {
+                "momentum": [],
+                "volatility": [],
+                "volume": [],
+                "support_resistance": [],
+                "technical": [],
+                "interactions": []
+            }
+            
+            for col in features.columns:
+                if "momentum" in col.lower():
+                    feature_categories["momentum"].append(col)
+                elif "volatility" in col.lower():
+                    feature_categories["volatility"].append(col)
+                elif "volume" in col.lower():
+                    feature_categories["volume"].append(col)
+                elif any(sr_term in col.lower() for sr_term in ["support", "resistance", "pivot", "sr_", "bb_"]):
+                    feature_categories["support_resistance"].append(col)
+                elif any(tech_term in col.lower() for tech_term in ["rsi", "macd", "adx", "atr", "sma", "ema"]):
+                    feature_categories["technical"].append(col)
+                elif "interaction" in col.lower():
+                    feature_categories["interactions"].append(col)
+                else:
+                    feature_categories["technical"].append(col)
+            
+            self.logger.info("📊 Feature categories:")
+            for category, cols in feature_categories.items():
+                if cols:
+                    self.logger.info(f"   - {category.capitalize()}: {len(cols)} features")
+                    if len(cols) <= 5:  # Show all if 5 or fewer
+                        self.logger.info(f"     {cols}")
+                    else:  # Show first 3 and last 2
+                        self.logger.info(f"     {cols[:3]} ... {cols[-2:]}")
+        
+        except Exception as e:
+            self.logger.warning(f"Could not log feature categories: {e}")
+
     @with_tracing_span("perform_hmm_regime_discovery")
     @resource_monitor
     @handle_errors(
@@ -614,71 +879,254 @@ class HMMRegimeDiscoveryStep:
         training_input: dict[str, Any], 
         data: Any
     ) -> dict[str, Any]:
-        """Perform HMM regime discovery on the prepared data."""
+        """Perform HMM regime discovery using hmmlearn with comprehensive features."""
         try:
             self.logger.info("🔍 Starting HMM regime discovery analysis...")
             self.logger.info(f"📊 Input data shape: {data.shape}")
 
-            # For now, implement a simple regime detection
-            # In a full implementation, this would use a proper HMM library like hmmlearn
-            
-            # Simple regime detection based on volatility and returns
-            self.logger.info("🔧 Preparing features for regime analysis...")
+            # Prepare comprehensive features
+            self.logger.info("🔧 Preparing comprehensive features for HMM analysis...")
             features = await self._prepare_hmm_features(data)
             
+            if features.empty:
+                self.logger.error("❌ No features available for HMM analysis")
+                return {"success": False, "error": "No features available"}
+
+            self.logger.info(f"📊 Features prepared: {len(features.columns)} features, {len(features)} samples")
+            
+            # Log feature statistics
             self.logger.info("📊 Feature statistics:")
             for col in features.columns:
-                if col != "timestamp":
-                    series = features[col].dropna()
-                    if len(series) > 0:
-                        self.logger.info(f"   - {col}: mean={series.mean():.6f}, std={series.std():.6f}, min={series.min():.6f}, max={series.max():.6f}")
+                series = features[col].dropna()
+                if len(series) > 0:
+                    self.logger.info(f"   - {col}: mean={series.mean():.6f}, std={series.std():.6f}, min={series.min():.6f}, max={series.max():.6f}")
+
+            # Try to import hmmlearn
+            try:
+                from hmmlearn import hmm
+                HMM_AVAILABLE = True
+                self.logger.info("✅ hmmlearn library available")
+            except ImportError:
+                HMM_AVAILABLE = False
+                self.logger.warning("⚠️ hmmlearn not available, falling back to simple regime detection")
+
+            if HMM_AVAILABLE:
+                # Use proper HMM implementation
+                return await self._perform_hmmlearn_regime_discovery(features)
+            else:
+                # Fallback to simple regime detection
+                return await self._perform_simple_regime_discovery(features)
+
+        except Exception as e:
+            self.logger.exception(f"❌ Error performing HMM regime discovery: {e}")
+            return {"success": False, "error": str(e)}
+
+    @with_tracing_span("perform_hmmlearn_regime_discovery")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={"success": False, "error": "HMMLearn regime discovery failed"},
+        context="perform_hmmlearn_regime_discovery"
+    )
+    async def _perform_hmmlearn_regime_discovery(self, features: Any) -> dict[str, Any]:
+        """Perform HMM regime discovery using hmmlearn library with 20-cluster composite approach."""
+        try:
+            from hmmlearn import hmm
+            from sklearn.preprocessing import StandardScaler
+            from sklearn.cluster import KMeans
+            from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
             
-            # Define regimes based on volatility and returns
-            self.logger.info("🎯 Defining regimes based on volatility and returns...")
-            volatility = features["volatility"].fillna(0)
-            returns = features["returns"].fillna(0)
+            self.logger.info("🧠 Using hmmlearn with 20-cluster composite approach...")
             
-            self.logger.info(f"📊 Volatility quantiles:")
+            # Scale features for HMM
+            self.logger.info("📊 Scaling features for HMM...")
+            scaler = StandardScaler()
+            features_scaled = scaler.fit_transform(features)
+            
+            # === PHASE 1: HMM State Discovery ===
+            # Configure HMM parameters for initial state discovery
+            n_hmm_states = 4  # Initial HMM states for basic regime identification
+            n_iter = 100
+            random_state = 42
+            
+            self.logger.info(f"🎯 Phase 1: Training HMM with {n_hmm_states} states...")
+            
+            # Train Gaussian HMM
+            hmm_model = hmm.GaussianHMM(
+                n_components=n_hmm_states,
+                n_iter=n_iter,
+                random_state=random_state,
+                covariance_type="full",
+                init_params="stmc",
+                params="stmc"
+            )
+            
+            # Fit the model
+            hmm_model.fit(features_scaled)
+            
+            # Get HMM state sequence and probabilities
+            hmm_state_sequence = hmm_model.predict(features_scaled)
+            hmm_state_probs = hmm_model.predict_proba(features_scaled)
+            
+            # === PHASE 2: 20-Cluster Composite Analysis ===
+            self.logger.info("🎯 Phase 2: Creating 20-cluster composite analysis...")
+            
+            # Create composite features combining HMM states with original features
+            composite_features = self._create_composite_features(features, hmm_state_sequence, hmm_state_probs)
+            
+            # Scale composite features
+            composite_scaler = StandardScaler()
+            composite_features_scaled = composite_scaler.fit_transform(composite_features)
+            
+            # Apply K-means clustering for 20 clusters
+            n_clusters = 20
+            kmeans = KMeans(
+                n_clusters=n_clusters,
+                random_state=random_state,
+                n_init=10,
+                max_iter=300
+            )
+            
+            cluster_labels = kmeans.fit_predict(composite_features_scaled)
+            
+            # === PHASE 3: Cluster Quality Analysis ===
+            self.logger.info("🎯 Phase 3: Analyzing cluster quality...")
+            
+            # Calculate cluster quality metrics
+            cluster_metrics = self._calculate_cluster_quality_metrics(
+                composite_features_scaled, cluster_labels, kmeans
+            )
+            
+            # === PHASE 4: Regime Interpretation ===
+            self.logger.info("🎯 Phase 4: Interpreting composite regimes...")
+            
+            # Create composite cluster analysis
+            composite_analysis = self._analyze_composite_clusters(
+                features, hmm_state_sequence, cluster_labels, cluster_metrics
+            )
+            
+            # === PHASE 5: Generate Reports ===
+            self.logger.info("🎯 Phase 5: Generating comprehensive reports...")
+            
+            # Generate detailed reports
+            reports = await self._generate_comprehensive_reports(
+                features, hmm_state_sequence, cluster_labels, composite_analysis, cluster_metrics
+            )
+            
+            # === PHASE 6: Create Output Data ===
+            self.logger.info("🎯 Phase 6: Creating output data structures...")
+            
+            # Create composite cluster DataFrame
+            composite_df = self._create_composite_cluster_dataframe(
+                features, hmm_state_sequence, cluster_labels, composite_analysis
+            )
+            
+            # Create intensity DataFrame
+            intensity_df = self._create_intensity_dataframe(
+                features, hmm_state_sequence, cluster_labels, composite_analysis
+            )
+            
+            # Create meta information
+            meta_info = self._create_meta_information(
+                hmm_model, kmeans, composite_analysis, cluster_metrics, reports
+            )
+            
+            # Calculate final metrics
+            final_metrics = {
+                "total_periods": len(cluster_labels),
+                "hmm_states": n_hmm_states,
+                "composite_clusters": n_clusters,
+                "cluster_quality": cluster_metrics,
+                "hmm_score": hmm_model.score(features_scaled),
+                "composite_analysis": composite_analysis,
+                "reports_generated": list(reports.keys())
+            }
+            
+            self.logger.info(f"✅ Composite HMM regime discovery completed successfully")
+            self.logger.info(f"📊 HMM States: {n_hmm_states}, Composite Clusters: {n_clusters}")
+            self.logger.info(f"📈 Cluster Quality - Silhouette: {cluster_metrics['silhouette_score']:.4f}")
+            self.logger.info(f"📊 Reports Generated: {len(reports)}")
+            
+            return {
+                "success": True,
+                "hmm_model": hmm_model,
+                "kmeans_model": kmeans,
+                "scaler": scaler,
+                "composite_scaler": composite_scaler,
+                "hmm_state_sequence": hmm_state_sequence,
+                "hmm_state_probs": hmm_state_probs,
+                "cluster_labels": cluster_labels,
+                "composite_df": composite_df,
+                "intensity_df": intensity_df,
+                "meta_info": meta_info,
+                "metrics": final_metrics,
+                "reports": reports
+            }
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error in composite HMM regime discovery: {e}")
+            return {"success": False, "error": str(e)}
+
+    @with_tracing_span("perform_simple_regime_discovery")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={"success": False, "error": "Simple regime discovery failed"},
+        context="perform_simple_regime_discovery"
+    )
+    async def _perform_simple_regime_discovery(self, features: Any) -> dict[str, Any]:
+        """Perform simple regime discovery based on volatility and momentum."""
+        try:
+            self.logger.info("📊 Using simple regime detection (fallback method)...")
+            
+            # Use key features for regime classification
+            volatility = features.get("volatility_20", features.get("volatility", pd.Series([0] * len(features))))
+            momentum = features.get("price_momentum_10", pd.Series([0] * len(features)))
+            volume_ratio = features.get("volume_ratio_10", pd.Series([1] * len(features)))
+            
+            # Fill NaN values
+            volatility = volatility.fillna(0)
+            momentum = momentum.fillna(0)
+            volume_ratio = volume_ratio.fillna(1)
+            
+            # Calculate quantiles for classification
             vol_quantiles = volatility.quantile([0.2, 0.8])
-            self.logger.info(f"   - 20th percentile: {vol_quantiles[0.2]:.6f}")
-            self.logger.info(f"   - 80th percentile: {vol_quantiles[0.8]:.6f}")
+            mom_quantiles = momentum.quantile([0.3, 0.7])
+            vol_quantiles = volume_ratio.quantile([0.3, 0.7])
             
-            self.logger.info(f"📊 Returns quantiles:")
-            ret_quantiles = returns.quantile([0.3, 0.7])
-            self.logger.info(f"   - 30th percentile: {ret_quantiles[0.3]:.6f}")
-            self.logger.info(f"   - 70th percentile: {ret_quantiles[0.7]:.6f}")
+            self.logger.info(f"📊 Volatility quantiles: {vol_quantiles.to_dict()}")
+            self.logger.info(f"📊 Momentum quantiles: {mom_quantiles.to_dict()}")
+            self.logger.info(f"📊 Volume ratio quantiles: {vol_quantiles.to_dict()}")
             
-            # Simple regime classification
-            self.logger.info("🏷️ Classifying regimes...")
+            # Classify regimes
             regimes = []
             regime_counts = {}
             total_periods = len(features)
             
-            # Progress tracking
-            progress_interval = max(1, total_periods // 10)  # Log every 10% progress
+            progress_interval = max(1, total_periods // 10)
             
-            for i in range(len(features)):
-                vol = volatility.iloc[i]
-                ret = returns.iloc[i]
+            for i in range(total_periods):
+                vol = volatility.iloc[i] if hasattr(volatility, 'iloc') else volatility[i]
+                mom = momentum.iloc[i] if hasattr(momentum, 'iloc') else momentum[i]
+                vol_ratio = volume_ratio.iloc[i] if hasattr(volume_ratio, 'iloc') else volume_ratio[i]
                 
+                # Classify based on volatility and momentum
                 if vol > vol_quantiles[0.8]:
-                    if ret > ret_quantiles[0.7]:
+                    if mom > mom_quantiles[0.7]:
                         regime = "high_volatility_bull"
-                    elif ret < ret_quantiles[0.3]:
+                    elif mom < mom_quantiles[0.3]:
                         regime = "high_volatility_bear"
                     else:
                         regime = "high_volatility_neutral"
                 elif vol < vol_quantiles[0.2]:
-                    if ret > ret_quantiles[0.7]:
+                    if mom > mom_quantiles[0.7]:
                         regime = "low_volatility_bull"
-                    elif ret < ret_quantiles[0.3]:
+                    elif mom < mom_quantiles[0.3]:
                         regime = "low_volatility_bear"
                     else:
                         regime = "low_volatility_neutral"
                 else:
-                    if ret > ret_quantiles[0.7]:
+                    if mom > mom_quantiles[0.7]:
                         regime = "medium_volatility_bull"
-                    elif ret < ret_quantiles[0.3]:
+                    elif mom < mom_quantiles[0.3]:
                         regime = "medium_volatility_bear"
                     else:
                         regime = "medium_volatility_neutral"
@@ -690,42 +1138,135 @@ class HMMRegimeDiscoveryStep:
                 if (i + 1) % progress_interval == 0:
                     progress = ((i + 1) / total_periods) * 100
                     self.logger.info(f"📊 Regime classification progress: {progress:.1f}% ({i + 1:,}/{total_periods:,})")
-
+            
             # Calculate regime statistics
-            self.logger.info("📊 Calculating regime statistics...")
-            regime_counts_series = pd.Series(regime_counts) if PANDAS_AVAILABLE else None
             regime_transitions = self._calculate_regime_transitions(regimes)
-
-            self.logger.info(f"✅ HMM regime discovery completed successfully")
+            
+            metrics = {
+                "total_periods": len(regimes),
+                "unique_regimes": len(regime_counts),
+                "regime_distribution": regime_counts,
+                "method": "simple_classification"
+            }
+            
+            self.logger.info(f"✅ Simple regime discovery completed")
             self.logger.info(f"📊 Discovered {len(regime_counts)} unique regimes:")
             for regime, count in regime_counts.items():
                 percentage = (count / len(regimes)) * 100
                 self.logger.info(f"   - {regime}: {count:,} periods ({percentage:.1f}%)")
-
-            # Log transition matrix
-            if regime_transitions:
-                self.logger.info("🔄 Regime transition matrix:")
-                for from_regime, to_regimes in regime_transitions.items():
-                    self.logger.info(f"   From {from_regime}:")
-                    for to_regime, prob in to_regimes.items():
-                        self.logger.info(f"     → {to_regime}: {prob:.3f}")
-
+            
             return {
                 "success": True,
                 "regime_states": regimes,
                 "regime_transitions": regime_transitions,
-                "metrics": {
-                    "total_periods": len(regimes),
-                    "unique_regimes": len(regime_counts),
-                    "regime_distribution": regime_counts,
-                    "volatility_quantiles": vol_quantiles.to_dict(),
-                    "returns_quantiles": ret_quantiles.to_dict()
-                }
+                "metrics": metrics
             }
-
+            
         except Exception as e:
-            self.logger.exception(f"❌ Error performing HMM regime discovery: {e}")
+            self.logger.exception(f"❌ Error in simple regime discovery: {e}")
             return {"success": False, "error": str(e)}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={"state_to_regime_map": {}, "state_analysis": {}},
+        context="interpret_hmm_states"
+    )
+    def _interpret_hmm_states(self, features: Any, state_sequence: Any, state_probs: Any) -> dict[str, Any]:
+        """Interpret HMM states based on feature characteristics."""
+        try:
+            self.logger.info("🔍 Interpreting HMM states...")
+            
+            # Analyze each state's characteristics
+            state_analysis = {}
+            state_to_regime_map = {}
+            
+            unique_states = sorted(set(state_sequence))
+            
+            for state in unique_states:
+                # Get data points for this state
+                state_mask = state_sequence == state
+                state_data = features[state_mask]
+                
+                if len(state_data) == 0:
+                    continue
+                
+                # Calculate state characteristics
+                state_char = {
+                    "count": len(state_data),
+                    "percentage": len(state_data) / len(features) * 100
+                }
+                
+                # Analyze key features for this state
+                key_features = [
+                    "price_momentum_10", "volatility_20", "volume_ratio_10", 
+                    "rsi", "adx", "bb_position"
+                ]
+                
+                for feature in key_features:
+                    if feature in state_data.columns:
+                        feature_data = state_data[feature].dropna()
+                        if len(feature_data) > 0:
+                            state_char[f"{feature}_mean"] = feature_data.mean()
+                            state_char[f"{feature}_std"] = feature_data.std()
+                
+                state_analysis[state] = state_char
+                
+                # Map state to regime based on characteristics
+                regime_name = self._map_state_to_regime(state_char)
+                state_to_regime_map[state] = regime_name
+                
+                self.logger.info(f"   State {state} → {regime_name}: {len(state_data)} periods ({state_char['percentage']:.1f}%)")
+            
+            return {
+                "state_to_regime_map": state_to_regime_map,
+                "state_analysis": state_analysis
+            }
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error interpreting HMM states: {e}")
+            return {"state_to_regime_map": {}, "state_analysis": {}}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return="unknown_regime",
+        context="map_state_to_regime"
+    )
+    def _map_state_to_regime(self, state_char: dict[str, Any]) -> str:
+        """Map state characteristics to regime name."""
+        try:
+            # Extract key characteristics
+            momentum = state_char.get("price_momentum_10_mean", 0)
+            volatility = state_char.get("volatility_20_mean", 0)
+            volume_ratio = state_char.get("volume_ratio_10_mean", 1)
+            rsi = state_char.get("rsi_mean", 50)
+            adx = state_char.get("adx_mean", 25)
+            
+            # Classify based on characteristics
+            if volatility > 0.02:  # High volatility
+                if momentum > 0.001:  # Positive momentum
+                    return "high_volatility_bull"
+                elif momentum < -0.001:  # Negative momentum
+                    return "high_volatility_bear"
+                else:
+                    return "high_volatility_neutral"
+            elif volatility < 0.01:  # Low volatility
+                if momentum > 0.001:
+                    return "low_volatility_bull"
+                elif momentum < -0.001:
+                    return "low_volatility_bear"
+                else:
+                    return "low_volatility_neutral"
+            else:  # Medium volatility
+                if momentum > 0.001:
+                    return "medium_volatility_bull"
+                elif momentum < -0.001:
+                    return "medium_volatility_bear"
+                else:
+                    return "medium_volatility_neutral"
+                    
+        except Exception as e:
+            self.logger.warning(f"Error mapping state to regime: {e}")
+            return "unknown_regime"
 
     @handle_errors(
         exceptions=(Exception,),
@@ -895,6 +1436,677 @@ async def run_step(
         logger.info("=" * 80)
         
         return False
+
+    # === COMPOSITE HMM HELPER METHODS ===
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.DataFrame(),
+        context="create_composite_features"
+    )
+    def _create_composite_features(self, features: Any, hmm_states: Any, hmm_probs: Any) -> Any:
+        """Create composite features combining HMM states with original features."""
+        try:
+            self.logger.info("🔧 Creating composite features...")
+            
+            # Convert to DataFrame if needed
+            if not isinstance(features, pd.DataFrame):
+                features = pd.DataFrame(features)
+            
+            # Create composite features DataFrame
+            composite_df = features.copy()
+            
+            # Add HMM state features
+            composite_df["hmm_state"] = hmm_states
+            composite_df["hmm_state_prob_max"] = np.max(hmm_probs, axis=1)
+            composite_df["hmm_state_entropy"] = -np.sum(hmm_probs * np.log(hmm_probs + 1e-10), axis=1)
+            
+            # Add HMM state probability features
+            for i in range(hmm_probs.shape[1]):
+                composite_df[f"hmm_state_prob_{i}"] = hmm_probs[:, i]
+            
+            # Add feature interactions with HMM states
+            key_features = ["price_momentum_10", "volatility_20", "volume_ratio_10", "rsi", "adx"]
+            for feature in key_features:
+                if feature in composite_df.columns:
+                    composite_df[f"{feature}_x_hmm_state"] = composite_df[feature] * composite_df["hmm_state"]
+                    composite_df[f"{feature}_x_hmm_entropy"] = composite_df[feature] * composite_df["hmm_state_entropy"]
+            
+            # Add rolling statistics for HMM states
+            composite_df["hmm_state_persistence"] = self._calculate_persistence(hmm_states)
+            composite_df["hmm_state_transitions"] = self._calculate_transitions(hmm_states)
+            
+            self.logger.info(f"✅ Created composite features: {len(composite_df.columns)} total features")
+            return composite_df
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error creating composite features: {e}")
+            return pd.DataFrame()
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="calculate_cluster_quality_metrics"
+    )
+    def _calculate_cluster_quality_metrics(self, features_scaled: Any, cluster_labels: Any, kmeans_model: Any) -> dict[str, Any]:
+        """Calculate comprehensive cluster quality metrics."""
+        try:
+            self.logger.info("📊 Calculating cluster quality metrics...")
+            
+            metrics = {}
+            
+            # Silhouette score (higher is better, range: -1 to 1)
+            try:
+                metrics["silhouette_score"] = silhouette_score(features_scaled, cluster_labels)
+            except Exception:
+                metrics["silhouette_score"] = 0.0
+            
+            # Calinski-Harabasz score (higher is better)
+            try:
+                metrics["calinski_harabasz_score"] = calinski_harabasz_score(features_scaled, cluster_labels)
+            except Exception:
+                metrics["calinski_harabasz_score"] = 0.0
+            
+            # Davies-Bouldin score (lower is better)
+            try:
+                metrics["davies_bouldin_score"] = davies_bouldin_score(features_scaled, cluster_labels)
+            except Exception:
+                metrics["davies_bouldin_score"] = float('inf')
+            
+            # Inertia (lower is better)
+            metrics["inertia"] = kmeans_model.inertia_
+            
+            # Cluster size distribution
+            unique_labels, counts = np.unique(cluster_labels, return_counts=True)
+            metrics["cluster_sizes"] = dict(zip(unique_labels, counts))
+            metrics["min_cluster_size"] = np.min(counts)
+            metrics["max_cluster_size"] = np.max(counts)
+            metrics["mean_cluster_size"] = np.mean(counts)
+            metrics["std_cluster_size"] = np.std(counts)
+            
+            # Cluster balance (coefficient of variation)
+            metrics["cluster_balance"] = metrics["std_cluster_size"] / metrics["mean_cluster_size"] if metrics["mean_cluster_size"] > 0 else 0
+            
+            # Distance to cluster centers
+            distances = kmeans_model.transform(features_scaled)
+            min_distances = np.min(distances, axis=1)
+            metrics["mean_distance_to_center"] = np.mean(min_distances)
+            metrics["max_distance_to_center"] = np.max(min_distances)
+            
+            self.logger.info(f"✅ Cluster quality metrics calculated:")
+            self.logger.info(f"   - Silhouette: {metrics['silhouette_score']:.4f}")
+            self.logger.info(f"   - Calinski-Harabasz: {metrics['calinski_harabasz_score']:.2f}")
+            self.logger.info(f"   - Davies-Bouldin: {metrics['davies_bouldin_score']:.4f}")
+            self.logger.info(f"   - Inertia: {metrics['inertia']:.2f}")
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error calculating cluster quality metrics: {e}")
+            return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="analyze_composite_clusters"
+    )
+    def _analyze_composite_clusters(self, features: Any, hmm_states: Any, cluster_labels: Any, cluster_metrics: dict[str, Any]) -> dict[str, Any]:
+        """Analyze composite clusters and their characteristics."""
+        try:
+            self.logger.info("🔍 Analyzing composite clusters...")
+            
+            analysis = {
+                "cluster_characteristics": {},
+                "hmm_state_distribution": {},
+                "feature_importance": {},
+                "cluster_stability": {},
+                "market_conditions": {}
+            }
+            
+            # Analyze each cluster
+            unique_clusters = np.unique(cluster_labels)
+            
+            for cluster_id in unique_clusters:
+                cluster_mask = cluster_labels == cluster_id
+                cluster_data = features[cluster_mask]
+                cluster_hmm_states = hmm_states[cluster_mask]
+                
+                # Cluster characteristics
+                cluster_char = {
+                    "size": len(cluster_data),
+                    "percentage": len(cluster_data) / len(features) * 100,
+                    "hmm_state_distribution": self._calculate_hmm_state_distribution(cluster_hmm_states),
+                    "feature_means": {},
+                    "feature_stds": {},
+                    "dominant_hmm_state": self._get_dominant_hmm_state(cluster_hmm_states)
+                }
+                
+                # Calculate feature statistics for this cluster
+                for col in features.columns:
+                    if col in cluster_data.columns:
+                        cluster_char["feature_means"][col] = cluster_data[col].mean()
+                        cluster_char["feature_stds"][col] = cluster_data[col].std()
+                
+                analysis["cluster_characteristics"][cluster_id] = cluster_char
+                
+                # Determine market condition for this cluster
+                market_condition = self._determine_market_condition(cluster_char)
+                analysis["market_conditions"][cluster_id] = market_condition
+            
+            # Calculate overall HMM state distribution
+            analysis["hmm_state_distribution"] = self._calculate_hmm_state_distribution(hmm_states)
+            
+            # Calculate feature importance across clusters
+            analysis["feature_importance"] = self._calculate_feature_importance(features, cluster_labels)
+            
+            # Calculate cluster stability metrics
+            analysis["cluster_stability"] = self._calculate_cluster_stability(cluster_labels, cluster_metrics)
+            
+            self.logger.info(f"✅ Composite cluster analysis completed for {len(unique_clusters)} clusters")
+            return analysis
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error analyzing composite clusters: {e}")
+            return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="generate_comprehensive_reports"
+    )
+    async def _generate_comprehensive_reports(self, features: Any, hmm_states: Any, cluster_labels: Any, composite_analysis: dict[str, Any], cluster_metrics: dict[str, Any]) -> dict[str, Any]:
+        """Generate comprehensive reports for the composite HMM analysis."""
+        try:
+            self.logger.info("📊 Generating comprehensive reports...")
+            
+            reports = {}
+            
+            # 1. Cluster Quality Report
+            reports["cluster_quality"] = self._generate_cluster_quality_report(cluster_metrics)
+            
+            # 2. Cluster Characteristics Report
+            reports["cluster_characteristics"] = self._generate_cluster_characteristics_report(composite_analysis)
+            
+            # 3. Market Conditions Report
+            reports["market_conditions"] = self._generate_market_conditions_report(composite_analysis)
+            
+            # 4. Feature Importance Report
+            reports["feature_importance"] = self._generate_feature_importance_report(composite_analysis)
+            
+            # 5. HMM State Analysis Report
+            reports["hmm_state_analysis"] = self._generate_hmm_state_analysis_report(hmm_states, composite_analysis)
+            
+            # 6. Temporal Analysis Report
+            reports["temporal_analysis"] = self._generate_temporal_analysis_report(cluster_labels, features)
+            
+            # 7. Recommendations Report
+            reports["recommendations"] = self._generate_recommendations_report(cluster_metrics, composite_analysis)
+            
+            self.logger.info(f"✅ Generated {len(reports)} comprehensive reports")
+            return reports
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error generating reports: {e}")
+            return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.DataFrame(),
+        context="create_composite_cluster_dataframe"
+    )
+    def _create_composite_cluster_dataframe(self, features: Any, hmm_states: Any, cluster_labels: Any, composite_analysis: dict[str, Any]) -> Any:
+        """Create composite cluster DataFrame with all relevant information."""
+        try:
+            self.logger.info("📊 Creating composite cluster DataFrame...")
+            
+            # Create base DataFrame
+            df = features.copy()
+            df["hmm_state"] = hmm_states
+            df["composite_cluster_id"] = cluster_labels
+            
+            # Add cluster characteristics
+            for cluster_id, char in composite_analysis.get("cluster_characteristics", {}).items():
+                cluster_mask = cluster_labels == cluster_id
+                df.loc[cluster_mask, "cluster_size"] = char["size"]
+                df.loc[cluster_mask, "cluster_percentage"] = char["percentage"]
+                df.loc[cluster_mask, "dominant_hmm_state"] = char["dominant_hmm_state"]
+                df.loc[cluster_mask, "market_condition"] = composite_analysis.get("market_conditions", {}).get(cluster_id, "unknown")
+            
+            # Add intensity scores
+            df["cluster_intensity"] = self._calculate_cluster_intensity(cluster_labels, composite_analysis)
+            
+            # Add stability metrics
+            df["cluster_stability"] = self._calculate_cluster_stability_scores(cluster_labels, composite_analysis)
+            
+            self.logger.info(f"✅ Created composite cluster DataFrame: {len(df)} rows, {len(df.columns)} columns")
+            return df
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error creating composite cluster DataFrame: {e}")
+            return pd.DataFrame()
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.DataFrame(),
+        context="create_intensity_dataframe"
+    )
+    def _create_intensity_dataframe(self, features: Any, hmm_states: Any, cluster_labels: Any, composite_analysis: dict[str, Any]) -> Any:
+        """Create intensity DataFrame for cluster analysis."""
+        try:
+            self.logger.info("📊 Creating intensity DataFrame...")
+            
+            # Create intensity DataFrame
+            intensity_df = pd.DataFrame()
+            intensity_df["composite_cluster_id"] = cluster_labels
+            intensity_df["hmm_state"] = hmm_states
+            
+            # Calculate intensity scores for each cluster
+            unique_clusters = np.unique(cluster_labels)
+            
+            for cluster_id in unique_clusters:
+                cluster_mask = cluster_labels == cluster_id
+                cluster_char = composite_analysis.get("cluster_characteristics", {}).get(cluster_id, {})
+                
+                # Calculate various intensity metrics
+                intensity_df.loc[cluster_mask, "cluster_intensity"] = cluster_char.get("size", 0) / len(features)
+                intensity_df.loc[cluster_mask, "volatility_intensity"] = self._calculate_volatility_intensity(features, cluster_mask)
+                intensity_df.loc[cluster_mask, "momentum_intensity"] = self._calculate_momentum_intensity(features, cluster_mask)
+                intensity_df.loc[cluster_mask, "volume_intensity"] = self._calculate_volume_intensity(features, cluster_mask)
+                
+                # Combined intensity score
+                intensity_df.loc[cluster_mask, "combined_intensity"] = (
+                    intensity_df.loc[cluster_mask, "cluster_intensity"] * 0.3 +
+                    intensity_df.loc[cluster_mask, "volatility_intensity"] * 0.3 +
+                    intensity_df.loc[cluster_mask, "momentum_intensity"] * 0.2 +
+                    intensity_df.loc[cluster_mask, "volume_intensity"] * 0.2
+                )
+            
+            self.logger.info(f"✅ Created intensity DataFrame: {len(intensity_df)} rows, {len(intensity_df.columns)} columns")
+            return intensity_df
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error creating intensity DataFrame: {e}")
+            return pd.DataFrame()
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="create_meta_information"
+    )
+    def _create_meta_information(self, hmm_model: Any, kmeans_model: Any, composite_analysis: dict[str, Any], cluster_metrics: dict[str, Any], reports: dict[str, Any]) -> dict[str, Any]:
+        """Create meta information for the composite HMM analysis."""
+        try:
+            self.logger.info("📊 Creating meta information...")
+            
+            meta = {
+                "creation_timestamp": pd.Timestamp.now().isoformat(),
+                "hmm_model_info": {
+                    "n_components": hmm_model.n_components,
+                    "covariance_type": hmm_model.covariance_type,
+                    "n_iter": hmm_model.n_iter,
+                    "converged": hmm_model.monitor_.converged,
+                    "score": hmm_model.score(hmm_model.means_)
+                },
+                "kmeans_model_info": {
+                    "n_clusters": kmeans_model.n_clusters,
+                    "inertia": kmeans_model.inertia_,
+                    "n_iter": kmeans_model.n_iter_,
+                    "converged": kmeans_model.n_iter_ < kmeans_model.max_iter
+                },
+                "cluster_metrics": cluster_metrics,
+                "composite_analysis_summary": {
+                    "total_clusters": len(composite_analysis.get("cluster_characteristics", {})),
+                    "hmm_states": len(composite_analysis.get("hmm_state_distribution", {})),
+                    "market_conditions": len(composite_analysis.get("market_conditions", {}))
+                },
+                "reports_summary": {
+                    "total_reports": len(reports),
+                    "report_types": list(reports.keys())
+                },
+                "feature_summary": {
+                    "total_features": len(composite_analysis.get("feature_importance", {})),
+                    "top_features": sorted(
+                        composite_analysis.get("feature_importance", {}).items(),
+                        key=lambda x: x[1],
+                        reverse=True
+                    )[:10]
+                }
+            }
+            
+            self.logger.info("✅ Created meta information")
+            return meta
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error creating meta information: {e}")
+            return {}
+
+    # === ADDITIONAL HELPER METHODS ===
+
+    def _calculate_persistence(self, states: Any) -> Any:
+        """Calculate state persistence (how long we stay in current state)."""
+        try:
+            persistence = np.zeros(len(states))
+            current_state = states[0]
+            current_count = 1
+            
+            for i in range(1, len(states)):
+                if states[i] == current_state:
+                    current_count += 1
+                else:
+                    # Update persistence for the previous state
+                    for j in range(i - current_count, i):
+                        persistence[j] = current_count
+                    current_state = states[i]
+                    current_count = 1
+            
+            # Handle the last state
+            for j in range(len(states) - current_count, len(states)):
+                persistence[j] = current_count
+            
+            return persistence
+        except Exception:
+            return np.zeros(len(states))
+
+    def _calculate_transitions(self, states: Any) -> Any:
+        """Calculate number of state transitions."""
+        try:
+            transitions = np.zeros(len(states))
+            for i in range(1, len(states)):
+                if states[i] != states[i-1]:
+                    transitions[i] = 1
+            return transitions
+        except Exception:
+            return np.zeros(len(states))
+
+    def _calculate_hmm_state_distribution(self, hmm_states: Any) -> dict[int, int]:
+        """Calculate distribution of HMM states."""
+        try:
+            unique_states, counts = np.unique(hmm_states, return_counts=True)
+            return dict(zip(unique_states, counts))
+        except Exception:
+            return {}
+
+    def _get_dominant_hmm_state(self, hmm_states: Any) -> int:
+        """Get the dominant HMM state in a cluster."""
+        try:
+            unique_states, counts = np.unique(hmm_states, return_counts=True)
+            return unique_states[np.argmax(counts)]
+        except Exception:
+            return 0
+
+    def _determine_market_condition(self, cluster_char: dict[str, Any]) -> str:
+        """Determine market condition for a cluster based on its characteristics."""
+        try:
+            # Extract key metrics
+            momentum = cluster_char.get("feature_means", {}).get("price_momentum_10", 0)
+            volatility = cluster_char.get("feature_means", {}).get("volatility_20", 0)
+            volume_ratio = cluster_char.get("feature_means", {}).get("volume_ratio_10", 1)
+            rsi = cluster_char.get("feature_means", {}).get("rsi", 50)
+            
+            # Determine market condition
+            if volatility > 0.02:
+                if momentum > 0.001:
+                    return "high_volatility_bull"
+                elif momentum < -0.001:
+                    return "high_volatility_bear"
+                else:
+                    return "high_volatility_neutral"
+            elif volatility < 0.01:
+                if momentum > 0.001:
+                    return "low_volatility_bull"
+                elif momentum < -0.001:
+                    return "low_volatility_bear"
+                else:
+                    return "low_volatility_neutral"
+            else:
+                if momentum > 0.001:
+                    return "medium_volatility_bull"
+                elif momentum < -0.001:
+                    return "medium_volatility_bear"
+                else:
+                    return "medium_volatility_neutral"
+        except Exception:
+            return "unknown"
+
+    def _calculate_feature_importance(self, features: Any, cluster_labels: Any) -> dict[str, float]:
+        """Calculate feature importance based on cluster separation."""
+        try:
+            importance = {}
+            for col in features.columns:
+                if col in features.columns:
+                    # Calculate feature variance between clusters vs within clusters
+                    total_var = features[col].var()
+                    if total_var > 0:
+                        between_cluster_var = 0
+                        within_cluster_var = 0
+                        
+                        for cluster_id in np.unique(cluster_labels):
+                            cluster_mask = cluster_labels == cluster_id
+                            cluster_mean = features.loc[cluster_mask, col].mean()
+                            cluster_var = features.loc[cluster_mask, col].var()
+                            cluster_size = cluster_mask.sum()
+                            
+                            between_cluster_var += cluster_size * (cluster_mean - features[col].mean()) ** 2
+                            within_cluster_var += cluster_size * cluster_var
+                        
+                        if within_cluster_var > 0:
+                            importance[col] = between_cluster_var / within_cluster_var
+                        else:
+                            importance[col] = 0
+                    else:
+                        importance[col] = 0
+            
+            return importance
+        except Exception:
+            return {}
+
+    def _calculate_cluster_stability(self, cluster_labels: Any, cluster_metrics: dict[str, Any]) -> dict[str, float]:
+        """Calculate cluster stability metrics."""
+        try:
+            stability = {
+                "silhouette_score": cluster_metrics.get("silhouette_score", 0),
+                "cluster_balance": cluster_metrics.get("cluster_balance", 0),
+                "mean_distance_to_center": cluster_metrics.get("mean_distance_to_center", 0)
+            }
+            return stability
+        except Exception:
+            return {}
+
+    def _calculate_cluster_intensity(self, cluster_labels: Any, composite_analysis: dict[str, Any]) -> Any:
+        """Calculate cluster intensity scores."""
+        try:
+            intensity = np.zeros(len(cluster_labels))
+            for cluster_id, char in composite_analysis.get("cluster_characteristics", {}).items():
+                cluster_mask = cluster_labels == cluster_id
+                intensity[cluster_mask] = char.get("percentage", 0) / 100
+            return intensity
+        except Exception:
+            return np.zeros(len(cluster_labels))
+
+    def _calculate_cluster_stability_scores(self, cluster_labels: Any, composite_analysis: dict[str, Any]) -> Any:
+        """Calculate cluster stability scores."""
+        try:
+            stability = np.ones(len(cluster_labels))  # Default stability score
+            # This could be enhanced with more sophisticated stability calculations
+            return stability
+        except Exception:
+            return np.ones(len(cluster_labels))
+
+    def _calculate_volatility_intensity(self, features: Any, cluster_mask: Any) -> float:
+        """Calculate volatility intensity for a cluster."""
+        try:
+            if "volatility_20" in features.columns:
+                return features.loc[cluster_mask, "volatility_20"].mean()
+            return 0.0
+        except Exception:
+            return 0.0
+
+    def _calculate_momentum_intensity(self, features: Any, cluster_mask: Any) -> float:
+        """Calculate momentum intensity for a cluster."""
+        try:
+            if "price_momentum_10" in features.columns:
+                return abs(features.loc[cluster_mask, "price_momentum_10"].mean())
+            return 0.0
+        except Exception:
+            return 0.0
+
+    def _calculate_volume_intensity(self, features: Any, cluster_mask: Any) -> float:
+        """Calculate volume intensity for a cluster."""
+        try:
+            if "volume_ratio_10" in features.columns:
+                return features.loc[cluster_mask, "volume_ratio_10"].mean()
+            return 1.0
+        except Exception:
+            return 1.0
+
+    # === REPORT GENERATION METHODS ===
+
+    def _generate_cluster_quality_report(self, cluster_metrics: dict[str, Any]) -> str:
+        """Generate cluster quality report."""
+        try:
+            report = []
+            report.append("# Cluster Quality Analysis Report")
+            report.append("")
+            report.append(f"## Quality Metrics")
+            report.append(f"- **Silhouette Score**: {cluster_metrics.get('silhouette_score', 0):.4f}")
+            report.append(f"- **Calinski-Harabasz Score**: {cluster_metrics.get('calinski_harabasz_score', 0):.2f}")
+            report.append(f"- **Davies-Bouldin Score**: {cluster_metrics.get('davies_bouldin_score', 0):.4f}")
+            report.append(f"- **Inertia**: {cluster_metrics.get('inertia', 0):.2f}")
+            report.append("")
+            report.append(f"## Cluster Distribution")
+            report.append(f"- **Min Cluster Size**: {cluster_metrics.get('min_cluster_size', 0)}")
+            report.append(f"- **Max Cluster Size**: {cluster_metrics.get('max_cluster_size', 0)}")
+            report.append(f"- **Mean Cluster Size**: {cluster_metrics.get('mean_cluster_size', 0):.1f}")
+            report.append(f"- **Cluster Balance**: {cluster_metrics.get('cluster_balance', 0):.4f}")
+            
+            return "\n".join(report)
+        except Exception as e:
+            return f"Error generating cluster quality report: {e}"
+
+    def _generate_cluster_characteristics_report(self, composite_analysis: dict[str, Any]) -> str:
+        """Generate cluster characteristics report."""
+        try:
+            report = []
+            report.append("# Cluster Characteristics Report")
+            report.append("")
+            
+            for cluster_id, char in composite_analysis.get("cluster_characteristics", {}).items():
+                report.append(f"## Cluster {cluster_id}")
+                report.append(f"- **Size**: {char.get('size', 0)} ({char.get('percentage', 0):.1f}%)")
+                report.append(f"- **Dominant HMM State**: {char.get('dominant_hmm_state', 'unknown')}")
+                report.append(f"- **Market Condition**: {composite_analysis.get('market_conditions', {}).get(cluster_id, 'unknown')}")
+                report.append("")
+            
+            return "\n".join(report)
+        except Exception as e:
+            return f"Error generating cluster characteristics report: {e}"
+
+    def _generate_market_conditions_report(self, composite_analysis: dict[str, Any]) -> str:
+        """Generate market conditions report."""
+        try:
+            report = []
+            report.append("# Market Conditions Report")
+            report.append("")
+            
+            market_conditions = composite_analysis.get("market_conditions", {})
+            condition_counts = {}
+            
+            for condition in market_conditions.values():
+                condition_counts[condition] = condition_counts.get(condition, 0) + 1
+            
+            for condition, count in condition_counts.items():
+                report.append(f"- **{condition}**: {count} clusters")
+            
+            return "\n".join(report)
+        except Exception as e:
+            return f"Error generating market conditions report: {e}"
+
+    def _generate_feature_importance_report(self, composite_analysis: dict[str, Any]) -> str:
+        """Generate feature importance report."""
+        try:
+            report = []
+            report.append("# Feature Importance Report")
+            report.append("")
+            
+            feature_importance = composite_analysis.get("feature_importance", {})
+            sorted_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
+            
+            report.append("## Top 10 Most Important Features")
+            for i, (feature, importance) in enumerate(sorted_features[:10], 1):
+                report.append(f"{i}. **{feature}**: {importance:.4f}")
+            
+            return "\n".join(report)
+        except Exception as e:
+            return f"Error generating feature importance report: {e}"
+
+    def _generate_hmm_state_analysis_report(self, hmm_states: Any, composite_analysis: dict[str, Any]) -> str:
+        """Generate HMM state analysis report."""
+        try:
+            report = []
+            report.append("# HMM State Analysis Report")
+            report.append("")
+            
+            hmm_distribution = composite_analysis.get("hmm_state_distribution", {})
+            total_states = sum(hmm_distribution.values())
+            
+            report.append("## HMM State Distribution")
+            for state, count in hmm_distribution.items():
+                percentage = (count / total_states * 100) if total_states > 0 else 0
+                report.append(f"- **State {state}**: {count} ({percentage:.1f}%)")
+            
+            return "\n".join(report)
+        except Exception as e:
+            return f"Error generating HMM state analysis report: {e}"
+
+    def _generate_temporal_analysis_report(self, cluster_labels: Any, features: Any) -> str:
+        """Generate temporal analysis report."""
+        try:
+            report = []
+            report.append("# Temporal Analysis Report")
+            report.append("")
+            
+            # Calculate cluster transitions
+            transitions = 0
+            for i in range(1, len(cluster_labels)):
+                if cluster_labels[i] != cluster_labels[i-1]:
+                    transitions += 1
+            
+            report.append(f"## Cluster Transitions")
+            report.append(f"- **Total Transitions**: {transitions}")
+            report.append(f"- **Transition Rate**: {transitions / len(cluster_labels) * 100:.2f}%")
+            
+            return "\n".join(report)
+        except Exception as e:
+            return f"Error generating temporal analysis report: {e}"
+
+    def _generate_recommendations_report(self, cluster_metrics: dict[str, Any], composite_analysis: dict[str, Any]) -> str:
+        """Generate recommendations report."""
+        try:
+            report = []
+            report.append("# Recommendations Report")
+            report.append("")
+            
+            # Analyze cluster quality
+            silhouette = cluster_metrics.get("silhouette_score", 0)
+            if silhouette < 0.2:
+                report.append("- **Low Silhouette Score**: Consider reducing number of clusters or improving feature engineering")
+            elif silhouette > 0.5:
+                report.append("- **Good Silhouette Score**: Clusters are well-separated")
+            
+            # Analyze cluster balance
+            balance = cluster_metrics.get("cluster_balance", 0)
+            if balance > 0.5:
+                report.append("- **Unbalanced Clusters**: Consider adjusting clustering parameters for better balance")
+            
+            # Analyze feature importance
+            feature_importance = composite_analysis.get("feature_importance", {})
+            if feature_importance:
+                top_feature = max(feature_importance.items(), key=lambda x: x[1])
+                report.append(f"- **Most Important Feature**: {top_feature[0]} (importance: {top_feature[1]:.4f})")
+            
+            return "\n".join(report)
+        except Exception as e:
+            return f"Error generating recommendations report: {e}"
 
 
 if __name__ == "__main__":

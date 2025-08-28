@@ -343,6 +343,10 @@ async def _create_comprehensive_features(
         # Add statistical features
         features_df = _add_statistical_features(features_df)
         
+        # Add HMM feature enhancement if regime data is available
+        if regime_data is not None:
+            features_df = _enhance_hmm_features(features_df, regime_data)
+        
         # Split into train/validation
         split_point = int(len(features_df) * 0.8)
         features_train = features_df.iloc[:split_point]
@@ -406,6 +410,36 @@ def _add_regime_aware_features(features: pd.DataFrame, data: pd.DataFrame) -> pd
             features[f"regime_{regime}_volatility_mean"] = features["volatility"].where(regime_mask).rolling(20).mean()
     
     return features
+
+
+def _enhance_hmm_features(features: pd.DataFrame, regime_data: pd.DataFrame) -> pd.DataFrame:
+    """Enhance features with HMM feature enhancer."""
+    try:
+        from src.training.steps.hmm_feature_enhancer import HMMFeatureEnhancer
+        
+        # Initialize HMM feature enhancer
+        enhancer = HMMFeatureEnhancer()
+        
+        # Merge regime data with features for enhancement
+        enhanced_features = features.copy()
+        
+        # Add regime information if not already present
+        if "composite_cluster_id" not in enhanced_features.columns and "regime" in regime_data.columns:
+            enhanced_features = enhanced_features.merge(
+                regime_data[["timestamp", "regime"]].rename(columns={"regime": "composite_cluster_id"}),
+                on="timestamp",
+                how="left"
+            )
+        
+        # Enhance features with HMM feature enhancer
+        enhanced_features = enhancer.enhance_hmm_features(enhanced_features)
+        
+        system_logger.info(f"✅ Enhanced features with HMM feature enhancer: {len(enhanced_features.columns)} total features")
+        return enhanced_features
+        
+    except Exception as e:
+        system_logger.error(f"Failed to enhance HMM features: {e}")
+        return features
 
 
 def _add_technical_indicators(features: pd.DataFrame) -> pd.DataFrame:

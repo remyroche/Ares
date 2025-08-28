@@ -421,6 +421,7 @@ class ValidatorOrchestrator:
     "step7_enhanced_matrix_operations": "step7_enhanced_matrix_operations_validator",
         "step8_regime_data_splitting": "step8_regime_data_splitting_validator",
         "step9_hmm_based_training": "step9_hmm_based_training_validator",
+    "step9_5_multi_timeframe_hmm_ensemble": "step9_5_multi_timeframe_hmm_ensemble_validator",
         "step9_5_hmm_lm_generalist_training": "step9_5_hmm_lm_generalist_training_validator",
         "step10_unified_regime_intelligence": "step10_unified_regime_intelligence_validator",
         "step11_analyst_creation": "step11_analyst_creation_validator",

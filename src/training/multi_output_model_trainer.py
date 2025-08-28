@@ -274,41 +274,45 @@ class MultiOutputModelTrainer:
         if missing_columns:
             raise ValueError(f"Missing required columns: {missing_columns}")
         
-        # Use enhanced feature selection if enabled
+        # Use enhanced data-driven feature selection if enabled
         if use_enhanced_feature_selection:
             try:
-                from src.training.feature_selection_manager import FeatureSelectionManager
+                from src.training.enhanced_feature_selection_manager import EnhancedFeatureSelectionManager
                 
-                self.logger.info("🔧 Using enhanced feature selection with autoencoder features...")
+                self.logger.info("🔧 Using enhanced data-driven feature selection (VIF, MI, SHAP, RF)...")
                 
-                # Create feature selection manager with enhanced features
-                feature_selector = FeatureSelectionManager(self.config.__dict__ if hasattr(self.config, '__dict__') else {})
+                # Create enhanced feature selection manager
+                feature_selector = EnhancedFeatureSelectionManager(self.config.__dict__ if hasattr(self.config, '__dict__') else {})
                 
-                # Create dummy target for feature selection (it will be replaced)
-                dummy_target = pd.Series(0, index=data.index)
+                # Create target for feature selection (use direction target for classification task)
+                selection_target = pd.Series(0, index=data.index)
                 if direction_column in data.columns:
-                    dummy_target = data[direction_column]
+                    selection_target = data[direction_column]
                 
-                # Use enhanced feature selection with autoencoder features
-                selected_features, metadata = feature_selector.select_features_step2(
+                # Use enhanced data-driven feature selection
+                selected_features, metadata = feature_selector.select_features_enhanced(
                     features_df=data,
-                    target=dummy_target,
+                    target=selection_target,
                     symbol="default",
                     exchange="default",
                     data_dir="temp",
-                    use_autoencoder_features=True,  # Use autoencoder features
-                    use_regularization=True         # Use regularization
+                    task="classification"  # Use classification task for direction prediction
                 )
                 
-                self.logger.info(f"✅ Enhanced feature selection completed: {selected_features.shape[1]} features selected")
-                self.logger.info(f"   - Autoencoder features: {metadata.get('stages', {}).get('stage0_autoencoder', {}).get('autoencoder_features_added', 0)}")
-                self.logger.info(f"   - Regularization applied: {metadata.get('stages', {}).get('stage6_regularization', {}).get('regularization_applied', False)}")
+                self.logger.info(f"✅ Enhanced data-driven feature selection completed: {selected_features.shape[1]} features selected")
+                self.logger.info(f"   - VIF features removed: {metadata.get('stages', {}).get('stage3_vif', {}).get('removed_high_vif', 0)}")
+                self.logger.info(f"   - MI features removed: {metadata.get('stages', {}).get('stage5_mutual_info', {}).get('removed_low_mi', 0)}")
+                self.logger.info(f"   - SHAP features removed: {metadata.get('stages', {}).get('stage6_shap', {}).get('removed_low_shap', 0)}")
+                self.logger.info(f"   - RF features removed: {metadata.get('stages', {}).get('stage7_random_forest', {}).get('removed_low_rf', 0)}")
+                
+                # Store feature importance scores for later use
+                self.feature_importance = metadata.get('feature_importance_scores', {})
                 
                 # Use selected features
                 data = selected_features
                 
             except Exception as e:
-                self.logger.warning(f"⚠️ Enhanced feature selection failed: {e}")
+                self.logger.warning(f"⚠️ Enhanced data-driven feature selection failed: {e}")
                 self.logger.info("📊 Falling back to basic feature preparation")
                 use_enhanced_feature_selection = False
         
@@ -347,6 +351,30 @@ class MultiOutputModelTrainer:
         self.logger.info(f"   - Profit target: mean={profit_target.mean():.6f}, std={profit_target.std():.6f}")
         
         return features, direction_target, profit_target
+    
+    def get_feature_importance_summary(self) -> Dict[str, Any]:
+        """Get a summary of feature importance scores from data-driven selection.
+        
+        Returns:
+            Dictionary containing feature importance summaries by method
+        """
+        if not hasattr(self, 'feature_importance') or not self.feature_importance:
+            return {}
+        
+        summary = {}
+        
+        for method, scores in self.feature_importance.items():
+            if isinstance(scores, dict) and len(scores) > 0:
+                scores_series = pd.Series(scores)
+                summary[method] = {
+                    "mean": float(scores_series.mean()),
+                    "std": float(scores_series.std()),
+                    "min": float(scores_series.min()),
+                    "max": float(scores_series.max()),
+                    "top_10_features": scores_series.nlargest(10).to_dict()
+                }
+        
+        return summary
     
     def _train_xgboost_multi_output(
         self,

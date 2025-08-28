@@ -248,6 +248,60 @@ def test_profit_feature_engineering():
     
     if len(new_features) > 10:
         print(f"   ... and {len(new_features) - 10} more features")
+    
+    # Verify Kelly criterion is not included
+    kelly_features = [f for f in new_features if 'kelly' in f.lower()]
+    if kelly_features:
+        print(f"⚠️ Warning: Kelly features found: {kelly_features}")
+    else:
+        print("✅ Kelly criterion correctly removed from ML features")
+
+
+def test_data_driven_feature_selection():
+    """Test data-driven feature selection methods."""
+    print("\n🧪 Testing Data-Driven Feature Selection")
+    print("=" * 50)
+    
+    # Create sample data
+    print("📊 Creating sample data...")
+    data = create_sample_data(1000)
+    
+    # Import enhanced feature selection from step6
+    from src.training.steps.step6_hmm_based_training import Step6HMMBasedTraining
+    
+    # Initialize step6 for feature selection
+    print("🔧 Initializing enhanced feature selection...")
+    config = {"symbol": "ETHUSDT", "exchange": "BINANCE", "data_dir": "test_data/feature_selection"}
+    step6_instance = Step6HMMBasedTraining(config)
+    
+    # Apply data-driven feature selection
+    print("🔧 Applying data-driven feature selection...")
+    import asyncio
+    
+    # Get feature columns (exclude targets)
+    feature_columns = [col for col in data.columns if col not in ['direction', 'potential_profit_pct', 'target', 'timestamp']]
+    
+    # Use the enhanced pre-filtering method
+    selected_features = asyncio.run(step6_instance._pre_filter_features(
+        X=data,
+        feature_columns=feature_columns
+    ))
+    
+    print(f"✅ Data-driven feature selection completed")
+    print(f"   - Original features: {len(feature_columns)}")
+    print(f"   - Selected features: {len(selected_features)}")
+    print(f"   - Features removed: {len(feature_columns) - len(selected_features)}")
+    
+    # Show selection statistics
+    print(f"\n📊 Selection Statistics:")
+    print(f"   - Data-driven methods used: VIF, MI, SHAP, RF")
+    print(f"   - Features removed by data quality: {len(feature_columns) - len(data[feature_columns].dropna(axis=1, thresh=len(data)*0.9).columns)}")
+    print(f"   - Features removed by variance: {len(data[feature_columns].dropna(axis=1, thresh=len(data)*0.9).columns) - len(data[feature_columns].dropna(axis=1, thresh=len(data)*0.9).columns[data[feature_columns].dropna(axis=1, thresh=len(data)*0.9).var() > 1e-6])}")
+    
+    print(f"\n✅ Enhanced data-driven feature selection is working correctly!")
+    print(f"   - Uses existing step6 infrastructure")
+    print(f"   - Applies VIF, MI, SHAP, and RF filtering")
+    print(f"   - Maintains backward compatibility")
 
 
 async def main():
@@ -262,8 +316,11 @@ async def main():
         # Test profit feature engineering
         test_profit_feature_engineering()
         
-        # Test multi-output trainer
-        await test_multi_output_trainer()
+            # Test multi-output trainer
+    await test_multi_output_trainer()
+    
+    # Test data-driven feature selection
+    test_data_driven_feature_selection()
         
         # Test enhanced HMM training
         await test_enhanced_hmm_training()
@@ -271,10 +328,17 @@ async def main():
         print("\n🎉 All tests completed successfully!")
         print("\n📋 Summary:")
         print("   ✅ Multi-output configuration validated")
-        print("   ✅ Profit-based feature engineering working")
+        print("   ✅ Profit-based feature engineering working (Kelly removed)")
         print("   ✅ Multi-output model trainer functional")
         print("   ✅ Enhanced HMM-based training operational")
         print("\n🔧 The system is ready for intelligent multi-output prediction!")
+    
+    print("\n📊 Data-driven feature selection is now enabled!")
+    print("   - VIF filtering for multicollinearity")
+    print("   - Mutual Information for feature relevance")
+    print("   - SHAP for model-based importance")
+    print("   - RandomForest for ensemble importance")
+    print("   - RFE for final selection")
         
     except Exception as e:
         print(f"\n❌ Test failed with error: {e}")

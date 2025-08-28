@@ -72,6 +72,29 @@ def get_multi_output_config() -> Dict[str, Any]:
             }
         },
         
+        # Enhanced data-driven feature selection configuration
+        "feature_reduction": {
+            "target_features": 100,
+            "vif_threshold": 10.0,
+            "mi_threshold": 0.01,
+            "correlation_threshold": 0.95,
+            "variance_threshold": 0.01,
+            "method_weights": {
+                "vif": 0.2,
+                "mutual_info": 0.25,
+                "shap": 0.25,
+                "random_forest": 0.2,
+                "rfe": 0.1
+            },
+            "enable_enhanced_selection": True,
+            "enable_vif_filtering": True,
+            "enable_mi_filtering": True,
+            "enable_shap_filtering": True,
+            "enable_rf_filtering": True,
+            "enable_ensemble_selection": True,
+            "enable_final_rfe": True
+        },
+        
         # Model trainer configuration
         "model_trainer": {
             "enable_multi_output": True,

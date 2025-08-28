@@ -168,22 +168,25 @@ class EnhancedTrainingManager:
             "step1_data_collection",           # Download and prepare market data
             "step1_5_data_converter",          # Convert data to unified format
             "step2_data_reading",              # Read and validate data quality
-            "step3_hmm_regime_discovery",      # Define HMM regime clusters
+            "step3_hmm_regime_discovery",      # Define HMM regime clusters (with basic features)
             "step4_triple_barrier_method",     # Apply triple barrier method
             "step5_labeling",                  # Create labels
-            "step6_feature_engineering",       # Feature engineering
-            "step7_regime_data_splitting",     # Split data by regimes
-            "step8_hmm_based_training",        # HMM-based model training
-            "step8_5_unified_regime_intelligence", # Unified regime intelligence
-            "step9_analyst_enhancement",       # Analyst enhancement
-            "step10_tactician_labeling",       # Tactician labeling
-            "step11_tactician_specialist_training", # Tactician specialist training
-            "step12_confidence_calibration",   # Confidence calibration
-            "step13_final_parameters_optimization", # Final parameters optimization
-            "step14_walk_forward_validation",  # Walk forward validation
-            "step15_monte_carlo_validation",   # Monte Carlo validation
-            "step16_ab_testing",               # A/B testing
-            "step17_saving",                   # Save final models
+            "step6_feature_engineering",       # Basic feature engineering
+            "step7_feature_engineering",       # Advanced feature engineering (AFTER regimes are known)
+            "step8_regime_data_splitting",     # Split data by regimes
+            "step9_hmm_based_training",        # HMM-based model training
+            "step10_unified_regime_intelligence", # Unified regime intelligence
+            "step11_analyst_creation",         # Analyst creation (NEW STEP)
+            "step12_analyst_enhancement",      # Analyst enhancement
+            "step13_analyst_ensemble_creation", # Analyst ensemble creation
+            "step14_tactician_labeling",       # Tactician labeling
+            "step15_tactician_specialist_training", # Tactician specialist training
+            "step16_confidence_calibration",   # Confidence calibration
+            "step17_final_parameters_optimization", # Final parameters optimization
+            "step18_walk_forward_validation",  # Walk forward validation
+            "step19_monte_carlo_validation",   # Monte Carlo validation
+            "step20_ab_testing",               # A/B testing
+            "step21_saving",                   # Save final models
         ]
 
         # Define critical artifact patterns for each step

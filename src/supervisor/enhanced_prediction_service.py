@@ -16,6 +16,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+from scipy import stats
+from scipy.stats import norm
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
@@ -42,6 +44,7 @@ class EnhancedPredictionService:
     - Tactician specialist models (step 9)
     - Confidence calibration results (step 11)
     - Final parameter optimization results (step 12-14)
+    - ML Profit Integration System (Universal ML Profit Integration)
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
@@ -58,6 +61,11 @@ class EnhancedPredictionService:
         self.calibration_results: dict[str, Any] = {}
         self.optimization_results: dict[str, Any] = {}
         
+        # ML Profit Integration System
+        self.ml_profit_models: dict[str, Any] = {}
+        self.profit_prediction_results: dict[str, Any] = {}
+        self.barrier_analysis_results: dict[str, Any] = {}
+        
         # Configuration
         self.service_config: dict[str, Any] = self.config.get("enhanced_prediction_service", {})
         self.data_dir: str = self.service_config.get("data_dir", "data/training")
@@ -66,6 +74,11 @@ class EnhancedPredictionService:
         # Prediction thresholds
         self.confidence_threshold: float = self.service_config.get("confidence_threshold", 0.7)
         self.price_prediction_threshold: float = self.service_config.get("price_prediction_threshold", 0.6)
+        
+        # ML Profit Integration thresholds
+        self.profit_threshold: float = self.service_config.get("profit_threshold", 0.02)  # 2% default
+        self.barrier_threshold: float = self.service_config.get("barrier_threshold", 0.01)  # 1% default
+        self.direction_confidence_threshold: float = self.service_config.get("direction_confidence_threshold", 0.65)
         
         # Timeframe configuration
         self.tactician_timeframes: list[str] = self.service_config.get("timeframes", ["1m", "5m"])
@@ -106,6 +119,9 @@ class EnhancedPredictionService:
 
             # Load optimization results (step 12-14)
             await self._load_optimization_results()
+
+            # Load ML Profit Integration models (steps 6-14)
+            await self._load_ml_profit_models()
 
             # Apply optimized parameters if available
             await self._apply_optimized_parameters()
@@ -277,6 +293,44 @@ class EnhancedPredictionService:
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
+        context="loading ML profit models",
+    )
+    @with_tracing_span("load_ml_profit_models")
+    @intelligent_caching(cache_key="ml_profit_models")
+    async def _load_ml_profit_models(self) -> None:
+        """Load ML profit models from steps 6-14."""
+        try:
+            ml_profit_path = Path(self.data_dir) / "ml_profit_models"
+            if not ml_profit_path.exists():
+                self.logger.warning(warning(f"⚠️ ML profit models directory not found: {ml_profit_path}"))
+                return
+
+            # Load different types of ML profit models
+            model_types = ["hmm_profit", "analyst_profit", "tactician_profit", "ensemble_profit"]
+            
+            for model_type in model_types:
+                type_path = ml_profit_path / model_type
+                if type_path.exists():
+                    self.ml_profit_models[model_type] = {}
+                    
+                    for model_file in type_path.glob("*.pkl"):
+                        try:
+                            with open(model_file, "rb") as f:
+                                model_data = pickle.load(f)
+                            
+                            model_name = model_file.stem
+                            self.ml_profit_models[model_type][model_name] = model_data
+                            self.logger.info(f"✅ Loaded ML profit model: {model_type}/{model_name}")
+                        
+                        except Exception as e:
+                            self.logger.warning(warning(f"⚠️ Failed to load ML profit model {model_file}: {e}"))
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error loading ML profit models: {e}"))
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
         context="applying optimized parameters",
     )
     @with_tracing_span("apply_optimized_parameters")
@@ -314,16 +368,15 @@ class EnhancedPredictionService:
         default_return={},
         context="generating analyst predictions",
     )
-    @validate_data_quality(validation_level="WARNING")
     @with_tracing_span("generate_analyst_predictions")
-    @performance_monitor(performance_level=PerformanceLevel.HIGH)
+    @validate_data_quality(validation_level="WARNING")
     async def generate_analyst_predictions(
-        self, 
+        self,
         market_data: pd.DataFrame,
         regime_info: dict[str, Any],
         symbol: str,
         exchange: str,
-        timeframe: str
+        timeframe: str = "1m"
     ) -> dict[str, Any]:
         """
         Generate enhanced predictions for the Analyst component.
@@ -344,42 +397,37 @@ class EnhancedPredictionService:
                 return {}
 
             predictions = {
-                "price_predictions": {},
-                "confidence_scores": {},
-                "calibrated_predictions": {},
-                "optimization_weights": {},
+                "ml_profit_predictions": {},
+                "enhanced_confidence_scores": {},
+                "barrier_analysis": {},
+                "regime_predictions": {},
+                "timeframe_used": timeframe,
                 "timestamp": datetime.now().isoformat()
             }
 
-            # Generate HMM-based predictions
-            hmm_predictions = await self._generate_hmm_predictions(
+            # Generate ML profit predictions (Universal ML Profit Integration)
+            ml_profit_predictions = await self._generate_ml_profit_predictions(
                 market_data, regime_info, symbol, exchange, timeframe
             )
-            predictions["price_predictions"].update(hmm_predictions)
+            predictions["ml_profit_predictions"] = ml_profit_predictions
 
-            # Generate analyst enhanced predictions
-            analyst_predictions = await self._generate_analyst_enhanced_predictions(
-                market_data, regime_info, symbol, exchange, timeframe
+            # Generate enhanced confidence scores with barrier analysis
+            enhanced_confidence = await self._generate_enhanced_confidence_scores(
+                ml_profit_predictions, market_data, symbol, exchange
             )
-            predictions["price_predictions"].update(analyst_predictions)
+            predictions["enhanced_confidence_scores"] = enhanced_confidence
 
-            # Apply confidence calibration
-            calibrated_predictions = await self._apply_confidence_calibration(
-                predictions["price_predictions"], symbol, exchange
+            # Generate barrier analysis
+            barrier_analysis = await self._generate_barrier_analysis(
+                ml_profit_predictions, market_data, symbol, exchange
             )
-            predictions["calibrated_predictions"] = calibrated_predictions
+            predictions["barrier_analysis"] = barrier_analysis
 
-            # Apply optimization weights
-            optimized_predictions = await self._apply_optimization_weights(
-                predictions["calibrated_predictions"], symbol, exchange
+            # Generate regime predictions
+            regime_predictions = await self._generate_regime_predictions(
+                market_data, regime_info, symbol, exchange
             )
-            predictions["optimization_weights"] = optimized_predictions
-
-            # Generate final confidence scores
-            final_confidence = await self._generate_final_confidence_scores(
-                predictions["calibrated_predictions"], predictions["optimization_weights"]
-            )
-            predictions["confidence_scores"] = final_confidence
+            predictions["regime_predictions"] = regime_predictions
 
             return predictions
 
@@ -723,6 +771,609 @@ class EnhancedPredictionService:
         except Exception as e:
             self.logger.error(error(f"❌ Error generating final confidence scores: {e}"))
             return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="generating ML profit predictions",
+    )
+    @with_tracing_span("generate_ml_profit_predictions")
+    @validate_data_quality(validation_level="WARNING")
+    async def _generate_ml_profit_predictions(
+        self,
+        market_data: pd.DataFrame,
+        regime_info: dict[str, Any],
+        symbol: str,
+        exchange: str,
+        timeframe: str
+    ) -> dict[str, Any]:
+        """Generate ML profit predictions from steps 6-14 models."""
+        try:
+            predictions = {}
+            
+            # Generate predictions from different ML model types
+            for model_type, models in self.ml_profit_models.items():
+                for model_name, model_data in models.items():
+                    if "model" in model_data and hasattr(model_data["model"], "predict"):
+                        try:
+                            # Prepare features for prediction
+                            features = self._prepare_features_for_prediction(
+                                market_data, regime_info
+                            )
+                            
+                            # Generate prediction
+                            raw_prediction = model_data["model"].predict(features)
+                            
+                            # Process prediction based on model type
+                            if model_type == "hmm_profit":
+                                processed_prediction = self._process_hmm_profit_prediction(
+                                    raw_prediction, model_data, model_name
+                                )
+                            elif model_type == "analyst_profit":
+                                processed_prediction = self._process_analyst_profit_prediction(
+                                    raw_prediction, model_data, model_name
+                                )
+                            elif model_type == "tactician_profit":
+                                processed_prediction = self._process_tactician_profit_prediction(
+                                    raw_prediction, model_data, model_name
+                                )
+                            else:  # ensemble_profit
+                                processed_prediction = self._process_ensemble_profit_prediction(
+                                    raw_prediction, model_data, model_name
+                                )
+                            
+                            predictions[f"{model_type}_{model_name}"] = processed_prediction
+                            
+                        except Exception as e:
+                            self.logger.warning(warning(f"⚠️ Failed to generate ML profit prediction for {model_type}/{model_name}: {e}"))
+
+            return predictions
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error generating ML profit predictions: {e}"))
+            return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="generating enhanced confidence scores",
+    )
+    @with_tracing_span("generate_enhanced_confidence_scores")
+    @validate_data_quality(validation_level="WARNING")
+    async def _generate_enhanced_confidence_scores(
+        self,
+        ml_profit_predictions: dict[str, Any],
+        market_data: pd.DataFrame,
+        symbol: str,
+        exchange: str
+    ) -> dict[str, Any]:
+        """
+        Generate enhanced confidence scores with barrier analysis.
+        
+        This function calculates the confidence that price will move AT LEAST by x% 
+        in a direction without hitting the barrier in the other direction first.
+        """
+        try:
+            enhanced_confidence = {}
+            
+            # Extract current price and volatility
+            current_price = market_data['close'].iloc[-1]
+            price_volatility = market_data['close'].pct_change().std()
+            
+            # Calculate price movement thresholds
+            profit_threshold_pct = self.profit_threshold
+            barrier_threshold_pct = self.barrier_threshold
+            
+            profit_threshold_price = current_price * (1 + profit_threshold_pct)
+            barrier_threshold_price = current_price * (1 - barrier_threshold_pct)
+            
+            for prediction_name, prediction_data in ml_profit_predictions.items():
+                try:
+                    # Extract prediction components
+                    predicted_direction = prediction_data.get("direction", 0)  # -1, 0, 1
+                    predicted_magnitude = prediction_data.get("magnitude", 0.0)
+                    base_confidence = prediction_data.get("confidence", 0.5)
+                    
+                    # Calculate enhanced confidence with barrier analysis
+                    enhanced_confidence_score = await self._calculate_directional_confidence_with_barriers(
+                        predicted_direction=predicted_direction,
+                        predicted_magnitude=predicted_magnitude,
+                        base_confidence=base_confidence,
+                        current_price=current_price,
+                        profit_threshold_price=profit_threshold_price,
+                        barrier_threshold_price=barrier_threshold_price,
+                        price_volatility=price_volatility,
+                        prediction_name=prediction_name
+                    )
+                    
+                    enhanced_confidence[prediction_name] = {
+                        "enhanced_confidence": enhanced_confidence_score,
+                        "base_confidence": base_confidence,
+                        "direction": predicted_direction,
+                        "magnitude": predicted_magnitude,
+                        "profit_threshold": profit_threshold_pct,
+                        "barrier_threshold": barrier_threshold_pct,
+                        "current_price": current_price,
+                        "profit_target": profit_threshold_price,
+                        "barrier_price": barrier_threshold_price,
+                        "volatility": price_volatility,
+                        "calculation_method": "directional_with_barriers"
+                    }
+                    
+                except Exception as e:
+                    self.logger.warning(warning(f"⚠️ Failed to calculate enhanced confidence for {prediction_name}: {e}"))
+                    enhanced_confidence[prediction_name] = {
+                        "enhanced_confidence": 0.5,
+                        "base_confidence": prediction_data.get("confidence", 0.5),
+                        "error": str(e)
+                    }
+
+            return enhanced_confidence
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error generating enhanced confidence scores: {e}"))
+            return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=0.5,
+        context="calculating directional confidence with barriers",
+    )
+    @with_tracing_span("calculate_directional_confidence_with_barriers")
+    async def _calculate_directional_confidence_with_barriers(
+        self,
+        predicted_direction: int,
+        predicted_magnitude: float,
+        base_confidence: float,
+        current_price: float,
+        profit_threshold_price: float,
+        barrier_threshold_price: float,
+        price_volatility: float,
+        prediction_name: str
+    ) -> float:
+        """
+        Calculate confidence that price will move AT LEAST by x% in a direction 
+        without hitting the barrier in the other direction first.
+        
+        This is the enhanced confidence calculation function that considers:
+        1. Directional probability
+        2. Magnitude probability
+        3. Barrier avoidance probability
+        4. Volatility-adjusted confidence
+        """
+        try:
+            if predicted_direction == 0:
+                return 0.5  # Neutral direction
+            
+            # Calculate directional probability
+            directional_prob = self._calculate_directional_probability(
+                predicted_direction, base_confidence, price_volatility
+            )
+            
+            # Calculate magnitude probability (probability of reaching profit target)
+            magnitude_prob = self._calculate_magnitude_probability(
+                predicted_magnitude, profit_threshold_price, current_price, price_volatility
+            )
+            
+            # Calculate barrier avoidance probability
+            barrier_avoidance_prob = self._calculate_barrier_avoidance_probability(
+                predicted_direction, barrier_threshold_price, current_price, price_volatility
+            )
+            
+            # Combine probabilities using Bayesian approach
+            # P(success) = P(direction) * P(magnitude) * P(no_barrier)
+            combined_probability = directional_prob * magnitude_prob * barrier_avoidance_prob
+            
+            # Apply volatility adjustment
+            volatility_adjustment = self._calculate_volatility_adjustment(price_volatility)
+            adjusted_confidence = combined_probability * volatility_adjustment
+            
+            # Ensure confidence is within bounds
+            final_confidence = max(0.0, min(1.0, adjusted_confidence))
+            
+            self.logger.debug(f"Enhanced confidence calculation for {prediction_name}:")
+            self.logger.debug(f"  Directional prob: {directional_prob:.4f}")
+            self.logger.debug(f"  Magnitude prob: {magnitude_prob:.4f}")
+            self.logger.debug(f"  Barrier avoidance prob: {barrier_avoidance_prob:.4f}")
+            self.logger.debug(f"  Volatility adjustment: {volatility_adjustment:.4f}")
+            self.logger.debug(f"  Final confidence: {final_confidence:.4f}")
+            
+            return final_confidence
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error calculating directional confidence with barriers: {e}"))
+            return base_confidence
+
+    def _calculate_directional_probability(
+        self,
+        predicted_direction: int,
+        base_confidence: float,
+        price_volatility: float
+    ) -> float:
+        """Calculate probability of correct direction prediction."""
+        try:
+            # Base directional probability from model confidence
+            base_directional_prob = base_confidence
+            
+            # Adjust for volatility (higher volatility = lower directional confidence)
+            volatility_factor = 1.0 / (1.0 + price_volatility * 10)  # Scale volatility impact
+            
+            # Adjust for direction strength
+            direction_strength = abs(predicted_direction)
+            direction_factor = min(1.0, direction_strength)
+            
+            # Combine factors
+            directional_probability = base_directional_prob * volatility_factor * direction_factor
+            
+            return max(0.1, min(0.95, directional_probability))  # Bounded between 0.1 and 0.95
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Error calculating directional probability: {e}"))
+            return 0.5
+
+    def _calculate_magnitude_probability(
+        self,
+        predicted_magnitude: float,
+        profit_threshold_price: float,
+        current_price: float,
+        price_volatility: float
+    ) -> float:
+        """Calculate probability of reaching the profit target."""
+        try:
+            # Calculate required price movement
+            required_movement = abs(profit_threshold_price - current_price) / current_price
+            
+            # Use predicted magnitude as base probability
+            if predicted_magnitude > 0:
+                # Normalize predicted magnitude to probability
+                magnitude_prob = min(1.0, predicted_magnitude / required_movement)
+            else:
+                magnitude_prob = 0.1  # Low probability if no magnitude prediction
+            
+            # Adjust for volatility (higher volatility = higher chance of large moves)
+            volatility_boost = min(0.3, price_volatility * 5)  # Cap volatility boost at 30%
+            adjusted_prob = magnitude_prob + volatility_boost
+            
+            return max(0.05, min(0.9, adjusted_prob))  # Bounded between 0.05 and 0.9
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Error calculating magnitude probability: {e}"))
+            return 0.5
+
+    def _calculate_barrier_avoidance_probability(
+        self,
+        predicted_direction: int,
+        barrier_threshold_price: float,
+        current_price: float,
+        price_volatility: float
+    ) -> float:
+        """Calculate probability of avoiding the barrier price."""
+        try:
+            # Calculate distance to barrier
+            barrier_distance = abs(barrier_threshold_price - current_price) / current_price
+            
+            # Base probability of avoiding barrier (further barrier = higher probability)
+            base_avoidance_prob = min(0.95, barrier_distance * 10)  # Scale distance to probability
+            
+            # Adjust for volatility (higher volatility = lower barrier avoidance probability)
+            volatility_penalty = min(0.4, price_volatility * 8)  # Cap volatility penalty at 40%
+            adjusted_prob = base_avoidance_prob - volatility_penalty
+            
+            # Direction-specific adjustment
+            if predicted_direction > 0:  # Bullish prediction
+                # More likely to avoid downside barrier if bullish
+                direction_boost = 0.1
+            elif predicted_direction < 0:  # Bearish prediction
+                # More likely to avoid upside barrier if bearish
+                direction_boost = 0.1
+            else:
+                direction_boost = 0.0
+            
+            final_prob = adjusted_prob + direction_boost
+            
+            return max(0.1, min(0.95, final_prob))  # Bounded between 0.1 and 0.95
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Error calculating barrier avoidance probability: {e}"))
+            return 0.7
+
+    def _calculate_volatility_adjustment(self, price_volatility: float) -> float:
+        """Calculate volatility adjustment factor for confidence."""
+        try:
+            # Higher volatility generally reduces confidence in predictions
+            # Use a sigmoid-like function to smooth the adjustment
+            volatility_factor = 1.0 / (1.0 + np.exp(price_volatility * 20 - 5))
+            
+            # Ensure adjustment is reasonable
+            return max(0.5, min(1.2, volatility_factor))
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Error calculating volatility adjustment: {e}"))
+            return 1.0
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="generating barrier analysis",
+    )
+    @with_tracing_span("generate_barrier_analysis")
+    async def _generate_barrier_analysis(
+        self,
+        ml_profit_predictions: dict[str, Any],
+        market_data: pd.DataFrame,
+        symbol: str,
+        exchange: str
+    ) -> dict[str, Any]:
+        """Generate barrier analysis for risk management."""
+        try:
+            barrier_analysis = {}
+            
+            current_price = market_data['close'].iloc[-1]
+            price_volatility = market_data['close'].pct_change().std()
+            
+            for prediction_name, prediction_data in ml_profit_predictions.items():
+                try:
+                    # Calculate barrier metrics
+                    barrier_metrics = self._calculate_barrier_metrics(
+                        prediction_data, current_price, price_volatility
+                    )
+                    
+                    barrier_analysis[prediction_name] = barrier_metrics
+                    
+                except Exception as e:
+                    self.logger.warning(warning(f"⚠️ Failed to calculate barrier metrics for {prediction_name}: {e}"))
+
+            return barrier_analysis
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error generating barrier analysis: {e}"))
+            return {}
+
+    def _calculate_barrier_metrics(
+        self,
+        prediction_data: dict[str, Any],
+        current_price: float,
+        price_volatility: float
+    ) -> dict[str, Any]:
+        """Calculate barrier-related metrics for risk management."""
+        try:
+            predicted_direction = prediction_data.get("direction", 0)
+            predicted_magnitude = prediction_data.get("magnitude", 0.0)
+            
+            # Calculate profit and barrier levels
+            profit_threshold = self.profit_threshold
+            barrier_threshold = self.barrier_threshold
+            
+            if predicted_direction > 0:  # Bullish
+                profit_target = current_price * (1 + profit_threshold)
+                barrier_level = current_price * (1 - barrier_threshold)
+            elif predicted_direction < 0:  # Bearish
+                profit_target = current_price * (1 - profit_threshold)
+                barrier_level = current_price * (1 + barrier_threshold)
+            else:  # Neutral
+                profit_target = current_price
+                barrier_level = current_price
+            
+            # Calculate distances
+            profit_distance = abs(profit_target - current_price) / current_price
+            barrier_distance = abs(barrier_level - current_price) / current_price
+            
+            # Calculate risk-reward ratio
+            risk_reward_ratio = profit_distance / barrier_distance if barrier_distance > 0 else 0
+            
+            # Calculate probability-weighted expected value
+            confidence = prediction_data.get("confidence", 0.5)
+            expected_value = (profit_distance * confidence) - (barrier_distance * (1 - confidence))
+            
+            return {
+                "profit_target": profit_target,
+                "barrier_level": barrier_level,
+                "profit_distance": profit_distance,
+                "barrier_distance": barrier_distance,
+                "risk_reward_ratio": risk_reward_ratio,
+                "expected_value": expected_value,
+                "direction": predicted_direction,
+                "confidence": confidence,
+                "volatility": price_volatility
+            }
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Error calculating barrier metrics: {e}"))
+            return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="generating regime predictions",
+    )
+    @with_tracing_span("generate_regime_predictions")
+    async def _generate_regime_predictions(
+        self,
+        market_data: pd.DataFrame,
+        regime_info: dict[str, Any],
+        symbol: str,
+        exchange: str
+    ) -> dict[str, Any]:
+        """Generate regime-based predictions."""
+        try:
+            regime_predictions = {}
+            
+            current_regime = regime_info.get("regime", "unknown")
+            regime_confidence = regime_info.get("confidence", 0.5)
+            
+            # Get regime-specific models
+            regime_models = self.analyst_enhanced_models.get(current_regime, {})
+            
+            for model_name, model_data in regime_models.items():
+                try:
+                    features = self._prepare_features_for_prediction(market_data, regime_info)
+                    raw_prediction = model_data["model"].predict(features)
+                    
+                    processed_prediction = self._process_regime_prediction(
+                        raw_prediction, model_data, model_name, current_regime
+                    )
+                    
+                    regime_predictions[f"regime_{current_regime}_{model_name}"] = processed_prediction
+                    
+                except Exception as e:
+                    self.logger.warning(warning(f"⚠️ Failed to generate regime prediction for {model_name}: {e}"))
+
+            return regime_predictions
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error generating regime predictions: {e}"))
+            return {}
+
+    def _process_hmm_profit_prediction(
+        self,
+        raw_prediction: Any,
+        model_data: dict[str, Any],
+        model_name: str
+    ) -> dict[str, Any]:
+        """Process HMM profit prediction."""
+        try:
+            if isinstance(raw_prediction, np.ndarray):
+                prediction_value = float(raw_prediction[0]) if raw_prediction.size > 0 else 0.0
+            else:
+                prediction_value = float(raw_prediction)
+
+            # Extract direction and magnitude from prediction
+            direction = 1 if prediction_value > 0 else (-1 if prediction_value < 0 else 0)
+            magnitude = abs(prediction_value)
+
+            return {
+                "prediction": prediction_value,
+                "direction": direction,
+                "magnitude": magnitude,
+                "confidence": model_data.get("confidence", 0.5),
+                "model_type": "hmm_profit",
+                "model_name": model_name,
+                "timestamp": datetime.now().isoformat()
+            }
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error processing HMM profit prediction: {e}"))
+            return {"prediction": 0.0, "direction": 0, "magnitude": 0.0, "confidence": 0.0, "model_type": "hmm_profit", "model_name": model_name}
+
+    def _process_analyst_profit_prediction(
+        self,
+        raw_prediction: Any,
+        model_data: dict[str, Any],
+        model_name: str
+    ) -> dict[str, Any]:
+        """Process analyst profit prediction."""
+        try:
+            if isinstance(raw_prediction, np.ndarray):
+                prediction_value = float(raw_prediction[0]) if raw_prediction.size > 0 else 0.0
+            else:
+                prediction_value = float(raw_prediction)
+
+            # Extract direction and magnitude from prediction
+            direction = 1 if prediction_value > 0 else (-1 if prediction_value < 0 else 0)
+            magnitude = abs(prediction_value)
+
+            return {
+                "prediction": prediction_value,
+                "direction": direction,
+                "magnitude": magnitude,
+                "confidence": model_data.get("confidence", 0.5),
+                "model_type": "analyst_profit",
+                "model_name": model_name,
+                "timestamp": datetime.now().isoformat()
+            }
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error processing analyst profit prediction: {e}"))
+            return {"prediction": 0.0, "direction": 0, "magnitude": 0.0, "confidence": 0.0, "model_type": "analyst_profit", "model_name": model_name}
+
+    def _process_tactician_profit_prediction(
+        self,
+        raw_prediction: Any,
+        model_data: dict[str, Any],
+        model_name: str
+    ) -> dict[str, Any]:
+        """Process tactician profit prediction."""
+        try:
+            if isinstance(raw_prediction, np.ndarray):
+                prediction_value = float(raw_prediction[0]) if raw_prediction.size > 0 else 0.0
+            else:
+                prediction_value = float(raw_prediction)
+
+            # Extract direction and magnitude from prediction
+            direction = 1 if prediction_value > 0 else (-1 if prediction_value < 0 else 0)
+            magnitude = abs(prediction_value)
+
+            return {
+                "prediction": prediction_value,
+                "direction": direction,
+                "magnitude": magnitude,
+                "confidence": model_data.get("confidence", 0.5),
+                "model_type": "tactician_profit",
+                "model_name": model_name,
+                "timestamp": datetime.now().isoformat()
+            }
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error processing tactician profit prediction: {e}"))
+            return {"prediction": 0.0, "direction": 0, "magnitude": 0.0, "confidence": 0.0, "model_type": "tactician_profit", "model_name": model_name}
+
+    def _process_ensemble_profit_prediction(
+        self,
+        raw_prediction: Any,
+        model_data: dict[str, Any],
+        model_name: str
+    ) -> dict[str, Any]:
+        """Process ensemble profit prediction."""
+        try:
+            if isinstance(raw_prediction, np.ndarray):
+                prediction_value = float(raw_prediction[0]) if raw_prediction.size > 0 else 0.0
+            else:
+                prediction_value = float(raw_prediction)
+
+            # Extract direction and magnitude from prediction
+            direction = 1 if prediction_value > 0 else (-1 if prediction_value < 0 else 0)
+            magnitude = abs(prediction_value)
+
+            return {
+                "prediction": prediction_value,
+                "direction": direction,
+                "magnitude": magnitude,
+                "confidence": model_data.get("confidence", 0.5),
+                "model_type": "ensemble_profit",
+                "model_name": model_name,
+                "timestamp": datetime.now().isoformat()
+            }
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error processing ensemble profit prediction: {e}"))
+            return {"prediction": 0.0, "direction": 0, "magnitude": 0.0, "confidence": 0.0, "model_type": "ensemble_profit", "model_name": model_name}
+
+    def _process_regime_prediction(
+        self,
+        raw_prediction: Any,
+        model_data: dict[str, Any],
+        model_name: str,
+        regime: str
+    ) -> dict[str, Any]:
+        """Process regime prediction."""
+        try:
+            if isinstance(raw_prediction, np.ndarray):
+                prediction_value = float(raw_prediction[0]) if raw_prediction.size > 0 else 0.0
+            else:
+                prediction_value = float(raw_prediction)
+
+            return {
+                "prediction": prediction_value,
+                "confidence": model_data.get("confidence", 0.5),
+                "model_type": "regime",
+                "model_name": model_name,
+                "regime": regime,
+                "timestamp": datetime.now().isoformat()
+            }
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error processing regime prediction: {e}"))
+            return {"prediction": 0.0, "confidence": 0.0, "model_type": "regime", "model_name": model_name, "regime": regime}
 
     @validate_data_quality(validation_level="WARNING")
     def _prepare_features_for_prediction(

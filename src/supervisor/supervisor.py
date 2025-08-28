@@ -3,7 +3,7 @@ import time
 from collections import defaultdict
 from datetime import datetime
 from src.utils.logger import system_logger
-from typing import Any
+from typing import Any, Dict
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import (
@@ -12,6 +12,7 @@ from src.utils.warning_symbols import (
     initialization_error,
     invalid,
 )
+from src.utils.tracing import with_tracing_span
 
 DEFAULT_SUPERVISOR_CONFIG = {
     "supervisor": {"supervision_interval": 60, "max_history": 100},
@@ -174,49 +175,11 @@ class Supervisor:
 
         # Enhanced prediction service for ML model integration
         self.enhanced_prediction_service = None
+        self.is_initialized: bool = False
+        self.enhanced_prediction_service_config = self.supervisor_config.get("enhanced_prediction_service", {})
+        self.entry_threshold: float = self.enhanced_prediction_service_config.get("entry_threshold", 0.7)
+        self.max_confidence_threshold: float = self.enhanced_prediction_service_config.get("max_confidence_threshold", 0.9)
 
-        # Health monitoring - Updated to include new component features
-        self.health_checks: dict[str , bool] = {}
-        self.critical_components: list[str] = [
-            "database",
-            "exchange",
-            "analyst",
-            "strategist",
-            "tactician",
-            "enhanced_training_manager",
-        ]
-
-        # Component-specific monitoring
-        self.component_monitors: dict[str , dict[str, Any]] = {
-            "analyst": {
-                "dual_model_system": False,
-                "liquidation_risk_model": False,
-                "feature_engineering_orchestrator": False,  # Legacy S/R/Candle code removed
-                "ml_confidence_predictor": False,
-                "regime_classifier": False,
-            },
-            "strategist": {
-                "regime_classifier": False,
-                "ml_confidence_predictor": False,
-                "volatility_targeting": False,
-            },
-            "tactician": {
-                # Legacy S/R/Candle code removed
-                "position_sizer": False,
-                "leverage_sizer": False,
-                "position_division_strategy": False,
-                "ml_predictions": False,
-                "position_monitor": False,
-            },
-            "enhanced_training_manager": {
-                "advanced_model_training": False,
-                "ensemble_training": False,
-                "multi_timeframe_training": False,
-                "adaptive_training": False,
-                "multi_timeframe_manager": False,
-                "ensemble_creator": False,
-            },
-        }
 
     @handle_specific_errors(
         error_handlers={
@@ -239,6 +202,7 @@ class Supervisor:
             await self._setup_online_learning()
             await self._setup_component_monitors()
             self.logger.info("✅ Supervisor initialization completed successfully")
+            self.is_initialized = True
             return True
         except Exception:
             self.print(failed("❌ Supervisor initialization failed: {e}"))
@@ -394,44 +358,49 @@ class Supervisor:
         default_return={},
         context="getting analyst predictions",
     )
+    @with_tracing_span("get_analyst_predictions")
     async def get_analyst_predictions(
         self,
         market_data: pd.DataFrame,
-        regime_info: dict[str, Any],
+        regime_info: Dict[str, Any],
         symbol: str,
         exchange: str,
-        timeframe: str = "1m"
-    ) -> dict[str, Any]:
+        timeframe: str = "1h"
+    ) -> Dict[str, Any]:
         """
-        Get enhanced analyst predictions with ML profit integration.
-
-        Args:
-            market_data: Market data for prediction
-            regime_info: Current regime information
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Timeframe
-
-        Returns:
-            dict: Enhanced analyst predictions with ML profit integration
+        Get Analyst predictions using calibrated confidence scores from ML models.
+        
+        The Analyst decides if we enter a position based on calibrated confidence scores.
         """
         try:
-            if self.enhanced_prediction_service and self.enhanced_prediction_service.is_initialized:
-                # Get ML profit predictions from enhanced prediction service
-                ml_profit_predictions = await self.enhanced_prediction_service.generate_analyst_predictions(
-                    market_data, regime_info, symbol, exchange, timeframe
-                )
-                
-                # Integrate with existing analyst components
-                integrated_predictions = await self._integrate_analyst_ml_profit_predictions(
-                    ml_profit_predictions, market_data, regime_info, symbol, exchange
-                )
-                
-                return integrated_predictions
-            else:
-                self.logger.warning("⚠️ Enhanced Prediction Service not available, using fallback")
+            if not self.is_initialized:
+                self.logger.error(error("❌ Supervisor not initialized"))
                 return {}
 
+            # Step 1: Get calibrated confidence scores from Enhanced Prediction Service
+            calibrated_confidence = await self.enhanced_prediction_service.get_calibrated_confidence_scores(
+                market_data, regime_info, symbol, exchange
+            )
+            
+            # Step 2: Analyst decides if we enter a position using Analyst models
+            analyst_decision = await self._analyst_decide_position_entry(
+                market_data, regime_info, calibrated_confidence["analyst_models"], symbol, exchange
+            )
+            
+            return {
+                "calibrated_confidence_scores": calibrated_confidence,
+                "analyst_decision": analyst_decision,
+                "timestamp": datetime.now().isoformat()
+            }
+
+        except ValueError as e:
+            # Enhanced Prediction Service failed - no calibrated confidence
+            self.logger.error(error(f"❌ Enhanced Prediction Service failed: {e}"))
+            return {
+                "error": str(e),
+                "analyst_decision": {"should_enter_position": False, "reason": "no_calibrated_confidence"},
+                "timestamp": datetime.now().isoformat()
+            }
         except Exception as e:
             self.logger.error(error(f"❌ Error getting analyst predictions: {e}"))
             return {}
@@ -441,49 +410,300 @@ class Supervisor:
         default_return={},
         context="getting tactician predictions",
     )
+    @with_tracing_span("get_tactician_predictions")
     async def get_tactician_predictions(
         self,
         market_data: pd.DataFrame,
-        regime_info: dict[str, Any],
-        analyst_signals: dict[str, Any],
+        regime_info: Dict[str, Any],
+        analyst_signals: Dict[str, Any],
         symbol: str,
         exchange: str,
         timeframe: str = "1m"
-    ) -> dict[str, Any]:
+    ) -> Dict[str, Any]:
         """
-        Get enhanced tactician predictions with ML profit integration.
-
-        Args:
-            market_data: Market data for prediction
-            regime_info: Current regime information
-            analyst_signals: Analyst signals and predictions
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Timeframe
-
-        Returns:
-            dict: Enhanced tactician predictions with ML profit integration
+        Get Tactician predictions using calibrated confidence scores from ML models.
+        
+        The Tactician decides when, how much, and with what leverage based on calibrated confidence scores.
+        Must agree with Analyst on trade direction.
         """
         try:
-            if self.enhanced_prediction_service and self.enhanced_prediction_service.is_initialized:
-                # Get ML profit predictions from enhanced prediction service
-                ml_profit_predictions = await self.enhanced_prediction_service.generate_tactician_predictions(
-                    market_data, regime_info, analyst_signals, symbol, exchange, timeframe
-                )
-                
-                # Integrate with existing tactician components
-                integrated_predictions = await self._integrate_tactician_ml_profit_predictions(
-                    ml_profit_predictions, market_data, analyst_signals, symbol, exchange
-                )
-                
-                return integrated_predictions
-            else:
-                self.logger.warning("⚠️ Enhanced Prediction Service not available, using fallback")
+            if not self.is_initialized:
+                self.logger.error(error("❌ Supervisor not initialized"))
                 return {}
 
+            # Step 1: Get calibrated confidence scores from Enhanced Prediction Service
+            calibrated_confidence = await self.enhanced_prediction_service.get_calibrated_confidence_scores(
+                market_data, regime_info, symbol, exchange
+            )
+            
+            # Step 2: Tactician decides execution parameters using Tactician models
+            tactician_decision = await self._tactician_calculate_execution_parameters(
+                market_data, analyst_signals, calibrated_confidence["tactician_models"], symbol, exchange
+            )
+            
+            return {
+                "calibrated_confidence_scores": calibrated_confidence,
+                "tactician_decision": tactician_decision,
+                "timestamp": datetime.now().isoformat()
+            }
+
+        except ValueError as e:
+            # Enhanced Prediction Service failed - no calibrated confidence
+            self.logger.error(error(f"❌ Enhanced Prediction Service failed: {e}"))
+            return {
+                "error": str(e),
+                "tactician_decision": {"should_execute": False, "reason": "no_calibrated_confidence"},
+                "timestamp": datetime.now().isoformat()
+            }
         except Exception as e:
             self.logger.error(error(f"❌ Error getting tactician predictions: {e}"))
             return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="analyst deciding position entry",
+    )
+    @with_tracing_span("analyst_decide_position_entry")
+    async def _analyst_decide_position_entry(
+        self,
+        market_data: pd.DataFrame,
+        regime_info: Dict[str, Any],
+        analyst_confidence_scores: Dict[str, float],
+        symbol: str,
+        exchange: str
+    ) -> Dict[str, Any]:
+        """
+        Analyst decides if we enter a position and determines trade direction based on Analyst ML models.
+        """
+        try:
+            # Calculate aggregate Analyst confidence
+            if not analyst_confidence_scores:
+                return {
+                    "should_enter_position": False,
+                    "trade_direction": "neutral",
+                    "entry_confidence": 0.0,
+                    "max_confidence": 0.0,
+                    "individual_confidences": {},
+                    "entry_reason": "no_analyst_confidence"
+                }
+            
+            avg_confidence = sum(analyst_confidence_scores.values()) / len(analyst_confidence_scores)
+            max_confidence = max(analyst_confidence_scores.values())
+            
+            # Determine trade direction from Analyst models
+            trade_direction = self._analyst_determine_trade_direction(analyst_confidence_scores, market_data)
+            
+            # Decision logic
+            should_enter = (
+                avg_confidence > self.enhanced_prediction_service.entry_threshold and 
+                max_confidence > self.enhanced_prediction_service.max_confidence_threshold and
+                trade_direction != "neutral"
+            )
+            
+            return {
+                "should_enter_position": should_enter,
+                "trade_direction": trade_direction,
+                "entry_confidence": avg_confidence,
+                "max_confidence": max_confidence,
+                "individual_confidences": analyst_confidence_scores,
+                "entry_reason": "high_confidence" if should_enter else "low_confidence_or_neutral"
+            }
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error in analyst position decision: {e}"))
+            return {
+                "should_enter_position": False,
+                "trade_direction": "neutral",
+                "entry_confidence": 0.0,
+                "max_confidence": 0.0,
+                "individual_confidences": {},
+                "entry_reason": "error",
+                "error": str(e)
+            }
+
+    def _analyst_determine_trade_direction(
+        self, 
+        confidence_scores: Dict[str, float], 
+        market_data: pd.DataFrame
+    ) -> str:
+        """Determine trade direction based on Analyst model confidences."""
+        try:
+            # Logic to determine if models suggest long, short, or neutral
+            # This would be based on the specific Analyst model outputs
+            bullish_confidence = sum(
+                conf for name, conf in confidence_scores.items() 
+                if "bullish" in name.lower() or "long" in name.lower()
+            )
+            bearish_confidence = sum(
+                conf for name, conf in confidence_scores.items() 
+                if "bearish" in name.lower() or "short" in name.lower()
+            )
+            
+            # If no directional models, use overall confidence pattern
+            if bullish_confidence == 0 and bearish_confidence == 0:
+                # Use price momentum as fallback
+                if len(market_data) >= 2:
+                    price_change = (market_data['close'].iloc[-1] - market_data['close'].iloc[-2]) / market_data['close'].iloc[-2]
+                    if abs(price_change) > 0.001:  # 0.1% threshold
+                        return "long" if price_change > 0 else "short"
+                return "neutral"
+            
+            # Determine direction based on confidence
+            if bullish_confidence > bearish_confidence and bullish_confidence > 0.6:
+                return "long"
+            elif bearish_confidence > bullish_confidence and bearish_confidence > 0.6:
+                return "short"
+            else:
+                return "neutral"
+                
+        except Exception as e:
+            self.logger.error(error(f"❌ Error determining trade direction: {e}"))
+            return "neutral"
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="tactician calculating execution parameters",
+    )
+    @with_tracing_span("tactician_calculate_execution_parameters")
+    async def _tactician_calculate_execution_parameters(
+        self,
+        market_data: pd.DataFrame,
+        analyst_signals: Dict[str, Any],
+        tactician_confidence_scores: Dict[str, float],
+        symbol: str,
+        exchange: str
+    ) -> Dict[str, Any]:
+        """
+        Tactician decides when, how much, and what leverage based on Tactician ML models.
+        Must agree with Analyst on trade direction.
+        """
+        try:
+            # Check if Analyst wants to enter
+            analyst_decision = analyst_signals.get("analyst_decision", {})
+            if not analyst_decision.get("should_enter_position", False):
+                return {
+                    "should_execute": False,
+                    "reason": "analyst_no_entry"
+                }
+            
+            # Check direction agreement
+            tactician_direction = self._tactician_determine_direction(tactician_confidence_scores, market_data)
+            analyst_direction = analyst_decision.get("trade_direction", "neutral")
+            
+            if not self._directions_agree(analyst_direction, tactician_direction):
+                return {
+                    "should_execute": False,
+                    "reason": "direction_mismatch",
+                    "analyst_direction": analyst_direction,
+                    "tactician_direction": tactician_direction
+                }
+            
+            # Calculate execution parameters based on Tactician confidence
+            if not tactician_confidence_scores:
+                return {
+                    "should_execute": False,
+                    "reason": "no_tactician_confidence"
+                }
+            
+            avg_tactician_confidence = sum(tactician_confidence_scores.values()) / len(tactician_confidence_scores)
+            
+            leverage = self._tactician_calculate_leverage(avg_tactician_confidence)
+            position_size = self._tactician_calculate_position_size(avg_tactician_confidence, leverage)
+            entry_timing = self._tactician_calculate_entry_timing(market_data, avg_tactician_confidence)
+            
+            return {
+                "should_execute": True,
+                "trade_direction": analyst_direction,  # Use agreed direction
+                "leverage": leverage,
+                "position_size": position_size,
+                "entry_timing": entry_timing,
+                "tactician_confidence": avg_tactician_confidence,
+                "analyst_confidence": analyst_decision.get("entry_confidence", 0.0),
+                "combined_confidence": (avg_tactician_confidence + analyst_decision.get("entry_confidence", 0.0)) / 2
+            }
+
+        except Exception as e:
+            self.logger.error(error(f"❌ Error in tactician execution calculation: {e}"))
+            return {
+                "should_execute": False,
+                "reason": "error",
+                "error": str(e)
+            }
+
+    def _tactician_determine_direction(
+        self, 
+        confidence_scores: Dict[str, float], 
+        market_data: pd.DataFrame
+    ) -> str:
+        """Determine trade direction based on Tactician model confidences."""
+        try:
+            # Logic to determine if Tactician models suggest long, short, or neutral
+            # This would be based on the specific Tactician model outputs (lower timeframe)
+            bullish_confidence = sum(
+                conf for name, conf in confidence_scores.items() 
+                if "bullish" in name.lower() or "long" in name.lower()
+            )
+            bearish_confidence = sum(
+                conf for name, conf in confidence_scores.items() 
+                if "bearish" in name.lower() or "short" in name.lower()
+            )
+            
+            # If no directional models, use overall confidence pattern
+            if bullish_confidence == 0 and bearish_confidence == 0:
+                # Use short-term price momentum as fallback
+                if len(market_data) >= 3:
+                    recent_change = (market_data['close'].iloc[-1] - market_data['close'].iloc[-3]) / market_data['close'].iloc[-3]
+                    if abs(recent_change) > 0.0005:  # 0.05% threshold for short-term
+                        return "long" if recent_change > 0 else "short"
+                return "neutral"
+            
+            # Determine direction based on confidence
+            if bullish_confidence > bearish_confidence and bullish_confidence > 0.6:
+                return "long"
+            elif bearish_confidence > bullish_confidence and bearish_confidence > 0.6:
+                return "short"
+            else:
+                return "neutral"
+                
+        except Exception as e:
+            self.logger.error(error(f"❌ Error determining tactician direction: {e}"))
+            return "neutral"
+
+    def _directions_agree(self, analyst_direction: str, tactician_direction: str) -> bool:
+        """Check if Analyst and Tactician agree on trade direction."""
+        if analyst_direction == "neutral" or tactician_direction == "neutral":
+            return False
+        return analyst_direction == tactician_direction
+
+    def _tactician_calculate_leverage(self, confidence: float) -> float:
+        """Calculate leverage based on confidence score."""
+        if confidence > 0.9:
+            return 3.0  # High leverage for very high confidence
+        elif confidence > 0.8:
+            return 2.5
+        elif confidence > 0.7:
+            return 2.0
+        elif confidence > 0.6:
+            return 1.5
+        else:
+            return 1.0  # No leverage for low confidence
+
+    def _tactician_calculate_position_size(self, confidence: float, leverage: float) -> float:
+        """Calculate position size based on confidence and leverage."""
+        base_size = confidence * 100  # Base size as percentage
+        adjusted_size = base_size * leverage
+        return min(adjusted_size, 100.0)  # Cap at 100%
+
+    def _tactician_calculate_entry_timing(self, market_data: pd.DataFrame, confidence: float) -> str:
+        """Calculate optimal entry timing."""
+        if confidence > 0.8:
+            return "immediate"
+        elif confidence > 0.7:
+            return "within_5_minutes"
+        else:
+            return "wait_for_confirmation"
 
     @handle_errors(
         exceptions=(Exception,),

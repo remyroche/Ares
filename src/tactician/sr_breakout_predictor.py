@@ -8,12 +8,40 @@ import pandas as pd
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.centralized_decorators import validate_data_quality
 
-# Import centralized S/R logic for enhanced functionality
-try:
-    from src.utils.centralized_sr_logic import CentralizedSRAnalyzer
-    CENTRALIZED_SR_AVAILABLE = True
-except ImportError:
-    CENTRALIZED_SR_AVAILABLE = False
+# Enhanced S/R analysis capabilities integrated directly
+from enum import Enum
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
+import numpy as np
+import pandas as pd
+from sklearn.cluster import DBSCAN
+from sklearn.preprocessing import StandardScaler
+
+# Enhanced S/R types and data structures
+class SRType(Enum):
+    """Support/Resistance level types."""
+    PIVOT = "pivot"
+    VOLUME = "volume"
+    FIBONACCI = "fibonacci"
+    PSYCHOLOGICAL = "psychological"
+    FRACTAL = "fractal"
+    ATR = "atr"
+
+@dataclass
+class SRLevel:
+    """Support/Resistance level data structure."""
+    price: float
+    level_type: SRType
+    strength: float
+    confidence: float
+    touches: int
+    volume: float
+    age: int
+    timestamp: pd.Timestamp
+    method: str
+    proximity: float = 0.0
+    breakout_probability: float = 0.0
+    last_touch: Optional[pd.Timestamp] = None
 
 class SRBreakoutPredictor:
     """
@@ -206,14 +234,10 @@ class SRBreakoutPredictor:
         self.performance_metrics: dict[str, Any] = {}
         self.prediction_history: list[dict[str, Any]] = []
         
-        # Initialize centralized S/R analyzer if available
-        self.centralized_sr_analyzer = None
-        if CENTRALIZED_SR_AVAILABLE:
-            try:
-                self.centralized_sr_analyzer = CentralizedSRAnalyzer(config)
-                self.logger.info("✅ Centralized S/R analyzer initialized")
-            except Exception as e:
-                self.logger.warning(f"⚠️ Failed to initialize centralized S/R analyzer: {e}")
+        # Enhanced S/R analysis capabilities
+        self.sr_levels_cache: dict[str, List[SRLevel]] = {}
+        self.sr_analysis_history: list[dict[str, Any]] = []
+        self.sr_quality_metrics: dict[str, float] = {}
 
     @handle_specific_errors(
         error_handlers={
@@ -378,82 +402,62 @@ class SRBreakoutPredictor:
             return {}
 
     async def _detect_support_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
-        """Detect support levels using configured method."""
+        """Detect support levels using enhanced multi-method analysis."""
         try:
-            # Use centralized S/R analyzer if available
-            if self.centralized_sr_analyzer:
-                self.logger.info("Using centralized S/R analyzer for support levels")
-                sr_analysis = self.centralized_sr_analyzer.analyze_sr_levels(market_data)
-                if sr_analysis.get("success", False):
-                    supports = sr_analysis.get("supports", [])
-                    # Convert to expected format
-                    return [
-                        {
-                            "price": level["price"],
-                            "strength": level["strength"],
-                            "timestamp": market_data.index[-1],  # Use current timestamp
-                            "method": level["type"],
-                            "confidence": level["confidence"],
-                            "touches": level["touches"],
-                            "volume": level["volume"],
-                            "age": level["age"]
-                        }
-                        for level in supports
-                    ]
+            self.logger.info("🔍 Detecting support levels using enhanced analysis...")
             
-            # Fallback to original methods
-            if self.sr_detection_method == "fractal":
-                return await self._detect_fractal_support_levels(market_data)
-            elif self.sr_detection_method == "volume":
-                return await self._detect_volume_support_levels(market_data)
-            elif self.sr_detection_method == "pivot":
-                return await self._detect_pivot_support_levels(market_data)
-            elif self.sr_detection_method == "atr":
-                return await self._detect_atr_support_levels(market_data)
-            else:
-                self.logger.warning(f"Unknown SR detection method: {self.sr_detection_method}")
-                return await self._detect_fractal_support_levels(market_data)
+            # Use enhanced S/R analysis
+            sr_levels = await self._analyze_enhanced_sr_levels(market_data, "support")
+            
+            # Convert SRLevel objects to dict format for compatibility
+            support_levels = []
+            for level in sr_levels:
+                support_levels.append({
+                    "price": level.price,
+                    "strength": level.strength,
+                    "timestamp": level.timestamp,
+                    "method": level.method,
+                    "confidence": level.confidence,
+                    "touches": level.touches,
+                    "volume": level.volume,
+                    "age": level.age,
+                    "proximity": level.proximity,
+                    "breakout_probability": level.breakout_probability
+                })
+            
+            self.logger.info(f"✅ Detected {len(support_levels)} support levels")
+            return support_levels
 
         except Exception as e:
             self.logger.error(f"Error detecting support levels: {e}")
             return []
 
     async def _detect_resistance_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
-        """Detect resistance levels using configured method."""
+        """Detect resistance levels using enhanced multi-method analysis."""
         try:
-            # Use centralized S/R analyzer if available
-            if self.centralized_sr_analyzer:
-                self.logger.info("Using centralized S/R analyzer for resistance levels")
-                sr_analysis = self.centralized_sr_analyzer.analyze_sr_levels(market_data)
-                if sr_analysis.get("success", False):
-                    resistances = sr_analysis.get("resistances", [])
-                    # Convert to expected format
-                    return [
-                        {
-                            "price": level["price"],
-                            "strength": level["strength"],
-                            "timestamp": market_data.index[-1],  # Use current timestamp
-                            "method": level["type"],
-                            "confidence": level["confidence"],
-                            "touches": level["touches"],
-                            "volume": level["volume"],
-                            "age": level["age"]
-                        }
-                        for level in resistances
-                    ]
+            self.logger.info("🔍 Detecting resistance levels using enhanced analysis...")
             
-            # Fallback to original methods
-            if self.sr_detection_method == "fractal":
-                return await self._detect_fractal_resistance_levels(market_data)
-            elif self.sr_detection_method == "volume":
-                return await self._detect_volume_resistance_levels(market_data)
-            elif self.sr_detection_method == "pivot":
-                return await self._detect_pivot_resistance_levels(market_data)
-            elif self.sr_detection_method == "atr":
-                return await self._detect_atr_resistance_levels(market_data)
-            else:
-                self.logger.warning(f"Unknown SR detection method: {self.sr_detection_method}")
-                return await self._detect_fractal_resistance_levels(market_data)
+            # Use enhanced S/R analysis
+            sr_levels = await self._analyze_enhanced_sr_levels(market_data, "resistance")
+            
+            # Convert SRLevel objects to dict format for compatibility
+            resistance_levels = []
+            for level in sr_levels:
+                resistance_levels.append({
+                    "price": level.price,
+                    "strength": level.strength,
+                    "timestamp": level.timestamp,
+                    "method": level.method,
+                    "confidence": level.confidence,
+                    "touches": level.touches,
+                    "volume": level.volume,
+                    "age": level.age,
+                    "proximity": level.proximity,
+                    "breakout_probability": level.breakout_probability
+                })
+            
+            self.logger.info(f"✅ Detected {len(resistance_levels)} resistance levels")
+            return resistance_levels
 
         except Exception as e:
             self.logger.error(f"Error detecting resistance levels: {e}")
@@ -878,6 +882,592 @@ class SRBreakoutPredictor:
         except Exception as e:
             self.logger.error(f"❌ Failed to stop SR breakout predictor: {e}")
 
+    # === ENHANCED S/R ANALYSIS METHODS ===
+    
+    async def _analyze_enhanced_sr_levels(self, market_data: pd.DataFrame, level_type: str) -> List[SRLevel]:
+        """Analyze S/R levels using multiple methods and combine results."""
+        try:
+            self.logger.info(f"🔍 Analyzing {level_type} levels using enhanced multi-method approach...")
+            
+            # Collect levels from different methods
+            all_levels = []
+            
+            # 1. Pivot-based levels
+            pivot_levels = await self._detect_pivot_levels(market_data, level_type)
+            all_levels.extend(pivot_levels)
+            
+            # 2. Volume-weighted levels
+            volume_levels = await self._detect_volume_levels(market_data, level_type)
+            all_levels.extend(volume_levels)
+            
+            # 3. Fractal levels
+            fractal_levels = await self._detect_fractal_levels(market_data, level_type)
+            all_levels.extend(fractal_levels)
+            
+            # 4. Fibonacci levels
+            fibonacci_levels = await self._detect_fibonacci_levels(market_data, level_type)
+            all_levels.extend(fibonacci_levels)
+            
+            # 5. Psychological levels
+            psychological_levels = await self._detect_psychological_levels(market_data, level_type)
+            all_levels.extend(psychological_levels)
+            
+            # 6. ATR-based levels
+            atr_levels = await self._detect_atr_levels(market_data, level_type)
+            all_levels.extend(atr_levels)
+            
+            # Cluster and merge similar levels
+            merged_levels = self._cluster_and_merge_levels(all_levels, market_data)
+            
+            # Calculate proximity and breakout probabilities
+            current_price = market_data['close'].iloc[-1]
+            for level in merged_levels:
+                level.proximity = abs(level.price - current_price) / current_price
+                level.breakout_probability = self._calculate_breakout_probability(level, current_price)
+            
+            # Sort by strength and confidence
+            merged_levels.sort(key=lambda x: (x.strength * x.confidence), reverse=True)
+            
+            # Limit to max levels
+            final_levels = merged_levels[:self.max_sr_levels]
+            
+            self.logger.info(f"✅ Enhanced {level_type} analysis completed: {len(final_levels)} levels")
+            return final_levels
+            
+        except Exception as e:
+            self.logger.error(f"Error in enhanced S/R analysis: {e}")
+            return []
+
+    async def _detect_pivot_levels(self, market_data: pd.DataFrame, level_type: str) -> List[SRLevel]:
+        """Detect pivot-based S/R levels."""
+        try:
+            levels = []
+            
+            # Calculate pivot points
+            pivot = (market_data['high'] + market_data['low'] + market_data['close']) / 3
+            
+            if level_type == "support":
+                s1 = 2 * pivot - market_data['high']
+                s2 = pivot - (market_data['high'] - market_data['low'])
+                s3 = market_data['low'] - 2 * (market_data['high'] - pivot)
+                
+                for i, price in enumerate([s1, s2, s3]):
+                    if not pd.isna(price):
+                        level = SRLevel(
+                            price=float(price.iloc[-1]),
+                            level_type=SRType.PIVOT,
+                            strength=self._calculate_pivot_strength(market_data, price, "support"),
+                            confidence=0.6,
+                            touches=self._count_touches(market_data, price, "support"),
+                            volume=float(market_data['volume'].iloc[-1]),
+                            age=len(market_data),
+                            timestamp=market_data.index[-1],
+                            method=f"pivot_s{i+1}"
+                        )
+                        levels.append(level)
+            else:  # resistance
+                r1 = 2 * pivot - market_data['low']
+                r2 = pivot + (market_data['high'] - market_data['low'])
+                r3 = market_data['high'] + 2 * (pivot - market_data['low'])
+                
+                for i, price in enumerate([r1, r2, r3]):
+                    if not pd.isna(price):
+                        level = SRLevel(
+                            price=float(price.iloc[-1]),
+                            level_type=SRType.PIVOT,
+                            strength=self._calculate_pivot_strength(market_data, price, "resistance"),
+                            confidence=0.6,
+                            touches=self._count_touches(market_data, price, "resistance"),
+                            volume=float(market_data['volume'].iloc[-1]),
+                            age=len(market_data),
+                            timestamp=market_data.index[-1],
+                            method=f"pivot_r{i+1}"
+                        )
+                        levels.append(level)
+            
+            return levels
+            
+        except Exception as e:
+            self.logger.error(f"Error detecting pivot levels: {e}")
+            return []
+
+    async def _detect_volume_levels(self, market_data: pd.DataFrame, level_type: str) -> List[SRLevel]:
+        """Detect volume-weighted S/R levels."""
+        try:
+            levels = []
+            
+            # Calculate VWAP
+            vwap = (market_data['close'] * market_data['volume']).cumsum() / market_data['volume'].cumsum()
+            
+            # Find high-volume price levels
+            volume_threshold = market_data['volume'].quantile(0.8)
+            high_volume_mask = market_data['volume'] > volume_threshold
+            
+            if level_type == "support":
+                # Find support levels near high volume areas
+                for i in range(len(market_data)):
+                    if high_volume_mask.iloc[i]:
+                        price = market_data['low'].iloc[i]
+                        level = SRLevel(
+                            price=float(price),
+                            level_type=SRType.VOLUME,
+                            strength=self._calculate_volume_strength(market_data, price, "support"),
+                            confidence=0.7,
+                            touches=self._count_touches(market_data, price, "support"),
+                            volume=float(market_data['volume'].iloc[i]),
+                            age=len(market_data) - i,
+                            timestamp=market_data.index[i],
+                            method="volume_support"
+                        )
+                        levels.append(level)
+            else:  # resistance
+                # Find resistance levels near high volume areas
+                for i in range(len(market_data)):
+                    if high_volume_mask.iloc[i]:
+                        price = market_data['high'].iloc[i]
+                        level = SRLevel(
+                            price=float(price),
+                            level_type=SRType.VOLUME,
+                            strength=self._calculate_volume_strength(market_data, price, "resistance"),
+                            confidence=0.7,
+                            touches=self._count_touches(market_data, price, "resistance"),
+                            volume=float(market_data['volume'].iloc[i]),
+                            age=len(market_data) - i,
+                            timestamp=market_data.index[i],
+                            method="volume_resistance"
+                        )
+                        levels.append(level)
+            
+            return levels
+            
+        except Exception as e:
+            self.logger.error(f"Error detecting volume levels: {e}")
+            return []
+
+    async def _detect_fractal_levels(self, market_data: pd.DataFrame, level_type: str) -> List[SRLevel]:
+        """Detect fractal-based S/R levels."""
+        try:
+            levels = []
+            window = 5
+            
+            if level_type == "support":
+                # Find local minima
+                for i in range(window, len(market_data) - window):
+                    if all(market_data['low'].iloc[i] <= market_data['low'].iloc[i-window:i]) and \
+                       all(market_data['low'].iloc[i] <= market_data['low'].iloc[i+1:i+window+1]):
+                        
+                        price = market_data['low'].iloc[i]
+                        level = SRLevel(
+                            price=float(price),
+                            level_type=SRType.FRACTAL,
+                            strength=self._calculate_fractal_strength(market_data, i, "support"),
+                            confidence=0.8,
+                            touches=self._count_touches(market_data, price, "support"),
+                            volume=float(market_data['volume'].iloc[i]),
+                            age=len(market_data) - i,
+                            timestamp=market_data.index[i],
+                            method="fractal_support"
+                        )
+                        levels.append(level)
+            else:  # resistance
+                # Find local maxima
+                for i in range(window, len(market_data) - window):
+                    if all(market_data['high'].iloc[i] >= market_data['high'].iloc[i-window:i]) and \
+                       all(market_data['high'].iloc[i] >= market_data['high'].iloc[i+1:i+window+1]):
+                        
+                        price = market_data['high'].iloc[i]
+                        level = SRLevel(
+                            price=float(price),
+                            level_type=SRType.FRACTAL,
+                            strength=self._calculate_fractal_strength(market_data, i, "resistance"),
+                            confidence=0.8,
+                            touches=self._count_touches(market_data, price, "resistance"),
+                            volume=float(market_data['volume'].iloc[i]),
+                            age=len(market_data) - i,
+                            timestamp=market_data.index[i],
+                            method="fractal_resistance"
+                        )
+                        levels.append(level)
+            
+            return levels
+            
+        except Exception as e:
+            self.logger.error(f"Error detecting fractal levels: {e}")
+            return []
+
+    async def _detect_fibonacci_levels(self, market_data: pd.DataFrame, level_type: str) -> List[SRLevel]:
+        """Detect Fibonacci retracement levels."""
+        try:
+            levels = []
+            
+            # Find swing high and low
+            swing_high = market_data['high'].max()
+            swing_low = market_data['low'].min()
+            price_range = swing_high - swing_low
+            
+            # Fibonacci ratios
+            fib_ratios = [0.236, 0.382, 0.5, 0.618, 0.786]
+            
+            if level_type == "support":
+                for ratio in fib_ratios:
+                    price = swing_high - (price_range * ratio)
+                    level = SRLevel(
+                        price=float(price),
+                        level_type=SRType.FIBONACCI,
+                        strength=0.6,
+                        confidence=0.5,
+                        touches=self._count_touches(market_data, price, "support"),
+                        volume=float(market_data['volume'].iloc[-1]),
+                        age=len(market_data),
+                        timestamp=market_data.index[-1],
+                        method=f"fibonacci_{ratio}"
+                    )
+                    levels.append(level)
+            else:  # resistance
+                for ratio in fib_ratios:
+                    price = swing_low + (price_range * ratio)
+                    level = SRLevel(
+                        price=float(price),
+                        level_type=SRType.FIBONACCI,
+                        strength=0.6,
+                        confidence=0.5,
+                        touches=self._count_touches(market_data, price, "resistance"),
+                        volume=float(market_data['volume'].iloc[-1]),
+                        age=len(market_data),
+                        timestamp=market_data.index[-1],
+                        method=f"fibonacci_{ratio}"
+                    )
+                    levels.append(level)
+            
+            return levels
+            
+        except Exception as e:
+            self.logger.error(f"Error detecting Fibonacci levels: {e}")
+            return []
+
+    async def _detect_psychological_levels(self, market_data: pd.DataFrame, level_type: str) -> List[SRLevel]:
+        """Detect psychological S/R levels (round numbers)."""
+        try:
+            levels = []
+            current_price = market_data['close'].iloc[-1]
+            
+            # Find nearby round numbers
+            if level_type == "support":
+                # Round down to nearest psychological level
+                base_price = int(current_price / 100) * 100
+                psychological_levels = [base_price, base_price - 100, base_price - 200]
+            else:  # resistance
+                # Round up to nearest psychological level
+                base_price = int(current_price / 100) * 100 + 100
+                psychological_levels = [base_price, base_price + 100, base_price + 200]
+            
+            for price in psychological_levels:
+                if price > 0:
+                    level = SRLevel(
+                        price=float(price),
+                        level_type=SRType.PSYCHOLOGICAL,
+                        strength=0.5,
+                        confidence=0.4,
+                        touches=self._count_touches(market_data, price, level_type),
+                        volume=float(market_data['volume'].iloc[-1]),
+                        age=len(market_data),
+                        timestamp=market_data.index[-1],
+                        method="psychological"
+                    )
+                    levels.append(level)
+            
+            return levels
+            
+        except Exception as e:
+            self.logger.error(f"Error detecting psychological levels: {e}")
+            return []
+
+    async def _detect_atr_levels(self, market_data: pd.DataFrame, level_type: str) -> List[SRLevel]:
+        """Detect ATR-based S/R levels."""
+        try:
+            levels = []
+            current_price = market_data['close'].iloc[-1]
+            
+            # Calculate ATR
+            atr = self._calculate_atr(market_data)
+            current_atr = atr.iloc[-1]
+            
+            if level_type == "support":
+                # Support levels below current price
+                for multiplier in [1, 2, 3]:
+                    price = current_price - (current_atr * multiplier)
+                    level = SRLevel(
+                        price=float(price),
+                        level_type=SRType.ATR,
+                        strength=0.4,
+                        confidence=0.3,
+                        touches=self._count_touches(market_data, price, "support"),
+                        volume=float(market_data['volume'].iloc[-1]),
+                        age=len(market_data),
+                        timestamp=market_data.index[-1],
+                        method=f"atr_support_{multiplier}x"
+                    )
+                    levels.append(level)
+            else:  # resistance
+                # Resistance levels above current price
+                for multiplier in [1, 2, 3]:
+                    price = current_price + (current_atr * multiplier)
+                    level = SRLevel(
+                        price=float(price),
+                        level_type=SRType.ATR,
+                        strength=0.4,
+                        confidence=0.3,
+                        touches=self._count_touches(market_data, price, "resistance"),
+                        volume=float(market_data['volume'].iloc[-1]),
+                        age=len(market_data),
+                        timestamp=market_data.index[-1],
+                        method=f"atr_resistance_{multiplier}x"
+                    )
+                    levels.append(level)
+            
+            return levels
+            
+        except Exception as e:
+            self.logger.error(f"Error detecting ATR levels: {e}")
+            return []
+
+    def _cluster_and_merge_levels(self, levels: List[SRLevel], market_data: pd.DataFrame) -> List[SRLevel]:
+        """Cluster similar S/R levels and merge them."""
+        try:
+            if not levels:
+                return []
+            
+            # Prepare data for clustering
+            prices = np.array([[level.price] for level in levels])
+            
+            # Use DBSCAN to cluster similar levels
+            scaler = StandardScaler()
+            prices_scaled = scaler.fit_transform(prices)
+            
+            # Cluster with DBSCAN
+            clustering = DBSCAN(eps=0.1, min_samples=1).fit(prices_scaled)
+            labels = clustering.labels_
+            
+            # Merge levels in the same cluster
+            merged_levels = []
+            unique_labels = set(labels)
+            
+            for label in unique_labels:
+                cluster_levels = [levels[i] for i in range(len(levels)) if labels[i] == label]
+                
+                if len(cluster_levels) == 1:
+                    merged_levels.append(cluster_levels[0])
+                else:
+                    # Merge multiple levels in the same cluster
+                    merged_level = self._merge_cluster_levels(cluster_levels)
+                    merged_levels.append(merged_level)
+            
+            return merged_levels
+            
+        except Exception as e:
+            self.logger.error(f"Error clustering and merging levels: {e}")
+            return levels
+
+    def _merge_cluster_levels(self, cluster_levels: List[SRLevel]) -> SRLevel:
+        """Merge multiple S/R levels in the same cluster."""
+        try:
+            # Weighted average price based on strength and confidence
+            total_weight = sum(level.strength * level.confidence for level in cluster_levels)
+            
+            if total_weight == 0:
+                # Fallback to simple average
+                avg_price = sum(level.price for level in cluster_levels) / len(cluster_levels)
+                avg_strength = sum(level.strength for level in cluster_levels) / len(cluster_levels)
+                avg_confidence = sum(level.confidence for level in cluster_levels) / len(cluster_levels)
+            else:
+                # Weighted average
+                avg_price = sum(level.price * level.strength * level.confidence for level in cluster_levels) / total_weight
+                avg_strength = sum(level.strength * level.strength * level.confidence for level in cluster_levels) / total_weight
+                avg_confidence = sum(level.confidence * level.strength * level.confidence for level in cluster_levels) / total_weight
+            
+            # Use the most recent timestamp and highest volume
+            latest_timestamp = max(level.timestamp for level in cluster_levels)
+            max_volume = max(level.volume for level in cluster_levels)
+            total_touches = sum(level.touches for level in cluster_levels)
+            
+            # Determine the most common level type
+            level_types = [level.level_type for level in cluster_levels]
+            most_common_type = max(set(level_types), key=level_types.count)
+            
+            return SRLevel(
+                price=avg_price,
+                level_type=most_common_type,
+                strength=min(1.0, avg_strength * 1.2),  # Boost strength for merged levels
+                confidence=min(1.0, avg_confidence * 1.1),  # Slight boost to confidence
+                touches=total_touches,
+                volume=max_volume,
+                age=min(level.age for level in cluster_levels),
+                timestamp=latest_timestamp,
+                method="merged"
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error merging cluster levels: {e}")
+            return cluster_levels[0] if cluster_levels else None
+
+    def _calculate_breakout_probability(self, level: SRLevel, current_price: float) -> float:
+        """Calculate breakout probability for an S/R level."""
+        try:
+            # Base probability on proximity and strength
+            proximity_factor = 1.0 - min(level.proximity / 0.1, 1.0)  # Higher proximity = higher probability
+            strength_factor = level.strength
+            confidence_factor = level.confidence
+            
+            # Combine factors
+            probability = (proximity_factor * 0.4 + strength_factor * 0.3 + confidence_factor * 0.3)
+            
+            return min(1.0, max(0.0, probability))
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating breakout probability: {e}")
+            return 0.5
+
+    # === HELPER METHODS FOR ENHANCED S/R ANALYSIS ===
+    
+    def _calculate_pivot_strength(self, market_data: pd.DataFrame, pivot_price: pd.Series, level_type: str) -> float:
+        """Calculate strength of pivot-based S/R level."""
+        try:
+            # Count touches and bounces
+            touches = self._count_touches(market_data, pivot_price, level_type)
+            bounces = self._count_bounces(market_data, pivot_price, level_type)
+            
+            # Calculate strength based on touches and bounces
+            strength = min(1.0, (touches * 0.3 + bounces * 0.7) / 10)
+            return strength
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating pivot strength: {e}")
+            return 0.5
+
+    def _calculate_volume_strength(self, market_data: pd.DataFrame, price: float, level_type: str) -> float:
+        """Calculate strength of volume-based S/R level."""
+        try:
+            # Find volume at this price level
+            price_tolerance = price * 0.001  # 0.1% tolerance
+            
+            if level_type == "support":
+                volume_at_level = market_data[
+                    (market_data['low'] >= price - price_tolerance) & 
+                    (market_data['low'] <= price + price_tolerance)
+                ]['volume'].sum()
+            else:  # resistance
+                volume_at_level = market_data[
+                    (market_data['high'] >= price - price_tolerance) & 
+                    (market_data['high'] <= price + price_tolerance)
+                ]['volume'].sum()
+            
+            # Normalize by average volume
+            avg_volume = market_data['volume'].mean()
+            strength = min(1.0, volume_at_level / (avg_volume * 10))
+            
+            return strength
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating volume strength: {e}")
+            return 0.5
+
+    def _calculate_fractal_strength(self, market_data: pd.DataFrame, index: int, level_type: str) -> float:
+        """Calculate strength of fractal-based S/R level."""
+        try:
+            # Calculate strength based on the sharpness of the fractal
+            window = 5
+            
+            if level_type == "support":
+                # Calculate how much the low stands out
+                current_low = market_data['low'].iloc[index]
+                surrounding_lows = market_data['low'].iloc[max(0, index-window):index].tolist() + \
+                                  market_data['low'].iloc[index+1:min(len(market_data), index+window+1)].tolist()
+                
+                if surrounding_lows:
+                    avg_surrounding = sum(surrounding_lows) / len(surrounding_lows)
+                    strength = min(1.0, (avg_surrounding - current_low) / current_low * 10)
+                else:
+                    strength = 0.5
+            else:  # resistance
+                # Calculate how much the high stands out
+                current_high = market_data['high'].iloc[index]
+                surrounding_highs = market_data['high'].iloc[max(0, index-window):index].tolist() + \
+                                   market_data['high'].iloc[index+1:min(len(market_data), index+window+1)].tolist()
+                
+                if surrounding_highs:
+                    avg_surrounding = sum(surrounding_highs) / len(surrounding_highs)
+                    strength = min(1.0, (current_high - avg_surrounding) / current_high * 10)
+                else:
+                    strength = 0.5
+            
+            return max(0.1, strength)
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating fractal strength: {e}")
+            return 0.5
+
+    def _count_touches(self, market_data: pd.DataFrame, price: float, level_type: str) -> int:
+        """Count how many times price touched the S/R level."""
+        try:
+            tolerance = price * 0.002  # 0.2% tolerance
+            
+            if level_type == "support":
+                touches = ((market_data['low'] >= price - tolerance) & 
+                          (market_data['low'] <= price + tolerance)).sum()
+            else:  # resistance
+                touches = ((market_data['high'] >= price - tolerance) & 
+                          (market_data['high'] <= price + tolerance)).sum()
+            
+            return int(touches)
+            
+        except Exception as e:
+            self.logger.error(f"Error counting touches: {e}")
+            return 0
+
+    def _count_bounces(self, market_data: pd.DataFrame, price: float, level_type: str) -> int:
+        """Count how many times price bounced off the S/R level."""
+        try:
+            tolerance = price * 0.002  # 0.2% tolerance
+            bounces = 0
+            
+            for i in range(1, len(market_data)):
+                if level_type == "support":
+                    # Check if price touched support and then moved up
+                    if (market_data['low'].iloc[i] <= price + tolerance and 
+                        market_data['close'].iloc[i] > market_data['close'].iloc[i-1]):
+                        bounces += 1
+                else:  # resistance
+                    # Check if price touched resistance and then moved down
+                    if (market_data['high'].iloc[i] >= price - tolerance and 
+                        market_data['close'].iloc[i] < market_data['close'].iloc[i-1]):
+                        bounces += 1
+            
+            return bounces
+            
+        except Exception as e:
+            self.logger.error(f"Error counting bounces: {e}")
+            return 0
+
+    def _calculate_atr(self, market_data: pd.DataFrame, window: int = 14) -> pd.Series:
+        """Calculate Average True Range."""
+        try:
+            high = market_data['high']
+            low = market_data['low']
+            close = market_data['close']
+            
+            tr1 = high - low
+            tr2 = abs(high - close.shift(1))
+            tr3 = abs(low - close.shift(1))
+            
+            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr = tr.rolling(window=window).mean()
+            
+            return atr
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating ATR: {e}")
+            return pd.Series([0] * len(market_data))
+
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
@@ -891,6 +1481,9 @@ class SRBreakoutPredictor:
             self.sr_predictions.clear()
             self.prediction_history.clear()
             self.performance_metrics.clear()
+            self.sr_levels_cache.clear()
+            self.sr_analysis_history.clear()
+            self.sr_quality_metrics.clear()
             self.logger.info("✅ SR breakout predictor cleanup completed")
         except Exception as e:
             self.logger.error(f"Error cleaning up SR breakout predictor: {e}")

@@ -37,12 +37,51 @@ except ImportError:
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import enhanced HMM regime manager for improved functionality
-try:
-    from src.utils.enhanced_hmm_regime_manager import EnhancedHMMRegimeManager
-    ENHANCED_HMM_AVAILABLE = True
-except ImportError:
-    ENHANCED_HMM_AVAILABLE = False
+# Enhanced HMM regime management capabilities integrated directly
+from enum import Enum
+from dataclasses import dataclass
+from typing import List, Optional, Tuple, Dict, Any
+import numpy as np
+import pandas as pd
+from sklearn.cluster import KMeans
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+
+# Enhanced regime types and data structures
+class RegimeType(Enum):
+    """Market regime types."""
+    BULL = "bull"
+    BEAR = "bear"
+    SIDEWAYS = "sideways"
+    VOLATILE = "volatile"
+    TRENDING = "trending"
+    CONSOLIDATION = "consolidation"
+
+@dataclass
+class RegimeState:
+    """Market regime state data structure."""
+    regime_id: int
+    regime_type: RegimeType
+    confidence: float
+    duration: int
+    volatility: float
+    momentum: float
+    volume_profile: float
+    timestamp: pd.Timestamp
+    features: Dict[str, float]
+    transition_probability: float = 0.0
+    stability_score: float = 0.0
+
+@dataclass
+class RegimeTransition:
+    """Regime transition data structure."""
+    from_regime: int
+    to_regime: int
+    probability: float
+    timestamp: pd.Timestamp
+    trigger_features: Dict[str, float]
+    confidence: float
 
 from src.utils.centralized_decorators import (
     comprehensive_data_validation,
@@ -79,14 +118,18 @@ class HMMRegimeDiscoveryStep:
         """Initialize HMM and data quality components."""
         self.logger.info("🔧 Initializing HMM regime discovery components...")
         
-        # Initialize enhanced HMM regime manager if available
-        self.enhanced_hmm_manager = None
-        if ENHANCED_HMM_AVAILABLE:
-            try:
-                self.enhanced_hmm_manager = EnhancedHMMRegimeManager(self.config)
-                self.logger.info("✅ Enhanced HMM regime manager initialized successfully")
-            except Exception as e:
-                self.logger.warning(f"⚠️ Could not initialize EnhancedHMMRegimeManager: {e}")
+        # Initialize enhanced HMM regime management capabilities
+        self.enhanced_hmm_capabilities = {
+            "regime_states": [],
+            "regime_transitions": [],
+            "hmm_model": None,
+            "kmeans_model": None,
+            "transition_model": None,
+            "scaler": None,
+            "regime_history": [],
+            "quality_metrics": {}
+        }
+        self.logger.info("✅ Enhanced HMM regime management capabilities initialized")
         
         try:
             from .step1.enhanced_data_quality_manager import EnhancedDataQualityManager
@@ -216,17 +259,11 @@ class HMMRegimeDiscoveryStep:
             self.logger.info("=" * 60)
             hmm_start = time.time()
             
-            # Use enhanced HMM manager if available
-            if self.enhanced_hmm_manager:
-                self.logger.info("🧠 Using enhanced HMM regime manager...")
-                regime_results = await self._perform_enhanced_hmm_regime_discovery(
-                    training_input, data_loaded["data"]
-                )
-            else:
-                self.logger.info("🧠 Using standard HMM regime discovery...")
-                regime_results = await self._perform_hmm_regime_discovery(
-                    training_input, data_loaded["data"]
-                )
+            # Use enhanced HMM regime discovery with integrated capabilities
+            self.logger.info("🧠 Using enhanced HMM regime discovery with integrated capabilities...")
+            regime_results = await self._perform_enhanced_hmm_regime_discovery(
+                training_input, data_loaded["data"]
+            )
             
             hmm_elapsed = time.time() - hmm_start
             self.logger.info(f"⏱️ HMM Regime Discovery completed in {hmm_elapsed:.2f} seconds")
@@ -906,12 +943,21 @@ class HMMRegimeDiscoveryStep:
         training_input: dict[str, Any], 
         data: Any
     ) -> dict[str, Any]:
-        """Perform enhanced HMM regime discovery using the enhanced HMM manager."""
+        """Perform enhanced HMM regime discovery with integrated capabilities."""
         try:
-            self.logger.info("🧠 Starting enhanced HMM regime discovery...")
+            self.logger.info("🧠 Starting enhanced HMM regime discovery with integrated capabilities...")
             
-            # Train regime models
-            training_result = await self.enhanced_hmm_manager.train_regime_models(data)
+            # Prepare comprehensive features
+            features = await self._prepare_hmm_features(data)
+            
+            if features.empty:
+                self.logger.error("❌ No features available for enhanced HMM analysis")
+                return {"success": False, "error": "No features available"}
+
+            self.logger.info(f"📊 Features prepared: {len(features.columns)} features, {len(features)} samples")
+            
+            # Train enhanced HMM models
+            training_result = await self._train_enhanced_hmm_models(features)
             
             if not training_result.get("success", False):
                 error_msg = training_result.get("error", "Enhanced HMM training failed")
@@ -919,29 +965,27 @@ class HMMRegimeDiscoveryStep:
                 return {"success": False, "error": error_msg}
             
             # Predict regime changes
-            prediction_result = await self.enhanced_hmm_manager.predict_regime_changes(data)
+            prediction_result = await self._predict_enhanced_regime_changes(features)
             
             if not prediction_result.get("success", False):
                 error_msg = prediction_result.get("error", "Enhanced HMM prediction failed")
                 self.logger.error(f"❌ Enhanced HMM prediction failed: {error_msg}")
                 return {"success": False, "error": error_msg}
             
-            # Get regime summary
-            regime_summary = self.enhanced_hmm_manager.get_regime_summary()
+            # Generate regime summary
+            regime_summary = self._generate_enhanced_regime_summary()
             
             # Format results for pipeline compatibility
             regime_results = {
                 "success": True,
-                "regime_states": prediction_result.get("cluster_labels", []),
-                "regime_transitions": {
-                    "transitions": prediction_result.get("regime_changes", []),
-                    "probabilities": prediction_result.get("transition_probabilities", [])
-                },
+                "regime_states": prediction_result.get("regime_states", []),
+                "regime_transitions": prediction_result.get("regime_transitions", {}),
                 "metrics": {
                     "training_report": training_result.get("training_report", {}),
                     "regime_summary": regime_summary,
                     "current_regime": prediction_result.get("current_regime"),
-                    "enhanced_features": True
+                    "enhanced_features": True,
+                    "quality_metrics": self.enhanced_hmm_capabilities["quality_metrics"]
                 },
                 "enhanced_analysis": True
             }

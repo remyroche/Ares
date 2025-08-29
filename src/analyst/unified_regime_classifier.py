@@ -11,6 +11,7 @@ from lightgbm import LGBMClassifier
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 from src.config import CONFIG
+from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.logger import system_logger
 from src.utils.error_handler import (
     handle_errors,
@@ -128,9 +129,57 @@ class UnifiedRegimeClassifier:
         self.location_classifier = None
         self.location_label_encoder = None
 
-        # Legacy S/R/Candle code removed
+        # Enhanced S/R Integration with SRBreakoutPredictor
         self.enable_sr_integration = self.config.get("enable_sr_integration", True)
+        self.sr_predictor = None
         self.basic_label_encoder = None
+        
+        # S/R Configuration for enhanced regime analysis
+        self.sr_config = {
+            "sr_breakout_predictor": {
+                "enable_sr_breakout_tactics": True,
+                "sr_proximity_threshold": 0.02,
+                "breakout_confidence_threshold": 0.6,
+                "sr_detection_method": "fractal",
+                "min_sr_strength": 0.3,
+                "max_sr_levels": 10,
+                "sr_lookback_periods": 100,
+                "volume_weight": 0.7,
+                "price_weight": 0.3,
+                "atr_multiplier": 1.5,
+                "breakout_confirmation_periods": 3,
+                "false_breakout_filter": True,
+                
+                # Enhanced strength calculation configuration
+                "strength_calculation": {
+                    "enable_enhanced_strength": True,
+                    "touch_count_lookback": 50,
+                    "bounce_rate_threshold": 0.02,
+                    "isolation_distance_threshold": 0.05,
+                    "age_decay_factor": 0.95
+                },
+                
+                # DBSCAN clustering configuration
+                "dbscan_clustering": {
+                    "enable_dbscan_clustering": True,
+                    "eps": 0.01,
+                    "min_samples": 2,
+                    "enable_noise_filtering": True
+                },
+                
+                # Feature calculation configuration
+                "feature_calculation": {
+                    "enable_comprehensive_features": True,
+                    "strength_score_weights": {
+                        "touch_count": 0.3,
+                        "total_volume": 0.2,
+                        "level_age": 0.2,
+                        "bounce_rate": 0.2,
+                        "isolation_score": 0.1
+                    }
+                }
+            }
+        }
 
         # Training Status
         self.trained = False
@@ -175,6 +224,30 @@ class UnifiedRegimeClassifier:
     # <class 'numpy.random._mt19937.MT19937'>). Newer NumPy expects a string name.
     # We normalize the argument before delegating to NumPy's constructor.
     _NUMPY_RNG_UNPICKLE_PATCHED = False
+
+    async def initialize_sr_predictor(self) -> bool:
+        """Initialize the SRBreakoutPredictor for enhanced S/R analysis."""
+        try:
+            if not self.enable_sr_integration:
+                self.logger.info("S/R integration disabled, skipping SRBreakoutPredictor initialization")
+                return True
+            
+            self.logger.info("🚀 Initializing SRBreakoutPredictor for enhanced regime analysis...")
+            
+            # Initialize SRBreakoutPredictor with enhanced configuration
+            self.sr_predictor = SRBreakoutPredictor(self.sr_config)
+            init_success = await self.sr_predictor.initialize()
+            
+            if not init_success:
+                self.logger.error("❌ Failed to initialize SRBreakoutPredictor")
+                return False
+            
+            self.logger.info("✅ SRBreakoutPredictor initialized successfully for enhanced regime analysis")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error initializing SRBreakoutPredictor: {e}")
+            return False
 
     @staticmethod
     def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
@@ -277,7 +350,7 @@ class UnifiedRegimeClassifier:
         self.logger.info("✅ UnifiedRegimeClassifier initialized successfully")
         return True
 
-    def _calculate_features(
+    async def _calculate_features(
         self,
         klines_df: pd.DataFrame,
         min_data_points: int = None,
@@ -364,6 +437,18 @@ class UnifiedRegimeClassifier:
             "volatility_20"
         ].shift(5)
 
+        # Enhanced S/R features for improved regime analysis
+        if self.sr_predictor and self.enable_sr_integration:
+            # Handle async call for enhanced features
+            try:
+                features_df = await self._add_enhanced_sr_features(features_df)
+            except Exception as e:
+                self.logger.warning(f"Enhanced S/R features failed, falling back to basic: {e}")
+                features_df = self._add_basic_sr_features(features_df)
+        else:
+            # Basic S/R features as fallback
+            features_df = self._add_basic_sr_features(features_df)
+
         # Improved NaN handling: use forward fill for technical indicators
         # This preserves more data points while maintaining feature quality
         technical_columns = [
@@ -380,6 +465,18 @@ class UnifiedRegimeClassifier:
             "atr_normalized",
             "adx",
             "volatility_regime",
+            # Enhanced S/R features
+            "sr_proximity",
+            "sr_strength",
+            "sr_zone_width",
+            "sr_cluster_count",
+            "sr_fibonacci_proximity",
+            "sr_elliott_proximity",
+            "sr_order_flow_imbalance",
+            "sr_enhanced_strength",
+            "sr_touch_count",
+            "sr_bounce_rate",
+            "sr_isolation_score",
         ]
 
         for col in technical_columns:
@@ -473,6 +570,207 @@ class UnifiedRegimeClassifier:
         volatile_regime = high_vol | atr_norm_high | bb_width_high | vol_accel
 
         return volatile_regime.astype(int)
+
+    async def _add_enhanced_sr_features(self, features_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Add enhanced S/R features using SRBreakoutPredictor for improved regime analysis.
+        """
+        try:
+            self.logger.info("🔧 Adding enhanced S/R features...")
+            
+            # Initialize enhanced S/R features
+            features_df["sr_proximity"] = 0.0
+            features_df["sr_strength"] = 0.0
+            features_df["sr_zone_width"] = 0.0
+            features_df["sr_cluster_count"] = 0
+            features_df["sr_fibonacci_proximity"] = 0.0
+            features_df["sr_elliott_proximity"] = 0.0
+            features_df["sr_order_flow_imbalance"] = 0.0
+            features_df["sr_enhanced_strength"] = 0.0
+            features_df["sr_touch_count"] = 0
+            features_df["sr_bounce_rate"] = 0.0
+            features_df["sr_isolation_score"] = 0.0
+            
+            # Calculate enhanced S/R features for each data point
+            for i in range(50, len(features_df)):  # Start after enough data for S/R calculation
+                try:
+                    # Get window of data for S/R analysis
+                    window_data = features_df.iloc[max(0, i-100):i+1]
+                    current_price = features_df["close"].iloc[i]
+                    
+                    # Get enhanced S/R context
+                    sr_context = await self.sr_predictor.get_sr_context(window_data, current_price)
+                    
+                    if sr_context:
+                        # S/R proximity to nearest levels
+                        nearest_support = sr_context.get("nearest_support", current_price * 0.95)
+                        nearest_resistance = sr_context.get("nearest_resistance", current_price * 1.05)
+                        
+                        # Calculate proximity (0 = at level, 1 = far from level)
+                        support_proximity = abs(current_price - nearest_support) / current_price
+                        resistance_proximity = abs(current_price - nearest_resistance) / current_price
+                        features_df.loc[features_df.index[i], "sr_proximity"] = min(support_proximity, resistance_proximity)
+                        
+                        # S/R strength
+                        support_strength = sr_context.get("support_strength", 0.5)
+                        resistance_strength = sr_context.get("resistance_strength", 0.5)
+                        features_df.loc[features_df.index[i], "sr_strength"] = max(support_strength, resistance_strength)
+                        
+                        # Enhanced strength
+                        enhanced_support = sr_context.get("enhanced_strength_support", {})
+                        enhanced_resistance = sr_context.get("enhanced_strength_resistance", {})
+                        max_enhanced_strength = max(
+                            enhanced_support.get("max_strength", 0.5),
+                            enhanced_resistance.get("max_strength", 0.5)
+                        )
+                        features_df.loc[features_df.index[i], "sr_enhanced_strength"] = max_enhanced_strength
+                        
+                        # S/R zone width
+                        sr_zone_width = sr_context.get("sr_zone_width", 0.0)
+                        features_df.loc[features_df.index[i], "sr_zone_width"] = sr_zone_width
+                        
+                        # Clustering information
+                        clustering_result = sr_context.get("clustering_result", {})
+                        features_df.loc[features_df.index[i], "sr_cluster_count"] = clustering_result.get("n_clusters", 0)
+                        
+                        # Fibonacci levels proximity
+                        fibonacci_levels = sr_context.get("fibonacci_levels", {})
+                        if fibonacci_levels:
+                            fib_proximities = []
+                            for fib_price in fibonacci_levels.values():
+                                if isinstance(fib_price, (int, float)):
+                                    fib_proximities.append(abs(current_price - fib_price) / current_price)
+                            if fib_proximities:
+                                features_df.loc[features_df.index[i], "sr_fibonacci_proximity"] = min(fib_proximities)
+                        
+                        # Elliott Wave levels proximity
+                        elliott_levels = sr_context.get("elliott_wave_levels", {})
+                        if elliott_levels:
+                            wave_levels = elliott_levels.get("wave_levels", {})
+                            if wave_levels:
+                                elliott_proximities = []
+                                for wave_price in wave_levels.values():
+                                    if isinstance(wave_price, (int, float)):
+                                        elliott_proximities.append(abs(current_price - wave_price) / current_price)
+                                if elliott_proximities:
+                                    features_df.loc[features_df.index[i], "sr_elliott_proximity"] = min(elliott_proximities)
+                        
+                        # Order flow imbalances
+                        order_flow_analysis = sr_context.get("order_flow_analysis", {})
+                        imbalances = order_flow_analysis.get("imbalances", [])
+                        if imbalances:
+                            total_imbalance_volume = sum(imb.get("volume", 0.0) for imb in imbalances)
+                            features_df.loc[features_df.index[i], "sr_order_flow_imbalance"] = total_imbalance_volume
+                        
+                        # Enhanced metrics from clustered levels
+                        support_levels = sr_context.get("support_levels", [])
+                        resistance_levels = sr_context.get("resistance_levels", [])
+                        all_levels = support_levels + resistance_levels
+                        
+                        if all_levels:
+                            # Calculate average touch count and bounce rate
+                            touch_counts = []
+                            bounce_rates = []
+                            isolation_scores = []
+                            
+                            for level in all_levels:
+                                if isinstance(level, dict):
+                                    touch_counts.append(level.get("touches", 0))
+                                    bounce_rates.append(level.get("bounce_rate", 0.0))
+                                    isolation_scores.append(level.get("isolation_score", 0.5))
+                            
+                            if touch_counts:
+                                features_df.loc[features_df.index[i], "sr_touch_count"] = np.mean(touch_counts)
+                            if bounce_rates:
+                                features_df.loc[features_df.index[i], "sr_bounce_rate"] = np.mean(bounce_rates)
+                            if isolation_scores:
+                                features_df.loc[features_df.index[i], "sr_isolation_score"] = np.mean(isolation_scores)
+                
+                except Exception as e:
+                    # Continue with next data point if there's an error
+                    self.logger.debug(f"Error calculating enhanced S/R features for index {i}: {e}")
+                    continue
+            
+            self.logger.info("✅ Enhanced S/R features added successfully")
+            return features_df
+            
+        except Exception as e:
+            self.logger.error(f"Error adding enhanced S/R features: {e}")
+            return self._add_basic_sr_features(features_df)
+
+    def _add_basic_sr_features(self, features_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Add basic S/R features as fallback when enhanced analysis is not available.
+        """
+        try:
+            self.logger.info("🔧 Adding basic S/R features...")
+            
+            # Initialize basic S/R features
+            features_df["sr_proximity"] = 0.0
+            features_df["sr_strength"] = 0.0
+            features_df["sr_zone_width"] = 0.0
+            features_df["sr_cluster_count"] = 0
+            features_df["sr_fibonacci_proximity"] = 0.0
+            features_df["sr_elliott_proximity"] = 0.0
+            features_df["sr_order_flow_imbalance"] = 0.0
+            features_df["sr_enhanced_strength"] = 0.0
+            features_df["sr_touch_count"] = 0
+            features_df["sr_bounce_rate"] = 0.0
+            features_df["sr_isolation_score"] = 0.0
+            
+            # Calculate basic S/R features using rolling windows
+            for i in range(20, len(features_df)):
+                try:
+                    # Get window of data for basic S/R analysis
+                    window_data = features_df.iloc[max(0, i-20):i+1]
+                    current_price = features_df["close"].iloc[i]
+                    
+                    # Calculate basic pivot levels
+                    high = window_data["high"].max()
+                    low = window_data["low"].min()
+                    close = window_data["close"].iloc[-1]
+                    pivot = (high + low + close) / 3
+                    
+                    # Basic support and resistance
+                    r1 = 2 * pivot - low
+                    s1 = 2 * pivot - high
+                    
+                    # Calculate basic proximity
+                    support_proximity = abs(current_price - s1) / current_price
+                    resistance_proximity = abs(current_price - r1) / current_price
+                    features_df.loc[features_df.index[i], "sr_proximity"] = min(support_proximity, resistance_proximity)
+                    
+                    # Basic strength (based on volume near levels)
+                    tolerance = window_data["close"].std() * 0.1
+                    volume_near_support = window_data[abs(window_data["close"] - s1) <= tolerance]["volume"].sum()
+                    volume_near_resistance = window_data[abs(window_data["close"] - r1) <= tolerance]["volume"].sum()
+                    total_volume = window_data["volume"].sum()
+                    
+                    support_strength = volume_near_support / total_volume if total_volume > 0 else 0.5
+                    resistance_strength = volume_near_resistance / total_volume if total_volume > 0 else 0.5
+                    features_df.loc[features_df.index[i], "sr_strength"] = max(support_strength, resistance_strength)
+                    
+                    # Basic zone width
+                    zone_width = (r1 - s1) / current_price
+                    features_df.loc[features_df.index[i], "sr_zone_width"] = zone_width
+                    
+                    # Set other features to neutral values
+                    features_df.loc[features_df.index[i], "sr_enhanced_strength"] = 0.5
+                    features_df.loc[features_df.index[i], "sr_touch_count"] = 1
+                    features_df.loc[features_df.index[i], "sr_bounce_rate"] = 0.5
+                    features_df.loc[features_df.index[i], "sr_isolation_score"] = 0.5
+                
+                except Exception as e:
+                    # Continue with next data point if there's an error
+                    self.logger.debug(f"Error calculating basic S/R features for index {i}: {e}")
+                    continue
+            
+            self.logger.info("✅ Basic S/R features added successfully")
+            return features_df
+            
+        except Exception as e:
+            self.logger.error(f"Error adding basic S/R features: {e}")
+            return features_df
 
     @handle_errors(
         exceptions=(Exception,),
@@ -709,103 +1007,121 @@ class UnifiedRegimeClassifier:
 
         return state_analysis
 
-    def _calculate_rolling_pivots(self, df_window: pd.DataFrame) -> dict:
+    async def _calculate_enhanced_sr_levels(self, df_window: pd.DataFrame) -> dict:
         """
-        Calculate rolling pivot points for dynamic support and resistance with strength metrics.
+        Calculate enhanced S/R levels using centralized SRBreakoutPredictor.
+
+        Args:
+            df_window: DataFrame window for S/R calculation
+
+        Returns:
+            Dict containing enhanced S/R levels with comprehensive metrics
+        """
+        try:
+            if not self.sr_predictor or not self.enable_sr_integration:
+                # Fallback to basic pivot calculation if SRBreakoutPredictor not available
+                return await self._calculate_basic_pivots(df_window)
+            
+            if len(df_window) < 5:
+                return {
+                    "s1": 0, "s2": 0, "r1": 0, "r2": 0, "pivot": 0,
+                    "enhanced_strengths": {},
+                    "clustering_result": {},
+                    "fibonacci_levels": {},
+                    "elliott_wave_levels": {},
+                    "order_flow_analysis": {},
+                }
+
+            # Get current price for S/R context
+            current_price = df_window["close"].iloc[-1]
+            
+            # Get comprehensive S/R context from SRBreakoutPredictor
+            sr_context = await self.sr_predictor.get_sr_context(df_window, current_price)
+            
+            if not sr_context:
+                self.logger.warning("Failed to get S/R context, falling back to basic calculation")
+                return await self._calculate_basic_pivots(df_window)
+            
+            # Extract enhanced S/R levels and metrics
+            support_levels = sr_context.get("support_levels", [])
+            resistance_levels = sr_context.get("resistance_levels", [])
+            
+            # Get nearest levels for traditional pivot format
+            nearest_support = sr_context.get("nearest_support", current_price * 0.95)
+            nearest_resistance = sr_context.get("nearest_resistance", current_price * 1.05)
+            
+            # Calculate traditional pivot levels as fallback
+            high = df_window["high"].max()
+            low = df_window["low"].min()
+            close = df_window["close"].iloc[-1]
+            pivot = (high + low + close) / 3
+            
+            # Use enhanced levels if available, otherwise use traditional calculations
+            s1 = nearest_support if support_levels else (2 * pivot - high)
+            r1 = nearest_resistance if resistance_levels else (2 * pivot - low)
+            s2 = s1 * 0.95 if support_levels else (pivot - (high - low))
+            r2 = r1 * 1.05 if resistance_levels else (pivot + (high - low))
+            
+            # Enhanced strength metrics
+            enhanced_strengths = {
+                "support_strength": sr_context.get("support_strength", 0.5),
+                "resistance_strength": sr_context.get("resistance_strength", 0.5),
+                "enhanced_strength_support": sr_context.get("enhanced_strength_support", {}),
+                "enhanced_strength_resistance": sr_context.get("enhanced_strength_resistance", {}),
+            }
+            
+            return {
+                "s1": s1,
+                "s2": s2,
+                "r1": r1,
+                "r2": r2,
+                "pivot": pivot,
+                "enhanced_strengths": enhanced_strengths,
+                "clustering_result": sr_context.get("clustering_result", {}),
+                "fibonacci_levels": sr_context.get("fibonacci_levels", {}),
+                "elliott_wave_levels": sr_context.get("elliott_wave_levels", {}),
+                "order_flow_analysis": sr_context.get("order_flow_analysis", {}),
+                "support_levels": support_levels,
+                "resistance_levels": resistance_levels,
+                "sr_zone_width": sr_context.get("sr_zone_width", 0.0),
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error calculating enhanced S/R levels: {e}")
+            return await self._calculate_basic_pivots(df_window)
+
+    async def _calculate_basic_pivots(self, df_window: pd.DataFrame) -> dict:
+        """
+        Calculate basic pivot points as fallback when SRBreakoutPredictor is not available.
 
         Args:
             df_window: DataFrame window for pivot calculation
 
         Returns:
-            Dict containing pivot levels with strength metrics
+            Dict containing basic pivot levels
         """
         try:
             if len(df_window) < 5:
                 return {
-                    "s1": 0,
-                    "s2": 0,
-                    "r1": 0,
-                    "r2": 0,
-                    "pivot": 0,
-                    "strengths": {
-                        "s1": {"strength": 0.0, "touches": 0, "volume": 0.0, "age": 0},
-                        "s2": {"strength": 0.0, "touches": 0, "volume": 0.0, "age": 0},
-                        "r1": {"strength": 0.0, "touches": 0, "volume": 0.0, "age": 0},
-                        "r2": {"strength": 0.0, "touches": 0, "volume": 0.0, "age": 0},
-                    },
+                    "s1": 0, "s2": 0, "r1": 0, "r2": 0, "pivot": 0,
+                    "enhanced_strengths": {},
+                    "clustering_result": {},
+                    "fibonacci_levels": {},
+                    "elliott_wave_levels": {},
+                    "order_flow_analysis": {},
                 }
 
-            # Calculate pivot point
+            # Calculate basic pivot point
             high = df_window["high"].max()
             low = df_window["low"].min()
             close = df_window["close"].iloc[-1]
-
             pivot = (high + low + close) / 3
 
-            # Calculate support and resistance levels
+            # Calculate basic support and resistance levels
             r1 = 2 * pivot - low
             r2 = pivot + (high - low)
             s1 = 2 * pivot - high
             s2 = pivot - (high - low)
-
-            # Calculate strength metrics for each level
-            levels = {"s1": s1, "s2": s2, "r1": r1, "r2": r2}
-            strengths = {}
-
-            for level_name, level_price in levels.items():
-                if level_price <= 0:
-                    strengths[level_name] = {
-                        "strength": 0.0,
-                        "touches": 0,
-                        "volume": 0.0,
-                        "age": 0,
-                    }
-                    continue
-
-                # Calculate touches (how many times price approached this level)
-                touches = 0
-                tolerance = df_window["close"].std() * 0.1  # 10% of price volatility
-
-                for i in range(1, len(df_window)):
-                    df_window["close"].iloc[i - 1]
-                    curr_close = df_window["close"].iloc[i]
-
-                    # Check if price approached the level
-                    if abs(curr_close - level_price) <= tolerance:
-                        touches += 1
-
-                # Calculate volume near this level
-                volume_near_level = 0.0
-                for i in range(len(df_window)):
-                    if abs(df_window["close"].iloc[i] - level_price) <= tolerance:
-                        volume_near_level += df_window["volume"].iloc[i]
-
-                # Calculate age (how long ago this level was first established)
-                age = 0
-                for i in range(len(df_window)):
-                    if abs(df_window["close"].iloc[i] - level_price) <= tolerance:
-                        age = len(df_window) - i
-                        break
-
-                # Calculate overall strength (0.0 to 1.0)
-                # Factors: touches (30%), volume (40%), age (30%)
-                touch_strength = min(touches / 5.0, 1.0)  # Normalize touches
-                volume_strength = min(
-                    volume_near_level / df_window["volume"].sum(),
-                    1.0,
-                )  # Normalize volume
-                age_strength = min(age / len(df_window), 1.0)  # Normalize age
-
-                overall_strength = (
-                    touch_strength * 0.3 + volume_strength * 0.4 + age_strength * 0.3
-                )
-
-                strengths[level_name] = {
-                    "strength": overall_strength,
-                    "touches": touches,
-                    "volume": volume_near_level,
-                    "age": age,
-                }
 
             return {
                 "s1": s1,
@@ -813,34 +1129,126 @@ class UnifiedRegimeClassifier:
                 "r1": r1,
                 "r2": r2,
                 "pivot": pivot,
-                "strengths": strengths,
-            }
-
-        except Exception:
-            self.logger.error(f"Error calculating rolling pivots: {e}")
-            return {
-                "s1": 0,
-                "s2": 0,
-                "r1": 0,
-                "r2": 0,
-                "pivot": 0,
-                "strengths": {
-                    "s1": {"strength": 0.0, "touches": 0, "volume": 0.0, "age": 0},
-                    "s2": {"strength": 0.0, "touches": 0, "volume": 0.0, "age": 0},
-                    "r1": {"strength": 0.0, "touches": 0, "volume": 0.0, "age": 0},
-                    "r2": {"strength": 0.0, "touches": 0, "volume": 0.0, "age": 0},
+                "enhanced_strengths": {
+                    "support_strength": 0.5,
+                    "resistance_strength": 0.5,
                 },
+                "clustering_result": {},
+                "fibonacci_levels": {},
+                "elliott_wave_levels": {},
+                "order_flow_analysis": {},
+                "support_levels": [],
+                "resistance_levels": [],
+                "sr_zone_width": 0.0,
             }
 
-    def _analyze_volume_levels(self, df_window: pd.DataFrame) -> dict | None:
+        except Exception as e:
+            self.logger.error(f"Error calculating basic pivots: {e}")
+            return {
+                "s1": 0, "s2": 0, "r1": 0, "r2": 0, "pivot": 0,
+                "enhanced_strengths": {},
+                "clustering_result": {},
+                "fibonacci_levels": {},
+                "elliott_wave_levels": {},
+                "order_flow_analysis": {},
+            }
+
+    async def _analyze_enhanced_volume_levels(self, df_window: pd.DataFrame) -> dict | None:
         """
-        Analyzes the volume profile to find the two most significant High Volume Nodes (HVNs),
-        their age, and the number of times they've been tested.
+        Analyzes enhanced volume levels using SRBreakoutPredictor's order flow analysis.
+        """
+        try:
+            if not self.sr_predictor or not self.enable_sr_integration:
+                # Fallback to basic volume analysis
+                return self._analyze_basic_volume_levels(df_window)
+            
+            if df_window.empty or len(df_window) < 20:
+                return None
+
+            # Get current price for S/R context
+            current_price = df_window["close"].iloc[-1]
+            
+            # Get comprehensive S/R context including order flow analysis
+            sr_context = await self.sr_predictor.get_sr_context(df_window, current_price)
+            
+            if not sr_context:
+                self.logger.warning("Failed to get S/R context for volume analysis, falling back to basic")
+                return self._analyze_basic_volume_levels(df_window)
+            
+            # Extract order flow analysis
+            order_flow_analysis = sr_context.get("order_flow_analysis", {})
+            
+            if not order_flow_analysis:
+                return self._analyze_basic_volume_levels(df_window)
+            
+            # Extract enhanced volume levels
+            volume_profile = order_flow_analysis.get("volume_profile", {})
+            poc_level = volume_profile.get("poc", {})
+            value_area = volume_profile.get("value_area", {})
+            hvns = volume_profile.get("high_volume_nodes", [])
+            
+            analyzed_levels = {}
+            
+            # Process POC (Point of Control)
+            if poc_level:
+                analyzed_levels["poc"] = {
+                    "price": poc_level.get("price", current_price),
+                    "volume": poc_level.get("volume", 0.0),
+                    "age": poc_level.get("age", 0),
+                    "touches": poc_level.get("touches", 0),
+                    "strength": poc_level.get("strength", 0.5),
+                    "volume_strength": poc_level.get("volume_strength", 0.5),
+                    "touch_strength": poc_level.get("touch_strength", 0.5),
+                    "age_strength": poc_level.get("age_strength", 0.5),
+                    "enhanced_metrics": {
+                        "value_area_high": value_area.get("high", current_price * 1.02),
+                        "value_area_low": value_area.get("low", current_price * 0.98),
+                        "value_area_volume": value_area.get("volume", 0.0),
+                    }
+                }
+            
+            # Process top HVNs
+            for i, hvn in enumerate(hvns[:2]):  # Top 2 HVNs
+                level_name = "hvn_primary" if i == 0 else "hvn_secondary"
+                analyzed_levels[level_name] = {
+                    "price": hvn.get("price", current_price),
+                    "volume": hvn.get("volume", 0.0),
+                    "age": hvn.get("age", 0),
+                    "touches": hvn.get("touches", 0),
+                    "strength": hvn.get("strength", 0.5),
+                    "volume_strength": hvn.get("volume_strength", 0.5),
+                    "touch_strength": hvn.get("touch_strength", 0.5),
+                    "age_strength": hvn.get("age_strength", 0.5),
+                    "enhanced_metrics": {
+                        "cluster_id": hvn.get("cluster_id", -1),
+                        "isolation_score": hvn.get("isolation_score", 0.5),
+                        "bounce_rate": hvn.get("bounce_rate", 0.0),
+                    }
+                }
+            
+            # Add order flow imbalances if available
+            imbalances = order_flow_analysis.get("imbalances", [])
+            if imbalances:
+                analyzed_levels["order_imbalances"] = {
+                    "count": len(imbalances),
+                    "total_volume": sum(imb.get("volume", 0.0) for imb in imbalances),
+                    "average_size": np.mean([imb.get("size", 0.0) for imb in imbalances]) if imbalances else 0.0,
+                }
+            
+            return analyzed_levels if analyzed_levels else None
+            
+        except Exception as e:
+            self.logger.error(f"Error in enhanced volume analysis: {e}")
+            return self._analyze_basic_volume_levels(df_window)
+
+    def _analyze_basic_volume_levels(self, df_window: pd.DataFrame) -> dict | None:
+        """
+        Basic volume level analysis as fallback when SRBreakoutPredictor is not available.
         """
         if df_window.empty or len(df_window) < 20:
             return None
 
-        # --- 1. ATR-Dynamic Binning (same as before) ---
+        # --- 1. ATR-Dynamic Binning ---
         high_low = df_window["high"] - df_window["low"]
         high_close = abs(df_window["high"] - df_window["close"].shift())
         low_close = abs(df_window["low"] - df_window["close"].shift())
@@ -926,34 +1334,188 @@ class UnifiedRegimeClassifier:
         return analyzed_levels
 
     @validate_data_quality(validation_level="WARNING")
+    @with_tracing_span("enhanced_location_classification")
+    async def _classify_enhanced_location(self, features_df: pd.DataFrame) -> list[str]:
+        """
+        Enhanced location classification using centralized SRBreakoutPredictor with advanced S/R analysis.
+        """
+        self.logger.info(
+            "Classifying location with enhanced S/R analysis using SRBreakoutPredictor...",
+        )
+
+        # --- Configuration for enhanced analysis ---
+        long_term_period = self.config.get("long_term_hvn_period", 720)  # 30 days on 1h chart
+        short_term_period = self.config.get("short_term_pivot_period", 24)  # 1 day on 1h chart
+        tolerance = self.config.get("level_tolerance", 0.01)  # 1% proximity tolerance
+        min_level_touches = self.config.get("min_level_touches", 1)  # Must have at least 1 re-test
+        min_strength_threshold = self.config.get("min_strength_threshold", 0.3)  # Minimum S/R strength
+
+        # Check if we have enough data for location classification
+        if len(features_df) < long_term_period:
+            self.logger.warning(
+                f"Insufficient data for enhanced location classification. "
+                f"Need at least {long_term_period} rows, but only have {len(features_df)}. "
+                f"Returning all OPEN_RANGE labels."
+            )
+            return ["OPEN_RANGE"] * len(features_df)
+
+        locations = []
+
+        # Start loop after the longest period to ensure enough data for all calculations
+        start_index = long_term_period
+        for i in range(start_index, len(features_df)):
+            current_price = features_df["close"].iloc[i]
+            current_price_diff = features_df["close"].diff().iloc[i]
+
+            # --- 1. Enhanced S/R Analysis (Short-Term) ---
+            short_window = features_df.iloc[i - short_term_period : i]
+            short_sr_levels = await self._calculate_enhanced_sr_levels(short_window)
+            
+            # --- 2. Enhanced Volume Analysis (Long-Term) ---
+            long_window = features_df.iloc[i - long_term_period : i]
+            volume_levels = await self._analyze_enhanced_volume_levels(long_window)
+
+            # --- 3. Enhanced Classification Logic ---
+            loc_sr = None
+            loc_volume = None
+            loc_fibonacci = None
+            loc_elliott = None
+
+            # Check S/R level proximity with enhanced strength filtering
+            support_levels = short_sr_levels.get("support_levels", [])
+            resistance_levels = short_sr_levels.get("resistance_levels", [])
+            
+            # Check support levels
+            for level in support_levels:
+                if isinstance(level, dict):
+                    level_price = level.get("price", level)
+                    level_strength = level.get("enhanced_strength", 0.5)
+                    level_touches = level.get("touches", 0)
+                else:
+                    level_price = level
+                    level_strength = 0.5
+                    level_touches = 1
+                
+                if (level_touches >= min_level_touches and 
+                    level_strength >= min_strength_threshold and
+                    abs(current_price - level_price) / current_price <= tolerance):
+                    loc_sr = "ENHANCED_SUPPORT"
+                    break
+            
+            # Check resistance levels
+            if not loc_sr:
+                for level in resistance_levels:
+                    if isinstance(level, dict):
+                        level_price = level.get("price", level)
+                        level_strength = level.get("enhanced_strength", 0.5)
+                        level_touches = level.get("touches", 0)
+                    else:
+                        level_price = level
+                        level_strength = 0.5
+                        level_touches = 1
+                    
+                    if (level_touches >= min_level_touches and 
+                        level_strength >= min_strength_threshold and
+                        abs(current_price - level_price) / current_price <= tolerance):
+                        loc_sr = "ENHANCED_RESISTANCE"
+                        break
+
+            # Check volume levels (POC, HVNs)
+            if volume_levels:
+                for level_name, level_data in volume_levels.items():
+                    if level_name in ["poc", "hvn_primary", "hvn_secondary"]:
+                        if (level_data.get("touches", 0) >= min_level_touches and
+                            level_data.get("strength", 0.5) >= min_strength_threshold and
+                            abs(current_price - level_data["price"]) / current_price <= tolerance):
+                            
+                            level_type = "SUPPORT" if current_price > level_data["price"] else "RESISTANCE"
+                            loc_volume = f"ENHANCED_{level_name.upper()}_{level_type}"
+                            break
+
+            # Check Fibonacci levels
+            fibonacci_levels = short_sr_levels.get("fibonacci_levels", {})
+            if fibonacci_levels:
+                for fib_type, fib_price in fibonacci_levels.items():
+                    if abs(current_price - fib_price) / current_price <= tolerance:
+                        fib_direction = "SUPPORT" if current_price > fib_price else "RESISTANCE"
+                        loc_fibonacci = f"FIBONACCI_{fib_type}_{fib_direction}"
+                        break
+
+            # Check Elliott Wave levels
+            elliott_levels = short_sr_levels.get("elliott_wave_levels", {})
+            if elliott_levels:
+                wave_levels = elliott_levels.get("wave_levels", {})
+                for wave_type, wave_price in wave_levels.items():
+                    if abs(current_price - wave_price) / current_price <= tolerance:
+                        wave_direction = "SUPPORT" if current_price > wave_price else "RESISTANCE"
+                        loc_elliott = f"ELLIOTT_{wave_type}_{wave_direction}"
+                        break
+
+            # --- 4. Enhanced Final Label Assignment with Priority ---
+            # Priority: Elliott Wave > Fibonacci > Enhanced S/R > Volume Levels
+            if loc_elliott:
+                locations.append(loc_elliott)
+            elif loc_fibonacci:
+                locations.append(loc_fibonacci)
+            elif loc_sr and loc_volume:
+                # High confluence: Enhanced S/R aligns with volume level
+                if "SUPPORT" in loc_sr and "SUPPORT" in loc_volume:
+                    locations.append("ENHANCED_CONFLUENCE_SUPPORT")
+                elif "RESISTANCE" in loc_sr and "RESISTANCE" in loc_volume:
+                    locations.append("ENHANCED_CONFLUENCE_RESISTANCE")
+                else:
+                    locations.append(loc_sr)  # Prefer S/R over volume
+            elif loc_sr:
+                locations.append(loc_sr)
+            elif loc_volume:
+                locations.append(loc_volume)
+            else:
+                locations.append("OPEN_RANGE")
+
+        # Pad the beginning of the list for alignment
+        padding = ["OPEN_RANGE"] * start_index
+        final_locations = padding + locations
+
+        self.logger.info(
+            f"Finished enhanced location classification. Found: {pd.Series(final_locations).value_counts().to_dict()}",
+        )
+        return final_locations
+
+    @validate_data_quality(validation_level="WARNING")
     @with_tracing_span("location_classification")
     def _classify_location(self, features_df: pd.DataFrame) -> list[str]:
         """
-        Classifies location using a multi-layered context of short-term Dynamic Pivots (tactical)
-        and long-term High Volume Nodes (strategic).
+        Legacy location classification method - now calls enhanced version if available.
         """
-        self.logger.info(
-            "Classifying location with tactical pivots and strategic volume levels...",
-        )
+        if self.sr_predictor and self.enable_sr_integration:
+            # Use enhanced classification if SRBreakoutPredictor is available
+            import asyncio
+            try:
+                # Create event loop if none exists
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                
+                return loop.run_until_complete(self._classify_enhanced_location(features_df))
+            except Exception as e:
+                self.logger.warning(f"Enhanced location classification failed, falling back to basic: {e}")
+                return self._classify_basic_location(features_df)
+        else:
+            return self._classify_basic_location(features_df)
+
+    def _classify_basic_location(self, features_df: pd.DataFrame) -> list[str]:
+        """
+        Basic location classification as fallback when enhanced analysis is not available.
+        """
+        self.logger.info("Using basic location classification...")
 
         # --- Configuration for dual-timeframe analysis ---
-        long_term_hvn_period = self.config.get(
-            "long_term_hvn_period",
-            720,
-        )  # 30 days on a 1h chart
-        short_term_pivot_period = self.config.get(
-            "short_term_pivot_period",
-            24,
-        )  # 1 day on a 1h chart
+        long_term_hvn_period = self.config.get("long_term_hvn_period", 720)  # 30 days on 1h chart
+        short_term_pivot_period = self.config.get("short_term_pivot_period", 24)  # 1 day on 1h chart
         tolerance = self.config.get("level_tolerance", 0.01)  # 1% proximity tolerance
-        self.config.get(
-            "max_level_age_pct",
-            0.9,
-        )  # Allow older levels for long-term analysis
-        min_level_touches = self.config.get(
-            "min_level_touches",
-            1,
-        )  # Must have at least 1 re-test
+        min_level_touches = self.config.get("min_level_touches", 1)  # Must have at least 1 re-test
 
         # Check if we have enough data for location classification
         if len(features_df) < long_term_hvn_period:
@@ -973,13 +1535,13 @@ class UnifiedRegimeClassifier:
 
             # --- 1. Tactical Pivot Analysis (Short-Term) ---
             pivot_window = features_df.iloc[i - short_term_pivot_period : i]
-            pivots = self._calculate_rolling_pivots(pivot_window)
+            pivots = self._calculate_basic_pivots(pivot_window)
             pivot_supports = [pivots["s1"], pivots["s2"]]
             pivot_resistances = [pivots["r1"], pivots["r2"]]
 
             # --- 2. Strategic Volume Level Analysis (Long-Term) ---
             hvn_window = features_df.iloc[i - long_term_hvn_period : i]
-            volume_levels = self._analyze_volume_levels(hvn_window)
+            volume_levels = self._analyze_basic_volume_levels(hvn_window)
 
             # --- 3. Classification Logic ---
             loc_pivot = None
@@ -1044,19 +1606,26 @@ class UnifiedRegimeClassifier:
         final_locations = padding + locations
 
         self.logger.info(
-            f"Finished classifying locations. Found: {pd.Series(final_locations).value_counts().to_dict()}",
+            f"Finished basic location classification. Found: {pd.Series(final_locations).value_counts().to_dict()}",
         )
         return final_locations
 
     async def train_hmm_labeler(self, historical_klines: pd.DataFrame) -> bool:
         """
-        Train HMM-based labeler for basic regimes (BULL, BEAR, SIDEWAYS, VOLATILE).
+        Train HMM-based labeler for basic regimes (BULL, BEAR, SIDEWAYS, VOLATILE) with enhanced S/R integration.
         """
         try:
-            self.logger.info("🎓 Training HMM-based Market Regime Classifier...")
+            self.logger.info("🎓 Training HMM-based Market Regime Classifier with enhanced S/R integration...")
+
+            # Initialize SRBreakoutPredictor for enhanced analysis
+            if self.enable_sr_integration:
+                sr_init_success = await self.initialize_sr_predictor()
+                if not sr_init_success:
+                    self.logger.warning("Failed to initialize SRBreakoutPredictor, continuing with basic analysis")
+                    self.enable_sr_integration = False
 
             # Calculate features
-            features_df = self._calculate_features(historical_klines)
+            features_df = await self._calculate_features(historical_klines)
             if features_df.empty:
                 self.logger.error("No features available for HMM training")
                 return False
@@ -1116,7 +1685,7 @@ class UnifiedRegimeClassifier:
             self.logger.info("🎓 Training Location Classifier...")
 
             # Calculate features
-            features_df = self._calculate_features(historical_klines)
+            features_df = await self._calculate_features(historical_klines)
             if features_df.empty:
                 self.logger.error(
                     "No features available for location classifier training",
@@ -1181,7 +1750,7 @@ class UnifiedRegimeClassifier:
             self.logger.info("🎓 Training Basic Regime Ensemble...")
 
             # Calculate features
-            features_df = self._calculate_features(historical_klines)
+            features_df = await self._calculate_features(historical_klines)
             if features_df.empty:
                 self.logger.error("No features available for ensemble training")
                 return False
@@ -1290,7 +1859,7 @@ class UnifiedRegimeClassifier:
             self.logger.error(f"❌ Failed to train complete system: {e}")
             return False
 
-    def predict_regime(
+    async def predict_regime(
         self,
         current_klines: pd.DataFrame,
     ) -> tuple[str, float, dict]:
@@ -1309,7 +1878,7 @@ class UnifiedRegimeClassifier:
                 return "SIDEWAYS", 0.5, {}
 
             # Calculate features
-            features_df = self._calculate_features(current_klines)
+            features_df = await self._calculate_features(current_klines)
             if features_df.empty:
                 return "SIDEWAYS", 0.5, {}
 
@@ -1358,7 +1927,7 @@ class UnifiedRegimeClassifier:
             self.logger.error(f"❌ Error in regime prediction: {e}")
             return "SIDEWAYS", 0.5, {"error": str(e)}
 
-    def predict_regime_and_location(
+    async def predict_regime_and_location(
         self,
         current_klines: pd.DataFrame,
     ) -> tuple[str, str, float, dict]:
@@ -1377,7 +1946,7 @@ class UnifiedRegimeClassifier:
                 return "SIDEWAYS", "OPEN_RANGE", 0.5, {}
 
             # Calculate features
-            features_df = self._calculate_features(current_klines)
+            features_df = await self._calculate_features(current_klines)
             if features_df.empty:
                 return "SIDEWAYS", "OPEN_RANGE", 0.5, {}
 
@@ -1609,7 +2178,7 @@ class UnifiedRegimeClassifier:
                     return {"error": "Failed to train regime classification models"}
 
             # Calculate features
-            features_df = self._calculate_features(historical_klines)
+            features_df = await self._calculate_features(historical_klines)
             if features_df.empty:
                 self.logger.error("❌ No features available for classification")
                 return {"error": "No features available for classification"}

@@ -19,8 +19,12 @@ from src.utils.centralized_decorators import validate_data_quality
 
 class PositionSizer:
     """
-    Simplified position sizer that uses ML confidence scores and Kelly criterion
-    for position sizing decisions.
+    Position Sizer component responsible for:
+    - Position sizing decisions based on ML confidence scores and Kelly criterion
+    - Integration with Strategist for strategy input
+    - Position size optimization for high leverage trading
+    
+    This is the primary component responsible for position sizing across the system.
     """
 
     def __init__(self, config: dict[str, Any]) -> None:

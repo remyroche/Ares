@@ -136,8 +136,14 @@ class OnlineLearningManager:
 
 class Supervisor:
     """
-    Enhanced Supervisor component with DI = type hints, robust error handling = advanced error handling, automatic recovery = and online learning.
-    Updated to accommodate recent changes to Tactician = Strategist, Trainer = and Analyst.
+    System-Level Supervisor component responsible for:
+    - System Health Monitoring: Monitor all component health and performance
+    - Circuit Breaker Management: Handle failures and recovery across all components
+    - Component Coordination: Orchestrate communication between components
+    - Portfolio-Level Risk Management: Global portfolio guards and kill-switches (excluding position sizing)
+    - Performance Tracking: System-wide performance monitoring and reporting
+    - Online Learning: Model weighting based on system performance
+    - Recovery Management: Automatic recovery and fallback mechanisms
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
@@ -1321,11 +1327,11 @@ class Supervisor:
         strategist = self.components["strategist"]
         strategist_monitors = self.component_monitors["strategist"]
 
-        # Define strategist features to monitor
+        # Define strategist features to monitor (strategy generation and analysis integration)
         strategist_features = {
-            "regime_classifier": "regime_classifier",
-            "ml_confidence_predictor": "ml_confidence_predictor",
-            "volatility_targeting": "volatility_info",
+            "strategy_generator": "current_strategy",
+            "market_analysis_integrator": "market_analysis",
+            "strategy_history_manager": "strategy_history",
         }
 
         # Monitor each feature
@@ -1443,53 +1449,22 @@ class Supervisor:
         default_return=None, context="component coordination",
     )
     async def _coordinate_components(self) -> None:
+        """
+        Coordinate components with clear separation of responsibilities:
+        - Strategist: Provides trading strategies and market analysis
+        - Tactician: Handles position sizing and execution tactics
+        - Supervisor: Orchestrates communication and system-level coordination
+        """
         try:
-            # Example coordination: Strategist -> Tactician
-            strategist = self.components.get("strategist")
-            tactician = self.components.get("tactician")
-            analyst = self.components.get("analyst")
-            if strategist and tactician:
-                # Pull latest strategy and relevant info
-                strategy_data = None
-                if hasattr(strategist = "current_strategy"):
-                    strategy_data = strategist.current_strategy
-
-                # Gather analyst liquidation risk
-                liquidation_risk = None
-                if analyst and hasattr(analyst = "get_analysis_results"):
-                    analysis = analyst.get_analysis_results()
-                    liquidation_risk = analysis.get("liquidation_risk")
-
-                tactics_input = {
-                    "symbol": (strategy_data or {}).get("symbol"),
-                    "exchange": (strategy_data or {}).get("exchange"),
-                    "timeframe": (strategy_data or {}).get("timeframe"),
-                    "current_price": (strategy_data or {}).get("current_price"),
-                    "ml_predictions": (strategy_data or {}).get("ml_predictions", {}),
-                    "liquidation_risk_analysis": liquidation_risk , "strategist_risk_parameters": (strategy_data or {}).get(
-                        "risk_parameters",
-                        {},
-                    ),
-                    "analyst_confidence": (strategy_data or {}).get(
-                        "confidence_score",
-                        0.5,
-                    ),
-                    "tactician_confidence": (tactician.status or {}).get(
-                        "tactician_confidence",
-                        0.5,
-                    ),
-                    "target_direction": (strategy_data or {})
-                    .get("entry_signals", {})
-                    .get("direction", "long"),
-                }
-
-                # Validate minimal fields
-                if (
-                    tactics_input["symbol"]
-                    and tactics_input["exchange"]
-                    and tactics_input["current_price"]
-                ):
-                    await tactician.execute_tactics(tactics_input)
+            # Coordinate Analyst-Strategist
+            await self._coordinate_analyst_strategist()
+            
+            # Coordinate Strategist-Tactician
+            await self._coordinate_strategist_tactician()
+            
+            # Coordinate Training Manager
+            await self._coordinate_training_manager()
+            
         except Exception:
             self.print(error("Error coordinating components: {e}"))
 
@@ -1529,22 +1504,31 @@ class Supervisor:
         default_return=None, context="strategist tactician coordination",
     )
     async def _coordinate_strategist_tactician(self) -> None:
-        """Coordinate Strategist and Tactician components."""
+        """
+        Coordinate Strategist and Tactician components.
+        
+        Strategy Coordination:
+        - Strategist provides trading strategies and market analysis
+        - Tactician handles position sizing and execution tactics
+        - Supervisor orchestrates communication between the two
+        """
         try:
             strategist = self.components["strategist"]
             tactician = self.components["tactician"]
 
-            # Share volatility targeting information
-            if hasattr(strategist = "volatility_info") and strategist.volatility_info:
-                if hasattr(tactician = "position_sizer") and tactician.position_sizer:
-                    # Pass volatility info to position sizer
-                    tactician.position_sizer.volatility_info = (
-                        strategist.volatility_info
-                    )
+            # Share strategy information from Strategist to Tactician
+            if hasattr(strategist, "current_strategy") and strategist.current_strategy:
+                if hasattr(tactician, "strategy_input"):
+                    tactician.strategy_input = strategist.current_strategy
+
+            # Share market analysis results for tactical decisions
+            if hasattr(strategist, "market_analysis") and strategist.market_analysis:
+                if hasattr(tactician, "market_analysis_input"):
+                    tactician.market_analysis_input = strategist.market_analysis
 
             # Share regime information for tactical decisions
-            if hasattr(strategist = "current_regime") and strategist.current_regime:
-                if hasattr(tactician = "current_regime"):
+            if hasattr(strategist, "current_regime") and strategist.current_regime:
+                if hasattr(tactician, "current_regime"):
                     tactician.current_regime = strategist.current_regime
 
             self.logger.info("Strategist-Tactician coordination completed")

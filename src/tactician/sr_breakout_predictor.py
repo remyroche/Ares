@@ -286,79 +286,71 @@ class SRBreakoutPredictor:
         max_null_ratio=0.1,
         check_duplicates=True,
         check_timestamps=True,
-        context="SR breakout prediction input validation"
+        context="SR context calculation input validation"
     )
     @handle_specific_errors(
         error_handlers={
-            ValueError: (None, "Invalid input data for SR breakout prediction"),
+            ValueError: (None, "Invalid input data for SR context calculation"),
             AttributeError: (None, "Predictor not properly initialized"),
         },
-        default_return=None,
-        context="SR breakout prediction",
+        default_return={},
+        context="SR context calculation",
     )
-    async def predict_sr_breakouts(
+    async def get_sr_context(
         self,
         market_data: pd.DataFrame,
         current_price: float,
     ) -> dict[str, Any]:
         """
-        Predict support/resistance breakouts.
+        Get comprehensive S/R context for current market position.
 
         Args:
             market_data: Market data DataFrame
             current_price: Current market price
 
         Returns:
-            dict[str, Any]: SR breakout predictions
+            dict[str, Any]: S/R context information
         """
         if not self.is_initialized:
             self.logger.error("SR breakout predictor not initialized")
             return {}
 
         try:
-            self.logger.info("Predicting SR breakouts...")
-
             # Detect support and resistance levels
             support_levels = await self._detect_support_levels(market_data)
             resistance_levels = await self._detect_resistance_levels(market_data)
 
-            # Calculate breakout probabilities
-            breakout_probabilities = await self._calculate_breakout_probabilities(
-                support_levels, resistance_levels, current_price,
-            )
+            # Find nearest levels
+            nearest_support = self._find_nearest_level(current_price, support_levels, "support")
+            nearest_resistance = self._find_nearest_level(current_price, resistance_levels, "resistance")
 
-            # Calculate confidence scores
-            confidence_scores = await self._calculate_confidence_scores(
-                support_levels, resistance_levels, market_data,
-            )
+            # Calculate proximity metrics
+            support_proximity = self._calculate_proximity(current_price, nearest_support)
+            resistance_proximity = self._calculate_proximity(current_price, nearest_resistance)
 
-            # Generate SR features
-            sr_features = await self._generate_sr_features(
-                support_levels, resistance_levels, market_data,
-            )
+            # Get pivot levels
+            pivot_levels = self._calculate_pivot_levels(market_data)
 
-            # Create predictions
-            predictions = {
+            # Create context
+            context = {
+                "current_price": current_price,
+                "nearest_support": nearest_support.get("price", current_price) if nearest_support else current_price,
+                "nearest_resistance": nearest_resistance.get("price", current_price) if nearest_resistance else current_price,
+                "support_strength": nearest_support.get("strength", 0.5) if nearest_support else 0.5,
+                "resistance_strength": nearest_resistance.get("strength", 0.5) if nearest_resistance else 0.5,
+                "support_proximity": support_proximity,
+                "resistance_proximity": resistance_proximity,
+                "pivot_levels": pivot_levels,
                 "support_levels": support_levels,
                 "resistance_levels": resistance_levels,
-                "breakout_probabilities": breakout_probabilities,
-                "confidence_scores": confidence_scores,
-                "sr_features": sr_features,
-                "current_price": current_price,
+                "sr_zone_width": abs(nearest_resistance.get("price", current_price) - nearest_support.get("price", current_price)) / current_price if nearest_resistance and nearest_support else 0.0,
                 "timestamp": pd.Timestamp.now(),
             }
 
-            # Store predictions
-            self.sr_predictions = predictions
-
-            # Update performance metrics
-            self._update_performance_metrics(predictions)
-
-            self.logger.info("✅ SR breakout predictions generated")
-            return predictions
+            return context
 
         except Exception as e:
-            self.logger.error(f"Error predicting SR breakouts: {e}")
+            self.logger.error(f"Error getting S/R context: {e}")
             return {}
 
     async def _detect_support_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
@@ -1100,63 +1092,6 @@ class SRBreakoutPredictor:
 
         except Exception as e:
             self.logger.error(f"Error updating performance metrics: {e}")
-
-    async def get_sr_context(
-        self,
-        market_data: pd.DataFrame,
-        current_price: float,
-    ) -> dict[str, Any]:
-        """
-        Get comprehensive S/R context for current market position.
-
-        Args:
-            market_data: Market data DataFrame
-            current_price: Current market price
-
-        Returns:
-            dict[str, Any]: S/R context information
-        """
-        if not self.is_initialized:
-            self.logger.error("SR breakout predictor not initialized")
-            return {}
-
-        try:
-            # Detect support and resistance levels
-            support_levels = await self._detect_support_levels(market_data)
-            resistance_levels = await self._detect_resistance_levels(market_data)
-
-            # Find nearest levels
-            nearest_support = self._find_nearest_level(current_price, support_levels, "support")
-            nearest_resistance = self._find_nearest_level(current_price, resistance_levels, "resistance")
-
-            # Calculate proximity metrics
-            support_proximity = self._calculate_proximity(current_price, nearest_support)
-            resistance_proximity = self._calculate_proximity(current_price, nearest_resistance)
-
-            # Get pivot levels
-            pivot_levels = self._calculate_pivot_levels(market_data)
-
-            # Create context
-            context = {
-                "current_price": current_price,
-                "nearest_support": nearest_support.get("price", current_price) if nearest_support else current_price,
-                "nearest_resistance": nearest_resistance.get("price", current_price) if nearest_resistance else current_price,
-                "support_strength": nearest_support.get("strength", 0.5) if nearest_support else 0.5,
-                "resistance_strength": nearest_resistance.get("strength", 0.5) if nearest_resistance else 0.5,
-                "support_proximity": support_proximity,
-                "resistance_proximity": resistance_proximity,
-                "pivot_levels": pivot_levels,
-                "support_levels": support_levels,
-                "resistance_levels": resistance_levels,
-                "sr_zone_width": abs(nearest_resistance.get("price", current_price) - nearest_support.get("price", current_price)) / current_price if nearest_resistance and nearest_support else 0.0,
-                "timestamp": pd.Timestamp.now(),
-            }
-
-            return context
-
-        except Exception as e:
-            self.logger.error(f"Error getting S/R context: {e}")
-            return {}
 
     def is_near_sr_level(
         self,

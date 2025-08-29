@@ -270,8 +270,9 @@ class SRBreakoutPredictor:
         """Initialize SR breakout predictor components."""
         try:
             # Initialize regime classifier if needed
-            if hasattr(self, "regime_classifier"):
-                await self.regime_classifier.initialize()
+            # Note: regime_classifier is currently commented out due to import issues
+            # if hasattr(self, "regime_classifier"):
+            #     await self.regime_classifier.initialize()
 
             self.logger.info("✅ SR breakout predictor components initialized")
             return True
@@ -596,7 +597,7 @@ class SRBreakoutPredictor:
             # Calculate pivot points
             pivot = (market_data['high'] + market_data['low'] + market_data['close']) / 3
             s1 = 2 * pivot - market_data['high']
-            pivot - (market_data['high'] - market_data['low'])
+            s2 = pivot - (market_data['high'] - market_data['low'])
 
             # Find support levels
             for i in range(len(market_data)):
@@ -624,7 +625,7 @@ class SRBreakoutPredictor:
             # Calculate pivot points
             pivot = (market_data['high'] + market_data['low'] + market_data['close']) / 3
             r1 = 2 * pivot - market_data['low']
-            pivot + (market_data['high'] - market_data['low'])
+            r2 = pivot + (market_data['high'] - market_data['low'])
 
             # Find resistance levels
             for i in range(len(market_data)):

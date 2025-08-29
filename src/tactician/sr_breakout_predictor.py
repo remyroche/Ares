@@ -234,10 +234,19 @@ class SRBreakoutPredictor:
         self.performance_metrics: dict[str, Any] = {}
         self.prediction_history: list[dict[str, Any]] = []
         
-        # Enhanced S/R analysis capabilities
-        self.sr_levels_cache: dict[str, List[SRLevel]] = {}
-        self.sr_analysis_history: list[dict[str, Any]] = []
-        self.sr_quality_metrics: dict[str, float] = {}
+            # Enhanced S/R analysis capabilities
+    self.sr_levels_cache: dict[str, List[SRLevel]] = {}
+    self.sr_analysis_history: list[dict[str, Any]] = []
+    self.sr_quality_metrics: dict[str, float] = {}
+    
+    # Centralized S/R analysis state
+    self.sr_analysis_state = {
+        "last_analysis_time": None,
+        "analysis_count": 0,
+        "quality_scores": {},
+        "redundancy_metrics": {},
+        "feature_integration_status": {}
+    }
 
     @handle_specific_errors(
         error_handlers={
@@ -1468,6 +1477,363 @@ class SRBreakoutPredictor:
             self.logger.error(f"Error calculating ATR: {e}")
             return pd.Series([0] * len(market_data))
 
+    # === CENTRALIZED S/R ANALYSIS METHODS ===
+    
+    async def analyze_centralized_sr_levels(self, market_data: pd.DataFrame) -> dict[str, Any]:
+        """
+        Perform comprehensive centralized S/R analysis using multiple methods.
+        
+        Args:
+            market_data: Market data DataFrame
+            
+        Returns:
+            dict[str, Any]: Comprehensive S/R analysis results
+        """
+        try:
+            self.logger.info("🔍 Performing comprehensive centralized S/R analysis...")
+            
+            # Update analysis state
+            self.sr_analysis_state["last_analysis_time"] = pd.Timestamp.now()
+            self.sr_analysis_state["analysis_count"] += 1
+            
+            # Perform multi-method S/R analysis
+            support_levels = await self._analyze_enhanced_sr_levels(market_data, "support")
+            resistance_levels = await self._analyze_enhanced_sr_levels(market_data, "resistance")
+            
+            # Calculate quality metrics
+            quality_metrics = self._calculate_sr_quality_metrics(support_levels, resistance_levels, market_data)
+            
+            # Detect and eliminate redundancy
+            redundancy_metrics = self._eliminate_sr_redundancy(support_levels, resistance_levels)
+            
+            # Generate comprehensive features
+            sr_features = self._generate_comprehensive_sr_features(support_levels, resistance_levels, market_data)
+            
+            # Create analysis results
+            analysis_results = {
+                "support_levels": support_levels,
+                "resistance_levels": resistance_levels,
+                "quality_metrics": quality_metrics,
+                "redundancy_metrics": redundancy_metrics,
+                "sr_features": sr_features,
+                "analysis_timestamp": pd.Timestamp.now(),
+                "analysis_id": self.sr_analysis_state["analysis_count"]
+            }
+            
+            # Cache results
+            cache_key = f"sr_analysis_{market_data.index[-1]}"
+            self.sr_levels_cache[cache_key] = support_levels + resistance_levels
+            self.sr_analysis_history.append(analysis_results)
+            
+            # Update quality metrics
+            self.sr_quality_metrics.update(quality_metrics)
+            self.sr_analysis_state["quality_scores"] = quality_metrics
+            self.sr_analysis_state["redundancy_metrics"] = redundancy_metrics
+            
+            self.logger.info("✅ Comprehensive centralized S/R analysis completed")
+            return analysis_results
+            
+        except Exception as e:
+            self.logger.error(f"Error in centralized S/R analysis: {e}")
+            return {}
+
+    def _calculate_sr_quality_metrics(self, support_levels: List[SRLevel], resistance_levels: List[SRLevel], market_data: pd.DataFrame) -> dict[str, float]:
+        """Calculate quality metrics for S/R levels."""
+        try:
+            metrics = {}
+            
+            # Coverage metrics
+            total_levels = len(support_levels) + len(resistance_levels)
+            metrics["total_levels"] = total_levels
+            metrics["support_coverage"] = len(support_levels) / max(total_levels, 1)
+            metrics["resistance_coverage"] = len(resistance_levels) / max(total_levels, 1)
+            
+            # Strength metrics
+            if support_levels:
+                metrics["avg_support_strength"] = sum(level.strength for level in support_levels) / len(support_levels)
+                metrics["max_support_strength"] = max(level.strength for level in support_levels)
+            else:
+                metrics["avg_support_strength"] = 0.0
+                metrics["max_support_strength"] = 0.0
+                
+            if resistance_levels:
+                metrics["avg_resistance_strength"] = sum(level.strength for level in resistance_levels) / len(resistance_levels)
+                metrics["max_resistance_strength"] = max(level.strength for level in resistance_levels)
+            else:
+                metrics["avg_resistance_strength"] = 0.0
+                metrics["max_resistance_strength"] = 0.0
+            
+            # Confidence metrics
+            if support_levels:
+                metrics["avg_support_confidence"] = sum(level.confidence for level in support_levels) / len(support_levels)
+            else:
+                metrics["avg_support_confidence"] = 0.0
+                
+            if resistance_levels:
+                metrics["avg_resistance_confidence"] = sum(level.confidence for level in resistance_levels) / len(resistance_levels)
+            else:
+                metrics["avg_resistance_confidence"] = 0.0
+            
+            # Distribution metrics
+            current_price = market_data['close'].iloc[-1]
+            price_range = market_data['high'].max() - market_data['low'].min()
+            
+            if support_levels:
+                support_distances = [abs(level.price - current_price) / price_range for level in support_levels]
+                metrics["support_distance_variance"] = np.var(support_distances) if len(support_distances) > 1 else 0.0
+            else:
+                metrics["support_distance_variance"] = 0.0
+                
+            if resistance_levels:
+                resistance_distances = [abs(level.price - current_price) / price_range for level in resistance_levels]
+                metrics["resistance_distance_variance"] = np.var(resistance_distances) if len(resistance_distances) > 1 else 0.0
+            else:
+                metrics["resistance_distance_variance"] = 0.0
+            
+            # Overall quality score
+            quality_factors = [
+                metrics["avg_support_strength"],
+                metrics["avg_resistance_strength"],
+                metrics["avg_support_confidence"],
+                metrics["avg_resistance_confidence"],
+                1.0 - metrics["support_distance_variance"],
+                1.0 - metrics["resistance_distance_variance"]
+            ]
+            metrics["overall_quality_score"] = sum(quality_factors) / len(quality_factors)
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating S/R quality metrics: {e}")
+            return {}
+
+    def _eliminate_sr_redundancy(self, support_levels: List[SRLevel], resistance_levels: List[SRLevel]) -> dict[str, Any]:
+        """Eliminate redundant S/R levels and calculate redundancy metrics."""
+        try:
+            metrics = {}
+            
+            # Combine all levels for redundancy analysis
+            all_levels = support_levels + resistance_levels
+            
+            # Find redundant levels (similar prices)
+            redundant_groups = []
+            processed_indices = set()
+            
+            for i, level1 in enumerate(all_levels):
+                if i in processed_indices:
+                    continue
+                    
+                redundant_group = [level1]
+                processed_indices.add(i)
+                
+                for j, level2 in enumerate(all_levels[i+1:], i+1):
+                    if j in processed_indices:
+                        continue
+                        
+                    # Check if levels are similar (within 0.5% of price)
+                    price_diff = abs(level1.price - level2.price) / level1.price
+                    if price_diff < 0.005:  # 0.5% threshold
+                        redundant_group.append(level2)
+                        processed_indices.add(j)
+                
+                if len(redundant_group) > 1:
+                    redundant_groups.append(redundant_group)
+            
+            # Merge redundant levels
+            merged_levels = []
+            for group in redundant_groups:
+                if len(group) > 1:
+                    merged_level = self._merge_redundant_levels(group)
+                    merged_levels.append(merged_level)
+                else:
+                    merged_levels.append(group[0])
+            
+            # Calculate redundancy metrics
+            metrics["original_levels"] = len(all_levels)
+            metrics["merged_levels"] = len(merged_levels)
+            metrics["redundant_groups"] = len(redundant_groups)
+            metrics["redundancy_ratio"] = (len(all_levels) - len(merged_levels)) / max(len(all_levels), 1)
+            
+            # Update levels with merged results
+            support_levels[:] = [level for level in merged_levels if level in support_levels]
+            resistance_levels[:] = [level for level in merged_levels if level in resistance_levels]
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"Error eliminating S/R redundancy: {e}")
+            return {}
+
+    def _merge_redundant_levels(self, redundant_group: List[SRLevel]) -> SRLevel:
+        """Merge redundant S/R levels into a single level."""
+        try:
+            # Weighted average based on strength and confidence
+            total_weight = sum(level.strength * level.confidence for level in redundant_group)
+            
+            if total_weight == 0:
+                # Fallback to simple average
+                avg_price = sum(level.price for level in redundant_group) / len(redundant_group)
+                avg_strength = sum(level.strength for level in redundant_group) / len(redundant_group)
+                avg_confidence = sum(level.confidence for level in redundant_group) / len(redundant_group)
+            else:
+                # Weighted average
+                avg_price = sum(level.price * level.strength * level.confidence for level in redundant_group) / total_weight
+                avg_strength = sum(level.strength * level.strength * level.confidence for level in redundant_group) / total_weight
+                avg_confidence = sum(level.confidence * level.strength * level.confidence for level in redundant_group) / total_weight
+            
+            # Use the most recent timestamp and highest volume
+            latest_timestamp = max(level.timestamp for level in redundant_group)
+            max_volume = max(level.volume for level in redundant_group)
+            total_touches = sum(level.touches for level in redundant_group)
+            
+            # Determine the most common level type
+            level_types = [level.level_type for level in redundant_group]
+            most_common_type = max(set(level_types), key=level_types.count)
+            
+            return SRLevel(
+                price=avg_price,
+                level_type=most_common_type,
+                strength=min(1.0, avg_strength * 1.1),  # Slight boost for merged levels
+                confidence=min(1.0, avg_confidence * 1.05),  # Slight boost to confidence
+                touches=total_touches,
+                volume=max_volume,
+                age=min(level.age for level in redundant_group),
+                timestamp=latest_timestamp,
+                method="merged_redundant"
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error merging redundant levels: {e}")
+            return redundant_group[0] if redundant_group else None
+
+    def _generate_comprehensive_sr_features(self, support_levels: List[SRLevel], resistance_levels: List[SRLevel], market_data: pd.DataFrame) -> dict[str, Any]:
+        """Generate comprehensive S/R features for feature engineering integration."""
+        try:
+            features = {}
+            current_price = market_data['close'].iloc[-1]
+            
+            # Basic proximity features
+            if support_levels:
+                nearest_support = min(support_levels, key=lambda x: abs(x.price - current_price))
+                features["nearest_support_price"] = nearest_support.price
+                features["nearest_support_distance"] = abs(nearest_support.price - current_price) / current_price
+                features["nearest_support_strength"] = nearest_support.strength
+                features["nearest_support_confidence"] = nearest_support.confidence
+            else:
+                features["nearest_support_price"] = current_price * 0.9
+                features["nearest_support_distance"] = 0.1
+                features["nearest_support_strength"] = 0.0
+                features["nearest_support_confidence"] = 0.0
+                
+            if resistance_levels:
+                nearest_resistance = min(resistance_levels, key=lambda x: abs(x.price - current_price))
+                features["nearest_resistance_price"] = nearest_resistance.price
+                features["nearest_resistance_distance"] = abs(nearest_resistance.price - current_price) / current_price
+                features["nearest_resistance_strength"] = nearest_resistance.strength
+                features["nearest_resistance_confidence"] = nearest_resistance.confidence
+            else:
+                features["nearest_resistance_price"] = current_price * 1.1
+                features["nearest_resistance_distance"] = 0.1
+                features["nearest_resistance_strength"] = 0.0
+                features["nearest_resistance_confidence"] = 0.0
+            
+            # SR zone features
+            features["sr_zone_width"] = features["nearest_resistance_distance"] + features["nearest_support_distance"]
+            features["sr_zone_center"] = (features["nearest_resistance_distance"] - features["nearest_support_distance"]) / 2
+            features["sr_zone_asymmetry"] = abs(features["nearest_resistance_distance"] - features["nearest_support_distance"])
+            
+            # Level count features
+            features["support_level_count"] = len(support_levels)
+            features["resistance_level_count"] = len(resistance_levels)
+            features["total_sr_levels"] = len(support_levels) + len(resistance_levels)
+            
+            # Strength aggregation features
+            if support_levels:
+                features["avg_support_strength"] = sum(level.strength for level in support_levels) / len(support_levels)
+                features["max_support_strength"] = max(level.strength for level in support_levels)
+                features["support_strength_variance"] = np.var([level.strength for level in support_levels])
+            else:
+                features["avg_support_strength"] = 0.0
+                features["max_support_strength"] = 0.0
+                features["support_strength_variance"] = 0.0
+                
+            if resistance_levels:
+                features["avg_resistance_strength"] = sum(level.strength for level in resistance_levels) / len(resistance_levels)
+                features["max_resistance_strength"] = max(level.strength for level in resistance_levels)
+                features["resistance_strength_variance"] = np.var([level.strength for level in resistance_levels])
+            else:
+                features["avg_resistance_strength"] = 0.0
+                features["max_resistance_strength"] = 0.0
+                features["resistance_strength_variance"] = 0.0
+            
+            # Method distribution features
+            method_counts = {}
+            for level in support_levels + resistance_levels:
+                method = level.method
+                method_counts[method] = method_counts.get(method, 0) + 1
+            
+            for method in ["pivot", "volume", "fractal", "fibonacci", "psychological", "atr"]:
+                features[f"sr_method_{method}_count"] = method_counts.get(method, 0)
+            
+            # Breakout probability features
+            if support_levels:
+                support_breakout_probs = [level.breakout_probability for level in support_levels]
+                features["avg_support_breakout_prob"] = sum(support_breakout_probs) / len(support_breakout_probs)
+                features["max_support_breakout_prob"] = max(support_breakout_probs)
+            else:
+                features["avg_support_breakout_prob"] = 0.0
+                features["max_support_breakout_prob"] = 0.0
+                
+            if resistance_levels:
+                resistance_breakout_probs = [level.breakout_probability for level in resistance_levels]
+                features["avg_resistance_breakout_prob"] = sum(resistance_breakout_probs) / len(resistance_breakout_probs)
+                features["max_resistance_breakout_prob"] = max(resistance_breakout_probs)
+            else:
+                features["avg_resistance_breakout_prob"] = 0.0
+                features["max_resistance_breakout_prob"] = 0.0
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Error generating comprehensive S/R features: {e}")
+            return {}
+
+    async def get_sr_features_for_engineering(self, market_data: pd.DataFrame) -> dict[str, Any]:
+        """
+        Get S/R features for feature engineering integration.
+        
+        Args:
+            market_data: Market data DataFrame
+            
+        Returns:
+            dict[str, Any]: S/R features ready for feature engineering
+        """
+        try:
+            # Perform centralized S/R analysis
+            analysis_results = await self.analyze_centralized_sr_levels(market_data)
+            
+            # Extract features
+            sr_features = analysis_results.get("sr_features", {})
+            
+            # Add quality metrics
+            quality_metrics = analysis_results.get("quality_metrics", {})
+            sr_features.update({
+                f"sr_quality_{key}": value for key, value in quality_metrics.items()
+            })
+            
+            # Add redundancy metrics
+            redundancy_metrics = analysis_results.get("redundancy_metrics", {})
+            sr_features.update({
+                f"sr_redundancy_{key}": value for key, value in redundancy_metrics.items()
+            })
+            
+            self.logger.info("✅ S/R features prepared for feature engineering")
+            return sr_features
+            
+        except Exception as e:
+            self.logger.error(f"Error getting S/R features for engineering: {e}")
+            return {}
+
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
@@ -1484,6 +1850,7 @@ class SRBreakoutPredictor:
             self.sr_levels_cache.clear()
             self.sr_analysis_history.clear()
             self.sr_quality_metrics.clear()
+            self.sr_analysis_state.clear()
             self.logger.info("✅ SR breakout predictor cleanup completed")
         except Exception as e:
             self.logger.error(f"Error cleaning up SR breakout predictor: {e}")

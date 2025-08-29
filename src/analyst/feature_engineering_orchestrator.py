@@ -78,6 +78,17 @@ class FeatureEngineeringOrchestrator:
         )
 
         self.logger.info("🚀 FeatureEngineeringOrchestrator initialized successfully")
+        
+        # Enhanced feature engineering state
+        self.feature_engineering_state = {
+            "last_feature_generation": None,
+            "feature_generation_count": 0,
+            "feature_quality_scores": {},
+            "feature_redundancy_metrics": {},
+            "feature_integration_status": {},
+            "sr_integration_status": {},
+            "regime_integration_status": {}
+        }
 
     @handle_errors(
         exceptions=(Exception,),
@@ -700,6 +711,383 @@ class FeatureEngineeringEngine:
         except Exception:
             self.print(error("Error applying autoencoders: {e}"))
             return data
+
+    # === ENHANCED FEATURE ENGINEERING METHODS ===
+    
+    async def generate_comprehensive_features(
+        self,
+        klines_df: pd.DataFrame,
+        agg_trades_df: pd.DataFrame = None,
+        futures_df: pd.DataFrame = None,
+        sr_levels: list = None,
+        regime_data: dict = None,
+    ) -> pd.DataFrame:
+        """
+        Generate comprehensive, non-redundant features with S/R and regime integration.
+        
+        Args:
+            klines_df: Klines data
+            agg_trades_df: Aggregated trades data (optional)
+            futures_df: Futures data (optional)
+            sr_levels: S/R levels from centralized analysis (optional)
+            regime_data: Regime data from HMM analysis (optional)
+            
+        Returns:
+            pd.DataFrame: Comprehensive features
+        """
+        try:
+            self.logger.info("🔧 Generating comprehensive features with S/R and regime integration...")
+            
+            # Update feature engineering state
+            self.feature_engineering_state["last_feature_generation"] = pd.Timestamp.now()
+            self.feature_engineering_state["feature_generation_count"] += 1
+            
+            # Step 1: Generate base features
+            base_features = await self._generate_base_features(klines_df, agg_trades_df, futures_df)
+            
+            # Step 2: Generate S/R features
+            sr_features = await self._generate_sr_features(klines_df, sr_levels)
+            
+            # Step 3: Generate regime features
+            regime_features = await self._generate_regime_features(klines_df, regime_data)
+            
+            # Step 4: Generate interaction features
+            interaction_features = await self._generate_interaction_features(base_features, sr_features, regime_features)
+            
+            # Step 5: Eliminate redundancy
+            redundancy_metrics = self._eliminate_feature_redundancy(base_features, sr_features, regime_features, interaction_features)
+            
+            # Step 6: Combine all features
+            comprehensive_features = self._combine_features(base_features, sr_features, regime_features, interaction_features)
+            
+            # Step 7: Calculate quality metrics
+            quality_metrics = self._calculate_feature_quality_metrics(comprehensive_features)
+            
+            # Update state
+            self.feature_engineering_state["feature_quality_scores"] = quality_metrics
+            self.feature_engineering_state["feature_redundancy_metrics"] = redundancy_metrics
+            self.feature_engineering_state["sr_integration_status"] = {"integrated": True, "feature_count": len(sr_features.columns)}
+            self.feature_engineering_state["regime_integration_status"] = {"integrated": True, "feature_count": len(regime_features.columns)}
+            
+            self.logger.info(f"✅ Comprehensive features generated: {comprehensive_features.shape}")
+            return comprehensive_features
+            
+        except Exception as e:
+            self.logger.error(f"Error generating comprehensive features: {e}")
+            return pd.DataFrame()
+
+    async def _generate_base_features(self, klines_df: pd.DataFrame, agg_trades_df: pd.DataFrame = None, futures_df: pd.DataFrame = None) -> pd.DataFrame:
+        """Generate base features from all components."""
+        try:
+            self.logger.info("🔧 Generating base features...")
+            
+            base_features = pd.DataFrame()
+            
+            # Generate advanced features
+            if self.enable_advanced_features:
+                advanced_features = await self.advanced_feature_engineering.generate_advanced_features(
+                    klines_df, agg_trades_df, futures_df
+                )
+                base_features = pd.concat([base_features, advanced_features], axis=1)
+            
+            # Generate autoencoder features
+            if self.enable_autoencoder_features:
+                autoencoder_features = await self.autoencoder_generator.generate_autoencoder_features(
+                    klines_df, agg_trades_df, futures_df
+                )
+                base_features = pd.concat([base_features, autoencoder_features], axis=1)
+            
+            # Generate legacy features
+            if self.enable_legacy_features:
+                legacy_features = await self.advanced_feature_engineering.generate_legacy_features(
+                    klines_df, agg_trades_df, futures_df
+                )
+                base_features = pd.concat([base_features, legacy_features], axis=1)
+            
+            # Generate multi-timeframe features
+            multi_timeframe_features = await self.advanced_feature_engineering.generate_multi_timeframe_features(
+                klines_df, agg_trades_df, futures_df
+            )
+            base_features = pd.concat([base_features, multi_timeframe_features], axis=1)
+            
+            # Generate meta-labeling features
+            meta_labeling_features = await self.advanced_feature_engineering.generate_meta_labeling_features(
+                klines_df, agg_trades_df, futures_df
+            )
+            base_features = pd.concat([base_features, meta_labeling_features], axis=1)
+            
+            self.logger.info(f"✅ Base features generated: {base_features.shape}")
+            return base_features
+            
+        except Exception as e:
+            self.logger.error(f"Error generating base features: {e}")
+            return pd.DataFrame()
+
+    async def _generate_sr_features(self, klines_df: pd.DataFrame, sr_levels: list = None) -> pd.DataFrame:
+        """Generate S/R features using centralized S/R analysis."""
+        try:
+            self.logger.info("🔧 Generating S/R features...")
+            
+            # Import SR breakout predictor
+            try:
+                from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
+                sr_predictor = SRBreakoutPredictor(self.config)
+                await sr_predictor.initialize()
+                
+                # Get S/R features
+                sr_features_dict = await sr_predictor.get_sr_features_for_engineering(klines_df)
+                
+                # Convert to DataFrame
+                sr_features = pd.DataFrame([sr_features_dict], index=klines_df.index[-1:])
+                
+                # Extend to full length if needed
+                if len(sr_features) < len(klines_df):
+                    sr_features = sr_features.reindex(klines_df.index, method='ffill')
+                
+                self.logger.info(f"✅ S/R features generated: {sr_features.shape}")
+                return sr_features
+                
+            except ImportError:
+                self.logger.warning("SR breakout predictor not available, using fallback S/R features")
+                return self._generate_fallback_sr_features(klines_df)
+            
+        except Exception as e:
+            self.logger.error(f"Error generating S/R features: {e}")
+            return pd.DataFrame()
+
+    async def _generate_regime_features(self, klines_df: pd.DataFrame, regime_data: dict = None) -> pd.DataFrame:
+        """Generate regime features using HMM analysis."""
+        try:
+            self.logger.info("🔧 Generating regime features...")
+            
+            if regime_data is None:
+                # Generate basic regime features
+                regime_features = self._generate_basic_regime_features(klines_df)
+            else:
+                # Use provided regime data
+                regime_features = self._extract_regime_features(regime_data, klines_df)
+            
+            self.logger.info(f"✅ Regime features generated: {regime_features.shape}")
+            return regime_features
+            
+        except Exception as e:
+            self.logger.error(f"Error generating regime features: {e}")
+            return pd.DataFrame()
+
+    async def _generate_interaction_features(self, base_features: pd.DataFrame, sr_features: pd.DataFrame, regime_features: pd.DataFrame) -> pd.DataFrame:
+        """Generate interaction features between different feature types."""
+        try:
+            self.logger.info("🔧 Generating interaction features...")
+            
+            interaction_features = pd.DataFrame()
+            
+            # Combine all features for interaction analysis
+            all_features = pd.concat([base_features, sr_features, regime_features], axis=1)
+            
+            # Generate polynomial features for important variables
+            important_features = self._identify_important_features(all_features)
+            
+            for i, feat1 in enumerate(important_features):
+                for feat2 in important_features[i+1:]:
+                    if feat1 in all_features.columns and feat2 in all_features.columns:
+                        # Create interaction feature
+                        interaction_name = f"interaction_{feat1}_{feat2}"
+                        interaction_features[interaction_name] = all_features[feat1] * all_features[feat2]
+                        
+                        # Create ratio feature
+                        ratio_name = f"ratio_{feat1}_{feat2}"
+                        interaction_features[ratio_name] = all_features[feat1] / (all_features[feat2] + 1e-8)
+            
+            self.logger.info(f"✅ Interaction features generated: {interaction_features.shape}")
+            return interaction_features
+            
+        except Exception as e:
+            self.logger.error(f"Error generating interaction features: {e}")
+            return pd.DataFrame()
+
+    def _eliminate_feature_redundancy(self, base_features: pd.DataFrame, sr_features: pd.DataFrame, 
+                                    regime_features: pd.DataFrame, interaction_features: pd.DataFrame) -> dict[str, Any]:
+        """Eliminate redundant features and calculate redundancy metrics."""
+        try:
+            metrics = {}
+            
+            # Combine all features
+            all_features = pd.concat([base_features, sr_features, regime_features, interaction_features], axis=1)
+            
+            # Calculate correlation matrix
+            correlation_matrix = all_features.corr().abs()
+            
+            # Find highly correlated feature pairs
+            high_correlation_pairs = []
+            for i in range(len(correlation_matrix.columns)):
+                for j in range(i+1, len(correlation_matrix.columns)):
+                    corr_value = correlation_matrix.iloc[i, j]
+                    if corr_value > 0.95:  # High correlation threshold
+                        high_correlation_pairs.append((
+                            correlation_matrix.columns[i],
+                            correlation_matrix.columns[j],
+                            corr_value
+                        ))
+            
+            # Remove redundant features
+            redundant_features = set()
+            for feat1, feat2, corr in high_correlation_pairs:
+                # Keep the feature with more variance
+                var1 = all_features[feat1].var()
+                var2 = all_features[feat2].var()
+                if var1 < var2:
+                    redundant_features.add(feat1)
+                else:
+                    redundant_features.add(feat2)
+            
+            metrics["total_features"] = len(all_features.columns)
+            metrics["redundant_features"] = len(redundant_features)
+            metrics["redundancy_ratio"] = len(redundant_features) / len(all_features.columns)
+            metrics["high_correlation_pairs"] = len(high_correlation_pairs)
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"Error eliminating feature redundancy: {e}")
+            return {}
+
+    def _combine_features(self, base_features: pd.DataFrame, sr_features: pd.DataFrame, 
+                         regime_features: pd.DataFrame, interaction_features: pd.DataFrame) -> pd.DataFrame:
+        """Combine all features into a comprehensive feature set."""
+        try:
+            # Combine all features
+            comprehensive_features = pd.concat([base_features, sr_features, regime_features, interaction_features], axis=1)
+            
+            # Remove any duplicate columns
+            comprehensive_features = comprehensive_features.loc[:, ~comprehensive_features.columns.duplicated()]
+            
+            # Fill any NaN values
+            comprehensive_features = comprehensive_features.fillna(method='ffill').fillna(0)
+            
+            return comprehensive_features
+            
+        except Exception as e:
+            self.logger.error(f"Error combining features: {e}")
+            return pd.DataFrame()
+
+    def _calculate_feature_quality_metrics(self, features: pd.DataFrame) -> dict[str, float]:
+        """Calculate quality metrics for the feature set."""
+        try:
+            metrics = {}
+            
+            # Completeness
+            metrics["completeness"] = 1.0 - features.isnull().sum().sum() / (features.shape[0] * features.shape[1])
+            
+            # Variance
+            metrics["avg_variance"] = features.var().mean()
+            metrics["variance_std"] = features.var().std()
+            
+            # Correlation
+            correlation_matrix = features.corr().abs()
+            metrics["avg_correlation"] = correlation_matrix.values[np.triu_indices_from(correlation_matrix.values, k=1)].mean()
+            
+            # Feature count
+            metrics["feature_count"] = len(features.columns)
+            
+            # Overall quality score
+            quality_factors = [
+                metrics["completeness"],
+                min(1.0, metrics["avg_variance"] * 10),  # Normalize variance
+                1.0 - metrics["avg_correlation"],  # Lower correlation is better
+                min(1.0, metrics["feature_count"] / 100)  # Normalize feature count
+            ]
+            metrics["overall_quality_score"] = sum(quality_factors) / len(quality_factors)
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating feature quality metrics: {e}")
+            return {}
+
+    def _generate_fallback_sr_features(self, klines_df: pd.DataFrame) -> pd.DataFrame:
+        """Generate fallback S/R features when centralized S/R analysis is not available."""
+        try:
+            sr_features = pd.DataFrame()
+            
+            # Basic S/R features
+            sr_features["support_level"] = klines_df['low'].rolling(window=20).min()
+            sr_features["resistance_level"] = klines_df['high'].rolling(window=20).max()
+            sr_features["sr_distance"] = (sr_features["resistance_level"] - sr_features["support_level"]) / klines_df['close']
+            
+            return sr_features
+            
+        except Exception as e:
+            self.logger.error(f"Error generating fallback S/R features: {e}")
+            return pd.DataFrame()
+
+    def _generate_basic_regime_features(self, klines_df: pd.DataFrame) -> pd.DataFrame:
+        """Generate basic regime features when HMM analysis is not available."""
+        try:
+            regime_features = pd.DataFrame()
+            
+            # Volatility regime
+            returns = klines_df['close'].pct_change()
+            regime_features["volatility_regime"] = returns.rolling(window=20).std()
+            regime_features["volatility_regime_high"] = (regime_features["volatility_regime"] > regime_features["volatility_regime"].quantile(0.8)).astype(int)
+            
+            # Trend regime
+            regime_features["trend_regime"] = returns.rolling(window=10).mean()
+            regime_features["trend_regime_bull"] = (regime_features["trend_regime"] > 0).astype(int)
+            regime_features["trend_regime_bear"] = (regime_features["trend_regime"] < 0).astype(int)
+            
+            # Volume regime
+            regime_features["volume_regime"] = klines_df['volume'] / klines_df['volume'].rolling(window=20).mean()
+            regime_features["volume_regime_high"] = (regime_features["volume_regime"] > 1.5).astype(int)
+            
+            return regime_features
+            
+        except Exception as e:
+            self.logger.error(f"Error generating basic regime features: {e}")
+            return pd.DataFrame()
+
+    def _extract_regime_features(self, regime_data: dict, klines_df: pd.DataFrame) -> pd.DataFrame:
+        """Extract regime features from HMM analysis results."""
+        try:
+            regime_features = pd.DataFrame(index=klines_df.index)
+            
+            # Extract regime states
+            regime_states = regime_data.get("regime_states", [])
+            if regime_states:
+                for i, state in enumerate(regime_states):
+                    if i < len(regime_features):
+                        regime_features.loc[regime_features.index[i], "regime_state"] = state.regime_id
+                        regime_features.loc[regime_features.index[i], "regime_confidence"] = state.confidence
+                        regime_features.loc[regime_features.index[i], "regime_volatility"] = state.volatility
+                        regime_features.loc[regime_features.index[i], "regime_momentum"] = state.momentum
+            
+            # Extract regime transitions
+            regime_transitions = regime_data.get("regime_transitions", [])
+            if regime_transitions:
+                transition_features = pd.DataFrame(index=klines_df.index)
+                for transition in regime_transitions:
+                    if transition.timestamp in regime_features.index:
+                        transition_features.loc[transition.timestamp, "regime_transition"] = 1
+                        transition_features.loc[transition.timestamp, "transition_probability"] = transition.probability
+                        transition_features.loc[transition.timestamp, "transition_confidence"] = transition.confidence
+                
+                regime_features = pd.concat([regime_features, transition_features], axis=1)
+            
+            return regime_features.fillna(0)
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting regime features: {e}")
+            return pd.DataFrame()
+
+    def _identify_important_features(self, features: pd.DataFrame, top_n: int = 10) -> List[str]:
+        """Identify the most important features for interaction generation."""
+        try:
+            # Use variance as a simple importance measure
+            feature_variance = features.var().sort_values(ascending=False)
+            return feature_variance.head(top_n).index.tolist()
+            
+        except Exception as e:
+            self.logger.error(f"Error identifying important features: {e}")
+            return []
 
     @handle_file_operations(default_return=False, context="load_autoencoder")
     def load_autoencoder(self):

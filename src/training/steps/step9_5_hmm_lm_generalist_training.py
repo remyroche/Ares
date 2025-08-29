@@ -90,6 +90,16 @@ class HMMLMGeneralistTrainingStep:
                 self.logger.info("✅ Enhanced HMM regime manager initialized for step 9.5")
             except Exception as e:
                 self.logger.warning(f"⚠️ Could not initialize EnhancedHMMRegimeManager: {e}")
+        
+        # Enhanced regime change prediction state
+        self.regime_change_state = {
+            "last_regime_change_analysis": None,
+            "regime_change_count": 0,
+            "regime_change_accuracy": {},
+            "regime_change_quality_scores": {},
+            "regime_change_redundancy_metrics": {},
+            "regime_change_prediction_model": None
+        }
 
     def _create_regime_change_vocabulary(self) -> dict[str, int]:
         """Create vocabulary for regime change events."""
@@ -1070,6 +1080,450 @@ async def run_step(
     except Exception as e:  # noqa: BLE001
         logger.exception(f"HMM-LM generalist training failed: {e}")
         return False
+
+    # === ENHANCED REGIME CHANGE PREDICTION METHODS ===
+    
+    async def _perform_enhanced_regime_change_prediction(self, training_input: dict[str, Any], market_data: pd.DataFrame) -> dict[str, Any]:
+        """
+        Perform enhanced regime change prediction with comprehensive analysis.
+        
+        Args:
+            training_input: Training input parameters
+            market_data: Market data DataFrame
+            
+        Returns:
+            dict[str, Any]: Enhanced regime change prediction results
+        """
+        try:
+            self.logger.info("🔄 Performing enhanced regime change prediction...")
+            
+            # Update regime change state
+            self.regime_change_state["last_regime_change_analysis"] = pd.Timestamp.now()
+            self.regime_change_state["regime_change_count"] += 1
+            
+            # Step 1: Detect regime changes
+            regime_changes = await self._detect_regime_changes(market_data)
+            
+            # Step 2: Analyze regime change patterns
+            change_patterns = await self._analyze_regime_change_patterns(regime_changes, market_data)
+            
+            # Step 3: Generate regime change sequences
+            sequences = await self._generate_regime_change_sequences(regime_changes, market_data)
+            
+            # Step 4: Train regime change prediction model
+            prediction_model = await self._train_regime_change_prediction_model(sequences, market_data)
+            
+            # Step 5: Calculate quality metrics
+            quality_metrics = self._calculate_regime_change_quality_metrics(
+                regime_changes, change_patterns, sequences, prediction_model
+            )
+            
+            # Step 6: Eliminate redundancy
+            redundancy_metrics = self._eliminate_regime_change_redundancy(
+                regime_changes, sequences, market_data
+            )
+            
+            # Create comprehensive results
+            results = {
+                "success": True,
+                "regime_changes": regime_changes,
+                "change_patterns": change_patterns,
+                "sequences": sequences,
+                "prediction_model": prediction_model,
+                "quality_metrics": quality_metrics,
+                "redundancy_metrics": redundancy_metrics,
+                "metrics": {
+                    **quality_metrics,
+                    **redundancy_metrics,
+                    "regime_change_count": len(regime_changes),
+                    "sequence_count": len(sequences),
+                    "prediction_accuracy": quality_metrics.get("prediction_accuracy", 0.0)
+                }
+            }
+            
+            # Update state
+            self.regime_change_state["regime_change_quality_scores"] = quality_metrics
+            self.regime_change_state["regime_change_redundancy_metrics"] = redundancy_metrics
+            self.regime_change_state["regime_change_prediction_model"] = prediction_model
+            
+            self.logger.info("✅ Enhanced regime change prediction completed")
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Error in enhanced regime change prediction: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def _detect_regime_changes(self, market_data: pd.DataFrame) -> List[dict[str, Any]]:
+        """Detect regime changes in market data."""
+        try:
+            self.logger.info("🔍 Detecting regime changes...")
+            
+            regime_changes = []
+            
+            # Calculate regime change indicators
+            volatility = market_data['close'].pct_change().rolling(window=20).std()
+            momentum = market_data['close'].pct_change().rolling(window=10).mean()
+            volume_ratio = market_data['volume'] / market_data['volume'].rolling(window=20).mean()
+            
+            # Detect regime changes based on multiple criteria
+            for i in range(20, len(market_data)):
+                change_detected = False
+                change_type = None
+                confidence = 0.0
+                
+                # Volatility regime change
+                vol_change = abs(volatility.iloc[i] - volatility.iloc[i-1]) / volatility.iloc[i-1]
+                if vol_change > 0.5:  # 50% change in volatility
+                    change_detected = True
+                    change_type = "volatility"
+                    confidence = min(1.0, vol_change)
+                
+                # Momentum regime change
+                mom_change = abs(momentum.iloc[i] - momentum.iloc[i-1])
+                if mom_change > 0.02:  # 2% change in momentum
+                    change_detected = True
+                    change_type = "momentum"
+                    confidence = max(confidence, min(1.0, mom_change * 10))
+                
+                # Volume regime change
+                vol_ratio_change = abs(volume_ratio.iloc[i] - volume_ratio.iloc[i-1])
+                if vol_ratio_change > 1.0:  # 100% change in volume ratio
+                    change_detected = True
+                    change_type = "volume"
+                    confidence = max(confidence, min(1.0, vol_ratio_change / 2))
+                
+                if change_detected:
+                    regime_change = {
+                        "timestamp": market_data.index[i],
+                        "change_type": change_type,
+                        "confidence": confidence,
+                        "volatility_change": vol_change,
+                        "momentum_change": mom_change,
+                        "volume_change": vol_ratio_change,
+                        "price": market_data['close'].iloc[i],
+                        "volume": market_data['volume'].iloc[i]
+                    }
+                    regime_changes.append(regime_change)
+            
+            self.logger.info(f"✅ Detected {len(regime_changes)} regime changes")
+            return regime_changes
+            
+        except Exception as e:
+            self.logger.error(f"Error detecting regime changes: {e}")
+            return []
+
+    async def _analyze_regime_change_patterns(self, regime_changes: List[dict[str, Any]], market_data: pd.DataFrame) -> dict[str, Any]:
+        """Analyze patterns in regime changes."""
+        try:
+            self.logger.info("📊 Analyzing regime change patterns...")
+            
+            if not regime_changes:
+                return {"patterns": [], "statistics": {}}
+            
+            # Analyze change type distribution
+            change_types = [change["change_type"] for change in regime_changes]
+            type_counts = {}
+            for change_type in change_types:
+                type_counts[change_type] = type_counts.get(change_type, 0) + 1
+            
+            # Analyze temporal patterns
+            timestamps = [change["timestamp"] for change in regime_changes]
+            intervals = []
+            for i in range(1, len(timestamps)):
+                interval = (timestamps[i] - timestamps[i-1]).total_seconds() / 3600  # hours
+                intervals.append(interval)
+            
+            # Analyze confidence patterns
+            confidences = [change["confidence"] for change in regime_changes]
+            
+            # Analyze price impact
+            price_impacts = []
+            for change in regime_changes:
+                change_idx = market_data.index.get_loc(change["timestamp"])
+                if change_idx + 10 < len(market_data):
+                    future_return = (market_data['close'].iloc[change_idx + 10] - change["price"]) / change["price"]
+                    price_impacts.append(future_return)
+            
+            patterns = {
+                "change_type_distribution": type_counts,
+                "avg_interval_hours": np.mean(intervals) if intervals else 0,
+                "interval_std_hours": np.std(intervals) if intervals else 0,
+                "avg_confidence": np.mean(confidences) if confidences else 0,
+                "avg_price_impact": np.mean(price_impacts) if price_impacts else 0,
+                "price_impact_std": np.std(price_impacts) if price_impacts else 0
+            }
+            
+            self.logger.info("✅ Regime change pattern analysis completed")
+            return {"patterns": patterns, "statistics": patterns}
+            
+        except Exception as e:
+            self.logger.error(f"Error analyzing regime change patterns: {e}")
+            return {"patterns": [], "statistics": {}}
+
+    async def _generate_regime_change_sequences(self, regime_changes: List[dict[str, Any]], market_data: pd.DataFrame) -> List[dict[str, Any]]:
+        """Generate sequences for regime change prediction."""
+        try:
+            self.logger.info("📝 Generating regime change sequences...")
+            
+            sequences = []
+            
+            # Create sequences around regime changes
+            for i, change in enumerate(regime_changes):
+                change_idx = market_data.index.get_loc(change["timestamp"])
+                
+                # Create sequence before the change
+                if change_idx >= self.sequence_length:
+                    sequence_data = market_data.iloc[change_idx - self.sequence_length:change_idx]
+                    
+                    # Create sequence features
+                    sequence_features = self._extract_sequence_features(sequence_data)
+                    
+                    # Create sequence label
+                    sequence_label = self._create_sequence_label(change)
+                    
+                    sequence = {
+                        "sequence_id": i,
+                        "features": sequence_features,
+                        "label": sequence_label,
+                        "change_type": change["change_type"],
+                        "confidence": change["confidence"],
+                        "timestamp": change["timestamp"]
+                    }
+                    sequences.append(sequence)
+            
+            self.logger.info(f"✅ Generated {len(sequences)} regime change sequences")
+            return sequences
+            
+        except Exception as e:
+            self.logger.error(f"Error generating regime change sequences: {e}")
+            return []
+
+    async def _train_regime_change_prediction_model(self, sequences: List[dict[str, Any]], market_data: pd.DataFrame) -> Any:
+        """Train model to predict regime changes."""
+        try:
+            self.logger.info("🎯 Training regime change prediction model...")
+            
+            if not sequences:
+                self.logger.warning("No sequences available for training")
+                return None
+            
+            # Prepare training data
+            X = []
+            y = []
+            
+            for sequence in sequences:
+                features = sequence["features"]
+                label = sequence["label"]
+                
+                # Convert features to tensor
+                if isinstance(features, dict):
+                    feature_vector = list(features.values())
+                else:
+                    feature_vector = features
+                
+                X.append(feature_vector)
+                y.append(label)
+            
+            X = np.array(X)
+            y = np.array(y)
+            
+            # Train Random Forest classifier
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.model_selection import train_test_split
+            
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+            
+            model = RandomForestClassifier(n_estimators=100, random_state=42)
+            model.fit(X_train, y_train)
+            
+            # Evaluate model
+            train_accuracy = model.score(X_train, y_train)
+            test_accuracy = model.score(X_test, y_test)
+            
+            prediction_model = {
+                "model": model,
+                "train_accuracy": train_accuracy,
+                "test_accuracy": test_accuracy,
+                "feature_importance": dict(zip(range(len(X[0])), model.feature_importances_))
+            }
+            
+            self.logger.info(f"✅ Regime change prediction model trained: test_accuracy={test_accuracy:.3f}")
+            return prediction_model
+            
+        except Exception as e:
+            self.logger.error(f"Error training regime change prediction model: {e}")
+            return None
+
+    def _calculate_regime_change_quality_metrics(self, regime_changes: List[dict[str, Any]], change_patterns: dict[str, Any], 
+                                               sequences: List[dict[str, Any]], prediction_model: Any) -> dict[str, float]:
+        """Calculate quality metrics for regime change prediction."""
+        try:
+            metrics = {}
+            
+            # Regime change detection quality
+            metrics["regime_change_count"] = len(regime_changes)
+            metrics["avg_confidence"] = np.mean([change["confidence"] for change in regime_changes]) if regime_changes else 0.0
+            metrics["confidence_std"] = np.std([change["confidence"] for change in regime_changes]) if regime_changes else 0.0
+            
+            # Pattern analysis quality
+            patterns = change_patterns.get("patterns", {})
+            metrics["pattern_completeness"] = len(patterns) / 6  # 6 expected pattern types
+            metrics["avg_interval_consistency"] = 1.0 - patterns.get("interval_std_hours", 0) / max(patterns.get("avg_interval_hours", 1), 1)
+            
+            # Sequence quality
+            metrics["sequence_count"] = len(sequences)
+            metrics["avg_sequence_length"] = np.mean([len(seq["features"]) for seq in sequences]) if sequences else 0.0
+            
+            # Prediction model quality
+            if prediction_model:
+                metrics["prediction_accuracy"] = prediction_model.get("test_accuracy", 0.0)
+                metrics["train_accuracy"] = prediction_model.get("train_accuracy", 0.0)
+                metrics["overfitting_score"] = metrics["train_accuracy"] - metrics["prediction_accuracy"]
+            else:
+                metrics["prediction_accuracy"] = 0.0
+                metrics["train_accuracy"] = 0.0
+                metrics["overfitting_score"] = 0.0
+            
+            # Overall quality score
+            quality_factors = [
+                metrics["avg_confidence"],
+                metrics["pattern_completeness"],
+                metrics["prediction_accuracy"],
+                1.0 - abs(metrics["overfitting_score"])
+            ]
+            metrics["overall_quality_score"] = sum(quality_factors) / len(quality_factors)
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating regime change quality metrics: {e}")
+            return {}
+
+    def _eliminate_regime_change_redundancy(self, regime_changes: List[dict[str, Any]], sequences: List[dict[str, Any]], 
+                                          market_data: pd.DataFrame) -> dict[str, Any]:
+        """Eliminate redundant regime changes and sequences."""
+        try:
+            metrics = {}
+            
+            # Analyze regime change redundancy
+            redundant_changes = []
+            for i, change1 in enumerate(regime_changes):
+                for j, change2 in enumerate(regime_changes[i+1:], i+1):
+                    time_diff = abs((change1["timestamp"] - change2["timestamp"]).total_seconds())
+                    if time_diff < 3600:  # Within 1 hour
+                        redundant_changes.append((i, j, time_diff))
+            
+            # Analyze sequence redundancy
+            redundant_sequences = []
+            for i, seq1 in enumerate(sequences):
+                for j, seq2 in enumerate(sequences[i+1:], i+1):
+                    feature_similarity = self._calculate_feature_similarity(seq1["features"], seq2["features"])
+                    if feature_similarity > 0.9:  # 90% similarity threshold
+                        redundant_sequences.append((i, j, feature_similarity))
+            
+            metrics["redundant_changes"] = len(redundant_changes)
+            metrics["redundant_sequences"] = len(redundant_sequences)
+            metrics["redundancy_ratio"] = (len(redundant_changes) + len(redundant_sequences)) / max(len(regime_changes) + len(sequences), 1)
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"Error eliminating regime change redundancy: {e}")
+            return {}
+
+    def _extract_sequence_features(self, sequence_data: pd.DataFrame) -> dict[str, float]:
+        """Extract features from a sequence of market data."""
+        try:
+            features = {}
+            
+            # Price features
+            features["price_mean"] = sequence_data['close'].mean()
+            features["price_std"] = sequence_data['close'].std()
+            features["price_trend"] = (sequence_data['close'].iloc[-1] - sequence_data['close'].iloc[0]) / sequence_data['close'].iloc[0]
+            
+            # Volume features
+            features["volume_mean"] = sequence_data['volume'].mean()
+            features["volume_std"] = sequence_data['volume'].std()
+            features["volume_trend"] = (sequence_data['volume'].iloc[-1] - sequence_data['volume'].iloc[0]) / sequence_data['volume'].iloc[0]
+            
+            # Volatility features
+            returns = sequence_data['close'].pct_change().dropna()
+            features["volatility"] = returns.std()
+            features["volatility_trend"] = returns.rolling(5).std().iloc[-1] - returns.rolling(5).std().iloc[0]
+            
+            # Technical features
+            features["rsi"] = self._calculate_rsi(sequence_data['close']).iloc[-1]
+            features["macd"] = self._calculate_macd(sequence_data['close']).iloc[-1]
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting sequence features: {e}")
+            return {}
+
+    def _create_sequence_label(self, regime_change: dict[str, Any]) -> int:
+        """Create label for a regime change sequence."""
+        try:
+            # Simple labeling based on change type
+            change_type = regime_change["change_type"]
+            if change_type == "volatility":
+                return 0
+            elif change_type == "momentum":
+                return 1
+            elif change_type == "volume":
+                return 2
+            else:
+                return 3
+                
+        except Exception as e:
+            self.logger.error(f"Error creating sequence label: {e}")
+            return 0
+
+    def _calculate_feature_similarity(self, features1: dict[str, float], features2: dict[str, float]) -> float:
+        """Calculate similarity between two feature sets."""
+        try:
+            if not features1 or not features2:
+                return 0.0
+            
+            # Calculate cosine similarity
+            keys = set(features1.keys()) & set(features2.keys())
+            if not keys:
+                return 0.0
+            
+            dot_product = sum(features1[key] * features2[key] for key in keys)
+            norm1 = sum(features1[key] ** 2 for key in keys) ** 0.5
+            norm2 = sum(features2[key] ** 2 for key in keys) ** 0.5
+            
+            if norm1 == 0 or norm2 == 0:
+                return 0.0
+            
+            return dot_product / (norm1 * norm2)
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating feature similarity: {e}")
+            return 0.0
+
+    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
+        """Calculate RSI indicator."""
+        try:
+            delta = prices.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs))
+            return rsi
+        except Exception:
+            return pd.Series([50] * len(prices))
+
+    def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
+        """Calculate MACD indicator."""
+        try:
+            ema_fast = prices.ewm(span=fast).mean()
+            ema_slow = prices.ewm(span=slow).mean()
+            macd = ema_fast - ema_slow
+            return macd
+        except Exception:
+            return pd.Series([0] * len(prices))
 
 
 if __name__ == "__main__":

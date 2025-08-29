@@ -10,7 +10,13 @@ from src.utils.error_handler import handle_errors, handle_specific_errors
 
 class RiskAllocator:
     """
-    Enhanced Risk Allocator component with DI, type hints, and robust error handling.
+    Portfolio-Level Risk Allocator component responsible for:
+    - Portfolio-level risk management (excluding position sizing)
+    - Global portfolio guards and kill-switches
+    - VaR and ES monitoring
+    - Portfolio-level risk limits and allocations
+    
+    Note: Position sizing is handled by the Tactician component
     """
 
     def __init__(self, config: dict[str, Any]) -> None:

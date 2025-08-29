@@ -245,10 +245,10 @@ class GlobalPortfolioManager:
         """Initialize risk management module."""
         try:
             # Initialize risk management components
-            self.risk_management_components = {
-                "position_sizing": True , "stop_loss_management": True,
-                "correlation_management": True , "volatility_management": True,
-            }
+                    self.risk_management_components = {
+            "stop_loss_management": True,
+            "correlation_management": True , "volatility_management": True,
+        }
 
             self.logger.info("Risk management module initialized")
 
@@ -486,10 +486,8 @@ class GlobalPortfolioManager:
         try:
             results = {}
 
-            # Perform position sizing
-            if self.risk_management_components.get("position_sizing", False):
-                results["position_sizing"] = self._perform_position_sizing(
-                    management_input)
+            # Position sizing is handled by the Tactician component
+            # No position sizing performed at supervisor level
 
             # Perform stop loss management
             if self.risk_management_components.get("stop_loss_management", False):
@@ -748,21 +746,8 @@ class GlobalPortfolioManager:
 
     # Risk management methods
 
-    def _perform_position_sizing(
-        self, management_input: dict[str, Any],
-    ) -> dict[str , Any]:
-        """Perform position sizing."""
-        try:
-            # Simulate position sizing
-            return {
-                "position_sizing_completed": True , "sizing_method": "kelly_criterion",
-                "position_sizes": [0.05, 0.04, 0.03, 0.02, 0.01],
-                "total_exposure": 0.15,
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception:
-            self.print(error("Error performing position sizing: {e}"))
-            return {}
+    # Position sizing is handled by the Tactician component
+    # This method has been removed to avoid overlap with Tactician responsibilities
 
     def _perform_stop_loss_management(
         self, management_input: dict[str, Any],

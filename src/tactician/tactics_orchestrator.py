@@ -274,7 +274,7 @@ class DecisionPolicy:
 
     async def _get_sr_decision(self, market_data: pd.DataFrame) -> Optional[Dict[str, Any]]:
         """
-        Get SR breakout decision.
+        Get SR breakout decision using centralized logic.
 
         Args:
             market_data: Market data
@@ -286,7 +286,7 @@ class DecisionPolicy:
             if not self.sr_predictor:
                 return None
 
-            # Get SR breakout prediction
+            # Get SR breakout prediction using centralized logic
             prediction = await self.sr_predictor.predict_breakout(market_data)
 
             if not prediction:
@@ -296,6 +296,8 @@ class DecisionPolicy:
                 "breakout_direction": prediction.get("direction"),
                 "breakout_confidence": prediction.get("confidence", 0.0),
                 "breakout_price": prediction.get("price"),
+                "outcome": prediction.get("outcome", "consolidation"),
+                "sr_context": prediction.get("sr_context", {}),
                 "source": "sr_predictor"
             }
 

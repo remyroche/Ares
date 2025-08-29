@@ -152,13 +152,14 @@ class TacticianSpecialistTrainingStep:
                         sr_features["multi_timeframe_sr_score"].append(0.5)
                         continue
 
-                    # Get HMM-aware S/R context and outcome prediction
+                    # Get HMM-aware S/R context and outcome prediction using centralized logic
                     sr_context = await self.sr_predictor.get_sr_context(
-                        market_slice=market_slice,
+                        market_data=market_slice,
                         current_price=current_price,
                     )
                     sr_outcome = await self.sr_predictor.predict_sr_outcome(
-                        market_slice=market_slice,
+                        market_data=market_slice,
+                        current_price=current_price,
                         sr_context=sr_context,
                     )
 

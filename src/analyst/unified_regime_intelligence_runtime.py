@@ -271,7 +271,7 @@ class UnifiedRegimeIntelligenceRuntime:
             if not self.enable_sr_monitoring:
                 return analysis_result
 
-            # Check S/R proximity
+            # Check S/R proximity using centralized logic
             sr_context = await self.sr_predictor.get_sr_context(
                 market_data, current_price
             )
@@ -283,7 +283,7 @@ class UnifiedRegimeIntelligenceRuntime:
                     current_price, sr_context
                 )
 
-                # Predict S/R outcome
+                # Predict S/R outcome using centralized logic
                 sr_outcome = await self.sr_predictor.predict_sr_outcome(
                     market_data, current_price, sr_context
                 )
@@ -410,7 +410,7 @@ class UnifiedRegimeIntelligenceRuntime:
             if not is_near_sr:
                 return {"opportunity_detected": False}
 
-            # Predict S/R outcome
+            # Predict S/R outcome using centralized logic
             sr_outcome = await self.sr_predictor.predict_sr_outcome(
                 market_data, current_price, sr_context
             )

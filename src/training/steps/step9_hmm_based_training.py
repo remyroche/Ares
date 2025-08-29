@@ -3597,7 +3597,7 @@ class TCNTrainer:
                         continue
 
                     sr_context = await self.sr_predictor.get_sr_context(
-                        market_slice, current_price,
+                        market_data=market_slice, current_price=current_price,
                     )
 
                     # Check if near S/R level
@@ -4714,12 +4714,12 @@ class TransformerTrainer:
                     if len(market_slice) < 20:
                         continue
 
-                    # Get S/R context and check proximity
-                    sr_context, await self.sr_predictor.get_sr_context(
-                        market_slice = current_price,
+                    # Get S/R context and check proximity using centralized logic
+                    sr_context = await self.sr_predictor.get_sr_context(
+                        market_data=market_slice, current_price=current_price,
                     )
-                    is_near_sr, self.sr_predictor.is_near_sr_level(
-                        current_price = sr_context,
+                    is_near_sr = self.sr_predictor.is_near_sr_level(
+                        current_price=current_price, sr_context=sr_context,
                     )
 
                     if is_near_sr:

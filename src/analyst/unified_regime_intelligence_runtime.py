@@ -273,19 +273,21 @@ class UnifiedRegimeIntelligenceRuntime:
 
             # Check S/R proximity using centralized logic
             sr_context = await self.sr_predictor.get_sr_context(
-                market_data, current_price
+                market_data=market_data, current_price=current_price
             )
-            is_near_sr = self.sr_predictor.is_near_sr_level(current_price, sr_context)
+            is_near_sr = self.sr_predictor.is_near_sr_level(
+                current_price=current_price, sr_context=sr_context
+            )
 
             if is_near_sr:
                 # Get detailed S/R proximity information
                 sr_proximity_details = self.sr_predictor.get_sr_proximity_details(
-                    current_price, sr_context
+                    current_price=current_price, sr_context=sr_context
                 )
 
                 # Predict S/R outcome using centralized logic
                 sr_outcome = await self.sr_predictor.predict_sr_outcome(
-                    market_data, current_price, sr_context
+                    market_data=market_data, current_price=current_price, sr_context=sr_context
                 )
 
                 # Check if opportunity meets confidence threshold
@@ -403,16 +405,18 @@ class UnifiedRegimeIntelligenceRuntime:
 
             # Get S/R context and outcome
             sr_context = await self.sr_predictor.get_sr_context(
-                market_data, current_price
+                market_data=market_data, current_price=current_price
             )
-            is_near_sr = self.sr_predictor.is_near_sr_level(current_price, sr_context)
+            is_near_sr = self.sr_predictor.is_near_sr_level(
+                current_price=current_price, sr_context=sr_context
+            )
 
             if not is_near_sr:
                 return {"opportunity_detected": False}
 
             # Predict S/R outcome using centralized logic
             sr_outcome = await self.sr_predictor.predict_sr_outcome(
-                market_data, current_price, sr_context
+                market_data=market_data, current_price=current_price, sr_context=sr_context
             )
 
             # Check if opportunity meets confidence threshold

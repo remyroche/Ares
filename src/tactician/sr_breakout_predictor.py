@@ -413,6 +413,11 @@ class SRBreakoutPredictor:
             # Get pivot levels
             pivot_levels = self._calculate_pivot_levels(market_data)
 
+            # Get advanced S/R analysis
+            fibonacci_levels = await self.calculate_fibonacci_levels(market_data)
+            elliott_wave_levels = await self.detect_elliott_wave_levels(market_data)
+            order_flow_analysis = await self.analyze_order_flow_levels(market_data)
+
             # Create context
             context = {
                 "current_price": current_price,
@@ -426,6 +431,12 @@ class SRBreakoutPredictor:
                 "support_levels": support_levels,
                 "resistance_levels": resistance_levels,
                 "sr_zone_width": abs(nearest_resistance.get("price", current_price) - nearest_support.get("price", current_price)) / current_price if nearest_resistance and nearest_support else 0.0,
+                
+                # Advanced S/R Analysis
+                "fibonacci_levels": fibonacci_levels,
+                "elliott_wave_levels": elliott_wave_levels,
+                "order_flow_analysis": order_flow_analysis,
+                
                 "timestamp": pd.Timestamp.now(),
             }
 
@@ -705,6 +716,351 @@ class SRBreakoutPredictor:
         except Exception as e:
             self.logger.error(f"Error in ATR resistance detection: {e}")
             return []
+
+    # ============================================================================
+    # ADVANCED S/R DETECTION METHODS
+    # ============================================================================
+
+    @validate_data_quality(validation_level="WARNING")
+    async def calculate_fibonacci_levels(self, market_data: pd.DataFrame) -> dict[str, float]:
+        """Calculate Fibonacci retracement and extension levels."""
+        try:
+            # Find swing high and low
+            high = market_data['high'].max()
+            low = market_data['low'].min()
+            swing_range = high - low
+            
+            fib_levels = {
+                'fib_0': low,
+                'fib_236': low + 0.236 * swing_range,  # 23.6% retracement
+                'fib_382': low + 0.382 * swing_range,  # 38.2% retracement
+                'fib_500': low + 0.500 * swing_range,  # 50.0% retracement
+                'fib_618': low + 0.618 * swing_range,  # 61.8% retracement
+                'fib_786': low + 0.786 * swing_range,  # 78.6% retracement
+                'fib_100': high,
+                'fib_1272': high + 0.272 * swing_range,  # 127.2% extension
+                'fib_1618': high + 0.618 * swing_range,  # 161.8% extension
+                'fib_2618': high + 1.618 * swing_range,  # 261.8% extension
+            }
+            
+            self.logger.info(f"✅ Calculated Fibonacci levels: {len(fib_levels)} levels")
+            return fib_levels
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating Fibonacci levels: {e}")
+            return {}
+
+    @validate_data_quality(validation_level="WARNING")
+    async def detect_elliott_wave_levels(self, market_data: pd.DataFrame) -> dict[str, Any]:
+        """Detect Elliott Wave patterns and associated S/R levels."""
+        try:
+            # Simple Elliott Wave detection (can be enhanced with more sophisticated algorithms)
+            prices = market_data['close'].values
+            highs = market_data['high'].values
+            lows = market_data['low'].values
+            
+            # Find potential wave points
+            wave_points = self._find_elliott_wave_points(prices, highs, lows)
+            
+            if len(wave_points) >= 5:
+                # Calculate wave levels
+                wave1_high = wave_points[1]['high']
+                wave1_low = wave_points[0]['low']
+                wave2_retracement = wave_points[2]['low']
+                wave3_target = wave2_retracement + 1.618 * (wave1_high - wave1_low)
+                wave4_retracement = wave_points[4]['low']
+                wave5_target = wave4_retracement + 0.618 * (wave1_high - wave1_low)
+                
+                elliott_levels = {
+                    'wave1': {'high': wave1_high, 'low': wave1_low},
+                    'wave2_retracement': wave2_retracement,
+                    'wave3_target': wave3_target,
+                    'wave4_retracement': wave4_retracement,
+                    'wave5_target': wave5_target,
+                    'pattern_type': 'impulse',
+                    'confidence': 0.7
+                }
+            else:
+                elliott_levels = {
+                    'pattern_type': 'incomplete',
+                    'confidence': 0.3
+                }
+            
+            self.logger.info(f"✅ Detected Elliott Wave pattern: {elliott_levels.get('pattern_type', 'unknown')}")
+            return elliott_levels
+            
+        except Exception as e:
+            self.logger.error(f"Error detecting Elliott Wave levels: {e}")
+            return {'pattern_type': 'error', 'confidence': 0.0}
+
+    def _find_elliott_wave_points(self, prices: np.ndarray, highs: np.ndarray, lows: np.ndarray) -> list[dict[str, Any]]:
+        """Find potential Elliott Wave points in price data."""
+        wave_points = []
+        
+        # Simple peak and trough detection
+        for i in range(2, len(prices) - 2):
+            # Peak detection
+            if highs[i] > highs[i-1] and highs[i] > highs[i-2] and highs[i] > highs[i+1] and highs[i] > highs[i+2]:
+                wave_points.append({
+                    'index': i,
+                    'type': 'peak',
+                    'high': highs[i],
+                    'low': lows[i]
+                })
+            # Trough detection
+            elif lows[i] < lows[i-1] and lows[i] < lows[i-2] and lows[i] < lows[i+1] and lows[i] < lows[i+2]:
+                wave_points.append({
+                    'index': i,
+                    'type': 'trough',
+                    'high': highs[i],
+                    'low': lows[i]
+                })
+        
+        return wave_points[:10]  # Limit to first 10 points
+
+    @validate_data_quality(validation_level="WARNING")
+    async def analyze_order_flow_levels(self, market_data: pd.DataFrame) -> dict[str, Any]:
+        """Analyze order flow to identify institutional S/R levels (POC, HVN, etc.)."""
+        try:
+            # Volume Profile Analysis
+            volume_profile = await self._calculate_volume_profile(market_data)
+            
+            # Point of Control (POC) - price level with highest volume
+            poc_level = volume_profile['poc']
+            
+            # Value Area (70% of volume)
+            value_area_high = volume_profile['value_area_high']
+            value_area_low = volume_profile['value_area_low']
+            
+            # High Volume Nodes (HVN) - significant volume levels
+            hvn_levels = volume_profile['hvn_levels']
+            
+            # Order Flow Imbalance
+            imbalance_levels = await self._detect_order_imbalances(market_data)
+            
+            order_flow_analysis = {
+                'poc': poc_level,
+                'value_area': {'high': value_area_high, 'low': value_area_low},
+                'hvn_levels': hvn_levels,
+                'imbalances': imbalance_levels,
+                'volume_nodes': volume_profile['volume_nodes'],
+                'total_volume': market_data['volume'].sum(),
+                'avg_volume': market_data['volume'].mean()
+            }
+            
+            self.logger.info(f"✅ Order flow analysis complete: POC at {poc_level:.2f}, {len(hvn_levels)} HVN levels")
+            return order_flow_analysis
+            
+        except Exception as e:
+            self.logger.error(f"Error analyzing order flow levels: {e}")
+            return {}
+
+    async def _calculate_volume_profile(self, market_data: pd.DataFrame) -> dict[str, Any]:
+        """Calculate volume profile for order flow analysis."""
+        try:
+            # Create price bins
+            price_range = market_data['high'].max() - market_data['low'].min()
+            num_bins = 50
+            bin_size = price_range / num_bins
+            
+            # Initialize volume profile
+            volume_profile = {}
+            for i in range(num_bins):
+                price_level = market_data['low'].min() + i * bin_size
+                volume_profile[price_level] = 0
+            
+            # Calculate volume at each price level
+            for idx, row in market_data.iterrows():
+                price = row['close']
+                volume = row['volume']
+                
+                # Find the appropriate bin
+                bin_index = int((price - market_data['low'].min()) / bin_size)
+                bin_index = max(0, min(bin_index, num_bins - 1))
+                price_level = market_data['low'].min() + bin_index * bin_size
+                
+                volume_profile[price_level] += volume
+            
+            # Find POC (Point of Control)
+            poc_level = max(volume_profile, key=volume_profile.get)
+            
+            # Calculate Value Area (70% of volume)
+            total_volume = sum(volume_profile.values())
+            target_volume = total_volume * 0.7
+            sorted_levels = sorted(volume_profile.items(), key=lambda x: x[1], reverse=True)
+            
+            cumulative_volume = 0
+            value_area_levels = []
+            for level, volume in sorted_levels:
+                cumulative_volume += volume
+                value_area_levels.append(level)
+                if cumulative_volume >= target_volume:
+                    break
+            
+            value_area_high = max(value_area_levels)
+            value_area_low = min(value_area_levels)
+            
+            # Find HVN (High Volume Nodes)
+            avg_volume = total_volume / len(volume_profile)
+            hvn_levels = [
+                {'price': level, 'volume': volume, 'strength': volume / avg_volume}
+                for level, volume in volume_profile.items()
+                if volume > avg_volume * 1.5  # 50% above average
+            ]
+            
+            # Sort HVN by strength
+            hvn_levels.sort(key=lambda x: x['strength'], reverse=True)
+            
+            return {
+                'poc': poc_level,
+                'value_area_high': value_area_high,
+                'value_area_low': value_area_low,
+                'hvn_levels': hvn_levels[:10],  # Top 10 HVN
+                'volume_nodes': volume_profile
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating volume profile: {e}")
+            return {}
+
+    async def _detect_order_imbalances(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
+        """Detect order flow imbalances."""
+        try:
+            imbalances = []
+            
+            # Calculate bid/ask imbalance (simplified - using volume as proxy)
+            for i in range(1, len(market_data)):
+                current_volume = market_data['volume'].iloc[i]
+                prev_volume = market_data['volume'].iloc[i-1]
+                current_price = market_data['close'].iloc[i]
+                prev_price = market_data['close'].iloc[i-1]
+                
+                # Volume spike
+                if current_volume > prev_volume * 2:
+                    imbalance = {
+                        'type': 'volume_spike',
+                        'price': current_price,
+                        'volume_ratio': current_volume / prev_volume,
+                        'timestamp': market_data.index[i],
+                        'strength': min(current_volume / prev_volume, 5.0)
+                    }
+                    imbalances.append(imbalance)
+                
+                # Price gap
+                price_change = abs(current_price - prev_price) / prev_price
+                if price_change > 0.01:  # 1% gap
+                    imbalance = {
+                        'type': 'price_gap',
+                        'price': current_price,
+                        'gap_size': price_change,
+                        'timestamp': market_data.index[i],
+                        'strength': min(price_change * 100, 5.0)
+                    }
+                    imbalances.append(imbalance)
+            
+            return imbalances
+            
+        except Exception as e:
+            self.logger.error(f"Error detecting order imbalances: {e}")
+            return []
+
+    @validate_data_quality(validation_level="WARNING")
+    async def detect_multi_timeframe_confluence(self, market_data: dict[str, pd.DataFrame]) -> dict[str, Any]:
+        """Detect S/R levels that appear across multiple timeframes."""
+        try:
+            confluence_levels = {}
+            
+            timeframes = ['1m', '5m', '15m', '1h', '4h', '1d']
+            
+            for tf in timeframes:
+                if tf in market_data:
+                    # Detect S/R levels for this timeframe
+                    tf_support = await self._detect_support_levels(market_data[tf])
+                    tf_resistance = await self._detect_resistance_levels(market_data[tf])
+                    
+                    # Add to confluence analysis
+                    for level in tf_support:
+                        level_key = f"{level['price']:.2f}"
+                        if level_key not in confluence_levels:
+                            confluence_levels[level_key] = {
+                                'price': level['price'],
+                                'type': 'support',
+                                'timeframes': [],
+                                'strength': 0,
+                                'methods': []
+                            }
+                        
+                        confluence_levels[level_key]['timeframes'].append(tf)
+                        confluence_levels[level_key]['strength'] += level.get('strength', 0.5)
+                        if level.get('method') not in confluence_levels[level_key]['methods']:
+                            confluence_levels[level_key]['methods'].append(level.get('method', 'unknown'))
+                    
+                    for level in tf_resistance:
+                        level_key = f"{level['price']:.2f}"
+                        if level_key not in confluence_levels:
+                            confluence_levels[level_key] = {
+                                'price': level['price'],
+                                'type': 'resistance',
+                                'timeframes': [],
+                                'strength': 0,
+                                'methods': []
+                            }
+                        
+                        confluence_levels[level_key]['timeframes'].append(tf)
+                        confluence_levels[level_key]['strength'] += level.get('strength', 0.5)
+                        if level.get('method') not in confluence_levels[level_key]['methods']:
+                            confluence_levels[level_key]['methods'].append(level.get('method', 'unknown'))
+            
+            # Filter for strong confluence (appears in 3+ timeframes)
+            strong_confluence = {
+                k: v for k, v in confluence_levels.items() 
+                if len(v['timeframes']) >= 3
+            }
+            
+            # Sort by strength
+            strong_confluence = dict(sorted(strong_confluence.items(), key=lambda x: x[1]['strength'], reverse=True))
+            
+            self.logger.info(f"✅ Multi-timeframe confluence analysis: {len(strong_confluence)} strong confluence levels")
+            return strong_confluence
+            
+        except Exception as e:
+            self.logger.error(f"Error detecting multi-timeframe confluence: {e}")
+            return {}
+
+    @validate_data_quality(validation_level="WARNING")
+    async def get_comprehensive_sr_analysis(self, market_data: pd.DataFrame, multi_timeframe_data: dict[str, pd.DataFrame] = None) -> dict[str, Any]:
+        """Get comprehensive S/R analysis including all advanced methods."""
+        try:
+            # Basic S/R context
+            basic_context = await self.get_sr_context(market_data, market_data['close'].iloc[-1])
+            
+            # Multi-timeframe confluence (if data provided)
+            mtf_confluence = {}
+            if multi_timeframe_data:
+                mtf_confluence = await self.detect_multi_timeframe_confluence(multi_timeframe_data)
+            
+            comprehensive_analysis = {
+                **basic_context,
+                "multi_timeframe_confluence": mtf_confluence,
+                "analysis_timestamp": pd.Timestamp.now(),
+                "analysis_methods": [
+                    "fractal_analysis",
+                    "volume_analysis", 
+                    "pivot_points",
+                    "atr_analysis",
+                    "fibonacci_levels",
+                    "elliott_wave",
+                    "order_flow_analysis",
+                    "multi_timeframe_confluence"
+                ]
+            }
+            
+            self.logger.info(f"✅ Comprehensive S/R analysis complete with {len(comprehensive_analysis['analysis_methods'])} methods")
+            return comprehensive_analysis
+            
+        except Exception as e:
+            self.logger.error(f"Error in comprehensive S/R analysis: {e}")
+            return {}
 
     def _calculate_level_strength(self, market_data: pd.DataFrame, index: int, level_type: str) -> float:
         """Calculate the strength of a support/resistance level."""

@@ -762,12 +762,6 @@ async def _add_sr_aware_feature_selection(
         # Add SR trend features
         features["sr_trend"] = 1 if market_data['close'].iloc[-1] > market_data['close'].iloc[-20] else -1
         
-        # Add SR breakout probability features
-        features["sr_breakout_probability"] = 1.0 / (1.0 + resistance_proximity) if resistance_proximity < support_proximity else 1.0 / (1.0 + support_proximity)
-        
-        # Add SR consolidation probability features
-        features["sr_consolidation_probability"] = 1.0 - features["sr_breakout_probability"]
-        
         await sr_predictor.cleanup()
         system_logger.info("✅ Added SR-aware feature selection features")
         return features

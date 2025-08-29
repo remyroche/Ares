@@ -48,9 +48,7 @@ This document summarizes the comprehensive integration of the SR (Support/Resist
 - `multi_timeframe_sr_score`, `sr_proximity`, `sr_outcome`
 - `normalized_distance`, `sr_proximity_score`, `strength_score`
 - `clarity_factor`, `directional_pressure`, `sr_score`, `delta_sr_score`
-- `isolation_score`, `sr_level`, `sr_breakout`, `sr_rebounce`
-- `sr_consolidation`, `sr_breakout_prob`, `sr_rebounce_prob`
-- `sr_consolidation_prob`, `sr_multi_timeframe`, `support_`, `resistance_`
+- `isolation_score`, `sr_level`, `sr_multi_timeframe`, `sr_`, `support_`, `resistance_`
 
 **Benefits**:
 - Comprehensive SR feature generation
@@ -93,6 +91,17 @@ This document summarizes the comprehensive integration of the SR (Support/Resist
 
 **Location**: `src/tactician/sr_breakout_predictor.py`
 
+**Generated SR Features** (sr_base_tokens):
+```python
+sr_base_tokens = [
+    "sr_distance", "support_level", "resistance_level", "proximity",
+    "multi_timeframe_sr_score", "sr_proximity", "sr_outcome",
+    "normalized_distance", "sr_proximity_score", "strength_score",
+    "clarity_factor", "directional_pressure", "sr_score", "delta_sr_score",
+    "isolation_score", "sr_level", "sr_multi_timeframe", "sr_", "support_", "resistance_",
+]
+```
+
 **Key Enhancements**:
 1. **Comprehensive Feature Generation**: Enhanced `calculate_comprehensive_sr_features()`
 2. **All Required Tokens**: Generated all features matching sr_base_tokens
@@ -109,9 +118,6 @@ This document summarizes the comprehensive integration of the SR (Support/Resist
 - `_calculate_delta_sr_score()`: SR score changes over time
 - `_calculate_isolation_score()`: SR level isolation analysis
 - `_determine_sr_level()`: Current SR level position
-- `_calculate_breakout_probability()`: Breakout probability calculation
-- `_calculate_rebounce_probability()`: Rebounce probability calculation
-- `_calculate_consolidation_probability()`: Consolidation probability calculation
 - `_predict_sr_outcome()`: SR outcome prediction
 
 ## Configuration

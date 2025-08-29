@@ -157,12 +157,10 @@ class Step7EnhancedMatrixOperations:
         
         # Identify SR features for specialized analysis
         sr_features = [col for col in df.columns if any(keyword in col.lower() for keyword in [
-            "sr_", "support", "resistance", "breakout", "proximity", "sr_distance",
+            "sr_", "support", "resistance", "proximity", "sr_distance",
             "sr_proximity", "sr_outcome", "normalized_distance", "sr_proximity_score",
             "strength_score", "clarity_factor", "directional_pressure", "sr_score",
-            "delta_sr_score", "isolation_score", "sr_level", "sr_breakout", "sr_rebounce",
-            "sr_consolidation", "sr_breakout_prob", "sr_rebounce_prob", "sr_consolidation_prob",
-            "sr_multi_timeframe", "support_", "resistance_"
+            "delta_sr_score", "isolation_score", "sr_level", "sr_multi_timeframe", "support_", "resistance_"
         ])]
         
         # Basic matrix operations configuration

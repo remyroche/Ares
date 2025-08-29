@@ -1585,6 +1585,103 @@ class SRBreakoutPredictor:
             self.logger.error(f"Error in centralized S/R analysis: {e}")
             return {}
 
+    # === ENHANCED CENTRALIZED S/R ANALYSIS METHODS ===
+    
+    async def get_centralized_sr_features(self, market_data: pd.DataFrame) -> dict[str, Any]:
+        """
+        Get centralized S/R features for feature engineering integration.
+        
+        Args:
+            market_data: Market data DataFrame
+            
+        Returns:
+            dict[str, Any]: Centralized S/R features
+        """
+        try:
+            # Perform centralized S/R analysis
+            analysis_results = await self.analyze_centralized_sr_levels(market_data)
+            
+            # Extract features
+            sr_features = analysis_results.get("sr_features", {})
+            
+            # Add quality metrics
+            quality_metrics = analysis_results.get("quality_metrics", {})
+            sr_features.update({
+                f"sr_quality_{key}": value for key, value in quality_metrics.items()
+            })
+            
+            # Add redundancy metrics
+            redundancy_metrics = analysis_results.get("redundancy_metrics", {})
+            sr_features.update({
+                f"sr_redundancy_{key}": value for key, value in redundancy_metrics.items()
+            })
+            
+            self.logger.info("✅ Centralized S/R features prepared for feature engineering")
+            return sr_features
+            
+        except Exception as e:
+            self.logger.error(f"Error getting centralized S/R features: {e}")
+            return {}
+
+    async def get_sr_breakout_predictions(self, market_data: pd.DataFrame) -> dict[str, Any]:
+        """
+        Get S/R breakout predictions with enhanced analysis.
+        
+        Args:
+            market_data: Market data DataFrame
+            
+        Returns:
+            dict[str, Any]: S/R breakout predictions
+        """
+        try:
+            # Perform centralized S/R analysis
+            analysis_results = await self.analyze_centralized_sr_levels(market_data)
+            
+            # Get current price
+            current_price = market_data['close'].iloc[-1]
+            
+            # Calculate breakout probabilities
+            support_levels = analysis_results.get("support_levels", [])
+            resistance_levels = analysis_results.get("resistance_levels", [])
+            
+            breakout_predictions = {
+                "support_breakouts": [],
+                "resistance_breakouts": [],
+                "current_price": current_price,
+                "analysis_timestamp": pd.Timestamp.now()
+            }
+            
+            # Analyze support breakouts
+            for level in support_levels:
+                if current_price < level.price:
+                    breakout_prob = self._calculate_breakout_probability(level, current_price)
+                    breakout_predictions["support_breakouts"].append({
+                        "level": level.price,
+                        "probability": breakout_prob,
+                        "strength": level.strength,
+                        "confidence": level.confidence,
+                        "method": level.method
+                    })
+            
+            # Analyze resistance breakouts
+            for level in resistance_levels:
+                if current_price > level.price:
+                    breakout_prob = self._calculate_breakout_probability(level, current_price)
+                    breakout_predictions["resistance_breakouts"].append({
+                        "level": level.price,
+                        "probability": breakout_prob,
+                        "strength": level.strength,
+                        "confidence": level.confidence,
+                        "method": level.method
+                    })
+            
+            self.logger.info("✅ S/R breakout predictions generated")
+            return breakout_predictions
+            
+        except Exception as e:
+            self.logger.error(f"Error getting S/R breakout predictions: {e}")
+            return {}
+
     def _calculate_sr_quality_metrics(self, support_levels: List[SRLevel], resistance_levels: List[SRLevel], market_data: pd.DataFrame) -> dict[str, float]:
         """Calculate quality metrics for S/R levels."""
         try:

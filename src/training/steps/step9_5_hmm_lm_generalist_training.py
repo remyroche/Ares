@@ -1601,6 +1601,250 @@ async def run_step(
             self.logger.error(f"Error in enhanced regime change analysis: {e}")
             return {"regime_changes": [], "quality_metrics": {}, "redundancy_metrics": {}}
 
+    # === ENHANCED REGIME CHANGE PREDICTION METHODS ===
+    
+    async def get_enhanced_regime_change_features(self, market_data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Get enhanced regime change features for feature engineering integration.
+        
+        Args:
+            market_data: Market data DataFrame
+            
+        Returns:
+            Dict[str, Any]: Enhanced regime change features
+        """
+        try:
+            self.logger.info("🔧 Generating enhanced regime change features...")
+            
+            # Perform enhanced regime change analysis
+            analysis_results = await self.analyze_enhanced_regime_changes(market_data)
+            
+            # Extract regime change features
+            regime_changes = analysis_results.get("regime_changes", [])
+            transition_analysis = analysis_results.get("transition_analysis", {})
+            stability_analysis = analysis_results.get("stability_analysis", {})
+            forecast_analysis = analysis_results.get("forecast_analysis", {})
+            
+            # Create regime change features
+            regime_change_features = {}
+            
+            # Basic regime change features
+            regime_change_features["regime_change_count"] = len(regime_changes)
+            regime_change_features["transition_count"] = len(transition_analysis.get("transitions", []))
+            regime_change_features["stability_score"] = stability_analysis.get("overall_stability", 0.0)
+            regime_change_features["forecast_accuracy"] = forecast_analysis.get("forecast_accuracy", 0.0)
+            
+            # Recent regime change features
+            if regime_changes:
+                recent_changes = regime_changes[-5:]  # Last 5 changes
+                regime_change_features["recent_change_count"] = len(recent_changes)
+                regime_change_features["avg_change_confidence"] = np.mean([change["confidence"] for change in recent_changes])
+                regime_change_features["avg_change_strength"] = np.mean([change["change_strength"] for change in recent_changes])
+                
+                # Change type distribution
+                change_types = [change["change_type"] for change in recent_changes]
+                regime_change_features["volatility_changes"] = change_types.count("volatility")
+                regime_change_features["momentum_changes"] = change_types.count("momentum")
+                regime_change_features["volume_changes"] = change_types.count("volume")
+            
+            # Transition features
+            transition_probabilities = transition_analysis.get("transition_probabilities", {})
+            regime_change_features["transition_diversity"] = len(transition_probabilities)
+            regime_change_features["avg_transition_probability"] = np.mean(list(transition_probabilities.values())) if transition_probabilities else 0.0
+            
+            # Stability features
+            stability_metrics = stability_analysis.get("stability_metrics", {})
+            for regime_type, metrics in stability_metrics.items():
+                regime_change_features[f"stability_{regime_type}"] = metrics.get("stability_score", 0.0)
+                regime_change_features[f"duration_{regime_type}"] = metrics.get("avg_duration", 0.0)
+            
+            # Forecast features
+            forecasts = forecast_analysis.get("forecasts", [])
+            regime_change_features["forecast_count"] = len(forecasts)
+            regime_change_features["avg_forecast_confidence"] = np.mean([f["confidence"] for f in forecasts]) if forecasts else 0.0
+            
+            # Quality metrics
+            quality_metrics = analysis_results.get("quality_metrics", {})
+            for key, value in quality_metrics.items():
+                regime_change_features[f"quality_{key}"] = value
+            
+            # Redundancy metrics
+            redundancy_metrics = analysis_results.get("redundancy_metrics", {})
+            for key, value in redundancy_metrics.items():
+                regime_change_features[f"redundancy_{key}"] = value
+            
+            self.logger.info("✅ Enhanced regime change features generated")
+            return regime_change_features
+            
+        except Exception as e:
+            self.logger.error(f"Error generating enhanced regime change features: {e}")
+            return {}
+
+    async def predict_regime_changes(self, market_data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Predict regime changes with enhanced analysis.
+        
+        Args:
+            market_data: Market data DataFrame
+            
+        Returns:
+            Dict[str, Any]: Regime change predictions
+        """
+        try:
+            self.logger.info("🔮 Predicting regime changes...")
+            
+            # Perform enhanced regime change analysis
+            analysis_results = await self.analyze_enhanced_regime_changes(market_data)
+            
+            # Get current market conditions
+            current_conditions = self._analyze_current_market_conditions(market_data)
+            
+            # Generate predictions based on analysis
+            predictions = {
+                "next_regime_change_probability": self._calculate_next_change_probability(analysis_results),
+                "expected_change_type": self._predict_next_change_type(analysis_results),
+                "time_to_next_change": self._predict_time_to_next_change(analysis_results),
+                "change_confidence": self._calculate_change_confidence(analysis_results),
+                "current_market_conditions": current_conditions,
+                "prediction_timestamp": pd.Timestamp.now()
+            }
+            
+            self.logger.info("✅ Regime change predictions generated")
+            return predictions
+            
+        except Exception as e:
+            self.logger.error(f"Error predicting regime changes: {e}")
+            return {}
+
+    def _analyze_current_market_conditions(self, market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Analyze current market conditions for regime change prediction."""
+        try:
+            conditions = {}
+            
+            # Volatility analysis
+            returns = market_data['close'].pct_change().dropna()
+            conditions["current_volatility"] = returns.rolling(window=20).std().iloc[-1]
+            conditions["volatility_trend"] = returns.rolling(window=20).std().diff().iloc[-1]
+            
+            # Momentum analysis
+            conditions["current_momentum"] = returns.rolling(window=10).mean().iloc[-1]
+            conditions["momentum_trend"] = returns.rolling(window=10).mean().diff().iloc[-1]
+            
+            # Volume analysis
+            conditions["current_volume_ratio"] = market_data['volume'].iloc[-1] / market_data['volume'].rolling(window=20).mean().iloc[-1]
+            conditions["volume_trend"] = market_data['volume'].pct_change().iloc[-1]
+            
+            # Price analysis
+            conditions["price_position"] = (market_data['close'].iloc[-1] - market_data['low'].rolling(window=20).min().iloc[-1]) / (market_data['high'].rolling(window=20).max().iloc[-1] - market_data['low'].rolling(window=20).min().iloc[-1])
+            
+            return conditions
+            
+        except Exception as e:
+            self.logger.error(f"Error analyzing current market conditions: {e}")
+            return {}
+
+    def _calculate_next_change_probability(self, analysis_results: Dict[str, Any]) -> float:
+        """Calculate probability of next regime change."""
+        try:
+            # Use recent change frequency and current conditions
+            regime_changes = analysis_results.get("regime_changes", [])
+            if len(regime_changes) < 2:
+                return 0.1  # Low probability if few changes
+            
+            # Calculate average time between changes
+            time_diffs = []
+            for i in range(1, len(regime_changes)):
+                time_diff = (regime_changes[i]["timestamp"] - regime_changes[i-1]["timestamp"]).total_seconds()
+                time_diffs.append(time_diff)
+            
+            avg_time_diff = np.mean(time_diffs) if time_diffs else 3600
+            
+            # Calculate probability based on time since last change
+            last_change_time = regime_changes[-1]["timestamp"]
+            time_since_last = (pd.Timestamp.now() - last_change_time).total_seconds()
+            
+            # Probability increases with time since last change
+            probability = min(0.9, time_since_last / avg_time_diff)
+            
+            return probability
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating next change probability: {e}")
+            return 0.1
+
+    def _predict_next_change_type(self, analysis_results: Dict[str, Any]) -> str:
+        """Predict the type of next regime change."""
+        try:
+            regime_changes = analysis_results.get("regime_changes", [])
+            if not regime_changes:
+                return "unknown"
+            
+            # Analyze recent change types
+            recent_changes = regime_changes[-10:]  # Last 10 changes
+            change_types = [change["change_type"] for change in recent_changes]
+            
+            # Count change types
+            type_counts = {}
+            for change_type in change_types:
+                type_counts[change_type] = type_counts.get(change_type, 0) + 1
+            
+            # Return most common type
+            if type_counts:
+                return max(type_counts, key=type_counts.get)
+            else:
+                return "unknown"
+                
+        except Exception as e:
+            self.logger.error(f"Error predicting next change type: {e}")
+            return "unknown"
+
+    def _predict_time_to_next_change(self, analysis_results: Dict[str, Any]) -> float:
+        """Predict time to next regime change in seconds."""
+        try:
+            regime_changes = analysis_results.get("regime_changes", [])
+            if len(regime_changes) < 2:
+                return 3600  # Default 1 hour
+            
+            # Calculate average time between changes
+            time_diffs = []
+            for i in range(1, len(regime_changes)):
+                time_diff = (regime_changes[i]["timestamp"] - regime_changes[i-1]["timestamp"]).total_seconds()
+                time_diffs.append(time_diff)
+            
+            avg_time_diff = np.mean(time_diffs) if time_diffs else 3600
+            
+            # Adjust based on current conditions
+            time_since_last = (pd.Timestamp.now() - regime_changes[-1]["timestamp"]).total_seconds()
+            remaining_time = max(0, avg_time_diff - time_since_last)
+            
+            return remaining_time
+            
+        except Exception as e:
+            self.logger.error(f"Error predicting time to next change: {e}")
+            return 3600
+
+    def _calculate_change_confidence(self, analysis_results: Dict[str, Any]) -> float:
+        """Calculate confidence in regime change predictions."""
+        try:
+            # Use quality metrics and recent performance
+            quality_metrics = analysis_results.get("quality_metrics", {})
+            regime_changes = analysis_results.get("regime_changes", [])
+            
+            # Base confidence on quality metrics
+            base_confidence = quality_metrics.get("composite_quality_score", 0.5)
+            
+            # Adjust based on recent change consistency
+            if len(regime_changes) >= 3:
+                recent_confidences = [change["confidence"] for change in regime_changes[-3:]]
+                consistency_factor = 1.0 - np.std(recent_confidences)
+                base_confidence *= (0.5 + 0.5 * consistency_factor)
+            
+            return min(1.0, max(0.0, base_confidence))
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating change confidence: {e}")
+            return 0.5
+
     async def _detect_enhanced_regime_changes(self, market_data: pd.DataFrame, hmm_model: Any = None) -> List[Dict[str, Any]]:
         """Detect regime changes using multiple methods."""
         try:

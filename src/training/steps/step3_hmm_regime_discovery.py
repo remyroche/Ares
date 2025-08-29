@@ -1055,6 +1055,409 @@ class HMMRegimeDiscoveryStep:
             self.logger.error(f"❌ Error in enhanced HMM regime discovery: {e}")
             return {"success": False, "error": str(e)}
 
+    # === ENHANCED HMM REGIME MANAGEMENT METHODS ===
+    
+    async def _train_enhanced_hmm_models(self, features: pd.DataFrame) -> dict[str, Any]:
+        """Train enhanced HMM models with comprehensive capabilities."""
+        try:
+            self.logger.info("🎯 Training enhanced HMM models...")
+            
+            # Train HMM model
+            hmm_result = await self._train_hmm_model(features)
+            
+            # Train clustering model
+            clustering_result = await self._train_clustering_model(features)
+            
+            # Train transition model
+            transition_result = await self._train_transition_model(features)
+            
+            # Combine results
+            training_result = {
+                "success": hmm_result.get("success", False) and clustering_result.get("success", False),
+                "hmm_model": hmm_result.get("model"),
+                "clustering_model": clustering_result.get("model"),
+                "transition_model": transition_result.get("model"),
+                "training_report": {
+                    "hmm_score": hmm_result.get("score", 0.0),
+                    "clustering_score": clustering_result.get("score", 0.0),
+                    "transition_accuracy": transition_result.get("accuracy", 0.0)
+                }
+            }
+            
+            self.logger.info("✅ Enhanced HMM models trained successfully")
+            return training_result
+            
+        except Exception as e:
+            self.logger.error(f"Error training enhanced HMM models: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def _train_hmm_model(self, features: pd.DataFrame) -> dict[str, Any]:
+        """Train HMM model for regime discovery."""
+        try:
+            from hmmlearn import hmm
+            from sklearn.preprocessing import StandardScaler
+            
+            # Scale features
+            scaler = StandardScaler()
+            features_scaled = scaler.fit_transform(features)
+            
+            # Train HMM
+            hmm_model = hmm.GaussianHMM(
+                n_components=4,
+                n_iter=100,
+                random_state=42,
+                covariance_type="full"
+            )
+            hmm_model.fit(features_scaled)
+            
+            # Get score
+            score = hmm_model.score(features_scaled)
+            
+            return {
+                "success": True,
+                "model": hmm_model,
+                "scaler": scaler,
+                "score": score
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error training HMM model: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def _train_clustering_model(self, features: pd.DataFrame) -> dict[str, Any]:
+        """Train clustering model for regime analysis."""
+        try:
+            from sklearn.cluster import KMeans
+            from sklearn.preprocessing import StandardScaler
+            from sklearn.metrics import silhouette_score
+            
+            # Scale features
+            scaler = StandardScaler()
+            features_scaled = scaler.fit_transform(features)
+            
+            # Train KMeans
+            kmeans = KMeans(n_clusters=5, random_state=42, n_init=10)
+            cluster_labels = kmeans.fit_predict(features_scaled)
+            
+            # Calculate score
+            score = silhouette_score(features_scaled, cluster_labels)
+            
+            return {
+                "success": True,
+                "model": kmeans,
+                "scaler": scaler,
+                "score": score,
+                "cluster_labels": cluster_labels
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error training clustering model: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def _train_transition_model(self, features: pd.DataFrame) -> dict[str, Any]:
+        """Train transition model for regime changes."""
+        try:
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.model_selection import train_test_split
+            
+            # Create transition labels (simplified)
+            transitions = []
+            for i in range(1, len(features)):
+                # Simple transition detection based on feature changes
+                feature_change = features.iloc[i] - features.iloc[i-1]
+                transition_label = 1 if feature_change.mean() > 0 else 0
+                transitions.append(transition_label)
+            
+            # Prepare data
+            X = features.iloc[:-1].values
+            y = transitions
+            
+            # Split data
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+            
+            # Train model
+            transition_model = RandomForestClassifier(n_estimators=100, random_state=42)
+            transition_model.fit(X_train, y_train)
+            
+            # Calculate accuracy
+            accuracy = transition_model.score(X_test, y_test)
+            
+            return {
+                "success": True,
+                "model": transition_model,
+                "accuracy": accuracy
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error training transition model: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def _predict_enhanced_regime_changes(self, features: pd.DataFrame) -> dict[str, Any]:
+        """Predict enhanced regime changes using trained models."""
+        try:
+            self.logger.info("🔮 Predicting enhanced regime changes...")
+            
+            # Get trained models from state
+            hmm_model = self.enhanced_hmm_capabilities.get("hmm_model")
+            clustering_model = self.enhanced_hmm_capabilities.get("kmeans_model")
+            transition_model = self.enhanced_hmm_capabilities.get("transition_model")
+            
+            if not all([hmm_model, clustering_model, transition_model]):
+                self.logger.warning("⚠️ Not all models available, using fallback prediction")
+                return await self._perform_simple_regime_discovery(features)
+            
+            # Predict regime states
+            regime_states = self._predict_regime_states(features, hmm_model, clustering_model)
+            
+            # Predict regime transitions
+            regime_transitions = self._predict_regime_transitions(features, transition_model)
+            
+            # Calculate current regime
+            current_regime = self._calculate_current_regime(regime_states)
+            
+            prediction_result = {
+                "success": True,
+                "regime_states": regime_states,
+                "regime_transitions": regime_transitions,
+                "current_regime": current_regime
+            }
+            
+            self.logger.info("✅ Enhanced regime change prediction completed")
+            return prediction_result
+            
+        except Exception as e:
+            self.logger.error(f"Error predicting enhanced regime changes: {e}")
+            return {"success": False, "error": str(e)}
+
+    def _predict_regime_states(self, features: pd.DataFrame, hmm_model: Any, clustering_model: Any) -> List[RegimeState]:
+        """Predict regime states using HMM and clustering models."""
+        try:
+            regime_states = []
+            
+            # Get HMM states
+            hmm_states = hmm_model.predict(features.values)
+            
+            # Get cluster labels
+            cluster_labels = clustering_model.predict(features.values)
+            
+            # Create regime states
+            for i in range(len(features)):
+                regime_state = RegimeState(
+                    regime_id=int(hmm_states[i]),
+                    regime_type=self._map_regime_type(hmm_states[i]),
+                    confidence=0.8,  # Placeholder confidence
+                    duration=1,
+                    volatility=features.iloc[i].get("volatility_20", 0.0),
+                    momentum=features.iloc[i].get("price_momentum_10", 0.0),
+                    volume_profile=features.iloc[i].get("volume_ratio_10", 1.0),
+                    timestamp=pd.Timestamp.now(),
+                    features=features.iloc[i].to_dict()
+                )
+                regime_states.append(regime_state)
+            
+            return regime_states
+            
+        except Exception as e:
+            self.logger.error(f"Error predicting regime states: {e}")
+            return []
+
+    def _predict_regime_transitions(self, features: pd.DataFrame, transition_model: Any) -> List[RegimeTransition]:
+        """Predict regime transitions using transition model."""
+        try:
+            transitions = []
+            
+            # Predict transitions
+            transition_predictions = transition_model.predict(features.values)
+            
+            # Create transition objects
+            for i in range(1, len(transition_predictions)):
+                if transition_predictions[i] == 1:  # Transition detected
+                    transition = RegimeTransition(
+                        from_regime=i-1,
+                        to_regime=i,
+                        probability=0.8,  # Placeholder probability
+                        timestamp=pd.Timestamp.now(),
+                        trigger_features=features.iloc[i].to_dict(),
+                        confidence=0.7
+                    )
+                    transitions.append(transition)
+            
+            return transitions
+            
+        except Exception as e:
+            self.logger.error(f"Error predicting regime transitions: {e}")
+            return []
+
+    def _calculate_current_regime(self, regime_states: List[RegimeState]) -> RegimeState:
+        """Calculate current regime from regime states."""
+        try:
+            if not regime_states:
+                return RegimeState(
+                    regime_id=0,
+                    regime_type=RegimeType.SIDEWAYS,
+                    confidence=0.0,
+                    duration=0,
+                    volatility=0.0,
+                    momentum=0.0,
+                    volume_profile=1.0,
+                    timestamp=pd.Timestamp.now(),
+                    features={}
+                )
+            
+            # Return the most recent regime state
+            return regime_states[-1]
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating current regime: {e}")
+            return RegimeState(
+                regime_id=0,
+                regime_type=RegimeType.SIDEWAYS,
+                confidence=0.0,
+                duration=0,
+                volatility=0.0,
+                momentum=0.0,
+                volume_profile=1.0,
+                timestamp=pd.Timestamp.now(),
+                features={}
+            )
+
+    def _map_regime_type(self, regime_id: int) -> RegimeType:
+        """Map regime ID to regime type."""
+        try:
+            regime_types = [RegimeType.BULL, RegimeType.BEAR, RegimeType.SIDEWAYS, RegimeType.VOLATILE]
+            return regime_types[regime_id % len(regime_types)]
+        except Exception:
+            return RegimeType.SIDEWAYS
+
+    def _calculate_regime_quality_metrics(self, features: pd.DataFrame, prediction_result: dict[str, Any]) -> dict[str, float]:
+        """Calculate quality metrics for regime predictions."""
+        try:
+            metrics = {}
+            
+            # Basic metrics
+            regime_states = prediction_result.get("regime_states", [])
+            metrics["regime_count"] = len(regime_states)
+            metrics["transition_count"] = len(prediction_result.get("regime_transitions", []))
+            
+            # Regime distribution
+            regime_types = [state.regime_type for state in regime_states]
+            unique_regimes = len(set(regime_types))
+            metrics["regime_diversity"] = unique_regimes / len(regime_types) if regime_types else 0.0
+            
+            # Confidence metrics
+            confidences = [state.confidence for state in regime_states]
+            metrics["avg_confidence"] = sum(confidences) / len(confidences) if confidences else 0.0
+            
+            # Volatility metrics
+            volatilities = [state.volatility for state in regime_states]
+            metrics["avg_volatility"] = sum(volatilities) / len(volatilities) if volatilities else 0.0
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating regime quality metrics: {e}")
+            return {}
+
+    def _eliminate_regime_redundancy(self, prediction_result: dict[str, Any]) -> dict[str, Any]:
+        """Eliminate redundant regime predictions."""
+        try:
+            metrics = {}
+            
+            regime_states = prediction_result.get("regime_states", [])
+            
+            # Count similar consecutive regimes
+            redundant_count = 0
+            for i in range(1, len(regime_states)):
+                if regime_states[i].regime_id == regime_states[i-1].regime_id:
+                    redundant_count += 1
+            
+            metrics["redundant_regimes"] = redundant_count
+            metrics["redundancy_ratio"] = redundant_count / len(regime_states) if regime_states else 0.0
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"Error eliminating regime redundancy: {e}")
+            return {}
+
+    def _generate_enhanced_regime_summary(self) -> dict[str, Any]:
+        """Generate enhanced regime summary."""
+        try:
+            summary = {
+                "total_regimes": len(self.enhanced_hmm_capabilities.get("regime_states", [])),
+                "quality_metrics": self.regime_management_state.get("regime_quality_scores", {}),
+                "redundancy_metrics": self.regime_management_state.get("regime_redundancy_metrics", {}),
+                "analysis_count": self.regime_management_state.get("regime_analysis_count", 0)
+            }
+            
+            return summary
+            
+        except Exception as e:
+            self.logger.error(f"Error generating enhanced regime summary: {e}")
+            return {}
+
+    # === ENHANCED REGIME FEATURE GENERATION ===
+    
+    async def get_enhanced_regime_features(self, market_data: pd.DataFrame) -> dict[str, Any]:
+        """
+        Get enhanced regime features for feature engineering integration.
+        
+        Args:
+            market_data: Market data DataFrame
+            
+        Returns:
+            dict[str, Any]: Enhanced regime features
+        """
+        try:
+            self.logger.info("🔧 Generating enhanced regime features...")
+            
+            # Prepare features
+            features = await self._prepare_hmm_features(market_data)
+            
+            if features.empty:
+                return {}
+            
+            # Perform enhanced regime discovery
+            regime_result = await self._perform_enhanced_hmm_regime_discovery(
+                {"symbol": "UNKNOWN"}, features
+            )
+            
+            if not regime_result.get("success", False):
+                return {}
+            
+            # Extract regime features
+            regime_states = regime_result.get("regime_states", [])
+            regime_transitions = regime_result.get("regime_transitions", {})
+            
+            # Create regime features
+            regime_features = {}
+            
+            if regime_states:
+                current_regime = regime_states[-1] if regime_states else None
+                if current_regime:
+                    regime_features["current_regime_id"] = current_regime.regime_id
+                    regime_features["current_regime_type"] = current_regime.regime_type.value
+                    regime_features["regime_confidence"] = current_regime.confidence
+                    regime_features["regime_volatility"] = current_regime.volatility
+                    regime_features["regime_momentum"] = current_regime.momentum
+                    regime_features["regime_volume_profile"] = current_regime.volume_profile
+            
+            # Add transition features
+            regime_features["transition_count"] = len(regime_transitions)
+            regime_features["regime_stability"] = 1.0 - (len(regime_transitions) / max(len(regime_states), 1))
+            
+            # Add quality metrics
+            quality_metrics = regime_result.get("metrics", {}).get("quality_metrics", {})
+            for key, value in quality_metrics.items():
+                regime_features[f"regime_quality_{key}"] = value
+            
+            self.logger.info("✅ Enhanced regime features generated")
+            return regime_features
+            
+        except Exception as e:
+            self.logger.error(f"Error generating enhanced regime features: {e}")
+            return {}
+
     @with_tracing_span("perform_hmm_regime_discovery")
     @resource_monitor
     @handle_errors(

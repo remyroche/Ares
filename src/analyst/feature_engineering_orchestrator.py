@@ -1,7 +1,7 @@
 # src/analyst/feature_engineering_orchestrator.py
 
 import os
-from typing import Any
+from typing import Any, List, Dict
 
 import numpy as np
 import pandas as pd
@@ -134,28 +134,215 @@ class FeatureEngineeringOrchestrator:
             self.feature_engineering_state["last_feature_generation"] = pd.Timestamp.now()
             self.feature_engineering_state["feature_generation_count"] += 1
             
-            # Use enhanced feature engineering if available
-            if self.enhanced_feature_engineering is not None:
-                enhanced_results = await self.enhanced_feature_engineering.generate_enhanced_features(
-                    klines_df, self.sr_analyzer, self.regime_analyzer
-                )
-                
-                # Update state
-                self.feature_engineering_state["feature_quality_scores"] = enhanced_results.get("quality_metrics", {})
-                self.feature_engineering_state["feature_redundancy_metrics"] = enhanced_results.get("redundancy_metrics", {})
-                self.feature_engineering_state["sr_integration_status"] = enhanced_results.get("sr_features", {})
-                self.feature_engineering_state["regime_integration_status"] = enhanced_results.get("regime_features", {})
-                
-                self.logger.info(f"✅ Enhanced feature generation completed: {enhanced_results.get('total_features', 0)} features")
-                return enhanced_results
-            else:
-                # Fallback to original method
-                self.logger.warning("⚠️ Enhanced feature engineering not available, using fallback method")
-                return await self.generate_all_features(klines_df)
+            # Step 1: Generate base features
+            base_features = await self._generate_base_features(klines_df)
+            
+            # Step 2: Generate S/R features using centralized S/R analysis
+            sr_features = await self._generate_sr_features(klines_df)
+            
+            # Step 3: Generate regime features using enhanced HMM analysis
+            regime_features = await self._generate_regime_features(klines_df)
+            
+            # Step 4: Generate interaction features
+            interaction_features = await self._generate_interaction_features(base_features, sr_features, regime_features)
+            
+            # Step 5: Eliminate redundancy
+            redundancy_metrics = self._eliminate_feature_redundancy(base_features, sr_features, regime_features, interaction_features)
+            
+            # Step 6: Combine all features
+            comprehensive_features = self._combine_features(base_features, sr_features, regime_features, interaction_features)
+            
+            # Step 7: Calculate quality metrics
+            quality_metrics = self._calculate_feature_quality_metrics(comprehensive_features)
+            
+            # Update state
+            self.feature_engineering_state["feature_quality_scores"] = quality_metrics
+            self.feature_engineering_state["feature_redundancy_metrics"] = redundancy_metrics
+            self.feature_engineering_state["sr_integration_status"] = {"integrated": True, "feature_count": len(sr_features.columns) if not sr_features.empty else 0}
+            self.feature_engineering_state["regime_integration_status"] = {"integrated": True, "feature_count": len(regime_features.columns) if not regime_features.empty else 0}
+            
+            # Create comprehensive results
+            enhanced_results = {
+                "base_features": base_features,
+                "sr_features": sr_features,
+                "regime_features": regime_features,
+                "interaction_features": interaction_features,
+                "comprehensive_features": comprehensive_features,
+                "quality_metrics": quality_metrics,
+                "redundancy_metrics": redundancy_metrics,
+                "total_features": len(comprehensive_features.columns) if not comprehensive_features.empty else 0
+            }
+            
+            self.logger.info(f"✅ Enhanced feature generation completed: {enhanced_results.get('total_features', 0)} features")
+            return enhanced_results
                 
         except Exception as e:
             self.logger.error(f"Error in enhanced feature generation: {e}")
             return {"base_features": {}, "sr_features": {}, "regime_features": {}, "interaction_features": {}}
+
+    # === ENHANCED FEATURE GENERATION METHODS ===
+    
+    async def _generate_sr_features(self, klines_df: pd.DataFrame) -> pd.DataFrame:
+        """Generate S/R features using centralized S/R analysis."""
+        try:
+            self.logger.info("🔧 Generating S/R features using centralized analysis...")
+            
+            # Use S/R analyzer if available
+            if self.sr_analyzer is not None:
+                try:
+                    # Get centralized S/R features
+                    sr_features_dict = await self.sr_analyzer.get_centralized_sr_features(klines_df)
+                    
+                    if sr_features_dict:
+                        # Convert to DataFrame
+                        sr_features = pd.DataFrame([sr_features_dict], index=klines_df.index[-1:])
+                        
+                        # Extend to full length if needed
+                        if len(sr_features) < len(klines_df):
+                            sr_features = sr_features.reindex(klines_df.index, method='ffill')
+                        
+                        self.logger.info(f"✅ S/R features generated: {sr_features.shape}")
+                        return sr_features
+                    else:
+                        self.logger.warning("⚠️ No S/R features returned from centralized analysis")
+                        return self._generate_fallback_sr_features(klines_df)
+                        
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Error in centralized S/R analysis: {e}")
+                    return self._generate_fallback_sr_features(klines_df)
+            else:
+                self.logger.warning("⚠️ S/R analyzer not available, using fallback S/R features")
+                return self._generate_fallback_sr_features(klines_df)
+            
+        except Exception as e:
+            self.logger.error(f"Error generating S/R features: {e}")
+            return pd.DataFrame()
+
+    async def _generate_regime_features(self, klines_df: pd.DataFrame) -> pd.DataFrame:
+        """Generate regime features using enhanced HMM analysis."""
+        try:
+            self.logger.info("🔧 Generating regime features using enhanced HMM analysis...")
+            
+            # Use regime analyzer if available
+            if self.regime_analyzer is not None:
+                try:
+                    # Get enhanced regime features from step3
+                    from src.training.steps.step3_hmm_regime_discovery import HMMRegimeDiscoveryStep
+                    hmm_step = HMMRegimeDiscoveryStep(self.config)
+                    await hmm_step.initialize()
+                    
+                    regime_features_dict = await hmm_step.get_enhanced_regime_features(klines_df)
+                    
+                    if regime_features_dict:
+                        # Convert to DataFrame
+                        regime_features = pd.DataFrame([regime_features_dict], index=klines_df.index[-1:])
+                        
+                        # Extend to full length if needed
+                        if len(regime_features) < len(klines_df):
+                            regime_features = regime_features.reindex(klines_df.index, method='ffill')
+                        
+                        self.logger.info(f"✅ Regime features generated: {regime_features.shape}")
+                        return regime_features
+                    else:
+                        self.logger.warning("⚠️ No regime features returned from enhanced HMM analysis")
+                        return self._generate_fallback_regime_features(klines_df)
+                        
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Error in enhanced HMM analysis: {e}")
+                    return self._generate_fallback_regime_features(klines_df)
+            else:
+                self.logger.warning("⚠️ Regime analyzer not available, using fallback regime features")
+                return self._generate_fallback_regime_features(klines_df)
+            
+        except Exception as e:
+            self.logger.error(f"Error generating regime features: {e}")
+            return pd.DataFrame()
+
+    async def _generate_interaction_features(self, base_features: pd.DataFrame, sr_features: pd.DataFrame, regime_features: pd.DataFrame) -> pd.DataFrame:
+        """Generate interaction features between different feature types."""
+        try:
+            self.logger.info("🔧 Generating interaction features...")
+            
+            interaction_features = pd.DataFrame()
+            
+            # Combine all features for interaction analysis
+            all_features = pd.concat([base_features, sr_features, regime_features], axis=1)
+            
+            if all_features.empty:
+                return interaction_features
+            
+            # Generate polynomial features for important variables
+            important_features = self._identify_important_features(all_features)
+            
+            for i, feat1 in enumerate(important_features):
+                for feat2 in important_features[i+1:]:
+                    if feat1 in all_features.columns and feat2 in all_features.columns:
+                        # Create interaction feature
+                        interaction_name = f"interaction_{feat1}_{feat2}"
+                        interaction_features[interaction_name] = all_features[feat1] * all_features[feat2]
+                        
+                        # Create ratio feature
+                        ratio_name = f"ratio_{feat1}_{feat2}"
+                        interaction_features[ratio_name] = all_features[feat1] / (all_features[feat2] + 1e-8)
+            
+            self.logger.info(f"✅ Interaction features generated: {interaction_features.shape}")
+            return interaction_features
+            
+        except Exception as e:
+            self.logger.error(f"Error generating interaction features: {e}")
+            return pd.DataFrame()
+
+    def _generate_fallback_sr_features(self, klines_df: pd.DataFrame) -> pd.DataFrame:
+        """Generate fallback S/R features when centralized S/R analysis is not available."""
+        try:
+            sr_features = pd.DataFrame()
+            
+            # Basic S/R features
+            sr_features["support_level"] = klines_df['low'].rolling(window=20).min()
+            sr_features["resistance_level"] = klines_df['high'].rolling(window=20).max()
+            sr_features["sr_distance"] = (sr_features["resistance_level"] - sr_features["support_level"]) / klines_df['close']
+            
+            return sr_features
+            
+        except Exception as e:
+            self.logger.error(f"Error generating fallback S/R features: {e}")
+            return pd.DataFrame()
+
+    def _generate_fallback_regime_features(self, klines_df: pd.DataFrame) -> pd.DataFrame:
+        """Generate fallback regime features when enhanced HMM analysis is not available."""
+        try:
+            regime_features = pd.DataFrame()
+            
+            # Volatility regime
+            returns = klines_df['close'].pct_change()
+            regime_features["volatility_regime"] = returns.rolling(window=20).std()
+            regime_features["volatility_regime_high"] = (regime_features["volatility_regime"] > regime_features["volatility_regime"].quantile(0.8)).astype(int)
+            
+            # Trend regime
+            regime_features["trend_regime"] = returns.rolling(window=10).mean()
+            regime_features["trend_regime_bull"] = (regime_features["trend_regime"] > 0).astype(int)
+            regime_features["trend_regime_bear"] = (regime_features["trend_regime"] < 0).astype(int)
+            
+            # Volume regime
+            regime_features["volume_regime"] = klines_df['volume'] / klines_df['volume'].rolling(window=20).mean()
+            regime_features["volume_regime_high"] = (regime_features["volume_regime"] > 1.5).astype(int)
+            
+            return regime_features
+            
+        except Exception as e:
+            self.logger.error(f"Error generating fallback regime features: {e}")
+            return pd.DataFrame()
+
+    def _identify_important_features(self, features: pd.DataFrame, top_n: int = 10) -> List[str]:
+        """Identify the most important features for interaction generation."""
+        try:
+            # Use variance as a simple importance measure
+            feature_variance = features.var().sort_values(ascending=False)
+            return feature_variance.head(top_n).index.tolist()
+            
+        except Exception as e:
+            self.logger.error(f"Error identifying important features: {e}")
+            return []
 
     @handle_errors(
         exceptions=(Exception,),

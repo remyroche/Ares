@@ -155,6 +155,14 @@ class Step7EnhancedMatrixOperations:
     ) -> dict[str, Any]:
         """Prepare configuration for matrix operations."""
         
+        # Identify SR features for specialized analysis
+        sr_features = [col for col in df.columns if any(keyword in col.lower() for keyword in [
+            "sr_", "support", "resistance", "proximity", "sr_distance",
+            "sr_proximity", "sr_outcome", "normalized_distance", "sr_proximity_score",
+            "strength_score", "clarity_factor", "directional_pressure", "sr_score",
+            "delta_sr_score", "isolation_score", "sr_level", "sr_multi_timeframe", "support_", "resistance_"
+        ])]
+        
         # Basic matrix operations configuration
         config = {
             "enable_gpu_acceleration": self.step_config.get("enable_gpu_acceleration", False),
@@ -180,15 +188,18 @@ class Step7EnhancedMatrixOperations:
             "exchange": exchange,
             "timeframe": timeframe,
             
-            # Operations to perform
-            "operations": [
-                "correlation_analysis",
-                "condition_number_check",
-                "eigenvalue_analysis",
-                "singular_value_decomposition",
-                "matrix_rank_analysis"
-            ]
+            # SR-specific settings
+            "sr_features": sr_features,
+            "sr_feature_count": len(sr_features),
+            "enable_sr_analysis": len(sr_features) > 0,
+            "sr_correlation_threshold": self.step_config.get("sr_correlation_threshold", 0.7),
+            "sr_condition_number_threshold": self.step_config.get("sr_condition_number_threshold", 1e10),
         }
+        
+        self.logger.info(f"🔧 Matrix operations configuration prepared:")
+        self.logger.info(f"   - Total features: {len(df.columns)}")
+        self.logger.info(f"   - SR features: {len(sr_features)}")
+        self.logger.info(f"   - Numeric features: {len(config['numeric_columns'])}")
         
         return config
 
@@ -210,65 +221,247 @@ class Step7EnhancedMatrixOperations:
         
         self.logger.info(f"🔢 Performing matrix operations on {len(numeric_df.columns)} numeric columns")
         
-        # 1. Correlation Analysis
-        if "correlation_analysis" in config["operations"]:
-            self.logger.info("📊 Performing correlation analysis...")
-            correlation_matrix = numeric_df.corr()
-            results["correlation_analysis"] = {
-                "correlation_matrix": correlation_matrix.to_dict(),
-                "high_correlations": self._find_high_correlations(correlation_matrix, config["correlation_threshold"])
-            }
+        # Standard matrix operations
+        results.update(await self._execute_standard_matrix_operations(numeric_df, config))
         
-        # 2. Condition Number Check
-        if "condition_number_check" in config["operations"]:
-            self.logger.info("🔍 Checking condition number...")
-            condition_number = np.linalg.cond(numeric_df.values)
-            results["condition_number_check"] = {
-                "condition_number": float(condition_number),
-                "is_well_conditioned": condition_number < config["condition_number_threshold"]
-            }
-        
-        # 3. Eigenvalue Analysis
-        if "eigenvalue_analysis" in config["operations"]:
-            self.logger.info("📈 Performing eigenvalue analysis...")
-            eigenvalues = np.linalg.eigvals(numeric_df.values)
-            results["eigenvalue_analysis"] = {
-                "eigenvalues": eigenvalues.tolist(),
-                "min_eigenvalue": float(np.min(eigenvalues)),
-                "max_eigenvalue": float(np.max(eigenvalues)),
-                "eigenvalue_ratio": float(np.max(eigenvalues) / np.min(eigenvalues)),
-                "small_eigenvalues": int(np.sum(np.abs(eigenvalues) < config["min_eigenvalue_threshold"]))
-            }
-        
-        # 4. Singular Value Decomposition
-        if "singular_value_decomposition" in config["operations"]:
-            self.logger.info("🔧 Performing SVD analysis...")
-            try:
-                U, s, Vt = np.linalg.svd(numeric_df.values, full_matrices=False)
-                results["singular_value_decomposition"] = {
-                    "singular_values": s.tolist(),
-                    "rank": int(np.sum(s > config["min_eigenvalue_threshold"])),
-                    "condition_number_svd": float(s[0] / s[-1]) if len(s) > 1 else float('inf')
-                }
-            except Exception as e:
-                self.logger.warning(f"⚠️ SVD failed: {str(e)}")
-                results["singular_value_decomposition"] = {"error": str(e)}
-        
-        # 5. Matrix Rank Analysis
-        if "matrix_rank_analysis" in config["operations"]:
-            self.logger.info("📊 Analyzing matrix rank...")
-            try:
-                rank = np.linalg.matrix_rank(numeric_df.values)
-                results["matrix_rank_analysis"] = {
-                    "rank": int(rank),
-                    "full_rank": rank == min(numeric_df.shape),
-                    "rank_deficiency": min(numeric_df.shape) - rank
-                }
-            except Exception as e:
-                self.logger.warning(f"⚠️ Rank analysis failed: {str(e)}")
-                results["matrix_rank_analysis"] = {"error": str(e)}
+        # SR-specific matrix operations
+        if config.get("enable_sr_analysis", False) and config.get("sr_features"):
+            self.logger.info("🎯 Performing SR-specific matrix operations...")
+            results["sr_analysis"] = await self._execute_sr_matrix_operations(df, config)
         
         return results
+
+    async def _execute_standard_matrix_operations(
+        self, 
+        numeric_df: pd.DataFrame, 
+        config: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Execute standard matrix operations."""
+        results = {}
+        
+        # 1. Correlation Analysis
+        self.logger.info("📊 Performing correlation analysis...")
+        correlation_matrix = numeric_df.corr()
+        results["correlation_analysis"] = {
+            "correlation_matrix": correlation_matrix.to_dict(),
+            "high_correlations": self._find_high_correlations(correlation_matrix, config["correlation_threshold"])
+        }
+        
+        # 2. Condition Number Check
+        self.logger.info("🔍 Checking condition number...")
+        condition_number = np.linalg.cond(numeric_df.values)
+        results["condition_number_check"] = {
+            "condition_number": float(condition_number),
+            "is_well_conditioned": condition_number < config["condition_number_threshold"]
+        }
+        
+        # 3. Eigenvalue Analysis
+        self.logger.info("📈 Performing eigenvalue analysis...")
+        eigenvalues = np.linalg.eigvals(numeric_df.values)
+        results["eigenvalue_analysis"] = {
+            "eigenvalues": eigenvalues.tolist(),
+            "min_eigenvalue": float(np.min(eigenvalues)),
+            "max_eigenvalue": float(np.max(eigenvalues)),
+            "eigenvalue_ratio": float(np.max(eigenvalues) / np.min(eigenvalues)),
+            "small_eigenvalues": int(np.sum(np.abs(eigenvalues) < config["min_eigenvalue_threshold"]))
+        }
+        
+        # 4. Singular Value Decomposition
+        self.logger.info("🔧 Performing SVD analysis...")
+        try:
+            U, s, Vt = np.linalg.svd(numeric_df.values, full_matrices=False)
+            results["singular_value_decomposition"] = {
+                "singular_values": s.tolist(),
+                "rank": int(np.sum(s > config["min_eigenvalue_threshold"])),
+                "condition_number_svd": float(s[0] / s[-1]) if len(s) > 1 else float('inf')
+            }
+        except Exception as e:
+            self.logger.warning(f"⚠️ SVD failed: {str(e)}")
+            results["singular_value_decomposition"] = {"error": str(e)}
+        
+        # 5. Matrix Rank Analysis
+        self.logger.info("📊 Analyzing matrix rank...")
+        try:
+            rank = np.linalg.matrix_rank(numeric_df.values)
+            results["matrix_rank_analysis"] = {
+                "rank": int(rank),
+                "full_rank": rank == min(numeric_df.shape),
+                "rank_deficiency": min(numeric_df.shape) - rank
+            }
+        except Exception as e:
+            self.logger.warning(f"⚠️ Rank analysis failed: {str(e)}")
+            results["matrix_rank_analysis"] = {"error": str(e)}
+        
+        return results
+
+    async def _execute_sr_matrix_operations(
+        self, 
+        df: pd.DataFrame, 
+        config: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Execute SR-specific matrix operations."""
+        try:
+            sr_features = config.get("sr_features", [])
+            if not sr_features:
+                return {"error": "No SR features found"}
+            
+            # Get SR feature columns
+            sr_df = df[sr_features].select_dtypes(include=[np.number])
+            
+            if len(sr_df.columns) == 0:
+                return {"error": "No numeric SR features found"}
+            
+            self.logger.info(f"🎯 Analyzing {len(sr_df.columns)} SR features")
+            
+            results = {}
+            
+            # 1. SR Feature Correlation Analysis
+            self.logger.info("📊 Performing SR feature correlation analysis...")
+            sr_correlation_matrix = sr_df.corr()
+            results["sr_correlation_analysis"] = {
+                "correlation_matrix": sr_correlation_matrix.to_dict(),
+                "high_correlations": self._find_high_correlations(sr_correlation_matrix, config["sr_correlation_threshold"]),
+                "sr_feature_count": len(sr_df.columns)
+            }
+            
+            # 2. SR Feature Condition Number
+            self.logger.info("🔍 Checking SR feature condition number...")
+            sr_condition_number = np.linalg.cond(sr_df.values)
+            results["sr_condition_number"] = {
+                "condition_number": float(sr_condition_number),
+                "is_well_conditioned": sr_condition_number < config["sr_condition_number_threshold"]
+            }
+            
+            # 3. SR Feature Eigenvalue Analysis
+            self.logger.info("📈 Performing SR feature eigenvalue analysis...")
+            sr_eigenvalues = np.linalg.eigvals(sr_df.values)
+            results["sr_eigenvalue_analysis"] = {
+                "eigenvalues": sr_eigenvalues.tolist(),
+                "min_eigenvalue": float(np.min(sr_eigenvalues)),
+                "max_eigenvalue": float(np.max(sr_eigenvalues)),
+                "eigenvalue_ratio": float(np.max(sr_eigenvalues) / np.min(sr_eigenvalues)),
+                "small_eigenvalues": int(np.sum(np.abs(sr_eigenvalues) < config["min_eigenvalue_threshold"]))
+            }
+            
+            # 4. SR Feature Clustering Analysis
+            self.logger.info("🔧 Performing SR feature clustering analysis...")
+            results["sr_clustering_analysis"] = self._analyze_sr_feature_clusters(sr_df)
+            
+            # 5. SR Feature Stability Analysis
+            self.logger.info("📊 Analyzing SR feature stability...")
+            results["sr_stability_analysis"] = self._analyze_sr_feature_stability(sr_df)
+            
+            # 6. SR Feature Importance Analysis
+            self.logger.info("🎯 Analyzing SR feature importance...")
+            results["sr_importance_analysis"] = self._analyze_sr_feature_importance(sr_df)
+            
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Error in SR matrix operations: {e}")
+            return {"error": str(e)}
+
+    def _analyze_sr_feature_clusters(self, sr_df: pd.DataFrame) -> dict[str, Any]:
+        """Analyze SR feature clusters."""
+        try:
+            # Simple clustering analysis based on correlation
+            correlation_matrix = sr_df.corr()
+            
+            # Find feature groups with high correlation
+            high_corr_groups = []
+            processed_features = set()
+            
+            for i, feature1 in enumerate(sr_df.columns):
+                if feature1 in processed_features:
+                    continue
+                    
+                group = [feature1]
+                processed_features.add(feature1)
+                
+                for feature2 in sr_df.columns[i+1:]:
+                    if feature2 not in processed_features:
+                        corr = abs(correlation_matrix.loc[feature1, feature2])
+                        if corr > 0.8:  # High correlation threshold
+                            group.append(feature2)
+                            processed_features.add(feature2)
+                
+                if len(group) > 1:
+                    high_corr_groups.append(group)
+            
+            return {
+                "high_correlation_groups": high_corr_groups,
+                "group_count": len(high_corr_groups),
+                "total_grouped_features": sum(len(group) for group in high_corr_groups)
+            }
+            
+        except Exception as e:
+            return {"error": str(e)}
+
+    def _analyze_sr_feature_stability(self, sr_df: pd.DataFrame) -> dict[str, Any]:
+        """Analyze SR feature stability over time."""
+        try:
+            # Calculate stability metrics for each SR feature
+            stability_metrics = {}
+            
+            for column in sr_df.columns:
+                values = sr_df[column].dropna()
+                if len(values) > 1:
+                    # Coefficient of variation (lower = more stable)
+                    cv = values.std() / abs(values.mean()) if values.mean() != 0 else float('inf')
+                    
+                    # Range stability
+                    range_stability = 1.0 / (1.0 + (values.max() - values.min()))
+                    
+                    stability_metrics[column] = {
+                        "coefficient_of_variation": float(cv),
+                        "range_stability": float(range_stability),
+                        "mean": float(values.mean()),
+                        "std": float(values.std()),
+                        "min": float(values.min()),
+                        "max": float(values.max())
+                    }
+            
+            # Overall stability metrics
+            overall_stability = {
+                "mean_cv": np.mean([metrics["coefficient_of_variation"] for metrics in stability_metrics.values()]),
+                "mean_range_stability": np.mean([metrics["range_stability"] for metrics in stability_metrics.values()]),
+                "stable_features": len([cv for cv in [metrics["coefficient_of_variation"] for metrics in stability_metrics.values()] if cv < 0.5]),
+                "unstable_features": len([cv for cv in [metrics["coefficient_of_variation"] for metrics in stability_metrics.values()] if cv > 1.0])
+            }
+            
+            return {
+                "feature_stability": stability_metrics,
+                "overall_stability": overall_stability
+            }
+            
+        except Exception as e:
+            return {"error": str(e)}
+
+    def _analyze_sr_feature_importance(self, sr_df: pd.DataFrame) -> dict[str, Any]:
+        """Analyze SR feature importance based on variance and correlation."""
+        try:
+            # Calculate variance-based importance
+            variances = sr_df.var()
+            variance_importance = variances.sort_values(ascending=False)
+            
+            # Calculate correlation-based importance (inverse of average correlation)
+            correlation_matrix = sr_df.corr()
+            avg_correlations = correlation_matrix.abs().mean()
+            correlation_importance = (1.0 / (1.0 + avg_correlations)).sort_values(ascending=False)
+            
+            # Combined importance score
+            combined_importance = (variance_importance + correlation_importance) / 2
+            combined_importance = combined_importance.sort_values(ascending=False)
+            
+            return {
+                "variance_importance": variance_importance.to_dict(),
+                "correlation_importance": correlation_importance.to_dict(),
+                "combined_importance": combined_importance.to_dict(),
+                "top_features": combined_importance.head(10).index.tolist()
+            }
+            
+        except Exception as e:
+            return {"error": str(e)}
 
     def _calculate_quality_metrics(self, df: pd.DataFrame, matrix_results: dict[str, Any]) -> dict[str, Any]:
         """Calculate comprehensive quality metrics for the feature matrix."""

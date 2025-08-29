@@ -742,9 +742,7 @@ class OptimizedFeatureSelectionManager:
                     "multi_timeframe_sr_score", "sr_proximity", "sr_outcome",
                     "normalized_distance", "sr_proximity_score", "strength_score",
                     "clarity_factor", "directional_pressure", "sr_score", "delta_sr_score",
-                    "isolation_score", "sr_level", "sr_breakout", "sr_rebounce",
-                    "sr_consolidation", "sr_breakout_prob", "sr_rebounce_prob",
-                    "sr_consolidation_prob", "sr_multi_timeframe", "sr_", "support_", "resistance_",
+                    "isolation_score", "sr_level", "sr_multi_timeframe", "sr_", "support_", "resistance_",
                 ]
                 derivative_tokens = [
                     "_diff", "diff_", "_delta", "delta_", "_accel", "accel_",

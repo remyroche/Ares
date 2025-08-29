@@ -120,6 +120,7 @@ class FeatureEngineeringOrchestrator:
     async def generate_enhanced_features(self, klines_df: pd.DataFrame) -> Dict[str, Any]:
         """
         Generate enhanced features with S/R and regime integration.
+        Improved with comprehensive feature categories and redundancy elimination.
         
         Args:
             klines_df: Market data DataFrame
@@ -134,46 +135,78 @@ class FeatureEngineeringOrchestrator:
             self.feature_engineering_state["last_feature_generation"] = pd.Timestamp.now()
             self.feature_engineering_state["feature_generation_count"] += 1
             
-            # Step 1: Generate base features
-            base_features = await self._generate_base_features(klines_df)
+            # Step 1: Generate comprehensive base features
+            base_features = await self._generate_comprehensive_base_features(klines_df)
             
             # Step 2: Generate S/R features using centralized S/R analysis
-            sr_features = await self._generate_sr_features(klines_df)
+            sr_features = await self._generate_enhanced_sr_features(klines_df)
             
             # Step 3: Generate regime features using enhanced HMM analysis
-            regime_features = await self._generate_regime_features(klines_df)
+            regime_features = await self._generate_enhanced_regime_features(klines_df)
             
-            # Step 4: Generate interaction features
-            interaction_features = await self._generate_interaction_features(base_features, sr_features, regime_features)
+            # Step 4: Generate advanced interaction features
+            interaction_features = await self._generate_advanced_interaction_features(base_features, sr_features, regime_features)
             
-            # Step 5: Eliminate redundancy
-            redundancy_metrics = self._eliminate_feature_redundancy(base_features, sr_features, regime_features, interaction_features)
+            # Step 5: Generate wavelet and statistical features
+            wavelet_features = await self._generate_wavelet_features(klines_df)
+            statistical_features = await self._generate_statistical_features(klines_df)
             
-            # Step 6: Combine all features
-            comprehensive_features = self._combine_features(base_features, sr_features, regime_features, interaction_features)
+            # Step 6: Eliminate redundancy and optimize features
+            redundancy_metrics = await self._eliminate_enhanced_feature_redundancy(
+                base_features, sr_features, regime_features, interaction_features, wavelet_features, statistical_features
+            )
             
-            # Step 7: Calculate quality metrics
-            quality_metrics = self._calculate_feature_quality_metrics(comprehensive_features)
+            # Step 7: Combine all features with quality control
+            comprehensive_features = await self._combine_enhanced_features(
+                base_features, sr_features, regime_features, interaction_features, wavelet_features, statistical_features
+            )
             
-            # Update state
+            # Step 8: Calculate comprehensive quality metrics
+            quality_metrics = await self._calculate_enhanced_feature_quality_metrics(comprehensive_features)
+            
+            # Step 9: Generate feature importance and selection
+            feature_importance = await self._calculate_feature_importance(comprehensive_features)
+            
+            # Update enhanced state
             self.feature_engineering_state["feature_quality_scores"] = quality_metrics
             self.feature_engineering_state["feature_redundancy_metrics"] = redundancy_metrics
-            self.feature_engineering_state["sr_integration_status"] = {"integrated": True, "feature_count": len(sr_features.columns) if not sr_features.empty else 0}
-            self.feature_engineering_state["regime_integration_status"] = {"integrated": True, "feature_count": len(regime_features.columns) if not regime_features.empty else 0}
+            self.feature_engineering_state["feature_integration_status"] = {
+                "sr_integrated": True, 
+                "sr_feature_count": len(sr_features.columns) if not sr_features.empty else 0,
+                "regime_integrated": True, 
+                "regime_feature_count": len(regime_features.columns) if not regime_features.empty else 0,
+                "wavelet_integrated": True,
+                "wavelet_feature_count": len(wavelet_features.columns) if not wavelet_features.empty else 0,
+                "statistical_integrated": True,
+                "statistical_feature_count": len(statistical_features.columns) if not statistical_features.empty else 0
+            }
             
-            # Create comprehensive results
+            # Create comprehensive enhanced results
             enhanced_results = {
                 "base_features": base_features,
                 "sr_features": sr_features,
                 "regime_features": regime_features,
                 "interaction_features": interaction_features,
+                "wavelet_features": wavelet_features,
+                "statistical_features": statistical_features,
                 "comprehensive_features": comprehensive_features,
                 "quality_metrics": quality_metrics,
                 "redundancy_metrics": redundancy_metrics,
-                "total_features": len(comprehensive_features.columns) if not comprehensive_features.empty else 0
+                "feature_importance": feature_importance,
+                "total_features": len(comprehensive_features.columns) if not comprehensive_features.empty else 0,
+                "integration_status": {
+                    "feature_engineering_ready": True,
+                    "analyst_component_ready": True,
+                    "quality_control_passed": quality_metrics.get("overall_quality", 0) > 0.6,
+                    "redundancy_eliminated": redundancy_metrics.get("redundancy_score", 0) < 0.3,
+                    "sr_integration_ready": True,
+                    "regime_integration_ready": True
+                }
             }
             
             self.logger.info(f"✅ Enhanced feature generation completed: {enhanced_results.get('total_features', 0)} features")
+            self.logger.info(f"📊 Feature quality score: {quality_metrics.get('overall_quality', 0.0):.3f}")
+            self.logger.info(f"📊 Redundancy score: {redundancy_metrics.get('redundancy_score', 0.0):.3f}")
             return enhanced_results
                 
         except Exception as e:

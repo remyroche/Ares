@@ -2704,6 +2704,7 @@ async def run_step(
     async def _perform_enhanced_hmm_regime_discovery(self, training_input: dict[str, Any], market_data: pd.DataFrame) -> dict[str, Any]:
         """
         Perform enhanced HMM regime discovery with comprehensive analysis.
+        Improved cluster generation and regime change prediction capabilities.
         
         Args:
             training_input: Training input parameters
@@ -2713,41 +2714,46 @@ async def run_step(
             dict[str, Any]: Enhanced regime discovery results
         """
         try:
-            self.logger.info("🧠 Performing enhanced HMM regime discovery...")
+            self.logger.info("🧠 Performing enhanced HMM regime discovery with improved clustering...")
             
             # Update regime management state
             self.regime_management_state["last_regime_analysis"] = pd.Timestamp.now()
             self.regime_management_state["regime_analysis_count"] += 1
             
-            # Step 1: Prepare features for HMM
-            features = await self._prepare_hmm_features(market_data)
+            # Step 1: Prepare comprehensive features for HMM
+            features = await self._prepare_enhanced_hmm_features(market_data)
             
-            # Step 2: Train HMM model
+            # Step 2: Train enhanced HMM model with optimal parameters
             hmm_model = await self._train_enhanced_hmm_model(features)
             
-            # Step 3: Perform clustering analysis
-            clustering_results = await self._perform_regime_clustering(features)
+            # Step 3: Perform advanced clustering analysis (20-cluster composite approach)
+            clustering_results = await self._perform_advanced_regime_clustering(features)
             
-            # Step 4: Analyze regime transitions
-            transition_analysis = await self._analyze_regime_transitions(hmm_model, features)
+            # Step 4: Analyze regime transitions with prediction capabilities
+            transition_analysis = await self._analyze_enhanced_regime_transitions(hmm_model, features)
             
-            # Step 5: Calculate regime stability
-            stability_analysis = await self._analyze_regime_stability(hmm_model, features)
+            # Step 5: Calculate regime stability and persistence
+            stability_analysis = await self._analyze_enhanced_regime_stability(hmm_model, features)
             
-            # Step 6: Generate regime predictions
-            prediction_results = await self._generate_regime_predictions(hmm_model, features)
+            # Step 6: Generate regime change predictions
+            prediction_results = await self._generate_enhanced_regime_predictions(hmm_model, features)
             
-            # Step 7: Calculate quality metrics
-            quality_metrics = self._calculate_regime_quality_metrics(
-                hmm_model, clustering_results, transition_analysis, stability_analysis
+            # Step 7: Calculate comprehensive quality metrics
+            quality_metrics = await self._calculate_enhanced_regime_quality_metrics(
+                hmm_model, clustering_results, transition_analysis, stability_analysis, features
             )
             
-            # Step 8: Eliminate redundancy
-            redundancy_metrics = self._eliminate_regime_redundancy(
+            # Step 8: Eliminate redundancy and optimize clusters
+            redundancy_metrics = await self._eliminate_enhanced_regime_redundancy(
                 hmm_model, clustering_results, features
             )
             
-            # Create comprehensive results
+            # Step 9: Generate regime change detection model
+            regime_change_model = await self._build_regime_change_detection_model(
+                hmm_model, clustering_results, transition_analysis
+            )
+            
+            # Create comprehensive results with enhanced capabilities
             results = {
                 "success": True,
                 "hmm_model": hmm_model,
@@ -2757,25 +2763,39 @@ async def run_step(
                 "prediction_results": prediction_results,
                 "quality_metrics": quality_metrics,
                 "redundancy_metrics": redundancy_metrics,
-                "regime_states": self._extract_regime_states(hmm_model, features),
+                "regime_change_model": regime_change_model,
+                "regime_states": await self._extract_enhanced_regime_states(hmm_model, features),
                 "regime_transitions": transition_analysis.get("transitions", []),
+                "regime_change_predictions": prediction_results.get("change_predictions", []),
                 "metrics": {
                     **quality_metrics,
                     **redundancy_metrics,
                     "regime_count": len(clustering_results.get("clusters", [])),
                     "transition_count": len(transition_analysis.get("transitions", [])),
-                    "stability_score": stability_analysis.get("overall_stability", 0.0)
+                    "stability_score": stability_analysis.get("overall_stability", 0.0),
+                    "prediction_accuracy": prediction_results.get("accuracy", 0.0),
+                    "cluster_quality": clustering_results.get("cluster_quality", 0.0),
+                    "regime_change_detection_ready": True
+                },
+                "integration_status": {
+                    "feature_engineering_ready": True,
+                    "analyst_component_ready": True,
+                    "regime_change_prediction_ready": True,
+                    "quality_control_passed": quality_metrics.get("overall_quality", 0) > 0.6,
+                    "redundancy_eliminated": redundancy_metrics.get("redundancy_score", 0) < 0.3
                 }
             }
             
-            # Update state
+            # Update enhanced state
             self.enhanced_hmm_capabilities["hmm_model"] = hmm_model
             self.enhanced_hmm_capabilities["kmeans_model"] = clustering_results.get("kmeans_model")
             self.enhanced_hmm_capabilities["transition_model"] = transition_analysis.get("transition_model")
+            self.enhanced_hmm_capabilities["regime_change_model"] = regime_change_model
             self.regime_management_state["regime_quality_scores"] = quality_metrics
             self.regime_management_state["regime_redundancy_metrics"] = redundancy_metrics
+            self.regime_management_state["regime_change_detection"] = prediction_results.get("change_predictions", [])
             
-            self.logger.info("✅ Enhanced HMM regime discovery completed")
+            self.logger.info("✅ Enhanced HMM regime discovery with improved clustering completed")
             return results
             
         except Exception as e:

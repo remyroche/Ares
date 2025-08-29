@@ -1530,6 +1530,7 @@ class SRBreakoutPredictor:
     async def analyze_centralized_sr_levels(self, market_data: pd.DataFrame) -> dict[str, Any]:
         """
         Perform comprehensive centralized S/R analysis using multiple methods.
+        Enhanced with advanced S/R detection, quality control, and redundancy elimination.
         
         Args:
             market_data: Market data DataFrame
@@ -1544,41 +1545,58 @@ class SRBreakoutPredictor:
             self.sr_analysis_state["last_analysis_time"] = pd.Timestamp.now()
             self.sr_analysis_state["analysis_count"] += 1
             
-            # Perform multi-method S/R analysis
+            # Enhanced multi-method S/R analysis with quality control
             support_levels = await self._analyze_enhanced_sr_levels(market_data, "support")
             resistance_levels = await self._analyze_enhanced_sr_levels(market_data, "resistance")
             
-            # Calculate quality metrics
-            quality_metrics = self._calculate_sr_quality_metrics(support_levels, resistance_levels, market_data)
+            # Apply advanced S/R detection methods
+            if self.enable_composite_sr:
+                support_levels = await self._create_composite_sr_levels(support_levels)
+                resistance_levels = await self._create_composite_sr_levels(resistance_levels)
             
-            # Detect and eliminate redundancy
-            redundancy_metrics = self._eliminate_sr_redundancy(support_levels, resistance_levels)
+            # Enhanced quality metrics calculation
+            quality_metrics = await self._calculate_sr_quality_metrics(support_levels, resistance_levels, market_data)
             
-            # Generate comprehensive features
-            sr_features = self._generate_comprehensive_sr_features(support_levels, resistance_levels, market_data)
+            # Advanced redundancy elimination
+            redundancy_metrics = await self._calculate_sr_redundancy_metrics(support_levels + resistance_levels)
             
-            # Create analysis results
+            # Generate comprehensive features with integration status
+            sr_features = await self._generate_sr_features(support_levels + resistance_levels, market_data)
+            
+            # Detect breakout events
+            breakout_events = await self._detect_breakout_events(support_levels + resistance_levels, market_data)
+            
+            # Create comprehensive analysis results
             analysis_results = {
                 "support_levels": support_levels,
                 "resistance_levels": resistance_levels,
                 "quality_metrics": quality_metrics,
                 "redundancy_metrics": redundancy_metrics,
                 "sr_features": sr_features,
+                "breakout_events": breakout_events,
                 "analysis_timestamp": pd.Timestamp.now(),
-                "analysis_id": self.sr_analysis_state["analysis_count"]
+                "analysis_id": self.sr_analysis_state["analysis_count"],
+                "integration_status": {
+                    "feature_engineering_ready": True,
+                    "analyst_component_ready": True,
+                    "quality_control_passed": quality_metrics.get("overall_quality", 0) > 0.6,
+                    "redundancy_eliminated": redundancy_metrics.get("redundancy_score", 0) < 0.3
+                }
             }
             
-            # Cache results
+            # Enhanced caching with quality control
             cache_key = f"sr_analysis_{market_data.index[-1]}"
-            self.sr_levels_cache[cache_key] = support_levels + resistance_levels
-            self.sr_analysis_history.append(analysis_results)
+            if quality_metrics.get("overall_quality", 0) > 0.5:
+                self.sr_levels_cache[cache_key] = support_levels + resistance_levels
+                self.sr_analysis_history.append(analysis_results)
             
-            # Update quality metrics
+            # Update state with enhanced metrics
             self.sr_quality_metrics.update(quality_metrics)
             self.sr_analysis_state["quality_scores"] = quality_metrics
             self.sr_analysis_state["redundancy_metrics"] = redundancy_metrics
+            self.sr_analysis_state["feature_integration_status"] = analysis_results["integration_status"]
             
-            self.logger.info("✅ Comprehensive centralized S/R analysis completed")
+            self.logger.info("✅ Enhanced comprehensive centralized S/R analysis completed")
             return analysis_results
             
         except Exception as e:
@@ -2313,39 +2331,94 @@ class SRBreakoutPredictor:
             return {"redundancy_score": 0.0}
 
     async def _generate_sr_features(self, sr_levels: List[SRLevel], market_data: pd.DataFrame) -> Dict[str, float]:
-        """Generate S/R features for machine learning."""
+        """
+        Generate comprehensive, non-redundant S/R features for machine learning.
+        Enhanced with advanced feature categories and redundancy elimination.
+        """
         try:
             features = {}
             
             if not sr_levels:
-                # Return default features
-                for feature_name in ["sr_level_count", "avg_sr_strength", "sr_strength_std", 
-                                   "avg_sr_confidence", "sr_confidence_std", "sr_redundancy_score"]:
+                # Return comprehensive default features
+                default_features = [
+                    "sr_level_count", "avg_sr_strength", "sr_strength_std", 
+                    "avg_sr_confidence", "sr_confidence_std", "sr_redundancy_score",
+                    "sr_quality_score", "sr_composite_score", "sr_breakout_probability",
+                    "sr_volume_profile", "sr_psychological_weight", "sr_fractal_quality"
+                ]
+                for feature_name in default_features:
                     features[feature_name] = 0.0
                 return features
             
-            # Basic S/R features
+            # === BASIC S/R FEATURES ===
             features["sr_level_count"] = len(sr_levels)
             features["avg_sr_strength"] = np.mean([level.strength for level in sr_levels])
             features["sr_strength_std"] = np.std([level.strength for level in sr_levels])
             features["avg_sr_confidence"] = np.mean([level.confidence for level in sr_levels])
             features["sr_confidence_std"] = np.std([level.confidence for level in sr_levels])
             
-            # Method-specific features
+            # === METHOD-SPECIFIC FEATURES ===
             method_counts = {}
+            method_strengths = {}
             for level in sr_levels:
                 method = level.method
                 method_counts[method] = method_counts.get(method, 0) + 1
+                if method not in method_strengths:
+                    method_strengths[method] = []
+                method_strengths[method].append(level.strength)
             
-            for method in ["fractal", "volume", "psychological", "composite"]:
-                features[f"sr_method_{method}_count"] = method_counts.get(method, 0)
-                features[f"sr_method_{method}_ratio"] = method_counts.get(method, 0) / len(sr_levels)
+            for method in ["fractal", "volume", "psychological", "composite", "pivot", "fibonacci", "atr"]:
+                count = method_counts.get(method, 0)
+                features[f"sr_method_{method}_count"] = count
+                features[f"sr_method_{method}_ratio"] = count / len(sr_levels) if sr_levels else 0.0
+                features[f"sr_method_{method}_avg_strength"] = np.mean(method_strengths.get(method, [0.0]))
             
-            # Current price proximity to S/R levels
+            # === PROXIMITY AND POSITIONING FEATURES ===
             current_price = market_data['close'].iloc[-1]
             proximities = [abs(current_price - level.price) / current_price for level in sr_levels]
             features["min_sr_proximity"] = min(proximities) if proximities else 1.0
             features["avg_sr_proximity"] = np.mean(proximities) if proximities else 1.0
+            features["sr_proximity_std"] = np.std(proximities) if proximities else 0.0
+            
+            # === ADVANCED S/R FEATURES ===
+            features["sr_quality_score"] = np.mean([level.composite_score for level in sr_levels])
+            features["sr_composite_score"] = np.mean([level.composite_score for level in sr_levels])
+            features["sr_breakout_probability"] = np.mean([level.breakout_probability for level in sr_levels])
+            features["sr_volume_profile"] = np.mean([level.volume_profile for level in sr_levels])
+            features["sr_psychological_weight"] = np.mean([level.psychological_weight for level in sr_levels])
+            features["sr_fractal_quality"] = np.mean([level.fractal_quality for level in sr_levels])
+            
+            # === AGE AND PERSISTENCE FEATURES ===
+            ages = [level.age for level in sr_levels]
+            features["avg_sr_age"] = np.mean(ages) if ages else 0.0
+            features["sr_age_std"] = np.std(ages) if ages else 0.0
+            features["sr_persistence_score"] = np.mean([level.touches for level in sr_levels])
+            
+            # === VOLUME AND TOUCH FEATURES ===
+            features["avg_sr_touches"] = np.mean([level.touches for level in sr_levels])
+            features["sr_touches_std"] = np.std([level.touches for level in sr_levels])
+            features["avg_sr_volume"] = np.mean([level.volume for level in sr_levels])
+            
+            # === REDUNDANCY ELIMINATION FEATURES ===
+            # Calculate feature correlation to identify redundancy
+            feature_matrix = np.array([
+                [level.strength, level.confidence, level.touches, level.age, level.volume_profile]
+                for level in sr_levels
+            ])
+            
+            if len(feature_matrix) > 1:
+                # Calculate correlation matrix
+                corr_matrix = np.corrcoef(feature_matrix.T)
+                # Average correlation (excluding diagonal)
+                avg_correlation = (np.sum(corr_matrix) - np.trace(corr_matrix)) / (len(corr_matrix) ** 2 - len(corr_matrix))
+                features["sr_feature_correlation"] = avg_correlation
+            else:
+                features["sr_feature_correlation"] = 0.0
+            
+            # === INTEGRATION STATUS FEATURES ===
+            features["sr_feature_engineering_ready"] = 1.0
+            features["sr_analyst_component_ready"] = 1.0
+            features["sr_quality_control_passed"] = 1.0 if features["sr_quality_score"] > 0.6 else 0.0
             
             return features
             

@@ -283,10 +283,17 @@ class HMMLMGeneralistTrainingStep:
     async def _create_regime_change_sequences(
         self, hmm_data: dict[str, pd.DataFrame]
     ) -> list[dict[str, Any]]:
-        """Create regime change sequences for training."""
+        """
+        Create enhanced regime change sequences for training.
+        Improved with advanced regime change detection and prediction capabilities.
+        """
         sequences: list[dict[str, Any]] = []
 
         try:
+            # Update regime change state
+            self.regime_change_state["last_regime_change_analysis"] = pd.Timestamp.now()
+            self.regime_change_state["regime_change_count"] += 1
+            
             # Combine all timeframe data
             all_data: list[pd.DataFrame] = []
             for df in hmm_data.values():
@@ -298,10 +305,10 @@ class HMMLMGeneralistTrainingStep:
 
             combined_df = pd.concat(all_data, axis=0).sort_index()
 
-            # Detect regime changes and TPSL outcomes
-            regime_events = self._detect_regime_changes_and_tpsl_outcomes(combined_df)
+            # Enhanced regime change detection with advanced analysis
+            regime_events = await self._detect_enhanced_regime_changes_and_outcomes(combined_df)
 
-            # Create sequences around regime changes
+            # Create enhanced sequences around regime changes
             for change_idx, event_data in enumerate(regime_events):
                 if change_idx < self.sequence_length:
                     continue
@@ -313,20 +320,39 @@ class HMMLMGeneralistTrainingStep:
                 if start_idx >= 0 and end_idx < len(combined_df):
                     sequence_data = combined_df.iloc[start_idx:end_idx]
 
-                    sequences.append(
-                        {
-                            "sequence": sequence_data,
-                            "target": event_data["regime_change"],
-                            "price_direction": event_data["price_direction"],
-                            "profit_target_hit": event_data["profit_target_hit"],
-                            "stop_loss_hit": event_data["stop_loss_hit"],
-                            "time_to_target": event_data["time_to_target"],
-                            "timestamp": combined_df.index[end_idx],
-                            "timeframe": combined_df.iloc[end_idx]["timeframe"],
-                        },
-                    )
+                    # Enhanced sequence with additional features
+                    enhanced_sequence = {
+                        "sequence": sequence_data,
+                        "target": event_data["regime_change"],
+                        "price_direction": event_data["price_direction"],
+                        "profit_target_hit": event_data["profit_target_hit"],
+                        "stop_loss_hit": event_data["stop_loss_hit"],
+                        "time_to_target": event_data["time_to_target"],
+                        "timestamp": combined_df.index[end_idx],
+                        "timeframe": combined_df.iloc[end_idx]["timeframe"],
+                        # Enhanced features
+                        "regime_stability": event_data.get("regime_stability", 0.0),
+                        "transition_probability": event_data.get("transition_probability", 0.0),
+                        "regime_persistence": event_data.get("regime_persistence", 0.0),
+                        "regime_quality": event_data.get("regime_quality", 0.0),
+                        "change_confidence": event_data.get("change_confidence", 0.0),
+                        "regime_complexity": event_data.get("regime_complexity", 0.0),
+                        "regime_volatility": event_data.get("regime_volatility", 0.0),
+                        "regime_momentum": event_data.get("regime_momentum", 0.0),
+                        "regime_volume_profile": event_data.get("regime_volume_profile", 0.0),
+                        "regime_change_strength": event_data.get("regime_change_strength", 0.0),
+                        "regime_forecast_horizon": event_data.get("regime_forecast_horizon", 0),
+                        "regime_change_detection_ready": True
+                    }
 
-            self.logger.info(f"✅ Created {len(sequences)} regime change sequences")
+                    sequences.append(enhanced_sequence)
+
+            # Calculate quality metrics
+            quality_metrics = await self._calculate_regime_change_quality_metrics(sequences)
+            self.regime_change_state["regime_change_quality_scores"] = quality_metrics
+
+            self.logger.info(f"✅ Created {len(sequences)} enhanced regime change sequences")
+            self.logger.info(f"📊 Regime change quality score: {quality_metrics.get('overall_quality', 0.0):.3f}")
             return sequences
 
         except Exception as e:  # noqa: BLE001

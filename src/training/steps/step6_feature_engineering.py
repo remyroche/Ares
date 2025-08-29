@@ -736,7 +736,7 @@ async def _add_sr_aware_feature_selection(
         support_proximity = sr_context.get("support_proximity", 1.0)
         resistance_proximity = sr_context.get("resistance_proximity", 1.0)
         
-        # Add proximity-based feature weights
+        # Add proximity-based feature weights (using percentages)
         features["sr_proximity_weight"] = 1.0 / (1.0 + min(support_proximity, resistance_proximity))
         
         # Add SR strength features
@@ -745,10 +745,13 @@ async def _add_sr_aware_feature_selection(
             sr_context.get("resistance_strength", 0.5)
         ) / 2
         
-        # Add SR zone features
-        features["sr_zone_position"] = (
-            current_price - sr_context.get("nearest_support", current_price)
-        ) / sr_context.get("sr_zone_width", 1.0)
+        # Add SR zone features (using percentages)
+        sr_zone_width = sr_context.get("sr_zone_width", 0.0)
+        if sr_zone_width > 0 and current_price > 0:
+            zone_position_pct = (current_price - sr_context.get("nearest_support", current_price)) / current_price / sr_zone_width
+        else:
+            zone_position_pct = 0.5
+        features["sr_zone_position"] = zone_position_pct
         
         # Add SR momentum features
         features["sr_momentum"] = market_data['close'].pct_change().iloc[-5:].mean()

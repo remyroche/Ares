@@ -2793,21 +2793,30 @@ class SRBreakoutPredictor:
             nearest_support = sr_context.get("nearest_support", current_price)
             nearest_resistance = sr_context.get("nearest_resistance", current_price)
             
-            features["sr_distance"] = pd.Series([(current_price - nearest_support) / current_price] * len(market_data), index=market_data.index)
-            features["support_level"] = pd.Series([nearest_support] * len(market_data), index=market_data.index)
-            features["resistance_level"] = pd.Series([nearest_resistance] * len(market_data), index=market_data.index)
+            # Calculate distances as percentages/returns
+            support_distance_pct = (current_price - nearest_support) / current_price if current_price > 0 else 0.0
+            resistance_distance_pct = (nearest_resistance - current_price) / current_price if current_price > 0 else 0.0
             
-            # 2. Proximity features
-            features["proximity"] = pd.Series([min(sr_context.get("support_proximity", 1.0), sr_context.get("resistance_proximity", 1.0))] * len(market_data), index=market_data.index)
-            features["sr_proximity"] = pd.Series([sr_context.get("support_proximity", 1.0)] * len(market_data), index=market_data.index)
-            features["sr_proximity_score"] = pd.Series([1.0 / (1.0 + sr_context.get("support_proximity", 1.0))] * len(market_data), index=market_data.index)
+            features["sr_distance"] = pd.Series([support_distance_pct] * len(market_data), index=market_data.index)
+            features["support_level"] = pd.Series([support_distance_pct] * len(market_data), index=market_data.index)  # Distance as percentage
+            features["resistance_level"] = pd.Series([resistance_distance_pct] * len(market_data), index=market_data.index)  # Distance as percentage
+            
+            # 2. Proximity features (as percentages)
+            features["proximity"] = pd.Series([min(support_distance_pct, resistance_distance_pct)] * len(market_data), index=market_data.index)
+            features["sr_proximity"] = pd.Series([support_distance_pct] * len(market_data), index=market_data.index)
+            features["sr_proximity_score"] = pd.Series([1.0 / (1.0 + support_distance_pct)] * len(market_data), index=market_data.index)
             
             # 3. Multi-timeframe SR score
             features["multi_timeframe_sr_score"] = pd.Series([self._calculate_multi_timeframe_sr_score(market_data)] * len(market_data), index=market_data.index)
             features["sr_multi_timeframe"] = pd.Series([self._calculate_multi_timeframe_sr_score(market_data)] * len(market_data), index=market_data.index)
             
-            # 4. Normalized distance
-            features["normalized_distance"] = pd.Series([(current_price - nearest_support) / (nearest_resistance - nearest_support) if nearest_resistance > nearest_support else 0.5] * len(market_data), index=market_data.index)
+            # 4. Normalized distance (as percentage)
+            if nearest_resistance > nearest_support and current_price > 0:
+                zone_width_pct = (nearest_resistance - nearest_support) / current_price
+                normalized_distance_pct = support_distance_pct / zone_width_pct if zone_width_pct > 0 else 0.5
+            else:
+                normalized_distance_pct = 0.5
+            features["normalized_distance"] = pd.Series([normalized_distance_pct] * len(market_data), index=market_data.index)
             
             # 5. Strength features
             features["strength_score"] = pd.Series([(sr_context.get("support_strength", 0.5) + sr_context.get("resistance_strength", 0.5)) / 2] * len(market_data), index=market_data.index)
@@ -2888,24 +2897,28 @@ class SRBreakoutPredictor:
             return 0.5
 
     def _calculate_directional_pressure(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> float:
-        """Calculate directional pressure towards SR levels."""
+        """Calculate directional pressure towards SR levels using percentages."""
         try:
             current_price = market_data['close'].iloc[-1]
             nearest_support = sr_context.get("nearest_support", current_price)
             nearest_resistance = sr_context.get("nearest_resistance", current_price)
             
-            # Calculate pressure based on distance and momentum
-            support_distance = (current_price - nearest_support) / current_price
-            resistance_distance = (nearest_resistance - current_price) / current_price
+            # Calculate pressure based on distance and momentum (using percentages)
+            if current_price > 0:
+                support_distance_pct = (current_price - nearest_support) / current_price
+                resistance_distance_pct = (nearest_resistance - current_price) / current_price
+            else:
+                support_distance_pct = 1.0
+                resistance_distance_pct = 1.0
             
-            # Add momentum component
+            # Add momentum component (as percentage)
             momentum = market_data['close'].pct_change().iloc[-5:].mean()
             
             # Pressure towards support if price is falling, towards resistance if rising
             if momentum < 0:
-                pressure = 1.0 / (1.0 + support_distance)
+                pressure = 1.0 / (1.0 + support_distance_pct)
             else:
-                pressure = 1.0 / (1.0 + resistance_distance)
+                pressure = 1.0 / (1.0 + resistance_distance_pct)
             
             return max(0.0, min(1.0, pressure))
             
@@ -2914,14 +2927,14 @@ class SRBreakoutPredictor:
             return 0.5
 
     def _calculate_sr_score(self, sr_context: dict[str, Any]) -> float:
-        """Calculate overall SR score."""
+        """Calculate overall SR score using percentages."""
         try:
             support_strength = sr_context.get("support_strength", 0.5)
             resistance_strength = sr_context.get("resistance_strength", 0.5)
             support_proximity = sr_context.get("support_proximity", 1.0)
             resistance_proximity = sr_context.get("resistance_proximity", 1.0)
             
-            # Combine strength and proximity
+            # Combine strength and proximity (proximity is already in percentage form)
             support_score = support_strength * (1.0 / (1.0 + support_proximity))
             resistance_score = resistance_strength * (1.0 / (1.0 + resistance_proximity))
             
@@ -2972,14 +2985,16 @@ class SRBreakoutPredictor:
             return 0.5
 
     def _determine_sr_level(self, current_price: float, sr_context: dict[str, Any]) -> float:
-        """Determine current SR level position."""
+        """Determine current SR level position as percentage."""
         try:
             nearest_support = sr_context.get("nearest_support", current_price)
             nearest_resistance = sr_context.get("nearest_resistance", current_price)
             
-            if nearest_resistance > nearest_support:
-                # Normalize position between support and resistance
-                return (current_price - nearest_support) / (nearest_resistance - nearest_support)
+            if nearest_resistance > nearest_support and current_price > 0:
+                # Calculate position as percentage within the SR zone
+                support_distance_pct = (current_price - nearest_support) / current_price
+                zone_width_pct = (nearest_resistance - nearest_support) / current_price
+                return support_distance_pct / zone_width_pct if zone_width_pct > 0 else 0.5
             else:
                 return 0.5
                 
@@ -2988,16 +3003,17 @@ class SRBreakoutPredictor:
             return 0.5
 
     def _predict_sr_outcome(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> float:
-        """Predict SR outcome based on current market conditions."""
+        """Predict SR outcome based on current market conditions as percentage."""
         try:
             current_price = market_data['close'].iloc[-1]
             nearest_support = sr_context.get("nearest_support", current_price)
             nearest_resistance = sr_context.get("nearest_resistance", current_price)
             
-            # Simple outcome prediction based on position relative to SR levels
-            if nearest_resistance > nearest_support:
-                position = (current_price - nearest_support) / (nearest_resistance - nearest_support)
-                return position
+            # Calculate outcome as percentage position within SR zone
+            if nearest_resistance > nearest_support and current_price > 0:
+                support_distance_pct = (current_price - nearest_support) / current_price
+                zone_width_pct = (nearest_resistance - nearest_support) / current_price
+                return support_distance_pct / zone_width_pct if zone_width_pct > 0 else 0.5
             else:
                 return 0.5
                 

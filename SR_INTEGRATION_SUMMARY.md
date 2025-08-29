@@ -102,6 +102,11 @@ sr_base_tokens = [
 ]
 ```
 
+**Note**: All distance and proximity features use percentages/returns instead of raw values:
+- **Distance Features**: `sr_distance`, `support_level`, `resistance_level` - calculated as percentage distance from current price
+- **Proximity Features**: `proximity`, `sr_proximity`, `sr_proximity_score` - calculated as percentage proximity
+- **Level Features**: `sr_level`, `normalized_distance` - calculated as percentage position within SR zone
+
 **Key Enhancements**:
 1. **Comprehensive Feature Generation**: Enhanced `calculate_comprehensive_sr_features()`
 2. **All Required Tokens**: Generated all features matching sr_base_tokens

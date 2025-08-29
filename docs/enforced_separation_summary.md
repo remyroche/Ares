@@ -69,15 +69,15 @@ async def _apply_position_sizing(self, strategy: dict[str, Any], current_price: 
 
 ### 4. Tactician Enhancements
 
-#### Added Position Sizing Methods
+#### Enhanced Existing Position Sizer
 ```python
-# ADDED to src/tactician/position_sizer.py:
-def calculate_leverage(self, confidence: float) -> float
-def calculate_position_size_from_confidence(self, confidence: float, leverage: float) -> float
-def calculate_entry_timing(self, market_data: pd.DataFrame, confidence: float) -> str
+# ENHANCED: src/tactician/position_sizer.py
+# Added interface integration method to existing PositionSizer class
+async def calculate_position_size_for_interface(...) -> dict[str, Any]:
+    """Uses existing calculate_position_size method for interface requests"""
 ```
 
-#### Added Interface Integration Method
+#### Interface Integration Method
 ```python
 # ADDED: calculate_position_size_for_interface()
 async def calculate_position_size_for_interface(
@@ -88,7 +88,7 @@ async def calculate_position_size_for_interface(
     market_data: pd.DataFrame,
     risk_parameters: dict[str, Any]
 ) -> dict[str, Any]:
-    """Calculate position size for interface requests."""
+    """Uses existing calculate_position_size method for interface requests."""
 ```
 
 ## New Architecture

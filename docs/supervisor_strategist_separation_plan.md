@@ -71,11 +71,11 @@ This document outlines the plan to enforce clear separation between the Supervis
 4. **Component coordination** logic
 5. **Circuit breaker** management
 
-#### Move to Tactician
-1. **Position sizing calculations** from Supervisor and Strategist
-2. **Leverage calculations** from Supervisor
-3. **Entry timing calculations** from Supervisor
-4. **Position management logic**
+#### Use Existing Tactician Position Sizer
+1. **Leverage existing** `PositionSizer` class in `src/tactician/position_sizer.py`
+2. **Add interface integration** to existing position sizer
+3. **Remove duplicate methods** from Supervisor and Strategist
+4. **Centralize position sizing** in existing Tactician infrastructure
 
 #### Keep in Supervisor
 1. **Portfolio-level risk management** (`_enforce_portfolio_guards()`)
@@ -91,10 +91,10 @@ This document outlines the plan to enforce clear separation between the Supervis
 4. **Strategy history management** (`_store_strategy_results()`)
 
 #### Keep in Tactician
-1. **Position sizing** (`calculate_position_size_for_interface()`)
-2. **Leverage calculation** (`calculate_leverage()`)
-3. **Entry timing** (`calculate_entry_timing()`)
-4. **Position management** (existing position management methods)
+1. **Position sizing** (existing `calculate_position_size()` method)
+2. **Interface integration** (`calculate_position_size_for_interface()`)
+3. **Position management** (existing position management methods)
+4. **All existing position sizer functionality** (Kelly criterion, ML integration, etc.)
 
 ### Phase 3: Interface Implementation
 

@@ -8,6 +8,14 @@ import pandas as pd
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.centralized_decorators import validate_data_quality
 
+# DBSCAN clustering for S/R level analysis
+try:
+    from sklearn.cluster import DBSCAN
+    DBSCAN_AVAILABLE = True
+except ImportError:
+    DBSCAN_AVAILABLE = False
+    print("Warning: sklearn not available, DBSCAN clustering will be disabled")
+
 class SRBreakoutPredictor:
     """
     SR Breakout Predictor responsible for predicting support/resistance breakouts.
@@ -198,6 +206,21 @@ class SRBreakoutPredictor:
         # Performance tracking
         self.performance_metrics: dict[str, Any] = {}
         self.prediction_history: list[dict[str, Any]] = []
+
+        # DBSCAN clustering configuration
+        self.dbscan_config: dict[str, Any] = self.sr_config.get("dbscan_clustering", {})
+        self.enable_dbscan_clustering: bool = self.dbscan_config.get("enable_dbscan_clustering", True)
+        self.dbscan_eps: float = self.dbscan_config.get("eps", 0.01)  # 1% of price for neighborhood
+        self.dbscan_min_samples: int = self.dbscan_config.get("min_samples", 3)  # Minimum points for cluster
+        self.dbscan_enable_noise_filtering: bool = self.dbscan_config.get("enable_noise_filtering", True)
+
+        # Enhanced strength calculation configuration
+        self.strength_config: dict[str, Any] = self.sr_config.get("strength_calculation", {})
+        self.enable_enhanced_strength: bool = self.strength_config.get("enable_enhanced_strength", True)
+        self.touch_count_lookback: int = self.strength_config.get("touch_count_lookback", 100)
+        self.bounce_rate_threshold: float = self.strength_config.get("bounce_rate_threshold", 0.02)  # 2% bounce
+        self.isolation_distance_threshold: float = self.strength_config.get("isolation_distance_threshold", 0.05)  # 5% distance
+        self.age_decay_factor: float = self.strength_config.get("age_decay_factor", 0.95)  # 5% decay per period
 
     @handle_specific_errors(
         error_handlers={
@@ -402,9 +425,41 @@ class SRBreakoutPredictor:
             support_levels = await self._detect_support_levels(market_data)
             resistance_levels = await self._detect_resistance_levels(market_data)
 
-            # Find nearest levels
-            nearest_support = self._find_nearest_level(current_price, support_levels, "support")
-            nearest_resistance = self._find_nearest_level(current_price, resistance_levels, "resistance")
+            # Apply DBSCAN clustering to filter significant levels
+            all_levels = support_levels + resistance_levels
+            clustering_result = await self.cluster_sr_levels_dbscan(all_levels)
+            clustered_levels = clustering_result.get('clustered_levels', all_levels)
+            
+            # Separate clustered levels back into support and resistance
+            clustered_support = [level for level in clustered_levels if level.get('type', 'support') == 'support']
+            clustered_resistance = [level for level in clustered_levels if level.get('type', 'resistance') == 'resistance']
+
+            # Calculate enhanced strength for all levels
+            enhanced_strength_support = await self.calculate_comprehensive_strength(market_data, clustered_support)
+            enhanced_strength_resistance = await self.calculate_comprehensive_strength(market_data, clustered_resistance)
+
+            # Update levels with enhanced strength
+            for level in clustered_support:
+                level_id = f"{level['price']:.4f}"
+                if level_id in enhanced_strength_support:
+                    level['enhanced_strength'] = enhanced_strength_support[level_id]['comprehensive_strength']
+                    level['strength_factors'] = enhanced_strength_support[level_id]['factors']
+                else:
+                    level['enhanced_strength'] = level.get('strength', 0.5)
+                    level['strength_factors'] = {}
+
+            for level in clustered_resistance:
+                level_id = f"{level['price']:.4f}"
+                if level_id in enhanced_strength_resistance:
+                    level['enhanced_strength'] = enhanced_strength_resistance[level_id]['comprehensive_strength']
+                    level['strength_factors'] = enhanced_strength_resistance[level_id]['factors']
+                else:
+                    level['enhanced_strength'] = level.get('strength', 0.5)
+                    level['strength_factors'] = {}
+
+            # Find nearest levels using enhanced strength
+            nearest_support = self._find_nearest_level(current_price, clustered_support, "support")
+            nearest_resistance = self._find_nearest_level(current_price, clustered_resistance, "resistance")
 
             # Calculate proximity metrics
             support_proximity = self._calculate_proximity(current_price, nearest_support)
@@ -423,14 +478,21 @@ class SRBreakoutPredictor:
                 "current_price": current_price,
                 "nearest_support": nearest_support.get("price", current_price) if nearest_support else current_price,
                 "nearest_resistance": nearest_resistance.get("price", current_price) if nearest_resistance else current_price,
-                "support_strength": nearest_support.get("strength", 0.5) if nearest_support else 0.5,
-                "resistance_strength": nearest_resistance.get("strength", 0.5) if nearest_resistance else 0.5,
+                "support_strength": nearest_support.get("enhanced_strength", nearest_support.get("strength", 0.5)) if nearest_support else 0.5,
+                "resistance_strength": nearest_resistance.get("enhanced_strength", nearest_resistance.get("strength", 0.5)) if nearest_resistance else 0.5,
                 "support_proximity": support_proximity,
                 "resistance_proximity": resistance_proximity,
                 "pivot_levels": pivot_levels,
-                "support_levels": support_levels,
-                "resistance_levels": resistance_levels,
+                "support_levels": clustered_support,  # Use clustered levels
+                "resistance_levels": clustered_resistance,  # Use clustered levels
                 "sr_zone_width": abs(nearest_resistance.get("price", current_price) - nearest_support.get("price", current_price)) / current_price if nearest_resistance and nearest_support else 0.0,
+                
+                # Enhanced Strength Analysis
+                "enhanced_strength_support": enhanced_strength_support,
+                "enhanced_strength_resistance": enhanced_strength_resistance,
+                
+                # DBSCAN Clustering Results
+                "clustering_result": clustering_result,
                 
                 # Advanced S/R Analysis
                 "fibonacci_levels": fibonacci_levels,
@@ -1086,6 +1148,349 @@ class SRBreakoutPredictor:
             self.logger.error(f"Error calculating level strength: {e}")
             return 0.5
 
+    # ============================================================================
+    # ENHANCED STRENGTH CALCULATION METHODS
+    # ============================================================================
+
+    @validate_data_quality(validation_level="WARNING")
+    async def calculate_touch_count(self, market_data: pd.DataFrame, sr_levels: list[dict[str, Any]]) -> dict[str, int]:
+        """Calculate touch count for each S/R level."""
+        try:
+            touch_counts = {}
+            
+            for level in sr_levels:
+                level_price = level['price']
+                level_id = f"{level_price:.4f}"
+                touch_count = 0
+                
+                # Look back through market data to count touches
+                lookback_data = market_data.tail(self.touch_count_lookback)
+                
+                for i in range(1, len(lookback_data)):
+                    high = lookback_data['high'].iloc[i]
+                    low = lookback_data['low'].iloc[i]
+                    prev_high = lookback_data['high'].iloc[i-1]
+                    prev_low = lookback_data['low'].iloc[i-1]
+                    
+                    # Check if price touched the level (candlestick crossed the level)
+                    if (low <= level_price <= high) or (prev_low <= level_price <= prev_high):
+                        # Additional check: price actually approached the level
+                        if abs(high - level_price) / level_price < 0.01 or abs(low - level_price) / level_price < 0.01:
+                            touch_count += 1
+                
+                touch_counts[level_id] = touch_count
+            
+            self.logger.info(f"✅ Calculated touch counts for {len(touch_counts)} S/R levels")
+            return touch_counts
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating touch counts: {e}")
+            return {}
+
+    @validate_data_quality(validation_level="WARNING")
+    async def calculate_level_age(self, market_data: pd.DataFrame, sr_levels: list[dict[str, Any]]) -> dict[str, float]:
+        """Calculate age of each S/R level."""
+        try:
+            level_ages = {}
+            
+            for level in sr_levels:
+                level_price = level['price']
+                level_id = f"{level_price:.4f}"
+                level_timestamp = level.get('timestamp', market_data.index[-1])
+                
+                # Calculate age in periods
+                if isinstance(level_timestamp, pd.Timestamp):
+                    age_periods = len(market_data) - market_data.index.get_loc(level_timestamp)
+                else:
+                    # If no timestamp, estimate age based on level strength
+                    age_periods = int(level.get('strength', 0.5) * 50)  # Estimate 0-50 periods
+                
+                # Apply age decay factor
+                age_score = self.age_decay_factor ** age_periods
+                
+                level_ages[level_id] = {
+                    'age_periods': age_periods,
+                    'age_score': age_score,
+                    'is_recent': age_periods <= 10
+                }
+            
+            self.logger.info(f"✅ Calculated age scores for {len(level_ages)} S/R levels")
+            return level_ages
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating level ages: {e}")
+            return {}
+
+    @validate_data_quality(validation_level="WARNING")
+    async def calculate_bounce_rate(self, market_data: pd.DataFrame, sr_levels: list[dict[str, Any]]) -> dict[str, float]:
+        """Calculate bounce rate for each S/R level."""
+        try:
+            bounce_rates = {}
+            
+            for level in sr_levels:
+                level_price = level['price']
+                level_id = f"{level_price:.4f}"
+                touches = 0
+                bounces = 0
+                
+                # Look back through market data to analyze bounces
+                lookback_data = market_data.tail(self.touch_count_lookback)
+                
+                for i in range(1, len(lookback_data)):
+                    high = lookback_data['high'].iloc[i]
+                    low = lookback_data['low'].iloc[i]
+                    close = lookback_data['close'].iloc[i]
+                    prev_close = lookback_data['close'].iloc[i-1]
+                    
+                    # Check if price touched the level
+                    if low <= level_price <= high:
+                        touches += 1
+                        
+                        # Check if it was a bounce (price moved away from level)
+                        if level_price > prev_close:  # Support level
+                            # Price bounced up from support
+                            if close > level_price + (level_price * self.bounce_rate_threshold):
+                                bounces += 1
+                        else:  # Resistance level
+                            # Price bounced down from resistance
+                            if close < level_price - (level_price * self.bounce_rate_threshold):
+                                bounces += 1
+                
+                # Calculate bounce rate
+                bounce_rate = bounces / max(touches, 1)
+                bounce_rates[level_id] = {
+                    'bounce_rate': bounce_rate,
+                    'touches': touches,
+                    'bounces': bounces,
+                    'bounce_strength': bounce_rate * 2  # Scale to 0-2 range
+                }
+            
+            self.logger.info(f"✅ Calculated bounce rates for {len(bounce_rates)} S/R levels")
+            return bounce_rates
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating bounce rates: {e}")
+            return {}
+
+    @validate_data_quality(validation_level="WARNING")
+    async def calculate_isolation_score(self, sr_levels: list[dict[str, Any]]) -> dict[str, float]:
+        """Calculate isolation score for each S/R level."""
+        try:
+            isolation_scores = {}
+            
+            for i, level in enumerate(sr_levels):
+                level_price = level['price']
+                level_id = f"{level_price:.4f}"
+                
+                # Calculate distance to nearest other level
+                min_distance = float('inf')
+                for j, other_level in enumerate(sr_levels):
+                    if i != j:
+                        distance = abs(level_price - other_level['price']) / level_price
+                        min_distance = min(min_distance, distance)
+                
+                # Calculate isolation score (higher = more isolated)
+                if min_distance == float('inf'):
+                    isolation_score = 1.0  # Only level
+                else:
+                    # Normalize to 0-1 range, higher distance = higher isolation
+                    isolation_score = min(1.0, min_distance / self.isolation_distance_threshold)
+                
+                isolation_scores[level_id] = {
+                    'isolation_score': isolation_score,
+                    'nearest_distance': min_distance if min_distance != float('inf') else 0.0,
+                    'is_isolated': isolation_score > 0.7
+                }
+            
+            self.logger.info(f"✅ Calculated isolation scores for {len(isolation_scores)} S/R levels")
+            return isolation_scores
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating isolation scores: {e}")
+            return {}
+
+    @validate_data_quality(validation_level="WARNING")
+    async def cluster_sr_levels_dbscan(self, sr_levels: list[dict[str, Any]]) -> dict[str, Any]:
+        """Cluster S/R levels using DBSCAN to identify significant levels."""
+        try:
+            if not DBSCAN_AVAILABLE:
+                self.logger.warning("DBSCAN not available, returning unclustered levels")
+                return {
+                    'clusters': {},
+                    'n_clusters': 0,
+                    'noise_points': 0,
+                    'total_points': len(sr_levels),
+                    'clustered_levels': sr_levels
+                }
+            
+            if not self.enable_dbscan_clustering or len(sr_levels) < 3:
+                return {
+                    'clusters': {},
+                    'n_clusters': 0,
+                    'noise_points': 0,
+                    'total_points': len(sr_levels),
+                    'clustered_levels': sr_levels
+                }
+            
+            # Extract prices for clustering
+            prices = np.array([level['price'] for level in sr_levels])
+            
+            # Normalize prices for clustering (use percentage of price)
+            price_mean = np.mean(prices)
+            normalized_prices = (prices - price_mean) / price_mean
+            
+            # Apply DBSCAN clustering
+            clustering = DBSCAN(
+                eps=self.dbscan_eps, 
+                min_samples=self.dbscan_min_samples
+            ).fit(normalized_prices.reshape(-1, 1))
+            
+            # Process clustering results
+            cluster_labels = clustering.labels_
+            n_clusters = len(set(cluster_labels)) - (1 if -1 in cluster_labels else 0)
+            noise_points = np.sum(cluster_labels == -1)
+            
+            # Group levels by cluster
+            clustered_levels = {}
+            significant_levels = []
+            
+            for i, level in enumerate(sr_levels):
+                cluster_id = cluster_labels[i]
+                
+                if cluster_id == -1:
+                    # Noise points (weak levels) - filter out if enabled
+                    if not self.dbscan_enable_noise_filtering:
+                        significant_levels.append(level)
+                    continue
+                    
+                if cluster_id not in clustered_levels:
+                    clustered_levels[cluster_id] = {
+                        'levels': [],
+                        'cluster_price': 0.0,
+                        'cluster_strength': 0.0,
+                        'cluster_volume': 0.0,
+                        'touch_count': 0
+                    }
+                
+                clustered_levels[cluster_id]['levels'].append(level)
+                significant_levels.append(level)
+            
+            # Calculate cluster statistics
+            for cluster_id, cluster_data in clustered_levels.items():
+                levels = cluster_data['levels']
+                
+                # Calculate cluster center (weighted average by strength)
+                total_strength = sum(level.get('strength', 0.5) for level in levels)
+                if total_strength > 0:
+                    cluster_price = sum(level['price'] * level.get('strength', 0.5) for level in levels) / total_strength
+                else:
+                    cluster_price = np.mean([level['price'] for level in levels])
+                
+                # Aggregate cluster metrics
+                cluster_strength = sum(level.get('strength', 0.5) for level in levels) / len(levels)
+                cluster_volume = sum(level.get('volume', 0) for level in levels)
+                touch_count = sum(level.get('touch_count', 1) for level in levels)
+                
+                clustered_levels[cluster_id].update({
+                    'cluster_price': cluster_price,
+                    'cluster_strength': cluster_strength,
+                    'cluster_volume': cluster_volume,
+                    'touch_count': touch_count,
+                    'level_count': len(levels)
+                })
+            
+            self.logger.info(f"✅ DBSCAN clustering: {n_clusters} clusters, {noise_points} noise points filtered")
+            return {
+                'clusters': clustered_levels,
+                'n_clusters': n_clusters,
+                'noise_points': noise_points,
+                'total_points': len(sr_levels),
+                'clustered_levels': significant_levels
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error in DBSCAN clustering: {e}")
+            return {
+                'clusters': {},
+                'n_clusters': 0,
+                'noise_points': 0,
+                'total_points': len(sr_levels),
+                'clustered_levels': sr_levels
+            }
+
+    @validate_data_quality(validation_level="WARNING")
+    async def calculate_comprehensive_strength(self, market_data: pd.DataFrame, sr_levels: list[dict[str, Any]]) -> dict[str, float]:
+        """Calculate comprehensive strength using all factors."""
+        try:
+            if not self.enable_enhanced_strength:
+                # Return basic strength calculation
+                return {f"{level['price']:.4f}": level.get('strength', 0.5) for level in sr_levels}
+            
+            # Calculate all strength factors
+            touch_counts = await self.calculate_touch_count(market_data, sr_levels)
+            level_ages = await self.calculate_level_age(market_data, sr_levels)
+            bounce_rates = await self.calculate_bounce_rate(market_data, sr_levels)
+            isolation_scores = await self.calculate_isolation_score(sr_levels)
+            
+            comprehensive_strengths = {}
+            
+            for level in sr_levels:
+                level_price = level['price']
+                level_id = f"{level_price:.4f}"
+                
+                # Get base strength
+                base_strength = level.get('strength', 0.5)
+                
+                # Get factor scores
+                touch_count_data = touch_counts.get(level_id, {'touch_count': 1})
+                age_data = level_ages.get(level_id, {'age_score': 0.5})
+                bounce_data = bounce_rates.get(level_id, {'bounce_strength': 0.5})
+                isolation_data = isolation_scores.get(level_id, {'isolation_score': 0.5})
+                
+                # Calculate factor scores (normalize to 0-1 range)
+                touch_factor = min(1.0, touch_count_data.get('touch_count', 1) / 10.0)  # Max 10 touches
+                age_factor = age_data.get('age_score', 0.5)
+                bounce_factor = min(1.0, bounce_data.get('bounce_strength', 0.5) / 2.0)  # Max 2.0 strength
+                isolation_factor = isolation_data.get('isolation_score', 0.5)
+                volume_factor = min(1.0, level.get('volume', 0) / market_data['volume'].mean() if market_data['volume'].mean() > 0 else 0.5)
+                
+                # Apply weights from configuration
+                weights = self.strength_score_weights
+                comprehensive_strength = (
+                    base_strength * 0.2 +  # Base strength gets 20% weight
+                    touch_factor * weights.get('touch_count', 0.3) +
+                    volume_factor * weights.get('total_volume', 0.2) +
+                    age_factor * weights.get('level_age', 0.2) +
+                    bounce_factor * weights.get('bounce_rate', 0.2) +
+                    isolation_factor * weights.get('isolation_score', 0.1)
+                )
+                
+                # Ensure strength is in 0-1 range
+                comprehensive_strength = min(1.0, max(0.0, comprehensive_strength))
+                
+                comprehensive_strengths[level_id] = {
+                    'comprehensive_strength': comprehensive_strength,
+                    'base_strength': base_strength,
+                    'touch_factor': touch_factor,
+                    'volume_factor': volume_factor,
+                    'age_factor': age_factor,
+                    'bounce_factor': bounce_factor,
+                    'isolation_factor': isolation_factor,
+                    'factors': {
+                        'touch_count': touch_count_data.get('touch_count', 1),
+                        'age_periods': age_data.get('age_periods', 0),
+                        'bounce_rate': bounce_data.get('bounce_rate', 0.0),
+                        'isolation_score': isolation_data.get('isolation_score', 0.5)
+                    }
+                }
+            
+            self.logger.info(f"✅ Calculated comprehensive strength for {len(comprehensive_strengths)} S/R levels")
+            return comprehensive_strengths
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating comprehensive strength: {e}")
+            return {f"{level['price']:.4f}": level.get('strength', 0.5) for level in sr_levels}
+
     async def _calculate_breakout_probabilities(
         self,
         support_levels: list[dict[str, Any]],
@@ -1194,18 +1599,28 @@ class SRBreakoutPredictor:
         levels: list[dict[str, Any]],
         level_type: str,
     ) -> dict[str, Any] | None:
-        """Find the nearest support or resistance level."""
+        """Find the nearest support or resistance level with enhanced strength consideration."""
         try:
             if not levels:
                 return None
 
             nearest_level = None
-            min_distance = float('inf')
+            best_score = float('-inf')
 
             for level in levels:
+                # Calculate distance score (closer is better)
                 distance = abs(current_price - level["price"]) / current_price
-                if distance < min_distance:
-                    min_distance = distance
+                distance_score = 1.0 / (1.0 + distance)  # Convert to 0-1 score, higher is better
+                
+                # Get strength score (use enhanced strength if available)
+                strength = level.get("enhanced_strength", level.get("strength", 0.5))
+                
+                # Combine distance and strength (weighted average)
+                # Distance gets 60% weight, strength gets 40% weight
+                combined_score = (distance_score * 0.6) + (strength * 0.4)
+                
+                if combined_score > best_score:
+                    best_score = combined_score
                     nearest_level = level
 
             return nearest_level

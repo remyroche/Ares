@@ -1256,13 +1256,23 @@ class SRBreakoutPredictor:
                             if close < level_price - (level_price * self.bounce_rate_threshold):
                                 bounces += 1
                 
-                # Calculate bounce rate
-                bounce_rate = bounces / max(touches, 1)
+                # Calculate bounce rate - handle untested levels properly
+                if touches == 0:
+                    # Level hasn't been tested yet - give neutral score
+                    bounce_rate = 0.5  # Neutral score for untested levels
+                    bounce_strength = 1.0  # Neutral strength
+                    is_untested = True
+                else:
+                    bounce_rate = bounces / touches
+                    bounce_strength = bounce_rate * 2  # Scale to 0-2 range
+                    is_untested = False
+                
                 bounce_rates[level_id] = {
                     'bounce_rate': bounce_rate,
                     'touches': touches,
                     'bounces': bounces,
-                    'bounce_strength': bounce_rate * 2  # Scale to 0-2 range
+                    'bounce_strength': bounce_strength,
+                    'is_untested': is_untested
                 }
             
             self.logger.info(f"✅ Calculated bounce rates for {len(bounce_rates)} S/R levels")
@@ -1444,13 +1454,19 @@ class SRBreakoutPredictor:
                 # Get factor scores
                 touch_count_data = touch_counts.get(level_id, {'touch_count': 1})
                 age_data = level_ages.get(level_id, {'age_score': 0.5})
-                bounce_data = bounce_rates.get(level_id, {'bounce_strength': 0.5})
+                bounce_data = bounce_rates.get(level_id, {'bounce_strength': 0.5, 'is_untested': False})
                 isolation_data = isolation_scores.get(level_id, {'isolation_score': 0.5})
                 
                 # Calculate factor scores (normalize to 0-1 range)
                 touch_factor = min(1.0, touch_count_data.get('touch_count', 1) / 10.0)  # Max 10 touches
                 age_factor = age_data.get('age_score', 0.5)
-                bounce_factor = min(1.0, bounce_data.get('bounce_strength', 0.5) / 2.0)  # Max 2.0 strength
+                
+                # Handle untested levels properly for bounce factor
+                if bounce_data.get('is_untested', False):
+                    bounce_factor = 0.5  # Neutral score for untested levels
+                else:
+                    bounce_factor = min(1.0, bounce_data.get('bounce_strength', 0.5) / 2.0)  # Max 2.0 strength
+                
                 isolation_factor = isolation_data.get('isolation_score', 0.5)
                 volume_factor = min(1.0, level.get('volume', 0) / market_data['volume'].mean() if market_data['volume'].mean() > 0 else 0.5)
                 
@@ -1480,7 +1496,8 @@ class SRBreakoutPredictor:
                         'touch_count': touch_count_data.get('touch_count', 1),
                         'age_periods': age_data.get('age_periods', 0),
                         'bounce_rate': bounce_data.get('bounce_rate', 0.0),
-                        'isolation_score': isolation_data.get('isolation_score', 0.5)
+                        'isolation_score': isolation_data.get('isolation_score', 0.5),
+                        'is_untested': bounce_data.get('is_untested', False)
                     }
                 }
             

@@ -210,7 +210,7 @@ class SROutcomeModelTrainer:
                     if len(market_slice) < 20:
                         continue
 
-                    # Get S/R context and outcome prediction
+                    # Get S/R context and outcome prediction using centralized logic
                     sr_context = await self.sr_predictor.get_sr_context(
                         market_data=market_slice, current_price=current_price
                     )

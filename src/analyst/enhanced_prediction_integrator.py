@@ -93,15 +93,15 @@ class EnhancedPredictionIntegrator:
             # Load confidence calibration results (step 11)
             await self._load_calibration_results()
 
-                    # Load optimization results (step 12-14)
-        await self._load_optimization_results()
+            # Load optimization results (step 12-14)
+            await self._load_optimization_results()
 
-        # Apply optimized parameters if available
-        await self._apply_optimized_parameters()
+            # Apply optimized parameters if available
+            await self._apply_optimized_parameters()
 
-        self.is_initialized = True
-        self.logger.info("✅ Enhanced Prediction Integrator initialized successfully")
-        return True
+            self.is_initialized = True
+            self.logger.info("✅ Enhanced Prediction Integrator initialized successfully")
+            return True
 
         except Exception as e:
             self.logger.error(failed(f"❌ Enhanced Prediction Integrator initialization failed: {e}"))

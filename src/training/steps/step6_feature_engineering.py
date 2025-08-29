@@ -420,6 +420,9 @@ async def _create_comprehensive_features(
         if regime_data is not None:
             features_df = _enhance_hmm_features(features_df, regime_data)
         
+        # Add comprehensive S/R features using centralized logic
+        features_df = await _add_sr_features(features_df, merged_data, config)
+        
         # Better integration with vectorized advanced features
         features_df = await _enhanced_integration_with_vectorized_features(features_df, feature_engineer, symbol, exchange, timeframe)
         
@@ -606,6 +609,41 @@ def _add_statistical_features(features: pd.DataFrame) -> pd.DataFrame:
     
     return features
 
+
+async def _add_sr_features(
+    features: pd.DataFrame, 
+    market_data: pd.DataFrame,
+    config: dict[str, Any]
+) -> pd.DataFrame:
+    """Add comprehensive S/R features using centralized logic."""
+    try:
+        from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
+        
+        # Initialize S/R predictor
+        sr_predictor = SRBreakoutPredictor(config)
+        await sr_predictor.initialize()
+        
+        # Calculate comprehensive S/R features
+        sr_features = await sr_predictor.calculate_comprehensive_sr_features(market_data)
+        
+        # Add S/R features to DataFrame
+        for feature_name, feature_series in sr_features.items():
+            if isinstance(feature_series, pd.Series) and len(feature_series) == len(features):
+                features[f"sr_{feature_name}"] = feature_series
+            elif isinstance(feature_series, (int, float)):
+                # If it's a scalar, broadcast to all rows
+                features[f"sr_{feature_name}"] = feature_series
+        
+        system_logger.info(f"✅ Added {len(sr_features)} S/R features using centralized logic")
+        
+        # Cleanup
+        await sr_predictor.cleanup()
+        
+        return features
+        
+    except Exception as e:
+        system_logger.warning(f"S/R feature integration failed: {e}")
+        return features
 
 async def _enhanced_integration_with_vectorized_features(
     features: pd.DataFrame, 

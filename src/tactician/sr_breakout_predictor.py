@@ -286,6 +286,87 @@ class SRBreakoutPredictor:
         max_null_ratio=0.1,
         check_duplicates=True,
         check_timestamps=True,
+        context="SR breakout prediction input validation"
+    )
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (None, "Invalid input data for SR breakout prediction"),
+            AttributeError: (None, "Predictor not properly initialized"),
+        },
+        default_return=None,
+        context="SR breakout prediction",
+    )
+    async def predict_sr_breakouts(
+        self,
+        market_data: pd.DataFrame,
+        current_price: float,
+    ) -> dict[str, Any]:
+        """
+        Predict support/resistance breakouts.
+
+        Args:
+            market_data: Market data DataFrame
+            current_price: Current market price
+
+        Returns:
+            dict[str, Any]: SR breakout predictions
+        """
+        if not self.is_initialized:
+            self.logger.error("SR breakout predictor not initialized")
+            return {}
+
+        try:
+            self.logger.info("Predicting SR breakouts...")
+
+            # Detect support and resistance levels
+            support_levels = await self._detect_support_levels(market_data)
+            resistance_levels = await self._detect_resistance_levels(market_data)
+
+            # Calculate breakout probabilities
+            breakout_probabilities = await self._calculate_breakout_probabilities(
+                support_levels, resistance_levels, current_price,
+            )
+
+            # Calculate confidence scores
+            confidence_scores = await self._calculate_confidence_scores(
+                support_levels, resistance_levels, market_data,
+            )
+
+            # Generate SR features
+            sr_features = await self._generate_sr_features(
+                support_levels, resistance_levels, market_data,
+            )
+
+            # Create predictions
+            predictions = {
+                "support_levels": support_levels,
+                "resistance_levels": resistance_levels,
+                "breakout_probabilities": breakout_probabilities,
+                "confidence_scores": confidence_scores,
+                "sr_features": sr_features,
+                "current_price": current_price,
+                "timestamp": pd.Timestamp.now(),
+            }
+
+            # Store predictions
+            self.sr_predictions = predictions
+
+            # Update performance metrics
+            self._update_performance_metrics(predictions)
+
+            self.logger.info("✅ SR breakout predictions generated")
+            return predictions
+
+        except Exception as e:
+            self.logger.error(f"Error predicting SR breakouts: {e}")
+            return {}
+
+    @validate_data_quality(
+        required_columns=["open", "high", "low", "close", "volume"],
+        min_rows=50,
+        max_null_ratio=0.1,
+        check_duplicates=True,
+        check_timestamps=True,
         context="SR context calculation input validation"
     )
     @handle_specific_errors(
@@ -1093,6 +1174,14 @@ class SRBreakoutPredictor:
         except Exception as e:
             self.logger.error(f"Error updating performance metrics: {e}")
 
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Invalid input data for S/R proximity check"),
+            KeyError: (False, "Missing required S/R context data"),
+        },
+        default_return=False,
+        context="S/R proximity check",
+    )
     def is_near_sr_level(
         self,
         current_price: float,
@@ -1168,6 +1257,23 @@ class SRBreakoutPredictor:
             self.logger.error(f"Error getting S/R proximity details: {e}")
             return {}
 
+    @validate_data_quality(
+        required_columns=["open", "high", "low", "close", "volume"],
+        min_rows=20,
+        max_null_ratio=0.1,
+        check_duplicates=True,
+        check_timestamps=True,
+        context="S/R outcome prediction input validation"
+    )
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: ({}, "Invalid input data for S/R outcome prediction"),
+            KeyError: ({}, "Missing required S/R context data"),
+            AttributeError: ({}, "Predictor not properly initialized"),
+        },
+        default_return={},
+        context="S/R outcome prediction",
+    )
     async def predict_sr_outcome(
         self,
         market_data: pd.DataFrame,
@@ -1214,6 +1320,22 @@ class SRBreakoutPredictor:
             self.logger.error(f"Error predicting S/R outcome: {e}")
             return {}
 
+    @validate_data_quality(
+        required_columns=["open", "high", "low", "close", "volume"],
+        min_rows=50,
+        max_null_ratio=0.1,
+        check_duplicates=True,
+        check_timestamps=True,
+        context="S/R features calculation input validation"
+    )
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: ({}, "Invalid input data for S/R features calculation"),
+            AttributeError: ({}, "Predictor not properly initialized"),
+        },
+        default_return={},
+        context="S/R features calculation",
+    )
     async def calculate_sr_features(
         self,
         market_data: pd.DataFrame,
@@ -1256,6 +1378,22 @@ class SRBreakoutPredictor:
             self.logger.error(f"Error calculating SR features: {e}")
             return {}
 
+    @validate_data_quality(
+        required_columns=["open", "high", "low", "close", "volume"],
+        min_rows=100,
+        max_null_ratio=0.1,
+        check_duplicates=True,
+        check_timestamps=True,
+        context="Comprehensive S/R features calculation input validation"
+    )
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: ({}, "Invalid input data for comprehensive S/R features calculation"),
+            AttributeError: ({}, "Predictor not properly initialized"),
+        },
+        default_return={},
+        context="Comprehensive S/R features calculation",
+    )
     async def calculate_comprehensive_sr_features(
         self,
         market_data: pd.DataFrame,
@@ -1343,6 +1481,22 @@ class SRBreakoutPredictor:
             self.logger.error(f"Error setting S/R weights: {e}")
             return False
 
+    @validate_data_quality(
+        required_columns=["open", "high", "low", "close", "volume"],
+        min_rows=50,
+        max_null_ratio=0.1,
+        check_duplicates=True,
+        check_timestamps=True,
+        context="Breakout prediction input validation"
+    )
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (None, "Invalid input data for breakout prediction"),
+            AttributeError: (None, "Predictor not properly initialized"),
+        },
+        default_return=None,
+        context="Breakout prediction",
+    )
     async def predict_breakout(self, market_data: pd.DataFrame) -> dict[str, Any] | None:
         """
         Predict breakout direction and confidence.

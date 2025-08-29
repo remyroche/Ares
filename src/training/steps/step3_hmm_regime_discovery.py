@@ -54,6 +54,9 @@ from src.utils.centralized_decorators import (
 )
 from src.utils.logger import system_logger
 
+# Import SR Breakout Predictor for enhanced regime analysis
+from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
+
 logger = system_logger.getChild("Step3HMMRegimeDiscovery")
 
 
@@ -75,9 +78,17 @@ class HMMRegimeDiscoveryStep:
             from .step1.enhanced_data_quality_manager import EnhancedDataQualityManager
             self.data_quality_manager = EnhancedDataQualityManager()
             self.logger.info("✅ Enhanced data quality manager initialized successfully")
+            
+            # Initialize SR Breakout Predictor for enhanced regime analysis
+            self.sr_predictor = SRBreakoutPredictor(self.config)
+            self.logger.info("✅ SR Breakout Predictor initialized successfully")
+            
         except ImportError as e:
             self.logger.warning(f"⚠️ Could not import EnhancedDataQualityManager: {e}")
             self.logger.info("📝 Proceeding without enhanced data quality manager")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not initialize SR Breakout Predictor: {e}")
+            self.logger.info("📝 Proceeding without SR analysis")
 
     @handle_errors(
         exceptions=(Exception,),
@@ -93,6 +104,15 @@ class HMMRegimeDiscoveryStep:
         self.logger.info(f"   - Exchange: {self.config.get('EXCHANGE', 'N/A')}")
         self.logger.info(f"   - Timeframe: {self.config.get('TIMEFRAME', 'N/A')}")
         self.logger.info(f"   - Data Directory: {self.config.get('DATA_DIR', 'N/A')}")
+        
+        # Initialize SR Breakout Predictor if available
+        if hasattr(self, 'sr_predictor'):
+            try:
+                await self.sr_predictor.initialize()
+                self.logger.info("✅ SR Breakout Predictor initialized successfully")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to initialize SR Breakout Predictor: {e}")
+        
         self.logger.info("✅ HMM Regime Discovery Step initialized successfully")
 
     def _log_step_timing(self, step_name: str, start_time: float) -> None:
@@ -213,6 +233,33 @@ class HMMRegimeDiscoveryStep:
                 
                 # Log detailed results
                 self._log_regime_discovery_results(regime_results)
+                
+                # Step 4: Perform SR Context Analysis
+                self.logger.info("=" * 60)
+                self.logger.info("STEP 4: SR Context Analysis")
+                self.logger.info("=" * 60)
+                sr_start = time.time()
+                
+                # Get SR context for regime analysis
+                current_price = data_loaded["data"]["close"].iloc[-1]
+                sr_context = await self._get_sr_context_for_regime_analysis(
+                    data_loaded["data"], 
+                    current_price
+                )
+                
+                # Enhance regime analysis with SR context
+                enhanced_regime_results = await self._enhance_regime_analysis_with_sr(
+                    regime_results, 
+                    sr_context, 
+                    data_loaded["data"]
+                )
+                
+                # Update pipeline state with SR-enhanced results
+                pipeline_state.update(enhanced_regime_results)
+                
+                sr_elapsed = time.time() - sr_start
+                self.logger.info(f"⏱️ SR Context Analysis completed in {sr_elapsed:.2f} seconds")
+                
             else:
                 self.logger.error("❌ HMM regime discovery failed")
                 error_msg = regime_results.get("error", "Unknown error")
@@ -235,6 +282,10 @@ class HMMRegimeDiscoveryStep:
         self.logger.info(f"   - Data Quality Validation: {data_quality_elapsed:.2f}s")
         self.logger.info(f"   - Data Loading and Preparation: {data_loading_elapsed:.2f}s")
         self.logger.info(f"   - HMM Regime Discovery: {hmm_elapsed:.2f}s")
+        
+        # Add SR analysis timing if it was performed
+        if 'sr_elapsed' in locals():
+            self.logger.info(f"   - SR Context Analysis: {sr_elapsed:.2f}s")
         
         # Memory usage summary
         if PSUTIL_AVAILABLE:
@@ -1813,6 +1864,114 @@ class HMMRegimeDiscoveryStep:
         except Exception as e:
             self.logger.warning(f"⚠️ Error calculating transition matrix: {e}")
             return np.array([])
+
+    async def _get_sr_context_for_regime_analysis(
+        self,
+        market_data: pd.DataFrame,
+        current_price: float
+    ) -> dict[str, Any]:
+        """Get SR context for regime analysis."""
+        try:
+            if not hasattr(self, 'sr_predictor') or self.sr_predictor is None:
+                self.logger.warning("⚠️ SR predictor not available, skipping SR context analysis")
+                return {}
+            
+            # Get comprehensive SR context
+            sr_context = await self.sr_predictor.get_sr_context(market_data, current_price)
+            
+            self.logger.info(f"✅ SR context analysis completed: {len(sr_context)} context elements")
+            return sr_context
+            
+        except Exception as e:
+            self.logger.error(f"Error getting SR context for regime analysis: {e}")
+            return {}
+
+    async def _enhance_regime_analysis_with_sr(
+        self,
+        regime_results: dict[str, Any],
+        sr_context: dict[str, Any],
+        market_data: pd.DataFrame
+    ) -> dict[str, Any]:
+        """Enhance regime analysis with SR context."""
+        try:
+            enhanced_results = regime_results.copy()
+            
+            # Add SR context to regime analysis
+            enhanced_results["sr_context"] = sr_context
+            
+            # Create SR-aware regime features
+            sr_regime_features = await self._create_sr_regime_features(
+                regime_results.get("regime_states", []),
+                sr_context,
+                market_data
+            )
+            
+            enhanced_results["sr_regime_features"] = sr_regime_features
+            
+            # Generate SR-enhanced regime report
+            if hasattr(self, 'sr_predictor') and self.sr_predictor and self.sr_predictor.reporting_enabled:
+                await self.sr_predictor.generate_manual_report(market_data, sr_context)
+            
+            self.logger.info("✅ SR context analysis completed")
+            return enhanced_results
+            
+        except Exception as e:
+            self.logger.error(f"Error enhancing regime analysis with SR: {e}")
+            return regime_results
+
+    async def _create_sr_regime_features(
+        self,
+        regime_states: list[int],
+        sr_context: dict[str, Any],
+        market_data: pd.DataFrame
+    ) -> dict[str, Any]:
+        """Create SR-aware regime features."""
+        try:
+            features = {}
+            
+            # Add SR proximity to regime analysis
+            features["sr_proximity_by_regime"] = {}
+            features["sr_strength_by_regime"] = {}
+            
+            # Group by regime and analyze SR context
+            for regime in set(regime_states):
+                regime_mask = [i for i, r in enumerate(regime_states) if r == regime]
+                regime_data = market_data.iloc[regime_mask]
+                
+                if len(regime_data) > 0:
+                    regime_price = regime_data["close"].iloc[-1]
+                    regime_sr_context = await self._get_sr_context_for_regime_analysis(
+                        regime_data, 
+                        regime_price
+                    )
+                    
+                    features["sr_proximity_by_regime"][f"regime_{regime}"] = {
+                        "support_proximity": regime_sr_context.get("support_proximity", 1.0),
+                        "resistance_proximity": regime_sr_context.get("resistance_proximity", 1.0)
+                    }
+                    
+                    features["sr_strength_by_regime"][f"regime_{regime}"] = {
+                        "support_strength": regime_sr_context.get("support_strength", 0.5),
+                        "resistance_strength": regime_sr_context.get("resistance_strength", 0.5)
+                    }
+            
+            # Add overall SR metrics
+            features["overall_sr_metrics"] = {
+                "support_proximity": sr_context.get("support_proximity", 1.0),
+                "resistance_proximity": sr_context.get("resistance_proximity", 1.0),
+                "support_strength": sr_context.get("support_strength", 0.5),
+                "resistance_strength": sr_context.get("resistance_strength", 0.5),
+                "sr_zone_width": sr_context.get("sr_zone_width", 0.0),
+                "total_support_levels": len(sr_context.get("support_levels", [])),
+                "total_resistance_levels": len(sr_context.get("resistance_levels", []))
+            }
+            
+            self.logger.info(f"✅ Created SR-aware regime features for {len(set(regime_states))} regimes")
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Error creating SR regime features: {e}")
+            return {}
 
 
 @monitor_feature_engineering()

@@ -2744,33 +2744,282 @@ class SRBreakoutPredictor:
 
         try:
             features = {}
-
+            current_price = market_data['close'].iloc[-1]
+            
+            # Get comprehensive S/R context
+            sr_context = await self.get_sr_context(market_data, current_price)
+            
+            # Extract base outcome features
+            base_features = await self._extract_outcome_features(market_data, current_price, sr_context)
+            
+            # Generate all required SR features based on sr_base_tokens
+            features.update(await self._generate_comprehensive_sr_features(market_data, sr_context, base_features))
+            
             # Calculate features for different lookback periods
             for lookback in [20, 50, 100]:
                 if len(market_data) >= lookback:
                     lookback_data = market_data.tail(lookback)
-                    current_price = lookback_data['close'].iloc[-1]
+                    lookback_price = lookback_data['close'].iloc[-1]
                     
                     # Get S/R context for this lookback
-                    sr_context = await self.get_sr_context(lookback_data, current_price)
+                    lookback_sr_context = await self.get_sr_context(lookback_data, lookback_price)
                     
-                    # Extract features
-                    lookback_features = await self._extract_outcome_features(lookback_data, current_price, sr_context)
+                    # Extract features with lookback suffix
+                    lookback_features = await self._extract_outcome_features(lookback_data, lookback_price, lookback_sr_context)
                     
                     # Add to features with lookback suffix
                     for feature_name, feature_value in lookback_features.items():
                         features[f"{feature_name}_{lookback}"] = pd.Series([feature_value] * len(market_data), index=market_data.index)
 
-            # Add current features
-            current_features = await self.calculate_sr_features(market_data)
-            for feature_name, feature_value in current_features.items():
-                features[feature_name] = pd.Series([feature_value] * len(market_data), index=market_data.index)
-
+            self.logger.info(f"✅ Generated {len(features)} comprehensive SR features")
             return features
 
         except Exception as e:
             self.logger.error(f"Error calculating comprehensive SR features: {e}")
             return {}
+
+    async def _generate_comprehensive_sr_features(
+        self,
+        market_data: pd.DataFrame,
+        sr_context: dict[str, Any],
+        base_features: dict[str, float]
+    ) -> dict[str, pd.Series]:
+        """Generate comprehensive SR features matching sr_base_tokens requirements."""
+        try:
+            features = {}
+            current_price = market_data['close'].iloc[-1]
+            
+            # 1. Distance-based features
+            nearest_support = sr_context.get("nearest_support", current_price)
+            nearest_resistance = sr_context.get("nearest_resistance", current_price)
+            
+            # Calculate distances as percentages/returns
+            support_distance_pct = (current_price - nearest_support) / current_price if current_price > 0 else 0.0
+            resistance_distance_pct = (nearest_resistance - current_price) / current_price if current_price > 0 else 0.0
+            
+            features["sr_distance"] = pd.Series([support_distance_pct] * len(market_data), index=market_data.index)
+            features["support_level"] = pd.Series([support_distance_pct] * len(market_data), index=market_data.index)  # Distance as percentage
+            features["resistance_level"] = pd.Series([resistance_distance_pct] * len(market_data), index=market_data.index)  # Distance as percentage
+            
+            # 2. Proximity features (as percentages)
+            features["proximity"] = pd.Series([min(support_distance_pct, resistance_distance_pct)] * len(market_data), index=market_data.index)
+            features["sr_proximity"] = pd.Series([support_distance_pct] * len(market_data), index=market_data.index)
+            features["sr_proximity_score"] = pd.Series([1.0 / (1.0 + support_distance_pct)] * len(market_data), index=market_data.index)
+            
+            # 3. Multi-timeframe SR score
+            features["multi_timeframe_sr_score"] = pd.Series([self._calculate_multi_timeframe_sr_score(market_data)] * len(market_data), index=market_data.index)
+            features["sr_multi_timeframe"] = pd.Series([self._calculate_multi_timeframe_sr_score(market_data)] * len(market_data), index=market_data.index)
+            
+            # 4. Normalized distance (as percentage)
+            if nearest_resistance > nearest_support and current_price > 0:
+                zone_width_pct = (nearest_resistance - nearest_support) / current_price
+                normalized_distance_pct = support_distance_pct / zone_width_pct if zone_width_pct > 0 else 0.5
+            else:
+                normalized_distance_pct = 0.5
+            features["normalized_distance"] = pd.Series([normalized_distance_pct] * len(market_data), index=market_data.index)
+            
+            # 5. Strength features
+            features["strength_score"] = pd.Series([(sr_context.get("support_strength", 0.5) + sr_context.get("resistance_strength", 0.5)) / 2] * len(market_data), index=market_data.index)
+            features["support_strength"] = pd.Series([sr_context.get("support_strength", 0.5)] * len(market_data), index=market_data.index)
+            features["resistance_strength"] = pd.Series([sr_context.get("resistance_strength", 0.5)] * len(market_data), index=market_data.index)
+            
+            # 6. Clarity factor
+            features["clarity_factor"] = pd.Series([self._calculate_clarity_factor(sr_context)] * len(market_data), index=market_data.index)
+            
+            # 7. Directional pressure
+            features["directional_pressure"] = pd.Series([self._calculate_directional_pressure(market_data, sr_context)] * len(market_data), index=market_data.index)
+            
+            # 8. SR score
+            features["sr_score"] = pd.Series([self._calculate_sr_score(sr_context)] * len(market_data), index=market_data.index)
+            
+            # 9. Delta SR score
+            features["delta_sr_score"] = pd.Series([self._calculate_delta_sr_score(market_data, sr_context)] * len(market_data), index=market_data.index)
+            
+            # 10. Isolation score
+            features["isolation_score"] = pd.Series([self._calculate_isolation_score(sr_context)] * len(market_data), index=market_data.index)
+            
+            # 11. SR level
+            features["sr_level"] = pd.Series([self._determine_sr_level(current_price, sr_context)] * len(market_data), index=market_data.index)
+            
+            # 12. SR outcome
+            features["sr_outcome"] = pd.Series([self._predict_sr_outcome(market_data, sr_context)] * len(market_data), index=market_data.index)
+            
+            # 13. Zone width
+            features["sr_zone_width"] = pd.Series([sr_context.get("sr_zone_width", 0.0)] * len(market_data), index=market_data.index)
+            
+            # 14. Add base features
+            for feature_name, feature_value in base_features.items():
+                features[f"sr_{feature_name}"] = pd.Series([feature_value] * len(market_data), index=market_data.index)
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Error generating comprehensive SR features: {e}")
+            return {}
+
+    def _calculate_multi_timeframe_sr_score(self, market_data: pd.DataFrame) -> float:
+        """Calculate multi-timeframe SR score."""
+        try:
+            # Calculate SR strength across different timeframes
+            timeframes = [20, 50, 100]
+            scores = []
+            
+            for tf in timeframes:
+                if len(market_data) >= tf:
+                    tf_data = market_data.tail(tf)
+                    # Simple SR strength calculation based on price action
+                    high_low_ratio = tf_data['high'].max() / tf_data['low'].min()
+                    volume_weight = tf_data['volume'].mean() / market_data['volume'].mean()
+                    scores.append(high_low_ratio * volume_weight)
+            
+            return np.mean(scores) if scores else 1.0
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating multi-timeframe SR score: {e}")
+            return 1.0
+
+    def _calculate_clarity_factor(self, sr_context: dict[str, Any]) -> float:
+        """Calculate SR clarity factor."""
+        try:
+            support_strength = sr_context.get("support_strength", 0.5)
+            resistance_strength = sr_context.get("resistance_strength", 0.5)
+            zone_width = sr_context.get("sr_zone_width", 0.0)
+            
+            # Clarity increases with strength and decreases with zone width
+            clarity = (support_strength + resistance_strength) / 2
+            if zone_width > 0:
+                clarity *= (1.0 - min(zone_width, 0.5))
+            
+            return max(0.0, min(1.0, clarity))
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating clarity factor: {e}")
+            return 0.5
+
+    def _calculate_directional_pressure(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> float:
+        """Calculate directional pressure towards SR levels using percentages."""
+        try:
+            current_price = market_data['close'].iloc[-1]
+            nearest_support = sr_context.get("nearest_support", current_price)
+            nearest_resistance = sr_context.get("nearest_resistance", current_price)
+            
+            # Calculate pressure based on distance and momentum (using percentages)
+            if current_price > 0:
+                support_distance_pct = (current_price - nearest_support) / current_price
+                resistance_distance_pct = (nearest_resistance - current_price) / current_price
+            else:
+                support_distance_pct = 1.0
+                resistance_distance_pct = 1.0
+            
+            # Add momentum component (as percentage)
+            momentum = market_data['close'].pct_change().iloc[-5:].mean()
+            
+            # Pressure towards support if price is falling, towards resistance if rising
+            if momentum < 0:
+                pressure = 1.0 / (1.0 + support_distance_pct)
+            else:
+                pressure = 1.0 / (1.0 + resistance_distance_pct)
+            
+            return max(0.0, min(1.0, pressure))
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating directional pressure: {e}")
+            return 0.5
+
+    def _calculate_sr_score(self, sr_context: dict[str, Any]) -> float:
+        """Calculate overall SR score using percentages."""
+        try:
+            support_strength = sr_context.get("support_strength", 0.5)
+            resistance_strength = sr_context.get("resistance_strength", 0.5)
+            support_proximity = sr_context.get("support_proximity", 1.0)
+            resistance_proximity = sr_context.get("resistance_proximity", 1.0)
+            
+            # Combine strength and proximity (proximity is already in percentage form)
+            support_score = support_strength * (1.0 / (1.0 + support_proximity))
+            resistance_score = resistance_strength * (1.0 / (1.0 + resistance_proximity))
+            
+            return (support_score + resistance_score) / 2
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating SR score: {e}")
+            return 0.5
+
+    def _calculate_delta_sr_score(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> float:
+        """Calculate change in SR score over time."""
+        try:
+            if len(market_data) < 20:
+                return 0.0
+            
+            # Calculate SR score for current and previous periods
+            current_price = market_data['close'].iloc[-1]
+            prev_price = market_data['close'].iloc[-20]
+            
+            # Simplified delta calculation
+            price_change = (current_price - prev_price) / prev_price
+            return price_change
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating delta SR score: {e}")
+            return 0.0
+
+    def _calculate_isolation_score(self, sr_context: dict[str, Any]) -> float:
+        """Calculate isolation score for SR levels."""
+        try:
+            # Use isolation data from enhanced strength calculation
+            support_levels = sr_context.get("support_levels", [])
+            resistance_levels = sr_context.get("resistance_levels", [])
+            
+            if not support_levels and not resistance_levels:
+                return 0.5
+            
+            # Calculate average isolation score
+            isolation_scores = []
+            for level in support_levels + resistance_levels:
+                if "strength_factors" in level and "isolation_score" in level["strength_factors"]:
+                    isolation_scores.append(level["strength_factors"]["isolation_score"])
+            
+            return np.mean(isolation_scores) if isolation_scores else 0.5
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating isolation score: {e}")
+            return 0.5
+
+    def _determine_sr_level(self, current_price: float, sr_context: dict[str, Any]) -> float:
+        """Determine current SR level position as percentage."""
+        try:
+            nearest_support = sr_context.get("nearest_support", current_price)
+            nearest_resistance = sr_context.get("nearest_resistance", current_price)
+            
+            if nearest_resistance > nearest_support and current_price > 0:
+                # Calculate position as percentage within the SR zone
+                support_distance_pct = (current_price - nearest_support) / current_price
+                zone_width_pct = (nearest_resistance - nearest_support) / current_price
+                return support_distance_pct / zone_width_pct if zone_width_pct > 0 else 0.5
+            else:
+                return 0.5
+                
+        except Exception as e:
+            self.logger.error(f"Error determining SR level: {e}")
+            return 0.5
+
+    def _predict_sr_outcome(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> float:
+        """Predict SR outcome based on current market conditions as percentage."""
+        try:
+            current_price = market_data['close'].iloc[-1]
+            nearest_support = sr_context.get("nearest_support", current_price)
+            nearest_resistance = sr_context.get("nearest_resistance", current_price)
+            
+            # Calculate outcome as percentage position within SR zone
+            if nearest_resistance > nearest_support and current_price > 0:
+                support_distance_pct = (current_price - nearest_support) / current_price
+                zone_width_pct = (nearest_resistance - nearest_support) / current_price
+                return support_distance_pct / zone_width_pct if zone_width_pct > 0 else 0.5
+            else:
+                return 0.5
+                
+        except Exception as e:
+            self.logger.error(f"Error predicting SR outcome: {e}")
+            return 0.5
 
     async def set_weights(self, weights: dict[str, float]) -> bool:
         """

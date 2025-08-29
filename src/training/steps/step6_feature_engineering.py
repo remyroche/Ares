@@ -371,6 +371,25 @@ async def _create_comprehensive_features(
     """Create comprehensive features using vectorized feature engineering."""
     
     try:
+        # Create proper config for SR features
+        config = {
+            "symbol": symbol,
+            "exchange": exchange,
+            "timeframe": timeframe,
+            "sr_breakout_predictor": {
+                "enable_detailed_reporting": True,
+                "sr_proximity_threshold": 0.02,
+                "breakout_confidence_threshold": 0.6,
+                "sr_detection_method": "fractal",
+                "min_sr_strength": 0.3,
+                "max_sr_levels": 10,
+                "enable_dbscan_clustering": True,
+                "enable_enhanced_strength": True,
+                "enable_sr_features": True,
+                "replace_existing_sr": False
+            }
+        }
+        
         # Merge data
         merged_data = unified_data.copy()
         
@@ -421,7 +440,13 @@ async def _create_comprehensive_features(
             features_df = _enhance_hmm_features(features_df, regime_data)
         
         # Add comprehensive S/R features using centralized logic
-        features_df = await _add_sr_features(features_df, merged_data, config)
+        if config.get("sr_breakout_predictor", {}).get("enable_sr_features", True):
+            features_df = await _add_sr_features(features_df, merged_data, config)
+        else:
+            system_logger.info("⏭️ Skipping SR feature generation (disabled in config)")
+        
+        # Add SR-aware feature selection
+        features_df = await _add_sr_aware_feature_selection(features_df, merged_data, config)
         
         # Better integration with vectorized advanced features
         features_df = await _enhanced_integration_with_vectorized_features(features_df, feature_engineer, symbol, exchange, timeframe)
@@ -444,6 +469,7 @@ async def _create_comprehensive_features(
                 "val_samples": len(features_val),
                 "feature_columns": list(features_df.columns),
                 "regime_aware": regime_data is not None,
+                "sr_features_enabled": config.get("sr_breakout_predictor", {}).get("enable_sr_features", True),
                 "timestamp": datetime.now().isoformat()
             }
         }
@@ -617,24 +643,69 @@ async def _add_sr_features(
 ) -> pd.DataFrame:
     """Add comprehensive S/R features using centralized logic."""
     try:
+        # Check for existing SR features to avoid redundancy
+        existing_sr_features = [col for col in features.columns if any(keyword in col.lower() for keyword in [
+            "sr_", "support", "resistance", "pivot", "breakout", "proximity"
+        ])]
+        
+        if existing_sr_features:
+            system_logger.info(f"⚠️ Found {len(existing_sr_features)} existing SR features, will enhance rather than replace")
+            system_logger.info(f"   Existing features: {existing_sr_features[:5]}...")
+        
         from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
         
-        # Initialize S/R predictor
+        # Initialize S/R predictor with proper config
         sr_predictor = SRBreakoutPredictor(config)
         await sr_predictor.initialize()
+        
+        # Get comprehensive S/R context
+        current_price = market_data['close'].iloc[-1]
+        sr_context = await sr_predictor.get_sr_context(market_data, current_price)
         
         # Calculate comprehensive S/R features
         sr_features = await sr_predictor.calculate_comprehensive_sr_features(market_data)
         
-        # Add S/R features to DataFrame
-        for feature_name, feature_series in sr_features.items():
-            if isinstance(feature_series, pd.Series) and len(feature_series) == len(features):
-                features[f"sr_{feature_name}"] = feature_series
-            elif isinstance(feature_series, (int, float)):
-                # If it's a scalar, broadcast to all rows
-                features[f"sr_{feature_name}"] = feature_series
+        # Add S/R context features
+        context_features = {
+            "sr_support_proximity": sr_context.get("support_proximity", 1.0),
+            "sr_resistance_proximity": sr_context.get("resistance_proximity", 1.0),
+            "sr_support_strength": sr_context.get("support_strength", 0.5),
+            "sr_resistance_strength": sr_context.get("resistance_strength", 0.5),
+            "sr_zone_width": sr_context.get("sr_zone_width", 0.0),
+            "sr_nearest_support": sr_context.get("nearest_support", current_price),
+            "sr_nearest_resistance": sr_context.get("nearest_resistance", current_price),
+            "sr_total_support_levels": len(sr_context.get("support_levels", [])),
+            "sr_total_resistance_levels": len(sr_context.get("resistance_levels", [])),
+        }
         
-        system_logger.info(f"✅ Added {len(sr_features)} S/R features using centralized logic")
+        # Add all features to DataFrame with conflict resolution
+        all_sr_features = {**sr_features, **context_features}
+        features_added = 0
+        
+        for feature_name, feature_value in all_sr_features.items():
+            new_feature_name = f"sr_{feature_name}"
+            
+            # Check if feature already exists
+            if new_feature_name in features.columns:
+                if config.get("sr_breakout_predictor", {}).get("replace_existing_sr", False):
+                    system_logger.info(f"🔄 Replacing existing feature: {new_feature_name}")
+                else:
+                    system_logger.warning(f"⚠️ Feature {new_feature_name} already exists, skipping")
+                    continue
+                
+            if isinstance(feature_value, pd.Series) and len(feature_value) == len(features):
+                features[new_feature_name] = feature_value
+                features_added += 1
+            elif isinstance(feature_value, (int, float)):
+                # If it's a scalar, broadcast to all rows
+                features[new_feature_name] = feature_value
+                features_added += 1
+        
+        system_logger.info(f"✅ Added {features_added} new S/R features (avoided {len(existing_sr_features)} existing)")
+        
+        # Generate detailed report if enabled
+        if sr_predictor.reporting_enabled:
+            await sr_predictor.generate_manual_report(market_data, sr_context)
         
         # Cleanup
         await sr_predictor.cleanup()
@@ -643,6 +714,63 @@ async def _add_sr_features(
         
     except Exception as e:
         system_logger.warning(f"S/R feature integration failed: {e}")
+        return features
+
+async def _add_sr_aware_feature_selection(
+    features: pd.DataFrame,
+    market_data: pd.DataFrame,
+    config: dict[str, Any]
+) -> pd.DataFrame:
+    """Add SR-aware feature selection and engineering."""
+    try:
+        from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
+        
+        sr_predictor = SRBreakoutPredictor(config)
+        await sr_predictor.initialize()
+        
+        # Get SR context for feature selection
+        current_price = market_data['close'].iloc[-1]
+        sr_context = await sr_predictor.get_sr_context(market_data, current_price)
+        
+        # Create SR-aware features based on proximity
+        support_proximity = sr_context.get("support_proximity", 1.0)
+        resistance_proximity = sr_context.get("resistance_proximity", 1.0)
+        
+        # Add proximity-based feature weights (using percentages)
+        features["sr_proximity_weight"] = 1.0 / (1.0 + min(support_proximity, resistance_proximity))
+        
+        # Add SR strength features
+        features["sr_combined_strength"] = (
+            sr_context.get("support_strength", 0.5) + 
+            sr_context.get("resistance_strength", 0.5)
+        ) / 2
+        
+        # Add SR zone features (using percentages)
+        sr_zone_width = sr_context.get("sr_zone_width", 0.0)
+        if sr_zone_width > 0 and current_price > 0:
+            zone_position_pct = (current_price - sr_context.get("nearest_support", current_price)) / current_price / sr_zone_width
+        else:
+            zone_position_pct = 0.5
+        features["sr_zone_position"] = zone_position_pct
+        
+        # Add SR momentum features
+        features["sr_momentum"] = market_data['close'].pct_change().iloc[-5:].mean()
+        
+        # Add SR volatility features
+        features["sr_volatility"] = market_data['close'].pct_change().rolling(20).std().iloc[-1]
+        
+        # Add SR volume features
+        features["sr_volume_ratio"] = market_data['volume'].iloc[-1] / market_data['volume'].rolling(20).mean().iloc[-1]
+        
+        # Add SR trend features
+        features["sr_trend"] = 1 if market_data['close'].iloc[-1] > market_data['close'].iloc[-20] else -1
+        
+        await sr_predictor.cleanup()
+        system_logger.info("✅ Added SR-aware feature selection features")
+        return features
+        
+    except Exception as e:
+        system_logger.warning(f"SR-aware feature selection failed: {e}")
         return features
 
 async def _enhanced_integration_with_vectorized_features(

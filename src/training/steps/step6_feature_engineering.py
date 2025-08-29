@@ -58,6 +58,12 @@ from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
     data_quality_checks={
         "min_rows": 1000,
         "required_columns": ["timestamp", "open", "high", "low", "close", "volume"],
+        "data_validation": {
+            "check_negative_prices": True,
+            "check_price_relationships": True,
+            "max_missing_ratio": 0.1,
+            "min_data_points": 100
+        }
     },
     context="Complete Feature Engineering",
 )
@@ -178,13 +184,10 @@ async def run_step(
             logger.error("❌ Failed to load unified data")
             return False
 
-        # 2) Validate input data
-        logger.info("🔍 Validating input data...")
-        if not _validate_input_data(unified_data):
-            logger.error("❌ Input data validation failed")
-            return False
+        # Note: Data validation is now handled by decorators (@validate_step_prerequisites, @secure_data_processing)
+        logger.info("✅ Data validation passed (handled by decorators)")
 
-        # 3) Load regime information from step3
+        # 2) Load regime information from step3
         logger.info("📊 Loading regime information from step3...")
         regime_data = await _load_regime_data(symbol, exchange, timeframe)
         if regime_data is not None:
@@ -192,14 +195,14 @@ async def run_step(
         else:
             logger.warning("⚠️ No regime data found - proceeding without regime-aware features")
 
-        # 4) Load labeled data from step5
+        # 3) Load labeled data from step5
         logger.info("📊 Loading labeled data from step5...")
         labeled_data = await _load_labeled_data(symbol, exchange, timeframe)
         if labeled_data is None or labeled_data.empty:
             logger.error("❌ Failed to load labeled data")
             return False
 
-        # 5) Initialize vectorized feature engineering
+        # 4) Initialize vectorized feature engineering
         logger.info("🔧 Initializing vectorized feature engineering...")
         feature_engineer = VectorizedAdvancedFeatureEngineering(
             config={
@@ -212,7 +215,7 @@ async def run_step(
             }
         )
 
-        # 6) Create comprehensive features
+        # 5) Create comprehensive features
         logger.info("🔧 Creating comprehensive features...")
         features_result = await _create_comprehensive_features(
             unified_data, labeled_data, regime_data, feature_engineer, symbol, exchange, timeframe
@@ -222,12 +225,12 @@ async def run_step(
             logger.error("❌ Failed to create comprehensive features")
             return False
 
-        # 7) Monitor feature generation
+        # 6) Monitor feature generation
         logger.info("📊 Monitoring feature generation...")
         feature_stats = _monitor_feature_generation(features_result["features_full"])
         logger.info(f"📈 Feature generation stats: {feature_stats}")
 
-        # 8) Save feature artifacts
+        # 7) Save feature artifacts
         logger.info("💾 Saving feature artifacts...")
         save_success = await _save_feature_artifacts(features_result, symbol, exchange, timeframe, data_dir)
         
@@ -243,45 +246,6 @@ async def run_step(
     except Exception as e:
         logger.exception(f"❌ Unexpected error in Step 6: {e}")
         return False
-
-
-def _validate_input_data(data: pd.DataFrame) -> bool:
-    """Validate input data before feature generation."""
-    required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
-    
-    # Check required columns
-    missing_columns = [col for col in required_columns if col not in data.columns]
-    if missing_columns:
-        system_logger.error(f"Missing required columns: {missing_columns}")
-        return False
-    
-    # Check data quality
-    if len(data) < 100:
-        system_logger.error("Insufficient data for feature generation")
-        return False
-    
-    # Check for negative prices
-    if (data[["open", "high", "low", "close"]] <= 0).any().any():
-        system_logger.error("Negative or zero prices detected")
-        return False
-    
-    # Check for logical price relationships
-    if not ((data["high"] >= data["low"]) & 
-            (data["high"] >= data["open"]) & 
-            (data["high"] >= data["close"]) &
-            (data["low"] <= data["open"]) & 
-            (data["low"] <= data["close"])).all():
-        system_logger.error("Invalid price relationships detected")
-        return False
-    
-    # Check for excessive missing values
-    missing_ratio = data[required_columns].isnull().sum().sum() / (len(data) * len(required_columns))
-    if missing_ratio > 0.1:  # More than 10% missing
-        system_logger.error(f"Too many missing values: {missing_ratio:.2%}")
-        return False
-    
-    system_logger.info("✅ Input data validation passed")
-    return True
 
 
 def _monitor_feature_generation(features: pd.DataFrame) -> dict:

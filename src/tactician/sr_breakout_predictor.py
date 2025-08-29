@@ -40,6 +40,14 @@ class SRBreakoutPredictor:
         # SR predictor state
         self.is_initialized: bool = False
         self.sr_predictions: dict[str, Any] = {}
+        
+        # Reporting system
+        self.reporting_enabled: bool = self.sr_config.get("enable_detailed_reporting", True)
+        self.report_directory: str = self.sr_config.get("report_directory", "reports/sr_analysis")
+        self.report_format: str = self.sr_config.get("report_format", "json")  # json, csv, html
+        self.report_retention_days: int = self.sr_config.get("report_retention_days", 30)
+        self.metrics_history: list[dict[str, Any]] = []
+        self.current_report_id: str = ""
 
         # Configuration
         self.sr_config: dict[str, Any] = self.config.get("sr_breakout_predictor", {})
@@ -246,6 +254,11 @@ class SRBreakoutPredictor:
 
             self.is_initialized = True
             self.logger.info("✅ SR breakout predictor initialized successfully")
+            
+            # Initialize reporting system
+            if self.reporting_enabled:
+                self._initialize_reporting_system()
+            
             return True
 
         except Exception as e:
@@ -303,6 +316,528 @@ class SRBreakoutPredictor:
         except Exception as e:
             self.logger.error(f"Failed to initialize components: {e}")
             return False
+
+    def _initialize_reporting_system(self) -> None:
+        """Initialize the reporting system."""
+        try:
+            import os
+            from pathlib import Path
+            
+            # Create report directory if it doesn't exist
+            report_path = Path(self.report_directory)
+            report_path.mkdir(parents=True, exist_ok=True)
+            
+            # Create subdirectories for different report types
+            (report_path / "json").mkdir(exist_ok=True)
+            (report_path / "csv").mkdir(exist_ok=True)
+            (report_path / "html").mkdir(exist_ok=True)
+            (report_path / "metrics").mkdir(exist_ok=True)
+            
+            self.logger.info(f"📊 Reporting system initialized: {report_path}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize reporting system: {e}")
+
+    def _generate_report_id(self) -> str:
+        """Generate a unique report ID."""
+        from datetime import datetime
+        import uuid
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        unique_id = str(uuid.uuid4())[:8]
+        return f"sr_report_{timestamp}_{unique_id}"
+
+    def _calculate_comprehensive_metrics(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> dict[str, Any]:
+        """Calculate comprehensive metrics for reporting."""
+        try:
+            current_price = sr_context.get("current_price", market_data["close"].iloc[-1])
+            
+            # Basic market metrics
+            market_metrics = {
+                "data_points": len(market_data),
+                "price_range": {
+                    "min": float(market_data["low"].min()),
+                    "max": float(market_data["high"].max()),
+                    "current": float(current_price),
+                    "volatility": float(market_data["close"].pct_change().std()),
+                },
+                "volume_metrics": {
+                    "total_volume": float(market_data["volume"].sum()),
+                    "avg_volume": float(market_data["volume"].mean()),
+                    "volume_std": float(market_data["volume"].std()),
+                    "volume_trend": float(market_data["volume"].iloc[-10:].mean() / market_data["volume"].iloc[-20:-10].mean() if len(market_data) >= 20 else 1.0),
+                },
+                "price_metrics": {
+                    "price_change_1h": float(market_data["close"].pct_change().iloc[-1]),
+                    "price_change_24h": float(market_data["close"].pct_change(24).iloc[-1]) if len(market_data) >= 24 else 0.0,
+                    "price_trend": float(market_data["close"].iloc[-10:].mean() / market_data["close"].iloc[-20:-10].mean() if len(market_data) >= 20 else 1.0),
+                }
+            }
+            
+            # S/R level metrics
+            support_levels = sr_context.get("support_levels", [])
+            resistance_levels = sr_context.get("resistance_levels", [])
+            
+            sr_metrics = {
+                "total_levels": len(support_levels) + len(resistance_levels),
+                "support_levels": {
+                    "count": len(support_levels),
+                    "avg_strength": np.mean([level.get("enhanced_strength", level.get("strength", 0.5)) for level in support_levels]) if support_levels else 0.0,
+                    "avg_price": np.mean([level.get("price", 0) for level in support_levels]) if support_levels else 0.0,
+                    "price_range": {
+                        "min": min([level.get("price", 0) for level in support_levels]) if support_levels else 0.0,
+                        "max": max([level.get("price", 0) for level in support_levels]) if support_levels else 0.0,
+                    }
+                },
+                "resistance_levels": {
+                    "count": len(resistance_levels),
+                    "avg_strength": np.mean([level.get("enhanced_strength", level.get("strength", 0.5)) for level in resistance_levels]) if resistance_levels else 0.0,
+                    "avg_price": np.mean([level.get("price", 0) for level in resistance_levels]) if resistance_levels else 0.0,
+                    "price_range": {
+                        "min": min([level.get("price", 0) for level in resistance_levels]) if resistance_levels else 0.0,
+                        "max": max([level.get("price", 0) for level in resistance_levels]) if resistance_levels else 0.0,
+                    }
+                },
+                "proximity_metrics": {
+                    "support_proximity": sr_context.get("support_proximity", 0.0),
+                    "resistance_proximity": sr_context.get("resistance_proximity", 0.0),
+                    "sr_zone_width": sr_context.get("sr_zone_width", 0.0),
+                },
+                "strength_metrics": {
+                    "support_strength": sr_context.get("support_strength", 0.5),
+                    "resistance_strength": sr_context.get("resistance_strength", 0.5),
+                }
+            }
+            
+            # Clustering metrics
+            clustering_result = sr_context.get("clustering_result", {})
+            clustering_metrics = {
+                "total_clusters": clustering_result.get("n_clusters", 0),
+                "noise_points": clustering_result.get("noise_points", 0),
+                "total_points": clustering_result.get("total_points", 0),
+                "clustering_quality": clustering_result.get("clustering_quality", "unknown"),
+                "cluster_statistics": clustering_result.get("cluster_statistics", {})
+            }
+            
+            # Advanced analysis metrics
+            fibonacci_levels = sr_context.get("fibonacci_levels", {})
+            elliott_wave_levels = sr_context.get("elliott_wave_levels", {})
+            order_flow_analysis = sr_context.get("order_flow_analysis", {})
+            
+            advanced_metrics = {
+                "fibonacci_analysis": {
+                    "levels_detected": len(fibonacci_levels),
+                    "level_types": list(fibonacci_levels.keys()) if fibonacci_levels else [],
+                },
+                "elliott_wave_analysis": {
+                    "waves_detected": len(elliott_wave_levels.get("wave_levels", {})),
+                    "wave_types": list(elliott_wave_levels.get("wave_levels", {}).keys()) if elliott_wave_levels.get("wave_levels") else [],
+                    "trend_direction": elliott_wave_levels.get("trend_direction", "unknown"),
+                },
+                "order_flow_analysis": {
+                    "poc_detected": bool(order_flow_analysis.get("volume_profile", {}).get("poc")),
+                    "hvns_detected": len(order_flow_analysis.get("volume_profile", {}).get("high_volume_nodes", [])),
+                    "imbalances_detected": len(order_flow_analysis.get("imbalances", [])),
+                    "value_area": order_flow_analysis.get("volume_profile", {}).get("value_area", {})
+                }
+            }
+            
+            # Performance metrics
+            performance_metrics = {
+                "analysis_timestamp": pd.Timestamp.now().isoformat(),
+                "data_quality_score": self._calculate_data_quality_score(market_data),
+                "sr_confidence_score": self._calculate_sr_confidence_score(sr_context),
+                "overall_analysis_quality": self._calculate_overall_quality_score(market_metrics, sr_metrics, clustering_metrics, advanced_metrics)
+            }
+            
+            return {
+                "market_metrics": market_metrics,
+                "sr_metrics": sr_metrics,
+                "clustering_metrics": clustering_metrics,
+                "advanced_metrics": advanced_metrics,
+                "performance_metrics": performance_metrics
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating comprehensive metrics: {e}")
+            return {}
+
+    def _calculate_data_quality_score(self, market_data: pd.DataFrame) -> float:
+        """Calculate data quality score (0-1)."""
+        try:
+            score = 1.0
+            
+            # Check for missing data
+            missing_ratio = market_data.isnull().sum().sum() / (len(market_data) * len(market_data.columns))
+            score -= missing_ratio * 0.3
+            
+            # Check for sufficient data points
+            if len(market_data) < 50:
+                score -= 0.2
+            elif len(market_data) < 100:
+                score -= 0.1
+            
+            # Check for price anomalies
+            price_changes = market_data["close"].pct_change().abs()
+            anomaly_ratio = (price_changes > 0.1).sum() / len(price_changes)
+            score -= anomaly_ratio * 0.2
+            
+            return max(0.0, min(1.0, score))
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating data quality score: {e}")
+            return 0.5
+
+    def _calculate_sr_confidence_score(self, sr_context: dict[str, Any]) -> float:
+        """Calculate S/R confidence score (0-1)."""
+        try:
+            score = 0.5  # Base score
+            
+            # Factor in number of levels
+            total_levels = len(sr_context.get("support_levels", [])) + len(sr_context.get("resistance_levels", []))
+            if total_levels >= 5:
+                score += 0.2
+            elif total_levels >= 3:
+                score += 0.1
+            
+            # Factor in strength
+            avg_strength = (sr_context.get("support_strength", 0.5) + sr_context.get("resistance_strength", 0.5)) / 2
+            score += avg_strength * 0.2
+            
+            # Factor in clustering quality
+            clustering_result = sr_context.get("clustering_result", {})
+            if clustering_result.get("n_clusters", 0) > 0:
+                score += 0.1
+            
+            return min(1.0, score)
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating SR confidence score: {e}")
+            return 0.5
+
+    def _calculate_overall_quality_score(self, market_metrics: dict, sr_metrics: dict, clustering_metrics: dict, advanced_metrics: dict) -> float:
+        """Calculate overall analysis quality score (0-1)."""
+        try:
+            score = 0.5  # Base score
+            
+            # Market data quality
+            if market_metrics.get("data_points", 0) >= 100:
+                score += 0.1
+            
+            # S/R analysis quality
+            if sr_metrics.get("total_levels", 0) >= 3:
+                score += 0.1
+            
+            # Clustering quality
+            if clustering_metrics.get("total_clusters", 0) > 0:
+                score += 0.1
+            
+            # Advanced analysis quality
+            if advanced_metrics.get("fibonacci_analysis", {}).get("levels_detected", 0) > 0:
+                score += 0.1
+            if advanced_metrics.get("elliott_wave_analysis", {}).get("waves_detected", 0) > 0:
+                score += 0.1
+            
+            return min(1.0, score)
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating overall quality score: {e}")
+            return 0.5
+
+    async def _generate_detailed_report(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> dict[str, Any]:
+        """Generate detailed metrics report."""
+        try:
+            if not self.reporting_enabled:
+                return {}
+            
+            # Generate report ID
+            self.current_report_id = self._generate_report_id()
+            
+            # Calculate comprehensive metrics
+            metrics = self._calculate_comprehensive_metrics(market_data, sr_context)
+            
+            # Create detailed report
+            report = {
+                "report_id": self.current_report_id,
+                "report_timestamp": pd.Timestamp.now().isoformat(),
+                "report_version": "1.0",
+                "configuration": {
+                    "sr_detection_method": self.sr_detection_method,
+                    "sr_proximity_threshold": self.sr_proximity_threshold,
+                    "breakout_confidence_threshold": self.breakout_confidence_threshold,
+                    "min_sr_strength": self.min_sr_strength,
+                    "max_sr_levels": self.max_sr_levels,
+                    "enable_dbscan_clustering": DBSCAN_AVAILABLE,
+                },
+                "metrics": metrics,
+                "sr_context_summary": {
+                    "current_price": sr_context.get("current_price", 0.0),
+                    "nearest_support": sr_context.get("nearest_support", 0.0),
+                    "nearest_resistance": sr_context.get("nearest_resistance", 0.0),
+                    "support_strength": sr_context.get("support_strength", 0.5),
+                    "resistance_strength": sr_context.get("resistance_strength", 0.5),
+                    "sr_zone_width": sr_context.get("sr_zone_width", 0.0),
+                },
+                "analysis_summary": {
+                    "total_support_levels": len(sr_context.get("support_levels", [])),
+                    "total_resistance_levels": len(sr_context.get("resistance_levels", [])),
+                    "clusters_detected": sr_context.get("clustering_result", {}).get("n_clusters", 0),
+                    "fibonacci_levels": len(sr_context.get("fibonacci_levels", {})),
+                    "elliott_waves": len(sr_context.get("elliott_wave_levels", {}).get("wave_levels", {})),
+                    "order_flow_imbalances": len(sr_context.get("order_flow_analysis", {}).get("imbalances", [])),
+                }
+            }
+            
+            # Store in history
+            self.metrics_history.append(report)
+            
+            # Limit history size
+            if len(self.metrics_history) > 100:
+                self.metrics_history = self.metrics_history[-100:]
+            
+            # Save report to file
+            await self._save_report_to_file(report)
+            
+            self.logger.info(f"📊 Detailed metrics report generated: {self.current_report_id}")
+            return report
+            
+        except Exception as e:
+            self.logger.error(f"Error generating detailed report: {e}")
+            return {}
+
+    async def _save_report_to_file(self, report: dict[str, Any]) -> None:
+        """Save report to file in specified format."""
+        try:
+            import os
+            from pathlib import Path
+            import json
+            
+            report_path = Path(self.report_directory)
+            
+            # Save JSON report
+            json_file = report_path / "json" / f"{self.current_report_id}.json"
+            with open(json_file, 'w') as f:
+                json.dump(report, f, indent=2, default=str)
+            
+            # Save CSV metrics
+            csv_file = report_path / "csv" / f"{self.current_report_id}_metrics.csv"
+            self._save_metrics_to_csv(report["metrics"], csv_file)
+            
+            # Save HTML report
+            html_file = report_path / "html" / f"{self.current_report_id}.html"
+            self._save_html_report(report, html_file)
+            
+            # Save latest metrics summary
+            summary_file = report_path / "metrics" / "latest_metrics.json"
+            with open(summary_file, 'w') as f:
+                json.dump({
+                    "last_report_id": self.current_report_id,
+                    "last_report_timestamp": report["report_timestamp"],
+                    "summary": report["analysis_summary"],
+                    "quality_scores": {
+                        "data_quality": report["metrics"]["performance_metrics"]["data_quality_score"],
+                        "sr_confidence": report["metrics"]["performance_metrics"]["sr_confidence_score"],
+                        "overall_quality": report["metrics"]["performance_metrics"]["overall_analysis_quality"]
+                    }
+                }, f, indent=2, default=str)
+            
+            self.logger.info(f"📁 Report saved: {self.current_report_id}")
+            
+        except Exception as e:
+            self.logger.error(f"Error saving report to file: {e}")
+
+    def _save_metrics_to_csv(self, metrics: dict[str, Any], file_path: Path) -> None:
+        """Save metrics to CSV format."""
+        try:
+            import csv
+            
+            # Flatten metrics for CSV
+            csv_data = []
+            
+            # Market metrics
+            market_metrics = metrics.get("market_metrics", {})
+            csv_data.append(["Category", "Metric", "Value"])
+            csv_data.append(["Market", "Data Points", market_metrics.get("data_points", 0)])
+            csv_data.append(["Market", "Current Price", market_metrics.get("price_range", {}).get("current", 0)])
+            csv_data.append(["Market", "Volatility", market_metrics.get("price_range", {}).get("volatility", 0)])
+            csv_data.append(["Market", "Total Volume", market_metrics.get("volume_metrics", {}).get("total_volume", 0)])
+            
+            # S/R metrics
+            sr_metrics = metrics.get("sr_metrics", {})
+            csv_data.append(["S/R", "Total Levels", sr_metrics.get("total_levels", 0)])
+            csv_data.append(["S/R", "Support Levels", sr_metrics.get("support_levels", {}).get("count", 0)])
+            csv_data.append(["S/R", "Resistance Levels", sr_metrics.get("resistance_levels", {}).get("count", 0)])
+            csv_data.append(["S/R", "SR Zone Width", sr_metrics.get("proximity_metrics", {}).get("sr_zone_width", 0)])
+            
+            # Clustering metrics
+            clustering_metrics = metrics.get("clustering_metrics", {})
+            csv_data.append(["Clustering", "Total Clusters", clustering_metrics.get("total_clusters", 0)])
+            csv_data.append(["Clustering", "Noise Points", clustering_metrics.get("noise_points", 0)])
+            
+            # Performance metrics
+            performance_metrics = metrics.get("performance_metrics", {})
+            csv_data.append(["Performance", "Data Quality Score", performance_metrics.get("data_quality_score", 0)])
+            csv_data.append(["Performance", "SR Confidence Score", performance_metrics.get("sr_confidence_score", 0)])
+            csv_data.append(["Performance", "Overall Quality Score", performance_metrics.get("overall_analysis_quality", 0)])
+            
+            with open(file_path, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerows(csv_data)
+                
+        except Exception as e:
+            self.logger.error(f"Error saving metrics to CSV: {e}")
+
+    def _save_html_report(self, report: dict[str, Any], file_path: Path) -> None:
+        """Save HTML report."""
+        try:
+            html_content = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>S/R Analysis Report - {report['report_id']}</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 20px; }}
+        .header {{ background-color: #f0f0f0; padding: 20px; border-radius: 5px; }}
+        .section {{ margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }}
+        .metric {{ margin: 10px 0; }}
+        .score {{ font-weight: bold; color: #007bff; }}
+        .quality-high {{ color: #28a745; }}
+        .quality-medium {{ color: #ffc107; }}
+        .quality-low {{ color: #dc3545; }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>S/R Analysis Report</h1>
+        <p><strong>Report ID:</strong> {report['report_id']}</p>
+        <p><strong>Timestamp:</strong> {report['report_timestamp']}</p>
+    </div>
+    
+    <div class="section">
+        <h2>Analysis Summary</h2>
+        <div class="metric"><strong>Support Levels:</strong> {report['analysis_summary']['total_support_levels']}</div>
+        <div class="metric"><strong>Resistance Levels:</strong> {report['analysis_summary']['total_resistance_levels']}</div>
+        <div class="metric"><strong>Clusters Detected:</strong> {report['analysis_summary']['clusters_detected']}</div>
+        <div class="metric"><strong>Fibonacci Levels:</strong> {report['analysis_summary']['fibonacci_levels']}</div>
+        <div class="metric"><strong>Elliott Waves:</strong> {report['analysis_summary']['elliott_waves']}</div>
+    </div>
+    
+    <div class="section">
+        <h2>Quality Scores</h2>
+        <div class="metric">
+            <strong>Data Quality:</strong> 
+            <span class="score quality-{'high' if report['metrics']['performance_metrics']['data_quality_score'] > 0.7 else 'medium' if report['metrics']['performance_metrics']['data_quality_score'] > 0.4 else 'low'}">
+                {report['metrics']['performance_metrics']['data_quality_score']:.3f}
+            </span>
+        </div>
+        <div class="metric">
+            <strong>SR Confidence:</strong> 
+            <span class="score quality-{'high' if report['metrics']['performance_metrics']['sr_confidence_score'] > 0.7 else 'medium' if report['metrics']['performance_metrics']['sr_confidence_score'] > 0.4 else 'low'}">
+                {report['metrics']['performance_metrics']['sr_confidence_score']:.3f}
+            </span>
+        </div>
+        <div class="metric">
+            <strong>Overall Quality:</strong> 
+            <span class="score quality-{'high' if report['metrics']['performance_metrics']['overall_analysis_quality'] > 0.7 else 'medium' if report['metrics']['performance_metrics']['overall_analysis_quality'] > 0.4 else 'low'}">
+                {report['metrics']['performance_metrics']['overall_analysis_quality']:.3f}
+            </span>
+        </div>
+    </div>
+    
+    <div class="section">
+        <h2>Market Metrics</h2>
+        <div class="metric"><strong>Data Points:</strong> {report['metrics']['market_metrics']['data_points']}</div>
+        <div class="metric"><strong>Current Price:</strong> {report['metrics']['market_metrics']['price_range']['current']:.4f}</div>
+        <div class="metric"><strong>Volatility:</strong> {report['metrics']['market_metrics']['price_range']['volatility']:.4f}</div>
+        <div class="metric"><strong>Total Volume:</strong> {report['metrics']['market_metrics']['volume_metrics']['total_volume']:.0f}</div>
+    </div>
+    
+    <div class="section">
+        <h2>S/R Context</h2>
+        <div class="metric"><strong>Current Price:</strong> {report['sr_context_summary']['current_price']:.4f}</div>
+        <div class="metric"><strong>Nearest Support:</strong> {report['sr_context_summary']['nearest_support']:.4f}</div>
+        <div class="metric"><strong>Nearest Resistance:</strong> {report['sr_context_summary']['nearest_resistance']:.4f}</div>
+        <div class="metric"><strong>SR Zone Width:</strong> {report['sr_context_summary']['sr_zone_width']:.4f}</div>
+    </div>
+</body>
+</html>
+            """
+            
+            with open(file_path, 'w') as f:
+                f.write(html_content)
+                
+        except Exception as e:
+            self.logger.error(f"Error saving HTML report: {e}")
+
+    async def get_latest_report(self) -> dict[str, Any]:
+        """Get the latest generated report."""
+        if self.metrics_history:
+            return self.metrics_history[-1]
+        return {}
+
+    async def get_report_history(self, limit: int = 10) -> list[dict[str, Any]]:
+        """Get recent report history."""
+        return self.metrics_history[-limit:] if self.metrics_history else []
+
+    async def cleanup_old_reports(self) -> None:
+        """Clean up old reports based on retention policy."""
+        try:
+            import os
+            from pathlib import Path
+            from datetime import datetime, timedelta
+            
+            if not self.reporting_enabled:
+                return
+            
+            report_path = Path(self.report_directory)
+            cutoff_date = datetime.now() - timedelta(days=self.report_retention_days)
+            
+            for subdir in ["json", "csv", "html"]:
+                subdir_path = report_path / subdir
+                if subdir_path.exists():
+                    for file_path in subdir_path.iterdir():
+                        if file_path.is_file():
+                            file_time = datetime.fromtimestamp(file_path.stat().st_mtime)
+                            if file_time < cutoff_date:
+                                file_path.unlink()
+                                self.logger.info(f"Cleaned up old report: {file_path}")
+            
+            self.logger.info("🧹 Old reports cleanup completed")
+            
+        except Exception as e:
+            self.logger.error(f"Error cleaning up old reports: {e}")
+
+    async def generate_manual_report(self, market_data: pd.DataFrame, sr_context: dict[str, Any] = None) -> dict[str, Any]:
+        """Manually generate a detailed report."""
+        try:
+            if not self.reporting_enabled:
+                self.logger.warning("Reporting is disabled. Enable it in configuration to generate reports.")
+                return {}
+            
+            if sr_context is None:
+                # Generate SR context if not provided
+                current_price = market_data["close"].iloc[-1]
+                sr_context = await self.get_sr_context(market_data, current_price)
+            
+            report = await self._generate_detailed_report(market_data, sr_context)
+            self.logger.info(f"📊 Manual report generated: {self.current_report_id}")
+            return report
+            
+        except Exception as e:
+            self.logger.error(f"Error generating manual report: {e}")
+            return {}
+
+    def get_reporting_status(self) -> dict[str, Any]:
+        """Get reporting system status."""
+        return {
+            "reporting_enabled": self.reporting_enabled,
+            "report_directory": self.report_directory,
+            "report_format": self.report_format,
+            "report_retention_days": self.report_retention_days,
+            "total_reports_generated": len(self.metrics_history),
+            "current_report_id": self.current_report_id,
+            "last_report_timestamp": self.metrics_history[-1]["report_timestamp"] if self.metrics_history else None
+        }
 
     @validate_data_quality(
         required_columns=["open", "high", "low", "close", "volume"],
@@ -371,6 +906,10 @@ class SRBreakoutPredictor:
                 "current_price": current_price,
                 "timestamp": pd.Timestamp.now(),
             }
+            
+            # Generate detailed report for predictions
+            if self.reporting_enabled:
+                await self._generate_detailed_report(market_data, predictions)
 
             # Store predictions
             self.sr_predictions = predictions
@@ -498,6 +1037,9 @@ class SRBreakoutPredictor:
                 "fibonacci_levels": fibonacci_levels,
                 "elliott_wave_levels": elliott_wave_levels,
                 "order_flow_analysis": order_flow_analysis,
+                
+                # Generate detailed report
+                "report_id": await self._generate_detailed_report(market_data, context),
                 
                 "timestamp": pd.Timestamp.now(),
             }

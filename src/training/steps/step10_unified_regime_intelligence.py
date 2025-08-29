@@ -1691,13 +1691,14 @@ class UnifiedRegimeIntelligenceStep:
             # Get base unified predictions
             unified_prediction = self.predict(hmm_states, market_features)
 
-            # Get S/R context and outcome prediction
+            # Get S/R context and outcome prediction using centralized logic
             sr_context = await self.sr_predictor.get_sr_context(
                 market_data=market_data,
                 current_price=current_price,
             )
             sr_outcome = await self.sr_predictor.predict_sr_outcome(
                 market_data=market_data,
+                current_price=current_price,
                 sr_context=sr_context,
             )
 

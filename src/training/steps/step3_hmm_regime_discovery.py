@@ -131,7 +131,11 @@ class HMMRegimeDiscoveryStep:
             "regime_prediction_model": None,
             "regime_clustering_model": None,
             "regime_stability_analyzer": None,
-            "regime_transition_detector": None
+            "regime_transition_detector": None,
+            "regime_prediction_accuracy": {},
+            "regime_stability_metrics": {},
+            "regime_quality_scores": {},
+            "regime_redundancy_metrics": {}
         }
         
         # Enhanced regime management state
@@ -141,7 +145,11 @@ class HMMRegimeDiscoveryStep:
             "regime_quality_scores": {},
             "regime_redundancy_metrics": {},
             "regime_prediction_accuracy": {},
-            "regime_stability_metrics": {}
+            "regime_stability_metrics": {},
+            "regime_transition_probabilities": {},
+            "regime_stability_scores": {},
+            "regime_change_detection": {},
+            "regime_forecasting": {}
         }
         
         self.logger.info("✅ Enhanced HMM regime management capabilities initialized")
@@ -962,6 +970,10 @@ class HMMRegimeDiscoveryStep:
         try:
             self.logger.info("🧠 Starting enhanced HMM regime discovery with integrated capabilities...")
             
+            # Update regime analysis state
+            self.regime_management_state["last_regime_analysis"] = pd.Timestamp.now()
+            self.regime_management_state["regime_analysis_count"] += 1
+            
             # Prepare comprehensive features
             features = await self._prepare_hmm_features(data)
             
@@ -987,8 +999,19 @@ class HMMRegimeDiscoveryStep:
                 self.logger.error(f"❌ Enhanced HMM prediction failed: {error_msg}")
                 return {"success": False, "error": error_msg}
             
+            # Calculate quality metrics
+            quality_metrics = self._calculate_regime_quality_metrics(features, prediction_result)
+            
+            # Eliminate redundancy
+            redundancy_metrics = self._eliminate_regime_redundancy(prediction_result)
+            
             # Generate regime summary
             regime_summary = self._generate_enhanced_regime_summary()
+            
+            # Update regime management state
+            self.regime_management_state["regime_quality_scores"] = quality_metrics
+            self.regime_management_state["regime_redundancy_metrics"] = redundancy_metrics
+            self.enhanced_hmm_capabilities["quality_metrics"] = quality_metrics
             
             # Format results for pipeline compatibility
             regime_results = {
@@ -1000,7 +1023,8 @@ class HMMRegimeDiscoveryStep:
                     "regime_summary": regime_summary,
                     "current_regime": prediction_result.get("current_regime"),
                     "enhanced_features": True,
-                    "quality_metrics": self.enhanced_hmm_capabilities["quality_metrics"]
+                    "quality_metrics": quality_metrics,
+                    "redundancy_metrics": redundancy_metrics
                 },
                 "enhanced_analysis": True
             }

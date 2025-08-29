@@ -234,19 +234,19 @@ class SRBreakoutPredictor:
         self.performance_metrics: dict[str, Any] = {}
         self.prediction_history: list[dict[str, Any]] = []
         
-            # Enhanced S/R analysis capabilities
-    self.sr_levels_cache: dict[str, List[SRLevel]] = {}
-    self.sr_analysis_history: list[dict[str, Any]] = []
-    self.sr_quality_metrics: dict[str, float] = {}
-    
-    # Centralized S/R analysis state
-    self.sr_analysis_state = {
-        "last_analysis_time": None,
-        "analysis_count": 0,
-        "quality_scores": {},
-        "redundancy_metrics": {},
-        "feature_integration_status": {}
-    }
+        # Enhanced S/R analysis capabilities
+        self.sr_levels_cache: dict[str, List[SRLevel]] = {}
+        self.sr_analysis_history: list[dict[str, Any]] = []
+        self.sr_quality_metrics: dict[str, float] = {}
+        
+        # Centralized S/R analysis state
+        self.sr_analysis_state = {
+            "last_analysis_time": None,
+            "analysis_count": 0,
+            "quality_scores": {},
+            "redundancy_metrics": {},
+            "feature_integration_status": {}
+        }
 
     @handle_specific_errors(
         error_handlers={

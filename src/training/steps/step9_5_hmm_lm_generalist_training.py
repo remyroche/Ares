@@ -304,7 +304,7 @@ class HMMLMGeneralistTrainingStep:
     def _detect_regime_changes_and_tpsl_outcomes(
         self, df: pd.DataFrame
     ) -> list[dict[str, Any]]:
-        """Detect regime changes and associated TPSL outcomes."""
+        """Detect regime changes and associated TPSL outcomes using enhanced probability-based approach."""
         events: list[dict[str, Any]] = []
 
         try:
@@ -326,87 +326,8 @@ class HMMLMGeneralistTrainingStep:
                 self.logger.warning(f"⚠️ No regime column {regime_col} found")
                 return events
 
-            # Detect state transitions
-            regimes = df[regime_col].fillna(-1).astype(int)
-
-            for i in range(1, len(regimes)):
-                prev_regime = int(regimes.iloc[i - 1])
-                curr_regime = int(regimes.iloc[i])
-
-                event: dict[str, Any] = {
-                    "regime_change": "<PAD>",
-                    "price_direction": 1,  # Sideways
-                    "profit_target_hit": 0,  # 0/1
-                    "stop_loss_hit": 0,  # 0/1
-                    "time_to_target": 0,  # bars to hit target
-                }
-
-                if prev_regime != curr_regime and prev_regime >= 0 and curr_regime >= 0:
-                    # Exit previous regime
-                    if 0 <= prev_regime < self.hmm_states:
-                        event["regime_change"] = f"exit_regime_{prev_regime}"
-
-                    # Enter new regime
-                    if 0 <= curr_regime < self.hmm_states:
-                        event["regime_change"] = f"enter_regime_{curr_regime}"
-
-                    # Calculate TPSL outcomes for regime change
-                    if "close" in df.columns and i < len(df) - 1:
-                        current_price = float(df.iloc[i]["close"])  # type: ignore[index]
-                        future_prices = df.iloc[i + 1 : i + 31]["close"].values
-
-                        if len(future_prices) > 0:
-                            # Calculate profit target and stop loss levels
-                            profit_target = current_price * (1 + profit_take_multiplier)
-                            stop_loss = current_price * (1 - stop_loss_multiplier)
-
-                            # Check if profit target or stop loss is hit
-                            profit_target_hit = 0
-                            stop_loss_hit = 0
-                            time_to_target = 0
-
-                            for j, future_price in enumerate(future_prices):
-                                fp = float(future_price)
-                                if fp >= profit_target and profit_target_hit == 0:
-                                    profit_target_hit = 1
-                                    time_to_target = j + 1
-                                elif fp <= stop_loss and stop_loss_hit == 0:
-                                    stop_loss_hit = 1
-                                    if time_to_target == 0:
-                                        time_to_target = j + 1
-
-                            # Price direction based on TPSL outcomes
-                            if profit_target_hit == 1 and stop_loss_hit == 0:
-                                event["price_direction"] = 0  # Up (hit profit target)
-                            elif stop_loss_hit == 1 and profit_target_hit == 0:
-                                event["price_direction"] = 2  # Down (hit stop loss)
-                            elif profit_target_hit == 1 and stop_loss_hit == 1:
-                                # Both hit - determine which came first
-                                if time_to_target <= 15:  # Profit target hit first
-                                    event["price_direction"] = 0  # Up
-                                else:
-                                    event["price_direction"] = 2  # Down
-                            else:
-                                event["price_direction"] = 1  # Sideways (neither hit)
-
-                            # Set TPSL outcomes
-                            event["profit_target_hit"] = profit_target_hit
-                            event["stop_loss_hit"] = stop_loss_hit
-                            event["time_to_target"] = time_to_target
-
-                events.append(event)
-
-            # Add padding for the first element
-            events.insert(
-                0,
-                {
-                    "regime_change": "<PAD>",
-                    "price_direction": 1,
-                    "profit_target_hit": 0,
-                    "stop_loss_hit": 0,
-                    "time_to_target": 0,
-                },
-            )
+            # Enhanced regime change detection using probability-based approach
+            events = self._detect_regime_changes_enhanced(df, profit_take_multiplier, stop_loss_multiplier)
 
             return events
 
@@ -415,6 +336,260 @@ class HMMLMGeneralistTrainingStep:
                 f"❌ Failed to detect regime changes and price action: {e}",
             )
             return []
+
+    def _detect_regime_changes_enhanced(
+        self, 
+        df: pd.DataFrame, 
+        profit_take_multiplier: float, 
+        stop_loss_multiplier: float
+    ) -> list[dict[str, Any]]:
+        """Enhanced regime change detection using probability-based approach."""
+        events: list[dict[str, Any]] = []
+        
+        try:
+            # Get regime data
+            regime_col = "composite_cluster_id"
+            regimes = df[regime_col].fillna(-1).astype(int)
+            
+            # Calculate regime probabilities if available
+            regime_probs = self._calculate_regime_probabilities(df)
+            
+            # Calculate regime stability and entropy
+            regime_stability = self._calculate_regime_stability(regime_probs)
+            regime_entropy = self._calculate_regime_entropy(regime_probs)
+            
+            # Detect regime changes using multiple signals
+            regime_changes = self._detect_regime_changes_multi_signal(
+                regimes, regime_stability, regime_entropy
+            )
+            
+            # Process each potential regime change
+            for i in range(len(regimes)):
+                event: dict[str, Any] = {
+                    "regime_change": "<PAD>",
+                    "price_direction": 1,  # Sideways
+                    "profit_target_hit": 0,  # 0/1
+                    "stop_loss_hit": 0,  # 0/1
+                    "time_to_target": 0,  # bars to hit target
+                    "regime_confidence": 0.0,
+                    "transition_probability": 0.0,
+                }
+                
+                if i > 0 and regime_changes[i]:
+                    prev_regime = int(regimes.iloc[i - 1])
+                    curr_regime = int(regimes.iloc[i])
+                    
+                    if prev_regime >= 0 and curr_regime >= 0:
+                        # Calculate transition probability
+                        transition_prob = self._calculate_transition_probability(
+                            prev_regime, curr_regime, regime_probs, i
+                        )
+                        
+                        # Determine regime change type
+                        if 0 <= prev_regime < self.hmm_states and 0 <= curr_regime < self.hmm_states:
+                            event["regime_change"] = f"transition_{prev_regime}_to_{curr_regime}"
+                            event["transition_probability"] = transition_prob
+                            
+                            # Calculate regime confidence
+                            event["regime_confidence"] = float(regime_stability[i])
+                            
+                            # Enhanced TPSL analysis
+                            tpsl_outcomes = self._calculate_enhanced_tpsl_outcomes(
+                                df, i, profit_take_multiplier, stop_loss_multiplier
+                            )
+                            event.update(tpsl_outcomes)
+                
+                events.append(event)
+            
+            return events
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Enhanced regime change detection failed: {e}")
+            return []
+
+    def _calculate_regime_probabilities(self, df: pd.DataFrame) -> np.ndarray:
+        """Calculate regime probabilities from available features."""
+        try:
+            # Look for probability features
+            prob_cols = [col for col in df.columns if col.endswith("_p_state_")]
+            
+            if prob_cols:
+                # Use existing probability features
+                probs = df[prob_cols].values
+                # Normalize to ensure probabilities sum to 1
+                row_sums = probs.sum(axis=1, keepdims=True)
+                probs = np.divide(probs, row_sums, where=row_sums > 0)
+                return probs
+            else:
+                # Create dummy probabilities based on regime ID
+                regime_col = "composite_cluster_id"
+                if regime_col in df.columns:
+                    regimes = df[regime_col].fillna(-1).astype(int)
+                    n_states = max(regimes.max() + 1, self.hmm_states)
+                    probs = np.zeros((len(regimes), n_states))
+                    
+                    for i, regime in enumerate(regimes):
+                        if regime >= 0:
+                            probs[i, regime] = 1.0
+                    
+                    return probs
+                else:
+                    return np.zeros((len(df), self.hmm_states))
+                    
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error calculating regime probabilities: {e}")
+            return np.zeros((len(df), self.hmm_states))
+
+    def _calculate_regime_stability(self, regime_probs: np.ndarray) -> np.ndarray:
+        """Calculate regime stability (max probability for each timepoint)."""
+        try:
+            return np.max(regime_probs, axis=1)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error calculating regime stability: {e}")
+            return np.zeros(len(regime_probs))
+
+    def _calculate_regime_entropy(self, regime_probs: np.ndarray) -> np.ndarray:
+        """Calculate regime entropy (uncertainty measure)."""
+        try:
+            # Add small epsilon to avoid log(0)
+            eps = 1e-10
+            entropy = -np.sum(regime_probs * np.log(regime_probs + eps), axis=1)
+            return entropy
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error calculating regime entropy: {e}")
+            return np.zeros(len(regime_probs))
+
+    def _detect_regime_changes_multi_signal(
+        self, 
+        regimes: pd.Series, 
+        stability: np.ndarray, 
+        entropy: np.ndarray
+    ) -> np.ndarray:
+        """Detect regime changes using multiple signals."""
+        try:
+            changes = np.zeros(len(regimes), dtype=bool)
+            
+            # Signal 1: Simple state comparison
+            state_changes = np.diff(regimes.values, prepend=regimes.iloc[0]) != 0
+            
+            # Signal 2: Stability drops
+            stability_threshold = np.percentile(stability, 25)  # Bottom 25%
+            stability_changes = stability < stability_threshold
+            
+            # Signal 3: High entropy (uncertainty)
+            entropy_threshold = np.percentile(entropy, 75)  # Top 25%
+            entropy_changes = entropy > entropy_threshold
+            
+            # Combine signals with persistence filter
+            for i in range(1, len(regimes)):
+                if state_changes[i] and stability_changes[i] and entropy_changes[i]:
+                    # Check persistence (avoid noise)
+                    if i >= 3:  # Minimum persistence of 3 bars
+                        changes[i] = True
+            
+            return changes
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error in multi-signal regime change detection: {e}")
+            return np.zeros(len(regimes), dtype=bool)
+
+    def _calculate_transition_probability(
+        self, 
+        from_regime: int, 
+        to_regime: int, 
+        regime_probs: np.ndarray, 
+        index: int
+    ) -> float:
+        """Calculate transition probability between regimes."""
+        try:
+            if index < len(regime_probs) and from_regime < regime_probs.shape[1] and to_regime < regime_probs.shape[1]:
+                # Use the probability of the target regime
+                return float(regime_probs[index, to_regime])
+            else:
+                return 0.0
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error calculating transition probability: {e}")
+            return 0.0
+
+    def _calculate_enhanced_tpsl_outcomes(
+        self, 
+        df: pd.DataFrame, 
+        index: int, 
+        profit_take_multiplier: float, 
+        stop_loss_multiplier: float
+    ) -> dict[str, Any]:
+        """Calculate enhanced TPSL outcomes with confidence scoring."""
+        try:
+            outcomes = {
+                "price_direction": 1,  # Sideways
+                "profit_target_hit": 0,
+                "stop_loss_hit": 0,
+                "time_to_target": 0,
+                "tpsl_confidence": 0.0,
+            }
+            
+            if "close" in df.columns and index < len(df) - 1:
+                current_price = float(df.iloc[index]["close"])
+                future_prices = df.iloc[index + 1 : index + 31]["close"].values
+                
+                if len(future_prices) > 0:
+                    # Calculate profit target and stop loss levels
+                    profit_target = current_price * (1 + profit_take_multiplier)
+                    stop_loss = current_price * (1 - stop_loss_multiplier)
+                    
+                    # Enhanced TPSL detection with confidence
+                    profit_target_hit = 0
+                    stop_loss_hit = 0
+                    time_to_target = 0
+                    confidence_factors = []
+                    
+                    for j, future_price in enumerate(future_prices):
+                        fp = float(future_price)
+                        
+                        if fp >= profit_target and profit_target_hit == 0:
+                            profit_target_hit = 1
+                            time_to_target = j + 1
+                            confidence_factors.append(1.0 - (j / 30))  # Higher confidence for earlier hits
+                            
+                        elif fp <= stop_loss and stop_loss_hit == 0:
+                            stop_loss_hit = 1
+                            if time_to_target == 0:
+                                time_to_target = j + 1
+                            confidence_factors.append(1.0 - (j / 30))
+                    
+                    # Calculate TPSL confidence
+                    if confidence_factors:
+                        outcomes["tpsl_confidence"] = float(np.mean(confidence_factors))
+                    
+                    # Enhanced price direction determination
+                    if profit_target_hit == 1 and stop_loss_hit == 0:
+                        outcomes["price_direction"] = 0  # Up
+                    elif stop_loss_hit == 1 and profit_target_hit == 0:
+                        outcomes["price_direction"] = 2  # Down
+                    elif profit_target_hit == 1 and stop_loss_hit == 1:
+                        # Both hit - use timing and confidence
+                        if time_to_target <= 15 and outcomes["tpsl_confidence"] > 0.5:
+                            outcomes["price_direction"] = 0  # Up
+                        else:
+                            outcomes["price_direction"] = 2  # Down
+                    else:
+                        outcomes["price_direction"] = 1  # Sideways
+                    
+                    outcomes["profit_target_hit"] = profit_target_hit
+                    outcomes["stop_loss_hit"] = stop_loss_hit
+                    outcomes["time_to_target"] = time_to_target
+            
+            return outcomes
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error calculating enhanced TPSL outcomes: {e}")
+            return {
+                "price_direction": 1,
+                "profit_target_hit": 0,
+                "stop_loss_hit": 0,
+                "time_to_target": 0,
+                "tpsl_confidence": 0.0,
+            }
 
     async def _train_hmm_lm_model(
         self, sequences: list[dict[str, Any]]

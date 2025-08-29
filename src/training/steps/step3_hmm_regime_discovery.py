@@ -996,13 +996,34 @@ class HMMRegimeDiscoveryStep:
                 composite_features_scaled, cluster_labels, kmeans
             )
             
-            # === PHASE 4: Regime Interpretation ===
-            self.logger.info("🎯 Phase 4: Interpreting composite regimes...")
+            # === PHASE 4: Enhanced Regime Analysis ===
+            self.logger.info("🎯 Phase 4: Enhanced regime analysis and interpretation...")
             
             # Create composite cluster analysis
             composite_analysis = self._analyze_composite_clusters(
                 features, hmm_state_sequence, cluster_labels, cluster_metrics
             )
+            
+            # Enhanced regime change detection
+            self.logger.info("🔍 Performing enhanced regime change detection...")
+            regime_change_analysis = self._detect_regime_changes_advanced(
+                hmm_state_probs, hmm_state_sequence, threshold=0.1, min_persistence=3
+            )
+            
+            # Calculate adaptive regime boundaries
+            self.logger.info("🔧 Calculating adaptive regime boundaries...")
+            adaptive_boundaries = self._calculate_adaptive_regime_boundaries(features)
+            
+            # Model regime persistence
+            self.logger.info("📊 Modeling regime persistence...")
+            persistence_model = self._model_regime_persistence(hmm_state_sequence)
+            
+            # Integrate enhanced analysis into composite analysis
+            composite_analysis.update({
+                "regime_change_analysis": regime_change_analysis,
+                "adaptive_boundaries": adaptive_boundaries,
+                "persistence_model": persistence_model
+            })
             
             # === PHASE 5: Generate Reports ===
             self.logger.info("🎯 Phase 5: Generating comprehensive reports...")
@@ -1299,6 +1320,499 @@ class HMMRegimeDiscoveryStep:
 
         self.logger.info(f"✅ Transition matrix calculated for {len(transitions)} regimes")
         return transitions
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={"success": False, "error": "Enhanced regime change detection failed"},
+        context="enhanced_regime_change_detection"
+    )
+    def _detect_regime_changes_advanced(
+        self, 
+        hmm_probs: np.ndarray, 
+        hmm_states: np.ndarray,
+        threshold: float = 0.1,
+        min_persistence: int = 3
+    ) -> dict[str, Any]:
+        """Detect regime changes using advanced probability-based approach.
+        
+        Args:
+            hmm_probs: HMM state probabilities (n_samples, n_states)
+            hmm_states: HMM state sequence
+            threshold: Probability stability threshold for regime change detection
+            min_persistence: Minimum bars a regime must persist
+            
+        Returns:
+            Dictionary with regime change information
+        """
+        try:
+            self.logger.info("🔍 Detecting regime changes using advanced probability-based approach...")
+            
+            # Calculate regime stability (max probability for each timepoint)
+            regime_stability = np.max(hmm_probs, axis=1)
+            
+            # Calculate regime entropy (uncertainty measure)
+            regime_entropy = -np.sum(hmm_probs * np.log(hmm_probs + 1e-10), axis=1)
+            
+            # Detect potential transitions when stability drops
+            stability_changes = np.diff(regime_stability)
+            potential_transitions = stability_changes < -threshold
+            
+            # Add entropy-based confirmation (high entropy indicates transition)
+            entropy_threshold = np.percentile(regime_entropy, 75)  # Top 25% entropy
+            entropy_confirmation = regime_entropy[1:] > entropy_threshold
+            
+            # Combine stability and entropy signals
+            initial_transitions = potential_transitions & entropy_confirmation
+            
+            # Apply persistence filter to avoid noise
+            confirmed_transitions = self._apply_persistence_filter(
+                initial_transitions, hmm_states, min_persistence
+            )
+            
+            # Calculate transition confidence scores
+            transition_confidence = self._calculate_transition_confidence(
+                hmm_probs, confirmed_transitions
+            )
+            
+            # Detect regime strength indicators
+            regime_strength = self._calculate_regime_strength(hmm_probs, hmm_states)
+            
+            # Create regime change events
+            regime_changes = self._create_regime_change_events(
+                confirmed_transitions, hmm_states, transition_confidence, regime_strength
+            )
+            
+            self.logger.info(f"✅ Detected {len(regime_changes)} regime changes with advanced method")
+            
+            return {
+                "success": True,
+                "regime_changes": regime_changes,
+                "transition_confidence": transition_confidence,
+                "regime_strength": regime_strength,
+                "stability_metrics": {
+                    "mean_stability": float(np.mean(regime_stability)),
+                    "stability_volatility": float(np.std(regime_stability)),
+                    "mean_entropy": float(np.mean(regime_entropy)),
+                    "entropy_volatility": float(np.std(regime_entropy))
+                }
+            }
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error in advanced regime change detection: {e}")
+            return {"success": False, "error": str(e)}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=np.zeros(0, dtype=bool),
+        context="apply_persistence_filter"
+    )
+    def _apply_persistence_filter(
+        self, 
+        transitions: np.ndarray, 
+        states: np.ndarray, 
+        min_persistence: int
+    ) -> np.ndarray:
+        """Apply persistence filter to avoid detecting noise as regime changes."""
+        try:
+            filtered_transitions = transitions.copy()
+            
+            # Calculate regime durations
+            durations = self._calculate_regime_durations(states)
+            
+            # Filter out transitions that occur too quickly
+            for i in range(len(transitions)):
+                if transitions[i]:
+                    # Check if current regime has persisted long enough
+                    current_duration = durations[i] if i < len(durations) else 0
+                    if current_duration < min_persistence:
+                        filtered_transitions[i] = False
+            
+            return filtered_transitions
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error applying persistence filter: {e}")
+            return transitions
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=np.zeros(0, dtype=float),
+        context="calculate_transition_confidence"
+    )
+    def _calculate_transition_confidence(
+        self, 
+        hmm_probs: np.ndarray, 
+        transitions: np.ndarray
+    ) -> np.ndarray:
+        """Calculate confidence scores for regime transitions."""
+        try:
+            confidence_scores = np.zeros(len(transitions))
+            
+            for i in range(len(transitions)):
+                if transitions[i] and i < len(hmm_probs) - 1:
+                    # Calculate confidence based on probability change magnitude
+                    prob_change = np.abs(hmm_probs[i+1] - hmm_probs[i])
+                    max_change = np.max(prob_change)
+                    
+                    # Normalize confidence score
+                    confidence_scores[i] = min(max_change * 10, 1.0)  # Scale and cap at 1.0
+            
+            return confidence_scores
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error calculating transition confidence: {e}")
+            return np.zeros(len(transitions), dtype=float)
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=np.zeros(0, dtype=float),
+        context="calculate_regime_strength"
+    )
+    def _calculate_regime_strength(
+        self, 
+        hmm_probs: np.ndarray, 
+        hmm_states: np.ndarray
+    ) -> np.ndarray:
+        """Calculate regime strength indicators."""
+        try:
+            # Regime strength based on probability dominance
+            max_probs = np.max(hmm_probs, axis=1)
+            
+            # Additional strength based on probability consistency
+            prob_std = np.std(hmm_probs, axis=1)
+            consistency_strength = 1.0 / (1.0 + prob_std)
+            
+            # Combined strength indicator
+            regime_strength = max_probs * consistency_strength
+            
+            return regime_strength
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error calculating regime strength: {e}")
+            return np.zeros(len(hmm_states), dtype=float)
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=[],
+        context="create_regime_change_events"
+    )
+    def _create_regime_change_events(
+        self, 
+        transitions: np.ndarray, 
+        states: np.ndarray, 
+        confidence: np.ndarray, 
+        strength: np.ndarray
+    ) -> list[dict[str, Any]]:
+        """Create detailed regime change events."""
+        try:
+            events = []
+            
+            for i in range(len(transitions)):
+                if transitions[i] and i < len(states) - 1:
+                    event = {
+                        "timestamp_index": i,
+                        "from_state": int(states[i]),
+                        "to_state": int(states[i + 1]),
+                        "confidence": float(confidence[i]),
+                        "regime_strength": float(strength[i]),
+                        "transition_type": "regime_change"
+                    }
+                    events.append(event)
+            
+            return events
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error creating regime change events: {e}")
+            return []
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=np.zeros(0, dtype=int),
+        context="calculate_regime_durations"
+    )
+    def _calculate_regime_durations(self, states: np.ndarray) -> np.ndarray:
+        """Calculate how long each regime persists."""
+        try:
+            durations = np.zeros(len(states), dtype=int)
+            current_state = states[0]
+            current_duration = 1
+            
+            for i in range(1, len(states)):
+                if states[i] == current_state:
+                    current_duration += 1
+                else:
+                    # Update durations for the previous regime
+                    for j in range(i - current_duration, i):
+                        durations[j] = current_duration
+                    current_state = states[i]
+                    current_duration = 1
+            
+            # Handle the last regime
+            for j in range(len(states) - current_duration, len(states)):
+                durations[j] = current_duration
+            
+            return durations
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error calculating regime durations: {e}")
+            return np.zeros(len(states), dtype=int)
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="calculate_adaptive_regime_boundaries"
+    )
+    def _calculate_adaptive_regime_boundaries(self, features: pd.DataFrame) -> dict[str, Any]:
+        """Calculate adaptive regime boundaries using clustering of regime characteristics."""
+        try:
+            self.logger.info("🔧 Calculating adaptive regime boundaries...")
+            
+            from sklearn.cluster import DBSCAN
+            from sklearn.preprocessing import StandardScaler
+            
+            # Extract regime characteristics
+            regime_features = self._extract_regime_characteristics(features)
+            
+            if regime_features.empty:
+                self.logger.warning("⚠️ No regime characteristics available for boundary calculation")
+                return {}
+            
+            # Scale features for clustering
+            scaler = StandardScaler()
+            scaled_features = scaler.fit_transform(regime_features)
+            
+            # Use DBSCAN for adaptive boundary detection
+            clustering = DBSCAN(eps=0.1, min_samples=5)
+            regime_boundaries = clustering.fit_predict(scaled_features)
+            
+            # Calculate boundary statistics
+            unique_boundaries = np.unique(regime_boundaries[regime_boundaries >= 0])
+            boundary_stats = {}
+            
+            for boundary_id in unique_boundaries:
+                boundary_mask = regime_boundaries == boundary_id
+                boundary_features = regime_features[boundary_mask]
+                
+                boundary_stats[f"boundary_{boundary_id}"] = {
+                    "size": int(np.sum(boundary_mask)),
+                    "characteristics": boundary_features.mean().to_dict(),
+                    "volatility": float(boundary_features.std().mean())
+                }
+            
+            self.logger.info(f"✅ Calculated {len(unique_boundaries)} adaptive regime boundaries")
+            
+            return {
+                "boundaries": regime_boundaries,
+                "boundary_stats": boundary_stats,
+                "scaler": scaler,
+                "clustering_model": clustering
+            }
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error calculating adaptive regime boundaries: {e}")
+            return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.DataFrame(),
+        context="extract_regime_characteristics"
+    )
+    def _extract_regime_characteristics(self, features: pd.DataFrame) -> pd.DataFrame:
+        """Extract regime characteristics for boundary calculation."""
+        try:
+            characteristics = pd.DataFrame()
+            
+            # Key regime characteristics
+            key_features = [
+                "price_momentum_10", "volatility_20", "volume_ratio_10",
+                "rsi", "adx", "bb_position", "atr_normalized"
+            ]
+            
+            for feature in key_features:
+                if feature in features.columns:
+                    # Calculate rolling statistics
+                    characteristics[f"{feature}_mean"] = features[feature].rolling(20).mean()
+                    characteristics[f"{feature}_std"] = features[feature].rolling(20).std()
+                    characteristics[f"{feature}_trend"] = features[feature].diff(10)
+            
+            # Add regime interaction features
+            if "price_momentum_10" in features.columns and "volatility_20" in features.columns:
+                characteristics["momentum_volatility_ratio"] = (
+                    features["price_momentum_10"] / (features["volatility_20"] + 1e-8)
+                )
+            
+            if "volume_ratio_10" in features.columns and "price_momentum_10" in features.columns:
+                characteristics["volume_momentum_correlation"] = (
+                    features["volume_ratio_10"] * features["price_momentum_10"]
+                )
+            
+            # Remove NaN values
+            characteristics = characteristics.dropna()
+            
+            return characteristics
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error extracting regime characteristics: {e}")
+            return pd.DataFrame()
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="model_regime_persistence"
+    )
+    def _model_regime_persistence(self, regime_sequence: np.ndarray) -> dict[str, Any]:
+        """Model how long regimes typically persist using statistical distributions."""
+        try:
+            self.logger.info("📊 Modeling regime persistence...")
+            
+            from scipy.stats import weibull_min, expon, gamma
+            from scipy.optimize import minimize
+            
+            # Calculate regime durations
+            durations = self._calculate_regime_durations(regime_sequence)
+            unique_durations = np.unique(durations)
+            
+            if len(unique_durations) < 3:
+                self.logger.warning("⚠️ Insufficient regime duration data for modeling")
+                return {}
+            
+            # Fit multiple distributions
+            distribution_fits = {}
+            
+            # Weibull distribution (most common for duration modeling)
+            try:
+                shape, loc, scale = weibull_min.fit(durations)
+                distribution_fits["weibull"] = {
+                    "shape": float(shape),
+                    "scale": float(scale),
+                    "mean_duration": float(scale * np.exp(1/shape)),
+                    "survival_function": lambda t: weibull_min.sf(t, shape, loc, scale),
+                    "aic": self._calculate_aic(durations, weibull_min.pdf, shape, loc, scale)
+                }
+            except Exception as e:
+                self.logger.warning(f"⚠️ Weibull fit failed: {e}")
+            
+            # Exponential distribution (simpler alternative)
+            try:
+                loc, scale = expon.fit(durations)
+                distribution_fits["exponential"] = {
+                    "scale": float(scale),
+                    "mean_duration": float(scale),
+                    "survival_function": lambda t: expon.sf(t, loc, scale),
+                    "aic": self._calculate_aic(durations, expon.pdf, loc, scale)
+                }
+            except Exception as e:
+                self.logger.warning(f"⚠️ Exponential fit failed: {e}")
+            
+            # Gamma distribution (more flexible)
+            try:
+                shape, loc, scale = gamma.fit(durations)
+                distribution_fits["gamma"] = {
+                    "shape": float(shape),
+                    "scale": float(scale),
+                    "mean_duration": float(shape * scale),
+                    "survival_function": lambda t: gamma.sf(t, shape, loc, scale),
+                    "aic": self._calculate_aic(durations, gamma.pdf, shape, loc, scale)
+                }
+            except Exception as e:
+                self.logger.warning(f"⚠️ Gamma fit failed: {e}")
+            
+            # Select best fitting distribution
+            best_distribution = None
+            best_aic = float('inf')
+            
+            for dist_name, dist_params in distribution_fits.items():
+                if dist_params["aic"] < best_aic:
+                    best_aic = dist_params["aic"]
+                    best_distribution = dist_name
+            
+            # Calculate regime transition probabilities
+            transition_matrix = self._calculate_transition_matrix(regime_sequence)
+            
+            # Calculate persistence statistics
+            persistence_stats = {
+                "mean_duration": float(np.mean(durations)),
+                "median_duration": float(np.median(durations)),
+                "std_duration": float(np.std(durations)),
+                "min_duration": int(np.min(durations)),
+                "max_duration": int(np.max(durations)),
+                "duration_percentiles": {
+                    "25": float(np.percentile(durations, 25)),
+                    "50": float(np.percentile(durations, 50)),
+                    "75": float(np.percentile(durations, 75)),
+                    "90": float(np.percentile(durations, 90))
+                }
+            }
+            
+            self.logger.info(f"✅ Modeled regime persistence with {best_distribution} distribution")
+            
+            return {
+                "best_distribution": best_distribution,
+                "distribution_fits": distribution_fits,
+                "persistence_stats": persistence_stats,
+                "transition_matrix": transition_matrix,
+                "durations": durations.tolist()
+            }
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error modeling regime persistence: {e}")
+            return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=float('inf'),
+        context="calculate_aic"
+    )
+    def _calculate_aic(self, data: np.ndarray, pdf_func, *params) -> float:
+        """Calculate Akaike Information Criterion for distribution fitting."""
+        try:
+            # Calculate log-likelihood
+            log_likelihood = np.sum(np.log(pdf_func(data, *params) + 1e-10))
+            
+            # AIC = 2k - 2ln(L) where k is number of parameters
+            k = len(params)
+            aic = 2 * k - 2 * log_likelihood
+            
+            return aic
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error calculating AIC: {e}")
+            return float('inf')
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=np.array([]),
+        context="calculate_transition_matrix"
+    )
+    def _calculate_transition_matrix(self, regime_sequence: np.ndarray) -> np.ndarray:
+        """Calculate regime transition probability matrix."""
+        try:
+            unique_states = np.unique(regime_sequence)
+            n_states = len(unique_states)
+            
+            if n_states == 0:
+                return np.array([])
+            
+            # Create state mapping
+            state_map = {state: i for i, state in enumerate(unique_states)}
+            
+            # Initialize transition matrix
+            transition_matrix = np.zeros((n_states, n_states))
+            
+            # Count transitions
+            for i in range(len(regime_sequence) - 1):
+                current_state = state_map[regime_sequence[i]]
+                next_state = state_map[regime_sequence[i + 1]]
+                transition_matrix[current_state, next_state] += 1
+            
+            # Normalize to probabilities
+            row_sums = transition_matrix.sum(axis=1, keepdims=True)
+            transition_matrix = np.divide(transition_matrix, row_sums, where=row_sums > 0)
+            
+            return transition_matrix
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error calculating transition matrix: {e}")
+            return np.array([])
 
 
 @monitor_feature_engineering()

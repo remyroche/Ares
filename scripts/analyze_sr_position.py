@@ -5,6 +5,9 @@ SR Position Analyzer
 This script analyzes the position of current price between the closest support and resistance levels,
 providing a continuum value from 0 (at support) to 1 (at resistance).
 
+NOTE: This script uses basic S/R level generation. For enhanced analysis with centralized SRBreakoutPredictor,
+use the enhanced version: scripts/analyze_sr_position_enhanced.py
+
 Usage:
     python scripts/analyze_sr_position.py --symbol ETHUSDT --exchange BINANCE --timeframe 15m
 """

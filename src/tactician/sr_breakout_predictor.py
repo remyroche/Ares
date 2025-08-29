@@ -2832,25 +2832,13 @@ class SRBreakoutPredictor:
             # 11. SR level
             features["sr_level"] = pd.Series([self._determine_sr_level(current_price, sr_context)] * len(market_data), index=market_data.index)
             
-            # 12. Breakout features
-            features["sr_breakout"] = pd.Series([self._calculate_breakout_probability(market_data, sr_context)] * len(market_data), index=market_data.index)
-            features["sr_breakout_prob"] = pd.Series([self._calculate_breakout_probability(market_data, sr_context)] * len(market_data), index=market_data.index)
-            
-            # 13. Rebounce features
-            features["sr_rebounce"] = pd.Series([self._calculate_rebounce_probability(market_data, sr_context)] * len(market_data), index=market_data.index)
-            features["sr_rebounce_prob"] = pd.Series([self._calculate_rebounce_probability(market_data, sr_context)] * len(market_data), index=market_data.index)
-            
-            # 14. Consolidation features
-            features["sr_consolidation"] = pd.Series([self._calculate_consolidation_probability(market_data, sr_context)] * len(market_data), index=market_data.index)
-            features["sr_consolidation_prob"] = pd.Series([self._calculate_consolidation_probability(market_data, sr_context)] * len(market_data), index=market_data.index)
-            
-            # 15. SR outcome
+            # 12. SR outcome
             features["sr_outcome"] = pd.Series([self._predict_sr_outcome(market_data, sr_context)] * len(market_data), index=market_data.index)
             
-            # 16. Zone width
+            # 13. Zone width
             features["sr_zone_width"] = pd.Series([sr_context.get("sr_zone_width", 0.0)] * len(market_data), index=market_data.index)
             
-            # 17. Add base features
+            # 14. Add base features
             for feature_name, feature_value in base_features.items():
                 features[f"sr_{feature_name}"] = pd.Series([feature_value] * len(market_data), index=market_data.index)
             
@@ -2999,75 +2987,20 @@ class SRBreakoutPredictor:
             self.logger.error(f"Error determining SR level: {e}")
             return 0.5
 
-    def _calculate_breakout_probability(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> float:
-        """Calculate probability of SR breakout."""
+    def _predict_sr_outcome(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> float:
+        """Predict SR outcome based on current market conditions."""
         try:
             current_price = market_data['close'].iloc[-1]
             nearest_support = sr_context.get("nearest_support", current_price)
             nearest_resistance = sr_context.get("nearest_resistance", current_price)
             
-            # Calculate breakout probability based on proximity and momentum
-            support_proximity = sr_context.get("support_proximity", 1.0)
-            resistance_proximity = sr_context.get("resistance_proximity", 1.0)
-            
-            # Momentum component
-            momentum = market_data['close'].pct_change().iloc[-5:].mean()
-            
-            # Breakout probability increases with proximity and momentum
-            if momentum > 0:
-                # Potential resistance breakout
-                prob = 1.0 / (1.0 + resistance_proximity) * (1.0 + momentum)
-            else:
-                # Potential support breakout
-                prob = 1.0 / (1.0 + support_proximity) * (1.0 - momentum)
-            
-            return max(0.0, min(1.0, prob))
-            
-        except Exception as e:
-            self.logger.error(f"Error calculating breakout probability: {e}")
-            return 0.5
-
-    def _calculate_rebounce_probability(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> float:
-        """Calculate probability of SR rebounce."""
-        try:
-            # Rebounce is inverse of breakout
-            breakout_prob = self._calculate_breakout_probability(market_data, sr_context)
-            return 1.0 - breakout_prob
-            
-        except Exception as e:
-            self.logger.error(f"Error calculating rebounce probability: {e}")
-            return 0.5
-
-    def _calculate_consolidation_probability(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> float:
-        """Calculate probability of consolidation between SR levels."""
-        try:
-            # Consolidation probability is highest when price is in the middle of SR zone
-            current_price = market_data['close'].iloc[-1]
-            nearest_support = sr_context.get("nearest_support", current_price)
-            nearest_resistance = sr_context.get("nearest_resistance", current_price)
-            
+            # Simple outcome prediction based on position relative to SR levels
             if nearest_resistance > nearest_support:
-                zone_center = (nearest_support + nearest_resistance) / 2
-                distance_from_center = abs(current_price - zone_center) / (nearest_resistance - nearest_support)
-                return max(0.0, 1.0 - distance_from_center)
+                position = (current_price - nearest_support) / (nearest_resistance - nearest_support)
+                return position
             else:
                 return 0.5
                 
-        except Exception as e:
-            self.logger.error(f"Error calculating consolidation probability: {e}")
-            return 0.5
-
-    def _predict_sr_outcome(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> float:
-        """Predict SR outcome (breakout, rebounce, or consolidation)."""
-        try:
-            breakout_prob = self._calculate_breakout_probability(market_data, sr_context)
-            rebounce_prob = self._calculate_rebounce_probability(market_data, sr_context)
-            consolidation_prob = self._calculate_consolidation_probability(market_data, sr_context)
-            
-            # Return the highest probability outcome
-            probs = [breakout_prob, rebounce_prob, consolidation_prob]
-            return max(probs)
-            
         except Exception as e:
             self.logger.error(f"Error predicting SR outcome: {e}")
             return 0.5

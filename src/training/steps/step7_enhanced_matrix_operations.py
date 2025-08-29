@@ -446,6 +446,216 @@ class Step7EnhancedMatrixOperations:
             self.logger.error(f"Error calculating overall quality score: {str(e)}")
             return 0.0
 
+    def _generate_detailed_quality_report(self, quality_metrics: dict[str, Any]) -> str:
+        """Generate detailed quality report with recommendations."""
+        try:
+            report = []
+            report.append("=" * 80)
+            report.append("📊 DETAILED FEATURE MATRIX QUALITY REPORT")
+            report.append("=" * 80)
+            
+            # Overall Score
+            overall_score = quality_metrics.get("overall_score", 0.0)
+            report.append(f"🎯 OVERALL QUALITY SCORE: {overall_score:.2f}/1.00")
+            
+            # Score interpretation
+            if overall_score >= 0.9:
+                report.append("✅ EXCELLENT - Feature matrix is of very high quality")
+            elif overall_score >= 0.8:
+                report.append("🟢 GOOD - Feature matrix is of good quality with minor issues")
+            elif overall_score >= 0.7:
+                report.append("🟡 ACCEPTABLE - Feature matrix has some quality issues")
+            elif overall_score >= 0.6:
+                report.append("🟠 POOR - Feature matrix has significant quality issues")
+            else:
+                report.append("🔴 CRITICAL - Feature matrix has severe quality issues")
+            
+            report.append("")
+            
+            # 1. Completeness Analysis
+            completeness = quality_metrics.get("completeness", {})
+            report.append("📋 1. DATA COMPLETENESS ANALYSIS")
+            report.append("-" * 40)
+            report.append(f"   Total cells: {completeness.get('total_cells', 0):,}")
+            report.append(f"   Missing cells: {completeness.get('missing_cells', 0):,}")
+            report.append(f"   Missing ratio: {completeness.get('missing_ratio', 0):.2%}")
+            report.append(f"   Complete rows: {completeness.get('complete_rows', 0):,}")
+            report.append(f"   Complete columns: {completeness.get('complete_columns', 0):,}")
+            
+            if completeness.get('missing_ratio', 0) > 0.05:
+                report.append("   ⚠️  RECOMMENDATION: High missing data ratio - consider imputation")
+            else:
+                report.append("   ✅ Data completeness is acceptable")
+            report.append("")
+            
+            # 2. Variance Analysis
+            variance = quality_metrics.get("variance", {})
+            report.append("📊 2. FEATURE VARIANCE ANALYSIS")
+            report.append("-" * 40)
+            report.append(f"   Mean variance: {variance.get('mean_variance', 0):.6f}")
+            report.append(f"   Median variance: {variance.get('median_variance', 0):.6f}")
+            report.append(f"   Min variance: {variance.get('min_variance', 0):.6f}")
+            report.append(f"   Max variance: {variance.get('max_variance', 0):.6f}")
+            report.append(f"   Low variance features: {variance.get('low_variance_features', 0)}")
+            report.append(f"   Zero variance features: {variance.get('zero_variance_features', 0)}")
+            
+            if variance.get('zero_variance_features', 0) > 0:
+                report.append("   ⚠️  RECOMMENDATION: Remove zero-variance features")
+            else:
+                report.append("   ✅ Feature variance is acceptable")
+            report.append("")
+            
+            # 3. Correlation Analysis
+            correlation = quality_metrics.get("correlation", {})
+            report.append("🔗 3. FEATURE CORRELATION ANALYSIS")
+            report.append("-" * 40)
+            report.append(f"   Mean correlation: {correlation.get('mean_correlation', 0):.4f}")
+            report.append(f"   Max correlation: {correlation.get('max_correlation', 0):.4f}")
+            report.append(f"   High correlation pairs: {correlation.get('high_correlation_pairs', 0)}")
+            report.append(f"   Correlation threshold: {correlation.get('correlation_threshold', 0.8)}")
+            
+            if correlation.get('high_correlation_pairs', 0) > 10:
+                report.append("   ⚠️  RECOMMENDATION: Many highly correlated features - consider feature selection")
+            elif correlation.get('high_correlation_pairs', 0) > 0:
+                report.append("   ⚠️  RECOMMENDATION: Some highly correlated features - review for redundancy")
+            else:
+                report.append("   ✅ Feature correlations are acceptable")
+            report.append("")
+            
+            # 4. Numerical Stability Analysis
+            stability = quality_metrics.get("numerical_stability", {})
+            report.append("🔢 4. NUMERICAL STABILITY ANALYSIS")
+            report.append("-" * 40)
+            report.append(f"   Condition number: {stability.get('condition_number', 0):.2e}")
+            report.append(f"   Well-conditioned: {stability.get('is_well_conditioned', False)}")
+            report.append(f"   Condition threshold: {stability.get('condition_threshold', 1e12):.2e}")
+            
+            if not stability.get('is_well_conditioned', False):
+                report.append("   ⚠️  RECOMMENDATION: Matrix is ill-conditioned - consider regularization or feature scaling")
+            else:
+                report.append("   ✅ Numerical stability is good")
+            report.append("")
+            
+            # 5. Dimensionality Analysis
+            dimensionality = quality_metrics.get("dimensionality", {})
+            report.append("📐 5. DIMENSIONALITY ANALYSIS")
+            report.append("-" * 40)
+            report.append(f"   Matrix rank: {dimensionality.get('matrix_rank', 0)}")
+            report.append(f"   Full rank: {dimensionality.get('full_rank', False)}")
+            report.append(f"   Rank deficiency: {dimensionality.get('rank_deficiency', 0)}")
+            report.append(f"   Effective dimensions: {dimensionality.get('effective_dimensions', 0)}")
+            
+            if dimensionality.get('rank_deficiency', 0) > 0:
+                report.append("   ⚠️  RECOMMENDATION: Rank-deficient matrix - consider dimensionality reduction")
+            else:
+                report.append("   ✅ Matrix has full rank")
+            report.append("")
+            
+            # 6. Distribution Analysis
+            distribution = quality_metrics.get("distribution", {})
+            report.append("📈 6. FEATURE DISTRIBUTION ANALYSIS")
+            report.append("-" * 40)
+            report.append(f"   Mean skewness: {distribution.get('skewness_mean', 0):.4f}")
+            report.append(f"   Skewness std: {distribution.get('skewness_std', 0):.4f}")
+            report.append(f"   Mean kurtosis: {distribution.get('kurtosis_mean', 0):.4f}")
+            report.append(f"   Kurtosis std: {distribution.get('kurtosis_std', 0):.4f}")
+            report.append(f"   High skew features: {distribution.get('high_skew_features', 0)}")
+            report.append(f"   High kurtosis features: {distribution.get('high_kurtosis_features', 0)}")
+            
+            if distribution.get('high_skew_features', 0) > 10:
+                report.append("   ⚠️  RECOMMENDATION: Many skewed features - consider transformations")
+            else:
+                report.append("   ✅ Feature distributions are generally acceptable")
+            report.append("")
+            
+            # 7. Outlier Analysis
+            outliers = quality_metrics.get("outliers", {})
+            report.append("🎯 7. OUTLIER ANALYSIS")
+            report.append("-" * 40)
+            report.append(f"   Total outliers: {outliers.get('total_outliers', 0):,}")
+            report.append(f"   Mean outliers per feature: {outliers.get('mean_outliers_per_feature', 0):.1f}")
+            report.append(f"   Max outliers in feature: {outliers.get('max_outliers_in_feature', 0)}")
+            report.append(f"   Mean outlier ratio: {outliers.get('mean_outlier_ratio', 0):.2%}")
+            report.append(f"   High outlier features: {outliers.get('high_outlier_features', 0)}")
+            
+            if outliers.get('high_outlier_features', 0) > 5:
+                report.append("   ⚠️  RECOMMENDATION: Many features with high outlier ratios - consider outlier handling")
+            else:
+                report.append("   ✅ Outlier levels are acceptable")
+            report.append("")
+            
+            # 8. Memory Usage Analysis
+            memory = quality_metrics.get("memory", {})
+            report.append("💾 8. MEMORY USAGE ANALYSIS")
+            report.append("-" * 40)
+            report.append(f"   Total memory usage: {memory.get('memory_usage_mb', 0):.1f} MB")
+            report.append(f"   Memory per feature: {memory.get('memory_per_feature_kb', 0):.1f} KB")
+            report.append(f"   Data types: {memory.get('data_types', {})}")
+            
+            if memory.get('memory_usage_mb', 0) > 1000:
+                report.append("   ⚠️  RECOMMENDATION: High memory usage - consider data type optimization")
+            else:
+                report.append("   ✅ Memory usage is reasonable")
+            report.append("")
+            
+            # 9. Actionable Recommendations
+            report.append("🚀 9. ACTIONABLE RECOMMENDATIONS")
+            report.append("-" * 40)
+            
+            recommendations = []
+            
+            if completeness.get('missing_ratio', 0) > 0.05:
+                recommendations.append("• Implement data imputation for missing values")
+            
+            if variance.get('zero_variance_features', 0) > 0:
+                recommendations.append("• Remove zero-variance features")
+            
+            if correlation.get('high_correlation_pairs', 0) > 5:
+                recommendations.append("• Apply feature selection to reduce multicollinearity")
+            
+            if not stability.get('is_well_conditioned', False):
+                recommendations.append("• Apply feature scaling or regularization")
+            
+            if dimensionality.get('rank_deficiency', 0) > 0:
+                recommendations.append("• Consider PCA or other dimensionality reduction techniques")
+            
+            if distribution.get('high_skew_features', 0) > 10:
+                recommendations.append("• Apply log or power transformations to skewed features")
+            
+            if outliers.get('high_outlier_features', 0) > 5:
+                recommendations.append("• Implement outlier detection and handling strategies")
+            
+            if memory.get('memory_usage_mb', 0) > 1000:
+                recommendations.append("• Optimize data types to reduce memory usage")
+            
+            if not recommendations:
+                recommendations.append("• No immediate actions required - feature matrix is in good condition")
+            
+            for rec in recommendations:
+                report.append(f"   {rec}")
+            
+            report.append("")
+            
+            # 10. Summary
+            report.append("📋 10. SUMMARY")
+            report.append("-" * 40)
+            report.append(f"   Overall Quality Score: {overall_score:.2f}/1.00")
+            
+            if overall_score >= 0.8:
+                report.append("   Status: ✅ READY FOR MODEL TRAINING")
+            elif overall_score >= 0.6:
+                report.append("   Status: ⚠️  NEEDS IMPROVEMENT BEFORE TRAINING")
+            else:
+                report.append("   Status: 🔴 REQUIRES SIGNIFICANT IMPROVEMENT")
+            
+            report.append("=" * 80)
+            
+            return "\n".join(report)
+            
+        except Exception as e:
+            self.logger.error(f"Error generating detailed quality report: {str(e)}")
+            return f"Error generating report: {str(e)}"
+
     def _find_high_correlations(
         self, 
         correlation_matrix: pd.DataFrame, 
@@ -496,6 +706,16 @@ class Step7EnhancedMatrixOperations:
         with open(quality_file, 'w') as f:
             json.dump(quality_metrics, f, indent=2, default=str)
         output_files["quality_metrics"] = str(quality_file)
+        
+        # Generate and save detailed quality report
+        detailed_report = self._generate_detailed_quality_report(quality_metrics)
+        report_file = self.output_dir / f"{exchange}_{symbol}_{timeframe}_quality_report.txt"
+        with open(report_file, 'w') as f:
+            f.write(detailed_report)
+        output_files["quality_report"] = str(report_file)
+        
+        # Log the detailed report
+        self.logger.info("\n" + detailed_report)
         
         # Save summary
         summary = {

@@ -122,6 +122,104 @@ class PositionSizer:
             self.print(error(f"Error validating configuration: {e}"))
             return False
 
+    # Methods moved from Supervisor to enforce position sizing separation
+    def calculate_leverage(self, confidence: float) -> float:
+        """Calculate leverage based on confidence score."""
+        if confidence > 0.9:
+            return 3.0  # High leverage for very high confidence
+        elif confidence > 0.8:
+            return 2.5
+        elif confidence > 0.7:
+            return 2.0
+        elif confidence > 0.6:
+            return 1.5
+        else:
+            return 1.0  # No leverage for low confidence
+
+    def calculate_position_size_from_confidence(self, confidence: float, leverage: float) -> float:
+        """Calculate position size based on confidence and leverage."""
+        base_size = confidence * 100  # Base size as percentage
+        adjusted_size = base_size * leverage
+        return min(adjusted_size, 100.0)  # Cap at 100%
+
+    def calculate_entry_timing(self, market_data: pd.DataFrame, confidence: float) -> str:
+        """Calculate optimal entry timing."""
+        if confidence > 0.8:
+            return "immediate"
+        elif confidence > 0.7:
+            return "within_5_minutes"
+        else:
+            return "wait_for_confirmation"
+
+    # Interface integration method
+    async def calculate_position_size_for_interface(
+        self,
+        confidence: float,
+        direction: str,
+        current_price: float,
+        market_data: pd.DataFrame,
+        risk_parameters: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Calculate position size for interface requests.
+        
+        This method provides a simplified interface for position sizing requests
+        from Supervisor and Strategist components.
+        """
+        try:
+            # Calculate leverage and position size
+            leverage = self.calculate_leverage(confidence)
+            position_size = self.calculate_position_size_from_confidence(confidence, leverage)
+            entry_timing = self.calculate_entry_timing(market_data, confidence)
+            
+            # Calculate stop loss and take profit based on risk parameters
+            stop_loss = None
+            take_profit = None
+            if risk_parameters:
+                risk_per_trade = risk_parameters.get('risk_per_trade', 0.02)
+                reward_ratio = risk_parameters.get('reward_ratio', 2.0)
+                
+                # Simple stop loss calculation (can be enhanced)
+                if direction == "BUY":
+                    stop_loss = current_price * (1 - risk_per_trade)
+                    take_profit = current_price * (1 + risk_per_trade * reward_ratio)
+                elif direction == "SELL":
+                    stop_loss = current_price * (1 + risk_per_trade)
+                    take_profit = current_price * (1 - risk_per_trade * reward_ratio)
+            
+            # Create response
+            result = {
+                'position_size': position_size / 100.0,  # Convert to decimal
+                'leverage': leverage,
+                'entry_timing': entry_timing,
+                'stop_loss': stop_loss,
+                'take_profit': take_profit,
+                'risk_metrics': {
+                    'confidence': confidence,
+                    'risk_per_trade': risk_parameters.get('risk_per_trade', 0.02),
+                    'max_drawdown': risk_parameters.get('max_drawdown', 0.1)
+                },
+                'reasoning': [
+                    f"Position size calculated based on {confidence:.2%} confidence",
+                    f"Leverage set to {leverage}x based on confidence level",
+                    f"Entry timing: {entry_timing}"
+                ]
+            }
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating position size for interface: {e}")
+            return {
+                'position_size': 0.0,
+                'leverage': 1.0,
+                'entry_timing': 'hold',
+                'stop_loss': None,
+                'take_profit': None,
+                'risk_metrics': {},
+                'reasoning': [f"Error: {str(e)}"]
+            }
+
     @validate_data_quality(
         required_columns=None,  # This method validates dict input, not DataFrame
         min_rows=1,

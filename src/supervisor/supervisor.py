@@ -609,20 +609,38 @@ class Supervisor:
             
             avg_tactician_confidence = sum(tactician_confidence_scores.values()) / len(tactician_confidence_scores)
             
-            leverage = self._tactician_calculate_leverage(avg_tactician_confidence)
-            position_size = self._tactician_calculate_position_size(avg_tactician_confidence, leverage)
-            entry_timing = self._tactician_calculate_entry_timing(market_data, avg_tactician_confidence)
-            
-            return {
-                "should_execute": True,
-                "trade_direction": analyst_direction,  # Use agreed direction
-                "leverage": leverage,
-                "position_size": position_size,
-                "entry_timing": entry_timing,
-                "tactician_confidence": avg_tactician_confidence,
-                "analyst_confidence": analyst_decision.get("entry_confidence", 0.0),
-                "combined_confidence": (avg_tactician_confidence + analyst_decision.get("entry_confidence", 0.0)) / 2
-            }
+            # Position sizing now handled by Tactician via interface
+            # Request position sizing from Tactician instead of calculating here
+            if hasattr(self, 'position_sizing_interface') and self.position_sizing_interface:
+                from src.interfaces.tactician_position_sizing_interface import PositionSizingRequest
+                
+                position_request = PositionSizingRequest(
+                    strategy_direction=analyst_direction,
+                    confidence=avg_tactician_confidence,
+                    current_price=market_data['close'].iloc[-1] if not market_data.empty else 0.0,
+                    market_data=market_data,
+                    risk_parameters={},
+                    portfolio_context=self.get_portfolio_context()
+                )
+                
+                position_response = await self.position_sizing_interface.calculate_position_size(position_request)
+                
+                return {
+                    "should_execute": True,
+                    "trade_direction": analyst_direction,  # Use agreed direction
+                    "leverage": position_response.leverage,
+                    "position_size": position_response.position_size,
+                    "entry_timing": position_response.entry_timing,
+                    "tactician_confidence": avg_tactician_confidence,
+                    "analyst_confidence": analyst_decision.get("entry_confidence", 0.0),
+                    "combined_confidence": (avg_tactician_confidence + analyst_decision.get("entry_confidence", 0.0)) / 2
+                }
+            else:
+                # Fallback if position sizing interface not available
+                return {
+                    "should_execute": False,
+                    "reason": "position_sizing_interface_not_available"
+                }
 
         except Exception as e:
             self.logger.error(error(f"❌ Error in tactician execution calculation: {e}"))
@@ -677,33 +695,22 @@ class Supervisor:
             return False
         return analyst_direction == tactician_direction
 
-    def _tactician_calculate_leverage(self, confidence: float) -> float:
-        """Calculate leverage based on confidence score."""
-        if confidence > 0.9:
-            return 3.0  # High leverage for very high confidence
-        elif confidence > 0.8:
-            return 2.5
-        elif confidence > 0.7:
-            return 2.0
-        elif confidence > 0.6:
-            return 1.5
-        else:
-            return 1.0  # No leverage for low confidence
+    # Position sizing methods removed - now handled by Tactician via interface
+    # _tactician_calculate_leverage, _tactician_calculate_position_size, _tactician_calculate_entry_timing
+    # have been moved to Tactician component to enforce separation of concerns
 
-    def _tactician_calculate_position_size(self, confidence: float, leverage: float) -> float:
-        """Calculate position size based on confidence and leverage."""
-        base_size = confidence * 100  # Base size as percentage
-        adjusted_size = base_size * leverage
-        return min(adjusted_size, 100.0)  # Cap at 100%
-
-    def _tactician_calculate_entry_timing(self, market_data: pd.DataFrame, confidence: float) -> str:
-        """Calculate optimal entry timing."""
-        if confidence > 0.8:
-            return "immediate"
-        elif confidence > 0.7:
-            return "within_5_minutes"
-        else:
-            return "wait_for_confirmation"
+    def get_portfolio_context(self) -> dict[str, Any]:
+        """Get portfolio context for position sizing requests."""
+        try:
+            return {
+                "portfolio_value": getattr(self, 'portfolio_value', 100000.0),
+                "current_positions": getattr(self, 'current_positions', {}),
+                "risk_limits": getattr(self, 'risk_limits', {}),
+                "timestamp": datetime.now().isoformat()
+            }
+        except Exception as e:
+            self.logger.error(f"Error getting portfolio context: {e}")
+            return {}
 
     @handle_errors(
         exceptions=(Exception,),

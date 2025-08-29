@@ -45,23 +45,37 @@ This document outlines the plan to enforce clear separation between the Supervis
 - **Strategy Generation**: Create trading strategies based on market analysis
 - **Market Analysis Integration**: Combine analyst and tactician inputs
 - **Strategy-Specific Risk Management**: Risk parameters for individual strategies
-- **Position Sizing Logic**: Calculate position sizes for specific strategies
 - **Strategy History Management**: Track and store strategy performance
 - **Volatility Targeting**: Implement volatility-based position adjustments
+
+#### Tactician Responsibilities (Execution-Level)
+- **Position Sizing**: Calculate position sizes based on strategy and market conditions
+- **Leverage Calculation**: Determine appropriate leverage based on confidence
+- **Entry Timing**: Calculate optimal entry timing for trades
+- **Order Execution**: Execute trades with proper risk management
+- **Position Management**: Monitor and manage open positions
 
 ### Phase 2: Code Refactoring
 
 #### Remove from Supervisor
 1. **Position sizing logic** from `_tactician_calculate_position_size()`
-2. **Strategy-specific risk management** from supervisor methods
-3. **Direct strategy generation** logic
-4. **Tactician-specific calculations** that should be in Tactician
+2. **Leverage calculation** from `_tactician_calculate_leverage()`
+3. **Entry timing** from `_tactician_calculate_entry_timing()`
+4. **Strategy-specific risk management** from supervisor methods
+5. **Direct strategy generation** logic
 
 #### Remove from Strategist
-1. **Portfolio-level allocation** methods
-2. **System-level monitoring** functionality
-3. **Component coordination** logic
-4. **Circuit breaker** management
+1. **Position sizing logic** from `_apply_position_sizing()`
+2. **Portfolio-level allocation** methods
+3. **System-level monitoring** functionality
+4. **Component coordination** logic
+5. **Circuit breaker** management
+
+#### Move to Tactician
+1. **Position sizing calculations** from Supervisor and Strategist
+2. **Leverage calculations** from Supervisor
+3. **Entry timing calculations** from Supervisor
+4. **Position management logic**
 
 #### Keep in Supervisor
 1. **Portfolio-level risk management** (`_enforce_portfolio_guards()`)
@@ -73,23 +87,34 @@ This document outlines the plan to enforce clear separation between the Supervis
 #### Keep in Strategist
 1. **Strategy generation** (`generate_strategy()`)
 2. **Strategy-specific risk management** (`_apply_risk_management()`)
-3. **Position sizing** (`_apply_position_sizing()`)
-4. **Market analysis integration** (`_integrate_analysis_results()`)
-5. **Strategy history management** (`_store_strategy_results()`)
+3. **Market analysis integration** (`_integrate_analysis_results()`)
+4. **Strategy history management** (`_store_strategy_results()`)
+
+#### Keep in Tactician
+1. **Position sizing** (`calculate_position_size_for_interface()`)
+2. **Leverage calculation** (`calculate_leverage()`)
+3. **Entry timing** (`calculate_entry_timing()`)
+4. **Position management** (existing position management methods)
 
 ### Phase 3: Interface Implementation
 
-#### Created Interface: `src/interfaces/supervisor_strategist_interface.py`
+#### Created Interfaces
 
-This interface enforces clear boundaries through:
+**1. Supervisor-Strategist Interface**: `src/interfaces/supervisor_strategist_interface.py`
+- **StrategyRequest/StrategyResponse**: Structured data exchange for strategy generation
+- **SystemStatusRequest/SystemStatusResponse**: System context provision to Strategist
+- **Event Notification**: Asynchronous event communication
+- **Performance Tracking**: Strategy performance submission to Supervisor
 
-1. **StrategyRequest/StrategyResponse**: Structured data exchange for strategy generation
-2. **SystemStatusRequest/SystemStatusResponse**: System context provision to Strategist
-3. **Event Notification**: Asynchronous event communication
-4. **Performance Tracking**: Strategy performance submission to Supervisor
+**2. Tactician Position Sizing Interface**: `src/interfaces/tactician_position_sizing_interface.py`
+- **PositionSizingRequest/PositionSizingResponse**: Structured data exchange for position sizing
+- **Position Size Validation**: Risk limit validation
+- **Position Sizing History**: Historical position sizing data
+- **Enforces**: Only Tactician handles position sizing logic
 
 #### Key Interface Methods
 
+**Supervisor-Strategist Interface:**
 ```python
 # Supervisor requests strategy from Strategist
 async def request_strategy_generation(request: StrategyRequest) -> StrategyResponse
@@ -102,6 +127,18 @@ async def request_system_status(request: SystemStatusRequest) -> SystemStatusRes
 
 # Strategist notifies Supervisor of events
 async def notify_strategy_event(event_type: str, event_data: Dict) -> bool
+```
+
+**Tactician Position Sizing Interface:**
+```python
+# Request position sizing from Tactician
+async def calculate_position_size(request: PositionSizingRequest) -> PositionSizingResponse
+
+# Validate position size against risk limits
+async def validate_position_size(position_size: float, context: Dict) -> bool
+
+# Get position sizing history
+async def get_position_sizing_history(limit: Optional[int] = None) -> list[Dict]
 ```
 
 ### Phase 4: Implementation Steps

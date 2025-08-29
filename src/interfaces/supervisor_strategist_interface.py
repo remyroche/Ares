@@ -33,11 +33,11 @@ class StrategyResponse:
     strategy_id: str
     direction: str  # BUY, SELL, HOLD
     confidence: float
-    position_size: float
     risk_parameters: Dict[str, Any]
     reasoning: List[str]
     timestamp: datetime
     metadata: Dict[str, Any]
+    # Note: position_size is handled by Tactician, not included here
 
 
 @dataclass
@@ -66,7 +66,8 @@ class SupervisorStrategistInterface(ABC):
     
     This interface enforces clear separation of concerns:
     - Supervisor: System-level monitoring, coordination, and portfolio management
-    - Strategist: Strategy generation, market analysis, and position sizing
+    - Strategist: Strategy generation, market analysis, and strategy-specific risk management
+    - Tactician: Position sizing, execution, and order management
     """
 
     @abstractmethod
@@ -172,7 +173,6 @@ class SupervisorInterface(SupervisorStrategistInterface):
                         strategy_id=strategy_result.get('strategy_id', 'unknown'),
                         direction=strategy_result.get('direction', 'HOLD'),
                         confidence=strategy_result.get('confidence', 0.0),
-                        position_size=strategy_result.get('position_size', 0.0),
                         risk_parameters=strategy_result.get('risk_parameters', {}),
                         reasoning=strategy_result.get('reasoning', []),
                         timestamp=datetime.now(),
@@ -184,7 +184,6 @@ class SupervisorInterface(SupervisorStrategistInterface):
             strategy_id='fallback',
             direction='HOLD',
             confidence=0.0,
-            position_size=0.0,
             risk_parameters={},
             reasoning=['Strategist not available'],
             timestamp=datetime.now(),
@@ -306,8 +305,8 @@ class StrategistInterface(SupervisorStrategistInterface):
     - Strategy generation
     - Market analysis integration
     - Strategy-specific risk management
-    - Position sizing logic
     - Strategy history management
+    - Note: Position sizing is handled by Tactician
     """
     
     def __init__(self, strategist_instance):
@@ -340,7 +339,6 @@ class StrategistInterface(SupervisorStrategistInterface):
                     strategy_id=strategy_result.get('strategy_id', f"strategy_{datetime.now().timestamp()}"),
                     direction=strategy_result.get('direction', 'HOLD'),
                     confidence=strategy_result.get('confidence', 0.0),
-                    position_size=strategy_result.get('position_size', 0.0),
                     risk_parameters=strategy_result.get('risk_parameters', {}),
                     reasoning=strategy_result.get('reasoning', []),
                     timestamp=datetime.now(),
@@ -364,7 +362,6 @@ class StrategistInterface(SupervisorStrategistInterface):
                     strategy_id='failed',
                     direction='HOLD',
                     confidence=0.0,
-                    position_size=0.0,
                     risk_parameters={},
                     reasoning=['Strategy generation failed'],
                     timestamp=datetime.now(),
@@ -376,7 +373,6 @@ class StrategistInterface(SupervisorStrategistInterface):
                 strategy_id='error',
                 direction='HOLD',
                 confidence=0.0,
-                position_size=0.0,
                 risk_parameters={},
                 reasoning=[f'Error: {str(e)}'],
                 timestamp=datetime.now(),

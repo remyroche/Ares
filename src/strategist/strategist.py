@@ -51,11 +51,13 @@ class Strategist:
         self.strategy_interval: int = self.strategist_config.get("strategy_interval", 1800)
         self.max_strategy_history: int = self.strategist_config.get("max_strategy_history", 50)
         self.enable_risk_management: bool = self.strategist_config.get("enable_risk_management", True)
-        self.enable_position_sizing: bool = self.strategist_config.get("enable_position_sizing", True)
+        # Position sizing removed - now handled by Tactician via interface
+        # self.enable_position_sizing: bool = self.strategist_config.get("enable_position_sizing", True)
 
         # Strategy parameters
         self.default_risk_per_trade: float = self.strategist_config.get("default_risk_per_trade", 0.02)
-        self.max_position_size: float = self.strategist_config.get("max_position_size", 0.1)
+        # Position sizing parameters removed - now handled by Tactician
+        # self.max_position_size: float = self.strategist_config.get("max_position_size", 0.1)
         self.min_confidence_threshold: float = self.strategist_config.get("min_confidence_threshold", 0.6)
 
         # Component references (will be set during initialization)
@@ -108,9 +110,9 @@ class Strategist:
             if self.enable_risk_management:
                 self.logger.info("Initializing risk management components...")
 
-            # Initialize position sizing
-            if self.enable_position_sizing:
-                self.logger.info("Initializing position sizing components...")
+            # Position sizing removed - now handled by Tactician via interface
+            # if self.enable_position_sizing:
+            #     self.logger.info("Initializing position sizing components...")
 
             self.logger.info("✅ Strategy components initialized successfully")
 
@@ -137,9 +139,10 @@ class Strategist:
                 self.logger.error(invalid("Invalid default_risk_per_trade value"))
                 return False
 
-            if self.max_position_size <= 0 or self.max_position_size > 1:
-                self.logger.error(invalid("Invalid max_position_size value"))
-                return False
+            # Position sizing validation removed - now handled by Tactician
+            # if self.max_position_size <= 0 or self.max_position_size > 1:
+            #     self.logger.error(invalid("Invalid max_position_size value"))
+            #     return False
 
             if self.min_confidence_threshold < 0 or self.min_confidence_threshold > 1:
                 self.logger.error(invalid("Invalid min_confidence_threshold value"))
@@ -198,9 +201,9 @@ class Strategist:
             if self.enable_risk_management:
                 base_strategy = await self._apply_risk_management(base_strategy, current_price)
 
-            # Apply position sizing
-            if self.enable_position_sizing:
-                base_strategy = await self._apply_position_sizing(base_strategy, current_price)
+            # Position sizing removed - now handled by Tactician via interface
+            # if self.enable_position_sizing:
+            #     base_strategy = await self._apply_position_sizing(base_strategy, current_price)
 
             # Store strategy results
             await self._store_strategy_results(base_strategy)
@@ -310,7 +313,8 @@ class Strategist:
                 "entry_price": current_price,
                 "stop_loss": None,
                 "take_profit": None,
-                "position_size": 0.0,
+                # Position size removed - now handled by Tactician
+            # "position_size": 0.0,
                 "risk_level": "MEDIUM",
                 "indicators": indicators,
                 "reasoning": [],
@@ -463,41 +467,10 @@ class Strategist:
             self.logger.error(f"Error applying risk management: {e}")
             return strategy
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError),
-        default_return={},
-        context="position sizing application",
-    )
-    async def _apply_position_sizing(self, strategy: dict[str, Any], current_price: float) -> dict[str, Any]:
-        """Apply position sizing to strategy."""
-        try:
-            if strategy["direction"] == "HOLD":
-                strategy["position_size"] = 0.0
-                return strategy
-
-            # Calculate position size based on confidence and risk
-            base_position_size = self.default_risk_per_trade
-            confidence_multiplier = strategy["confidence"]
-            
-            # Adjust position size based on confidence
-            position_size = base_position_size * confidence_multiplier
-            
-            # Apply maximum position size limit
-            position_size = min(position_size, self.max_position_size)
-            
-            # Ensure minimum position size
-            if position_size < 0.001:
-                position_size = 0.0
-                strategy["direction"] = "HOLD"
-                strategy["reasoning"].append("Position size too small - switching to HOLD")
-
-            strategy["position_size"] = position_size
-
-            return strategy
-
-        except Exception as e:
-            self.logger.error(f"Error applying position sizing: {e}")
-            return strategy
+    # Position sizing method removed - now handled by Tactician via interface
+    # async def _apply_position_sizing(self, strategy: dict[str, Any], current_price: float) -> dict[str, Any]:
+    #     """Apply position sizing to strategy."""
+    #     # This method has been removed as position sizing is now handled by Tactician
 
     @handle_errors(
         exceptions=(ValueError, TypeError),

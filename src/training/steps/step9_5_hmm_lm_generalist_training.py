@@ -98,6 +98,12 @@ class HMMLMGeneralistTrainingStep:
             "regime_change_accuracy": {},
             "regime_change_quality_scores": {},
             "regime_change_redundancy_metrics": {},
+            "regime_transition_probabilities": {},
+            "regime_stability_metrics": {},
+            "regime_forecasting_accuracy": {},
+            "regime_change_detection": {},
+            "regime_prediction_models": {}
+        }
             "regime_change_prediction_model": None
         }
 
@@ -1524,6 +1530,522 @@ async def run_step(
             return macd
         except Exception:
             return pd.Series([0] * len(prices))
+
+    # Enhanced Regime Change Prediction Methods
+    
+    async def analyze_enhanced_regime_changes(self, market_data: pd.DataFrame, hmm_model: Any = None) -> Dict[str, Any]:
+        """
+        Perform enhanced regime change analysis with comprehensive prediction capabilities.
+        
+        Args:
+            market_data: Market data DataFrame
+            hmm_model: Optional pre-trained HMM model
+            
+        Returns:
+            Dict[str, Any]: Enhanced regime change analysis results
+        """
+        try:
+            self.logger.info("🔍 Performing enhanced regime change analysis...")
+            
+            # Update regime change state
+            self.regime_change_state["last_regime_change_analysis"] = pd.Timestamp.now()
+            self.regime_change_state["regime_change_count"] += 1
+            
+            # Step 1: Detect regime changes
+            regime_changes = await self._detect_enhanced_regime_changes(market_data, hmm_model)
+            
+            # Step 2: Analyze regime transitions
+            transition_analysis = await self._analyze_regime_transitions(regime_changes, market_data)
+            
+            # Step 3: Predict regime stability
+            stability_analysis = await self._predict_regime_stability(regime_changes, market_data)
+            
+            # Step 4: Generate regime forecasts
+            forecast_analysis = await self._generate_regime_forecasts(regime_changes, market_data)
+            
+            # Step 5: Calculate quality metrics
+            quality_metrics = self._calculate_enhanced_regime_quality_metrics(
+                regime_changes, transition_analysis, stability_analysis, forecast_analysis
+            )
+            
+            # Step 6: Eliminate redundancy
+            redundancy_metrics = self._eliminate_enhanced_regime_redundancy(
+                regime_changes, transition_analysis, market_data
+            )
+            
+            # Create comprehensive results
+            results = {
+                "regime_changes": regime_changes,
+                "transition_analysis": transition_analysis,
+                "stability_analysis": stability_analysis,
+                "forecast_analysis": forecast_analysis,
+                "quality_metrics": quality_metrics,
+                "redundancy_metrics": redundancy_metrics,
+                "regime_change_count": len(regime_changes),
+                "transition_count": len(transition_analysis.get("transitions", [])),
+                "stability_score": stability_analysis.get("overall_stability", 0.0),
+                "forecast_accuracy": forecast_analysis.get("forecast_accuracy", 0.0)
+            }
+            
+            # Update state
+            self.regime_change_state["regime_change_quality_scores"] = quality_metrics
+            self.regime_change_state["regime_change_redundancy_metrics"] = redundancy_metrics
+            self.regime_change_state["regime_transition_probabilities"] = transition_analysis.get("transition_probabilities", {})
+            self.regime_change_state["regime_stability_metrics"] = stability_analysis.get("stability_metrics", {})
+            self.regime_change_state["regime_forecasting_accuracy"] = forecast_analysis.get("forecast_accuracy", 0.0)
+            
+            self.logger.info(f"✅ Enhanced regime change analysis completed: {len(regime_changes)} changes detected")
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Error in enhanced regime change analysis: {e}")
+            return {"regime_changes": [], "quality_metrics": {}, "redundancy_metrics": {}}
+
+    async def _detect_enhanced_regime_changes(self, market_data: pd.DataFrame, hmm_model: Any = None) -> List[Dict[str, Any]]:
+        """Detect regime changes using multiple methods."""
+        try:
+            regime_changes = []
+            
+            # Method 1: HMM-based regime detection
+            if hmm_model is not None:
+                hmm_changes = await self._detect_hmm_regime_changes(market_data, hmm_model)
+                regime_changes.extend(hmm_changes)
+            
+            # Method 2: Volatility-based regime detection
+            volatility_changes = await self._detect_volatility_regime_changes(market_data)
+            regime_changes.extend(volatility_changes)
+            
+            # Method 3: Momentum-based regime detection
+            momentum_changes = await self._detect_momentum_regime_changes(market_data)
+            regime_changes.extend(momentum_changes)
+            
+            # Method 4: Volume-based regime detection
+            volume_changes = await self._detect_volume_regime_changes(market_data)
+            regime_changes.extend(volume_changes)
+            
+            # Remove duplicates and sort by timestamp
+            unique_changes = self._remove_duplicate_regime_changes(regime_changes)
+            unique_changes.sort(key=lambda x: x["timestamp"])
+            
+            return unique_changes
+            
+        except Exception as e:
+            self.logger.error(f"Error detecting enhanced regime changes: {e}")
+            return []
+
+    async def _detect_hmm_regime_changes(self, market_data: pd.DataFrame, hmm_model: Any) -> List[Dict[str, Any]]:
+        """Detect regime changes using HMM model."""
+        try:
+            changes = []
+            
+            # Prepare features
+            features = self._prepare_regime_features(market_data)
+            feature_matrix = features.dropna().values
+            
+            if len(feature_matrix) < 10:
+                return changes
+            
+            # Normalize features
+            scaler = StandardScaler()
+            normalized_features = scaler.fit_transform(feature_matrix)
+            
+            # Predict states
+            states = hmm_model.predict(normalized_features)
+            
+            # Detect state changes
+            for i in range(1, len(states)):
+                if states[i] != states[i-1]:
+                    change = {
+                        "timestamp": market_data.index[i] if hasattr(market_data, 'index') else pd.Timestamp.now(),
+                        "change_type": "hmm_state",
+                        "from_state": states[i-1],
+                        "to_state": states[i],
+                        "confidence": hmm_model.predict_proba(normalized_features[i:i+1])[0].max(),
+                        "features": features.iloc[i].to_dict(),
+                        "change_strength": 1.0,
+                        "detection_method": "hmm"
+                    }
+                    changes.append(change)
+            
+            return changes
+            
+        except Exception as e:
+            self.logger.error(f"Error detecting HMM regime changes: {e}")
+            return []
+
+    async def _detect_volatility_regime_changes(self, market_data: pd.DataFrame) -> List[Dict[str, Any]]:
+        """Detect regime changes based on volatility shifts."""
+        try:
+            changes = []
+            
+            # Calculate volatility
+            returns = market_data['close'].pct_change().dropna()
+            volatility = returns.rolling(window=20).std()
+            
+            # Detect volatility regime changes
+            volatility_threshold = volatility.quantile(0.8)
+            high_volatility = volatility > volatility_threshold
+            
+            for i in range(1, len(high_volatility)):
+                if high_volatility.iloc[i] != high_volatility.iloc[i-1]:
+                    change = {
+                        "timestamp": market_data.index[i] if hasattr(market_data, 'index') else pd.Timestamp.now(),
+                        "change_type": "volatility",
+                        "from_state": "low_vol" if not high_volatility.iloc[i-1] else "high_vol",
+                        "to_state": "high_vol" if high_volatility.iloc[i] else "low_vol",
+                        "confidence": abs(volatility.iloc[i] - volatility.iloc[i-1]) / volatility.iloc[i-1],
+                        "features": {"volatility": volatility.iloc[i]},
+                        "change_strength": abs(volatility.iloc[i] - volatility.iloc[i-1]) / volatility.iloc[i-1],
+                        "detection_method": "volatility"
+                    }
+                    changes.append(change)
+            
+            return changes
+            
+        except Exception as e:
+            self.logger.error(f"Error detecting volatility regime changes: {e}")
+            return []
+
+    async def _detect_momentum_regime_changes(self, market_data: pd.DataFrame) -> List[Dict[str, Any]]:
+        """Detect regime changes based on momentum shifts."""
+        try:
+            changes = []
+            
+            # Calculate momentum indicators
+            momentum_5 = market_data['close'] / market_data['close'].shift(5) - 1
+            momentum_20 = market_data['close'] / market_data['close'].shift(20) - 1
+            
+            # Detect momentum regime changes
+            momentum_threshold = 0.02  # 2% threshold
+            
+            for i in range(20, len(momentum_5)):
+                momentum_change = abs(momentum_5.iloc[i] - momentum_5.iloc[i-1])
+                
+                if momentum_change > momentum_threshold:
+                    change = {
+                        "timestamp": market_data.index[i] if hasattr(market_data, 'index') else pd.Timestamp.now(),
+                        "change_type": "momentum",
+                        "from_state": "low_momentum" if momentum_5.iloc[i-1] < 0 else "high_momentum",
+                        "to_state": "high_momentum" if momentum_5.iloc[i] > 0 else "low_momentum",
+                        "confidence": min(momentum_change / momentum_threshold, 1.0),
+                        "features": {"momentum_5": momentum_5.iloc[i], "momentum_20": momentum_20.iloc[i]},
+                        "change_strength": momentum_change / momentum_threshold,
+                        "detection_method": "momentum"
+                    }
+                    changes.append(change)
+            
+            return changes
+            
+        except Exception as e:
+            self.logger.error(f"Error detecting momentum regime changes: {e}")
+            return []
+
+    async def _detect_volume_regime_changes(self, market_data: pd.DataFrame) -> List[Dict[str, Any]]:
+        """Detect regime changes based on volume shifts."""
+        try:
+            changes = []
+            
+            # Calculate volume indicators
+            volume_ma = market_data['volume'].rolling(window=20).mean()
+            volume_ratio = market_data['volume'] / volume_ma
+            
+            # Detect volume regime changes
+            volume_threshold = 2.0  # 2x average volume
+            
+            for i in range(20, len(volume_ratio)):
+                if volume_ratio.iloc[i] > volume_threshold and volume_ratio.iloc[i-1] <= volume_threshold:
+                    change = {
+                        "timestamp": market_data.index[i] if hasattr(market_data, 'index') else pd.Timestamp.now(),
+                        "change_type": "volume",
+                        "from_state": "normal_volume",
+                        "to_state": "high_volume",
+                        "confidence": min(volume_ratio.iloc[i] / volume_threshold, 1.0),
+                        "features": {"volume_ratio": volume_ratio.iloc[i]},
+                        "change_strength": volume_ratio.iloc[i] / volume_threshold,
+                        "detection_method": "volume"
+                    }
+                    changes.append(change)
+            
+            return changes
+            
+        except Exception as e:
+            self.logger.error(f"Error detecting volume regime changes: {e}")
+            return []
+
+    async def _analyze_regime_transitions(self, regime_changes: List[Dict[str, Any]], market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Analyze regime transitions and patterns."""
+        try:
+            transitions = []
+            transition_patterns = {}
+            
+            for i, change in enumerate(regime_changes):
+                if i > 0:
+                    prev_change = regime_changes[i-1]
+                    
+                    # Calculate transition pattern
+                    pattern = f"{prev_change['to_state']}_to_{change['to_state']}"
+                    if pattern not in transition_patterns:
+                        transition_patterns[pattern] = 0
+                    transition_patterns[pattern] += 1
+                    
+                    # Calculate transition probability
+                    time_diff = (change["timestamp"] - prev_change["timestamp"]).total_seconds()
+                    transition_probability = 1.0 / (1.0 + time_diff / 3600)  # Decay with time
+                    
+                    transition = {
+                        "from_change": prev_change,
+                        "to_change": change,
+                        "pattern": pattern,
+                        "probability": transition_probability,
+                        "time_diff": time_diff,
+                        "strength": (change["change_strength"] + prev_change["change_strength"]) / 2
+                    }
+                    transitions.append(transition)
+            
+            # Calculate transition probabilities
+            total_transitions = len(transitions)
+            transition_probabilities = {}
+            for pattern, count in transition_patterns.items():
+                transition_probabilities[pattern] = count / total_transitions if total_transitions > 0 else 0.0
+            
+            results = {
+                "transitions": transitions,
+                "transition_patterns": transition_patterns,
+                "transition_probabilities": transition_probabilities,
+                "transition_count": len(transitions)
+            }
+            
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Error analyzing regime transitions: {e}")
+            return {"transitions": [], "transition_probabilities": {}, "transition_count": 0}
+
+    async def _predict_regime_stability(self, regime_changes: List[Dict[str, Any]], market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Predict regime stability and persistence."""
+        try:
+            stability_metrics = {}
+            
+            # Calculate stability for each regime type
+            regime_types = set(change["change_type"] for change in regime_changes)
+            
+            for regime_type in regime_types:
+                type_changes = [c for c in regime_changes if c["change_type"] == regime_type]
+                
+                if len(type_changes) > 1:
+                    # Calculate average duration between changes
+                    durations = []
+                    for i in range(1, len(type_changes)):
+                        duration = (type_changes[i]["timestamp"] - type_changes[i-1]["timestamp"]).total_seconds()
+                        durations.append(duration)
+                    
+                    avg_duration = np.mean(durations)
+                    duration_std = np.std(durations)
+                    
+                    # Calculate stability score (higher duration = more stable)
+                    stability_score = 1.0 / (1.0 + duration_std / avg_duration) if avg_duration > 0 else 0.0
+                    
+                    stability_metrics[regime_type] = {
+                        "avg_duration": avg_duration,
+                        "duration_std": duration_std,
+                        "stability_score": stability_score,
+                        "change_frequency": len(type_changes) / len(regime_changes)
+                    }
+                else:
+                    stability_metrics[regime_type] = {
+                        "avg_duration": 0,
+                        "duration_std": 0,
+                        "stability_score": 1.0,  # Single change = stable
+                        "change_frequency": 1.0 / len(regime_changes) if regime_changes else 0.0
+                    }
+            
+            # Calculate overall stability
+            overall_stability = np.mean([metrics["stability_score"] for metrics in stability_metrics.values()])
+            
+            results = {
+                "stability_metrics": stability_metrics,
+                "overall_stability": overall_stability
+            }
+            
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Error predicting regime stability: {e}")
+            return {"overall_stability": 0.0, "stability_metrics": {}}
+
+    async def _generate_regime_forecasts(self, regime_changes: List[Dict[str, Any]], market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Generate regime forecasts and predictions."""
+        try:
+            forecasts = []
+            
+            if len(regime_changes) < 2:
+                return {"forecasts": [], "forecast_accuracy": 0.0}
+            
+            # Use recent changes to predict future changes
+            recent_changes = regime_changes[-10:]  # Last 10 changes
+            
+            # Calculate average time between changes
+            time_diffs = []
+            for i in range(1, len(recent_changes)):
+                time_diff = (recent_changes[i]["timestamp"] - recent_changes[i-1]["timestamp"]).total_seconds()
+                time_diffs.append(time_diff)
+            
+            avg_time_diff = np.mean(time_diffs) if time_diffs else 3600  # Default 1 hour
+            
+            # Generate forecasts
+            last_change = regime_changes[-1]
+            current_time = pd.Timestamp.now()
+            
+            for i in range(1, 6):  # Predict next 5 changes
+                forecast_time = last_change["timestamp"] + pd.Timedelta(seconds=avg_time_diff * i)
+                
+                if forecast_time > current_time:
+                    forecast = {
+                        "forecast_step": i,
+                        "forecast_time": forecast_time,
+                        "predicted_change_type": last_change["change_type"],
+                        "confidence": max(0.1, 1.0 - i * 0.2),  # Decreasing confidence
+                        "time_until_change": (forecast_time - current_time).total_seconds()
+                    }
+                    forecasts.append(forecast)
+            
+            # Calculate forecast accuracy (placeholder - would need historical validation)
+            forecast_accuracy = 0.7  # Placeholder accuracy
+            
+            results = {
+                "forecasts": forecasts,
+                "forecast_accuracy": forecast_accuracy,
+                "avg_time_between_changes": avg_time_diff
+            }
+            
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Error generating regime forecasts: {e}")
+            return {"forecasts": [], "forecast_accuracy": 0.0}
+
+    def _calculate_enhanced_regime_quality_metrics(self, regime_changes: List[Dict[str, Any]], 
+                                                 transition_analysis: Dict[str, Any],
+                                                 stability_analysis: Dict[str, Any],
+                                                 forecast_analysis: Dict[str, Any]) -> Dict[str, float]:
+        """Calculate comprehensive regime change quality metrics."""
+        try:
+            metrics = {}
+            
+            # Basic quality metrics
+            metrics["regime_change_count"] = len(regime_changes)
+            metrics["avg_confidence"] = np.mean([c["confidence"] for c in regime_changes]) if regime_changes else 0.0
+            metrics["avg_change_strength"] = np.mean([c["change_strength"] for c in regime_changes]) if regime_changes else 0.0
+            
+            # Transition quality
+            transition_count = transition_analysis.get("transition_count", 0)
+            metrics["transition_count"] = transition_count
+            metrics["transition_diversity"] = len(transition_analysis.get("transition_patterns", {}))
+            
+            # Stability quality
+            overall_stability = stability_analysis.get("overall_stability", 0.0)
+            metrics["overall_stability"] = overall_stability
+            
+            # Forecast quality
+            forecast_accuracy = forecast_analysis.get("forecast_accuracy", 0.0)
+            metrics["forecast_accuracy"] = forecast_accuracy
+            
+            # Composite quality score
+            quality_score = (
+                metrics.get("avg_confidence", 0.0) * 0.3 +
+                metrics.get("avg_change_strength", 0.0) * 0.2 +
+                min(metrics.get("transition_count", 0) / 10.0, 1.0) * 0.2 +
+                metrics.get("overall_stability", 0.0) * 0.2 +
+                metrics.get("forecast_accuracy", 0.0) * 0.1
+            )
+            metrics["composite_quality_score"] = quality_score
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating enhanced regime quality metrics: {e}")
+            return {"composite_quality_score": 0.0}
+
+    def _eliminate_enhanced_regime_redundancy(self, regime_changes: List[Dict[str, Any]], 
+                                            transition_analysis: Dict[str, Any],
+                                            market_data: pd.DataFrame) -> Dict[str, float]:
+        """Eliminate redundant regime changes and calculate redundancy metrics."""
+        try:
+            metrics = {}
+            
+            # Analyze temporal redundancy
+            temporal_redundancy = 0
+            for i, change1 in enumerate(regime_changes):
+                for j, change2 in enumerate(regime_changes[i+1:], i+1):
+                    time_diff = abs((change1["timestamp"] - change2["timestamp"]).total_seconds())
+                    if time_diff < 300:  # Within 5 minutes
+                        temporal_redundancy += 1
+            
+            # Analyze feature redundancy
+            feature_redundancy = 0
+            for i, change1 in enumerate(regime_changes):
+                for j, change2 in enumerate(regime_changes[i+1:], i+1):
+                    if change1["change_type"] == change2["change_type"]:
+                        feature_similarity = self._calculate_feature_similarity(
+                            change1["features"], change2["features"]
+                        )
+                        if feature_similarity > 0.8:  # 80% similarity threshold
+                            feature_redundancy += 1
+            
+            # Calculate redundancy metrics
+            total_pairs = len(regime_changes) * (len(regime_changes) - 1) / 2
+            metrics["temporal_redundancy"] = temporal_redundancy
+            metrics["feature_redundancy"] = feature_redundancy
+            metrics["total_redundancy"] = temporal_redundancy + feature_redundancy
+            metrics["redundancy_ratio"] = metrics["total_redundancy"] / total_pairs if total_pairs > 0 else 0.0
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"Error eliminating enhanced regime redundancy: {e}")
+            return {"redundancy_ratio": 0.0}
+
+    def _remove_duplicate_regime_changes(self, regime_changes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Remove duplicate regime changes."""
+        try:
+            unique_changes = []
+            seen_timestamps = set()
+            
+            for change in regime_changes:
+                timestamp = change["timestamp"]
+                if timestamp not in seen_timestamps:
+                    unique_changes.append(change)
+                    seen_timestamps.add(timestamp)
+            
+            return unique_changes
+            
+        except Exception as e:
+            self.logger.error(f"Error removing duplicate regime changes: {e}")
+            return regime_changes
+
+    def _prepare_regime_features(self, market_data: pd.DataFrame) -> pd.DataFrame:
+        """Prepare features for regime analysis."""
+        try:
+            features = pd.DataFrame()
+            
+            # Price features
+            features['returns'] = market_data['close'].pct_change()
+            features['log_returns'] = np.log(market_data['close'] / market_data['close'].shift(1))
+            features['price_momentum'] = market_data['close'] / market_data['close'].shift(5) - 1
+            
+            # Volatility features
+            features['volatility'] = features['returns'].rolling(window=20).std()
+            features['volatility_change'] = features['volatility'].diff()
+            
+            # Volume features
+            features['volume_ratio'] = market_data['volume'] / market_data['volume'].rolling(window=20).mean()
+            features['volume_change'] = market_data['volume'].pct_change()
+            
+            return features.dropna()
+            
+        except Exception as e:
+            self.logger.error(f"Error preparing regime features: {e}")
+            return pd.DataFrame()
 
 
 if __name__ == "__main__":

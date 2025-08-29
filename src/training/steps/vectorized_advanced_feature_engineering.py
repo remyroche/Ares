@@ -80,6 +80,17 @@ class OptimizedResampler:
         self.cache_hits: int = 0
         self.cache_misses: int = 0
         self.logger = system_logger.getChild("OptimizedResampler")
+        
+        # Enhanced feature engineering state
+        self.feature_engineering_state = {
+            "last_feature_generation": None,
+            "feature_generation_count": 0,
+            "feature_quality_scores": {},
+            "feature_redundancy_metrics": {},
+            "feature_integration_status": {},
+            "sr_integration_status": {},
+            "regime_integration_status": {}
+        }
 
     def _get_cache_key(self, data: pd.DataFrame, timeframe: str) -> str:
         """Generate cache key for resampled data."""
@@ -5948,3 +5959,319 @@ class VectorizedAdvancedFeatureEngineering:
         return None
 
         # Initialize features dictionary
+
+    # Enhanced Feature Engineering Methods
+    
+    async def generate_enhanced_features(self, market_data: pd.DataFrame, sr_analyzer: Any = None, regime_analyzer: Any = None) -> Dict[str, Any]:
+        """
+        Generate enhanced features with S/R and regime integration.
+        
+        Args:
+            market_data: Market data DataFrame
+            sr_analyzer: Optional S/R analyzer instance
+            regime_analyzer: Optional regime analyzer instance
+            
+        Returns:
+            Dict[str, Any]: Enhanced feature engineering results
+        """
+        try:
+            self.logger.info("🔧 Generating enhanced features with S/R and regime integration...")
+            
+            # Update feature engineering state
+            self.feature_engineering_state["last_feature_generation"] = pd.Timestamp.now()
+            self.feature_engineering_state["feature_generation_count"] += 1
+            
+            # Step 1: Generate base features
+            base_features = await self._generate_base_features(market_data)
+            
+            # Step 2: Generate S/R features
+            sr_features = {}
+            if sr_analyzer is not None:
+                sr_features = await self._generate_sr_features(market_data, sr_analyzer)
+            
+            # Step 3: Generate regime features
+            regime_features = {}
+            if regime_analyzer is not None:
+                regime_features = await self._generate_regime_features(market_data, regime_analyzer)
+            
+            # Step 4: Generate interaction features
+            interaction_features = await self._generate_interaction_features(base_features, sr_features, regime_features)
+            
+            # Step 5: Calculate quality metrics
+            quality_metrics = self._calculate_feature_quality_metrics(
+                base_features, sr_features, regime_features, interaction_features
+            )
+            
+            # Step 6: Eliminate redundancy
+            redundancy_metrics = self._eliminate_feature_redundancy(
+                base_features, sr_features, regime_features, interaction_features
+            )
+            
+            # Create comprehensive results
+            results = {
+                "base_features": base_features,
+                "sr_features": sr_features,
+                "regime_features": regime_features,
+                "interaction_features": interaction_features,
+                "quality_metrics": quality_metrics,
+                "redundancy_metrics": redundancy_metrics,
+                "total_features": len(base_features) + len(sr_features) + len(regime_features) + len(interaction_features),
+                "feature_categories": {
+                    "base": len(base_features),
+                    "sr": len(sr_features),
+                    "regime": len(regime_features),
+                    "interaction": len(interaction_features)
+                }
+            }
+            
+            # Update state
+            self.feature_engineering_state["feature_quality_scores"] = quality_metrics
+            self.feature_engineering_state["feature_redundancy_metrics"] = redundancy_metrics
+            self.feature_engineering_state["sr_integration_status"] = {"integrated": sr_analyzer is not None}
+            self.feature_engineering_state["regime_integration_status"] = {"integrated": regime_analyzer is not None}
+            
+            self.logger.info(f"✅ Enhanced feature generation completed: {results['total_features']} features")
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Error in enhanced feature generation: {e}")
+            return {"base_features": {}, "sr_features": {}, "regime_features": {}, "interaction_features": {}}
+
+    async def _generate_base_features(self, market_data: pd.DataFrame) -> Dict[str, float]:
+        """Generate base market features."""
+        try:
+            features = {}
+            
+            # Price features
+            features['price_return'] = market_data['close'].pct_change().iloc[-1]
+            features['price_momentum'] = market_data['close'].iloc[-1] / market_data['close'].iloc[-5] - 1
+            features['price_acceleration'] = features['price_momentum'] - (market_data['close'].iloc[-5] / market_data['close'].iloc[-10] - 1)
+            
+            # Volatility features
+            returns = market_data['close'].pct_change().dropna()
+            features['volatility'] = returns.rolling(window=20).std().iloc[-1]
+            features['volatility_change'] = features['volatility'] - returns.rolling(window=20).std().iloc[-2]
+            
+            # Volume features
+            features['volume_ratio'] = market_data['volume'].iloc[-1] / market_data['volume'].rolling(window=20).mean().iloc[-1]
+            features['volume_trend'] = market_data['volume'].iloc[-1] / market_data['volume'].iloc[-5] - 1
+            
+            # Technical features
+            features['rsi'] = self._calculate_rsi(market_data['close']).iloc[-1]
+            features['macd'] = self._calculate_macd(market_data['close']).iloc[-1]
+            features['bollinger_position'] = self._calculate_bollinger_position(market_data['close']).iloc[-1]
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Error generating base features: {e}")
+            return {}
+
+    async def _generate_sr_features(self, market_data: pd.DataFrame, sr_analyzer: Any) -> Dict[str, float]:
+        """Generate S/R features using the S/R analyzer."""
+        try:
+            features = {}
+            
+            # Get S/R analysis results
+            sr_results = await sr_analyzer.analyze_centralized_sr_levels(market_data)
+            sr_levels = sr_results.get("sr_levels", [])
+            sr_features = sr_results.get("sr_features", {})
+            
+            # Add S/R features
+            features.update(sr_features)
+            
+            # Add proximity features
+            current_price = market_data['close'].iloc[-1]
+            if sr_levels:
+                proximities = [abs(current_price - level.price) / current_price for level in sr_levels]
+                features['min_sr_proximity'] = min(proximities)
+                features['avg_sr_proximity'] = np.mean(proximities)
+                features['sr_level_count'] = len(sr_levels)
+            else:
+                features['min_sr_proximity'] = 1.0
+                features['avg_sr_proximity'] = 1.0
+                features['sr_level_count'] = 0
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Error generating S/R features: {e}")
+            return {}
+
+    async def _generate_regime_features(self, market_data: pd.DataFrame, regime_analyzer: Any) -> Dict[str, float]:
+        """Generate regime features using the regime analyzer."""
+        try:
+            features = {}
+            
+            # Get regime analysis results
+            regime_results = await regime_analyzer.analyze_enhanced_regime_changes(market_data)
+            regime_changes = regime_results.get("regime_changes", [])
+            stability_analysis = regime_results.get("stability_analysis", {})
+            
+            # Add regime features
+            features['regime_change_count'] = len(regime_changes)
+            features['regime_stability'] = stability_analysis.get("overall_stability", 0.0)
+            
+            if regime_changes:
+                features['avg_regime_confidence'] = np.mean([c["confidence"] for c in regime_changes])
+                features['avg_regime_strength'] = np.mean([c["change_strength"] for c in regime_changes])
+                features['last_regime_change_type'] = regime_changes[-1]["change_type"]
+            else:
+                features['avg_regime_confidence'] = 0.0
+                features['avg_regime_strength'] = 0.0
+                features['last_regime_change_type'] = "none"
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Error generating regime features: {e}")
+            return {}
+
+    async def _generate_interaction_features(self, base_features: Dict[str, float], 
+                                           sr_features: Dict[str, float], 
+                                           regime_features: Dict[str, float]) -> Dict[str, float]:
+        """Generate interaction features between different feature categories."""
+        try:
+            features = {}
+            
+            # S/R and price interactions
+            if 'price_return' in base_features and 'min_sr_proximity' in sr_features:
+                features['sr_price_interaction'] = base_features['price_return'] * (1 - sr_features['min_sr_proximity'])
+            
+            # Regime and volatility interactions
+            if 'volatility' in base_features and 'regime_stability' in regime_features:
+                features['regime_volatility_interaction'] = base_features['volatility'] * (1 - regime_features['regime_stability'])
+            
+            # Volume and S/R interactions
+            if 'volume_ratio' in base_features and 'sr_level_count' in sr_features:
+                features['volume_sr_interaction'] = base_features['volume_ratio'] * sr_features['sr_level_count']
+            
+            # Regime and momentum interactions
+            if 'price_momentum' in base_features and 'avg_regime_confidence' in regime_features:
+                features['regime_momentum_interaction'] = base_features['price_momentum'] * regime_features['avg_regime_confidence']
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Error generating interaction features: {e}")
+            return {}
+
+    def _calculate_feature_quality_metrics(self, base_features: Dict[str, float], 
+                                         sr_features: Dict[str, float], 
+                                         regime_features: Dict[str, float], 
+                                         interaction_features: Dict[str, float]) -> Dict[str, float]:
+        """Calculate feature quality metrics."""
+        try:
+            metrics = {}
+            
+            # Feature coverage
+            total_features = len(base_features) + len(sr_features) + len(regime_features) + len(interaction_features)
+            metrics["total_feature_count"] = total_features
+            metrics["feature_coverage"] = total_features / 50.0  # Normalized to expected max
+            
+            # Feature diversity
+            all_features = {**base_features, **sr_features, **regime_features, **interaction_features}
+            feature_values = list(all_features.values())
+            if feature_values:
+                metrics["feature_diversity"] = np.std(feature_values)
+                metrics["feature_range"] = max(feature_values) - min(feature_values)
+            else:
+                metrics["feature_diversity"] = 0.0
+                metrics["feature_range"] = 0.0
+            
+            # Category balance
+            category_counts = {
+                "base": len(base_features),
+                "sr": len(sr_features),
+                "regime": len(regime_features),
+                "interaction": len(interaction_features)
+            }
+            metrics["category_balance"] = 1.0 - np.std(list(category_counts.values())) / np.mean(list(category_counts.values())) if category_counts.values() else 0.0
+            
+            # Composite quality score
+            quality_score = (
+                metrics.get("feature_coverage", 0.0) * 0.4 +
+                min(metrics.get("feature_diversity", 0.0), 1.0) * 0.3 +
+                metrics.get("category_balance", 0.0) * 0.3
+            )
+            metrics["composite_quality_score"] = quality_score
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating feature quality metrics: {e}")
+            return {"composite_quality_score": 0.0}
+
+    def _eliminate_feature_redundancy(self, base_features: Dict[str, float], 
+                                    sr_features: Dict[str, float], 
+                                    regime_features: Dict[str, float], 
+                                    interaction_features: Dict[str, float]) -> Dict[str, float]:
+        """Eliminate redundant features and calculate redundancy metrics."""
+        try:
+            metrics = {}
+            
+            # Combine all features
+            all_features = {**base_features, **sr_features, **regime_features, **interaction_features}
+            
+            if len(all_features) < 2:
+                return {"redundancy_ratio": 0.0}
+            
+            # Calculate pairwise correlations
+            feature_names = list(all_features.keys())
+            feature_values = list(all_features.values())
+            
+            redundant_pairs = 0
+            total_pairs = len(feature_names) * (len(feature_names) - 1) / 2
+            
+            for i in range(len(feature_names)):
+                for j in range(i + 1, len(feature_names)):
+                    # Simple correlation approximation
+                    val1, val2 = feature_values[i], feature_values[j]
+                    if abs(val1 - val2) < 0.01:  # Very similar values
+                        redundant_pairs += 1
+            
+            metrics["redundant_pairs"] = redundant_pairs
+            metrics["total_pairs"] = total_pairs
+            metrics["redundancy_ratio"] = redundant_pairs / total_pairs if total_pairs > 0 else 0.0
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"Error eliminating feature redundancy: {e}")
+            return {"redundancy_ratio": 0.0}
+
+    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
+        """Calculate RSI indicator."""
+        try:
+            delta = prices.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs))
+            return rsi
+        except Exception:
+            return pd.Series([50] * len(prices))
+
+    def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26) -> pd.Series:
+        """Calculate MACD indicator."""
+        try:
+            ema_fast = prices.ewm(span=fast).mean()
+            ema_slow = prices.ewm(span=slow).mean()
+            macd = ema_fast - ema_slow
+            return macd
+        except Exception:
+            return pd.Series([0] * len(prices))
+
+    def _calculate_bollinger_position(self, prices: pd.Series, period: int = 20, std_dev: int = 2) -> pd.Series:
+        """Calculate Bollinger Band position."""
+        try:
+            sma = prices.rolling(window=period).mean()
+            std = prices.rolling(window=period).std()
+            upper_band = sma + (std * std_dev)
+            lower_band = sma - (std * std_dev)
+            
+            # Position within bands (0 = at lower band, 1 = at upper band)
+            position = (prices - lower_band) / (upper_band - lower_band)
+            return position
+        except Exception:
+            return pd.Series([0.5] * len(prices))

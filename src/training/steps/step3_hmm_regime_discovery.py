@@ -47,6 +47,8 @@ from sklearn.cluster import KMeans
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+from sklearn.mixture import GaussianMixture
+from sklearn.decomposition import PCA
 
 # Enhanced regime types and data structures
 class RegimeType(Enum):
@@ -57,6 +59,8 @@ class RegimeType(Enum):
     VOLATILE = "volatile"
     TRENDING = "trending"
     CONSOLIDATION = "consolidation"
+    BREAKOUT = "breakout"
+    REVERSAL = "reversal"
 
 @dataclass
 class RegimeState:
@@ -72,6 +76,9 @@ class RegimeState:
     features: Dict[str, float]
     transition_probability: float = 0.0
     stability_score: float = 0.0
+    regime_quality: float = 0.0
+    regime_persistence: float = 0.0
+    regime_complexity: float = 0.0
 
 @dataclass
 class RegimeTransition:
@@ -82,6 +89,18 @@ class RegimeTransition:
     timestamp: pd.Timestamp
     trigger_features: Dict[str, float]
     confidence: float
+    transition_strength: float = 0.0
+    transition_duration: int = 0
+
+@dataclass
+class RegimeCluster:
+    """Regime cluster data structure."""
+    cluster_id: int
+    center: np.ndarray
+    regime_states: List[RegimeState]
+    cluster_quality: float
+    cluster_stability: float
+    cluster_features: Dict[str, float]
 
 from src.utils.centralized_decorators import (
     comprehensive_data_validation,
@@ -2359,6 +2378,485 @@ async def run_step(
         except Exception as e:
             self.logger.error(f"Error in enhanced HMM regime discovery: {e}")
             return {"success": False, "error": str(e)}
+
+    # Enhanced HMM Regime Management Methods
+    
+    async def _train_enhanced_hmm_model(self, features: pd.DataFrame) -> Any:
+        """Train enhanced HMM model with improved parameters."""
+        try:
+            self.logger.info("🧠 Training enhanced HMM model...")
+            
+            # Prepare data
+            feature_matrix = features.dropna().values
+            if len(feature_matrix) < 100:
+                raise ValueError("Insufficient data for HMM training")
+            
+            # Normalize features
+            scaler = StandardScaler()
+            normalized_features = scaler.fit_transform(feature_matrix)
+            
+            # Train HMM with multiple components
+            from hmmlearn import hmm
+            
+            # Try different numbers of states
+            best_score = -np.inf
+            best_model = None
+            best_n_states = 5
+            
+            for n_states in [3, 5, 7, 10]:
+                try:
+                    model = hmm.GaussianHMM(
+                        n_components=n_states,
+                        covariance_type="full",
+                        n_iter=1000,
+                        random_state=42,
+                        init_params="stmcw",
+                        params="stmcw"
+                    )
+                    model.fit(normalized_features)
+                    score = model.score(normalized_features)
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_model = model
+                        best_n_states = n_states
+                        
+                except Exception as e:
+                    self.logger.warning(f"Failed to train HMM with {n_states} states: {e}")
+                    continue
+            
+            if best_model is None:
+                raise ValueError("Failed to train any HMM model")
+            
+            self.logger.info(f"✅ Enhanced HMM model trained with {best_n_states} states")
+            return best_model
+            
+        except Exception as e:
+            self.logger.error(f"Error training enhanced HMM model: {e}")
+            raise
+
+    async def _perform_regime_clustering(self, features: pd.DataFrame) -> Dict[str, Any]:
+        """Perform regime clustering using KMeans and other methods."""
+        try:
+            self.logger.info("🔍 Performing regime clustering...")
+            
+            # Prepare data
+            feature_matrix = features.dropna().values
+            scaler = StandardScaler()
+            normalized_features = scaler.fit_transform(feature_matrix)
+            
+            # KMeans clustering
+            kmeans = KMeans(n_clusters=5, random_state=42, n_init=10)
+            kmeans_labels = kmeans.fit_predict(normalized_features)
+            
+            # Gaussian Mixture clustering
+            gmm = GaussianMixture(n_components=5, random_state=42)
+            gmm_labels = gmm.fit_predict(normalized_features)
+            
+            # Calculate clustering quality metrics
+            kmeans_silhouette = silhouette_score(normalized_features, kmeans_labels)
+            gmm_silhouette = silhouette_score(normalized_features, gmm_labels)
+            
+            # Choose best clustering
+            if kmeans_silhouette > gmm_silhouette:
+                best_clustering = kmeans
+                best_labels = kmeans_labels
+                best_score = kmeans_silhouette
+            else:
+                best_clustering = gmm
+                best_labels = gmm_labels
+                best_score = gmm_silhouette
+            
+            # Create regime clusters
+            clusters = []
+            for i in range(best_clustering.n_clusters):
+                cluster_mask = best_labels == i
+                cluster_data = normalized_features[cluster_mask]
+                
+                cluster = RegimeCluster(
+                    cluster_id=i,
+                    center=best_clustering.cluster_centers_[i] if hasattr(best_clustering, 'cluster_centers_') else best_clustering.means_[i],
+                    regime_states=[],  # Will be populated later
+                    cluster_quality=best_score,
+                    cluster_stability=np.std(cluster_data),
+                    cluster_features=self._extract_cluster_features(cluster_data, features.iloc[cluster_mask])
+                )
+                clusters.append(cluster)
+            
+            results = {
+                "kmeans_model": kmeans,
+                "gmm_model": gmm,
+                "best_clustering": best_clustering,
+                "best_labels": best_labels,
+                "clusters": clusters,
+                "kmeans_silhouette": kmeans_silhouette,
+                "gmm_silhouette": gmm_silhouette,
+                "best_score": best_score
+            }
+            
+            self.logger.info(f"✅ Regime clustering completed with {len(clusters)} clusters")
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Error in regime clustering: {e}")
+            return {"clusters": [], "best_score": 0.0}
+
+    async def _analyze_regime_transitions(self, hmm_model: Any, features: pd.DataFrame) -> Dict[str, Any]:
+        """Analyze regime transitions and train transition prediction model."""
+        try:
+            self.logger.info("🔄 Analyzing regime transitions...")
+            
+            # Get HMM states
+            feature_matrix = features.dropna().values
+            scaler = StandardScaler()
+            normalized_features = scaler.fit_transform(feature_matrix)
+            states = hmm_model.predict(normalized_features)
+            
+            # Create transition matrix
+            n_states = hmm_model.n_components
+            transition_matrix = np.zeros((n_states, n_states))
+            
+            for i in range(len(states) - 1):
+                from_state = states[i]
+                to_state = states[i + 1]
+                transition_matrix[from_state, to_state] += 1
+            
+            # Normalize transition matrix
+            row_sums = transition_matrix.sum(axis=1)
+            transition_matrix = transition_matrix / row_sums[:, np.newaxis]
+            
+            # Train transition prediction model
+            transition_features = []
+            transition_labels = []
+            
+            for i in range(len(states) - 1):
+                # Create features for transition prediction
+                current_features = normalized_features[i]
+                next_features = normalized_features[i + 1]
+                feature_diff = next_features - current_features
+                
+                transition_feature = np.concatenate([current_features, feature_diff])
+                transition_features.append(transition_feature)
+                transition_labels.append(states[i + 1])
+            
+            if len(transition_features) > 10:
+                transition_model = RandomForestClassifier(n_estimators=100, random_state=42)
+                transition_model.fit(transition_features, transition_labels)
+                
+                # Calculate transition probabilities
+                transition_probabilities = {}
+                for from_state in range(n_states):
+                    for to_state in range(n_states):
+                        key = f"{from_state}_to_{to_state}"
+                        transition_probabilities[key] = transition_matrix[from_state, to_state]
+            else:
+                transition_model = None
+                transition_probabilities = {}
+            
+            # Detect regime transitions
+            transitions = []
+            for i in range(len(states) - 1):
+                if states[i] != states[i + 1]:
+                    transition = RegimeTransition(
+                        from_regime=states[i],
+                        to_regime=states[i + 1],
+                        probability=transition_matrix[states[i], states[i + 1]],
+                        timestamp=features.index[i + 1] if hasattr(features, 'index') else pd.Timestamp.now(),
+                        trigger_features=dict(zip(features.columns, normalized_features[i])),
+                        confidence=transition_matrix[states[i], states[i + 1]],
+                        transition_strength=1.0,
+                        transition_duration=1
+                    )
+                    transitions.append(transition)
+            
+            results = {
+                "transition_matrix": transition_matrix,
+                "transition_model": transition_model,
+                "transition_probabilities": transition_probabilities,
+                "transitions": transitions,
+                "transition_count": len(transitions)
+            }
+            
+            self.logger.info(f"✅ Regime transition analysis completed: {len(transitions)} transitions detected")
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Error in regime transition analysis: {e}")
+            return {"transitions": [], "transition_count": 0}
+
+    async def _analyze_regime_stability(self, hmm_model: Any, features: pd.DataFrame) -> Dict[str, Any]:
+        """Analyze regime stability and persistence."""
+        try:
+            self.logger.info("📊 Analyzing regime stability...")
+            
+            # Get HMM states
+            feature_matrix = features.dropna().values
+            scaler = StandardScaler()
+            normalized_features = scaler.fit_transform(feature_matrix)
+            states = hmm_model.predict(normalized_features)
+            
+            # Calculate stability metrics for each regime
+            stability_metrics = {}
+            n_states = hmm_model.n_components
+            
+            for state in range(n_states):
+                state_mask = states == state
+                state_durations = []
+                current_duration = 0
+                
+                for is_state in state_mask:
+                    if is_state:
+                        current_duration += 1
+                    else:
+                        if current_duration > 0:
+                            state_durations.append(current_duration)
+                            current_duration = 0
+                
+                if current_duration > 0:
+                    state_durations.append(current_duration)
+                
+                if state_durations:
+                    stability_metrics[state] = {
+                        "avg_duration": np.mean(state_durations),
+                        "max_duration": np.max(state_durations),
+                        "duration_std": np.std(state_durations),
+                        "persistence": len(state_durations) / len(states),
+                        "stability_score": 1.0 / (1.0 + np.std(state_durations))
+                    }
+                else:
+                    stability_metrics[state] = {
+                        "avg_duration": 0,
+                        "max_duration": 0,
+                        "duration_std": 0,
+                        "persistence": 0,
+                        "stability_score": 0
+                    }
+            
+            # Calculate overall stability
+            overall_stability = np.mean([metrics["stability_score"] for metrics in stability_metrics.values()])
+            
+            results = {
+                "stability_metrics": stability_metrics,
+                "overall_stability": overall_stability,
+                "regime_persistence": {state: metrics["persistence"] for state, metrics in stability_metrics.items()}
+            }
+            
+            self.logger.info(f"✅ Regime stability analysis completed: overall stability = {overall_stability:.3f}")
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Error in regime stability analysis: {e}")
+            return {"overall_stability": 0.0, "stability_metrics": {}}
+
+    async def _generate_regime_predictions(self, hmm_model: Any, features: pd.DataFrame) -> Dict[str, Any]:
+        """Generate regime predictions and forecasting."""
+        try:
+            self.logger.info("🔮 Generating regime predictions...")
+            
+            # Get current state
+            feature_matrix = features.dropna().values
+            scaler = StandardScaler()
+            normalized_features = scaler.fit_transform(feature_matrix)
+            current_state = hmm_model.predict(normalized_features)[-1]
+            
+            # Predict next state probabilities
+            next_state_probs = hmm_model.transmat_[current_state]
+            
+            # Generate short-term predictions
+            predictions = []
+            current_state_probs = next_state_probs.copy()
+            
+            for step in range(5):  # Predict next 5 steps
+                next_state = np.argmax(current_state_probs)
+                confidence = np.max(current_state_probs)
+                
+                prediction = {
+                    "step": step + 1,
+                    "predicted_state": next_state,
+                    "confidence": confidence,
+                    "state_probabilities": current_state_probs.copy()
+                }
+                predictions.append(prediction)
+                
+                # Update probabilities for next step
+                current_state_probs = hmm_model.transmat_[next_state]
+            
+            results = {
+                "current_state": current_state,
+                "next_state_probabilities": next_state_probs,
+                "predictions": predictions,
+                "prediction_horizon": 5
+            }
+            
+            self.logger.info(f"✅ Regime predictions generated: current state = {current_state}")
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Error generating regime predictions: {e}")
+            return {"current_state": 0, "predictions": []}
+
+    def _calculate_regime_quality_metrics(self, hmm_model: Any, clustering_results: Dict[str, Any], 
+                                        transition_analysis: Dict[str, Any], stability_analysis: Dict[str, Any]) -> Dict[str, float]:
+        """Calculate comprehensive regime quality metrics."""
+        try:
+            metrics = {}
+            
+            # HMM model quality
+            if hasattr(hmm_model, 'score'):
+                feature_matrix = self._get_feature_matrix()
+                if feature_matrix is not None:
+                    metrics["hmm_log_likelihood"] = hmm_model.score(feature_matrix)
+                    metrics["hmm_bic"] = hmm_model.bic(feature_matrix)
+                    metrics["hmm_aic"] = hmm_model.aic(feature_matrix)
+            
+            # Clustering quality
+            clustering_score = clustering_results.get("best_score", 0.0)
+            metrics["clustering_quality"] = clustering_score
+            metrics["cluster_count"] = len(clustering_results.get("clusters", []))
+            
+            # Transition quality
+            transition_count = transition_analysis.get("transition_count", 0)
+            metrics["transition_count"] = transition_count
+            metrics["transition_diversity"] = len(set([t.to_regime for t in transition_analysis.get("transitions", [])]))
+            
+            # Stability quality
+            overall_stability = stability_analysis.get("overall_stability", 0.0)
+            metrics["overall_stability"] = overall_stability
+            metrics["regime_persistence"] = np.mean(list(stability_analysis.get("regime_persistence", {}).values()))
+            
+            # Composite quality score
+            quality_score = (
+                metrics.get("clustering_quality", 0.0) * 0.3 +
+                metrics.get("overall_stability", 0.0) * 0.3 +
+                (1.0 - metrics.get("regime_persistence", 0.0)) * 0.2 +
+                min(metrics.get("transition_count", 0) / 10.0, 1.0) * 0.2
+            )
+            metrics["composite_quality_score"] = quality_score
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating regime quality metrics: {e}")
+            return {"composite_quality_score": 0.0}
+
+    def _eliminate_regime_redundancy(self, hmm_model: Any, clustering_results: Dict[str, Any], 
+                                   features: pd.DataFrame) -> Dict[str, float]:
+        """Eliminate redundant regimes and calculate redundancy metrics."""
+        try:
+            metrics = {}
+            
+            # Analyze cluster overlap
+            clusters = clustering_results.get("clusters", [])
+            if len(clusters) > 1:
+                cluster_centers = np.array([cluster.center for cluster in clusters])
+                
+                # Calculate pairwise distances between cluster centers
+                distances = []
+                for i in range(len(cluster_centers)):
+                    for j in range(i + 1, len(cluster_centers)):
+                        distance = np.linalg.norm(cluster_centers[i] - cluster_centers[j])
+                        distances.append(distance)
+                
+                # Calculate redundancy metrics
+                avg_distance = np.mean(distances)
+                min_distance = np.min(distances)
+                distance_std = np.std(distances)
+                
+                metrics["avg_cluster_distance"] = avg_distance
+                metrics["min_cluster_distance"] = min_distance
+                metrics["cluster_distance_std"] = distance_std
+                metrics["cluster_redundancy_score"] = 1.0 / (1.0 + avg_distance)
+                
+                # Identify redundant clusters
+                redundant_clusters = []
+                for i in range(len(cluster_centers)):
+                    for j in range(i + 1, len(cluster_centers)):
+                        distance = np.linalg.norm(cluster_centers[i] - cluster_centers[j])
+                        if distance < avg_distance * 0.5:  # Clusters too close
+                            redundant_clusters.append((i, j, distance))
+                
+                metrics["redundant_cluster_pairs"] = len(redundant_clusters)
+                metrics["redundancy_ratio"] = len(redundant_clusters) / (len(clusters) * (len(clusters) - 1) / 2)
+            else:
+                metrics["cluster_redundancy_score"] = 0.0
+                metrics["redundancy_ratio"] = 0.0
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"Error eliminating regime redundancy: {e}")
+            return {"cluster_redundancy_score": 0.0, "redundancy_ratio": 0.0}
+
+    def _extract_regime_states(self, hmm_model: Any, features: pd.DataFrame) -> List[RegimeState]:
+        """Extract regime states from HMM model."""
+        try:
+            states = []
+            feature_matrix = features.dropna().values
+            scaler = StandardScaler()
+            normalized_features = scaler.fit_transform(feature_matrix)
+            hmm_states = hmm_model.predict(normalized_features)
+            
+            for i, state in enumerate(hmm_states):
+                regime_state = RegimeState(
+                    regime_id=state,
+                    regime_type=self._map_state_to_regime_type(state),
+                    confidence=hmm_model.predict_proba(normalized_features[i:i+1])[0].max(),
+                    duration=1,
+                    volatility=features.iloc[i]['volatility'] if 'volatility' in features.columns else 0.0,
+                    momentum=features.iloc[i]['price_momentum'] if 'price_momentum' in features.columns else 0.0,
+                    volume_profile=features.iloc[i]['volume_ratio'] if 'volume_ratio' in features.columns else 0.0,
+                    timestamp=features.index[i] if hasattr(features, 'index') else pd.Timestamp.now(),
+                    features=features.iloc[i].to_dict(),
+                    transition_probability=0.0,
+                    stability_score=0.0,
+                    regime_quality=0.0,
+                    regime_persistence=0.0,
+                    regime_complexity=0.0
+                )
+                states.append(regime_state)
+            
+            return states
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting regime states: {e}")
+            return []
+
+    def _extract_cluster_features(self, cluster_data: np.ndarray, cluster_features: pd.DataFrame) -> Dict[str, float]:
+        """Extract features for a cluster."""
+        try:
+            features = {}
+            
+            # Calculate mean and std for each feature
+            for col in cluster_features.columns:
+                features[f"{col}_mean"] = cluster_features[col].mean()
+                features[f"{col}_std"] = cluster_features[col].std()
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting cluster features: {e}")
+            return {}
+
+    def _map_state_to_regime_type(self, state: int) -> RegimeType:
+        """Map HMM state to regime type."""
+        # Simple mapping based on state number
+        regime_types = [
+            RegimeType.BULL,
+            RegimeType.BEAR,
+            RegimeType.SIDEWAYS,
+            RegimeType.VOLATILE,
+            RegimeType.TRENDING
+        ]
+        return regime_types[state % len(regime_types)]
+
+    def _get_feature_matrix(self) -> Optional[np.ndarray]:
+        """Get feature matrix for HMM scoring."""
+        try:
+            # This would need to be implemented based on the current feature data
+            return None
+        except Exception as e:
+            self.logger.error(f"Error getting feature matrix: {e}")
+            return None
 
     async def _prepare_hmm_features(self, market_data: pd.DataFrame) -> pd.DataFrame:
         """Prepare comprehensive features for HMM analysis."""

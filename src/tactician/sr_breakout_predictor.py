@@ -11,11 +11,13 @@ from src.utils.centralized_decorators import validate_data_quality
 # Enhanced S/R analysis capabilities integrated directly
 from enum import Enum
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 import numpy as np
 import pandas as pd
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 
 # Enhanced S/R types and data structures
 class SRType(Enum):
@@ -26,6 +28,7 @@ class SRType(Enum):
     PSYCHOLOGICAL = "psychological"
     FRACTAL = "fractal"
     ATR = "atr"
+    COMPOSITE = "composite"
 
 @dataclass
 class SRLevel:
@@ -42,6 +45,21 @@ class SRLevel:
     proximity: float = 0.0
     breakout_probability: float = 0.0
     last_touch: Optional[pd.Timestamp] = None
+    volume_profile: float = 0.0
+    psychological_weight: float = 0.0
+    fractal_quality: float = 0.0
+    composite_score: float = 0.0
+
+@dataclass
+class SRBreakoutEvent:
+    """S/R breakout event data structure."""
+    level: SRLevel
+    breakout_type: str  # "support_break" or "resistance_break"
+    confidence: float
+    volume_confirmation: float
+    price_momentum: float
+    timestamp: pd.Timestamp
+    trigger_features: Dict[str, float]
 
 class SRBreakoutPredictor:
     """
@@ -56,7 +74,7 @@ class SRBreakoutPredictor:
 
     def __init__(self, config: dict[str, Any]) -> None:
         """
-        Initialize SR breakout predictor.
+        Initialize SR breakout predictor with enhanced centralized S/R logic.
 
         Args:
             config: Configuration dictionary
@@ -67,6 +85,9 @@ class SRBreakoutPredictor:
         # SR predictor state
         self.is_initialized: bool = False
         self.sr_predictions: dict[str, Any] = {}
+        self.sr_levels: List[SRLevel] = []
+        self.breakout_events: List[SRBreakoutEvent] = []
+        self.sr_quality_metrics: Dict[str, float] = {}
 
         # Configuration
         self.sr_config: dict[str, Any] = self.config.get("sr_breakout_predictor", {})
@@ -84,7 +105,7 @@ class SRBreakoutPredictor:
         )
         self.sr_detection_method: str = self.sr_config.get(
             "sr_detection_method",
-            "fractal",
+            "composite",  # Enhanced to use composite method
         )
         self.min_sr_strength: float = self.sr_config.get(
             "min_sr_strength",
@@ -98,6 +119,33 @@ class SRBreakoutPredictor:
             "sr_lookback_periods",
             100,
         )
+        
+        # Enhanced S/R configuration
+        self.enable_composite_sr: bool = self.sr_config.get("enable_composite_sr", True)
+        self.enable_volume_profile: bool = self.sr_config.get("enable_volume_profile", True)
+        self.enable_psychological_levels: bool = self.sr_config.get("enable_psychological_levels", True)
+        self.enable_fractal_analysis: bool = self.sr_config.get("enable_fractal_analysis", True)
+        self.enable_breakout_prediction: bool = self.sr_config.get("enable_breakout_prediction", True)
+        
+        # S/R analysis parameters
+        self.volume_threshold: float = self.sr_config.get("volume_threshold", 1.5)
+        self.psychological_levels: List[float] = self.sr_config.get("psychological_levels", [])
+        self.fractal_window: int = self.sr_config.get("fractal_window", 20)
+        self.strength_decay_factor: float = self.sr_config.get("strength_decay_factor", 0.95)
+        
+        # Breakout prediction model
+        self.breakout_model: Optional[RandomForestClassifier] = None
+        self.breakout_model_trained: bool = False
+        
+        # Centralized S/R state
+        self.sr_analysis_state = {
+            "last_sr_analysis": None,
+            "sr_detection_count": 0,
+            "sr_quality_scores": {},
+            "sr_redundancy_metrics": {},
+            "sr_integration_status": {},
+            "breakout_prediction_accuracy": {}
+        }
         self.volume_weight: float = self.sr_config.get(
             "volume_weight",
             0.7,
@@ -1833,6 +1881,436 @@ class SRBreakoutPredictor:
         except Exception as e:
             self.logger.error(f"Error getting S/R features for engineering: {e}")
             return {}
+
+    # Enhanced Centralized S/R Analysis Methods
+    
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={"sr_levels": [], "quality_metrics": {}, "redundancy_metrics": {}},
+        context="centralized S/R analysis",
+    )
+    async def analyze_centralized_sr_levels(self, market_data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Perform comprehensive centralized S/R analysis using multiple methods.
+        
+        Args:
+            market_data: Market data DataFrame
+            
+        Returns:
+            Dict[str, Any]: Comprehensive S/R analysis results
+        """
+        try:
+            self.logger.info("🔍 Starting centralized S/R analysis...")
+            
+            # Initialize results
+            analysis_results = {
+                "sr_levels": [],
+                "quality_metrics": {},
+                "redundancy_metrics": {},
+                "sr_features": {},
+                "breakout_events": []
+            }
+            
+            # Perform different S/R detection methods
+            if self.enable_fractal_analysis:
+                fractal_levels = await self._detect_fractal_sr_levels(market_data)
+                analysis_results["sr_levels"].extend(fractal_levels)
+            
+            if self.enable_volume_profile:
+                volume_levels = await self._detect_volume_sr_levels(market_data)
+                analysis_results["sr_levels"].extend(volume_levels)
+            
+            if self.enable_psychological_levels:
+                psychological_levels = await self._detect_psychological_sr_levels(market_data)
+                analysis_results["sr_levels"].extend(psychological_levels)
+            
+            # Perform composite analysis
+            if self.enable_composite_sr:
+                composite_levels = await self._create_composite_sr_levels(analysis_results["sr_levels"])
+                analysis_results["sr_levels"] = composite_levels
+            
+            # Calculate quality metrics
+            analysis_results["quality_metrics"] = await self._calculate_sr_quality_metrics(
+                analysis_results["sr_levels"], market_data
+            )
+            
+            # Calculate redundancy metrics
+            analysis_results["redundancy_metrics"] = await self._calculate_sr_redundancy_metrics(
+                analysis_results["sr_levels"]
+            )
+            
+            # Generate S/R features
+            analysis_results["sr_features"] = await self._generate_sr_features(
+                analysis_results["sr_levels"], market_data
+            )
+            
+            # Detect breakout events
+            if self.enable_breakout_prediction:
+                analysis_results["breakout_events"] = await self._detect_breakout_events(
+                    analysis_results["sr_levels"], market_data
+                )
+            
+            # Update state
+            self.sr_levels = analysis_results["sr_levels"]
+            self.sr_analysis_state["last_sr_analysis"] = pd.Timestamp.now()
+            self.sr_analysis_state["sr_detection_count"] += 1
+            
+            self.logger.info(f"✅ Centralized S/R analysis completed: {len(analysis_results['sr_levels'])} levels detected")
+            return analysis_results
+            
+        except Exception as e:
+            self.logger.error(f"Error in centralized S/R analysis: {e}")
+            return {"sr_levels": [], "quality_metrics": {}, "redundancy_metrics": {}}
+
+    async def _detect_fractal_sr_levels(self, market_data: pd.DataFrame) -> List[SRLevel]:
+        """Detect S/R levels using fractal analysis."""
+        try:
+            levels = []
+            high = market_data['high'].values
+            low = market_data['low'].values
+            close = market_data['close'].values
+            volume = market_data['volume'].values
+            timestamps = market_data.index
+            
+            # Detect swing highs and lows
+            for i in range(self.fractal_window, len(high) - self.fractal_window):
+                # Swing high detection
+                if all(high[i] >= high[j] for j in range(i - self.fractal_window, i)) and \
+                   all(high[i] >= high[j] for j in range(i + 1, i + self.fractal_window + 1)):
+                    
+                    level = SRLevel(
+                        price=high[i],
+                        level_type=SRType.FRACTAL,
+                        strength=0.5,  # Base strength
+                        confidence=0.6,
+                        touches=1,
+                        volume=volume[i],
+                        age=0,
+                        timestamp=timestamps[i],
+                        method="fractal_high",
+                        fractal_quality=0.8
+                    )
+                    levels.append(level)
+                
+                # Swing low detection
+                if all(low[i] <= low[j] for j in range(i - self.fractal_window, i)) and \
+                   all(low[i] <= low[j] for j in range(i + 1, i + self.fractal_window + 1)):
+                    
+                    level = SRLevel(
+                        price=low[i],
+                        level_type=SRType.FRACTAL,
+                        strength=0.5,  # Base strength
+                        confidence=0.6,
+                        touches=1,
+                        volume=volume[i],
+                        age=0,
+                        timestamp=timestamps[i],
+                        method="fractal_low",
+                        fractal_quality=0.8
+                    )
+                    levels.append(level)
+            
+            return levels
+            
+        except Exception as e:
+            self.logger.error(f"Error in fractal S/R detection: {e}")
+            return []
+
+    async def _detect_volume_sr_levels(self, market_data: pd.DataFrame) -> List[SRLevel]:
+        """Detect S/R levels using volume profile analysis."""
+        try:
+            levels = []
+            close = market_data['close'].values
+            volume = market_data['volume'].values
+            timestamps = market_data.index
+            
+            # Calculate volume-weighted average price
+            vwap = np.sum(close * volume) / np.sum(volume)
+            
+            # Find high volume price levels
+            volume_threshold = np.mean(volume) * self.volume_threshold
+            
+            for i in range(len(close)):
+                if volume[i] > volume_threshold:
+                    level = SRLevel(
+                        price=close[i],
+                        level_type=SRType.VOLUME,
+                        strength=min(volume[i] / volume_threshold, 2.0),
+                        confidence=0.7,
+                        touches=1,
+                        volume=volume[i],
+                        age=0,
+                        timestamp=timestamps[i],
+                        method="volume_profile",
+                        volume_profile=volume[i] / np.mean(volume)
+                    )
+                    levels.append(level)
+            
+            return levels
+            
+        except Exception as e:
+            self.logger.error(f"Error in volume S/R detection: {e}")
+            return []
+
+    async def _detect_psychological_sr_levels(self, market_data: pd.DataFrame) -> List[SRLevel]:
+        """Detect psychological S/R levels."""
+        try:
+            levels = []
+            close = market_data['close'].values
+            timestamps = market_data.index
+            
+            # Common psychological levels
+            if not self.psychological_levels:
+                self.psychological_levels = [0.5, 1.0, 1.5, 2.0, 5.0, 10.0, 50.0, 100.0]
+            
+            for i in range(len(close)):
+                for psych_level in self.psychological_levels:
+                    proximity = abs(close[i] - psych_level) / psych_level
+                    if proximity < 0.01:  # Within 1% of psychological level
+                        level = SRLevel(
+                            price=psych_level,
+                            level_type=SRType.PSYCHOLOGICAL,
+                            strength=0.6,
+                            confidence=0.8,
+                            touches=1,
+                            volume=0.0,
+                            age=0,
+                            timestamp=timestamps[i],
+                            method="psychological",
+                            psychological_weight=1.0 - proximity
+                        )
+                        levels.append(level)
+            
+            return levels
+            
+        except Exception as e:
+            self.logger.error(f"Error in psychological S/R detection: {e}")
+            return []
+
+    async def _create_composite_sr_levels(self, individual_levels: List[SRLevel]) -> List[SRLevel]:
+        """Create composite S/R levels by combining individual detections."""
+        try:
+            if not individual_levels:
+                return []
+            
+            # Group levels by proximity
+            grouped_levels = []
+            used_indices = set()
+            
+            for i, level1 in enumerate(individual_levels):
+                if i in used_indices:
+                    continue
+                
+                group = [level1]
+                used_indices.add(i)
+                
+                for j, level2 in enumerate(individual_levels[i+1:], i+1):
+                    if j in used_indices:
+                        continue
+                    
+                    # Check proximity
+                    proximity = abs(level1.price - level2.price) / level1.price
+                    if proximity < 0.02:  # Within 2%
+                        group.append(level2)
+                        used_indices.add(j)
+                
+                if len(group) > 1:
+                    # Create composite level
+                    composite_price = np.mean([level.price for level in group])
+                    composite_strength = np.mean([level.strength for level in group])
+                    composite_confidence = np.mean([level.confidence for level in group])
+                    total_touches = sum(level.touches for level in group)
+                    total_volume = sum(level.volume for level in group)
+                    
+                    composite_level = SRLevel(
+                        price=composite_price,
+                        level_type=SRType.COMPOSITE,
+                        strength=composite_strength * 1.2,  # Boost for composite
+                        confidence=composite_confidence * 1.1,
+                        touches=total_touches,
+                        volume=total_volume,
+                        age=0,
+                        timestamp=group[0].timestamp,
+                        method="composite",
+                        composite_score=len(group) * 0.1
+                    )
+                    grouped_levels.append(composite_level)
+                else:
+                    grouped_levels.append(level1)
+            
+            return grouped_levels
+            
+        except Exception as e:
+            self.logger.error(f"Error creating composite S/R levels: {e}")
+            return individual_levels
+
+    async def _calculate_sr_quality_metrics(self, sr_levels: List[SRLevel], market_data: pd.DataFrame) -> Dict[str, float]:
+        """Calculate quality metrics for S/R levels."""
+        try:
+            if not sr_levels:
+                return {}
+            
+            metrics = {}
+            
+            # Strength distribution
+            strengths = [level.strength for level in sr_levels]
+            metrics["avg_strength"] = np.mean(strengths)
+            metrics["strength_std"] = np.std(strengths)
+            metrics["max_strength"] = np.max(strengths)
+            
+            # Confidence distribution
+            confidences = [level.confidence for level in sr_levels]
+            metrics["avg_confidence"] = np.mean(confidences)
+            metrics["confidence_std"] = np.std(confidences)
+            
+            # Method distribution
+            method_counts = {}
+            for level in sr_levels:
+                method = level.method
+                method_counts[method] = method_counts.get(method, 0) + 1
+            
+            for method, count in method_counts.items():
+                metrics[f"method_{method}_ratio"] = count / len(sr_levels)
+            
+            # Volume profile quality
+            volume_profiles = [level.volume_profile for level in sr_levels if level.volume_profile > 0]
+            if volume_profiles:
+                metrics["avg_volume_profile"] = np.mean(volume_profiles)
+                metrics["volume_profile_std"] = np.std(volume_profiles)
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating S/R quality metrics: {e}")
+            return {}
+
+    async def _calculate_sr_redundancy_metrics(self, sr_levels: List[SRLevel]) -> Dict[str, float]:
+        """Calculate redundancy metrics for S/R levels."""
+        try:
+            if len(sr_levels) < 2:
+                return {"redundancy_score": 0.0}
+            
+            # Calculate proximity matrix
+            prices = [level.price for level in sr_levels]
+            proximity_matrix = np.zeros((len(prices), len(prices)))
+            
+            for i in range(len(prices)):
+                for j in range(i+1, len(prices)):
+                    proximity = abs(prices[i] - prices[j]) / prices[i]
+                    proximity_matrix[i, j] = proximity
+                    proximity_matrix[j, i] = proximity
+            
+            # Calculate redundancy score
+            close_pairs = np.sum(proximity_matrix < 0.02) / 2  # Pairs within 2%
+            total_pairs = len(prices) * (len(prices) - 1) / 2
+            redundancy_score = close_pairs / total_pairs if total_pairs > 0 else 0.0
+            
+            return {
+                "redundancy_score": redundancy_score,
+                "close_pairs_ratio": close_pairs / len(sr_levels) if sr_levels else 0.0,
+                "avg_proximity": np.mean(proximity_matrix[proximity_matrix > 0])
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating S/R redundancy metrics: {e}")
+            return {"redundancy_score": 0.0}
+
+    async def _generate_sr_features(self, sr_levels: List[SRLevel], market_data: pd.DataFrame) -> Dict[str, float]:
+        """Generate S/R features for machine learning."""
+        try:
+            features = {}
+            
+            if not sr_levels:
+                # Return default features
+                for feature_name in ["sr_level_count", "avg_sr_strength", "sr_strength_std", 
+                                   "avg_sr_confidence", "sr_confidence_std", "sr_redundancy_score"]:
+                    features[feature_name] = 0.0
+                return features
+            
+            # Basic S/R features
+            features["sr_level_count"] = len(sr_levels)
+            features["avg_sr_strength"] = np.mean([level.strength for level in sr_levels])
+            features["sr_strength_std"] = np.std([level.strength for level in sr_levels])
+            features["avg_sr_confidence"] = np.mean([level.confidence for level in sr_levels])
+            features["sr_confidence_std"] = np.std([level.confidence for level in sr_levels])
+            
+            # Method-specific features
+            method_counts = {}
+            for level in sr_levels:
+                method = level.method
+                method_counts[method] = method_counts.get(method, 0) + 1
+            
+            for method in ["fractal", "volume", "psychological", "composite"]:
+                features[f"sr_method_{method}_count"] = method_counts.get(method, 0)
+                features[f"sr_method_{method}_ratio"] = method_counts.get(method, 0) / len(sr_levels)
+            
+            # Current price proximity to S/R levels
+            current_price = market_data['close'].iloc[-1]
+            proximities = [abs(current_price - level.price) / current_price for level in sr_levels]
+            features["min_sr_proximity"] = min(proximities) if proximities else 1.0
+            features["avg_sr_proximity"] = np.mean(proximities) if proximities else 1.0
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Error generating S/R features: {e}")
+            return {}
+
+    async def _detect_breakout_events(self, sr_levels: List[SRLevel], market_data: pd.DataFrame) -> List[SRBreakoutEvent]:
+        """Detect S/R breakout events."""
+        try:
+            events = []
+            close = market_data['close'].values
+            volume = market_data['volume'].values
+            timestamps = market_data.index
+            
+            for level in sr_levels:
+                # Check for breakouts
+                for i in range(len(close)):
+                    price = close[i]
+                    level_price = level.price
+                    
+                    # Support break
+                    if price < level_price * 0.98:  # 2% below support
+                        event = SRBreakoutEvent(
+                            level=level,
+                            breakout_type="support_break",
+                            confidence=level.confidence,
+                            volume_confirmation=volume[i] / np.mean(volume),
+                            price_momentum=(price - level_price) / level_price,
+                            timestamp=timestamps[i],
+                            trigger_features={
+                                "price_momentum": (price - level_price) / level_price,
+                                "volume_confirmation": volume[i] / np.mean(volume),
+                                "level_strength": level.strength
+                            }
+                        )
+                        events.append(event)
+                        break
+                    
+                    # Resistance break
+                    elif price > level_price * 1.02:  # 2% above resistance
+                        event = SRBreakoutEvent(
+                            level=level,
+                            breakout_type="resistance_break",
+                            confidence=level.confidence,
+                            volume_confirmation=volume[i] / np.mean(volume),
+                            price_momentum=(price - level_price) / level_price,
+                            timestamp=timestamps[i],
+                            trigger_features={
+                                "price_momentum": (price - level_price) / level_price,
+                                "volume_confirmation": volume[i] / np.mean(volume),
+                                "level_strength": level.strength
+                            }
+                        )
+                        events.append(event)
+                        break
+            
+            return events
+            
+        except Exception as e:
+            self.logger.error(f"Error detecting breakout events: {e}")
+            return []
 
     @handle_errors(
         exceptions=(Exception,),

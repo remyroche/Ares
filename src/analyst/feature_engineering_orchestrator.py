@@ -89,6 +89,73 @@ class FeatureEngineeringOrchestrator:
             "sr_integration_status": {},
             "regime_integration_status": {}
         }
+        
+        # Initialize enhanced components
+        self.sr_analyzer = None
+        self.regime_analyzer = None
+        self.enhanced_feature_engineering = None
+        
+        # Try to initialize enhanced components
+        try:
+            from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
+            self.sr_analyzer = SRBreakoutPredictor(config)
+            self.logger.info("✅ S/R analyzer initialized for feature engineering")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not initialize S/R analyzer: {e}")
+        
+        try:
+            from src.training.steps.step9_5_hmm_lm_generalist_training import HMMLMGeneralistTrainingStep
+            self.regime_analyzer = HMMLMGeneralistTrainingStep(config)
+            self.logger.info("✅ Regime analyzer initialized for feature engineering")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not initialize regime analyzer: {e}")
+        
+        try:
+            from src.training.steps.vectorized_advanced_feature_engineering import OptimizedResampler
+            self.enhanced_feature_engineering = OptimizedResampler()
+            self.logger.info("✅ Enhanced feature engineering initialized")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not initialize enhanced feature engineering: {e}")
+
+    async def generate_enhanced_features(self, klines_df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Generate enhanced features with S/R and regime integration.
+        
+        Args:
+            klines_df: Market data DataFrame
+            
+        Returns:
+            Dict[str, Any]: Enhanced feature engineering results
+        """
+        try:
+            self.logger.info("🔧 Generating enhanced features with S/R and regime integration...")
+            
+            # Update feature engineering state
+            self.feature_engineering_state["last_feature_generation"] = pd.Timestamp.now()
+            self.feature_engineering_state["feature_generation_count"] += 1
+            
+            # Use enhanced feature engineering if available
+            if self.enhanced_feature_engineering is not None:
+                enhanced_results = await self.enhanced_feature_engineering.generate_enhanced_features(
+                    klines_df, self.sr_analyzer, self.regime_analyzer
+                )
+                
+                # Update state
+                self.feature_engineering_state["feature_quality_scores"] = enhanced_results.get("quality_metrics", {})
+                self.feature_engineering_state["feature_redundancy_metrics"] = enhanced_results.get("redundancy_metrics", {})
+                self.feature_engineering_state["sr_integration_status"] = enhanced_results.get("sr_features", {})
+                self.feature_engineering_state["regime_integration_status"] = enhanced_results.get("regime_features", {})
+                
+                self.logger.info(f"✅ Enhanced feature generation completed: {enhanced_results.get('total_features', 0)} features")
+                return enhanced_results
+            else:
+                # Fallback to original method
+                self.logger.warning("⚠️ Enhanced feature engineering not available, using fallback method")
+                return await self.generate_all_features(klines_df)
+                
+        except Exception as e:
+            self.logger.error(f"Error in enhanced feature generation: {e}")
+            return {"base_features": {}, "sr_features": {}, "regime_features": {}, "interaction_features": {}}
 
     @handle_errors(
         exceptions=(Exception,),

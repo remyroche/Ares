@@ -50,7 +50,7 @@ class TacticianTripleBarrierLabeler:
         self.barrier_calculator = DynamicBarrierCalculator(self.config)
         
         # Get dynamic barriers for primary timeframe (1m)
-        self.pt_pct, self.sl_pct, self.time_barrier = self.barrier_calculator.calculate_dynamic_barriers(
+        self.upper_barrier_pct, self.lower_barrier_pct = self.barrier_calculator.calculate_dynamic_barriers(
             timeframe="1m"
         )
         
@@ -82,9 +82,8 @@ class TacticianTripleBarrierLabeler:
         self.logger.info(f"🔧 Enhanced Tactician Triple Barrier Configuration (Dynamic):")
         self.logger.info(f"   Timeframes: {self.timeframes}")
         self.logger.info(f"   Primary: {self.primary_timeframe}, Secondary: {self.secondary_timeframe}")
-        self.logger.info(f"   Dynamic Profit Take: {self.pt_pct:.4f} ({self.pt_pct*100:.3f}%)")
-        self.logger.info(f"   Dynamic Stop Loss: {self.sl_pct:.4f} ({self.sl_pct*100:.3f}%)")
-        self.logger.info(f"   Dynamic Time Barrier: {self.time_barrier} periods")
+        self.logger.info(f"   Dynamic Upper Barrier: {self.upper_barrier_pct:.4f} ({self.upper_barrier_pct*100:.3f}%)")
+        self.logger.info(f"   Dynamic Lower Barrier: {self.lower_barrier_pct:.4f} ({self.lower_barrier_pct*100:.3f}%)")
         self.logger.info(f"   High Precision Mode: {self.enable_high_precision_mode}")
         self.logger.info(f"   Precision Threshold: {self.precision_threshold}")
 
@@ -199,48 +198,44 @@ class TacticianTripleBarrierLabeler:
                 continue
             
             # Calculate base barriers
-            base_pt = entry_prices.iloc[i] * (1 + self.pt_pct * signal)
-            base_sl = entry_prices.iloc[i] * (1 - self.sl_pct * signal)
+            base_upper = entry_prices.iloc[i] * (1 + self.upper_barrier_pct * signal)
+            base_lower = entry_prices.iloc[i] * (1 - self.lower_barrier_pct * signal)
             
             # Apply adaptive barriers if enabled
             if self.config.get("enable_adaptive_barriers", True):
-                pt, sl = self._calculate_adaptive_barriers(data, entry_idx, base_pt, base_sl)
+                upper, lower = self._calculate_adaptive_barriers(data, entry_idx, base_upper, base_lower)
             else:
-                pt, sl = base_pt, base_sl
+                upper, lower = base_upper, base_lower
 
-            path = data.iloc[entry_idx + 1 : entry_idx + 1 + self.time_barrier]
-            if path.empty:
-                continue
+            # Check for hits with enhanced precision (no time barrier)
+            upper_hit_mask = (path["high"] >= upper) if signal == 1 else (path["low"] <= upper)
+            lower_hit_mask = (path["low"] <= lower) if signal == 1 else (path["high"] >= lower)
 
-            # Check for hits with enhanced precision
-            pt_hit_mask = (path["high"] >= pt) if signal == 1 else (path["low"] <= pt)
-            sl_hit_mask = (path["low"] <= sl) if signal == 1 else (path["high"] >= sl)
-
-            pt_hit_time = path.index[pt_hit_mask].min()
-            sl_hit_time = path.index[sl_hit_mask].min()
+            upper_hit_time = path.index[upper_hit_mask].min()
+            lower_hit_time = path.index[lower_hit_mask].min()
 
             # Calculate precision score based on execution quality
             precision_score = 0.0
             quality_score = 0.0
 
             # Determine label based on which barrier was hit first
-            if pd.notna(pt_hit_time) and (
-                pd.isna(sl_hit_time) or pt_hit_time <= sl_hit_time
+            if pd.notna(upper_hit_time) and (
+                pd.isna(lower_hit_time) or upper_hit_time <= lower_hit_time
             ):
-                labels.iloc[entry_idx] = 1  # Profit take
+                labels.iloc[entry_idx] = 1  # Upper barrier hit
                 
-                # Calculate precision score for profit take
-                time_to_hit = (pt_hit_time - path.index[0]).total_seconds() / 60  # minutes
-                precision_score = max(0.0, 1.0 - (time_to_hit / self.time_barrier))
-                quality_score = self.pt_pct / (self.pt_pct + self.sl_pct)  # Risk-reward ratio
+                # Calculate precision score for upper barrier hit
+                time_to_hit = (upper_hit_time - data.index[entry_idx]).total_seconds() / 60  # minutes
+                precision_score = max(0.0, 1.0 - (time_to_hit / 30))  # Use 30 minutes as reference
+                quality_score = self.upper_barrier_pct / (self.upper_barrier_pct + self.lower_barrier_pct)  # Risk-reward ratio
                 
-            elif pd.notna(sl_hit_time):
-                labels.iloc[entry_idx] = -1  # Stop loss
+            elif pd.notna(lower_hit_time):
+                labels.iloc[entry_idx] = -1  # Lower barrier hit
                 
-                # Calculate precision score for stop loss (lower score for quick stops)
-                time_to_hit = (sl_hit_time - path.index[0]).total_seconds() / 60  # minutes
-                precision_score = max(0.0, 1.0 - (time_to_hit / self.time_barrier)) * 0.5  # Penalty for stop loss
-                quality_score = 0.0  # No quality score for stop loss
+                # Calculate precision score for lower barrier hit (lower score for quick stops)
+                time_to_hit = (lower_hit_time - data.index[entry_idx]).total_seconds() / 60  # minutes
+                precision_score = max(0.0, 1.0 - (time_to_hit / 30)) * 0.5  # Penalty for lower barrier hit
+                quality_score = 0.0  # No quality score for lower barrier hit
 
             # Apply high precision mode filtering
             if self.enable_high_precision_mode:

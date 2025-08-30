@@ -629,7 +629,9 @@ class Supervisor:
                 "symbol": symbol,
                 "exchange": exchange,
                 "execution_manager": "enhanced_precision",
-                "barrier_strategy": "50_25_percent_completion"
+                "barrier_strategy": "fraction_based",
+                "barrier_types": ["upper_barrier", "lower_barrier"],
+                "timeframes": ["1m", "5m"]
             })
             
             self.logger.info(f"🎯 Enhanced Tactician Execution Parameters:")

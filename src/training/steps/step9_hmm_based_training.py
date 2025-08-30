@@ -38,6 +38,7 @@ from src.utils.centralized_decorators import (
     validate_feature_engineering_with_lookahead_bias_detection,
 )
 from src.utils.logger import system_logger
+from src.utils.enhanced_mlflow_integration import with_enhanced_mlflow_logging, log_step_model, log_step_metrics, log_step_artifact
 from ..model_probability_generator import ModelProbabilityGenerator
 from ..model_saving_utils import save_model_with_probabilities
 
@@ -342,6 +343,7 @@ class HMMBasedTrainingStep:
             msg = f"Enhanced optimization failed for {timeframe} {architecture}: {e}"
             raise RuntimeError(msg)
 
+    @with_enhanced_mlflow_logging("step9_hmm_based_training")
     @handle_errors(
         exceptions=(Exception,),
         default_return={"status": "FAILED", "error": "Execution failed"},
@@ -2308,6 +2310,26 @@ class HMMBasedTrainingStep:
                 pickle.dump(model_data, f)
 
             self.logger.info(f"✅ Saved {timeframe} model to {model_path}")
+            
+            # Log model to MLflow
+            try:
+                if result.get("best_model"):
+                    log_step_model(
+                        config=self.config,
+                        step_name="step9_hmm_based_training",
+                        model=result["best_model"],
+                        model_name=f"{timeframe}_hmm_model",
+                        model_type="hmm_based",
+                        additional_metadata={
+                            "timeframe": timeframe,
+                            "architecture": result.get("architecture", "unknown"),
+                            "avg_accuracy": result.get("avg_accuracy", 0.0),
+                            "avg_f1_score": result.get("avg_f1_score", 0.0),
+                            "training_algorithm": getattr(result["best_model"], '__class__.__name__', 'Unknown'),
+                        }
+                    )
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to log {timeframe} model to MLflow: {e}")
 
             # Save comprehensive training summary
             summary_path = f"{models_dir}/{exchange}_{symbol}_hmm_training_summary.json"
@@ -2347,6 +2369,46 @@ class HMMBasedTrainingStep:
             self.logger.info(
                 f"✅ Saved comprehensive training summary to {summary_path}",
             )
+            
+            # Log training summary to MLflow
+            try:
+                log_step_artifact(
+                    config=self.config,
+                    step_name="step9_hmm_based_training",
+                    artifact_path=summary_path,
+                    artifact_type="training_summary",
+                    additional_metadata={
+                        "models_trained": len(training_results),
+                        "timeframes": list(training_results.keys()),
+                        "summary_type": "comprehensive_training_summary",
+                    }
+                )
+                
+                # Log training metrics
+                all_metrics = {}
+                for timeframe, result in training_results.items():
+                    if "avg_accuracy" in result:
+                        all_metrics[f"step9_{timeframe}_avg_accuracy"] = result["avg_accuracy"]
+                    if "avg_f1_score" in result:
+                        all_metrics[f"step9_{timeframe}_avg_f1_score"] = result["avg_f1_score"]
+                    if "avg_precision" in result:
+                        all_metrics[f"step9_{timeframe}_avg_precision"] = result["avg_precision"]
+                    if "avg_recall" in result:
+                        all_metrics[f"step9_{timeframe}_avg_recall"] = result["avg_recall"]
+                
+                if all_metrics:
+                    log_step_metrics(
+                        config=self.config,
+                        step_name="step9_hmm_based_training",
+                        metrics=all_metrics,
+                        additional_metadata={
+                            "metrics_type": "hmm_training_performance",
+                            "models_trained": len(training_results),
+                        }
+                    )
+                    
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to log training summary to MLflow: {e}")
 
             # Save feature importance summary
             feature_summary = {}

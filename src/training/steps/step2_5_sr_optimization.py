@@ -425,8 +425,14 @@ class SROptimizationStep:
             # Get sample market data for analysis
             sample_data = await self._get_sample_market_data()
             if sample_data is not None:
-                # Generate SR context analysis
-                current_price = sample_data["close"].iloc[-1]
+                # Generate SR context analysis - use VWAP if available, otherwise fall back to close price
+                if 'vwap' in sample_data.columns:
+                    current_price = sample_data["vwap"].iloc[-1]
+                    self.logger.info("✅ Using VWAP for SR analysis")
+                else:
+                    current_price = sample_data["close"].iloc[-1]
+                    self.logger.info("⚠️ VWAP not available, using close price for SR analysis")
+                
                 sr_context = await self.sr_predictor.get_sr_context(sample_data, current_price)
                 
                 # Generate manual report
@@ -444,6 +450,10 @@ class SROptimizationStep:
                 # Generate SR breakout analysis
                 breakout_analysis = await self._analyze_sr_breakouts(sample_data, sr_context)
                 reports["breakout_analysis"] = breakout_analysis
+                
+                # Generate price vs VWAP comparison analysis
+                comparison_analysis = await self._analyze_price_vwap_comparison(sample_data, sr_context)
+                reports["price_vwap_comparison"] = comparison_analysis
                 
                 self.logger.info(f"✅ Generated {len(reports)} SR analysis reports")
             else:
@@ -638,7 +648,13 @@ class SROptimizationStep:
                 "proximity_volatility": {}
             }
             
-            current_price = market_data["close"].iloc[-1]
+            # Use VWAP if available, otherwise fall back to close price
+            if 'vwap' in market_data.columns:
+                current_price = market_data["vwap"].iloc[-1]
+                self.logger.info("✅ Using VWAP for proximity analysis")
+            else:
+                current_price = market_data["close"].iloc[-1]
+                self.logger.info("⚠️ VWAP not available, using close price for proximity analysis")
             
             # Analyze proximity to support and resistance
             if "support_proximity" in sr_context:
@@ -711,9 +727,12 @@ class SROptimizationStep:
             # Calculate historical proximity values
             historical_proximities = []
             
+            # Use VWAP if available, otherwise fall back to close price
+            price_column = "vwap" if "vwap" in market_data.columns else "close"
+            
             for i in range(len(market_data) - 100, len(market_data)):
                 if i >= 0:
-                    price = market_data["close"].iloc[i]
+                    price = market_data[price_column].iloc[i]
                     # Simple proximity calculation (can be enhanced)
                     proximity = abs(price - current_price) / current_price
                     historical_proximities.append(proximity)
@@ -739,7 +758,9 @@ class SROptimizationStep:
         try:
             # Simple trend analysis based on price momentum
             if len(market_data) >= 20:
-                recent_momentum = market_data["close"].pct_change(5).tail(20).mean()
+                # Use VWAP if available, otherwise fall back to close price
+                price_column = "vwap" if "vwap" in market_data.columns else "close"
+                recent_momentum = market_data[price_column].pct_change(5).tail(20).mean()
                 momentum_trend = "increasing" if recent_momentum > 0 else "decreasing"
                 
                 return {
@@ -855,6 +876,159 @@ class SROptimizationStep:
         except Exception as e:
             self.logger.error(f"Failed to generate method effectiveness report: {e}")
             return {}
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="analyze_price_vwap_comparison"
+    )
+    @secure_data_processing
+    async def _analyze_price_vwap_comparison(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> dict[str, Any]:
+        """Analyze price vs VWAP approach performance for support/resistance detection."""
+        try:
+            self.logger.info("🔄 Analyzing price vs VWAP approach performance...")
+            
+            analysis = {
+                "approach_comparison": {},
+                "performance_metrics": {},
+                "level_analysis": {},
+                "recommendations": {}
+            }
+            
+            # Extract comparison metrics from SR context
+            comparison_metrics = sr_context.get("comparison_metrics", {})
+            data_source_analysis = sr_context.get("data_source_analysis", {})
+            
+            if comparison_metrics:
+                analysis["approach_comparison"] = comparison_metrics
+                
+                # Performance metrics
+                analysis["performance_metrics"] = {
+                    "detection_efficiency": comparison_metrics.get("detection_efficiency", {}),
+                    "level_quality": comparison_metrics.get("level_quality", {}),
+                    "overlap_analysis": {
+                        "overlap_rate": comparison_metrics.get("detection_efficiency", {}).get("overlap_rate", 0),
+                        "overlap_interpretation": self._interpret_overlap_rate(
+                            comparison_metrics.get("detection_efficiency", {}).get("overlap_rate", 0)
+                        )
+                    }
+                }
+                
+                # Level analysis by data source
+                analysis["level_analysis"] = {
+                    "price_approach": {
+                        "support_levels": comparison_metrics.get("price_vs_vwap", {}).get("support_levels", {}).get("price_count", 0),
+                        "resistance_levels": comparison_metrics.get("price_vs_vwap", {}).get("resistance_levels", {}).get("price_count", 0),
+                        "avg_strength": comparison_metrics.get("price_vs_vwap", {}).get("support_levels", {}).get("price_avg_strength", 0),
+                        "avg_confidence": comparison_metrics.get("price_vs_vwap", {}).get("support_levels", {}).get("price_avg_confidence", 0)
+                    },
+                    "vwap_approach": {
+                        "support_levels": comparison_metrics.get("price_vs_vwap", {}).get("support_levels", {}).get("vwap_count", 0),
+                        "resistance_levels": comparison_metrics.get("price_vs_vwap", {}).get("resistance_levels", {}).get("vwap_count", 0),
+                        "avg_strength": comparison_metrics.get("price_vs_vwap", {}).get("support_levels", {}).get("vwap_avg_strength", 0),
+                        "avg_confidence": comparison_metrics.get("price_vs_vwap", {}).get("support_levels", {}).get("vwap_avg_confidence", 0)
+                    }
+                }
+                
+                # Recommendations
+                recommendations = comparison_metrics.get("recommendations", {})
+                analysis["recommendations"] = {
+                    "primary_approach": recommendations.get("primary_approach", "unknown"),
+                    "secondary_approach": recommendations.get("secondary_approach", "unknown"),
+                    "rationale": recommendations.get("rationale", "No rationale available"),
+                    "optimization_suggestions": recommendations.get("optimization_suggestions", [])
+                }
+            
+            if data_source_analysis:
+                # Add data source distribution analysis
+                analysis["data_source_analysis"] = {
+                    "distribution": data_source_analysis.get("data_source_distribution", {}),
+                    "characteristics": data_source_analysis.get("source_characteristics", {}),
+                    "method_effectiveness": data_source_analysis.get("method_effectiveness", {})
+                }
+            
+            # Generate additional insights
+            analysis["insights"] = self._generate_comparison_insights(analysis)
+            
+            self.logger.info("✅ Price vs VWAP comparison analysis completed")
+            return analysis
+            
+        except Exception as e:
+            self.logger.error(f"Failed to analyze price vs VWAP comparison: {e}")
+            return {}
+
+    def _interpret_overlap_rate(self, overlap_rate: float) -> str:
+        """Interpret the overlap rate between price and VWAP approaches."""
+        try:
+            if overlap_rate >= 0.7:
+                return "High overlap - approaches are detecting similar levels"
+            elif overlap_rate >= 0.4:
+                return "Moderate overlap - approaches complement each other well"
+            elif overlap_rate >= 0.2:
+                return "Low overlap - approaches detect different aspects of the market"
+            else:
+                return "Very low overlap - approaches are detecting fundamentally different levels"
+        except Exception as e:
+            self.logger.warning(f"Failed to interpret overlap rate: {e}")
+            return "Unable to interpret overlap rate"
+
+    def _generate_comparison_insights(self, analysis: dict[str, Any]) -> list[str]:
+        """Generate insights from the price vs VWAP comparison analysis."""
+        try:
+            insights = []
+            
+            # Approach effectiveness insights
+            if "level_quality" in analysis.get("performance_metrics", {}):
+                level_quality = analysis["performance_metrics"]["level_quality"]
+                price_score = level_quality.get("price_quality_score", 0)
+                vwap_score = level_quality.get("vwap_quality_score", 0)
+                
+                if abs(price_score - vwap_score) < 0.05:
+                    insights.append("Both price and VWAP approaches show similar effectiveness")
+                elif price_score > vwap_score:
+                    insights.append(f"Price approach outperforms VWAP approach (score: {price_score:.3f} vs {vwap_score:.3f})")
+                else:
+                    insights.append(f"VWAP approach outperforms price approach (score: {vwap_score:.3f} vs {price_score:.3f})")
+            
+            # Detection efficiency insights
+            if "detection_efficiency" in analysis.get("performance_metrics", {}):
+                detection_efficiency = analysis["performance_metrics"]["detection_efficiency"]
+                price_rate = detection_efficiency.get("price_detection_rate", 0)
+                vwap_rate = detection_efficiency.get("vwap_detection_rate", 0)
+                
+                if price_rate > 0.6 and vwap_rate > 0.6:
+                    insights.append("Both approaches show high detection rates")
+                elif price_rate < 0.3 or vwap_rate < 0.3:
+                    insights.append("One or both approaches show low detection rates - consider parameter optimization")
+            
+            # Overlap insights
+            if "overlap_analysis" in analysis.get("performance_metrics", {}):
+                overlap_rate = analysis["performance_metrics"]["overlap_analysis"]["overlap_rate"]
+                if overlap_rate < 0.2:
+                    insights.append("Low overlap suggests approaches detect different market characteristics")
+                elif overlap_rate > 0.8:
+                    insights.append("High overlap suggests approaches are redundant - consider using only one")
+            
+            # Data source insights
+            if "data_source_analysis" in analysis:
+                data_source = analysis["data_source_analysis"]
+                if "distribution" in data_source:
+                    distribution = data_source["distribution"]
+                    price_pct = distribution.get("price_percentage", 0)
+                    vwap_pct = distribution.get("vwap_percentage", 0)
+                    
+                    if price_pct > 0.8:
+                        insights.append("Price approach dominates detection - VWAP may need parameter tuning")
+                    elif vwap_pct > 0.8:
+                        insights.append("VWAP approach dominates detection - price may need parameter tuning")
+                    elif 0.3 <= price_pct <= 0.7 and 0.3 <= vwap_pct <= 0.7:
+                        insights.append("Balanced detection between approaches - good complementarity")
+            
+            return insights
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to generate comparison insights: {e}")
+            return ["Unable to generate insights"]
 
     @handle_errors(
         exceptions=(Exception,),

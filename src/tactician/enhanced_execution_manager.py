@@ -39,9 +39,16 @@ class EnhancedExecutionManager:
 
     def _load_config(self) -> None:
         """Load configuration for high precision execution."""
-        # Barrier Configuration
-        self.profit_take_pct = self.config.get("profit_take_pct", 0.001)  # 0.1%
-        self.stop_loss_pct = self.config.get("stop_loss_pct", 0.00025)  # 0.025%
+        # Import dynamic barrier calculator
+        from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
+        
+        # Initialize dynamic barrier calculator
+        self.barrier_calculator = DynamicBarrierCalculator(self.config)
+        
+        # Get dynamic barriers for primary timeframe (1m)
+        self.profit_take_pct, self.stop_loss_pct, self.time_barrier = self.barrier_calculator.calculate_dynamic_barriers(
+            timeframe="1m"
+        )
         
         # Precision Settings
         self.precision_threshold = self.config.get("precision_threshold", 0.85)
@@ -61,9 +68,17 @@ class EnhancedExecutionManager:
         self.entry_delay_seconds = self.config.get("entry_delay_seconds", 5)
         self.max_execution_time = self.config.get("max_execution_time", 30)
         
-        self.logger.info(f"🔧 Enhanced Execution Manager Configuration:")
-        self.logger.info(f"   Profit Take: {self.profit_take_pct:.4f} ({self.profit_take_pct*100:.3f}%)")
-        self.logger.info(f"   Stop Loss: {self.stop_loss_pct:.4f} ({self.stop_loss_pct*100:.3f}%)")
+        # Timeframe settings
+        self.timeframes = self.config.get("timeframes", ["1m", "5m"])
+        self.primary_timeframe = self.config.get("primary_timeframe", "1m")
+        self.secondary_timeframe = self.config.get("secondary_timeframe", "5m")
+        
+        self.logger.info(f"🔧 Enhanced Execution Manager Configuration (Dynamic):")
+        self.logger.info(f"   Timeframes: {self.timeframes}")
+        self.logger.info(f"   Primary: {self.primary_timeframe}, Secondary: {self.secondary_timeframe}")
+        self.logger.info(f"   Dynamic Profit Take: {self.profit_take_pct:.4f} ({self.profit_take_pct*100:.3f}%)")
+        self.logger.info(f"   Dynamic Stop Loss: {self.stop_loss_pct:.4f} ({self.stop_loss_pct*100:.3f}%)")
+        self.logger.info(f"   Dynamic Time Barrier: {self.time_barrier} periods")
         self.logger.info(f"   Precision Threshold: {self.precision_threshold}")
         self.logger.info(f"   Position Size Multiplier: {self.position_size_multiplier}")
 
@@ -184,10 +199,20 @@ class EnhancedExecutionManager:
                     "validation_details": validation
                 }
             
+            # Calculate dynamic barriers for the appropriate timeframe
+            # Determine timeframe based on market data frequency or use primary timeframe
+            timeframe = self._determine_timeframe(market_data)
+            
+            # Get dynamic barriers for this timeframe
+            dynamic_pt, dynamic_sl, dynamic_time = self.barrier_calculator.calculate_dynamic_barriers(
+                timeframe=timeframe,
+                market_data=market_data
+            )
+            
             # Calculate adaptive barriers based on market conditions
             volatility = self._calculate_volatility(market_data)
             adaptive_pt, adaptive_sl = self._calculate_adaptive_barriers(
-                current_price, volatility, validation["trade_direction"]
+                current_price, volatility, validation["trade_direction"], dynamic_pt, dynamic_sl
             )
             
             # Calculate position sizing with precision multiplier
@@ -257,38 +282,64 @@ class EnhancedExecutionManager:
         except Exception:
             return 0.01
 
+    def _determine_timeframe(self, market_data: pd.DataFrame) -> str:
+        """Determine the timeframe based on market data frequency."""
+        try:
+            if market_data is None or len(market_data) < 2:
+                return self.primary_timeframe
+            
+            # Calculate time difference between consecutive rows
+            time_diff = market_data.index[1] - market_data.index[0]
+            
+            # Convert to minutes
+            if hasattr(time_diff, 'total_seconds'):
+                minutes_diff = time_diff.total_seconds() / 60
+            else:
+                # If not datetime index, assume 1m
+                minutes_diff = 1
+            
+            # Determine timeframe based on frequency
+            if minutes_diff <= 1.5:
+                return "1m"
+            elif minutes_diff <= 7.5:  # Allow some tolerance for 5m
+                return "5m"
+            else:
+                return self.primary_timeframe
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error determining timeframe: {e}")
+            return self.primary_timeframe
+
     def _calculate_adaptive_barriers(
         self, 
         current_price: float, 
         volatility: float, 
-        direction: str
+        direction: str,
+        base_pt_pct: float,
+        base_sl_pct: float
     ) -> Tuple[float, float]:
-        """Calculate adaptive barriers based on volatility and direction."""
+        """Calculate adaptive barriers based on volatility and direction using dynamic base values."""
         try:
-            # Base barriers
-            base_pt = current_price * (1 + self.profit_take_pct)
-            base_sl = current_price * (1 - self.stop_loss_pct)
-            
             # Volatility adjustment
             volatility_multiplier = min(2.0, max(0.5, 1.0 / (volatility * 100)))
             
             # Direction adjustment
             if direction == "short":
                 # For short positions, invert the barriers
-                adaptive_pt = current_price * (1 - self.profit_take_pct * volatility_multiplier)
-                adaptive_sl = current_price * (1 + self.stop_loss_pct * volatility_multiplier)
+                adaptive_pt = current_price * (1 - base_pt_pct * volatility_multiplier)
+                adaptive_sl = current_price * (1 + base_sl_pct * volatility_multiplier)
             else:
                 # For long positions, use standard barriers
-                adaptive_pt = current_price * (1 + self.profit_take_pct * volatility_multiplier)
-                adaptive_sl = current_price * (1 - self.stop_loss_pct * volatility_multiplier)
+                adaptive_pt = current_price * (1 + base_pt_pct * volatility_multiplier)
+                adaptive_sl = current_price * (1 - base_sl_pct * volatility_multiplier)
             
             return adaptive_pt, adaptive_sl
             
         except Exception as e:
             self.logger.warning(f"⚠️ Error calculating adaptive barriers: {e}")
             # Fallback to base barriers
-            base_pt = current_price * (1 + self.profit_take_pct)
-            base_sl = current_price * (1 - self.stop_loss_pct)
+            base_pt = current_price * (1 + base_pt_pct)
+            base_sl = current_price * (1 - base_sl_pct)
             return base_pt, base_sl
 
     def _calculate_risk_adjusted_size(

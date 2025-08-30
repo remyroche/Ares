@@ -1,15 +1,28 @@
 # Tactician Triple Barrier Configuration
-# This configuration ensures the Tactician completes the Analyst nicely with smaller barriers
-# and high precision execution
+# This configuration ensures the Tactician completes the Analyst nicely with dynamic barriers
+# calculated as fractions of the Analyst's triple barrier values
 
 tactician_triple_barrier:
-  # Barrier Configuration - 50% and 25% of Analyst barriers for high precision
-  profit_take_pct: 0.001  # 0.1% (50% of Analyst's 0.2%)
-  stop_loss_pct: 0.00025  # 0.025% (25% of Analyst's 0.1%)
+  # Dynamic Barrier Configuration - Fractions of Analyst barriers
+  analyst_barrier_fractions:
+    profit_take_fraction: 0.5    # 50% of Analyst's profit take barrier
+    stop_loss_fraction: 0.25     # 25% of Analyst's stop loss barrier
+    time_barrier_fraction: 0.5   # 50% of Analyst's time barrier
   
-  # Time Configuration - Shorter time horizon for precision
-  time_barrier_periods: 15  # 15 minutes (50% of Analyst's 30 minutes)
-  max_lookahead: 50  # Reduced lookahead for precision
+  # Analyst Base Values (will be dynamically loaded from Analyst configuration)
+  analyst_base_values:
+    profit_take_multiplier: 0.002  # 0.2% (Analyst default)
+    stop_loss_multiplier: 0.001    # 0.1% (Analyst default)
+    time_barrier_minutes: 30       # 30 minutes (Analyst default)
+  
+  # Timeframe Configuration - Tactician operates at both 1m and 5m
+  timeframes: ["1m", "5m"]
+  primary_timeframe: "1m"      # Primary timeframe for execution
+  secondary_timeframe: "5m"    # Secondary timeframe for confirmation
+  
+  # Dynamic calculation settings
+  enable_dynamic_barriers: true
+  dynamic_calculation_method: "fraction_based"  # "fraction_based" or "adaptive"
   
   # Precision Settings
   enable_high_precision_mode: true
@@ -52,3 +65,16 @@ tactician_triple_barrier:
   volatility_adjustment: true
   market_condition_adjustment: true
   confidence_adjustment: true
+  
+  # Timeframe-specific settings
+  timeframe_settings:
+    "1m":
+      priority: "primary"
+      execution_weight: 0.7
+      confirmation_weight: 0.3
+      barrier_adjustment: 1.0  # No adjustment for primary timeframe
+    "5m":
+      priority: "secondary"
+      execution_weight: 0.3
+      confirmation_weight: 0.7
+      barrier_adjustment: 1.2  # Slightly larger barriers for 5m timeframe

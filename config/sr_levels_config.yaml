@@ -1,0 +1,190 @@
+# SR Levels System Configuration
+# This file configures the comprehensive Support/Resistance levels system
+
+sr_levels_manager:
+  # Storage configuration
+  storage_path: "data/sr_levels"
+  levels_file: "sr_levels.json"
+  history_file: "sr_levels_history.json"
+  
+  # Level management
+  max_levels: 50
+  min_strength: 0.3
+  proximity_threshold: 0.005  # 0.5% proximity for deduplication
+  
+  # Level filtering
+  min_touch_count: 2
+  max_age_days: 30
+  strength_decay_factor: 0.95
+  
+  # Quality scoring weights
+  quality_weights:
+    strength: 0.3
+    touch_count: 0.25
+    age: 0.15
+    bounce_rate: 0.2
+    isolation_score: 0.1
+
+sr_trading_intelligence:
+  # Real-time updates
+  enable_real_time_updates: true
+  update_interval_seconds: 60
+  
+  # Position management
+  max_position_size: 0.1
+  risk_tolerance: 0.02
+  
+  # Trading thresholds
+  entry_confidence_threshold: 0.7
+  exit_confidence_threshold: 0.6
+  risk_reward_ratio_min: 2.0
+  
+  # Proximity thresholds
+  near_support_threshold: 0.01    # 1% from support
+  near_resistance_threshold: 0.01 # 1% from resistance
+  urgent_exit_threshold: 0.005    # 0.5% for urgent exits
+
+sr_breakout_predictor:
+  # Detection methods
+  sr_detection_method: "fractal"  # fractal, volume, pivot, atr
+  enable_detailed_reporting: true
+  report_directory: "reports/sr_analysis"
+  report_format: "json"  # json, csv, html
+  report_retention_days: 30
+  
+  # Detection parameters
+  max_sr_levels: 20
+  min_sr_strength: 0.3
+  sr_lookback_periods: 100
+  sr_proximity_threshold: 0.02
+  
+  # Method weights
+  method_weights:
+    fractal: 0.4
+    volume: 0.3
+    pivot: 0.2
+    atr: 0.1
+  
+  # Strength calculation
+  strength_weights:
+    touch_count: 0.3
+    volume: 0.25
+    age: 0.2
+    bounce_rate: 0.15
+    isolation: 0.1
+  
+  # Breakout detection
+  breakout_confidence_threshold: 0.6
+  breakout_confirmation_periods: 3
+  atr_multiplier: 1.5
+  
+  # VWAP integration
+  enable_vwap_detection: true
+  vwap_weight: 0.7
+  price_weight: 0.3
+
+# Data integration settings
+data_integration:
+  symbol: "ETHUSDT"
+  exchange: "BINANCE"
+  timeframes: ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
+  lookback_days: 730  # 2 years
+  
+  # Data quality
+  min_data_points: 1000
+  max_data_age_hours: 24
+  required_columns: ["open", "high", "low", "close", "volume"]
+  
+  # VWAP calculation
+  enable_vwap: true
+  vwap_lookback_periods: 20
+
+# Performance optimization
+performance:
+  # Caching
+  enable_level_caching: true
+  cache_ttl_seconds: 300  # 5 minutes
+  
+  # Batch processing
+  batch_size: 100
+  max_concurrent_updates: 5
+  
+  # Memory management
+  max_memory_usage_mb: 512
+  enable_garbage_collection: true
+
+# Risk management
+risk_management:
+  # Position sizing
+  max_risk_per_trade: 0.02  # 2% max risk per trade
+  max_portfolio_risk: 0.06  # 6% max portfolio risk
+  
+  # Stop loss
+  default_stop_loss_pct: 0.02  # 2% default stop loss
+  trailing_stop_enabled: true
+  trailing_stop_pct: 0.01  # 1% trailing stop
+  
+  # Take profit
+  default_take_profit_pct: 0.04  # 4% default take profit
+  enable_scaling_out: true
+  scaling_levels: [0.5, 0.3, 0.2]  # Scale out at 50%, 30%, 20% of position
+
+# Reporting and monitoring
+reporting:
+  # Logging
+  log_level: "INFO"
+  enable_structured_logging: true
+  log_retention_days: 30
+  
+  # Metrics
+  enable_performance_metrics: true
+  metrics_export_interval: 300  # 5 minutes
+  
+  # Alerts
+  enable_alerts: true
+  alert_channels: ["log", "email"]
+  
+  # Dashboard
+  enable_dashboard: true
+  dashboard_port: 8080
+  dashboard_refresh_interval: 60
+
+# Integration settings
+integrations:
+  # Exchange integration
+  exchange_api:
+    enable_rate_limiting: true
+    max_requests_per_second: 10
+    retry_attempts: 3
+    retry_delay_seconds: 1
+  
+  # Database integration
+  database:
+    type: "sqlite"  # sqlite, postgresql, mysql
+    connection_string: "data/sr_levels.db"
+    enable_connection_pooling: true
+    max_connections: 10
+  
+  # External APIs
+  external_apis:
+    enable_news_feed: false
+    enable_sentiment_analysis: false
+    enable_economic_calendar: false
+
+# Testing and validation
+testing:
+  # Test data
+  enable_mock_data: true
+  mock_data_points: 1000
+  mock_data_seed: 42
+  
+  # Validation
+  enable_cross_validation: true
+  validation_folds: 5
+  enable_backtesting: true
+  backtest_lookback_days: 90
+  
+  # Performance testing
+  enable_stress_testing: true
+  stress_test_duration_minutes: 60
+  stress_test_update_frequency_ms: 100

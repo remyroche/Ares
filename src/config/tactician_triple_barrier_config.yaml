@@ -1,0 +1,74 @@
+# Tactician Triple Barrier Configuration
+# This configuration ensures the Tactician completes the Analyst nicely with dynamic barriers
+# calculated as fractions of the Analyst's triple barrier values
+
+tactician_triple_barrier:
+  # Dynamic Barrier Configuration - 2 Barrier Combinations
+  analyst_barrier_fractions:
+    # 50-50% combination
+    upper_barrier_50_fraction: 0.5    # 50% of Analyst's upper barrier
+    lower_barrier_50_fraction: 0.5    # 50% of Analyst's lower barrier
+    # 25-25% combination  
+    upper_barrier_25_fraction: 0.25   # 25% of Analyst's upper barrier
+    lower_barrier_25_fraction: 0.25   # 25% of Analyst's lower barrier
+  
+  # Analyst Base Values (will be dynamically loaded from Analyst configuration)
+  analyst_base_values:
+    upper_barrier_multiplier: 0.002  # 0.2% (Analyst default - profit take)
+    lower_barrier_multiplier: 0.001  # 0.1% (Analyst default - stop loss)
+  
+  # Timeframe Configuration - Tactician operates at both 1m and 5m
+  timeframes: ["1m", "5m"]
+  primary_timeframe: "1m"      # Primary timeframe for execution
+  secondary_timeframe: "5m"    # Secondary timeframe for confirmation
+  
+  # Dynamic calculation settings
+  enable_dynamic_barriers: true
+  dynamic_calculation_method: "fraction_based"  # "fraction_based" or "adaptive"
+  
+  # Precision Settings
+  enable_high_precision_mode: true
+  precision_threshold: 0.85  # Minimum confidence for execution
+  min_signal_strength: 0.8   # Minimum signal strength required
+  
+  # Risk Management
+  max_risk_per_trade: 0.001  # 0.1% max risk per trade
+  position_size_multiplier: 0.5  # Reduce position size for precision
+  leverage_multiplier: 0.75  # Reduce leverage for precision
+  
+  # Quality Filters
+  enable_quality_filters: true
+  min_volume_threshold: 1000  # Minimum volume for execution
+  min_spread_threshold: 0.0001  # Maximum spread allowed
+  volatility_filter: true  # Filter based on volatility
+  
+  # Integration Settings
+  analyst_signal_requirement: true  # Must have Analyst signal
+  direction_agreement_required: true  # Must agree with Analyst direction
+  confidence_boost_threshold: 0.9  # Boost confidence if above threshold
+  
+  # Execution Timing
+  entry_delay_seconds: 5  # Wait 5 seconds after signal
+  max_execution_time: 30  # Maximum 30 seconds to execute
+  
+  # Monitoring and Logging
+  enable_detailed_logging: true
+  log_execution_details: true
+  track_precision_metrics: true
+  
+  # Performance Tracking
+  track_success_rate: true
+  track_profit_factor: true
+  track_max_drawdown: true
+  track_sharpe_ratio: true
+  
+  # Adaptive Settings
+  enable_adaptive_barriers: true
+  volatility_adjustment: true
+  market_condition_adjustment: true
+  confidence_adjustment: true
+  
+  # Timeframe Configuration - Both timeframes are equal, ML model decides usage
+  timeframes: ["1m", "5m"]
+  primary_timeframe: "1m"      # Default primary timeframe
+  secondary_timeframe: "5m"    # Default secondary timeframe

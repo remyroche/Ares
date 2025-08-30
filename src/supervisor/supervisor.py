@@ -584,8 +584,15 @@ class Supervisor:
         """
         Tactician decides when, how much, and what leverage based on Tactician ML models.
         Must agree with Analyst on trade direction.
+        Enhanced with high precision triple barrier completion.
         """
         try:
+            # Import enhanced execution manager
+            from src.tactician.enhanced_execution_manager import EnhancedExecutionManager
+            
+            # Initialize enhanced execution manager
+            enhanced_manager = EnhancedExecutionManager(self.config)
+            
             # Check if Analyst wants to enter
             analyst_decision = analyst_signals.get("analyst_decision", {})
             if not analyst_decision.get("should_enter_position", False):
@@ -594,19 +601,7 @@ class Supervisor:
                     "reason": "analyst_no_entry"
                 }
             
-            # Check direction agreement
-            tactician_direction = self._tactician_determine_direction(tactician_confidence_scores, market_data)
-            analyst_direction = analyst_decision.get("trade_direction", "neutral")
-            
-            if not self._directions_agree(analyst_direction, tactician_direction):
-                return {
-                    "should_execute": False,
-                    "reason": "direction_mismatch",
-                    "analyst_direction": analyst_direction,
-                    "tactician_direction": tactician_direction
-                }
-            
-            # Calculate execution parameters based on Tactician confidence
+            # Calculate average tactician confidence
             if not tactician_confidence_scores:
                 return {
                     "should_execute": False,
@@ -615,23 +610,40 @@ class Supervisor:
             
             avg_tactician_confidence = sum(tactician_confidence_scores.values()) / len(tactician_confidence_scores)
             
-            leverage = self._tactician_calculate_leverage(avg_tactician_confidence)
-            position_size = self._tactician_calculate_position_size(avg_tactician_confidence, leverage)
-            entry_timing = self._tactician_calculate_entry_timing(market_data, avg_tactician_confidence)
+            # Get current price for execution calculations
+            current_price = market_data['close'].iloc[-1] if not market_data.empty else 0.0
             
-            return {
-                "should_execute": True,
-                "trade_direction": analyst_direction,  # Use agreed direction
-                "leverage": leverage,
-                "position_size": position_size,
-                "entry_timing": entry_timing,
-                "tactician_confidence": avg_tactician_confidence,
-                "analyst_confidence": analyst_decision.get("entry_confidence", 0.0),
-                "combined_confidence": (avg_tactician_confidence + analyst_decision.get("entry_confidence", 0.0)) / 2
-            }
+            # Use enhanced execution manager for high precision parameters
+            execution_params = enhanced_manager.calculate_execution_parameters(
+                market_data=market_data,
+                analyst_signal=analyst_decision,
+                tactician_confidence=avg_tactician_confidence,
+                current_price=current_price
+            )
+            
+            if not execution_params.get("should_execute", False):
+                return execution_params
+            
+            # Add additional metadata
+            execution_params.update({
+                "symbol": symbol,
+                "exchange": exchange,
+                "execution_manager": "enhanced_precision",
+                "barrier_strategy": "fraction_based",
+                "barrier_types": ["upper_barrier", "lower_barrier"],
+                "timeframes": ["1m", "5m"]
+            })
+            
+            self.logger.info(f"🎯 Enhanced Tactician Execution Parameters:")
+            self.logger.info(f"   Symbol: {symbol}")
+            self.logger.info(f"   Direction: {execution_params.get('trade_direction', 'unknown')}")
+            self.logger.info(f"   Precision Score: {execution_params.get('precision_score', 0.0):.3f}")
+            self.logger.info(f"   Combined Confidence: {execution_params.get('combined_confidence', 0.0):.3f}")
+            
+            return execution_params
 
         except Exception as e:
-            self.logger.error(error(f"❌ Error in tactician execution calculation: {e}"))
+            self.logger.error(error(f"❌ Error in enhanced tactician execution calculation: {e}"))
             return {
                 "should_execute": False,
                 "reason": "error",

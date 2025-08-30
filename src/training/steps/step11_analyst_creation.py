@@ -283,11 +283,54 @@ class AnalystCreationStep:
             return pipeline_state
 
     async def _load_regime_splits(self, data_dir: str) -> dict[str, pd.DataFrame]:
-        """Load regime splits from the previous step."""
+        """Load regime data from unified dataset with labels."""
         try:
+            symbol = self.config.get("symbol", "ETHUSDT")
+            exchange = self.config.get("exchange", "BINANCE")
+            timeframe = self.config.get("timeframe", "1m")
+            
+            # Try to load unified regime dataset first (new approach)
+            unified_regime_file = os.path.join(
+                data_dir, "training", 
+                f"{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet"
+            )
+            
+            if os.path.exists(unified_regime_file):
+                self.logger.info(f"✅ Loading unified regime dataset: {unified_regime_file}")
+                unified_data = pd.read_parquet(unified_regime_file)
+                
+                # Load regime labels mapping
+                labels_file = os.path.join(
+                    data_dir, "training", 
+                    f"{exchange}_{symbol}_{timeframe}_regime_labels.json"
+                )
+                
+                if os.path.exists(labels_file):
+                    with open(labels_file) as f:
+                        regime_labels = json.load(f)
+                    
+                    regime_ids = regime_labels.get("regime_ids", [])
+                    self.logger.info(f"📊 Found {len(regime_ids)} regimes in unified dataset")
+                    
+                    # Create regime splits from unified dataset
+                    regime_splits = {}
+                    for regime_id in regime_ids:
+                        regime_data = unified_data[unified_data["composite_cluster_id"] == regime_id].copy()
+                        
+                        if len(regime_data) > 0:
+                            regime_splits[f"regime_{regime_id}"] = regime_data
+                            self.logger.info(f"📊 Created regime {regime_id}: {len(regime_data)} rows")
+                    
+                    self.logger.info(f"✅ Created {len(regime_splits)} regime splits from unified dataset")
+                    return regime_splits
+                else:
+                    self.logger.warning(f"⚠️ Regime labels file not found: {labels_file}")
+            
+            # Fallback to legacy approach for backward compatibility
+            self.logger.warning("⚠️ Falling back to legacy regime data loading approach")
             regime_splits_dir = os.path.join(data_dir, "training", "regime_splits")
             if not os.path.exists(regime_splits_dir):
-                self.logger.error(f"❌ Regime splits directory not found: {regime_splits_dir}")
+                self.logger.error(f"❌ Legacy regime splits directory not found: {regime_splits_dir}")
                 return {}
 
             regime_splits = {}
@@ -297,7 +340,7 @@ class AnalystCreationStep:
                     file_path = os.path.join(regime_splits_dir, file)
                     regime_data = pd.read_parquet(file_path)
                     regime_splits[regime_name] = regime_data
-                    self.logger.info(f"📊 Loaded regime {regime_name}: {len(regime_data)} rows")
+                    self.logger.info(f"📊 Loaded legacy regime {regime_name}: {len(regime_data)} rows")
 
             return regime_splits
 

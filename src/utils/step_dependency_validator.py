@@ -675,10 +675,10 @@ class StepDependencyValidator:
                 "step4_processing_labeling": [
                     f"{artifact_dir}/{exchange}_{symbol}_{timeframe}_labeled_validation.parquet",
                 ],
-                "step5_regime_data_splitting": [
-                    f"{artifact_dir}/{exchange}_{symbol}_{timeframe}_regime_splits_train.parquet",
-                    f"{artifact_dir}/{exchange}_{symbol}_{timeframe}_regime_splits_validation.parquet",
-                ],
+                            "step5_regime_data_splitting": [
+                f"{artifact_dir}/{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet",
+                f"{artifact_dir}/{exchange}_{symbol}_{timeframe}_regime_labels.json",
+            ],
                 "step6_hmm_based_training": [
                     f"{artifact_dir}/{exchange}_{symbol}_{timeframe}_hmm_models.pkl",
                 ],

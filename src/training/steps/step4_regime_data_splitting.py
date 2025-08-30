@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Step 4: Regime Data Splitting.
 
-This module splits data by HMM regimes for regime-specific processing.
-Supports 10+ regimes with efficient memory management and parallel processing.
+This module creates a unified dataset with regime labels for regime-aware processing.
+Uses labels to differentiate regimes instead of creating separate files per regime.
+This ensures trading indicators have the necessary lookback periods.
 """
 
 import asyncio
@@ -22,15 +23,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from src.utils.logger import system_logger
 from src.utils.centralized_decorators import (
-
-from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
-)
     comprehensive_data_validation,
     handle_errors,
     memory_efficient,
@@ -42,11 +34,20 @@ from src.utils.enhanced_mlflow_integration import (
     monitor_feature_engineering,
 )
 
+from src.utils.enhanced_mlflow_integration import (
+    with_enhanced_mlflow_logging,
+    log_step_report,
+    create_detailed_step_report,
+    log_step_metrics,
+    log_step_dataframe_with_standardized_name,
+    log_step_artifact_with_standardized_name
+)
+
 logger = system_logger.getChild("Step4RegimeDataSplitting")
 
 
 class RegimeDataSplittingStep:
-    """Step 4: Regime Data Splitting with support for 10+ regimes."""
+    """Step 4: Regime Data Splitting with unified dataset and regime labels."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -59,8 +60,8 @@ class RegimeDataSplittingStep:
         self.start_time = time.time()
         self.logger.info("🚀 Initializing Regime Data Splitting Step...")
         self.logger.info("📋 Step 4 Configuration:")
-        self.logger.info(f"   - Max regimes supported: 20")
-        self.logger.info(f"   - Parallel processing: Enabled")
+        self.logger.info(f"   - Unified dataset approach: Enabled")
+        self.logger.info(f"   - Regime labels: composite_cluster_id")
         self.logger.info(f"   - Memory management: Optimized")
         self.logger.info("✅ Regime Data Splitting Step initialized successfully")
 
@@ -85,9 +86,9 @@ class RegimeDataSplittingStep:
         timeframe: str, 
         data_dir: str
     ) -> bool:
-        """Split data by HMM regimes for regime-specific processing."""
+        """Create unified dataset with regime labels for regime-aware processing."""
         step_start = time.time()
-        self.logger.info(f"🔀 Splitting data by regimes for {symbol} on {exchange} ({timeframe})")
+        self.logger.info(f"🔀 Creating unified dataset with regime labels for {symbol} on {exchange} ({timeframe})")
         
         try:
             # Load HMM regime data
@@ -110,25 +111,21 @@ class RegimeDataSplittingStep:
                 self.logger.warning(f"⚠️ Many regimes detected: {num_regimes} (maximum 20 supported)")
                 # Continue but with memory optimization
             
-            # Create regime-specific directories
-            regime_base_dir = Path(data_dir) / "training" / "regimes" / f"{exchange}_{symbol}_{timeframe}"
-            regime_base_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Split data by regimes with parallel processing
-            success = await self._process_regimes_parallel(
-                regime_data, regime_ids, regime_base_dir, num_regimes
+            # Create unified dataset with regime labels
+            success = await self._create_unified_regime_dataset(
+                regime_data, regime_ids, symbol, exchange, timeframe, data_dir
             )
             
             if success:
                 self._log_step_timing("Regime Data Splitting", step_start)
-                self.logger.info(f"✅ Successfully split data into {num_regimes} regimes")
+                self.logger.info(f"✅ Successfully created unified dataset with {num_regimes} regime labels")
                 
                 # Save regime metadata
-                await self._save_regime_metadata(regime_ids, regime_base_dir)
+                await self._save_regime_metadata(regime_ids, data_dir, symbol, exchange, timeframe)
                 
                 return True
             else:
-                self.logger.error("❌ Failed to split data by regimes")
+                self.logger.error("❌ Failed to create unified regime dataset")
                 return False
                 
         except Exception as e:
@@ -186,122 +183,148 @@ class RegimeDataSplittingStep:
             self.logger.exception(f"❌ Error loading regime data: {e}")
             return None
 
-    async def _process_regimes_parallel(
+    async def _create_unified_regime_dataset(
         self, 
         data: pd.DataFrame, 
         regime_ids: List[int], 
-        base_dir: Path, 
-        num_regimes: int
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        data_dir: str
     ) -> bool:
-        """Process regimes in parallel with memory management."""
-        
-        # Determine batch size based on number of regimes
-        if num_regimes <= 5:
-            batch_size = 3
-        elif num_regimes <= 10:
-            batch_size = 2
-        else:
-            batch_size = 1  # Process one at a time for 10+ regimes
-        
-        self.logger.info(f"🔄 Processing {num_regimes} regimes in batches of {batch_size}")
-        
-        # Split regime IDs into batches
-        regime_batches = [regime_ids[i:i + batch_size] for i in range(0, len(regime_ids), batch_size)]
-        
-        all_success = True
-        
-        for batch_idx, regime_batch in enumerate(regime_batches):
-            self.logger.info(f"📦 Processing batch {batch_idx + 1}/{len(regime_batches)}: regimes {regime_batch}")
-            
-            # Process batch in parallel
-            tasks = [
-                self._process_single_regime(data, regime_id, base_dir) 
-                for regime_id in regime_batch
-            ]
-            
-            batch_results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            # Check batch results
-            for regime_id, result in zip(regime_batch, batch_results):
-                if isinstance(result, Exception):
-                    self.logger.error(f"❌ Error processing regime {regime_id}: {result}")
-                    all_success = False
-                elif not result:
-                    self.logger.error(f"❌ Failed to process regime {regime_id}")
-                    all_success = False
-                else:
-                    self.logger.info(f"✅ Successfully processed regime {regime_id}")
-            
-            # Clear memory after each batch
-            del tasks
-            del batch_results
-            
-        return all_success
-
-    async def _process_single_regime(
-        self, 
-        data: pd.DataFrame, 
-        regime_id: int, 
-        base_dir: Path
-    ) -> bool:
-        """Process a single regime."""
+        """Create unified dataset with regime labels."""
         try:
-            # Filter data for this regime
-            regime_data = data[data['composite_cluster_id'] == regime_id].copy()
+            # Ensure data is sorted by timestamp for proper lookback
+            data = data.sort_values('timestamp').reset_index(drop=True)
             
-            if len(regime_data) < 50:
-                self.logger.warning(f"⚠️ Regime {regime_id} has only {len(regime_data)} data points")
+            # Create training directory
+            training_dir = Path(data_dir) / "training"
+            training_dir.mkdir(parents=True, exist_ok=True)
             
-            # Create regime directory
-            regime_dir = base_dir / f"regime_{regime_id}"
-            regime_dir.mkdir(exist_ok=True)
+            # Save unified dataset with regime labels
+            unified_file = training_dir / f"{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet"
+            data.to_parquet(unified_file, index=False)
             
-            # Save regime data
-            regime_file = regime_dir / "regime_data.parquet"
-            regime_data.to_parquet(regime_file, index=False)
+            self.logger.info(f"✅ Saved unified regime dataset: {len(data)} rows -> {unified_file}")
+            
+            # Create regime statistics summary
+            regime_stats = self._calculate_regime_statistics(data, regime_ids)
             
             # Save regime statistics
-            stats = {
-                "regime_id": regime_id,
-                "data_points": len(regime_data),
-                "date_range": {
-                    "start": regime_data['timestamp'].min().isoformat(),
-                    "end": regime_data['timestamp'].max().isoformat()
-                },
-                "price_stats": {
-                    "mean": float(regime_data['close'].mean()),
-                    "std": float(regime_data['close'].std()),
-                    "min": float(regime_data['close'].min()),
-                    "max": float(regime_data['close'].max())
+            stats_file = training_dir / f"{exchange}_{symbol}_{timeframe}_regime_statistics.json"
+            import json
+            with open(stats_file, 'w') as f:
+                json.dump(regime_stats, f, indent=2)
+            
+            self.logger.info(f"✅ Saved regime statistics: {stats_file}")
+            
+            # Create regime labels mapping for easy access
+            regime_labels = {
+                "regime_column": "composite_cluster_id",
+                "regime_ids": sorted(regime_ids),
+                "total_regimes": len(regime_ids),
+                "data_shape": data.shape,
+                "timestamp_range": {
+                    "start": data['timestamp'].min().isoformat(),
+                    "end": data['timestamp'].max().isoformat()
                 }
             }
             
-            stats_file = regime_dir / "regime_stats.json"
-            import json
-            with open(stats_file, 'w') as f:
-                json.dump(stats, f, indent=2)
+            labels_file = training_dir / f"{exchange}_{symbol}_{timeframe}_regime_labels.json"
+            with open(labels_file, 'w') as f:
+                json.dump(regime_labels, f, indent=2)
             
-            self.logger.info(f"✅ Regime {regime_id}: {len(regime_data)} data points saved")
+            self.logger.info(f"✅ Saved regime labels mapping: {labels_file}")
+            
             return True
             
         except Exception as e:
-            self.logger.exception(f"❌ Error processing regime {regime_id}: {e}")
+            self.logger.exception(f"❌ Error creating unified regime dataset: {e}")
             return False
 
-    async def _save_regime_metadata(self, regime_ids: List[int], base_dir: Path) -> None:
-        """Save metadata about all regimes."""
+    def _calculate_regime_statistics(
+        self, 
+        data: pd.DataFrame, 
+        regime_ids: List[int]
+    ) -> Dict[str, Any]:
+        """Calculate statistics for each regime."""
         try:
-            metadata = {
+            stats = {
                 "total_regimes": len(regime_ids),
-                "regime_ids": sorted(regime_ids),
-                "created_at": time.time(),
-                "regime_structure": {
-                    "base_dir": str(base_dir),
-                    "regime_pattern": "regime_{regime_id}/regime_data.parquet"
+                "total_data_points": len(data),
+                "regime_details": {},
+                "overall_statistics": {
+                    "date_range": {
+                        "start": data['timestamp'].min().isoformat(),
+                        "end": data['timestamp'].max().isoformat()
+                    },
+                    "price_stats": {
+                        "mean": float(data['close'].mean()) if 'close' in data.columns else None,
+                        "std": float(data['close'].std()) if 'close' in data.columns else None,
+                        "min": float(data['close'].min()) if 'close' in data.columns else None,
+                        "max": float(data['close'].max()) if 'close' in data.columns else None
+                    }
                 }
             }
             
-            metadata_file = base_dir / "regime_metadata.json"
+            # Calculate statistics for each regime
+            for regime_id in regime_ids:
+                regime_data = data[data['composite_cluster_id'] == regime_id]
+                
+                if len(regime_data) > 0:
+                    regime_stats = {
+                        "data_points": len(regime_data),
+                        "percentage": len(regime_data) / len(data) * 100,
+                        "date_range": {
+                            "start": regime_data['timestamp'].min().isoformat(),
+                            "end": regime_data['timestamp'].max().isoformat()
+                        }
+                    }
+                    
+                    # Add price statistics if available
+                    if 'close' in regime_data.columns:
+                        regime_stats["price_stats"] = {
+                            "mean": float(regime_data['close'].mean()),
+                            "std": float(regime_data['close'].std()),
+                            "min": float(regime_data['close'].min()),
+                            "max": float(regime_data['close'].max())
+                        }
+                    
+                    stats["regime_details"][f"regime_{regime_id}"] = regime_stats
+            
+            return stats
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error calculating regime statistics: {e}")
+            return {}
+
+    async def _save_regime_metadata(self, regime_ids: List[int], data_dir: str, symbol: str, exchange: str, timeframe: str) -> None:
+        """Save metadata about the unified regime dataset."""
+        try:
+            metadata = {
+                "approach": "unified_dataset_with_labels",
+                "total_regimes": len(regime_ids),
+                "regime_ids": sorted(regime_ids),
+                "created_at": time.time(),
+                "data_structure": {
+                    "main_file": f"{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet",
+                    "regime_column": "composite_cluster_id",
+                    "regime_labels_file": f"{exchange}_{symbol}_{timeframe}_regime_labels.json",
+                    "regime_statistics_file": f"{exchange}_{symbol}_{timeframe}_regime_statistics.json"
+                },
+                "usage_instructions": {
+                    "description": "Load the unified dataset and filter by composite_cluster_id for regime-specific processing",
+                    "example": "regime_data = data[data['composite_cluster_id'] == regime_id]",
+                    "benefits": [
+                        "Maintains temporal continuity for trading indicators",
+                        "Preserves lookback periods",
+                        "Eliminates need for multiple file management",
+                        "Enables regime-aware processing with single dataset"
+                    ]
+                }
+            }
+            
+            metadata_file = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_regime_metadata.json"
             import json
             with open(metadata_file, 'w') as f:
                 json.dump(metadata, f, indent=2)

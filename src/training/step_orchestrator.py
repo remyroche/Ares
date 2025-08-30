@@ -35,6 +35,7 @@ class StepOrchestrator:
             "step1_data_collection",
             "step1_5_data_converter",
             "step2_feature_engineering",
+            "step2_5_sr_optimization",
             "step3_hmm_regime_discovery",
             "step4_processing_labeling",
             "step5_regime_data_splitting",

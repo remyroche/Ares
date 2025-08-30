@@ -217,9 +217,34 @@ class HMMRegimeDiscoveryStep:
                 pipeline_state["regime_discovery_error"] = f"Data loading failed: {error_msg}"
                 return pipeline_state
 
-            # Step 3: Perform HMM regime discovery
+            # Step 3: Automatic Parameter Optimization (ALWAYS RUNS)
+            symbol = training_input.get("symbol", "ETHUSDT")
+            exchange = training_input.get("exchange", "BINANCE")
+            timeframe = training_input.get("timeframe", "1m")
+            data_dir = training_input.get("data_dir", "data_cache")
+            
             self.logger.info("=" * 60)
-            self.logger.info("STEP 3: HMM Regime Discovery")
+            self.logger.info("STEP 3: Automatic Parameter Optimization")
+            self.logger.info("=" * 60)
+            optimization_start = time.time()
+            
+            optimized_params = await self._run_automatic_optimization(symbol, exchange, timeframe, data_dir)
+            if optimized_params:
+                self.logger.info("✅ Parameter optimization completed successfully")
+                # Apply optimized parameters
+                self._apply_optimized_parameters(optimized_params)
+                pipeline_state["optimization_used"] = True
+                pipeline_state["optimized_params"] = optimized_params
+            else:
+                self.logger.warning("⚠️ Parameter optimization failed, using default parameters")
+                pipeline_state["optimization_used"] = False
+            
+            optimization_elapsed = time.time() - optimization_start
+            self.logger.info(f"⏱️ Parameter Optimization completed in {optimization_elapsed:.2f} seconds")
+
+            # Step 4: Perform HMM regime discovery
+            self.logger.info("=" * 60)
+            self.logger.info("STEP 4: HMM Regime Discovery")
             self.logger.info("=" * 60)
             hmm_start = time.time()
             regime_results = await self._perform_hmm_regime_discovery(
@@ -238,9 +263,9 @@ class HMMRegimeDiscoveryStep:
                 # Log detailed results
                 self._log_regime_discovery_results(regime_results)
                 
-                # Step 4: Perform SR Context Analysis
+                # Step 5: Perform SR Context Analysis
                 self.logger.info("=" * 60)
-                self.logger.info("STEP 4: SR Context Analysis")
+                self.logger.info("STEP 5: SR Context Analysis")
                 self.logger.info("=" * 60)
                 sr_start = time.time()
                 
@@ -2011,7 +2036,7 @@ async def run_step(
         logger = system_logger.getChild("Step3HMMRegimeDiscovery")
 
         logger.info("=" * 80)
-        logger.info("🚀 STEP 3: HMM Regime Discovery")
+        logger.info("🚀 STEP 3: HMM Regime Discovery with Automatic Optimization")
         logger.info("=" * 80)
         logger.info(f"🎯 Symbol: {symbol}")
         logger.info(f"🏢 Exchange: {exchange}")
@@ -2049,6 +2074,14 @@ async def run_step(
 
         if result.get("hmm_regime_discovery_completed", False):
             logger.info("✅ Step 3: HMM Regime Discovery completed successfully")
+            
+            # Log optimization information
+            if result.get("optimization_used", False):
+                logger.info("🔧 Automatic parameter optimization completed successfully")
+                if result.get("optimized_params"):
+                    logger.info(f"📊 Optimized parameters applied: {list(result['optimized_params'].keys())}")
+            else:
+                logger.warning("⚠️ Parameter optimization failed, using default parameters")
             
             # Log regime discovery results
             if result.get("regime_states"):
@@ -2784,6 +2817,297 @@ async def run_step(
             return "\n".join(report)
         except Exception as e:
             return f"Error generating recommendations report: {e}"
+
+    # ============================================================================
+    # AUTOMATIC OPTIMIZATION METHODS
+    # ============================================================================
+
+    def _should_run_optimization(self, symbol: str, exchange: str, timeframe: str, data_dir: str, force_rerun: bool) -> bool:
+        """Determine if parameter optimization should be run."""
+        
+        # Get optimization configuration
+        optimization_config = self._get_optimization_config()
+        auto_config = optimization_config.get("automatic_optimization", {})
+        
+        # Check if automatic optimization is enabled
+        if not auto_config.get("enabled", True):
+            self.logger.info("🔧 Automatic optimization is disabled")
+            return False
+        
+        # ALWAYS run optimization when Step 3 is executed
+        self.logger.info("🔄 Step 3 optimization: Always running parameter optimization")
+        return True
+
+    async def _run_automatic_optimization(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[Dict[str, Any]]:
+        """Run automatic parameter optimization for HMM regime discovery."""
+        
+        try:
+            self.logger.info("🚀 Starting automatic parameter optimization...")
+            
+            # Import the optimizer
+            try:
+                sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+                from optimize_hmm_regime_parameters import HMMRegimeOptimizer, identify_market_condition_columns
+            except ImportError as e:
+                self.logger.error(f"❌ Could not import optimizer: {e}")
+                self.logger.info("📝 Proceeding without optimization")
+                return None
+            
+            # Load feature data for optimization
+            feature_data = await self._load_feature_data_for_optimization(symbol, exchange, timeframe, data_dir)
+            if feature_data is None or feature_data.empty:
+                self.logger.error("❌ Could not load feature data for optimization")
+                return None
+            
+            # Identify market condition columns
+            market_condition_columns = identify_market_condition_columns(feature_data)
+            feature_columns = [col for col in feature_data.columns 
+                             if col not in ['timestamp', 'composite_cluster_id']]
+            
+            self.logger.info(f"📊 Optimization data: {len(feature_data)} samples, {len(feature_columns)} features")
+            self.logger.info(f"📈 Market conditions: {len(market_condition_columns)}")
+            
+            # Initialize optimizer with configuration
+            optimization_config = self._get_optimization_config()
+            optimizer = HMMRegimeOptimizer(optimization_config)
+            
+            # Get optimization settings from configuration
+            optimization_config = self._get_optimization_config()
+            opt_settings = optimization_config.get("optimization_settings", {})
+            auto_config = optimization_config.get("automatic_optimization", {})
+            
+            # Run optimization with configuration settings
+            optimization_results = optimizer.optimize(
+                data=feature_data,
+                feature_columns=feature_columns,
+                market_condition_columns=market_condition_columns,
+                n_trials=auto_config.get("max_trials", 50),
+                timeout=auto_config.get("timeout_minutes", 30) * 60,  # Convert to seconds
+                study_name=f"{auto_config.get('study_name_prefix', 'auto_optimization')}_{symbol}_{exchange}_{timeframe}"
+            )
+            
+            if optimization_results and optimization_results.get('best_params'):
+                # Save optimization results
+                await self._save_optimization_results(
+                    optimization_results, symbol, exchange, timeframe, data_dir
+                )
+                
+                # Generate optimization report
+                await self._generate_optimization_report(
+                    optimizer, symbol, exchange, timeframe, data_dir
+                )
+                
+                self.logger.info("✅ Automatic optimization completed successfully")
+                return optimization_results['best_params']
+            else:
+                self.logger.error("❌ Optimization failed to produce valid results")
+                return None
+                
+        except Exception as e:
+            self.logger.exception(f"❌ Error in automatic optimization: {e}")
+            return None
+
+    async def _load_feature_data_for_optimization(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
+        """Load feature data for optimization."""
+        
+        try:
+            # Try to load from Step 2 feature engineering results
+            feature_file = Path(data_dir) / f"{exchange}_{symbol}_{timeframe}_features.parquet"
+            
+            if feature_file.exists():
+                self.logger.info(f"📂 Loading feature data from: {feature_file}")
+                return pd.read_parquet(feature_file)
+            
+            # Fallback: load raw data and create basic features
+            self.logger.info("📂 Feature file not found, creating basic features from raw data")
+            raw_data = await self._load_data(symbol, exchange, timeframe, data_dir)
+            if raw_data is not None and not raw_data.empty:
+                return await self._create_basic_features(raw_data)
+            
+            return None
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error loading feature data for optimization: {e}")
+            return None
+
+    async def _create_basic_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Create basic features for optimization if Step 2 features are not available."""
+        
+        try:
+            self.logger.info("🔧 Creating basic features for optimization...")
+            
+            features = data.copy()
+            
+            # Add basic market condition features
+            if 'close' in features.columns:
+                features['returns'] = features['close'].pct_change()
+                features['volatility_20'] = features['returns'].rolling(20).std()
+                features['price_momentum_10'] = features['close'].pct_change(10)
+            
+            if 'volume' in features.columns:
+                features['volume_ratio_10'] = features['volume'] / features['volume'].rolling(10).mean()
+            
+            # Add some technical indicators
+            if 'close' in features.columns:
+                features['sma_20'] = features['close'].rolling(20).mean()
+                features['sma_50'] = features['close'].rolling(50).mean()
+                features['rsi_14'] = self._calculate_rsi(features['close'], 14)
+            
+            # Remove NaN values
+            features = features.dropna()
+            
+            self.logger.info(f"✅ Created {len(features)} basic features")
+            return features
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error creating basic features: {e}")
+            return pd.DataFrame()
+
+    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
+        """Calculate RSI indicator."""
+        try:
+            delta = prices.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs))
+            return rsi
+        except Exception:
+            return pd.Series(index=prices.index)
+
+    def _get_optimization_config(self) -> Dict[str, Any]:
+        """Get optimization configuration."""
+        
+        try:
+            # Try to load from configuration file
+            config_file = Path(__file__).parent / "step3_optimization_config.json"
+            if config_file.exists():
+                import json
+                with open(config_file, 'r') as f:
+                    config = json.load(f)
+                self.logger.info("📋 Loaded optimization configuration from file")
+                return config
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not load optimization config file: {e}")
+        
+        # Fallback to default configuration
+        self.logger.info("📋 Using default optimization configuration")
+        return {
+            "automatic_optimization": {
+                "enabled": True,
+                "max_trials": 50,
+                "timeout_minutes": 30,
+                "force_rerun_days": 7
+            },
+            "optimization_settings": {
+                "n_trials": 50,
+                "timeout": 1800,
+                "study_name": "automatic_optimization",
+                "random_state": 42
+            },
+            "evaluation_weights": {
+                "regime_differentiation": 0.4,
+                "internal_coherence": 0.3,
+                "regime_balance": 0.15,
+                "target_count_penalty": 0.15
+            },
+            "market_condition_keywords": [
+                "volatility", "momentum", "volume", "returns", "price_change",
+                "trend", "regime", "market", "condition", "state",
+                "rsi", "macd", "bollinger", "atr", "adx", "stoch", "cci"
+            ]
+        }
+
+    async def _save_optimization_results(self, optimization_results: Dict[str, Any], 
+                                       symbol: str, exchange: str, timeframe: str, data_dir: str) -> None:
+        """Save optimization results."""
+        
+        try:
+            from datetime import datetime
+            import json
+            
+            # Create optimization directory
+            optimization_dir = Path(data_dir) / "optimization_results"
+            optimization_dir.mkdir(exist_ok=True)
+            
+            # Save results
+            results_file = optimization_dir / f"{exchange}_{symbol}_{timeframe}_optimization_results.json"
+            
+            # Add timestamp
+            optimization_results['timestamp'] = datetime.now().isoformat()
+            optimization_results['symbol'] = symbol
+            optimization_results['exchange'] = exchange
+            optimization_results['timeframe'] = timeframe
+            
+            with open(results_file, 'w') as f:
+                json.dump(optimization_results, f, indent=2, default=str)
+            
+            self.logger.info(f"💾 Optimization results saved to: {results_file}")
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error saving optimization results: {e}")
+
+    async def _generate_optimization_report(self, optimizer: Any, symbol: str, exchange: str, 
+                                          timeframe: str, data_dir: str) -> None:
+        """Generate optimization report."""
+        
+        try:
+            # Create optimization directory
+            optimization_dir = Path(data_dir) / "optimization_results"
+            optimization_dir.mkdir(exist_ok=True)
+            
+            # Generate report
+            report_file = optimization_dir / f"{exchange}_{symbol}_{timeframe}_optimization_report.md"
+            optimizer.generate_optimization_report(output_path=str(report_file))
+            
+            # Create visualizations
+            optimizer.create_optimization_visualizations(output_dir=str(optimization_dir))
+            
+            self.logger.info(f"📄 Optimization report saved to: {report_file}")
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error generating optimization report: {e}")
+
+    def _apply_optimized_parameters(self, optimized_params: Dict[str, Any]) -> None:
+        """Apply optimized parameters to the HMM regime discovery configuration."""
+        
+        try:
+            self.logger.info("🔧 Applying optimized parameters...")
+            
+            # Update HMM parameters
+            if 'n_components' in optimized_params:
+                self.config['hmm_n_components'] = optimized_params['n_components']
+            if 'covariance_type' in optimized_params:
+                self.config['hmm_covariance_type'] = optimized_params['covariance_type']
+            if 'n_iter' in optimized_params:
+                self.config['hmm_n_iter'] = optimized_params['n_iter']
+            if 'tol' in optimized_params:
+                self.config['hmm_tol'] = optimized_params['tol']
+            if 'reg_covar' in optimized_params:
+                self.config['hmm_reg_covar'] = optimized_params['reg_covar']
+            
+            # Update clustering parameters
+            if 'clustering_method' in optimized_params:
+                self.config['clustering_method'] = optimized_params['clustering_method']
+            if 'n_clusters' in optimized_params:
+                self.config['n_clusters'] = optimized_params['n_clusters']
+            
+            # Update regime merging parameters
+            if 'target_regimes' in optimized_params:
+                self.config['target_regimes'] = optimized_params['target_regimes']
+            if 'merging_method' in optimized_params:
+                self.config['merging_method'] = optimized_params['merging_method']
+            if 'similarity_threshold' in optimized_params:
+                self.config['similarity_threshold'] = optimized_params['similarity_threshold']
+            if 'coherence_threshold' in optimized_params:
+                self.config['coherence_threshold'] = optimized_params['coherence_threshold']
+            if 'differentiation_threshold' in optimized_params:
+                self.config['differentiation_threshold'] = optimized_params['differentiation_threshold']
+            
+            self.logger.info("✅ Optimized parameters applied successfully")
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error applying optimized parameters: {e}")
 
 
 if __name__ == "__main__":

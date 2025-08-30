@@ -133,7 +133,7 @@ class DITrainingManager(InjectableBase):
             "step9_model_evaluation",
             "step10_tactician_ensemble_creation",
             "step11_confidence_calibration",
-            "step12_final_parameters_optimization",
+            "step17_final_parameters_optimization",
         ]
 
         for step_name in step_classes:
@@ -278,7 +278,7 @@ class DITrainingManager(InjectableBase):
                 "step9_model_evaluation",
                 "step10_tactician_ensemble_creation",
                 "step11_confidence_calibration",
-                "step12_final_parameters_optimization",
+                "step17_final_parameters_optimization",
             ]
 
             for step_name in pipeline_steps:
@@ -357,7 +357,7 @@ class DITrainingManager(InjectableBase):
             # Execute optimization steps
             optimization_steps = [
                 "step7_hyperparameter_optimization",
-                "step12_final_parameters_optimization",
+                "step17_final_parameters_optimization",
             ]
 
             for step_name in optimization_steps:

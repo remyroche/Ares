@@ -38,7 +38,7 @@ from optuna.visualization import plot_optimization_history, plot_param_importanc
 # Ensure src on path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-from src.training.steps.step12_final_parameters_optimization.optimized_optuna_optimization import (  # noqa: E402
+from src.training.steps.step17_final_parameters_optimization.optimized_optuna_optimization import (  # noqa: E402
     AdvancedOptunaManager,
 )
 from src.utils.logger import setup_logging  # noqa: E402

@@ -48,7 +48,7 @@ from src.config_optuna import (  # noqa: E402
     SROptimizationParameters,
     validate_sr_optimization_config,
 )
-from src.training.steps.step12_final_parameters_optimization.optimized_optuna_optimization import (  # noqa: E402
+from src.training.steps.step17_final_parameters_optimization.optimized_optuna_optimization import (  # noqa: E402
     AdvancedOptunaManager,
     OptimizationResult,
 )

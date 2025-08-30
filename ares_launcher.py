@@ -2178,7 +2178,7 @@ Examples:
     python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step9_tactician_specialist_training
     python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step10_tactician_ensemble_creation
     python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step11_confidence_calibration
-    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step12_final_parameters_optimization
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step17_final_parameters_optimization
     python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step13_walk_forward_validation
     python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step14_monte_carlo_validation
     python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step15_ab_testing

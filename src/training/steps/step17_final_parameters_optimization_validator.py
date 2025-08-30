@@ -23,7 +23,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
     """Validator for Step 12: Final Parameters Optimization."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        super().__init__("step12_final_parameters_optimization", config)
+        super().__init__("step17_final_parameters_optimization", config)
 
     async def validate(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any], ) -> bool:
@@ -376,7 +376,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
 
 
 async def run_validator(training_input: dict[str, Any], pipeline_state: dict[str, Any], ) -> dict[str, Any]:
-    """Run the step12_final_parameters_optimization validator.
+    """Run the step17_final_parameters_optimization validator.
 
     Args:
         training_input: Training input parameters
@@ -390,7 +390,7 @@ async def run_validator(training_input: dict[str, Any], pipeline_state: dict[str
     validation_passed = await validator.validate(training_input, pipeline_state)
 
     return {
-        "step_name": "step12_final_parameters_optimization",
+        "step_name": "step17_final_parameters_optimization",
         "validation_passed": validation_passed,
         "validation_results": validator.validation_results,
         "duration": 0,  # Could be enhanced to track actual duration

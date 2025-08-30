@@ -429,6 +429,10 @@ class AnalystEnhancementStep:
                 pass
 
             pipeline_state["enhanced_hmm_models"] = enhanced_models_summary
+            
+            # Deliver step12 results for tactician confidence optimization
+            await self._deliver_step12_results(enhanced_models_summary, duration)
+            
             return {
                 "status": "SUCCESS",
                 "enhanced_models_dir": enhanced_models_dir,

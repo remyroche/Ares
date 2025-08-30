@@ -109,8 +109,11 @@ class DecisionPolicy:
             self.leverage_sizer = LeverageSizer(self.config)
             await self.leverage_sizer.initialize()
 
-            # Initialize SR breakout predictor
-            self.sr_predictor = SRBreakoutPredictor(self.config)
+            # Initialize SR breakout predictor with optimized parameters
+            sr_config = self.config.copy()
+            sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
+            sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
+            self.sr_predictor = SRBreakoutPredictor(sr_config)
             await self.sr_predictor.initialize()
 
             # Initialize ML tactics manager

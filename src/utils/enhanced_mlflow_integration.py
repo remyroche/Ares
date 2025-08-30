@@ -17,8 +17,9 @@ This ensures complete traceability and reproducibility of all training runs.
 import os
 import tempfile
 from datetime import datetime
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, List
 from functools import wraps
+import sys
 
 import mlflow
 import pandas as pd
@@ -325,6 +326,69 @@ def log_step_dataframe(
         system_logger.error(f"Failed to log DataFrame '{artifact_name}' for step {step_name}: {e}")
 
 
+def create_standardized_artifact_folders(base_dir: str = "artifacts") -> Dict[str, str]:
+    """Create standardized folder structure for all pipeline artifacts.
+    
+    Args:
+        base_dir: Base directory for artifacts
+        
+    Returns:
+        Dictionary mapping folder types to their paths
+    """
+    folders = {
+        "base": base_dir,
+        "dataframes": f"{base_dir}/dataframes",
+        "models": f"{base_dir}/models",
+        "reports": f"{base_dir}/reports",
+        "metrics": f"{base_dir}/metrics",
+        "metadata": f"{base_dir}/metadata",
+        "plots": f"{base_dir}/plots",
+        "configs": f"{base_dir}/configs",
+        "logs": f"{base_dir}/logs",
+    }
+    
+    # Create all folders
+    for folder_path in folders.values():
+        os.makedirs(folder_path, exist_ok=True)
+    
+    return folders
+
+
+def get_standardized_artifact_path(
+    artifact_type: str,
+    step_name: str,
+    artifact_name: str,
+    base_dir: str = "artifacts"
+) -> str:
+    """Get standardized path for an artifact based on its type.
+    
+    Args:
+        artifact_type: Type of artifact (dataframe, model, report, etc.)
+        step_name: Name of the pipeline step
+        artifact_name: Name of the artifact
+        base_dir: Base directory for artifacts
+        
+    Returns:
+        Standardized artifact path
+    """
+    folders = create_standardized_artifact_folders(base_dir)
+    
+    # Map artifact types to folders
+    type_to_folder = {
+        "dataframe": "dataframes",
+        "model": "models",
+        "report": "reports",
+        "metrics": "metrics",
+        "metadata": "metadata",
+        "plot": "plots",
+        "config": "configs",
+        "log": "logs",
+    }
+    
+    folder = type_to_folder.get(artifact_type, "base")
+    return f"{folders[folder]}/{step_name}/{artifact_name}"
+
+
 def log_step_dataframe_with_standardized_name(
     config: Dict[str, Any],
     step_name: str,
@@ -333,7 +397,7 @@ def log_step_dataframe_with_standardized_name(
     run_id: Optional[str] = None,
     additional_metadata: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """Log a DataFrame with standardized naming pattern.
+    """Log a DataFrame with standardized naming pattern and folder structure.
     
     Args:
         config: Configuration dictionary
@@ -359,6 +423,9 @@ def log_step_dataframe_with_standardized_name(
         extension="parquet"
     )
     
+    # Get standardized path
+    artifact_path = get_standardized_artifact_path("dataframe", step_name, artifact_name)
+    
     # Log the DataFrame
     log_step_dataframe(
         config=config,
@@ -380,7 +447,7 @@ def log_step_artifact_with_standardized_name(
     run_id: Optional[str] = None,
     additional_metadata: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """Log an artifact with standardized naming pattern.
+    """Log an artifact with standardized naming pattern and folder structure.
     
     Args:
         config: Configuration dictionary
@@ -409,6 +476,9 @@ def log_step_artifact_with_standardized_name(
         extension=file_extension
     )
     
+    # Get standardized path
+    standardized_path = get_standardized_artifact_path(artifact_type, step_name, artifact_name)
+    
     # Log the artifact
     log_step_artifact(
         config=config,
@@ -430,7 +500,7 @@ def log_step_report(
     run_id: Optional[str] = None,
     additional_metadata: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """Log a step report with standardized naming pattern.
+    """Log a step report with standardized naming pattern and folder structure.
     
     Args:
         config: Configuration dictionary
@@ -456,6 +526,9 @@ def log_step_report(
             artifact_type=report_type,
             extension="json"
         )
+        
+        # Get standardized path
+        report_path = get_standardized_artifact_path("report", step_name, report_name)
         
         # Create temporary file
         import json
@@ -494,63 +567,6 @@ def log_step_report(
     except Exception as e:
         system_logger.error(f"Failed to log report for step {step_name}: {e}")
         return ""
-
-
-def log_step_dataframe(
-    config: Dict[str, Any],
-    step_name: str,
-    df: pd.DataFrame,
-    artifact_name: str,
-    run_id: Optional[str] = None,
-    additional_metadata: Optional[Dict[str, Any]] = None,
-) -> None:
-    """Log a DataFrame as an artifact for a specific step.
-    
-    Args:
-        config: Configuration dictionary
-        step_name: Name of the pipeline step
-        df: DataFrame to log
-        artifact_name: Name for the artifact
-        run_id: Optional MLflow run ID
-        additional_metadata: Additional metadata to log
-    """
-    try:
-        metadata = extract_training_metadata(config)
-        
-        # Create temporary file
-        with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp_file:
-            df.to_parquet(tmp_file.name, index=False)
-            tmp_path = tmp_file.name
-        
-        # Prepare additional metadata
-        extra_metadata = {
-            "artifact_type": "dataframe",
-            "dataframe_shape": list(df.shape),
-            "dataframe_columns": list(df.columns),
-            "dataframe_dtypes": df.dtypes.to_dict(),
-        }
-        if additional_metadata:
-            extra_metadata.update(additional_metadata)
-        
-        # Log artifact
-        log_artifacts_with_metadata(
-            local_path=tmp_path,
-            artifact_path=f"artifacts/{step_name}/{artifact_name}.parquet",
-            asset=metadata["asset"],
-            exchange=metadata["exchange"],
-            lookback_period=metadata["lookback_period"],
-            project_version=metadata["project_version"],
-            run_id=run_id,
-            additional_metadata=extra_metadata,
-        )
-        
-        # Clean up temporary file
-        os.unlink(tmp_path)
-        
-        system_logger.info(f"✅ Logged DataFrame '{artifact_name}' for step {step_name}")
-        
-    except Exception as e:
-        system_logger.error(f"Failed to log DataFrame '{artifact_name}' for step {step_name}: {e}")
 
 
 def log_step_model(
@@ -1129,3 +1145,85 @@ def log_pipeline_completion(
         
     except Exception as e:
         system_logger.error(f"Failed to log pipeline completion: {e}")
+
+
+def create_detailed_step_report(
+    step_name: str,
+    step_data: Dict[str, Any],
+    training_input: Dict[str, Any],
+    execution_metadata: Dict[str, Any],
+    artifacts_generated: List[str],
+    metrics_calculated: Dict[str, Any],
+    errors_encountered: List[str] = None,
+) -> Dict[str, Any]:
+    """Create a detailed report for a pipeline step.
+    
+    Args:
+        step_name: Name of the pipeline step
+        step_data: Data generated by the step
+        training_input: Input parameters for the step
+        execution_metadata: Metadata about step execution
+        artifacts_generated: List of artifacts generated
+        metrics_calculated: Metrics calculated during the step
+        errors_encountered: List of errors encountered (if any)
+        
+    Returns:
+        Detailed report dictionary
+    """
+    report = {
+        "step_info": {
+            "step_name": step_name,
+            "execution_timestamp": datetime.now().isoformat(),
+            "step_version": "1.0",
+        },
+        "execution_summary": {
+            "status": "completed" if not errors_encountered else "completed_with_errors",
+            "start_time": execution_metadata.get("start_time"),
+            "end_time": execution_metadata.get("end_time"),
+            "duration_seconds": execution_metadata.get("duration_seconds"),
+            "memory_usage_mb": execution_metadata.get("memory_usage_mb"),
+            "cpu_usage_percent": execution_metadata.get("cpu_usage_percent"),
+        },
+        "training_input": {
+            "symbol": training_input.get("symbol"),
+            "exchange": training_input.get("exchange"),
+            "timeframe": training_input.get("timeframe"),
+            "lookback_years": training_input.get("lookback_years"),
+            "additional_params": {k: v for k, v in training_input.items() 
+                                if k not in ["symbol", "exchange", "timeframe", "lookback_years"]},
+        },
+        "artifacts_generated": {
+            "count": len(artifacts_generated),
+            "artifacts": artifacts_generated,
+            "artifact_types": list(set([os.path.splitext(artifact)[1] for artifact in artifacts_generated])),
+        },
+        "metrics_calculated": {
+            "count": len(metrics_calculated),
+            "metrics": metrics_calculated,
+            "metric_types": list(set([type(v).__name__ for v in metrics_calculated.values()])),
+        },
+        "step_data_summary": {
+            "data_keys": list(step_data.keys()) if isinstance(step_data, dict) else [],
+            "data_types": {k: type(v).__name__ for k, v in step_data.items()} if isinstance(step_data, dict) else {},
+            "data_sizes": {k: len(v) if hasattr(v, '__len__') else 'N/A' 
+                          for k, v in step_data.items()} if isinstance(step_data, dict) else {},
+        },
+        "quality_metrics": {
+            "data_quality_score": execution_metadata.get("data_quality_score", 0.0),
+            "processing_efficiency": execution_metadata.get("processing_efficiency", 0.0),
+            "error_rate": len(errors_encountered) if errors_encountered else 0,
+        },
+        "errors_and_warnings": {
+            "errors": errors_encountered or [],
+            "warnings": execution_metadata.get("warnings", []),
+            "error_count": len(errors_encountered) if errors_encountered else 0,
+        },
+        "system_info": {
+            "python_version": sys.version,
+            "platform": sys.platform,
+            "memory_available_gb": execution_metadata.get("memory_available_gb"),
+            "disk_space_available_gb": execution_metadata.get("disk_space_available_gb"),
+        },
+    }
+    
+    return report

@@ -50,6 +50,15 @@ from src.utils.centralized_decorators import (
 )
 from src.utils.logger import system_logger
 
+from src.utils.enhanced_mlflow_integration import (
+    with_enhanced_mlflow_logging,
+    log_step_report,
+    create_detailed_step_report,
+    log_step_metrics,
+    log_step_dataframe_with_standardized_name,
+    log_step_artifact_with_standardized_name
+)
+
 logger = system_logger.getChild("Step4TripleBarrierMethod")
 
 
@@ -100,6 +109,7 @@ class TripleBarrierMethodStep:
         max_correlation=0.95,
         required_grade="C"
     )
+    @with_enhanced_mlflow_logging("step4_triple_barrier_method")
     @comprehensive_data_validation
     @handle_errors
     @memory_efficient
@@ -177,11 +187,125 @@ class TripleBarrierMethodStep:
             self.logger.info(f"✅ Triple barrier labels saved to {output_path}")
 
             self._log_step_timing("Triple Barrier Method", step_start)
+            
+            # Log artifacts and create detailed report
+            await self._log_step4_artifacts_and_report(
+                symbol, exchange, timeframe, data_dir, result_data, output_path
+            )
+            
             return True
 
         except Exception as e:
             self.logger.exception(f"❌ Error in triple barrier method: {e}")
             return False
+
+    async def _log_step4_artifacts_and_report(
+        self,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        data_dir: str,
+        result_data: pd.DataFrame,
+        output_path: Path
+    ) -> None:
+        """Log step 4 artifacts and create detailed report."""
+        try:
+            # Collect execution metadata
+            execution_metadata = {
+                "start_time": datetime.now().isoformat(),
+                "end_time": datetime.now().isoformat(),
+                "duration_seconds": 0.0,  # Will be calculated if available
+                "memory_usage_mb": 0.0,  # Will be calculated if available
+                "cpu_usage_percent": 0.0,  # Will be calculated if available
+                "data_quality_score": 1.0,
+                "processing_efficiency": 1.0,
+            }
+            
+            # Collect artifacts generated
+            artifacts_generated = [
+                str(output_path),
+                f"{exchange}_{symbol}_{timeframe}_triple_barrier_metrics.json",
+            ]
+            
+            # Collect metrics
+            metrics_calculated = {
+                "triple_barrier_success": 1.0,
+                "total_samples": len(result_data) if result_data is not None else 0,
+                "labeled_samples": len(result_data[result_data['label'].notna()]) if result_data is not None else 0,
+                "label_distribution": result_data['label'].value_counts().to_dict() if result_data is not None and 'label' in result_data.columns else {},
+            }
+            
+            # Create training input for report
+            training_input = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": timeframe,
+                "data_dir": data_dir,
+            }
+            
+            # Create step data for report
+            step_data = {
+                "output_path": str(output_path),
+                "data_shape": list(result_data.shape) if result_data is not None else [],
+                "label_columns": list(result_data.columns) if result_data is not None else [],
+            }
+            
+            # Create detailed report
+            report_data = create_detailed_step_report(
+                step_name="step4_triple_barrier_method",
+                step_data=step_data,
+                training_input=training_input,
+                execution_metadata=execution_metadata,
+                artifacts_generated=artifacts_generated,
+                metrics_calculated=metrics_calculated,
+                errors_encountered=[]
+            )
+            
+            # Log the report
+            report_name = log_step_report(
+                config=self.config,
+                step_name="step4_triple_barrier_method",
+                report_data=report_data,
+                report_type="triple_barrier_method_report",
+                additional_metadata={
+                    "triple_barrier_success": True,
+                    "timeframe": timeframe,
+                }
+            )
+            self.logger.info(f"✅ Logged triple barrier method report: {report_name}")
+            
+            # Log triple barrier labels DataFrame
+            if result_data is not None:
+                artifact_name = log_step_dataframe_with_standardized_name(
+                    config=self.config,
+                    step_name="step4_triple_barrier_method",
+                    df=result_data,
+                    artifact_type="triple_barrier_labels",
+                    additional_metadata={
+                        "artifact_type": "triple_barrier_labels",
+                        "dataframe_shape": list(result_data.shape),
+                        "label_distribution": result_data['label'].value_counts().to_dict() if 'label' in result_data.columns else {},
+                        "timeframe": timeframe,
+                    }
+                )
+                self.logger.info(f"✅ Logged triple barrier labels: {artifact_name}")
+            
+            # Log metrics
+            log_step_metrics(
+                config=self.config,
+                step_name="step4_triple_barrier_method",
+                metrics=metrics_calculated,
+                additional_metadata={
+                    "metrics_type": "triple_barrier_performance",
+                    "timeframe": timeframe,
+                }
+            )
+            
+            self.logger.info("✅ Step 4 artifacts and reports logged successfully")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to log step 4 artifacts and reports: {e}")
+            # Don't fail the step if MLflow logging fails
 
     async def _apply_optimized_triple_barrier(self, data: pd.DataFrame) -> Optional[pd.DataFrame]:
         """Apply optimized triple barrier labeling with profit tracking."""

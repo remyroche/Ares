@@ -18,6 +18,15 @@ from src.training.enhanced_matrix_operations import EnhancedMatrixOperations
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.training_pipeline_decorators import (
+
+from src.utils.enhanced_mlflow_integration import (
+    with_enhanced_mlflow_logging,
+    log_step_report,
+    create_detailed_step_report,
+    log_step_metrics,
+    log_step_dataframe_with_standardized_name,
+    log_step_artifact_with_standardized_name
+)
     circuit_breaker_protection,
     debug_training_step,
     memory_efficient,

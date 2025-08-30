@@ -15,6 +15,15 @@ from src.utils.logger import system_logger
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.centralized_decorators import (
+
+from src.utils.enhanced_mlflow_integration import (
+    with_enhanced_mlflow_logging,
+    log_step_report,
+    create_detailed_step_report,
+    log_step_metrics,
+    log_step_dataframe_with_standardized_name,
+    log_step_artifact_with_standardized_name
+)
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,
@@ -49,6 +58,7 @@ class RegimeDataSplittingStep:
         self.logger.info("🚀 Initializing Step 4: HMM Composite Regime Data Splitting...")
         self.logger.info("✅ HMM Composite Regime Data Splitting initialized successfully")
 
+    @with_enhanced_mlflow_logging("step8")
     @with_tracing_span("step4_regime_splitting.execute", log_args=False)
     @handle_errors(exceptions=(Exception,), default_return={"success": False, "error": "Execution failed"}, context="step4_execution")
     async def execute(self) -> dict[str, Any]:

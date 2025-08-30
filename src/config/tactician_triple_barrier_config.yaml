@@ -5,15 +5,13 @@
 tactician_triple_barrier:
   # Dynamic Barrier Configuration - Fractions of Analyst barriers
   analyst_barrier_fractions:
-    profit_take_fraction: 0.5    # 50% of Analyst's profit take barrier
-    stop_loss_fraction: 0.25     # 25% of Analyst's stop loss barrier
-    time_barrier_fraction: 0.5   # 50% of Analyst's time barrier
+    upper_barrier_fraction: 0.5    # 50% of Analyst's upper barrier (profit take)
+    lower_barrier_fraction: 0.25   # 25% of Analyst's lower barrier (stop loss)
   
   # Analyst Base Values (will be dynamically loaded from Analyst configuration)
   analyst_base_values:
-    profit_take_multiplier: 0.002  # 0.2% (Analyst default)
-    stop_loss_multiplier: 0.001    # 0.1% (Analyst default)
-    time_barrier_minutes: 30       # 30 minutes (Analyst default)
+    upper_barrier_multiplier: 0.002  # 0.2% (Analyst default - profit take)
+    lower_barrier_multiplier: 0.001  # 0.1% (Analyst default - stop loss)
   
   # Timeframe Configuration - Tactician operates at both 1m and 5m
   timeframes: ["1m", "5m"]

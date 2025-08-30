@@ -26,16 +26,119 @@ class TacticianTripleBarrierLabeler:
 
     This labeler uses FIXED PERCENTAGE barriers and a short time horizon to reward
     models that can accurately predict immediate, favorable price action under strict risk parameters.
+    
+    Enhanced for high precision completion of Analyst signals with:
+    - 50% smaller profit take barriers (0.1% vs 0.2%)
+    - 25% smaller stop loss barriers (0.025% vs 0.1%)
+    - Shorter time horizons for precision
+    - Quality filters for execution
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config.get("tactician_triple_barrier", {})
         self.logger = system_logger.getChild("TacticianTripleBarrierLabeler")
+        
+        # Load enhanced configuration
+        self._load_enhanced_config()
+
+    def _load_enhanced_config(self) -> None:
+        """Load enhanced configuration for high precision execution."""
+        # Barrier Configuration - 50% and 25% of Analyst barriers
+        self.pt_pct = self.config.get("profit_take_pct", 0.001)  # 0.1% (50% of Analyst's 0.2%)
+        self.sl_pct = self.config.get("stop_loss_pct", 0.00025)  # 0.025% (25% of Analyst's 0.1%)
+        
+        # Time Configuration - Shorter for precision
+        self.time_barrier = self.config.get("time_barrier_periods", 15)  # 15 minutes (50% of Analyst's 30)
+        self.max_lookahead = self.config.get("max_lookahead", 50)  # Reduced lookahead
+        
+        # Precision Settings
+        self.enable_high_precision_mode = self.config.get("enable_high_precision_mode", True)
+        self.precision_threshold = self.config.get("precision_threshold", 0.85)
+        self.min_signal_strength = self.config.get("min_signal_strength", 0.8)
+        
+        # Quality Filters
+        self.enable_quality_filters = self.config.get("enable_quality_filters", True)
+        self.min_volume_threshold = self.config.get("min_volume_threshold", 1000)
+        self.min_spread_threshold = self.config.get("min_spread_threshold", 0.0001)
+        self.volatility_filter = self.config.get("volatility_filter", True)
+        
+        # Integration Settings
+        self.analyst_signal_requirement = self.config.get("analyst_signal_requirement", True)
+        self.direction_agreement_required = self.config.get("direction_agreement_required", True)
+        self.confidence_boost_threshold = self.config.get("confidence_boost_threshold", 0.9)
+        
+        # Log configuration
+        self.logger.info(f"🔧 Enhanced Tactician Triple Barrier Configuration:")
+        self.logger.info(f"   Profit Take: {self.pt_pct:.4f} ({self.pt_pct*100:.3f}%)")
+        self.logger.info(f"   Stop Loss: {self.sl_pct:.4f} ({self.sl_pct*100:.3f}%)")
+        self.logger.info(f"   Time Barrier: {self.time_barrier} periods")
+        self.logger.info(f"   High Precision Mode: {self.enable_high_precision_mode}")
+        self.logger.info(f"   Precision Threshold: {self.precision_threshold}")
+
+    def _apply_quality_filters(self, data: pd.DataFrame, entry_idx: int) -> bool:
+        """Apply quality filters for high precision execution."""
+        if not self.enable_quality_filters:
+            return True
+            
+        try:
+            # Volume filter
+            if "volume" in data.columns:
+                volume = data.iloc[entry_idx]["volume"]
+                if volume < self.min_volume_threshold:
+                    return False
+            
+            # Spread filter (if bid/ask data available)
+            if "bid" in data.columns and "ask" in data.columns:
+                bid = data.iloc[entry_idx]["bid"]
+                ask = data.iloc[entry_idx]["ask"]
+                spread = (ask - bid) / bid
+                if spread > self.min_spread_threshold:
+                    return False
+            
+            # Volatility filter
+            if self.volatility_filter and len(data) >= 20:
+                recent_data = data.iloc[max(0, entry_idx-20):entry_idx+1]
+                if len(recent_data) >= 10:
+                    returns = recent_data["close"].pct_change().dropna()
+                    volatility = returns.std()
+                    # Filter out extremely high volatility periods
+                    if volatility > 0.01:  # 1% volatility threshold
+                        return False
+            
+            return True
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Quality filter error: {e}")
+            return True  # Default to allow if filter fails
+
+    def _calculate_adaptive_barriers(self, data: pd.DataFrame, entry_idx: int, base_pt: float, base_sl: float) -> tuple[float, float]:
+        """Calculate adaptive barriers based on market conditions."""
+        try:
+            # Volatility adjustment
+            if len(data) >= 20:
+                recent_data = data.iloc[max(0, entry_idx-20):entry_idx+1]
+                if len(recent_data) >= 10:
+                    returns = recent_data["close"].pct_change().dropna()
+                    volatility = returns.std()
+                    
+                    # Adjust barriers based on volatility
+                    volatility_multiplier = min(2.0, max(0.5, 1.0 / (volatility * 100)))
+                    
+                    adjusted_pt = base_pt * volatility_multiplier
+                    adjusted_sl = base_sl * volatility_multiplier
+                    
+                    return adjusted_pt, adjusted_sl
+            
+            return base_pt, base_sl
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Adaptive barrier calculation error: {e}")
+            return base_pt, base_sl
 
     def apply_labels(
         self, data: pd.DataFrame, strategic_signals: pd.Series,
     ) -> pd.DataFrame:
-        """Vectorized application of the triple barrier method.
+        """Vectorized application of the enhanced triple barrier method with high precision.
 
         Args:
             data: The 1-minute market data (must contain OHLC columns).
@@ -43,19 +146,11 @@ class TacticianTripleBarrierLabeler:
                                as values, indicating when the Analyst has identified a setup.
 
         Returns:
-            A DataFrame with the new 'tactician_label' column.
+            A DataFrame with the new 'tactician_label' column and precision metrics.
         """
         self.logger.info(
-            "🔧 Applying specialized Tactician triple barrier labels using fixed percentages...",
+            "🔧 Applying enhanced Tactician triple barrier labels with high precision...",
         )
-
-        # Get parameters from config, with defaults for a high-leverage, 1m timeframe
-        pt_pct = self.config.get("profit_take_pct", 0.005)  # Target 0.5% profit
-        sl_pct = self.config.get("stop_loss_pct", 0.0025)  # Stop out at 0.25% loss
-        time_barrier = self.config.get(
-            "time_barrier_periods",
-            30,
-        )  # 30-minute time horizon
 
         # Align signals with the data index
         entry_points = (
@@ -65,9 +160,8 @@ class TacticianTripleBarrierLabeler:
             self.logger.warning(
                 "⚠️ No strategic signals found to label. Returning data without labels.",
             )
-            data[
-                "tactician_label"
-            ] = -1  # Default to sell signal for binary classification
+            data["tactician_label"] = -1  # Default to sell signal for binary classification
+            data["tactician_precision_score"] = 0.0
             return data
 
         entry_indices = data.index.get_indexer_for(entry_points.index)
@@ -75,45 +169,91 @@ class TacticianTripleBarrierLabeler:
         # Calculate fixed percentage barriers for each entry point
         entry_prices = data["open"].iloc[entry_indices + 1]
 
-        profit_barriers = entry_prices * (1 + pt_pct * entry_points.values)
-        stop_barriers = entry_prices * (1 - sl_pct * entry_points.values)
+        # Initialize labels and precision scores
+        labels = pd.Series(-1, index=data.index)  # Default to sell signal
+        precision_scores = pd.Series(0.0, index=data.index)
+        execution_quality = pd.Series(0.0, index=data.index)
 
-        labels = pd.Series(
-            -1, index=data.index
-        )  # Default to sell signal for binary classification
-
-        # Vectorized barrier check
+        # Vectorized barrier check with enhanced precision
         for i, entry_idx in enumerate(entry_indices):
             if entry_idx >= len(data) - 1:
                 continue
 
             signal = entry_points.iloc[i]
-            pt = profit_barriers.iloc[i]
-            sl = stop_barriers.iloc[i]
+            
+            # Apply quality filters
+            if not self._apply_quality_filters(data, entry_idx):
+                continue
+            
+            # Calculate base barriers
+            base_pt = entry_prices.iloc[i] * (1 + self.pt_pct * signal)
+            base_sl = entry_prices.iloc[i] * (1 - self.sl_pct * signal)
+            
+            # Apply adaptive barriers if enabled
+            if self.config.get("enable_adaptive_barriers", True):
+                pt, sl = self._calculate_adaptive_barriers(data, entry_idx, base_pt, base_sl)
+            else:
+                pt, sl = base_pt, base_sl
 
-            path = data.iloc[entry_idx + 1 : entry_idx + 1 + time_barrier]
+            path = data.iloc[entry_idx + 1 : entry_idx + 1 + self.time_barrier]
             if path.empty:
                 continue
 
-            # Check for hits
+            # Check for hits with enhanced precision
             pt_hit_mask = (path["high"] >= pt) if signal == 1 else (path["low"] <= pt)
             sl_hit_mask = (path["low"] <= sl) if signal == 1 else (path["high"] >= sl)
 
             pt_hit_time = path.index[pt_hit_mask].min()
             sl_hit_time = path.index[sl_hit_mask].min()
 
+            # Calculate precision score based on execution quality
+            precision_score = 0.0
+            quality_score = 0.0
+
             # Determine label based on which barrier was hit first
             if pd.notna(pt_hit_time) and (
                 pd.isna(sl_hit_time) or pt_hit_time <= sl_hit_time
             ):
                 labels.iloc[entry_idx] = 1  # Profit take
+                
+                # Calculate precision score for profit take
+                time_to_hit = (pt_hit_time - path.index[0]).total_seconds() / 60  # minutes
+                precision_score = max(0.0, 1.0 - (time_to_hit / self.time_barrier))
+                quality_score = self.pt_pct / (self.pt_pct + self.sl_pct)  # Risk-reward ratio
+                
             elif pd.notna(sl_hit_time):
                 labels.iloc[entry_idx] = -1  # Stop loss
+                
+                # Calculate precision score for stop loss (lower score for quick stops)
+                time_to_hit = (sl_hit_time - path.index[0]).total_seconds() / 60  # minutes
+                precision_score = max(0.0, 1.0 - (time_to_hit / self.time_barrier)) * 0.5  # Penalty for stop loss
+                quality_score = 0.0  # No quality score for stop loss
 
+            # Apply high precision mode filtering
+            if self.enable_high_precision_mode:
+                if precision_score < self.precision_threshold:
+                    labels.iloc[entry_idx] = 0  # Filter out low precision signals
+                    precision_score = 0.0
+
+            precision_scores.iloc[entry_idx] = precision_score
+            execution_quality.iloc[entry_idx] = quality_score
+
+        # Add precision metrics to data
         data["tactician_label"] = labels
-        self.logger.info(
-            f"Tactician labeling complete. Label distribution:\n{labels.value_counts()}",
-        )
+        data["tactician_precision_score"] = precision_scores
+        data["tactician_execution_quality"] = execution_quality
+        
+        # Log enhanced results
+        label_distribution = labels.value_counts()
+        avg_precision = precision_scores[precision_scores > 0].mean()
+        avg_quality = execution_quality[execution_quality > 0].mean()
+        
+        self.logger.info(f"Enhanced Tactician labeling complete:")
+        self.logger.info(f"   Label distribution: {label_distribution}")
+        self.logger.info(f"   Average precision score: {avg_precision:.3f}")
+        self.logger.info(f"   Average execution quality: {avg_quality:.3f}")
+        self.logger.info(f"   High precision signals: {(precision_scores >= self.precision_threshold).sum()}")
+        
         return data
 
 

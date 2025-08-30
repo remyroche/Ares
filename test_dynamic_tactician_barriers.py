@@ -140,13 +140,8 @@ def test_dynamic_barrier_calculator():
     
     # Test multi-timeframe barrier calculation
     print(f"\n📊 Testing Multi-timeframe Barriers:")
-    market_data_1m = create_test_market_data(timeframe_minutes=1)
-    market_data_5m = create_test_market_data(timeframe_minutes=5)
     
-    multi_barriers = calculator.calculate_multi_timeframe_barriers(
-        market_data_1m=market_data_1m,
-        market_data_5m=market_data_5m
-    )
+    multi_barriers = calculator.calculate_multi_timeframe_barriers()
     
     for timeframe, (pt, sl, time) in multi_barriers.items():
         print(f"   {timeframe}: PT={pt:.4f}, SL={sl:.4f}, Time={time} periods")
@@ -377,14 +372,10 @@ def test_barrier_comparison_analysis():
         print(f"     {timeframe}: Execution={exec_weight:.1f}, Confirmation={conf_weight:.1f}")
 
 
-def test_dynamic_adaptation():
-    """Test dynamic adaptation to market conditions."""
-    print("\n🧪 Testing Dynamic Adaptation")
+def test_fraction_based_calculation():
+    """Test fraction-based barrier calculation."""
+    print("\n🧪 Testing Fraction-Based Calculation")
     print("=" * 60)
-    
-    # Create test data with different volatility levels
-    low_vol_data = create_test_market_data(volatility=0.005)
-    high_vol_data = create_test_market_data(volatility=0.02)
     
     config = {
         "tactician_triple_barrier": {
@@ -393,35 +384,27 @@ def test_dynamic_adaptation():
                 "stop_loss_fraction": 0.25,
                 "time_barrier_fraction": 0.5
             },
-            "timeframes": ["1m", "5m"],
-            "enable_adaptive_barriers": True,
-            "market_condition_adjustment": True
+            "timeframes": ["1m", "5m"]
         }
     }
     
     calculator = DynamicBarrierCalculator(config)
     
-    print(f"📊 Testing Volatility Adaptation:")
+    print(f"📊 Testing Fraction-Based Barriers:")
     
-    # Test low volatility
-    pt_low, sl_low, time_low = calculator.calculate_dynamic_barriers(
-        timeframe="1m",
-        market_data=low_vol_data
-    )
+    # Test 1m timeframe
+    pt_1m, sl_1m, time_1m = calculator.calculate_dynamic_barriers("1m")
     
-    # Test high volatility
-    pt_high, sl_high, time_high = calculator.calculate_dynamic_barriers(
-        timeframe="1m",
-        market_data=high_vol_data
-    )
+    # Test 5m timeframe
+    pt_5m, sl_5m, time_5m = calculator.calculate_dynamic_barriers("5m")
     
-    print(f"   Low Volatility Market:")
-    print(f"     Profit Take: {pt_low:.4f}, Stop Loss: {sl_low:.4f}")
-    print(f"   High Volatility Market:")
-    print(f"     Profit Take: {pt_high:.4f}, Stop Loss: {sl_high:.4f}")
-    print(f"   Adaptation Ratio (High/Low):")
-    print(f"     Profit Take: {pt_high/pt_low:.2f}x")
-    print(f"     Stop Loss: {sl_high/sl_low:.2f}x")
+    print(f"   1m Timeframe:")
+    print(f"     Profit Take: {pt_1m:.4f}, Stop Loss: {sl_1m:.4f}, Time: {time_1m} periods")
+    print(f"   5m Timeframe:")
+    print(f"     Profit Take: {pt_5m:.4f}, Stop Loss: {sl_5m:.4f}, Time: {time_5m} periods")
+    print(f"   Verification:")
+    print(f"     Same fractions applied to both timeframes: {pt_1m == pt_5m and sl_1m == sl_5m}")
+    print(f"     Only time periods differ due to timeframe conversion")
 
 
 def main():
@@ -445,14 +428,14 @@ def main():
         # Test 4: Barrier Comparison Analysis
         test_barrier_comparison_analysis()
         
-        # Test 5: Dynamic Adaptation
-        test_dynamic_adaptation()
+        # Test 5: Fraction-Based Calculation
+        test_fraction_based_calculation()
         
         print("\n✅ All Dynamic Tactician Tests Completed Successfully!")
         print("\n📋 Summary:")
         print("   ✓ Dynamic barrier calculation based on Analyst values")
         print("   ✓ Support for both 1m and 5m timeframes")
-        print("   ✓ Adaptive barriers based on market conditions")
+        print("   ✓ Fraction-based barrier calculation")
         print("   ✓ Multi-timeframe barrier calculation")
         print("   ✓ Barrier validation and comparison")
         print("   ✓ Enhanced execution with dynamic parameters")
@@ -460,16 +443,16 @@ def main():
         print("\n🎯 Key Features Verified:")
         print("   • Tactician barriers are 50% and 25% of Analyst barriers")
         print("   • Both 1m and 5m timeframes are supported")
-        print("   • Dynamic adaptation to market volatility")
-        print("   • Timeframe-specific barrier adjustments")
+        print("   • No real-time adaptation - only fractions of Analyst barriers")
+        print("   • Both timeframes are equal - ML model decides usage")
         print("   • Comprehensive validation and testing")
         
         print("\n🔧 Dynamic Configuration:")
         print("   • Analyst values loaded dynamically")
         print("   • Fraction-based barrier calculation")
-        print("   • Timeframe-specific adjustments")
-        print("   • Market condition adaptation")
-        print("   • Volatility-based barrier scaling")
+        print("   • No timeframe-specific adjustments")
+        print("   • No market condition adaptation")
+        print("   • Simple fraction-based approach")
         
     except Exception as e:
         print(f"\n❌ Test failed with error: {e}")

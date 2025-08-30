@@ -66,15 +66,7 @@ tactician_triple_barrier:
   market_condition_adjustment: true
   confidence_adjustment: true
   
-  # Timeframe-specific settings
-  timeframe_settings:
-    "1m":
-      priority: "primary"
-      execution_weight: 0.7
-      confirmation_weight: 0.3
-      barrier_adjustment: 1.0  # No adjustment for primary timeframe
-    "5m":
-      priority: "secondary"
-      execution_weight: 0.3
-      confirmation_weight: 0.7
-      barrier_adjustment: 1.2  # Slightly larger barriers for 5m timeframe
+  # Timeframe Configuration - Both timeframes are equal, ML model decides usage
+  timeframes: ["1m", "5m"]
+  primary_timeframe: "1m"      # Default primary timeframe
+  secondary_timeframe: "5m"    # Default secondary timeframe

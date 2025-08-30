@@ -102,19 +102,16 @@ class DynamicBarrierCalculator:
         self.stop_loss_fraction = fractions.get("stop_loss_fraction", 0.25)
         self.time_barrier_fraction = fractions.get("time_barrier_fraction", 0.5)
         
-        # Get timeframe settings
+        # Get timeframe settings - both timeframes are equal
         self.timeframes = self.tactician_config.get("timeframes", ["1m", "5m"])
         self.primary_timeframe = self.tactician_config.get("primary_timeframe", "1m")
         self.secondary_timeframe = self.tactician_config.get("secondary_timeframe", "5m")
-        
-        # Get timeframe-specific settings
-        self.timeframe_settings = self.tactician_config.get("timeframe_settings", {})
         
         self.logger.info(f"🔧 Dynamic Barrier Calculator Initialized:")
         self.logger.info(f"   Profit Take Fraction: {self.profit_take_fraction:.2f}")
         self.logger.info(f"   Stop Loss Fraction: {self.stop_loss_fraction:.2f}")
         self.logger.info(f"   Time Barrier Fraction: {self.time_barrier_fraction:.2f}")
-        self.logger.info(f"   Timeframes: {self.timeframes}")
+        self.logger.info(f"   Timeframes: {self.timeframes} (both equal, ML model decides usage)")
         self.logger.info(f"   Primary: {self.primary_timeframe}, Secondary: {self.secondary_timeframe}")
 
     @handle_errors(
@@ -125,16 +122,12 @@ class DynamicBarrierCalculator:
     @with_tracing_span("DynamicBarrier.calculateBarriers")
     def calculate_dynamic_barriers(
         self, 
-        timeframe: str = "1m",
-        market_data: Optional[pd.DataFrame] = None,
-        volatility: Optional[float] = None
+        timeframe: str = "1m"
     ) -> Tuple[float, float, int]:
         """Calculate dynamic barriers for Tactician based on Analyst values and timeframe.
         
         Args:
             timeframe: The timeframe for calculation ("1m" or "5m")
-            market_data: Market data for volatility calculation
-            volatility: Pre-calculated volatility (optional)
             
         Returns:
             Tuple of (profit_take_pct, stop_loss_pct, time_barrier_periods)
@@ -155,13 +148,9 @@ class DynamicBarrierCalculator:
             base_tactician_sl = analyst_sl * self.stop_loss_fraction
             base_tactician_time = int(analyst_time * self.time_barrier_fraction)
             
-            # Apply timeframe-specific adjustments
-            timeframe_setting = self.timeframe_settings.get(timeframe, {})
-            barrier_adjustment = timeframe_setting.get("barrier_adjustment", 1.0)
-            
-            # Apply barrier adjustment for timeframe
-            tactician_pt = base_tactician_pt * barrier_adjustment
-            tactician_sl = base_tactician_sl * barrier_adjustment
+            # No timeframe-specific adjustments - both timeframes use same fractions
+            tactician_pt = base_tactician_pt
+            tactician_sl = base_tactician_sl
             
             # Time barrier is adjusted differently (periods vs minutes)
             if timeframe == "1m":
@@ -171,24 +160,14 @@ class DynamicBarrierCalculator:
             else:
                 tactician_time = base_tactician_time
             
-            # Apply volatility adjustment if enabled and volatility provided
-            if (self.tactician_config.get("enable_adaptive_barriers", True) and 
-                volatility is not None):
-                tactician_pt, tactician_sl = self._apply_volatility_adjustment(
-                    tactician_pt, tactician_sl, volatility
-                )
-            
-            # Apply market condition adjustment if enabled and market data provided
-            if (self.tactician_config.get("market_condition_adjustment", True) and 
-                market_data is not None):
-                tactician_pt, tactician_sl = self._apply_market_condition_adjustment(
-                    tactician_pt, tactician_sl, market_data
-                )
+            # No real-time adaptation - barriers are only fractions of Analyst barriers
+            # Let the ML model handle market condition adaptation
             
             self.logger.info(f"🎯 Dynamic Barriers Calculated for {timeframe}:")
             self.logger.info(f"   Analyst Base - PT: {analyst_pt:.4f}, SL: {analyst_sl:.4f}, Time: {analyst_time}m")
             self.logger.info(f"   Tactician - PT: {tactician_pt:.4f}, SL: {tactician_sl:.4f}, Time: {tactician_time} periods")
             self.logger.info(f"   Fractions - PT: {self.profit_take_fraction:.2f}, SL: {self.stop_loss_fraction:.2f}, Time: {self.time_barrier_fraction:.2f}")
+            self.logger.info(f"   Note: No real-time adaptation - only fractions of Analyst barriers")
             
             return tactician_pt, tactician_sl, tactician_time
             
@@ -197,114 +176,26 @@ class DynamicBarrierCalculator:
             # Return fallback values
             return 0.001, 0.00025, 15
 
-    def _apply_volatility_adjustment(
-        self, 
-        profit_take: float, 
-        stop_loss: float, 
-        volatility: float
-    ) -> Tuple[float, float]:
-        """Apply volatility-based adjustment to barriers."""
-        try:
-            # Volatility adjustment: higher volatility = larger barriers
-            volatility_multiplier = min(2.0, max(0.5, 1.0 / (volatility * 100)))
-            
-            adjusted_pt = profit_take * volatility_multiplier
-            adjusted_sl = stop_loss * volatility_multiplier
-            
-            self.logger.debug(f"   Volatility adjustment: {volatility:.4f} -> multiplier: {volatility_multiplier:.2f}")
-            
-            return adjusted_pt, adjusted_sl
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Error applying volatility adjustment: {e}")
-            return profit_take, stop_loss
-
-    def _apply_market_condition_adjustment(
-        self, 
-        profit_take: float, 
-        stop_loss: float, 
-        market_data: pd.DataFrame
-    ) -> Tuple[float, float]:
-        """Apply market condition adjustment to barriers."""
-        try:
-            if len(market_data) < 20:
-                return profit_take, stop_loss
-            
-            # Calculate recent market conditions
-            recent_returns = market_data["close"].pct_change().tail(20).dropna()
-            avg_return = recent_returns.mean()
-            return_volatility = recent_returns.std()
-            
-            # Adjust based on market trend and volatility
-            trend_adjustment = 1.0
-            if abs(avg_return) > 0.001:  # Significant trend
-                if avg_return > 0:  # Bullish trend
-                    trend_adjustment = 0.9  # Slightly tighter barriers
-                else:  # Bearish trend
-                    trend_adjustment = 1.1  # Slightly wider barriers
-            
-            # Volatility adjustment
-            volatility_adjustment = min(1.5, max(0.7, 1.0 / (return_volatility * 50)))
-            
-            # Combined adjustment
-            combined_adjustment = trend_adjustment * volatility_adjustment
-            
-            adjusted_pt = profit_take * combined_adjustment
-            adjusted_sl = stop_loss * combined_adjustment
-            
-            self.logger.debug(f"   Market adjustment: trend={avg_return:.4f}, vol={return_volatility:.4f} -> adjustment: {combined_adjustment:.2f}")
-            
-            return adjusted_pt, adjusted_sl
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Error applying market condition adjustment: {e}")
-            return profit_take, stop_loss
+    # Removed volatility and market condition adjustment methods
+    # Barriers are only fractions of Analyst barriers - no real-time adaptation
 
     def get_timeframe_weights(self, timeframe: str) -> Tuple[float, float]:
         """Get execution and confirmation weights for a timeframe."""
-        try:
-            timeframe_setting = self.timeframe_settings.get(timeframe, {})
-            execution_weight = timeframe_setting.get("execution_weight", 0.5)
-            confirmation_weight = timeframe_setting.get("confirmation_weight", 0.5)
-            
-            return execution_weight, confirmation_weight
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Error getting timeframe weights: {e}")
-            return 0.5, 0.5
+        # Both timeframes are equal - let the ML model decide usage
+        return 0.5, 0.5
 
-    def calculate_multi_timeframe_barriers(
-        self, 
-        market_data_1m: Optional[pd.DataFrame] = None,
-        market_data_5m: Optional[pd.DataFrame] = None
-    ) -> Dict[str, Tuple[float, float, int]]:
+    def calculate_multi_timeframe_barriers(self) -> Dict[str, Tuple[float, float, int]]:
         """Calculate barriers for both 1m and 5m timeframes."""
         try:
             barriers = {}
             
             # Calculate 1m barriers
             if "1m" in self.timeframes:
-                volatility_1m = None
-                if market_data_1m is not None:
-                    volatility_1m = market_data_1m["close"].pct_change().std()
-                
-                barriers["1m"] = self.calculate_dynamic_barriers(
-                    timeframe="1m",
-                    market_data=market_data_1m,
-                    volatility=volatility_1m
-                )
+                barriers["1m"] = self.calculate_dynamic_barriers(timeframe="1m")
             
             # Calculate 5m barriers
             if "5m" in self.timeframes:
-                volatility_5m = None
-                if market_data_5m is not None:
-                    volatility_5m = market_data_5m["close"].pct_change().std()
-                
-                barriers["5m"] = self.calculate_dynamic_barriers(
-                    timeframe="5m",
-                    market_data=market_data_5m,
-                    volatility=volatility_5m
-                )
+                barriers["5m"] = self.calculate_dynamic_barriers(timeframe="5m")
             
             self.logger.info(f"📊 Multi-timeframe barriers calculated:")
             for tf, (pt, sl, time) in barriers.items():

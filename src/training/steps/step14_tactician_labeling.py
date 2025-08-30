@@ -53,8 +53,8 @@ class TacticianTripleBarrierLabeler:
         # Initialize dynamic barrier calculator
         self.barrier_calculator = DynamicBarrierCalculator(self.config)
         
-        # Get dynamic barriers for primary timeframe (1m)
-        self.upper_barrier_pct, self.lower_barrier_pct = self.barrier_calculator.calculate_dynamic_barriers(
+        # Get all 4 barrier combinations for primary timeframe (1m)
+        self.barrier_combinations = self.barrier_calculator.calculate_dynamic_barriers(
             timeframe="1m"
         )
         
@@ -83,11 +83,12 @@ class TacticianTripleBarrierLabeler:
         self.secondary_timeframe = self.config.get("secondary_timeframe", "5m")
         
         # Log configuration
-        self.logger.info(f"🔧 Enhanced Tactician Triple Barrier Configuration (Dynamic):")
+        self.logger.info(f"🔧 Enhanced Tactician Triple Barrier Configuration (4 Barrier Combinations):")
         self.logger.info(f"   Timeframes: {self.timeframes}")
         self.logger.info(f"   Primary: {self.primary_timeframe}, Secondary: {self.secondary_timeframe}")
-        self.logger.info(f"   Dynamic Upper Barrier: {self.upper_barrier_pct:.4f} ({self.upper_barrier_pct*100:.3f}%)")
-        self.logger.info(f"   Dynamic Lower Barrier: {self.lower_barrier_pct:.4f} ({self.lower_barrier_pct*100:.3f}%)")
+        self.logger.info(f"   4 Barrier Combinations:")
+        for name, (upper, lower) in self.barrier_combinations.items():
+            self.logger.info(f"     {name}: Upper={upper:.4f} ({upper*100:.3f}%), Lower={lower:.4f} ({lower*100:.3f}%)")
         self.logger.info(f"   High Precision Mode: {self.enable_high_precision_mode}")
         self.logger.info(f"   Precision Threshold: {self.precision_threshold}")
 
@@ -156,34 +157,41 @@ class TacticianTripleBarrierLabeler:
         data: pd.DataFrame,
         entry_idx: int,
         signal: int,
-        upper_barrier: float,
-        lower_barrier: float,
+        barrier_combinations: Dict[str, Tuple[float, float]],
         entry_price: float,
         precision_score: float,
         quality_score: float
     ) -> dict[str, Any]:
-        """Generate multi-outcome predictions similar to Analyst but with Tactician characteristics."""
+        """Generate multi-outcome predictions for all 4 barrier combinations."""
         try:
-            # Calculate price deviation for both 50% and 25% of Analyst barriers
-            if signal == 1:  # Long position
-                # Use upper barrier (50% of Analyst's upper barrier)
-                price_deviation = (upper_barrier - entry_price) / entry_price
-                price_direction = 1
-            else:  # Short position
-                # Use lower barrier (25% of Analyst's lower barrier)
-                price_deviation = (entry_price - lower_barrier) / entry_price
-                price_direction = -1
+            # Calculate price deviations for all 4 barrier combinations
+            price_deviations = {}
+            price_directions = {}
+            price_target_confidences = {}
             
-            # Calculate price target confidence (calculated by ML model)
-            # This should be enhanced by the ML model based on market conditions
-            base_confidence = precision_score
-            # ML model will calculate the actual confidence, not just boost it
-            price_target_confidence = base_confidence
+            for barrier_name, (upper_barrier, lower_barrier) in barrier_combinations.items():
+                if signal == 1:  # Long position
+                    # Calculate deviation to upper barrier
+                    price_deviation = (upper_barrier - entry_price) / entry_price
+                    price_direction = 1
+                else:  # Short position
+                    # Calculate deviation to lower barrier
+                    price_deviation = (entry_price - lower_barrier) / entry_price
+                    price_direction = -1
+                
+                # Store predictions for this barrier combination
+                price_deviations[barrier_name] = price_deviation
+                price_directions[barrier_name] = price_direction
+                
+                # Calculate confidence to reach upper barrier before lower barrier
+                # ML model will enhance this based on market conditions
+                base_confidence = precision_score
+                price_target_confidences[barrier_name] = base_confidence
             
             return {
-                "price_deviation": price_deviation,
-                "price_direction": price_direction,
-                "price_target_confidence": price_target_confidence,
+                "price_deviations": price_deviations,
+                "price_directions": price_directions,
+                "price_target_confidences": price_target_confidences,
                 "label": signal,  # Traditional label for backward compatibility
                 "precision_score": precision_score,
                 "execution_quality": quality_score
@@ -191,10 +199,15 @@ class TacticianTripleBarrierLabeler:
             
         except Exception as e:
             self.logger.error(f"❌ Error generating multi-outcome predictions: {e}")
+            # Return fallback values for all barrier combinations
+            fallback_deviations = {name: 0.0 for name in barrier_combinations.keys()}
+            fallback_directions = {name: 0 for name in barrier_combinations.keys()}
+            fallback_confidences = {name: 0.0 for name in barrier_combinations.keys()}
+            
             return {
-                "price_deviation": 0.0,
-                "price_direction": 0,
-                "price_target_confidence": 0.0,
+                "price_deviations": fallback_deviations,
+                "price_directions": fallback_directions,
+                "price_target_confidences": fallback_confidences,
                 "label": signal,
                 "precision_score": precision_score,
                 "execution_quality": quality_score
@@ -262,55 +275,102 @@ class TacticianTripleBarrierLabeler:
             if not self._apply_quality_filters(data, entry_idx):
                 continue
             
-            # Calculate base barriers
-            base_upper = entry_prices.iloc[i] * (1 + self.upper_barrier_pct * signal)
-            base_lower = entry_prices.iloc[i] * (1 - self.lower_barrier_pct * signal)
+            # Calculate barriers for all 4 combinations
+            barrier_prices = {}
+            for barrier_name, (upper_pct, lower_pct) in self.barrier_combinations.items():
+                base_upper = entry_prices.iloc[i] * (1 + upper_pct * signal)
+                base_lower = entry_prices.iloc[i] * (1 - lower_pct * signal)
+                
+                # Apply adaptive barriers if enabled
+                if self.config.get("enable_adaptive_barriers", True):
+                    upper, lower = self._calculate_adaptive_barriers(data, entry_idx, base_upper, base_lower)
+                else:
+                    upper, lower = base_upper, base_lower
+                
+                barrier_prices[barrier_name] = (upper, lower)
+
+            # Get the path data for barrier hit detection
+            path = data.iloc[entry_idx:entry_idx + self.max_lookahead]
+
+            # Check for hits with enhanced precision for all 4 barrier combinations
+            barrier_results = {}
+            best_precision_score = 0.0
+            best_quality_score = 0.0
+            best_barrier_name = None
             
-            # Apply adaptive barriers if enabled
-            if self.config.get("enable_adaptive_barriers", True):
-                upper, lower = self._calculate_adaptive_barriers(data, entry_idx, base_upper, base_lower)
+            for barrier_name, (upper, lower) in barrier_prices.items():
+                # Check for hits with enhanced precision (no time barrier)
+                upper_hit_mask = (path["high"] >= upper) if signal == 1 else (path["low"] <= upper)
+                lower_hit_mask = (path["low"] <= lower) if signal == 1 else (path["high"] >= lower)
+
+                upper_hit_time = path.index[upper_hit_mask].min()
+                lower_hit_time = path.index[lower_hit_mask].min()
+
+                # Determine which barrier was hit first for this combination
+                if pd.notna(upper_hit_time) and (
+                    pd.isna(lower_hit_time) or upper_hit_time <= lower_hit_time
+                ):
+                    # Upper barrier hit first
+                    time_to_hit = (upper_hit_time - data.index[entry_idx]).total_seconds() / 60  # minutes
+                    precision_score = max(0.0, 1.0 - (time_to_hit / 30))  # Use 30 minutes as reference
+                    # Get the barrier percentages for this combination
+                    barrier_upper_pct, barrier_lower_pct = self.barrier_combinations[barrier_name]
+                    quality_score = barrier_upper_pct / (barrier_upper_pct + barrier_lower_pct)  # Risk-reward ratio
+                    barrier_result = 1  # Upper barrier hit
+                    
+                elif pd.notna(lower_hit_time):
+                    # Lower barrier hit first
+                    time_to_hit = (lower_hit_time - data.index[entry_idx]).total_seconds() / 60  # minutes
+                    precision_score = max(0.0, 1.0 - (time_to_hit / 30)) * 0.5  # Penalty for lower barrier hit
+                    quality_score = 0.0  # No quality score for lower barrier hit
+                    barrier_result = -1  # Lower barrier hit
+                    
+                else:
+                    # No barrier hit within lookahead
+                    precision_score = 0.0
+                    quality_score = 0.0
+                    barrier_result = 0
+                
+                barrier_results[barrier_name] = {
+                    "result": barrier_result,
+                    "precision_score": precision_score,
+                    "quality_score": quality_score,
+                    "upper_hit_time": upper_hit_time,
+                    "lower_hit_time": lower_hit_time
+                }
+                
+                # Track the best performing barrier combination
+                if precision_score > best_precision_score:
+                    best_precision_score = precision_score
+                    best_quality_score = quality_score
+                    best_barrier_name = barrier_name
+
+            # Use the best performing barrier combination for traditional labeling
+            if best_barrier_name:
+                best_result = barrier_results[best_barrier_name]
+                labels.iloc[entry_idx] = best_result["result"]
+                precision_score = best_result["precision_score"]
+                quality_score = best_result["quality_score"]
             else:
-                upper, lower = base_upper, base_lower
+                labels.iloc[entry_idx] = 0
+                precision_score = 0.0
+                quality_score = 0.0
 
-            # Check for hits with enhanced precision (no time barrier)
-            upper_hit_mask = (path["high"] >= upper) if signal == 1 else (path["low"] <= upper)
-            lower_hit_mask = (path["low"] <= lower) if signal == 1 else (path["high"] >= lower)
-
-            upper_hit_time = path.index[upper_hit_mask].min()
-            lower_hit_time = path.index[lower_hit_mask].min()
-
-            # Calculate precision score based on execution quality
-            precision_score = 0.0
-            quality_score = 0.0
-
-            # Determine label based on which barrier was hit first
-            if pd.notna(upper_hit_time) and (
-                pd.isna(lower_hit_time) or upper_hit_time <= lower_hit_time
-            ):
-                labels.iloc[entry_idx] = 1  # Upper barrier hit
-                
-                # Calculate precision score for upper barrier hit
-                time_to_hit = (upper_hit_time - data.index[entry_idx]).total_seconds() / 60  # minutes
-                precision_score = max(0.0, 1.0 - (time_to_hit / 30))  # Use 30 minutes as reference
-                quality_score = self.upper_barrier_pct / (self.upper_barrier_pct + self.lower_barrier_pct)  # Risk-reward ratio
-                
-            elif pd.notna(lower_hit_time):
-                labels.iloc[entry_idx] = -1  # Lower barrier hit
-                
-                # Calculate precision score for lower barrier hit (lower score for quick stops)
-                time_to_hit = (lower_hit_time - data.index[entry_idx]).total_seconds() / 60  # minutes
-                precision_score = max(0.0, 1.0 - (time_to_hit / 30)) * 0.5  # Penalty for lower barrier hit
-                quality_score = 0.0  # No quality score for lower barrier hit
-
-            # Generate multi-outcome predictions
+            # Generate multi-outcome predictions for all 4 barrier combinations
             predictions = self._generate_multi_outcome_predictions(
-                data, entry_idx, signal, upper, lower, entry_prices.iloc[i], precision_score, quality_score
+                data, entry_idx, signal, barrier_prices, entry_prices.iloc[i], precision_score, quality_score
             )
             
-            # Store multi-outcome predictions (only 3 types)
-            price_deviation_predictions.iloc[entry_idx] = predictions["price_deviation"]
-            price_direction_predictions.iloc[entry_idx] = predictions["price_direction"]
-            price_target_confidence.iloc[entry_idx] = predictions["price_target_confidence"]
+            # Store multi-outcome predictions for all 4 barrier combinations
+            # Store the best performing barrier combination as the main prediction
+            if best_barrier_name:
+                price_deviation_predictions.iloc[entry_idx] = predictions["price_deviations"][best_barrier_name]
+                price_direction_predictions.iloc[entry_idx] = predictions["price_directions"][best_barrier_name]
+                price_target_confidence.iloc[entry_idx] = predictions["price_target_confidences"][best_barrier_name]
+            else:
+                price_deviation_predictions.iloc[entry_idx] = 0.0
+                price_direction_predictions.iloc[entry_idx] = 0
+                price_target_confidence.iloc[entry_idx] = 0.0
             
             # Apply high precision mode filtering
             if self.enable_high_precision_mode:

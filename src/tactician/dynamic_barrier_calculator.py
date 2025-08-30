@@ -96,10 +96,12 @@ class DynamicBarrierCalculator:
 
     def _initialize_dynamic_barriers(self) -> None:
         """Initialize dynamic barrier calculation parameters."""
-        # Get fractions from configuration
+        # Get fractions from configuration - 4 barrier combinations
         fractions = self.tactician_config.get("analyst_barrier_fractions", {})
-        self.upper_barrier_fraction = fractions.get("upper_barrier_fraction", 0.5)
-        self.lower_barrier_fraction = fractions.get("lower_barrier_fraction", 0.25)
+        self.upper_barrier_50_fraction = fractions.get("upper_barrier_50_fraction", 0.5)
+        self.lower_barrier_50_fraction = fractions.get("lower_barrier_50_fraction", 0.5)
+        self.upper_barrier_25_fraction = fractions.get("upper_barrier_25_fraction", 0.25)
+        self.lower_barrier_25_fraction = fractions.get("lower_barrier_25_fraction", 0.25)
         
         # Get timeframe settings - both timeframes are equal
         self.timeframes = self.tactician_config.get("timeframes", ["1m", "5m"])
@@ -107,8 +109,8 @@ class DynamicBarrierCalculator:
         self.secondary_timeframe = self.tactician_config.get("secondary_timeframe", "5m")
         
         self.logger.info(f"🔧 Dynamic Barrier Calculator Initialized:")
-        self.logger.info(f"   Upper Barrier Fraction: {self.upper_barrier_fraction:.2f}")
-        self.logger.info(f"   Lower Barrier Fraction: {self.lower_barrier_fraction:.2f}")
+        self.logger.info(f"   50% Barriers - Upper: {self.upper_barrier_50_fraction:.2f}, Lower: {self.lower_barrier_50_fraction:.2f}")
+        self.logger.info(f"   25% Barriers - Upper: {self.upper_barrier_25_fraction:.2f}, Lower: {self.lower_barrier_25_fraction:.2f}")
         self.logger.info(f"   Timeframes: {self.timeframes} (both equal, ML model decides usage)")
         self.logger.info(f"   Primary: {self.primary_timeframe}, Secondary: {self.secondary_timeframe}")
 
@@ -121,14 +123,18 @@ class DynamicBarrierCalculator:
     def calculate_dynamic_barriers(
         self, 
         timeframe: str = "1m"
-    ) -> Tuple[float, float]:
-        """Calculate dynamic barriers for Tactician based on Analyst values and timeframe.
+    ) -> Dict[str, Tuple[float, float]]:
+        """Calculate all 4 dynamic barrier combinations for Tactician.
         
         Args:
             timeframe: The timeframe for calculation ("1m" or "5m")
             
         Returns:
-            Tuple of (upper_barrier_pct, lower_barrier_pct)
+            Dictionary with 4 barrier combinations:
+            - upper_50_lower_50: (50% upper, 50% lower)
+            - upper_50_lower_25: (50% upper, 25% lower) 
+            - upper_25_lower_50: (25% upper, 50% lower)
+            - upper_25_lower_25: (25% upper, 25% lower)
         """
         try:
             # Validate timeframe
@@ -140,25 +146,43 @@ class DynamicBarrierCalculator:
             analyst_upper = self.analyst_config["profit_take_multiplier"]  # Upper barrier (profit take)
             analyst_lower = self.analyst_config["stop_loss_multiplier"]    # Lower barrier (stop loss)
             
-            # Calculate Tactician barriers as fractions of Analyst barriers
-            tactician_upper = analyst_upper * self.upper_barrier_fraction
-            tactician_lower = analyst_lower * self.lower_barrier_fraction
+            # Calculate all 4 barrier combinations
+            barriers = {
+                "upper_50_lower_50": (
+                    analyst_upper * self.upper_barrier_50_fraction,  # 50% upper
+                    analyst_lower * self.lower_barrier_50_fraction   # 50% lower
+                ),
+                "upper_50_lower_25": (
+                    analyst_upper * self.upper_barrier_50_fraction,  # 50% upper
+                    analyst_lower * self.lower_barrier_25_fraction   # 25% lower
+                ),
+                "upper_25_lower_50": (
+                    analyst_upper * self.upper_barrier_25_fraction,  # 25% upper
+                    analyst_lower * self.lower_barrier_50_fraction   # 50% lower
+                ),
+                "upper_25_lower_25": (
+                    analyst_upper * self.upper_barrier_25_fraction,  # 25% upper
+                    analyst_lower * self.lower_barrier_25_fraction   # 25% lower
+                )
+            }
             
-            # No real-time adaptation - barriers are only fractions of Analyst barriers
-            # Let the ML model handle market condition adaptation
-            
-            self.logger.info(f"🎯 Dynamic Barriers Calculated for {timeframe}:")
+            self.logger.info(f"🎯 4 Dynamic Barrier Combinations Calculated for {timeframe}:")
             self.logger.info(f"   Analyst Base - Upper: {analyst_upper:.4f}, Lower: {analyst_lower:.4f}")
-            self.logger.info(f"   Tactician - Upper: {tactician_upper:.4f}, Lower: {tactician_lower:.4f}")
-            self.logger.info(f"   Fractions - Upper: {self.upper_barrier_fraction:.2f}, Lower: {self.lower_barrier_fraction:.2f}")
-            self.logger.info(f"   Note: No real-time adaptation - only fractions of Analyst barriers")
+            for name, (upper, lower) in barriers.items():
+                self.logger.info(f"   {name}: Upper={upper:.4f}, Lower={lower:.4f}")
+            self.logger.info(f"   Note: ML model will choose optimal combination based on market conditions")
             
-            return tactician_upper, tactician_lower
+            return barriers
             
         except Exception as e:
             self.logger.error(f"❌ Error calculating dynamic barriers: {e}")
             # Return fallback values
-            return 0.001, 0.00025
+            return {
+                "upper_50_lower_50": (0.001, 0.0005),
+                "upper_50_lower_25": (0.001, 0.00025),
+                "upper_25_lower_50": (0.0005, 0.0005),
+                "upper_25_lower_25": (0.0005, 0.00025)
+            }
 
     # Removed volatility and market condition adjustment methods
     # Barriers are only fractions of Analyst barriers - no real-time adaptation
@@ -168,22 +192,24 @@ class DynamicBarrierCalculator:
         # Both timeframes are equal - let the ML model decide usage
         return 0.5, 0.5
 
-    def calculate_multi_timeframe_barriers(self) -> Dict[str, Tuple[float, float]]:
-        """Calculate barriers for both 1m and 5m timeframes."""
+    def calculate_multi_timeframe_barriers(self) -> Dict[str, Dict[str, Tuple[float, float]]]:
+        """Calculate all 4 barrier combinations for both 1m and 5m timeframes."""
         try:
             barriers = {}
             
-            # Calculate 1m barriers
+            # Calculate 1m barriers (all 4 combinations)
             if "1m" in self.timeframes:
                 barriers["1m"] = self.calculate_dynamic_barriers(timeframe="1m")
             
-            # Calculate 5m barriers
+            # Calculate 5m barriers (all 4 combinations)
             if "5m" in self.timeframes:
                 barriers["5m"] = self.calculate_dynamic_barriers(timeframe="5m")
             
-            self.logger.info(f"📊 Multi-timeframe barriers calculated:")
-            for tf, (upper, lower) in barriers.items():
-                self.logger.info(f"   {tf}: Upper={upper:.4f}, Lower={lower:.4f}")
+            self.logger.info(f"📊 Multi-timeframe barriers calculated (4 combinations each):")
+            for tf, combinations in barriers.items():
+                self.logger.info(f"   {tf}:")
+                for name, (upper, lower) in combinations.items():
+                    self.logger.info(f"     {name}: Upper={upper:.4f}, Lower={lower:.4f}")
             
             return barriers
             
@@ -197,55 +223,74 @@ class DynamicBarrierCalculator:
             "upper_barrier_multiplier": self.analyst_config["profit_take_multiplier"],
             "lower_barrier_multiplier": self.analyst_config["stop_loss_multiplier"],
             "fractions": {
-                "upper_barrier_fraction": self.upper_barrier_fraction,
-                "lower_barrier_fraction": self.lower_barrier_fraction
+                "upper_barrier_50_fraction": self.upper_barrier_50_fraction,
+                "lower_barrier_50_fraction": self.lower_barrier_50_fraction,
+                "upper_barrier_25_fraction": self.upper_barrier_25_fraction,
+                "lower_barrier_25_fraction": self.lower_barrier_25_fraction
             }
         }
 
     def validate_barrier_calculation(self, timeframe: str) -> Dict[str, Any]:
         """Validate barrier calculation for a timeframe."""
         try:
-            # Calculate barriers
-            upper, lower = self.calculate_dynamic_barriers(timeframe)
+            # Calculate all 4 barrier combinations
+            barriers = self.calculate_dynamic_barriers(timeframe)
             
             # Get Analyst values
             analyst_upper = self.analyst_config["profit_take_multiplier"]
             analyst_lower = self.analyst_config["stop_loss_multiplier"]
             
-            # Calculate actual fractions
-            actual_upper_fraction = upper / analyst_upper
-            actual_lower_fraction = lower / analyst_lower
+            validation_results = {}
             
-            # Validate against expected fractions
-            upper_fraction_error = abs(actual_upper_fraction - self.upper_barrier_fraction)
-            lower_fraction_error = abs(actual_lower_fraction - self.lower_barrier_fraction)
+            for barrier_name, (upper, lower) in barriers.items():
+                # Calculate actual fractions
+                actual_upper_fraction = upper / analyst_upper
+                actual_lower_fraction = lower / analyst_lower
+                
+                # Get expected fractions based on barrier name
+                if "upper_50" in barrier_name:
+                    expected_upper_fraction = self.upper_barrier_50_fraction
+                else:
+                    expected_upper_fraction = self.upper_barrier_25_fraction
+                    
+                if "lower_50" in barrier_name:
+                    expected_lower_fraction = self.lower_barrier_50_fraction
+                else:
+                    expected_lower_fraction = self.lower_barrier_25_fraction
+                
+                # Validate against expected fractions
+                upper_fraction_error = abs(actual_upper_fraction - expected_upper_fraction)
+                lower_fraction_error = abs(actual_lower_fraction - expected_lower_fraction)
+                
+                validation_results[barrier_name] = {
+                    "analyst_values": {
+                        "upper_barrier": analyst_upper,
+                        "lower_barrier": analyst_lower
+                    },
+                    "tactician_values": {
+                        "upper_barrier": upper,
+                        "lower_barrier": lower
+                    },
+                    "actual_fractions": {
+                        "upper_barrier": actual_upper_fraction,
+                        "lower_barrier": actual_lower_fraction
+                    },
+                    "expected_fractions": {
+                        "upper_barrier": expected_upper_fraction,
+                        "lower_barrier": expected_lower_fraction
+                    },
+                    "fraction_errors": {
+                        "upper_barrier": upper_fraction_error,
+                        "lower_barrier": lower_fraction_error
+                    },
+                    "is_valid": upper_fraction_error < 0.1 and lower_fraction_error < 0.1
+                }
             
-            validation_result = {
+            return {
                 "timeframe": timeframe,
-                "analyst_values": {
-                    "upper_barrier": analyst_upper,
-                    "lower_barrier": analyst_lower
-                },
-                "tactician_values": {
-                    "upper_barrier": upper,
-                    "lower_barrier": lower
-                },
-                "actual_fractions": {
-                    "upper_barrier": actual_upper_fraction,
-                    "lower_barrier": actual_lower_fraction
-                },
-                "expected_fractions": {
-                    "upper_barrier": self.upper_barrier_fraction,
-                    "lower_barrier": self.lower_barrier_fraction
-                },
-                "fraction_errors": {
-                    "upper_barrier": upper_fraction_error,
-                    "lower_barrier": lower_fraction_error
-                },
-                "is_valid": upper_fraction_error < 0.1 and lower_fraction_error < 0.1
+                "barrier_combinations": validation_results,
+                "overall_valid": all(result["is_valid"] for result in validation_results.values())
             }
-            
-            return validation_result
             
         except Exception as e:
             self.logger.error(f"❌ Error validating barrier calculation: {e}")

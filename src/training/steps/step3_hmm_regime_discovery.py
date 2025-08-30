@@ -213,37 +213,30 @@ class HMMRegimeDiscoveryStep:
                 pipeline_state["regime_discovery_error"] = f"Data loading failed: {error_msg}"
                 return pipeline_state
 
-            # Step 3: Automatic Parameter Optimization (if needed)
+            # Step 3: Automatic Parameter Optimization (ALWAYS RUNS)
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             timeframe = training_input.get("timeframe", "1m")
             data_dir = training_input.get("data_dir", "data_cache")
-            force_rerun = training_input.get("force_rerun", False)
             
-            should_optimize = self._should_run_optimization(symbol, exchange, timeframe, data_dir, force_rerun)
+            self.logger.info("=" * 60)
+            self.logger.info("STEP 3: Automatic Parameter Optimization")
+            self.logger.info("=" * 60)
+            optimization_start = time.time()
             
-            if should_optimize:
-                self.logger.info("=" * 60)
-                self.logger.info("STEP 3: Automatic Parameter Optimization")
-                self.logger.info("=" * 60)
-                optimization_start = time.time()
-                
-                optimized_params = await self._run_automatic_optimization(symbol, exchange, timeframe, data_dir)
-                if optimized_params:
-                    self.logger.info("✅ Parameter optimization completed successfully")
-                    # Apply optimized parameters
-                    self._apply_optimized_parameters(optimized_params)
-                    pipeline_state["optimization_used"] = True
-                    pipeline_state["optimized_params"] = optimized_params
-                else:
-                    self.logger.warning("⚠️ Parameter optimization failed, using default parameters")
-                    pipeline_state["optimization_used"] = False
-                
-                optimization_elapsed = time.time() - optimization_start
-                self.logger.info(f"⏱️ Parameter Optimization completed in {optimization_elapsed:.2f} seconds")
+            optimized_params = await self._run_automatic_optimization(symbol, exchange, timeframe, data_dir)
+            if optimized_params:
+                self.logger.info("✅ Parameter optimization completed successfully")
+                # Apply optimized parameters
+                self._apply_optimized_parameters(optimized_params)
+                pipeline_state["optimization_used"] = True
+                pipeline_state["optimized_params"] = optimized_params
             else:
-                self.logger.info("✅ Using existing optimization results")
+                self.logger.warning("⚠️ Parameter optimization failed, using default parameters")
                 pipeline_state["optimization_used"] = False
+            
+            optimization_elapsed = time.time() - optimization_start
+            self.logger.info(f"⏱️ Parameter Optimization completed in {optimization_elapsed:.2f} seconds")
 
             # Step 4: Perform HMM regime discovery
             self.logger.info("=" * 60)
@@ -2080,11 +2073,11 @@ async def run_step(
             
             # Log optimization information
             if result.get("optimization_used", False):
-                logger.info("🔧 Automatic parameter optimization was used")
+                logger.info("🔧 Automatic parameter optimization completed successfully")
                 if result.get("optimized_params"):
                     logger.info(f"📊 Optimized parameters applied: {list(result['optimized_params'].keys())}")
             else:
-                logger.info("📋 Using existing optimization results")
+                logger.warning("⚠️ Parameter optimization failed, using default parameters")
             
             # Log regime discovery results
             if result.get("regime_states"):
@@ -2837,42 +2830,9 @@ async def run_step(
             self.logger.info("🔧 Automatic optimization is disabled")
             return False
         
-        # Always run optimization if force_rerun is True (--force flag)
-        if force_rerun:
-            self.logger.info("🔄 Force rerun enabled - will run optimization")
-            return True
-        
-        # Check if optimization results already exist
-        optimization_file = Path(data_dir) / f"{exchange}_{symbol}_{timeframe}_optimization_results.json"
-        
-        # Run optimization if results don't exist
-        if not optimization_file.exists():
-            self.logger.info("🔧 No existing optimization results found - will run optimization")
-            return True
-        
-        # Check if optimization is outdated (default: 1 day)
-        force_rerun_days = auto_config.get("force_rerun_days", 1)  # Changed default to 1 day
-        try:
-            import json
-            from datetime import datetime, timedelta
-            
-            with open(optimization_file, 'r') as f:
-                optimization_data = json.load(f)
-            
-            # Check if optimization was done recently
-            if 'timestamp' in optimization_data:
-                optimization_time = datetime.fromisoformat(optimization_data['timestamp'])
-                if datetime.now() - optimization_time > timedelta(days=force_rerun_days):
-                    self.logger.info(f"🔧 Optimization results are outdated (>{force_rerun_days} day) - will re-run optimization")
-                    return True
-            
-            self.logger.info("✅ Using existing optimization results")
-            return False
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Could not check optimization file: {e}")
-            self.logger.info("🔧 Will run optimization due to file check error")
-            return True
+        # ALWAYS run optimization when Step 3 is executed
+        self.logger.info("🔄 Step 3 optimization: Always running parameter optimization")
+        return True
 
     async def _run_automatic_optimization(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[Dict[str, Any]]:
         """Run automatic parameter optimization for HMM regime discovery."""

@@ -46,7 +46,7 @@ class EnhancedExecutionManager:
         self.barrier_calculator = DynamicBarrierCalculator(self.config)
         
         # Get dynamic barriers for primary timeframe (1m)
-        self.profit_take_pct, self.stop_loss_pct, self.time_barrier = self.barrier_calculator.calculate_dynamic_barriers(
+        self.upper_barrier_pct, self.lower_barrier_pct = self.barrier_calculator.calculate_dynamic_barriers(
             timeframe="1m"
         )
         
@@ -76,9 +76,8 @@ class EnhancedExecutionManager:
         self.logger.info(f"🔧 Enhanced Execution Manager Configuration (Dynamic):")
         self.logger.info(f"   Timeframes: {self.timeframes}")
         self.logger.info(f"   Primary: {self.primary_timeframe}, Secondary: {self.secondary_timeframe}")
-        self.logger.info(f"   Dynamic Profit Take: {self.profit_take_pct:.4f} ({self.profit_take_pct*100:.3f}%)")
-        self.logger.info(f"   Dynamic Stop Loss: {self.stop_loss_pct:.4f} ({self.stop_loss_pct*100:.3f}%)")
-        self.logger.info(f"   Dynamic Time Barrier: {self.time_barrier} periods")
+        self.logger.info(f"   Dynamic Upper Barrier: {self.upper_barrier_pct:.4f} ({self.upper_barrier_pct*100:.3f}%)")
+        self.logger.info(f"   Dynamic Lower Barrier: {self.lower_barrier_pct:.4f} ({self.lower_barrier_pct*100:.3f}%)")
         self.logger.info(f"   Precision Threshold: {self.precision_threshold}")
         self.logger.info(f"   Position Size Multiplier: {self.position_size_multiplier}")
 
@@ -204,15 +203,14 @@ class EnhancedExecutionManager:
             timeframe = self._determine_timeframe(market_data)
             
             # Get dynamic barriers for this timeframe
-            dynamic_pt, dynamic_sl, dynamic_time = self.barrier_calculator.calculate_dynamic_barriers(
-                timeframe=timeframe,
-                market_data=market_data
+            dynamic_upper, dynamic_lower = self.barrier_calculator.calculate_dynamic_barriers(
+                timeframe=timeframe
             )
             
             # Calculate adaptive barriers based on market conditions
             volatility = self._calculate_volatility(market_data)
-            adaptive_pt, adaptive_sl = self._calculate_adaptive_barriers(
-                current_price, volatility, validation["trade_direction"], dynamic_pt, dynamic_sl
+            adaptive_upper, adaptive_lower = self._calculate_adaptive_barriers(
+                current_price, volatility, validation["trade_direction"], dynamic_upper, dynamic_lower
             )
             
             # Calculate position sizing with precision multiplier
@@ -225,7 +223,7 @@ class EnhancedExecutionManager:
             
             # Calculate risk-adjusted parameters
             risk_adjusted_size = self._calculate_risk_adjusted_size(
-                precision_position_size, adaptive_sl, current_price
+                precision_position_size, adaptive_lower, current_price
             )
             
             # Calculate execution timing
@@ -240,8 +238,8 @@ class EnhancedExecutionManager:
                 "should_execute": True,
                 "trade_direction": validation["trade_direction"],
                 "entry_price": current_price,
-                "profit_take_price": adaptive_pt,
-                "stop_loss_price": adaptive_sl,
+                "upper_barrier_price": adaptive_upper,
+                "lower_barrier_price": adaptive_lower,
                 "position_size": risk_adjusted_size,
                 "leverage": precision_leverage,
                 "entry_timing": entry_timing,
@@ -257,8 +255,8 @@ class EnhancedExecutionManager:
             self.logger.info(f"🎯 High Precision Execution Parameters:")
             self.logger.info(f"   Direction: {execution_params['trade_direction']}")
             self.logger.info(f"   Entry Price: {execution_params['entry_price']:.4f}")
-            self.logger.info(f"   Profit Take: {execution_params['profit_take_price']:.4f}")
-            self.logger.info(f"   Stop Loss: {execution_params['stop_loss_price']:.4f}")
+            self.logger.info(f"   Upper Barrier: {execution_params['upper_barrier_price']:.4f}")
+            self.logger.info(f"   Lower Barrier: {execution_params['lower_barrier_price']:.4f}")
             self.logger.info(f"   Position Size: {execution_params['position_size']:.4f}")
             self.logger.info(f"   Precision Score: {execution_params['precision_score']:.3f}")
             
@@ -315,8 +313,8 @@ class EnhancedExecutionManager:
         current_price: float, 
         volatility: float, 
         direction: str,
-        base_pt_pct: float,
-        base_sl_pct: float
+        base_upper_pct: float,
+        base_lower_pct: float
     ) -> Tuple[float, float]:
         """Calculate adaptive barriers based on volatility and direction using dynamic base values."""
         try:
@@ -326,21 +324,21 @@ class EnhancedExecutionManager:
             # Direction adjustment
             if direction == "short":
                 # For short positions, invert the barriers
-                adaptive_pt = current_price * (1 - base_pt_pct * volatility_multiplier)
-                adaptive_sl = current_price * (1 + base_sl_pct * volatility_multiplier)
+                adaptive_upper = current_price * (1 - base_upper_pct * volatility_multiplier)
+                adaptive_lower = current_price * (1 + base_lower_pct * volatility_multiplier)
             else:
                 # For long positions, use standard barriers
-                adaptive_pt = current_price * (1 + base_pt_pct * volatility_multiplier)
-                adaptive_sl = current_price * (1 - base_sl_pct * volatility_multiplier)
+                adaptive_upper = current_price * (1 + base_upper_pct * volatility_multiplier)
+                adaptive_lower = current_price * (1 - base_lower_pct * volatility_multiplier)
             
-            return adaptive_pt, adaptive_sl
+            return adaptive_upper, adaptive_lower
             
         except Exception as e:
             self.logger.warning(f"⚠️ Error calculating adaptive barriers: {e}")
             # Fallback to base barriers
-            base_pt = current_price * (1 + base_pt_pct)
-            base_sl = current_price * (1 - base_sl_pct)
-            return base_pt, base_sl
+            base_upper = current_price * (1 + base_upper_pct)
+            base_lower = current_price * (1 - base_lower_pct)
+            return base_upper, base_lower
 
     def _calculate_risk_adjusted_size(
         self, 

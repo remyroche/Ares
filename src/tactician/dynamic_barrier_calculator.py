@@ -98,9 +98,8 @@ class DynamicBarrierCalculator:
         """Initialize dynamic barrier calculation parameters."""
         # Get fractions from configuration
         fractions = self.tactician_config.get("analyst_barrier_fractions", {})
-        self.profit_take_fraction = fractions.get("profit_take_fraction", 0.5)
-        self.stop_loss_fraction = fractions.get("stop_loss_fraction", 0.25)
-        self.time_barrier_fraction = fractions.get("time_barrier_fraction", 0.5)
+        self.upper_barrier_fraction = fractions.get("upper_barrier_fraction", 0.5)
+        self.lower_barrier_fraction = fractions.get("lower_barrier_fraction", 0.25)
         
         # Get timeframe settings - both timeframes are equal
         self.timeframes = self.tactician_config.get("timeframes", ["1m", "5m"])
@@ -108,29 +107,28 @@ class DynamicBarrierCalculator:
         self.secondary_timeframe = self.tactician_config.get("secondary_timeframe", "5m")
         
         self.logger.info(f"🔧 Dynamic Barrier Calculator Initialized:")
-        self.logger.info(f"   Profit Take Fraction: {self.profit_take_fraction:.2f}")
-        self.logger.info(f"   Stop Loss Fraction: {self.stop_loss_fraction:.2f}")
-        self.logger.info(f"   Time Barrier Fraction: {self.time_barrier_fraction:.2f}")
+        self.logger.info(f"   Upper Barrier Fraction: {self.upper_barrier_fraction:.2f}")
+        self.logger.info(f"   Lower Barrier Fraction: {self.lower_barrier_fraction:.2f}")
         self.logger.info(f"   Timeframes: {self.timeframes} (both equal, ML model decides usage)")
         self.logger.info(f"   Primary: {self.primary_timeframe}, Secondary: {self.secondary_timeframe}")
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=(0.001, 0.00025, 15),
+        default_return=(0.001, 0.00025),
         context="dynamic_barrier_calculator.calculate_dynamic_barriers"
     )
     @with_tracing_span("DynamicBarrier.calculateBarriers")
     def calculate_dynamic_barriers(
         self, 
         timeframe: str = "1m"
-    ) -> Tuple[float, float, int]:
+    ) -> Tuple[float, float]:
         """Calculate dynamic barriers for Tactician based on Analyst values and timeframe.
         
         Args:
             timeframe: The timeframe for calculation ("1m" or "5m")
             
         Returns:
-            Tuple of (profit_take_pct, stop_loss_pct, time_barrier_periods)
+            Tuple of (upper_barrier_pct, lower_barrier_pct)
         """
         try:
             # Validate timeframe
@@ -139,42 +137,28 @@ class DynamicBarrierCalculator:
                 timeframe = self.primary_timeframe
             
             # Get Analyst base values
-            analyst_pt = self.analyst_config["profit_take_multiplier"]
-            analyst_sl = self.analyst_config["stop_loss_multiplier"]
-            analyst_time = self.analyst_config["time_barrier_minutes"]
+            analyst_upper = self.analyst_config["profit_take_multiplier"]  # Upper barrier (profit take)
+            analyst_lower = self.analyst_config["stop_loss_multiplier"]    # Lower barrier (stop loss)
             
-            # Calculate base Tactician barriers as fractions of Analyst barriers
-            base_tactician_pt = analyst_pt * self.profit_take_fraction
-            base_tactician_sl = analyst_sl * self.stop_loss_fraction
-            base_tactician_time = int(analyst_time * self.time_barrier_fraction)
-            
-            # No timeframe-specific adjustments - both timeframes use same fractions
-            tactician_pt = base_tactician_pt
-            tactician_sl = base_tactician_sl
-            
-            # Time barrier is adjusted differently (periods vs minutes)
-            if timeframe == "1m":
-                tactician_time = base_tactician_time  # Same as minutes for 1m
-            elif timeframe == "5m":
-                tactician_time = int(base_tactician_time / 5)  # Convert to 5m periods
-            else:
-                tactician_time = base_tactician_time
+            # Calculate Tactician barriers as fractions of Analyst barriers
+            tactician_upper = analyst_upper * self.upper_barrier_fraction
+            tactician_lower = analyst_lower * self.lower_barrier_fraction
             
             # No real-time adaptation - barriers are only fractions of Analyst barriers
             # Let the ML model handle market condition adaptation
             
             self.logger.info(f"🎯 Dynamic Barriers Calculated for {timeframe}:")
-            self.logger.info(f"   Analyst Base - PT: {analyst_pt:.4f}, SL: {analyst_sl:.4f}, Time: {analyst_time}m")
-            self.logger.info(f"   Tactician - PT: {tactician_pt:.4f}, SL: {tactician_sl:.4f}, Time: {tactician_time} periods")
-            self.logger.info(f"   Fractions - PT: {self.profit_take_fraction:.2f}, SL: {self.stop_loss_fraction:.2f}, Time: {self.time_barrier_fraction:.2f}")
+            self.logger.info(f"   Analyst Base - Upper: {analyst_upper:.4f}, Lower: {analyst_lower:.4f}")
+            self.logger.info(f"   Tactician - Upper: {tactician_upper:.4f}, Lower: {tactician_lower:.4f}")
+            self.logger.info(f"   Fractions - Upper: {self.upper_barrier_fraction:.2f}, Lower: {self.lower_barrier_fraction:.2f}")
             self.logger.info(f"   Note: No real-time adaptation - only fractions of Analyst barriers")
             
-            return tactician_pt, tactician_sl, tactician_time
+            return tactician_upper, tactician_lower
             
         except Exception as e:
             self.logger.error(f"❌ Error calculating dynamic barriers: {e}")
             # Return fallback values
-            return 0.001, 0.00025, 15
+            return 0.001, 0.00025
 
     # Removed volatility and market condition adjustment methods
     # Barriers are only fractions of Analyst barriers - no real-time adaptation
@@ -184,7 +168,7 @@ class DynamicBarrierCalculator:
         # Both timeframes are equal - let the ML model decide usage
         return 0.5, 0.5
 
-    def calculate_multi_timeframe_barriers(self) -> Dict[str, Tuple[float, float, int]]:
+    def calculate_multi_timeframe_barriers(self) -> Dict[str, Tuple[float, float]]:
         """Calculate barriers for both 1m and 5m timeframes."""
         try:
             barriers = {}
@@ -198,8 +182,8 @@ class DynamicBarrierCalculator:
                 barriers["5m"] = self.calculate_dynamic_barriers(timeframe="5m")
             
             self.logger.info(f"📊 Multi-timeframe barriers calculated:")
-            for tf, (pt, sl, time) in barriers.items():
-                self.logger.info(f"   {tf}: PT={pt:.4f}, SL={sl:.4f}, Time={time} periods")
+            for tf, (upper, lower) in barriers.items():
+                self.logger.info(f"   {tf}: Upper={upper:.4f}, Lower={lower:.4f}")
             
             return barriers
             
@@ -210,13 +194,11 @@ class DynamicBarrierCalculator:
     def get_analyst_barrier_info(self) -> Dict[str, Any]:
         """Get information about Analyst barriers for comparison."""
         return {
-            "profit_take_multiplier": self.analyst_config["profit_take_multiplier"],
-            "stop_loss_multiplier": self.analyst_config["stop_loss_multiplier"],
-            "time_barrier_minutes": self.analyst_config["time_barrier_minutes"],
+            "upper_barrier_multiplier": self.analyst_config["profit_take_multiplier"],
+            "lower_barrier_multiplier": self.analyst_config["stop_loss_multiplier"],
             "fractions": {
-                "profit_take_fraction": self.profit_take_fraction,
-                "stop_loss_fraction": self.stop_loss_fraction,
-                "time_barrier_fraction": self.time_barrier_fraction
+                "upper_barrier_fraction": self.upper_barrier_fraction,
+                "lower_barrier_fraction": self.lower_barrier_fraction
             }
         }
 
@@ -224,51 +206,43 @@ class DynamicBarrierCalculator:
         """Validate barrier calculation for a timeframe."""
         try:
             # Calculate barriers
-            pt, sl, time = self.calculate_dynamic_barriers(timeframe)
+            upper, lower = self.calculate_dynamic_barriers(timeframe)
             
             # Get Analyst values
-            analyst_pt = self.analyst_config["profit_take_multiplier"]
-            analyst_sl = self.analyst_config["stop_loss_multiplier"]
-            analyst_time = self.analyst_config["time_barrier_minutes"]
+            analyst_upper = self.analyst_config["profit_take_multiplier"]
+            analyst_lower = self.analyst_config["stop_loss_multiplier"]
             
             # Calculate actual fractions
-            actual_pt_fraction = pt / analyst_pt
-            actual_sl_fraction = sl / analyst_sl
-            actual_time_fraction = time / analyst_time
+            actual_upper_fraction = upper / analyst_upper
+            actual_lower_fraction = lower / analyst_lower
             
             # Validate against expected fractions
-            pt_fraction_error = abs(actual_pt_fraction - self.profit_take_fraction)
-            sl_fraction_error = abs(actual_sl_fraction - self.stop_loss_fraction)
-            time_fraction_error = abs(actual_time_fraction - self.time_barrier_fraction)
+            upper_fraction_error = abs(actual_upper_fraction - self.upper_barrier_fraction)
+            lower_fraction_error = abs(actual_lower_fraction - self.lower_barrier_fraction)
             
             validation_result = {
                 "timeframe": timeframe,
                 "analyst_values": {
-                    "profit_take": analyst_pt,
-                    "stop_loss": analyst_sl,
-                    "time_barrier": analyst_time
+                    "upper_barrier": analyst_upper,
+                    "lower_barrier": analyst_lower
                 },
                 "tactician_values": {
-                    "profit_take": pt,
-                    "stop_loss": sl,
-                    "time_barrier": time
+                    "upper_barrier": upper,
+                    "lower_barrier": lower
                 },
                 "actual_fractions": {
-                    "profit_take": actual_pt_fraction,
-                    "stop_loss": actual_sl_fraction,
-                    "time_barrier": actual_time_fraction
+                    "upper_barrier": actual_upper_fraction,
+                    "lower_barrier": actual_lower_fraction
                 },
                 "expected_fractions": {
-                    "profit_take": self.profit_take_fraction,
-                    "stop_loss": self.stop_loss_fraction,
-                    "time_barrier": self.time_barrier_fraction
+                    "upper_barrier": self.upper_barrier_fraction,
+                    "lower_barrier": self.lower_barrier_fraction
                 },
                 "fraction_errors": {
-                    "profit_take": pt_fraction_error,
-                    "stop_loss": sl_fraction_error,
-                    "time_barrier": time_fraction_error
+                    "upper_barrier": upper_fraction_error,
+                    "lower_barrier": lower_fraction_error
                 },
-                "is_valid": pt_fraction_error < 0.1 and sl_fraction_error < 0.1 and time_fraction_error < 0.1
+                "is_valid": upper_fraction_error < 0.1 and lower_fraction_error < 0.1
             }
             
             return validation_result

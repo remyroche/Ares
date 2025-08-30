@@ -90,27 +90,12 @@ def test_dynamic_barrier_calculator():
     config = {
         "tactician_triple_barrier": {
             "analyst_barrier_fractions": {
-                "profit_take_fraction": 0.5,    # 50% of Analyst
-                "stop_loss_fraction": 0.25,     # 25% of Analyst
-                "time_barrier_fraction": 0.5    # 50% of Analyst
+                "upper_barrier_fraction": 0.5,    # 50% of Analyst's upper barrier
+                "lower_barrier_fraction": 0.25    # 25% of Analyst's lower barrier
             },
             "timeframes": ["1m", "5m"],
             "primary_timeframe": "1m",
-            "secondary_timeframe": "5m",
-            "timeframe_settings": {
-                "1m": {
-                    "priority": "primary",
-                    "execution_weight": 0.7,
-                    "confirmation_weight": 0.3,
-                    "barrier_adjustment": 1.0
-                },
-                "5m": {
-                    "priority": "secondary",
-                    "execution_weight": 0.3,
-                    "confirmation_weight": 0.7,
-                    "barrier_adjustment": 1.2
-                }
-            }
+            "secondary_timeframe": "5m"
         }
     }
     
@@ -120,31 +105,28 @@ def test_dynamic_barrier_calculator():
     # Test Analyst configuration loading
     print(f"📊 Analyst Configuration Loaded:")
     analyst_info = calculator.get_analyst_barrier_info()
-    print(f"   Profit Take: {analyst_info['profit_take_multiplier']:.4f} ({analyst_info['profit_take_multiplier']*100:.3f}%)")
-    print(f"   Stop Loss: {analyst_info['stop_loss_multiplier']:.4f} ({analyst_info['stop_loss_multiplier']*100:.3f}%)")
-    print(f"   Time Barrier: {analyst_info['time_barrier_minutes']} minutes")
+    print(f"   Upper Barrier: {analyst_info['upper_barrier_multiplier']:.4f} ({analyst_info['upper_barrier_multiplier']*100:.3f}%)")
+    print(f"   Lower Barrier: {analyst_info['lower_barrier_multiplier']:.4f} ({analyst_info['lower_barrier_multiplier']*100:.3f}%)")
     
     # Test dynamic barrier calculation for 1m timeframe
     print(f"\n📊 Testing 1m Timeframe Barriers:")
-    pt_1m, sl_1m, time_1m = calculator.calculate_dynamic_barriers("1m")
-    print(f"   Profit Take: {pt_1m:.4f} ({pt_1m*100:.3f}%)")
-    print(f"   Stop Loss: {sl_1m:.4f} ({sl_1m*100:.3f}%)")
-    print(f"   Time Barrier: {time_1m} periods")
+    upper_1m, lower_1m = calculator.calculate_dynamic_barriers("1m")
+    print(f"   Upper Barrier: {upper_1m:.4f} ({upper_1m*100:.3f}%)")
+    print(f"   Lower Barrier: {lower_1m:.4f} ({lower_1m*100:.3f}%)")
     
     # Test dynamic barrier calculation for 5m timeframe
     print(f"\n📊 Testing 5m Timeframe Barriers:")
-    pt_5m, sl_5m, time_5m = calculator.calculate_dynamic_barriers("5m")
-    print(f"   Profit Take: {pt_5m:.4f} ({pt_5m*100:.3f}%)")
-    print(f"   Stop Loss: {sl_5m:.4f} ({sl_5m*100:.3f}%)")
-    print(f"   Time Barrier: {time_5m} periods")
+    upper_5m, lower_5m = calculator.calculate_dynamic_barriers("5m")
+    print(f"   Upper Barrier: {upper_5m:.4f} ({upper_5m*100:.3f}%)")
+    print(f"   Lower Barrier: {lower_5m:.4f} ({lower_5m*100:.3f}%)")
     
     # Test multi-timeframe barrier calculation
     print(f"\n📊 Testing Multi-timeframe Barriers:")
     
     multi_barriers = calculator.calculate_multi_timeframe_barriers()
     
-    for timeframe, (pt, sl, time) in multi_barriers.items():
-        print(f"   {timeframe}: PT={pt:.4f}, SL={sl:.4f}, Time={time} periods")
+    for timeframe, (upper, lower) in multi_barriers.items():
+        print(f"   {timeframe}: Upper={upper:.4f}, Lower={lower:.4f}")
     
     # Test barrier validation
     print(f"\n📊 Testing Barrier Validation:")
@@ -152,7 +134,7 @@ def test_dynamic_barrier_calculator():
         validation = calculator.validate_barrier_calculation(timeframe)
         print(f"   {timeframe} validation: {'✓' if validation['is_valid'] else '✗'}")
         if validation['is_valid']:
-            print(f"     Actual fractions - PT: {validation['actual_fractions']['profit_take']:.2f}, SL: {validation['actual_fractions']['stop_loss']:.2f}")
+            print(f"     Actual fractions - Upper: {validation['actual_fractions']['upper_barrier']:.2f}, Lower: {validation['actual_fractions']['lower_barrier']:.2f}")
     
     return calculator
 
@@ -173,9 +155,8 @@ def test_enhanced_tactician_labeling():
     config = {
         "tactician_triple_barrier": {
             "analyst_barrier_fractions": {
-                "profit_take_fraction": 0.5,
-                "stop_loss_fraction": 0.25,
-                "time_barrier_fraction": 0.5
+                "upper_barrier_fraction": 0.5,
+                "lower_barrier_fraction": 0.25
             },
             "timeframes": ["1m", "5m"],
             "primary_timeframe": "1m",
@@ -229,9 +210,8 @@ def test_enhanced_execution_manager():
     config = {
         "tactician_triple_barrier": {
             "analyst_barrier_fractions": {
-                "profit_take_fraction": 0.5,
-                "stop_loss_fraction": 0.25,
-                "time_barrier_fraction": 0.5
+                "upper_barrier_fraction": 0.5,
+                "lower_barrier_fraction": 0.25
             },
             "timeframes": ["1m", "5m"],
             "primary_timeframe": "1m",
@@ -277,8 +257,8 @@ def test_enhanced_execution_manager():
         print(f"   1m Execution Parameters:")
         print(f"     Trade direction: {execution_params_1m['trade_direction']}")
         print(f"     Entry price: {execution_params_1m['entry_price']:.4f}")
-        print(f"     Profit take: {execution_params_1m['profit_take_price']:.4f}")
-        print(f"     Stop loss: {execution_params_1m['stop_loss_price']:.4f}")
+        print(f"     Upper barrier: {execution_params_1m['upper_barrier_price']:.4f}")
+        print(f"     Lower barrier: {execution_params_1m['lower_barrier_price']:.4f}")
         print(f"     Position size: {execution_params_1m['position_size']:.4f}")
         print(f"     Leverage: {execution_params_1m['leverage']:.2f}")
         print(f"     Precision score: {execution_params_1m['precision_score']:.3f}")
@@ -298,8 +278,8 @@ def test_enhanced_execution_manager():
         print(f"   5m Execution Parameters:")
         print(f"     Trade direction: {execution_params_5m['trade_direction']}")
         print(f"     Entry price: {execution_params_5m['entry_price']:.4f}")
-        print(f"     Profit take: {execution_params_5m['profit_take_price']:.4f}")
-        print(f"     Stop loss: {execution_params_5m['stop_loss_price']:.4f}")
+        print(f"     Upper barrier: {execution_params_5m['upper_barrier_price']:.4f}")
+        print(f"     Lower barrier: {execution_params_5m['lower_barrier_price']:.4f}")
         print(f"     Position size: {execution_params_5m['position_size']:.4f}")
         print(f"     Leverage: {execution_params_5m['leverage']:.2f}")
         print(f"     Precision score: {execution_params_5m['precision_score']:.3f}")
@@ -316,9 +296,8 @@ def test_barrier_comparison_analysis():
     config = {
         "tactician_triple_barrier": {
             "analyst_barrier_fractions": {
-                "profit_take_fraction": 0.5,
-                "stop_loss_fraction": 0.25,
-                "time_barrier_fraction": 0.5
+                "upper_barrier_fraction": 0.5,
+                "lower_barrier_fraction": 0.25
             },
             "timeframes": ["1m", "5m"],
             "primary_timeframe": "1m",
@@ -331,34 +310,30 @@ def test_barrier_comparison_analysis():
     
     # Get Analyst values
     analyst_info = calculator.get_analyst_barrier_info()
-    analyst_pt = analyst_info["profit_take_multiplier"]
-    analyst_sl = analyst_info["stop_loss_multiplier"]
-    analyst_time = analyst_info["time_barrier_minutes"]
+    analyst_upper = analyst_info["upper_barrier_multiplier"]
+    analyst_lower = analyst_info["lower_barrier_multiplier"]
     
     # Calculate Tactician barriers for both timeframes
-    pt_1m, sl_1m, time_1m = calculator.calculate_dynamic_barriers("1m")
-    pt_5m, sl_5m, time_5m = calculator.calculate_dynamic_barriers("5m")
+    upper_1m, lower_1m = calculator.calculate_dynamic_barriers("1m")
+    upper_5m, lower_5m = calculator.calculate_dynamic_barriers("5m")
     
     print(f"📊 Comprehensive Barrier Comparison:")
     print(f"   Analyst Base Values:")
-    print(f"     Profit Take: {analyst_pt:.4f} ({analyst_pt*100:.3f}%)")
-    print(f"     Stop Loss: {analyst_sl:.4f} ({analyst_sl*100:.3f}%)")
-    print(f"     Time Barrier: {analyst_time} minutes")
+    print(f"     Upper Barrier: {analyst_upper:.4f} ({analyst_upper*100:.3f}%)")
+    print(f"     Lower Barrier: {analyst_lower:.4f} ({analyst_lower*100:.3f}%)")
     
     print(f"\n   Tactician 1m Values:")
-    print(f"     Profit Take: {pt_1m:.4f} ({pt_1m*100:.3f}%) - {pt_1m/analyst_pt:.1%} of Analyst")
-    print(f"     Stop Loss: {sl_1m:.4f} ({sl_1m*100:.3f}%) - {sl_1m/analyst_sl:.1%} of Analyst")
-    print(f"     Time Barrier: {time_1m} periods - {time_1m/analyst_time:.1%} of Analyst")
+    print(f"     Upper Barrier: {upper_1m:.4f} ({upper_1m*100:.3f}%) - {upper_1m/analyst_upper:.1%} of Analyst")
+    print(f"     Lower Barrier: {lower_1m:.4f} ({lower_1m*100:.3f}%) - {lower_1m/analyst_lower:.1%} of Analyst")
     
     print(f"\n   Tactician 5m Values:")
-    print(f"     Profit Take: {pt_5m:.4f} ({pt_5m*100:.3f}%) - {pt_5m/analyst_pt:.1%} of Analyst")
-    print(f"     Stop Loss: {sl_5m:.4f} ({sl_5m*100:.3f}%) - {sl_5m/analyst_sl:.1%} of Analyst")
-    print(f"     Time Barrier: {time_5m} periods - {time_5m/analyst_time:.1%} of Analyst")
+    print(f"     Upper Barrier: {upper_5m:.4f} ({upper_5m*100:.3f}%) - {upper_5m/analyst_upper:.1%} of Analyst")
+    print(f"     Lower Barrier: {lower_5m:.4f} ({lower_5m*100:.3f}%) - {lower_5m/analyst_lower:.1%} of Analyst")
     
     # Calculate risk-reward ratios
-    analyst_rr = analyst_pt / analyst_sl
-    tactician_1m_rr = pt_1m / sl_1m
-    tactician_5m_rr = pt_5m / sl_5m
+    analyst_rr = analyst_upper / analyst_lower
+    tactician_1m_rr = upper_1m / lower_1m
+    tactician_5m_rr = upper_5m / lower_5m
     
     print(f"\n   Risk-Reward Ratios:")
     print(f"     Analyst: {analyst_rr:.2f}:1")
@@ -393,18 +368,18 @@ def test_fraction_based_calculation():
     print(f"📊 Testing Fraction-Based Barriers:")
     
     # Test 1m timeframe
-    pt_1m, sl_1m, time_1m = calculator.calculate_dynamic_barriers("1m")
+    upper_1m, lower_1m = calculator.calculate_dynamic_barriers("1m")
     
     # Test 5m timeframe
-    pt_5m, sl_5m, time_5m = calculator.calculate_dynamic_barriers("5m")
+    upper_5m, lower_5m = calculator.calculate_dynamic_barriers("5m")
     
     print(f"   1m Timeframe:")
-    print(f"     Profit Take: {pt_1m:.4f}, Stop Loss: {sl_1m:.4f}, Time: {time_1m} periods")
+    print(f"     Upper Barrier: {upper_1m:.4f}, Lower Barrier: {lower_1m:.4f}")
     print(f"   5m Timeframe:")
-    print(f"     Profit Take: {pt_5m:.4f}, Stop Loss: {sl_5m:.4f}, Time: {time_5m} periods")
+    print(f"     Upper Barrier: {upper_5m:.4f}, Lower Barrier: {lower_5m:.4f}")
     print(f"   Verification:")
-    print(f"     Same fractions applied to both timeframes: {pt_1m == pt_5m and sl_1m == sl_5m}")
-    print(f"     Only time periods differ due to timeframe conversion")
+    print(f"     Same fractions applied to both timeframes: {upper_1m == upper_5m and lower_1m == lower_5m}")
+    print(f"     Both timeframes use identical barrier percentages")
 
 
 def main():

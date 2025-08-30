@@ -8,9 +8,10 @@ A comprehensive tool for downloading and analyzing cryptocurrency data to compar
 - Downloads 15-minute klines from Binance API for multiple cryptocurrencies
 - Covers 2 years of historical data
 - Supports 15 popular assets: ETH, ADA, ALGO, BTC, BNB, SOL, DOT, LINK, MATIC, AVAX, ATOM, UNI, LTC, XRP, BCH
-- Stores data in efficient Parquet format
-- Includes rate limiting and error handling
-- Comprehensive logging
+- **Stores data in efficient Parquet format** with optimal compression (3-5x smaller than CSV)
+- Includes data validation and integrity checks
+- Rate limiting and error handling with fallback options
+- Comprehensive logging and progress tracking
 
 ### Data Analyzer (`data_analyzer.py`)
 - **Basic Metrics Analysis:**
@@ -77,7 +78,7 @@ This will:
 ## Output Files
 
 ### Data Files
-- `data/crypto_15m_data_*.parquet` - Raw OHLCV data
+- `data/crypto_15m_data_*.parquet` - Raw OHLCV data in Parquet format (optimized for storage and performance)
 
 ### Analysis Results
 - `results/basic_metrics.csv` - Basic asset metrics
@@ -183,10 +184,29 @@ swing_results = self.simulate_swing_strategy(
 )
 ```
 
+## Data Storage
+
+### Parquet Format Benefits
+- **Compression:** 3-5x smaller file sizes compared to CSV
+- **Performance:** Faster read/write operations
+- **Data Types:** Preserves exact data types (float64, int64, datetime)
+- **Indexing:** Maintains datetime index for efficient time-based queries
+- **Compatibility:** Works with pandas, Apache Arrow, and other data tools
+
+### Data Structure
+The Parquet files contain the following columns:
+- `open_time` (datetime index): Timestamp of the kline
+- `open`, `high`, `low`, `close` (float64): OHLC prices
+- `volume` (float64): Trading volume
+- `quote_asset_volume` (float64): Volume in quote currency
+- `number_of_trades` (int64): Number of trades in the period
+- `symbol` (string): Trading pair symbol
+
 ## Notes
 
 - The tool uses Binance's public API with rate limiting to avoid being blocked
 - Data is downloaded in chunks to handle large datasets efficiently
+- **Raw data is stored in Parquet format for optimal storage and performance**
 - Analysis includes realistic trading simulation with proper entry/exit logic
 - Results are based on historical data and may not predict future performance
 - Consider transaction costs and slippage in real trading scenarios

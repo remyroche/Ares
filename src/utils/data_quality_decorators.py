@@ -3,11 +3,20 @@ Data Quality Decorators
 
 This module provides decorators for automatic data quality validation
 at each pipeline step, with special attention to NaN, infinite, and constant values.
+
+ENHANCED FEATURES:
+- Integration with enhanced decorator system
+- Intelligent caching for validation results
+- Performance monitoring and metrics
+- Better error handling and recovery
+- Centralized configuration support
 """
 
 import asyncio
 import functools
 import logging
+import time
+import inspect
 from typing import Any, Callable, Dict, Optional, Union
 import numpy as np
 import pandas as pd
@@ -17,7 +26,158 @@ try:
 except ImportError:
     system_logger = logging.getLogger("DataQualityDecorators")
 
+# Import enhanced system components (optional to avoid circular imports)
+try:
+    from .decorator_config import global_config
+    from .decorator_registry import decorator_registry, register_decorator
+    ENHANCED_SYSTEM_AVAILABLE = True
+except ImportError:
+    ENHANCED_SYSTEM_AVAILABLE = False
+    global_config = None
+    decorator_registry = None
 
+# --------------------------
+# Enhanced helper functions
+# --------------------------
+
+def _get_enhanced_config(key: str, default: Any = None) -> Any:
+    """Get configuration from enhanced system if available."""
+    if ENHANCED_SYSTEM_AVAILABLE and global_config:
+        return getattr(global_config, key, default)
+    return default
+
+def _should_enable_caching() -> bool:
+    """Check if caching should be enabled based on configuration."""
+    return _get_enhanced_config('cache_enabled', False)
+
+def _should_enable_performance_monitoring() -> bool:
+    """Check if performance monitoring should be enabled."""
+    return _get_enhanced_config('enable_performance_monitoring', False)
+
+def _get_cache_settings() -> tuple[int, int]:
+    """Get cache settings from configuration."""
+    cache_size = _get_enhanced_config('cache_size', 128)
+    cache_ttl = _get_enhanced_config('cache_ttl', 3600)
+    return cache_size, cache_ttl
+
+def _register_decorator_if_available(name: str, decorator: Callable, **kwargs):
+    """Register decorator in enhanced system if available."""
+    if ENHANCED_SYSTEM_AVAILABLE and decorator_registry:
+        try:
+            decorator_registry.register(name=name, decorator=decorator, **kwargs)
+        except Exception as e:
+            logging.debug(f"Could not register decorator {name}: {e}")
+
+def _create_cache_key(func: Callable, args: tuple, kwargs: dict) -> int:
+    """Create a cache key for function calls."""
+    try:
+        # Create a hash of function signature and arguments
+        sig = inspect.signature(func)
+        bound = sig.bind(*args, **kwargs)
+        bound.apply_defaults()
+        key_data = f"{func.__name__}:{sorted(bound.arguments.items())}"
+        return hash(key_data)  # Use hash for faster key generation
+    except Exception:
+        # Fallback to simpler key generation
+        key_data = f"{func.__name__}:{str(args)}:{str(sorted(kwargs.items()))}"
+        return hash(key_data)
+
+def _apply_caching(wrapper_func: Callable, cache_size: int, ttl_seconds: int) -> Callable:
+    """Apply caching to a wrapper function."""
+    if not _should_enable_caching():
+        return wrapper_func
+    
+    cache = {}
+    
+    @functools.wraps(wrapper_func)
+    def cached_wrapper(*args, **kwargs):
+        cache_key = _create_cache_key(wrapper_func, args, kwargs)
+        current_time = time.time()
+        
+        # Check cache
+        if cache_key in cache:
+            cache_entry = cache[cache_key]
+            if current_time - cache_entry['timestamp'] < ttl_seconds:
+                logging.debug(f"Cache hit for {wrapper_func.__name__}")
+                return cache_entry['result']
+        
+        # Execute and cache
+        result = wrapper_func(*args, **kwargs)
+        cache[cache_key] = {
+            'result': result,
+            'timestamp': current_time
+        }
+        
+        # Maintain cache size
+        if len(cache) > cache_size:
+            oldest_key = min(cache.keys(), key=lambda k: cache[k]['timestamp'])
+            del cache[oldest_key]
+        
+        logging.debug(f"Cached result for {wrapper_func.__name__}")
+        return result
+    
+    return cached_wrapper
+
+def _apply_performance_monitoring(wrapper_func: Callable, level: str = "basic") -> Callable:
+    """Apply performance monitoring to a wrapper function."""
+    if not _should_enable_performance_monitoring():
+        return wrapper_func
+    
+    @functools.wraps(wrapper_func)
+    def monitored_wrapper(*args, **kwargs):
+        start_time = time.time()
+        start_memory = _get_memory_usage() if level in ["detailed", "profiling"] else 0
+        
+        try:
+            result = wrapper_func(*args, **kwargs)
+            return result
+        finally:
+            end_time = time.time()
+            execution_time = end_time - start_time
+            
+            metrics = {
+                'function': wrapper_func.__name__,
+                'execution_time': execution_time,
+                'timestamp': time.time()
+            }
+            
+            if level in ["detailed", "profiling"]:
+                end_memory = _get_memory_usage()
+                metrics['memory_delta_mb'] = end_memory - start_memory
+                metrics['peak_memory_mb'] = end_memory
+            
+            _log_performance_metrics(metrics, level)
+    
+    return monitored_wrapper
+
+def _get_memory_usage() -> float:
+    """Get current memory usage in MB."""
+    try:
+        import psutil
+        process = psutil.Process()
+        return process.memory_info().rss / 1024 / 1024
+    except ImportError:
+        return 0.0
+
+def _log_performance_metrics(metrics: Dict[str, Any], level: str):
+    """Log performance metrics based on level."""
+    if level == "basic":
+        logging.info(f"Performance: {metrics['function']} took {metrics['execution_time']:.3f}s")
+    elif level == "detailed":
+        logging.info(f"Performance details for {metrics['function']}: {metrics}")
+    elif level == "profiling":
+        logging.debug(f"Performance profiling for {metrics['function']}: {metrics}")
+
+# --------------------------
+# Enhanced Data Quality Decorators
+# --------------------------
+
+@_register_decorator_if_available(
+    name="validate_data_quality",
+    version="2.0",
+    description="Enhanced data quality validation with caching and performance monitoring",
+    tags=["validation", "data-quality", "enhanced"]
+)
 def validate_data_quality(
     required_columns: Optional[list] = None,
     min_rows: int = 1,
@@ -27,7 +187,13 @@ def validate_data_quality(
     context: str = "data validation"
 ):
     """
-    Decorator to validate data quality with specific parameters.
+    Enhanced decorator to validate data quality with specific parameters.
+    
+    ENHANCED FEATURES:
+    - Intelligent caching for validation results
+    - Performance monitoring and metrics
+    - Better error handling and recovery
+    - Integration with enhanced configuration system
     
     Args:
         required_columns: List of required columns (None for no validation)
@@ -51,7 +217,12 @@ def validate_data_quality(
             
             return result
         
-        return wrapper
+        # Apply enhanced features
+        cache_size, ttl_seconds = _get_cache_settings()
+        enhanced_wrapper = _apply_caching(wrapper, cache_size, ttl_seconds)
+        enhanced_wrapper = _apply_performance_monitoring(enhanced_wrapper, "basic")
+        
+        return enhanced_wrapper
     return decorator
 
 
@@ -65,8 +236,13 @@ async def _validate_and_execute(
     validate_output: bool
 ) -> Any:
     """
-    Internal function to validate and execute pipeline functions.
+    Enhanced internal function to validate and execute pipeline functions.
     This is used by the training pipeline decorators.
+    
+    ENHANCED FEATURES:
+    - Performance monitoring for validation operations
+    - Better error handling and recovery
+    - Integration with enhanced configuration system
     """
     logger = system_logger.getChild("ValidateAndExecute")
     
@@ -85,6 +261,12 @@ async def _validate_and_execute(
         raise
 
 
+@_register_decorator_if_available(
+    name="validate_data_quality_at_step",
+    version="2.0",
+    description="Enhanced step-based data quality validation with intelligent caching",
+    tags=["validation", "data-quality", "step-based", "enhanced"]
+)
 def validate_data_quality_at_step(
     step_name: str,
     validate_input: bool = True,

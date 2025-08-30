@@ -425,8 +425,14 @@ class SROptimizationStep:
             # Get sample market data for analysis
             sample_data = await self._get_sample_market_data()
             if sample_data is not None:
-                # Generate SR context analysis
-                current_price = sample_data["close"].iloc[-1]
+                # Generate SR context analysis - use VWAP if available, otherwise fall back to close price
+                if 'vwap' in sample_data.columns:
+                    current_price = sample_data["vwap"].iloc[-1]
+                    self.logger.info("✅ Using VWAP for SR analysis")
+                else:
+                    current_price = sample_data["close"].iloc[-1]
+                    self.logger.info("⚠️ VWAP not available, using close price for SR analysis")
+                
                 sr_context = await self.sr_predictor.get_sr_context(sample_data, current_price)
                 
                 # Generate manual report
@@ -638,7 +644,13 @@ class SROptimizationStep:
                 "proximity_volatility": {}
             }
             
-            current_price = market_data["close"].iloc[-1]
+            # Use VWAP if available, otherwise fall back to close price
+            if 'vwap' in market_data.columns:
+                current_price = market_data["vwap"].iloc[-1]
+                self.logger.info("✅ Using VWAP for proximity analysis")
+            else:
+                current_price = market_data["close"].iloc[-1]
+                self.logger.info("⚠️ VWAP not available, using close price for proximity analysis")
             
             # Analyze proximity to support and resistance
             if "support_proximity" in sr_context:
@@ -711,9 +723,12 @@ class SROptimizationStep:
             # Calculate historical proximity values
             historical_proximities = []
             
+            # Use VWAP if available, otherwise fall back to close price
+            price_column = "vwap" if "vwap" in market_data.columns else "close"
+            
             for i in range(len(market_data) - 100, len(market_data)):
                 if i >= 0:
-                    price = market_data["close"].iloc[i]
+                    price = market_data[price_column].iloc[i]
                     # Simple proximity calculation (can be enhanced)
                     proximity = abs(price - current_price) / current_price
                     historical_proximities.append(proximity)
@@ -739,7 +754,9 @@ class SROptimizationStep:
         try:
             # Simple trend analysis based on price momentum
             if len(market_data) >= 20:
-                recent_momentum = market_data["close"].pct_change(5).tail(20).mean()
+                # Use VWAP if available, otherwise fall back to close price
+                price_column = "vwap" if "vwap" in market_data.columns else "close"
+                recent_momentum = market_data[price_column].pct_change(5).tail(20).mean()
                 momentum_trend = "increasing" if recent_momentum > 0 else "decreasing"
                 
                 return {

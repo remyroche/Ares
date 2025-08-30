@@ -124,7 +124,7 @@ class CryptoPriceAnalyzer:
     def _calculate_single_barrier_profits(self, symbol_data, barrier_pct):
         """
         Calculate theoretical profits for a single barrier level
-        Only captures successful movements at their peak
+        Only captures successful movements at their peak (15-minute periods)
         
         Args:
             symbol_data (pd.DataFrame): Data for a single symbol
@@ -133,25 +133,18 @@ class CryptoPriceAnalyzer:
         Returns:
             dict: Profit calculations for this barrier
         """
-        # Group by day to calculate daily movements
-        daily_data = symbol_data.groupby(symbol_data.index.date).agg({
-            'open': 'first',
-            'high': 'max',
-            'low': 'min',
-            'close': 'last',
-            'volume': 'sum'
-        })
-        
-        # Calculate potential profits for each day
+        # Calculate potential profits for each 15-minute period
         successful_trades = []
         long_trades = 0
         short_trades = 0
         
-        for date, day_data in daily_data.iterrows():
-            open_price = day_data['open']
-            high_price = day_data['high']
-            low_price = day_data['low']
-            close_price = day_data['close']
+        for i in range(len(symbol_data)):
+            current_data = symbol_data.iloc[i]
+            current_time = symbol_data.index[i]
+            open_price = current_data['open']
+            high_price = current_data['high']
+            low_price = current_data['low']
+            close_price = current_data['close']
             
             # Calculate potential profit if we captured 100% of the movement
             # Long position: buy at open, sell at high
@@ -163,7 +156,7 @@ class CryptoPriceAnalyzer:
             # Only count trades that exceed the barrier
             if long_profit >= barrier_pct:
                 successful_trades.append({
-                    'date': date,
+                    'time': current_time,
                     'profit': long_profit,
                     'position': 'long',
                     'entry_price': open_price,
@@ -173,7 +166,7 @@ class CryptoPriceAnalyzer:
             
             if short_profit >= barrier_pct:
                 successful_trades.append({
-                    'date': date,
+                    'time': current_time,
                     'profit': short_profit,
                     'position': 'short',
                     'entry_price': open_price,
@@ -206,7 +199,7 @@ class CryptoPriceAnalyzer:
             'min_profit': trades_df['profit'].min(),
             'profit_std': trades_df['profit'].std(),
             'total_potential_profit': trades_df['profit'].sum(),
-            'profit_frequency': len(successful_trades) / len(daily_data)  # Successful trades per day
+            'profit_frequency': len(successful_trades) / len(symbol_data)  # Successful trades per 15-min period
         }
     
     def calculate_intraday_patterns(self, symbol_data):

@@ -48,6 +48,27 @@ This implementation ensures that all models in the `enhanced_training_manager` p
 
 ### 3. Updated Integration Points
 
+#### Step 3: HMM Regime Discovery (`src/training/steps/step3_hmm_regime_discovery.py`)
+- Added `@with_enhanced_mlflow_logging("step3_hmm_regime_discovery")` decorator
+- Enhanced artifact logging for composite clusters and intensity DataFrames
+- Model logging for HMM and K-means models with metadata
+- Metrics logging for regime discovery performance
+- Automatic metadata extraction and association
+
+#### Step 6: Feature Engineering (`src/training/steps/step6_feature_engineering.py`)
+- Added `@with_enhanced_mlflow_logging("step6_feature_engineering")` decorator
+- Enhanced DataFrame logging for training and validation features
+- Feature metadata logging with comprehensive statistics
+- Feature engineering metrics logging
+- Automatic artifact tracking with enhanced metadata
+
+#### Step 9: HMM-Based Training (`src/training/steps/step9_hmm_based_training.py`)
+- Added `@with_enhanced_mlflow_logging("step9_hmm_based_training")` decorator
+- Enhanced model logging for all trained models (HMM, K-means, etc.)
+- Training metrics logging with timeframe-specific performance
+- Training summary logging with comprehensive metadata
+- Model artifact tracking with enhanced metadata
+
 #### Step 21: Saving (`src/training/steps/step21_saving.py`)
 - Enhanced `_save_to_mlflow()` method to use new utilities
 - Automatic extraction of lookback period from config
@@ -73,6 +94,12 @@ This implementation ensures that all models in the `enhanced_training_manager` p
 - Code examples for all functions
 - Best practices and troubleshooting
 - Integration patterns
+
+#### Step Integration Template (`docs/enhanced_mlflow_step_integration_template.py`)
+- Template showing how to integrate enhanced MLflow logging into any pipeline step
+- Examples for class-based and function-based steps
+- Pattern for automatic metadata association
+- Best practices for artifact logging
 
 ## Required Metadata Associations
 
@@ -208,10 +235,13 @@ else:
 
 ## Integration Points Updated
 
-1. **Step 21: Saving** - Enhanced MLflow saving with all metadata
-2. **Model Trainer** - Enhanced model training logging
-3. **Enhanced LM Optimizer** - Enhanced hyperparameter optimization logging
-4. **All Pipeline Steps** - Ready for enhanced metadata logging
+1. **Step 3: HMM Regime Discovery** - Enhanced MLflow logging for regime discovery artifacts and models
+2. **Step 6: Feature Engineering** - Enhanced MLflow logging for feature DataFrames and metadata
+3. **Step 9: HMM-Based Training** - Enhanced MLflow logging for trained models and performance metrics
+4. **Step 21: Saving** - Enhanced MLflow saving with all metadata
+5. **Model Trainer** - Enhanced model training logging
+6. **Enhanced LM Optimizer** - Enhanced hyperparameter optimization logging
+7. **All Pipeline Steps** - Ready for enhanced metadata logging with template and decorators
 
 ## Backward Compatibility
 

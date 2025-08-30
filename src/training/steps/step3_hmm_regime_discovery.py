@@ -53,6 +53,7 @@ from src.utils.centralized_decorators import (
     validate_pipeline_step
 )
 from src.utils.logger import system_logger
+from src.utils.enhanced_mlflow_integration import with_enhanced_mlflow_logging, log_step_artifact, log_step_dataframe
 
 # Import SR Breakout Predictor for enhanced regime analysis
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
@@ -153,6 +154,7 @@ class HMMRegimeDiscoveryStep:
         max_correlation=0.95,
         required_grade="C"
     )
+    @with_enhanced_mlflow_logging("step3_hmm_regime_discovery")
     @handle_errors(
         exceptions=(Exception,),
         default_return={"success": False, "regimes": [], "error": "HMM discovery failed"},
@@ -263,6 +265,9 @@ class HMMRegimeDiscoveryStep:
                 # Log detailed results
                 self._log_regime_discovery_results(regime_results)
                 
+                # Log artifacts to MLflow
+                await self._log_step3_artifacts_to_mlflow(regime_results, training_input)
+                
                 # Step 5: Perform SR Context Analysis
                 self.logger.info("=" * 60)
                 self.logger.info("STEP 5: SR Context Analysis")
@@ -325,6 +330,102 @@ class HMMRegimeDiscoveryStep:
         self.logger.info(f"🎯 Final result: {'✅ SUCCESS' if success else '❌ FAILED'}")
 
         return pipeline_state
+
+    async def _log_step3_artifacts_to_mlflow(self, regime_results: dict[str, Any], training_input: dict[str, Any]) -> None:
+        """Log step 3 artifacts to MLflow with enhanced metadata."""
+        try:
+            symbol = training_input.get("symbol", "ETHUSDT")
+            exchange = training_input.get("exchange", "BINANCE")
+            timeframe = training_input.get("timeframe", "1m")
+            data_dir = training_input.get("data_dir", "data_cache")
+            
+            # Log composite clusters DataFrame
+            if "composite_df" in regime_results:
+                composite_df = regime_results["composite_df"]
+                log_step_dataframe(
+                    config=self.config,
+                    step_name="step3_hmm_regime_discovery",
+                    df=composite_df,
+                    artifact_name=f"{exchange}_{symbol}_{timeframe}_composite_clusters",
+                    additional_metadata={
+                        "artifact_type": "composite_clusters",
+                        "dataframe_shape": list(composite_df.shape),
+                        "regime_count": len(composite_df.get("composite_cluster_id", []).unique()) if "composite_cluster_id" in composite_df.columns else 0,
+                    }
+                )
+            
+            # Log intensity DataFrame
+            if "intensity_df" in regime_results:
+                intensity_df = regime_results["intensity_df"]
+                log_step_dataframe(
+                    config=self.config,
+                    step_name="step3_hmm_regime_discovery",
+                    df=intensity_df,
+                    artifact_name=f"{exchange}_{symbol}_{timeframe}_intensity_clusters",
+                    additional_metadata={
+                        "artifact_type": "intensity_clusters",
+                        "dataframe_shape": list(intensity_df.shape),
+                        "intensity_features": [col for col in intensity_df.columns if "intensity" in col],
+                    }
+                )
+            
+            # Log metrics
+            if "metrics" in regime_results:
+                metrics = regime_results["metrics"]
+                # Extract numeric metrics
+                numeric_metrics = {}
+                for key, value in metrics.items():
+                    if isinstance(value, (int, float)):
+                        numeric_metrics[f"step3_{key}"] = float(value)
+                
+                if numeric_metrics:
+                    log_step_metrics(
+                        config=self.config,
+                        step_name="step3_hmm_regime_discovery",
+                        metrics=numeric_metrics,
+                        additional_metadata={
+                            "metrics_type": "regime_discovery",
+                            "hmm_states": metrics.get("hmm_states", 0),
+                            "composite_clusters": metrics.get("composite_clusters", 0),
+                        }
+                    )
+            
+            # Log HMM model if available
+            if "hmm_model" in regime_results:
+                hmm_model = regime_results["hmm_model"]
+                log_step_model(
+                    config=self.config,
+                    step_name="step3_hmm_regime_discovery",
+                    model=hmm_model,
+                    model_name="hmm_regime_model",
+                    model_type="hmm",
+                    additional_metadata={
+                        "n_components": getattr(hmm_model, 'n_components', 0),
+                        "covariance_type": getattr(hmm_model, 'covariance_type', 'unknown'),
+                        "training_algorithm": "GaussianHMM",
+                    }
+                )
+            
+            # Log K-means model if available
+            if "kmeans_model" in regime_results:
+                kmeans_model = regime_results["kmeans_model"]
+                log_step_model(
+                    config=self.config,
+                    step_name="step3_hmm_regime_discovery",
+                    model=kmeans_model,
+                    model_name="kmeans_clustering_model",
+                    model_type="clustering",
+                    additional_metadata={
+                        "n_clusters": getattr(kmeans_model, 'n_clusters', 0),
+                        "training_algorithm": "KMeans",
+                    }
+                )
+            
+            self.logger.info("✅ Step 3 artifacts logged to MLflow successfully")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to log step 3 artifacts to MLflow: {e}")
+            # Don't fail the step if MLflow logging fails
 
     def _log_regime_discovery_results(self, regime_results: dict[str, Any]) -> None:
         """Log detailed regime discovery results."""

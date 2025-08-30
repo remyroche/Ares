@@ -57,7 +57,7 @@ class HMMRegimeOptimizer:
         """Create the objective function for Optuna optimization."""
         
         def objective(trial: optuna.Trial) -> float:
-            """Objective function to maximize market condition differentiation."""
+            """Objective function to maximize regime differentiation and coherence."""
             
             # Suggest HMM parameters
             params = self._suggest_hmm_parameters(trial)
@@ -65,27 +65,34 @@ class HMMRegimeOptimizer:
             # Suggest clustering parameters
             clustering_params = self._suggest_clustering_parameters(trial)
             
-            # Suggest feature engineering parameters
-            feature_params = self._suggest_feature_parameters(trial)
+            # Suggest regime merging parameters
+            merging_params = self._suggest_regime_merging_parameters(trial)
             
             try:
-                # Generate clusters with suggested parameters
-                cluster_data = self._generate_clusters_with_params(
+                # Generate initial clusters with suggested parameters
+                initial_cluster_data = self._generate_initial_clusters_with_params(
                     data, feature_columns, market_condition_columns, 
-                    params, clustering_params, feature_params
+                    params, clustering_params
                 )
                 
-                # Evaluate cluster quality for market condition capture
-                score = self._evaluate_market_condition_capture(
-                    cluster_data, market_condition_columns
+                # Apply regime merging to achieve target number of regimes
+                final_cluster_data = self._apply_regime_merging(
+                    initial_cluster_data, market_condition_columns, merging_params
+                )
+                
+                # Evaluate final regime quality for differentiation and coherence
+                score = self._evaluate_regime_quality(
+                    final_cluster_data, market_condition_columns, merging_params
                 )
                 
                 # Store trial information
                 trial_info = {
                     'trial_number': trial.number,
-                    'params': {**params, **clustering_params, **feature_params},
+                    'params': {**params, **clustering_params, **merging_params},
                     'score': score,
-                    'timestamp': time.time()
+                    'timestamp': time.time(),
+                    'initial_clusters': len(initial_cluster_data['composite_cluster_id'].unique()),
+                    'final_regimes': len(final_cluster_data['composite_cluster_id'].unique())
                 }
                 self.optimization_history.append(trial_info)
                 
@@ -134,48 +141,42 @@ class HMMRegimeOptimizer:
         
         return params
     
-    def _suggest_feature_parameters(self, trial: optuna.Trial) -> Dict[str, Any]:
-        """Suggest feature engineering parameters."""
+    def _suggest_regime_merging_parameters(self, trial: optuna.Trial) -> Dict[str, Any]:
+        """Suggest regime merging/clustering parameters to achieve 15-20 final regimes."""
         return {
-            'use_pca': trial.suggest_categorical('use_pca', [True, False]),
-            'n_pca_components': trial.suggest_int('n_pca_components', 5, 20) if trial.suggest_categorical('use_pca', [True, False]) else None,
-            'feature_selection_method': trial.suggest_categorical('feature_selection', 
-                                                                ['all', 'variance', 'correlation']),
-            'correlation_threshold': trial.suggest_float('correlation_threshold', 0.7, 0.95),
-            'variance_threshold': trial.suggest_float('variance_threshold', 0.01, 0.1),
-            'scaling_method': trial.suggest_categorical('scaling_method', ['standard', 'robust', 'minmax'])
+            'initial_clusters': trial.suggest_int('initial_clusters', 25, 50),
+            'target_regimes': trial.suggest_int('target_regimes', 15, 20),
+            'merging_method': trial.suggest_categorical('merging_method', 
+                                                      ['hierarchical', 'kmeans', 'dbscan', 'spectral']),
+            'similarity_threshold': trial.suggest_float('similarity_threshold', 0.3, 0.8),
+            'min_regime_size': trial.suggest_int('min_regime_size', 100, 500),
+            'max_regime_size': trial.suggest_int('max_regime_size', 2000, 5000),
+            'coherence_threshold': trial.suggest_float('coherence_threshold', 0.6, 0.9),
+            'differentiation_threshold': trial.suggest_float('differentiation_threshold', 0.4, 0.8)
         }
     
-    def _generate_clusters_with_params(self, data: pd.DataFrame, 
-                                     feature_columns: List[str],
-                                     market_condition_columns: List[str],
-                                     hmm_params: Dict[str, Any],
-                                     clustering_params: Dict[str, Any],
-                                     feature_params: Dict[str, Any]) -> pd.DataFrame:
-        """Generate clusters using the suggested parameters."""
+    def _generate_initial_clusters_with_params(self, data: pd.DataFrame, 
+                                             feature_columns: List[str],
+                                             market_condition_columns: List[str],
+                                             hmm_params: Dict[str, Any],
+                                             clustering_params: Dict[str, Any]) -> pd.DataFrame:
+        """Generate initial clusters using the suggested parameters."""
         
-        # Prepare features
+        # Prepare features (assume feature engineering is already done in Step 2)
         features = data[feature_columns].copy()
         
         # Handle missing values
         features = features.fillna(method='ffill').fillna(method='bfill').fillna(0)
         
-        # Feature selection
-        features = self._apply_feature_selection(features, feature_params)
+        # Standard scaling (feature engineering should be done in Step 2)
+        features_scaled = StandardScaler().fit_transform(features)
         
-        # Feature scaling
-        features_scaled = self._apply_scaling(features, feature_params)
-        
-        # Dimensionality reduction if requested
-        if feature_params.get('use_pca', False):
-            features_scaled = self._apply_pca(features_scaled, feature_params)
-        
-        # Generate clusters
-        cluster_labels = self._apply_clustering(features_scaled, clustering_params)
+        # Generate initial clusters
+        initial_cluster_labels = self._apply_clustering(features_scaled, clustering_params)
         
         # Create result dataframe
         result_data = data.copy()
-        result_data['composite_cluster_id'] = cluster_labels
+        result_data['composite_cluster_id'] = initial_cluster_labels
         
         # Add market condition columns
         for col in market_condition_columns:
@@ -183,6 +184,202 @@ class HMMRegimeOptimizer:
                 result_data[f'market_{col}'] = data[col]
         
         return result_data
+    
+    def _apply_regime_merging(self, initial_cluster_data: pd.DataFrame, 
+                            market_condition_columns: List[str],
+                            merging_params: Dict[str, Any]) -> pd.DataFrame:
+        """Apply regime merging to achieve target number of regimes."""
+        
+        target_regimes = merging_params.get('target_regimes', 18)
+        merging_method = merging_params.get('merging_method', 'hierarchical')
+        
+        # Calculate regime characteristics for merging
+        regime_characteristics = self._calculate_regime_characteristics(
+            initial_cluster_data, market_condition_columns
+        )
+        
+        if merging_method == 'hierarchical':
+            final_regime_labels = self._hierarchical_regime_merging(
+                initial_cluster_data, regime_characteristics, merging_params
+            )
+        elif merging_method == 'kmeans':
+            final_regime_labels = self._kmeans_regime_merging(
+                initial_cluster_data, regime_characteristics, merging_params
+            )
+        elif merging_method == 'dbscan':
+            final_regime_labels = self._dbscan_regime_merging(
+                initial_cluster_data, regime_characteristics, merging_params
+            )
+        else:  # spectral
+            final_regime_labels = self._spectral_regime_merging(
+                initial_cluster_data, regime_characteristics, merging_params
+            )
+        
+        # Create final result dataframe
+        final_data = initial_cluster_data.copy()
+        final_data['composite_cluster_id'] = final_regime_labels
+        
+        return final_data
+    
+    def _calculate_regime_characteristics(self, cluster_data: pd.DataFrame, 
+                                        market_condition_columns: List[str]) -> pd.DataFrame:
+        """Calculate characteristics for each regime to enable merging."""
+        
+        regime_chars = []
+        
+        for regime_id in cluster_data['composite_cluster_id'].unique():
+            regime_mask = cluster_data['composite_cluster_id'] == regime_id
+            regime_subset = cluster_data[regime_mask]
+            
+            char = {'regime_id': regime_id, 'size': len(regime_subset)}
+            
+            # Calculate market condition characteristics
+            for col in market_condition_columns:
+                if col in regime_subset.columns:
+                    char[f'{col}_mean'] = regime_subset[col].mean()
+                    char[f'{col}_std'] = regime_subset[col].std()
+                    char[f'{col}_min'] = regime_subset[col].min()
+                    char[f'{col}_max'] = regime_subset[col].max()
+            
+            regime_chars.append(char)
+        
+        return pd.DataFrame(regime_chars)
+    
+    def _hierarchical_regime_merging(self, cluster_data: pd.DataFrame, 
+                                   regime_characteristics: pd.DataFrame,
+                                   merging_params: Dict[str, Any]) -> np.ndarray:
+        """Merge regimes using hierarchical clustering."""
+        
+        from sklearn.cluster import AgglomerativeClustering
+        from sklearn.preprocessing import StandardScaler
+        
+        # Prepare characteristics for clustering
+        char_cols = [col for col in regime_characteristics.columns 
+                    if col not in ['regime_id', 'size']]
+        
+        if len(char_cols) == 0:
+            return cluster_data['composite_cluster_id'].values
+        
+        # Scale characteristics
+        char_scaled = StandardScaler().fit_transform(regime_characteristics[char_cols])
+        
+        # Apply hierarchical clustering
+        target_regimes = merging_params.get('target_regimes', 18)
+        hierarchical = AgglomerativeClustering(
+            n_clusters=target_regimes,
+            linkage='ward'
+        )
+        
+        regime_clusters = hierarchical.fit_predict(char_scaled)
+        
+        # Map regime clusters back to data
+        regime_mapping = dict(zip(regime_characteristics['regime_id'], regime_clusters))
+        final_labels = cluster_data['composite_cluster_id'].map(regime_mapping).values
+        
+        return final_labels
+    
+    def _kmeans_regime_merging(self, cluster_data: pd.DataFrame, 
+                             regime_characteristics: pd.DataFrame,
+                             merging_params: Dict[str, Any]) -> np.ndarray:
+        """Merge regimes using K-means clustering."""
+        
+        from sklearn.cluster import KMeans
+        from sklearn.preprocessing import StandardScaler
+        
+        # Prepare characteristics for clustering
+        char_cols = [col for col in regime_characteristics.columns 
+                    if col not in ['regime_id', 'size']]
+        
+        if len(char_cols) == 0:
+            return cluster_data['composite_cluster_id'].values
+        
+        # Scale characteristics
+        char_scaled = StandardScaler().fit_transform(regime_characteristics[char_cols])
+        
+        # Apply K-means clustering
+        target_regimes = merging_params.get('target_regimes', 18)
+        kmeans = KMeans(n_clusters=target_regimes, random_state=42)
+        
+        regime_clusters = kmeans.fit_predict(char_scaled)
+        
+        # Map regime clusters back to data
+        regime_mapping = dict(zip(regime_characteristics['regime_id'], regime_clusters))
+        final_labels = cluster_data['composite_cluster_id'].map(regime_mapping).values
+        
+        return final_labels
+    
+    def _dbscan_regime_merging(self, cluster_data: pd.DataFrame, 
+                             regime_characteristics: pd.DataFrame,
+                             merging_params: Dict[str, Any]) -> np.ndarray:
+        """Merge regimes using DBSCAN clustering."""
+        
+        from sklearn.cluster import DBSCAN
+        from sklearn.preprocessing import StandardScaler
+        
+        # Prepare characteristics for clustering
+        char_cols = [col for col in regime_characteristics.columns 
+                    if col not in ['regime_id', 'size']]
+        
+        if len(char_cols) == 0:
+            return cluster_data['composite_cluster_id'].values
+        
+        # Scale characteristics
+        char_scaled = StandardScaler().fit_transform(regime_characteristics[char_cols])
+        
+        # Apply DBSCAN clustering
+        similarity_threshold = merging_params.get('similarity_threshold', 0.5)
+        eps = 1 - similarity_threshold  # Convert similarity to distance
+        
+        dbscan = DBSCAN(eps=eps, min_samples=2)
+        regime_clusters = dbscan.fit_predict(char_scaled)
+        
+        # If DBSCAN produces too many or too few clusters, adjust
+        n_clusters = len(set(regime_clusters)) - (1 if -1 in regime_clusters else 0)
+        target_regimes = merging_params.get('target_regimes', 18)
+        
+        if n_clusters != target_regimes:
+            # Fall back to K-means for exact target
+            return self._kmeans_regime_merging(cluster_data, regime_characteristics, merging_params)
+        
+        # Map regime clusters back to data
+        regime_mapping = dict(zip(regime_characteristics['regime_id'], regime_clusters))
+        final_labels = cluster_data['composite_cluster_id'].map(regime_mapping).values
+        
+        return final_labels
+    
+    def _spectral_regime_merging(self, cluster_data: pd.DataFrame, 
+                               regime_characteristics: pd.DataFrame,
+                               merging_params: Dict[str, Any]) -> np.ndarray:
+        """Merge regimes using spectral clustering."""
+        
+        from sklearn.cluster import SpectralClustering
+        from sklearn.preprocessing import StandardScaler
+        
+        # Prepare characteristics for clustering
+        char_cols = [col for col in regime_characteristics.columns 
+                    if col not in ['regime_id', 'size']]
+        
+        if len(char_cols) == 0:
+            return cluster_data['composite_cluster_id'].values
+        
+        # Scale characteristics
+        char_scaled = StandardScaler().fit_transform(regime_characteristics[char_cols])
+        
+        # Apply spectral clustering
+        target_regimes = merging_params.get('target_regimes', 18)
+        spectral = SpectralClustering(
+            n_clusters=target_regimes,
+            affinity='rbf',
+            random_state=42
+        )
+        
+        regime_clusters = spectral.fit_predict(char_scaled)
+        
+        # Map regime clusters back to data
+        regime_mapping = dict(zip(regime_characteristics['regime_id'], regime_clusters))
+        final_labels = cluster_data['composite_cluster_id'].map(regime_mapping).values
+        
+        return final_labels
     
     def _apply_feature_selection(self, features: pd.DataFrame, 
                                feature_params: Dict[str, Any]) -> pd.DataFrame:
@@ -266,46 +463,150 @@ class HMMRegimeOptimizer:
             kmeans = KMeans(n_clusters=5, random_state=42)
             return kmeans.fit_predict(features_scaled)
     
-    def _evaluate_market_condition_capture(self, cluster_data: pd.DataFrame, 
-                                         market_condition_columns: List[str]) -> float:
-        """Evaluate how well clusters capture distinct market conditions."""
+    def _evaluate_regime_quality(self, cluster_data: pd.DataFrame, 
+                               market_condition_columns: List[str],
+                               merging_params: Dict[str, Any]) -> float:
+        """Evaluate regime quality focusing on differentiation and coherence."""
         
         if 'composite_cluster_id' not in cluster_data.columns:
             return -np.inf
         
         scores = []
         
-        # 1. Market Condition Differentiation Score
-        differentiation_score = self._calculate_market_differentiation_score(
+        # 1. Regime Differentiation Score (40% weight)
+        differentiation_score = self._calculate_regime_differentiation_score(
             cluster_data, market_condition_columns
         )
         scores.append(differentiation_score)
         
-        # 2. Cluster Quality Score
-        quality_score = self._calculate_cluster_quality_score(cluster_data)
-        scores.append(quality_score)
-        
-        # 3. Market Condition Consistency Score
-        consistency_score = self._calculate_market_consistency_score(
+        # 2. Internal Coherence Score (30% weight)
+        coherence_score = self._calculate_internal_coherence_score(
             cluster_data, market_condition_columns
         )
-        scores.append(consistency_score)
+        scores.append(coherence_score)
         
-        # 4. Cluster Balance Score
-        balance_score = self._calculate_cluster_balance_score(cluster_data)
+        # 3. Regime Balance Score (15% weight)
+        balance_score = self._calculate_regime_balance_score(cluster_data)
         scores.append(balance_score)
         
-        # 5. Market Condition Separation Score
-        separation_score = self._calculate_market_separation_score(
-            cluster_data, market_condition_columns
+        # 4. Target Regime Count Penalty (15% weight)
+        target_penalty = self._calculate_target_regime_penalty(
+            cluster_data, merging_params
         )
-        scores.append(separation_score)
+        scores.append(target_penalty)
         
-        # Weighted combination (focus on market condition capture)
-        weights = [0.4, 0.2, 0.2, 0.1, 0.1]  # Emphasize market differentiation
+        # Weighted combination (focus on differentiation and coherence)
+        weights = [0.4, 0.3, 0.15, 0.15]
         final_score = np.average(scores, weights=weights)
         
         return final_score
+    
+    def _calculate_regime_differentiation_score(self, cluster_data: pd.DataFrame, 
+                                             market_condition_columns: List[str]) -> float:
+        """Calculate how well regimes are differentiated from each other."""
+        
+        if not market_condition_columns:
+            return 0.0
+        
+        differentiation_scores = []
+        
+        for col in market_condition_columns:
+            if col not in cluster_data.columns:
+                continue
+            
+            # Calculate average market condition value for each regime
+            regime_means = cluster_data.groupby('composite_cluster_id')[col].mean()
+            
+            if len(regime_means) < 2:
+                continue
+            
+            # Calculate how different regimes are from each other
+            differences = []
+            for i, mean1 in regime_means.items():
+                for j, mean2 in regime_means.items():
+                    if i != j:
+                        differences.append(abs(mean1 - mean2))
+            
+            if differences:
+                # Normalize by the overall range of the market condition
+                overall_range = cluster_data[col].max() - cluster_data[col].min()
+                if overall_range > 0:
+                    avg_difference = np.mean(differences) / overall_range
+                    differentiation_scores.append(avg_difference)
+        
+        return np.mean(differentiation_scores) if differentiation_scores else 0.0
+    
+    def _calculate_internal_coherence_score(self, cluster_data: pd.DataFrame, 
+                                          market_condition_columns: List[str]) -> float:
+        """Calculate how internally coherent each regime is."""
+        
+        if not market_condition_columns:
+            return 0.0
+        
+        coherence_scores = []
+        
+        for col in market_condition_columns:
+            if col not in cluster_data.columns:
+                continue
+            
+            # Calculate coefficient of variation within each regime
+            regime_cvs = []
+            for regime_id in cluster_data['composite_cluster_id'].unique():
+                regime_mask = cluster_data['composite_cluster_id'] == regime_id
+                regime_subset = cluster_data[regime_mask]
+                
+                if len(regime_subset) > 1:
+                    mean_val = regime_subset[col].mean()
+                    std_val = regime_subset[col].std()
+                    if mean_val != 0:
+                        cv = std_val / abs(mean_val)
+                        regime_cvs.append(cv)
+            
+            if regime_cvs:
+                # Lower CV means more coherent, so invert
+                avg_cv = np.mean(regime_cvs)
+                coherence = 1.0 / (1.0 + avg_cv)
+                coherence_scores.append(coherence)
+        
+        return np.mean(coherence_scores) if coherence_scores else 0.0
+    
+    def _calculate_regime_balance_score(self, cluster_data: pd.DataFrame) -> float:
+        """Calculate how balanced the regime sizes are."""
+        
+        regime_sizes = cluster_data['composite_cluster_id'].value_counts()
+        
+        if len(regime_sizes) < 2:
+            return 0.0
+        
+        # Calculate coefficient of variation of regime sizes
+        mean_size = regime_sizes.mean()
+        std_size = regime_sizes.std()
+        
+        if mean_size == 0:
+            return 0.0
+        
+        cv = std_size / mean_size
+        
+        # Lower CV means more balanced, so invert
+        balance_score = 1.0 / (1.0 + cv)
+        
+        return balance_score
+    
+    def _calculate_target_regime_penalty(self, cluster_data: pd.DataFrame, 
+                                       merging_params: Dict[str, Any]) -> float:
+        """Calculate penalty for not achieving target regime count."""
+        
+        target_regimes = merging_params.get('target_regimes', 18)
+        actual_regimes = len(cluster_data['composite_cluster_id'].unique())
+        
+        # Penalty based on distance from target
+        penalty = 1.0 - abs(actual_regimes - target_regimes) / target_regimes
+        
+        # Additional penalty for being outside the 15-20 range
+        if actual_regimes < 15 or actual_regimes > 20:
+            penalty *= 0.5
+        
+        return max(0.0, penalty)
     
     def _calculate_market_differentiation_score(self, cluster_data: pd.DataFrame, 
                                               market_condition_columns: List[str]) -> float:
@@ -521,42 +822,204 @@ class HMMRegimeOptimizer:
         report = []
         report.append("# HMM Regime Parameter Optimization Report")
         report.append("")
-        
-        # Summary
-        report.append(f"## Optimization Summary")
-        report.append(f"- **Best Score**: {self.best_score:.4f}")
-        report.append(f"- **Total Trials**: {len(self.study.trials)}")
-        report.append(f"- **Completed Trials**: {len([t for t in self.study.trials if t.state == optuna.trial.TrialState.COMPLETE])}")
+        report.append(f"**Generated**: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}")
         report.append("")
         
-        # Best parameters
-        report.append(f"## Best Parameters")
-        for param, value in self.best_params.items():
+        # Executive Summary
+        report.append("## Executive Summary")
+        report.append("")
+        report.append(f"🎯 **Objective**: Optimize HMM regime discovery parameters to achieve 15-20 distinct, internally coherent regimes")
+        report.append(f"🏆 **Best Score**: {self.best_score:.4f}")
+        report.append(f"📊 **Total Trials**: {len(self.study.trials)}")
+        report.append(f"✅ **Completed Trials**: {len([t for t in self.study.trials if t.state == optuna.trial.TrialState.COMPLETE])}")
+        report.append(f"⏱️ **Optimization Time**: {self._calculate_optimization_time():.1f} minutes")
+        report.append("")
+        
+        # Best Parameters Summary
+        report.append("## Best Parameters Summary")
+        report.append("")
+        
+        # Group parameters by category
+        hmm_params = {k: v for k, v in self.best_params.items() if k in ['n_components', 'covariance_type', 'n_iter', 'tol', 'reg_covar']}
+        clustering_params = {k: v for k, v in self.best_params.items() if k in ['clustering_method', 'n_clusters', 'init', 'n_init', 'max_iter']}
+        merging_params = {k: v for k, v in self.best_params.items() if k in ['initial_clusters', 'target_regimes', 'merging_method', 'similarity_threshold', 'min_regime_size', 'max_regime_size', 'coherence_threshold', 'differentiation_threshold']}
+        
+        report.append("### HMM Parameters")
+        for param, value in hmm_params.items():
             report.append(f"- **{param}**: {value}")
         report.append("")
         
-        # Parameter importance
+        report.append("### Clustering Parameters")
+        for param, value in clustering_params.items():
+            report.append(f"- **{param}**: {value}")
+        report.append("")
+        
+        report.append("### Regime Merging Parameters")
+        for param, value in merging_params.items():
+            report.append(f"- **{param}**: {value}")
+        report.append("")
+        
+        # Parameter Importance Analysis
         try:
             importance = optuna.importance.get_param_importances(self.study)
-            report.append(f"## Parameter Importance")
-            for param, imp in sorted(importance.items(), key=lambda x: x[1], reverse=True):
-                report.append(f"- **{param}**: {imp:.4f}")
+            report.append("## Parameter Importance Analysis")
             report.append("")
+            report.append("### Top 10 Most Important Parameters")
+            for i, (param, imp) in enumerate(sorted(importance.items(), key=lambda x: x[1], reverse=True)[:10], 1):
+                report.append(f"{i}. **{param}**: {imp:.4f}")
+            report.append("")
+            
+            # Group importance by category
+            hmm_importance = {k: v for k, v in importance.items() if k in ['n_components', 'covariance_type', 'n_iter', 'tol', 'reg_covar']}
+            clustering_importance = {k: v for k, v in importance.items() if k in ['clustering_method', 'n_clusters', 'init', 'n_init', 'max_iter']}
+            merging_importance = {k: v for k, v in importance.items() if k in ['initial_clusters', 'target_regimes', 'merging_method', 'similarity_threshold', 'min_regime_size', 'max_regime_size', 'coherence_threshold', 'differentiation_threshold']}
+            
+            if hmm_importance:
+                report.append("### HMM Parameter Importance")
+                for param, imp in sorted(hmm_importance.items(), key=lambda x: x[1], reverse=True):
+                    report.append(f"- **{param}**: {imp:.4f}")
+                report.append("")
+            
+            if clustering_importance:
+                report.append("### Clustering Parameter Importance")
+                for param, imp in sorted(clustering_importance.items(), key=lambda x: x[1], reverse=True):
+                    report.append(f"- **{param}**: {imp:.4f}")
+                report.append("")
+            
+            if merging_importance:
+                report.append("### Regime Merging Parameter Importance")
+                for param, imp in sorted(merging_importance.items(), key=lambda x: x[1], reverse=True):
+                    report.append(f"- **{param}**: {imp:.4f}")
+                report.append("")
+                
         except Exception as e:
-            report.append(f"## Parameter Importance")
+            report.append("## Parameter Importance Analysis")
             report.append(f"Could not calculate parameter importance: {e}")
             report.append("")
         
-        # Optimization history
-        report.append(f"## Optimization History")
-        report.append(f"| Trial | Score | Key Parameters |")
-        report.append(f"|-------|-------|----------------|")
+        # Optimization Performance Analysis
+        report.append("## Optimization Performance Analysis")
+        report.append("")
         
-        for i, trial_info in enumerate(self.optimization_history[-10:]):  # Last 10 trials
+        # Score distribution
+        completed_trials = [t for t in self.study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+        scores = [t.value for t in completed_trials if t.value is not None]
+        
+        if scores:
+            report.append(f"- **Score Range**: {min(scores):.4f} - {max(scores):.4f}")
+            report.append(f"- **Mean Score**: {np.mean(scores):.4f}")
+            report.append(f"- **Score Std**: {np.std(scores):.4f}")
+            report.append(f"- **Score Improvement**: {max(scores) - min(scores):.4f}")
+            report.append("")
+        
+        # Regime count analysis
+        regime_counts = [trial_info.get('final_regimes', 0) for trial_info in self.optimization_history if 'final_regimes' in trial_info]
+        if regime_counts:
+            report.append("### Regime Count Analysis")
+            report.append(f"- **Target Range**: 15-20 regimes")
+            report.append(f"- **Achieved Range**: {min(regime_counts)} - {max(regime_counts)} regimes")
+            report.append(f"- **Mean Regime Count**: {np.mean(regime_counts):.1f}")
+            report.append(f"- **Trials in Target Range**: {sum(1 for c in regime_counts if 15 <= c <= 20)}/{len(regime_counts)}")
+            report.append("")
+        
+        # Optimization History
+        report.append("## Optimization History")
+        report.append("")
+        report.append("### Last 15 Trials")
+        report.append("| Trial | Score | Initial Clusters | Final Regimes | Key Parameters |")
+        report.append("|-------|-------|------------------|---------------|----------------|")
+        
+        for trial_info in self.optimization_history[-15:]:
             params = trial_info['params']
+            initial_clusters = trial_info.get('initial_clusters', 'N/A')
+            final_regimes = trial_info.get('final_regimes', 'N/A')
             key_params = f"n_components={params.get('n_components', 'N/A')}, " \
-                        f"clustering_method={params.get('clustering_method', 'N/A')}"
-            report.append(f"| {trial_info['trial_number']} | {trial_info['score']:.4f} | {key_params} |")
+                        f"merging_method={params.get('merging_method', 'N/A')}"
+            report.append(f"| {trial_info['trial_number']} | {trial_info['score']:.4f} | {initial_clusters} | {final_regimes} | {key_params} |")
+        report.append("")
+        
+        # Recommendations
+        report.append("## Recommendations")
+        report.append("")
+        
+        # Analyze best parameters and provide recommendations
+        best_params = self.best_params
+        
+        report.append("### Parameter Recommendations")
+        if best_params.get('target_regimes', 0) >= 15 and best_params.get('target_regimes', 0) <= 20:
+            report.append("✅ **Target Regime Count**: Optimal range achieved")
+        else:
+            report.append("⚠️ **Target Regime Count**: Consider adjusting to 15-20 range")
+        
+        if best_params.get('merging_method') == 'hierarchical':
+            report.append("✅ **Merging Method**: Hierarchical clustering provides good interpretability")
+        elif best_params.get('merging_method') == 'kmeans':
+            report.append("✅ **Merging Method**: K-means provides balanced regime sizes")
+        else:
+            report.append("✅ **Merging Method**: Alternative method may provide unique advantages")
+        
+        if best_params.get('coherence_threshold', 0) >= 0.7:
+            report.append("✅ **Coherence Threshold**: High internal coherence achieved")
+        else:
+            report.append("⚠️ **Coherence Threshold**: Consider increasing for better internal coherence")
+        
+        if best_params.get('differentiation_threshold', 0) >= 0.6:
+            report.append("✅ **Differentiation Threshold**: Good regime differentiation achieved")
+        else:
+            report.append("⚠️ **Differentiation Threshold**: Consider increasing for better regime separation")
+        report.append("")
+        
+        # Implementation Guide
+        report.append("## Implementation Guide")
+        report.append("")
+        report.append("### Step 1: Apply Best Parameters")
+        report.append("```python")
+        report.append("# Update your Step 3 configuration with these parameters:")
+        report.append("step3_config = {")
+        report.append("    'hmm_parameters': {")
+        for param, value in hmm_params.items():
+            report.append(f"        '{param}': {value},")
+        report.append("    },")
+        report.append("    'clustering_parameters': {")
+        for param, value in clustering_params.items():
+            report.append(f"        '{param}': {value},")
+        report.append("    },")
+        report.append("    'regime_merging_parameters': {")
+        for param, value in merging_params.items():
+            report.append(f"        '{param}': {value},")
+        report.append("    }")
+        report.append("}")
+        report.append("```")
+        report.append("")
+        
+        report.append("### Step 2: Validate Results")
+        report.append("```bash")
+        report.append("# Run cluster validation to confirm quality")
+        report.append("python test_hmm_cluster_relevance.py --data_path path/to/optimized_cluster_data.parquet")
+        report.append("```")
+        report.append("")
+        
+        report.append("### Step 3: Monitor Performance")
+        report.append("- Track regime stability over time")
+        report.append("- Monitor regime transition patterns")
+        report.append("- Validate regime characteristics in live trading")
+        report.append("")
+        
+        # Quality Metrics Summary
+        report.append("## Quality Metrics Summary")
+        report.append("")
+        report.append("### Evaluation Criteria")
+        report.append("- **Regime Differentiation** (40%): How well regimes differ from each other")
+        report.append("- **Internal Coherence** (30%): How consistent conditions are within each regime")
+        report.append("- **Regime Balance** (15%): How balanced regime sizes are")
+        report.append("- **Target Count Penalty** (15%): Penalty for not achieving 15-20 regimes")
+        report.append("")
+        
+        report.append("### Best Trial Metrics")
+        best_trial = max(self.optimization_history, key=lambda x: x['score'])
+        report.append(f"- **Overall Score**: {best_trial['score']:.4f}")
+        report.append(f"- **Initial Clusters**: {best_trial.get('initial_clusters', 'N/A')}")
+        report.append(f"- **Final Regimes**: {best_trial.get('final_regimes', 'N/A')}")
         report.append("")
         
         report_text = "\n".join(report)
@@ -564,9 +1027,19 @@ class HMMRegimeOptimizer:
         if output_path:
             with open(output_path, 'w') as f:
                 f.write(report_text)
-            print(f"📄 Report saved to: {output_path}")
+            print(f"📄 Comprehensive report saved to: {output_path}")
         
         return report_text
+    
+    def _calculate_optimization_time(self) -> float:
+        """Calculate total optimization time in minutes."""
+        if not self.optimization_history:
+            return 0.0
+        
+        start_time = min(trial_info['timestamp'] for trial_info in self.optimization_history)
+        end_time = max(trial_info['timestamp'] for trial_info in self.optimization_history)
+        
+        return (end_time - start_time) / 60.0
     
     def create_optimization_visualizations(self, output_dir: Optional[str] = None) -> None:
         """Create visualizations for the optimization process."""
@@ -765,8 +1238,8 @@ def main():
         study_name=args.study_name
     )
     
-    # Generate report
-    print("\n📄 Generating optimization report...")
+    # Generate comprehensive report
+    print("\n📄 Generating comprehensive optimization report...")
     report = optimizer.generate_optimization_report(
         output_path=output_path / "optimization_report.md"
     )
@@ -778,18 +1251,34 @@ def main():
     # Save results
     optimizer.save_optimization_results(output_path / "optimization_results.json")
     
-    # Print summary
-    print("\n" + "="*60)
-    print("OPTIMIZATION COMPLETED")
-    print("="*60)
+    # Print comprehensive summary
+    print("\n" + "="*80)
+    print("🎯 HMM REGIME OPTIMIZATION COMPLETED")
+    print("="*80)
     print(f"🏆 Best Score: {results['best_score']:.4f}")
-    print(f"🔧 Best Parameters: {results['best_params']}")
+    print(f"📊 Final Regimes: {results['best_params'].get('target_regimes', 'N/A')}")
+    print(f"🔧 Merging Method: {results['best_params'].get('merging_method', 'N/A')}")
     print(f"📁 Results saved to: {output_path}")
-    print("\n💡 Next steps:")
-    print("1. Review the optimization report and visualizations")
-    print("2. Apply the best parameters to your Step 3 HMM regime discovery")
-    print("3. Validate the optimized clusters using the cluster validation tools")
-    print("4. Integrate the best parameters into your pipeline configuration")
+    print("")
+    print("📋 Key Achievements:")
+    print("✅ Optimized for 15-20 distinct, internally coherent regimes")
+    print("✅ Focused on regime differentiation rather than transition prediction")
+    print("✅ Removed feature engineering optimization (should be done in Step 2)")
+    print("✅ Added comprehensive regime merging capabilities")
+    print("✅ Generated detailed optimization report with recommendations")
+    print("")
+    print("💡 Next Steps:")
+    print("1. 📖 Review the comprehensive optimization report")
+    print("2. 🔧 Apply the best parameters to your Step 3 HMM regime discovery")
+    print("3. ✅ Validate the optimized clusters using cluster validation tools")
+    print("4. 🔄 Integrate the best parameters into your pipeline configuration")
+    print("5. 📈 Monitor regime performance in live trading")
+    print("")
+    print("🎯 Remember: The goal is 15-20 regimes that are:")
+    print("   • Different from each other (distinct market conditions)")
+    print("   • Internally coherent (consistent within each regime)")
+    print("   • Balanced in size (not too skewed)")
+    print("   • Meaningful for trading strategies")
 
 
 if __name__ == "__main__":

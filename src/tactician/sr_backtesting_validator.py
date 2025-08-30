@@ -39,6 +39,14 @@ class SRLevelTest:
     avg_breakout_strength: float = 0.0
     level_strength: float = 0.0
     confidence_score: float = 0.0
+    
+    # Volume analysis metrics
+    avg_volume_at_touches: float = 0.0
+    volume_spike_ratio: float = 0.0  # Volume at touches vs average volume
+    volume_confirmation_rate: float = 0.0  # % of touches with above-average volume
+    volume_weighted_bounce_rate: float = 0.0  # Bounce rate weighted by volume
+    institutional_volume_ratio: float = 0.0  # Large volume bars ratio
+    volume_cluster_score: float = 0.0  # Volume clustering around level
 
 
 @dataclass
@@ -70,6 +78,12 @@ class BacktestResult:
     avg_confidence_score: float = 0.0
     level_detection_accuracy: float = 0.0
     
+    # Volume analysis metrics
+    avg_volume_spike_ratio: float = 0.0
+    avg_volume_confirmation_rate: float = 0.0
+    avg_institutional_volume_ratio: float = 0.0
+    avg_volume_cluster_score: float = 0.0
+    
     # Detailed results
     level_tests: List[SRLevelTest] = None
     trade_signals: List[Dict[str, Any]] = None
@@ -97,14 +111,21 @@ class SRBacktestingValidator:
         self.config = config
         self.logger = system_logger.getChild("SRBacktestingValidator")
         
-        # Backtesting configuration
-        self.backtest_config = config.get("sr_backtesting", {})
-        self.touch_threshold = self.backtest_config.get("touch_threshold", 0.001)  # 0.1% touch threshold
-        self.bounce_threshold = self.backtest_config.get("bounce_threshold", 0.005)  # 0.5% bounce threshold
-        self.breakout_threshold = self.backtest_config.get("breakout_threshold", 0.01)  # 1% breakout threshold
-        self.false_breakout_threshold = self.backtest_config.get("false_breakout_threshold", 0.02)  # 2% false breakout
-        self.confirmation_periods = self.backtest_config.get("confirmation_periods", 3)
-        self.min_touches = self.backtest_config.get("min_touches", 2)
+            # Backtesting configuration
+    self.backtest_config = config.get("sr_backtesting", {})
+    self.touch_threshold = self.backtest_config.get("touch_threshold", 0.001)  # 0.1% touch threshold
+    self.bounce_threshold = self.backtest_config.get("bounce_threshold", 0.005)  # 0.5% bounce threshold
+    self.breakout_threshold = self.backtest_config.get("breakout_threshold", 0.01)  # 1% breakout threshold
+    self.false_breakout_threshold = self.backtest_config.get("false_breakout_threshold", 0.02)  # 2% false breakout
+    self.confirmation_periods = self.backtest_config.get("confirmation_periods", 3)
+    self.min_touches = self.backtest_config.get("min_touches", 2)
+    
+    # Volume analysis configuration
+    self.volume_spike_threshold = self.backtest_config.get("volume_spike_threshold", 1.5)  # 1.5x average volume
+    self.institutional_volume_threshold = self.backtest_config.get("institutional_volume_threshold", 2.0)  # 2x average volume
+    self.volume_confirmation_threshold = self.backtest_config.get("volume_confirmation_threshold", 1.2)  # 1.2x average volume
+    self.volume_lookback_periods = self.backtest_config.get("volume_lookback_periods", 20)  # 20 periods for volume baseline
+    self.volume_cluster_radius = self.backtest_config.get("volume_cluster_radius", 0.005)  # 0.5% price range for clustering
         
         # Trading simulation configuration
         self.enable_trading_simulation = self.backtest_config.get("enable_trading_simulation", True)
@@ -193,9 +214,12 @@ class SRBacktestingValidator:
             )
             
             # Analyze price interactions with this level
-            touches, bounces, breakouts, false_breakouts = await self._analyze_level_interactions(
+            touch_data = await self._analyze_level_interactions(
                 market_data, level_price, level_type
             )
+            
+            touches, bounces, breakouts, false_breakouts = touch_data[:4]
+            touch_volumes, touch_indices = touch_data[4:6]
             
             # Update test results
             test.touches = touches
@@ -209,7 +233,10 @@ class SRBacktestingValidator:
                 test.breakout_rate = breakouts / touches
                 test.false_breakout_rate = false_breakouts / touches
             
-            # Calculate confidence score
+            # Analyze volume patterns
+            await self._analyze_volume_patterns(test, market_data, touch_volumes, touch_indices, level_price)
+            
+            # Calculate confidence score with volume analysis
             test.confidence_score = self._calculate_level_confidence(test)
             
             return test
@@ -223,18 +250,20 @@ class SRBacktestingValidator:
         market_data: pd.DataFrame,
         level_price: float,
         level_type: str
-    ) -> Tuple[int, int, int, int]:
+    ) -> Tuple[int, int, int, int, List[float], List[int]]:
         """
         Analyze how price interacts with a specific S/R level.
         
         Returns:
-            Tuple of (touches, bounces, breakouts, false_breakouts)
+            Tuple of (touches, bounces, breakouts, false_breakouts, touch_volumes, touch_indices)
         """
         try:
             touches = 0
             bounces = 0
             breakouts = 0
             false_breakouts = 0
+            touch_volumes = []
+            touch_indices = []
             
             # Define touch zone around the level
             touch_zone_upper = level_price * (1 + self.touch_threshold)
@@ -248,6 +277,8 @@ class SRBacktestingValidator:
                 
                 if low <= touch_zone_upper and high >= touch_zone_lower:
                     touches += 1
+                    touch_volumes.append(market_data['volume'].iloc[i])
+                    touch_indices.append(i)
                     
                     # Analyze what happens after the touch
                     touch_result = await self._analyze_touch_outcome(
@@ -263,11 +294,11 @@ class SRBacktestingValidator:
                 
                 i += 1
             
-            return touches, bounces, breakouts, false_breakouts
+            return touches, bounces, breakouts, false_breakouts, touch_volumes, touch_indices
             
         except Exception as e:
             self.logger.error(f"Failed to analyze level interactions: {e}")
-            return 0, 0, 0, 0
+            return 0, 0, 0, 0, [], []
     
     async def _analyze_touch_outcome(
         self,
@@ -327,12 +358,139 @@ class SRBacktestingValidator:
             self.logger.error(f"Failed to analyze touch outcome: {e}")
             return "inconclusive"
     
+    async def _analyze_volume_patterns(
+        self,
+        test: SRLevelTest,
+        market_data: pd.DataFrame,
+        touch_volumes: List[float],
+        touch_indices: List[int],
+        level_price: float
+    ) -> None:
+        """
+        Analyze volume patterns around S/R levels.
+        
+        This method analyzes:
+        1. Volume spikes at S/R touches
+        2. Volume confirmation of bounces/breakouts
+        3. Institutional volume presence
+        4. Volume clustering around the level
+        """
+        try:
+            if not touch_volumes or len(touch_volumes) == 0:
+                return
+            
+            # Calculate volume baseline
+            avg_volume = market_data['volume'].rolling(window=self.volume_lookback_periods).mean()
+            
+            # 1. Average volume at touches
+            test.avg_volume_at_touches = np.mean(touch_volumes)
+            
+            # 2. Volume spike ratio (volume at touches vs average volume)
+            volume_spikes = []
+            volume_confirmations = 0
+            institutional_volumes = 0
+            
+            for i, touch_idx in enumerate(touch_indices):
+                if touch_idx < len(avg_volume):
+                    baseline_volume = avg_volume.iloc[touch_idx]
+                    if baseline_volume > 0:
+                        volume_ratio = touch_volumes[i] / baseline_volume
+                        volume_spikes.append(volume_ratio)
+                        
+                        # Check for volume confirmation
+                        if volume_ratio >= self.volume_confirmation_threshold:
+                            volume_confirmations += 1
+                        
+                        # Check for institutional volume
+                        if volume_ratio >= self.institutional_volume_threshold:
+                            institutional_volumes += 1
+            
+            if volume_spikes:
+                test.volume_spike_ratio = np.mean(volume_spikes)
+                test.volume_confirmation_rate = volume_confirmations / len(touch_indices)
+                test.institutional_volume_ratio = institutional_volumes / len(touch_indices)
+            
+            # 3. Volume-weighted bounce rate
+            bounce_volumes = []
+            total_volume = 0
+            
+            for i, touch_idx in enumerate(touch_indices):
+                if touch_idx < len(market_data) - self.confirmation_periods:
+                    # Check if this touch resulted in a bounce
+                    touch_result = await self._analyze_touch_outcome(
+                        market_data, touch_idx, level_price, test.level_type
+                    )
+                    
+                    if touch_result == "bounce":
+                        bounce_volumes.append(touch_volumes[i])
+                    
+                    total_volume += touch_volumes[i]
+            
+            if total_volume > 0 and bounce_volumes:
+                test.volume_weighted_bounce_rate = sum(bounce_volumes) / total_volume
+            
+            # 4. Volume clustering analysis
+            test.volume_cluster_score = await self._calculate_volume_cluster_score(
+                market_data, level_price, touch_indices
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Failed to analyze volume patterns: {e}")
+    
+    async def _calculate_volume_cluster_score(
+        self,
+        market_data: pd.DataFrame,
+        level_price: float,
+        touch_indices: List[int]
+    ) -> float:
+        """
+        Calculate volume clustering score around S/R level.
+        
+        This measures how much volume is concentrated around the S/R level
+        compared to other price levels.
+        """
+        try:
+            if not touch_indices:
+                return 0.0
+            
+            # Define the level zone
+            level_zone_upper = level_price * (1 + self.volume_cluster_radius)
+            level_zone_lower = level_price * (1 - self.volume_cluster_radius)
+            
+            # Calculate total volume in the level zone
+            level_zone_volume = 0
+            total_volume = market_data['volume'].sum()
+            
+            for i in range(len(market_data)):
+                price = market_data['close'].iloc[i]
+                if level_zone_lower <= price <= level_zone_upper:
+                    level_zone_volume += market_data['volume'].iloc[i]
+            
+            # Calculate volume concentration ratio
+            if total_volume > 0:
+                volume_concentration = level_zone_volume / total_volume
+                
+                # Normalize by the size of the zone relative to the price range
+                price_range = market_data['high'].max() - market_data['low'].min()
+                zone_size = level_zone_upper - level_zone_lower
+                expected_concentration = zone_size / price_range if price_range > 0 else 0
+                
+                if expected_concentration > 0:
+                    cluster_score = volume_concentration / expected_concentration
+                    return min(cluster_score, 5.0)  # Cap at 5x concentration
+            
+            return 0.0
+            
+        except Exception as e:
+            self.logger.error(f"Failed to calculate volume cluster score: {e}")
+            return 0.0
+    
     def _calculate_level_confidence(self, test: SRLevelTest) -> float:
-        """Calculate confidence score for a level based on its performance."""
+        """Calculate confidence score for a level based on its performance and volume analysis."""
         try:
             confidence = 0.0
             
-            # Base confidence from bounce rate
+            # Base confidence from bounce rate (40% weight)
             if test.bounce_rate > 0.8:
                 confidence += 0.4
             elif test.bounce_rate > 0.6:
@@ -342,20 +500,45 @@ class SRBacktestingValidator:
             elif test.bounce_rate > 0.2:
                 confidence += 0.1
             
-            # Penalty for false breakouts
+            # Volume analysis (30% weight)
+            volume_confidence = 0.0
+            
+            # Volume spike ratio
+            if test.volume_spike_ratio > 2.0:
+                volume_confidence += 0.15
+            elif test.volume_spike_ratio > 1.5:
+                volume_confidence += 0.1
+            elif test.volume_spike_ratio > 1.2:
+                volume_confidence += 0.05
+            
+            # Volume confirmation rate
+            if test.volume_confirmation_rate > 0.8:
+                volume_confidence += 0.1
+            elif test.volume_confirmation_rate > 0.6:
+                volume_confidence += 0.05
+            
+            # Institutional volume presence
+            if test.institutional_volume_ratio > 0.3:
+                volume_confidence += 0.05
+            
+            confidence += volume_confidence
+            
+            # Penalty for false breakouts (15% weight)
             if test.false_breakout_rate > 0.3:
-                confidence -= 0.2
+                confidence -= 0.15
             elif test.false_breakout_rate > 0.2:
                 confidence -= 0.1
+            elif test.false_breakout_rate > 0.1:
+                confidence -= 0.05
             
-            # Bonus for number of touches (more touches = more reliable)
+            # Bonus for number of touches (10% weight)
             if test.touches >= 5:
-                confidence += 0.2
-            elif test.touches >= 3:
                 confidence += 0.1
+            elif test.touches >= 3:
+                confidence += 0.05
             
-            # Bonus for level strength
-            confidence += test.level_strength * 0.2
+            # Bonus for level strength (5% weight)
+            confidence += test.level_strength * 0.05
             
             return max(0.0, min(1.0, confidence))
             
@@ -405,6 +588,13 @@ class SRBacktestingValidator:
             # Calculate average metrics
             result.avg_level_strength = np.mean([test.level_strength for test in result.level_tests])
             result.avg_confidence_score = np.mean([test.confidence_score for test in result.level_tests])
+            
+            # Calculate volume-related metrics
+            if result.level_tests:
+                result.avg_volume_spike_ratio = np.mean([test.volume_spike_ratio for test in result.level_tests])
+                result.avg_volume_confirmation_rate = np.mean([test.volume_confirmation_rate for test in result.level_tests])
+                result.avg_institutional_volume_ratio = np.mean([test.institutional_volume_ratio for test in result.level_tests])
+                result.avg_volume_cluster_score = np.mean([test.volume_cluster_score for test in result.level_tests])
             
             # Calculate level detection accuracy
             if result.total_levels_tested > 0:

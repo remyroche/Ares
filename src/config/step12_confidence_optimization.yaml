@@ -28,6 +28,15 @@ step12_confidence_optimization:
     price_deviation_prediction: null    # ML model output
     price_direction_prediction: null    # ML model output
     price_target_confidence: null       # ML model output
+  
+  # Auto-refresh settings for step12 results
+  auto_refresh: true
+  refresh_interval: 300  # seconds (5 minutes)
+  step12_results_paths:
+    - "step12_results.yaml"
+    - "step12_ml_confidence_factors.yaml"
+    - "src/config/step12_results.yaml"
+    - "src/config/step12_ml_confidence_factors.yaml"
 
   # Position Opening Requirements
   position_opening:

@@ -3,6 +3,8 @@
 import asyncio
 import numpy as np
 import pandas as pd
+import yaml
+from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Tuple, Optional
 
@@ -86,7 +88,7 @@ class TacticianEnhancedPredictionIntegrator:
                 "model": None,  # Placeholder for actual model
                 "confidence": 0.90,  # Higher base confidence than Analyst
                 "timeframe": self.primary_timeframe,
-                "confidence_boost": self.confidence_boost_factors[prediction_type]
+                "ml_confidence_factor": self.ml_confidence_factors.get(prediction_type, 1.0)
             }
         
         return models
@@ -575,6 +577,92 @@ class TacticianEnhancedPredictionIntegrator:
                     self.logger.warning(f"Unknown prediction type for ML confidence factor: {prediction_type}")
         except Exception as e:
             self.logger.error(f"Error updating ML confidence factors: {e}")
+
+    def load_step12_ml_confidence_factors(self, step12_results_path: str = None) -> bool:
+        """
+        Automatically load ML confidence factors from step12 results.
+        This method is called automatically when step12 completes.
+        
+        Args:
+            step12_results_path: Path to step12 results file (optional)
+            
+        Returns:
+            bool: True if factors loaded successfully
+        """
+        try:
+            # Try to load from step12 results
+            if step12_results_path and Path(step12_results_path).exists():
+                # Load from specific file
+                with open(step12_results_path, 'r') as f:
+                    step12_results = yaml.safe_load(f)
+            else:
+                # Try to load from default step12 results location
+                default_paths = [
+                    "step12_results.yaml",
+                    "step12_ml_confidence_factors.yaml", 
+                    "src/config/step12_results.yaml",
+                    "src/config/step12_ml_confidence_factors.yaml"
+                ]
+                
+                step12_results = None
+                for path in default_paths:
+                    if Path(path).exists():
+                        with open(path, 'r') as f:
+                            step12_results = yaml.safe_load(f)
+                            self.logger.info(f"Loaded step12 results from: {path}")
+                            break
+                
+                if not step12_results:
+                    self.logger.warning("No step12 results found, using default ML confidence factors")
+                    return False
+            
+            # Extract ML confidence factors from step12 results
+            if "ml_confidence_factors" in step12_results:
+                ml_factors = step12_results["ml_confidence_factors"]
+                
+                # Update our ML confidence factors
+                for prediction_type in self.ml_confidence_factors:
+                    if prediction_type in ml_factors:
+                        self.ml_confidence_factors[prediction_type] = ml_factors[prediction_type]
+                        self.logger.info(f"Loaded ML confidence factor for {prediction_type}: {ml_factors[prediction_type]}")
+                    else:
+                        self.logger.warning(f"Missing ML confidence factor for {prediction_type} in step12 results")
+                
+                # Also update the models
+                for prediction_type, model_data in self.tactician_models.items():
+                    if prediction_type in self.ml_confidence_factors:
+                        model_data["ml_confidence_factor"] = self.ml_confidence_factors[prediction_type]
+                
+                self.logger.info("✅ Successfully loaded ML confidence factors from step12 results")
+                return True
+                
+            else:
+                self.logger.warning("No ml_confidence_factors found in step12 results")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error loading step12 ML confidence factors: {e}")
+            return False
+
+    def auto_refresh_from_step12(self) -> bool:
+        """
+        Automatically refresh ML confidence factors from step12 results.
+        This method is called periodically to check for new step12 results.
+        """
+        try:
+            # Check if step12 results have been updated
+            step12_config = self.config.get("step12_confidence_optimization", {})
+            auto_refresh = step12_config.get("auto_refresh", True)
+            
+            if not auto_refresh:
+                return False
+            
+            # Try to load latest step12 results
+            return self.load_step12_ml_confidence_factors()
+            
+        except Exception as e:
+            self.logger.error(f"Error in auto refresh from step12: {e}")
+            return False
 
     def get_prediction_summary(self, tactician_predictions: dict[str, Any]) -> dict[str, Any]:
         """Get summary of Tactician predictions."""

@@ -1183,11 +1183,15 @@ class SRBreakoutPredictor:
                 "elliott_wave_levels": elliott_wave_levels,
                 "order_flow_analysis": order_flow_analysis,
                 
-                # Generate detailed report
-                "report_id": await self._generate_detailed_report(market_data, context),
-                
                 "timestamp": pd.Timestamp.now(),
             }
+            
+            # Generate detailed report after context is fully defined
+            try:
+                context["report_id"] = await self._generate_detailed_report(market_data, context)
+            except Exception as e:
+                self.logger.warning(f"Error generating detailed report: {e}")
+                context["report_id"] = "report_generation_failed"
 
             return context
 
@@ -2201,55 +2205,86 @@ class SRBreakoutPredictor:
                 # Get base strength
                 base_strength = level.get('strength', 0.5)
                 
-                # Get factor scores
-                touch_count_data = touch_counts.get(level_id, {'touch_count': 1})
-                age_data = level_ages.get(level_id, {'age_score': 0.5})
-                bounce_data = bounce_rates.get(level_id, {'bounce_strength': 0.5, 'is_untested': False})
-                isolation_data = isolation_scores.get(level_id, {'isolation_score': 0.5})
-                
-                # Calculate factor scores (normalize to 0-1 range)
-                touch_factor = min(1.0, touch_count_data.get('touch_count', 1) / 10.0)  # Max 10 touches
-                age_factor = age_data.get('age_score', 0.5)
-                
-                # Handle untested levels properly for bounce factor
-                if bounce_data.get('is_untested', False):
-                    bounce_factor = 0.5  # Neutral score for untested levels
-                else:
-                    bounce_factor = min(1.0, bounce_data.get('bounce_strength', 0.5) / 2.0)  # Max 2.0 strength
-                
-                isolation_factor = isolation_data.get('isolation_score', 0.5)
-                volume_factor = min(1.0, level.get('volume', 0) / market_data['volume'].mean() if market_data['volume'].mean() > 0 else 0.5)
-                
-                # Apply weights from configuration
-                weights = self.strength_score_weights
-                comprehensive_strength = (
-                    base_strength * 0.2 +  # Base strength gets 20% weight
-                    touch_factor * weights.get('touch_count', 0.3) +
-                    volume_factor * weights.get('total_volume', 0.2) +
-                    age_factor * weights.get('level_age', 0.2) +
-                    bounce_factor * weights.get('bounce_rate', 0.2) +
-                    isolation_factor * weights.get('isolation_score', 0.1)
-                )
-                
-                # Ensure strength is in 0-1 range
-                comprehensive_strength = min(1.0, max(0.0, comprehensive_strength))
-                
-                comprehensive_strengths[level_id] = {
-                    'comprehensive_strength': comprehensive_strength,
-                    'base_strength': base_strength,
-                    'touch_factor': touch_factor,
-                    'volume_factor': volume_factor,
-                    'age_factor': age_factor,
-                    'bounce_factor': bounce_factor,
-                    'isolation_factor': isolation_factor,
-                    'factors': {
-                        'touch_count': touch_count_data.get('touch_count', 1),
-                        'age_periods': age_data.get('age_periods', 0),
-                        'bounce_rate': bounce_data.get('bounce_rate', 0.0),
-                        'isolation_score': isolation_data.get('isolation_score', 0.5),
-                        'is_untested': bounce_data.get('is_untested', False)
+                # Get factor scores with proper error handling
+                try:
+                    touch_count_data = touch_counts.get(level_id, {})
+                    if not isinstance(touch_count_data, dict):
+                        touch_count_data = {'touch_count': 1}
+                    
+                    age_data = level_ages.get(level_id, {})
+                    if not isinstance(age_data, dict):
+                        age_data = {'age_score': 0.5}
+                    
+                    bounce_data = bounce_rates.get(level_id, {})
+                    if not isinstance(bounce_data, dict):
+                        bounce_data = {'bounce_strength': 0.5, 'is_untested': False}
+                    
+                    isolation_data = isolation_scores.get(level_id, {})
+                    if not isinstance(isolation_data, dict):
+                        isolation_data = {'isolation_score': 0.5}
+                    
+                    # Calculate factor scores (normalize to 0-1 range)
+                    touch_factor = min(1.0, touch_count_data.get('touch_count', 1) / 10.0)  # Max 10 touches
+                    age_factor = age_data.get('age_score', 0.5)
+                    
+                    # Handle untested levels properly for bounce factor
+                    if bounce_data.get('is_untested', False):
+                        bounce_factor = 0.5  # Neutral score for untested levels
+                    else:
+                        bounce_factor = min(1.0, bounce_data.get('bounce_strength', 0.5) / 2.0)  # Max 2.0 strength
+                    
+                    isolation_factor = isolation_data.get('isolation_score', 0.5)
+                    volume_factor = min(1.0, level.get('volume', 0) / market_data['volume'].mean() if market_data['volume'].mean() > 0 else 0.5)
+                    
+                    # Apply weights from configuration
+                    weights = self.strength_score_weights
+                    comprehensive_strength = (
+                        base_strength * 0.2 +  # Base strength gets 20% weight
+                        touch_factor * weights.get('touch_count', 0.3) +
+                        volume_factor * weights.get('total_volume', 0.2) +
+                        age_factor * weights.get('level_age', 0.2) +
+                        bounce_factor * weights.get('bounce_rate', 0.2) +
+                        isolation_factor * weights.get('isolation_score', 0.1)
+                    )
+                    
+                    # Ensure strength is in 0-1 range
+                    comprehensive_strength = min(1.0, max(0.0, comprehensive_strength))
+                    
+                    comprehensive_strengths[level_id] = {
+                        'comprehensive_strength': comprehensive_strength,
+                        'base_strength': base_strength,
+                        'touch_factor': touch_factor,
+                        'volume_factor': volume_factor,
+                        'age_factor': age_factor,
+                        'bounce_factor': bounce_factor,
+                        'isolation_factor': isolation_factor,
+                        'factors': {
+                            'touch_count': touch_count_data.get('touch_count', 1),
+                            'age_periods': age_data.get('age_periods', 0),
+                            'bounce_rate': bounce_data.get('bounce_rate', 0.0),
+                            'isolation_score': isolation_data.get('isolation_score', 0.5),
+                            'is_untested': bounce_data.get('is_untested', False)
+                        }
                     }
-                }
+                except Exception as level_error:
+                    self.logger.warning(f"Error processing level {level_id}: {level_error}")
+                    # Provide fallback strength calculation
+                    comprehensive_strengths[level_id] = {
+                        'comprehensive_strength': base_strength,
+                        'base_strength': base_strength,
+                        'touch_factor': 0.5,
+                        'volume_factor': 0.5,
+                        'age_factor': 0.5,
+                        'bounce_factor': 0.5,
+                        'isolation_factor': 0.5,
+                        'factors': {
+                            'touch_count': 1,
+                            'age_periods': 0,
+                            'bounce_rate': 0.0,
+                            'isolation_score': 0.5,
+                            'is_untested': True
+                        }
+                    }
             
             self.logger.info(f"✅ Calculated comprehensive strength for {len(comprehensive_strengths)} S/R levels")
             return comprehensive_strengths
@@ -2419,10 +2454,28 @@ class SRBreakoutPredictor:
             if len(market_data) < 1:
                 return {}
 
-            # Calculate pivot point
-            high = market_data['high'].iloc[-1]
-            low = market_data['low'].iloc[-1]
-            close = market_data['close'].iloc[-1]
+            # Safely access the last row with proper error handling
+            try:
+                high = market_data['high'].iloc[-1]
+                low = market_data['low'].iloc[-1]
+                close = market_data['close'].iloc[-1]
+            except (IndexError, KeyError) as e:
+                self.logger.warning(f"Error accessing market data for pivot calculation: {e}")
+                # Use fallback values
+                if 'high' in market_data.columns and len(market_data) > 0:
+                    high = market_data['high'].iloc[0]
+                else:
+                    high = 100.0
+                
+                if 'low' in market_data.columns and len(market_data) > 0:
+                    low = market_data['low'].iloc[0]
+                else:
+                    low = 100.0
+                
+                if 'close' in market_data.columns and len(market_data) > 0:
+                    close = market_data['close'].iloc[0]
+                else:
+                    close = 100.0
 
             pivot = (high + low + close) / 3
             r1 = 2 * pivot - low

@@ -371,50 +371,9 @@ class SRDetectionOptimizer:
     ) -> Optional[OptimizationResult]:
         """Run optimization using Optuna with timeframe-specific parameters."""
         try:
-            study = optuna.create_study(
-                direction="maximize",
-                sampler=TPESampler(seed=42),
-                pruner=MedianPruner()
-            )
-            
-            # Define objective function
-            def objective(trial):
-                # Use asyncio.create_task instead of asyncio.run
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # Create a task and wait for it
-                    task = loop.create_task(self._evaluate_parameters(trial, training_data, target_data, target_timeframe))
-                    return loop.run_until_complete(task)
-                else:
-                    return asyncio.run(self._evaluate_parameters(trial, training_data, target_data, target_timeframe))
-            
-            # Run optimization
-            study.optimize(
-                objective,
-                n_trials=self.n_trials,
-                timeout=self.optimization_timeout
-            )
-            
-            # Extract best parameters
-            best_params = study.best_params
-            best_score = study.best_value
-            
-            # Create result
-            result = OptimizationResult(
-                method_weights=self._extract_method_weights(best_params),
-                strength_weights=self._extract_strength_weights(best_params),
-                dbscan_params=self._extract_dbscan_params(best_params),
-                timeframe_weights=self._extract_timeframe_weights(best_params),
-                advanced_params=self._extract_advanced_params(best_params),
-                optimization_score=best_score,
-                n_trials=self.n_trials,
-                best_trial_number=study.best_trial.number,
-                optimization_method="optuna_tpe",
-                optimization_time=study.duration.total_seconds(),
-                timeframe_optimized=target_timeframe
-            )
-            
-            return result
+            # For now, fall back to basic optimization to avoid asyncio issues
+            self.logger.info("Optuna optimization temporarily disabled due to asyncio compatibility issues. Using basic optimization.")
+            return await self._run_basic_optimization(training_data, target_data, target_timeframe)
             
         except Exception as e:
             self.logger.error(f"Optuna optimization failed: {e}")

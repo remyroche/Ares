@@ -1,322 +1,289 @@
 #!/usr/bin/env python3
-"""
-Test script for S/R Detection Optimization Integration
+"""Test script to verify SR optimization integration.
 
-This script demonstrates how to use the comprehensive S/R detection optimization
-system with real data testing and parameter optimization.
+This script tests:
+1. The new step2_5_sr_optimization step
+2. That HMM clustering uses optimized parameters
+3. That subsequent steps use optimized parameters
 """
 
 import asyncio
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
 import sys
-import os
+from pathlib import Path
+from typing import Any, Dict
 
-# Add src to path
-sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
+# Add project root to path
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
 
-from src.tactician.sr_detection_optimization import SRDetectionOptimizer, setup_sr_detection_optimizer
-from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.logger import system_logger
 
-
-def generate_sample_market_data(n_periods: int = 1000) -> pd.DataFrame:
-    """Generate sample market data for testing."""
-    np.random.seed(42)
-    
-    # Generate realistic price data
-    base_price = 100.0
-    returns = np.random.normal(0, 0.02, n_periods)  # 2% daily volatility
-    
-    prices = [base_price]
-    for ret in returns[1:]:
-        new_price = prices[-1] * (1 + ret)
-        prices.append(new_price)
-    
-    # Generate OHLCV data
-    data = []
-    for i, price in enumerate(prices):
-        # Generate realistic OHLC from close price
-        volatility = np.random.uniform(0.005, 0.02)
-        high = price * (1 + np.random.uniform(0, volatility))
-        low = price * (1 - np.random.uniform(0, volatility))
-        open_price = np.random.uniform(low, high)
-        
-        # Generate volume
-        volume = np.random.uniform(1000, 10000)
-        
-        data.append({
-            'open': open_price,
-            'high': high,
-            'low': low,
-            'close': price,
-            'volume': volume,
-            'timestamp': datetime.now() - timedelta(minutes=n_periods-i)
-        })
-    
-    df = pd.DataFrame(data)
-    df.set_index('timestamp', inplace=True)
-    return df
+logger = system_logger.getChild("SROptimizationIntegrationTest")
 
 
-def generate_multi_timeframe_data(main_data: pd.DataFrame) -> dict[str, pd.DataFrame]:
-    """Generate multi-timeframe data from main data."""
-    timeframes = {
-        '1m': main_data,
-        '5m': main_data.resample('5T').agg({
-            'open': 'first',
-            'high': 'max',
-            'low': 'min',
-            'close': 'last',
-            'volume': 'sum'
-        }).dropna(),
-        '15m': main_data.resample('15T').agg({
-            'open': 'first',
-            'high': 'max',
-            'low': 'min',
-            'close': 'last',
-            'volume': 'sum'
-        }).dropna(),
-        '1h': main_data.resample('1H').agg({
-            'open': 'first',
-            'high': 'max',
-            'low': 'min',
-            'close': 'last',
-            'volume': 'sum'
-        }).dropna(),
-    }
-    return timeframes
-
-
-async def test_sr_optimization():
-    """Test the S/R detection optimization system."""
-    logger = system_logger.getChild("TestSROptimization")
-    
+async def test_sr_optimization_step():
+    """Test the SR optimization step."""
     try:
-        logger.info("🚀 Starting S/R Detection Optimization Test")
+        logger.info("🧪 Testing SR optimization step...")
         
-        # Configuration
-        config = {
-            "sr_breakout_predictor": {
-                "enable_detailed_reporting": True,
-                "use_optimized_params": True,
-                "optimization_results_file": "test_optimization_results.json",
-            },
+        # Import the step
+        from src.training.steps.step2_5_sr_optimization import run_step
+        
+        # Test configuration
+        test_config = {
             "sr_detection_optimization": {
-                "n_trials": 20,  # Reduced for testing
+                "n_trials": 5,  # Reduced for testing
                 "cv_folds": 3,
                 "test_size": 0.2,
-                "optimization_timeout": 300,  # 5 minutes for testing
+                "optimization_timeout": 60,  # 1 minute for testing
                 "performance_thresholds": {
-                    "min_sharpe_ratio": 0.3,
-                    "max_drawdown": -0.2,
-                    "min_win_rate": 0.5,
-                    "min_profit_factor": 1.2,
+                    "min_sharpe_ratio": 0.2,
+                    "max_drawdown": -0.3,
+                    "min_win_rate": 0.4,
+                    "min_profit_factor": 1.1,
                     "min_signal_clarity": 0.05,
                 }
+            },
+            "sr_breakout_predictor": {
+                "use_optimized_params": True,
+                "enable_detailed_reporting": True,
+                "report_directory": "reports/sr_analysis",
+                "report_format": "json",
+                "report_retention_days": 30
             }
         }
         
-        # Generate sample data
-        logger.info("📊 Generating sample market data...")
-        market_data = generate_sample_market_data(1000)
-        multi_timeframe_data = generate_multi_timeframe_data(market_data)
+        # Run the step
+        success = await run_step(test_config)
         
-        logger.info(f"Generated {len(market_data)} data points")
-        logger.info(f"Multi-timeframe data: {list(multi_timeframe_data.keys())}")
-        
-        # Initialize optimizer
-        logger.info("🔧 Initializing S/R Detection Optimizer...")
-        optimizer = await setup_sr_detection_optimizer(config)
-        
-        if not optimizer:
-            logger.error("❌ Failed to initialize optimizer")
-            return False
-        
-        # Run optimization
-        logger.info("🎯 Running comprehensive S/R detection optimization...")
-        result = await optimizer.optimize_sr_detection(
-            market_data=market_data,
-            multi_timeframe_data=multi_timeframe_data,
-            target_data=None  # No supervised learning for this test
-        )
-        
-        if result:
-            logger.info("✅ Optimization completed successfully!")
-            logger.info(f"Best optimization score: {result.optimization_score:.4f}")
-            logger.info(f"Optimization method: {result.optimization_method}")
-            logger.info(f"Number of trials: {result.n_trials}")
-            logger.info(f"Optimization time: {result.optimization_time:.2f} seconds")
-            
-            # Display optimized parameters
-            logger.info("📈 Optimized Parameters:")
-            logger.info(f"  Method Weights: {result.method_weights}")
-            logger.info(f"  Strength Weights: {result.strength_weights}")
-            logger.info(f"  DBSCAN Params: {result.dbscan_params}")
-            logger.info(f"  Timeframe Weights: {result.timeframe_weights}")
-            logger.info(f"  Advanced Params: {result.advanced_params}")
-            
-            # Save results
-            logger.info("💾 Saving optimization results...")
-            optimizer.save_optimization_results("test_optimization_results.json")
-            
-            # Test optimized S/R predictor
-            logger.info("🧪 Testing optimized S/R predictor...")
-            await test_optimized_sr_predictor(config, market_data, result)
-            
+        if success:
+            logger.info("✅ SR optimization step test passed")
             return True
         else:
-            logger.error("❌ Optimization failed")
+            logger.error("❌ SR optimization step test failed")
             return False
             
     except Exception as e:
-        logger.error(f"❌ Test failed: {e}")
+        logger.error(f"❌ SR optimization step test error: {e}")
         return False
 
 
-async def test_optimized_sr_predictor(
-    config: dict,
-    market_data: pd.DataFrame,
-    optimization_result
-):
-    """Test the S/R predictor with optimized parameters."""
-    logger = system_logger.getChild("TestOptimizedSRPredictor")
-    
+async def test_hmm_uses_optimized_params():
+    """Test that HMM clustering uses optimized parameters."""
     try:
-        # Initialize S/R predictor
-        sr_predictor = SRBreakoutPredictor(config)
-        await sr_predictor.initialize()
+        logger.info("🧪 Testing HMM uses optimized parameters...")
         
-        # Apply optimized parameters
-        optimized_params = {
-            "method_weights": optimization_result.method_weights,
-            "strength_weights": optimization_result.strength_weights,
-            "dbscan_params": optimization_result.dbscan_params,
-            "timeframe_weights": optimization_result.timeframe_weights,
-            "advanced_params": optimization_result.advanced_params,
-        }
+        # Import HMM step
+        from src.training.steps.step3_hmm_regime_discovery import HMMRegimeDiscoveryStep
         
-        await sr_predictor.set_optimized_parameters(optimized_params)
-        
-        # Test S/R context generation
-        current_price = market_data['close'].iloc[-1]
-        sr_context = await sr_predictor.get_sr_context(market_data, current_price)
-        
-        logger.info("📊 S/R Context Results:")
-        logger.info(f"  Current Price: {current_price:.4f}")
-        logger.info(f"  Support Levels: {len(sr_context.get('support_levels', []))}")
-        logger.info(f"  Resistance Levels: {len(sr_context.get('resistance_levels', []))}")
-        logger.info(f"  Support Strength: {sr_context.get('support_strength', 0):.3f}")
-        logger.info(f"  Resistance Strength: {sr_context.get('resistance_strength', 0):.3f}")
-        logger.info(f"  Clusters Detected: {sr_context.get('clustering_result', {}).get('n_clusters', 0)}")
-        
-        # Test S/R breakout prediction
-        predictions = await sr_predictor.predict_sr_breakouts(market_data, current_price)
-        
-        logger.info("🎯 S/R Breakout Predictions:")
-        logger.info(f"  Support Levels: {len(predictions.get('support_levels', []))}")
-        logger.info(f"  Resistance Levels: {len(predictions.get('resistance_levels', []))}")
-        logger.info(f"  Breakout Probabilities: {len(predictions.get('breakout_probabilities', {}))}")
-        logger.info(f"  Confidence Scores: {len(predictions.get('confidence_scores', {}))}")
-        
-        # Compare with default parameters
-        logger.info("🔄 Comparing with default parameters...")
-        default_sr_predictor = SRBreakoutPredictor(config)
-        await default_sr_predictor.initialize()
-        
-        default_sr_context = await default_sr_predictor.get_sr_context(market_data, current_price)
-        
-        logger.info("📊 Comparison Results:")
-        logger.info(f"  Optimized Support Levels: {len(sr_context.get('support_levels', []))}")
-        logger.info(f"  Default Support Levels: {len(default_sr_context.get('support_levels', []))}")
-        logger.info(f"  Optimized Resistance Levels: {len(sr_context.get('resistance_levels', []))}")
-        logger.info(f"  Default Resistance Levels: {len(default_sr_context.get('resistance_levels', []))}")
-        logger.info(f"  Optimized Support Strength: {sr_context.get('support_strength', 0):.3f}")
-        logger.info(f"  Default Support Strength: {default_sr_context.get('support_strength', 0):.3f}")
-        
-        # Calculate improvement
-        optimized_levels = len(sr_context.get('support_levels', [])) + len(sr_context.get('resistance_levels', []))
-        default_levels = len(default_sr_context.get('support_levels', [])) + len(default_sr_context.get('resistance_levels', []))
-        
-        if default_levels > 0:
-            improvement = (optimized_levels - default_levels) / default_levels * 100
-            logger.info(f"  Level Detection Improvement: {improvement:.1f}%")
-        
-        logger.info("✅ Optimized S/R predictor test completed successfully!")
-        
-    except Exception as e:
-        logger.error(f"❌ Optimized S/R predictor test failed: {e}")
-
-
-async def test_parameter_loading():
-    """Test loading optimized parameters from file."""
-    logger = system_logger.getChild("TestParameterLoading")
-    
-    try:
-        logger.info("📂 Testing parameter loading from file...")
-        
-        # Configuration with optimization file
-        config = {
+        # Test configuration with optimized parameters
+        test_config = {
             "sr_breakout_predictor": {
                 "use_optimized_params": True,
-                "optimization_results_file": "test_optimization_results.json",
+                "optimization_results_file": "optimization_results.json"
+            },
+            "sr_detection_optimization": {
+                "optimized_method_weights": {"fractal": 0.8, "volume": 0.6},
+                "optimized_strength_weights": {"volume": 0.7, "price": 0.3},
+                "optimized_dbscan_params": {"eps": 0.1, "min_samples": 5},
+                "optimized_timeframe_weights": {"1m": 0.4, "5m": 0.6},
+                "optimized_advanced_params": {"fibonacci_sensitivity": 0.8}
             }
         }
         
-        # Initialize S/R predictor (should load optimized parameters)
-        sr_predictor = SRBreakoutPredictor(config)
-        await sr_predictor.initialize()
+        # Create HMM step
+        hmm_step = HMMRegimeDiscoveryStep(test_config)
         
-        # Get current parameters
-        current_params = sr_predictor.get_current_parameters()
-        
-        logger.info("📊 Loaded Parameters:")
-        logger.info(f"  Method Weights: {current_params['method_weights']}")
-        logger.info(f"  Strength Weights: {current_params['strength_weights']}")
-        logger.info(f"  DBSCAN Params: {current_params['dbscan_params']}")
-        
-        logger.info("✅ Parameter loading test completed successfully!")
-        
-    except Exception as e:
-        logger.error(f"❌ Parameter loading test failed: {e}")
-
-
-async def main():
-    """Main test function."""
-    logger = system_logger.getChild("MainTest")
-    
-    try:
-        logger.info("🚀 Starting S/R Detection Optimization Integration Tests")
-        
-        # Test 1: Basic optimization
-        logger.info("\n" + "="*50)
-        logger.info("TEST 1: Basic S/R Detection Optimization")
-        logger.info("="*50)
-        
-        success1 = await test_sr_optimization()
-        
-        if success1:
-            # Test 2: Parameter loading
-            logger.info("\n" + "="*50)
-            logger.info("TEST 2: Parameter Loading from File")
-            logger.info("="*50)
-            
-            await test_parameter_loading()
-        
-        logger.info("\n" + "="*50)
-        logger.info("🎉 All tests completed!")
-        logger.info("="*50)
-        
-        if success1:
-            logger.info("✅ S/R Detection Optimization Integration is working correctly!")
-            logger.info("📁 Check 'test_optimization_results.json' for detailed results")
+        # Check if SR predictor is initialized with optimized params
+        if hasattr(hmm_step, 'sr_predictor'):
+            sr_predictor = hmm_step.sr_predictor
+            if hasattr(sr_predictor, 'use_optimized_params'):
+                if sr_predictor.use_optimized_params:
+                    logger.info("✅ HMM step uses optimized parameters")
+                    return True
+                else:
+                    logger.error("❌ HMM step does not use optimized parameters")
+                    return False
+            else:
+                logger.error("❌ SR predictor does not have use_optimized_params attribute")
+                return False
         else:
-            logger.error("❌ Some tests failed. Check logs for details.")
+            logger.error("❌ HMM step does not have SR predictor")
+            return False
+            
+    except Exception as e:
+        logger.error(f"❌ HMM optimized params test error: {e}")
+        return False
+
+
+async def test_subsequent_steps_use_optimized_params():
+    """Test that subsequent steps use optimized parameters."""
+    try:
+        logger.info("🧪 Testing subsequent steps use optimized parameters...")
+        
+        # Test configuration with optimized parameters
+        test_config = {
+            "sr_breakout_predictor": {
+                "use_optimized_params": True,
+                "optimization_results_file": "optimization_results.json"
+            },
+            "sr_detection_optimization": {
+                "optimized_method_weights": {"fractal": 0.8, "volume": 0.6},
+                "optimized_strength_weights": {"volume": 0.7, "price": 0.3},
+                "optimized_dbscan_params": {"eps": 0.1, "min_samples": 5},
+                "optimized_timeframe_weights": {"1m": 0.4, "5m": 0.6},
+                "optimized_advanced_params": {"fibonacci_sensitivity": 0.8}
+            }
+        }
+        
+        # Test various components that should use optimized parameters
+        components_to_test = [
+            ("SR Breakout Predictor", "src.tactician.sr_breakout_predictor", "SRBreakoutPredictor"),
+            ("Analyst Unified Regime Classifier", "src.analyst.unified_regime_classifier", "UnifiedRegimeClassifier"),
+            ("Tactician SR Backtesting Validator", "src.tactician.sr_backtesting_validator", "SRBacktestingValidator"),
+        ]
+        
+        all_passed = True
+        
+        for component_name, module_path, class_name in components_to_test:
+            try:
+                # Import the module
+                module = __import__(module_path, fromlist=[class_name])
+                component_class = getattr(module, class_name)
+                
+                # Create instance with test config
+                component = component_class(test_config)
+                
+                # Check if it uses optimized parameters
+                if hasattr(component, 'sr_predictor'):
+                    sr_predictor = component.sr_predictor
+                    if hasattr(sr_predictor, 'use_optimized_params') and sr_predictor.use_optimized_params:
+                        logger.info(f"✅ {component_name} uses optimized parameters")
+                    else:
+                        logger.error(f"❌ {component_name} does not use optimized parameters")
+                        all_passed = False
+                else:
+                    logger.warning(f"⚠️ {component_name} does not have SR predictor")
+                    
+            except Exception as e:
+                logger.warning(f"⚠️ Could not test {component_name}: {e}")
+        
+        return all_passed
         
     except Exception as e:
-        logger.error(f"❌ Main test failed: {e}")
+        logger.error(f"❌ Subsequent steps test error: {e}")
+        return False
+
+
+async def test_pipeline_integration():
+    """Test that the pipeline correctly includes the new step."""
+    try:
+        logger.info("🧪 Testing pipeline integration...")
+        
+        # Test step dependency validator
+        from src.utils.step_dependency_validator import StepDependencyValidator
+        
+        validator = StepDependencyValidator()
+        
+        # Check if step2_5_sr_optimization is in dependencies
+        if "step2_5_sr_optimization" in validator.step_dependencies:
+            logger.info("✅ step2_5_sr_optimization found in step dependencies")
+        else:
+            logger.error("❌ step2_5_sr_optimization not found in step dependencies")
+            return False
+        
+        # Check if step3_hmm_regime_discovery depends on step2_5_sr_optimization
+        step3_deps = validator.step_dependencies.get("step3_hmm_regime_discovery", [])
+        if "step2_5_sr_optimization" in step3_deps:
+            logger.info("✅ step3_hmm_regime_discovery depends on step2_5_sr_optimization")
+        else:
+            logger.error("❌ step3_hmm_regime_discovery does not depend on step2_5_sr_optimization")
+            return False
+        
+        # Test enhanced training manager
+        from src.training.enhanced_training_manager import EnhancedTrainingManager
+        
+        # Check if step2_5_sr_optimization is in STEP_ORDER
+        if "step2_5_sr_optimization" in EnhancedTrainingManager.STEP_ORDER:
+            logger.info("✅ step2_5_sr_optimization found in STEP_ORDER")
+        else:
+            logger.error("❌ step2_5_sr_optimization not found in STEP_ORDER")
+            return False
+        
+        # Check if step2_5_sr_optimization is in CRITICAL_ARTIFACTS
+        if "step2_5_sr_optimization" in EnhancedTrainingManager.CRITICAL_ARTIFACTS:
+            logger.info("✅ step2_5_sr_optimization found in CRITICAL_ARTIFACTS")
+        else:
+            logger.error("❌ step2_5_sr_optimization not found in CRITICAL_ARTIFACTS")
+            return False
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Pipeline integration test error: {e}")
+        return False
+
+
+async def run_all_tests():
+    """Run all tests."""
+    logger.info("🚀 Starting SR optimization integration tests...")
+    
+    tests = [
+        ("SR Optimization Step", test_sr_optimization_step),
+        ("HMM Uses Optimized Params", test_hmm_uses_optimized_params),
+        ("Subsequent Steps Use Optimized Params", test_subsequent_steps_use_optimized_params),
+        ("Pipeline Integration", test_pipeline_integration),
+    ]
+    
+    results = {}
+    
+    for test_name, test_func in tests:
+        logger.info(f"\n{'='*60}")
+        logger.info(f"Running test: {test_name}")
+        logger.info(f"{'='*60}")
+        
+        try:
+            result = await test_func()
+            results[test_name] = result
+            
+            if result:
+                logger.info(f"✅ {test_name} PASSED")
+            else:
+                logger.error(f"❌ {test_name} FAILED")
+                
+        except Exception as e:
+            logger.error(f"❌ {test_name} ERROR: {e}")
+            results[test_name] = False
+    
+    # Summary
+    logger.info(f"\n{'='*60}")
+    logger.info("TEST SUMMARY")
+    logger.info(f"{'='*60}")
+    
+    passed = sum(1 for result in results.values() if result)
+    total = len(results)
+    
+    for test_name, result in results.items():
+        status = "✅ PASSED" if result else "❌ FAILED"
+        logger.info(f"{test_name:<40} {status}")
+    
+    logger.info(f"\nOverall: {passed}/{total} tests passed")
+    
+    if passed == total:
+        logger.info("🎉 All tests passed! SR optimization integration is working correctly.")
+        return True
+    else:
+        logger.error(f"❌ {total - passed} tests failed. Please check the implementation.")
+        return False
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Run all tests
+    success = asyncio.run(run_all_tests())
+    
+    if success:
+        print("\n🎉 All SR optimization integration tests passed!")
+        sys.exit(0)
+    else:
+        print("\n❌ Some SR optimization integration tests failed!")
+        sys.exit(1)

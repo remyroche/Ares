@@ -124,6 +124,7 @@ class DITrainingManager(InjectableBase):
         step_classes = [
             "step1_data_collection",
             "step2_data_validation",
+            "step2_5_sr_optimization",
             "step3_hmm_regime_discovery",
             "step4_data_preprocessing",
             "step5_model_training",

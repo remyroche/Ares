@@ -66,13 +66,6 @@ class BacktestResult:
     support_breakout_rate: float = 0.0
     resistance_breakout_rate: float = 0.0
     
-    # Performance metrics
-    sharpe_ratio: float = 0.0
-    win_rate: float = 0.0
-    profit_factor: float = 0.0
-    max_drawdown: float = 0.0
-    total_return: float = 0.0
-    
     # Level quality metrics
     avg_level_strength: float = 0.0
     avg_confidence_score: float = 0.0
@@ -84,15 +77,15 @@ class BacktestResult:
     avg_institutional_volume_ratio: float = 0.0
     avg_volume_cluster_score: float = 0.0
     
+    # S/R validation score
+    sr_validation_score: float = 0.0
+    
     # Detailed results
     level_tests: List[SRLevelTest] = None
-    trade_signals: List[Dict[str, Any]] = None
     
     def __post_init__(self):
         if self.level_tests is None:
             self.level_tests = []
-        if self.trade_signals is None:
-            self.trade_signals = []
 
 
 class SRBacktestingValidator:
@@ -127,11 +120,10 @@ class SRBacktestingValidator:
     self.volume_lookback_periods = self.backtest_config.get("volume_lookback_periods", 20)  # 20 periods for volume baseline
     self.volume_cluster_radius = self.backtest_config.get("volume_cluster_radius", 0.005)  # 0.5% price range for clustering
         
-        # Trading simulation configuration
-        self.enable_trading_simulation = self.backtest_config.get("enable_trading_simulation", True)
-        self.position_size = self.backtest_config.get("position_size", 0.1)  # 10% of capital
-        self.stop_loss = self.backtest_config.get("stop_loss", 0.02)  # 2% stop loss
-        self.take_profit = self.backtest_config.get("take_profit", 0.04)  # 4% take profit
+            # S/R validation configuration
+    self.min_bounce_rate = self.backtest_config.get("min_bounce_rate", 0.6)  # 60% minimum bounce rate
+    self.max_false_breakout_rate = self.backtest_config.get("max_false_breakout_rate", 0.3)  # 30% max false breakouts
+    self.min_volume_confirmation = self.backtest_config.get("min_volume_confirmation", 0.5)  # 50% volume confirmation
         
     @handle_specific_errors(
         error_handlers={
@@ -178,14 +170,10 @@ class SRBacktestingValidator:
             # Calculate overall metrics
             await self._calculate_overall_metrics(result)
             
-            # Simulate trading if enabled
-            if self.enable_trading_simulation:
-                await self._simulate_trading_strategy(market_data, sr_levels, result)
+            # Calculate S/R validation score
+            await self._calculate_sr_validation_score(result)
             
-            # Calculate final performance metrics
-            await self._calculate_performance_metrics(result)
-            
-            self.logger.info(f"✅ S/R validation completed. Success rate: {result.win_rate:.2%}")
+            self.logger.info(f"✅ S/R validation completed. Validation score: {result.sr_validation_score:.3f}")
             return result
             
         except Exception as e:
@@ -603,239 +591,39 @@ class SRBacktestingValidator:
         except Exception as e:
             self.logger.error(f"Failed to calculate overall metrics: {e}")
     
-    async def _simulate_trading_strategy(
-        self,
-        market_data: pd.DataFrame,
-        sr_levels: List[Dict[str, Any]],
-        result: BacktestResult
-    ) -> None:
-        """Simulate trading strategy based on S/R levels."""
+    async def _calculate_sr_validation_score(self, result: BacktestResult) -> None:
+        """Calculate S/R validation score based on level effectiveness."""
         try:
-            if not sr_levels:
-                return
+            # S/R validation score components (0-1)
+            bounce_score = min(result.overall_bounce_rate / self.min_bounce_rate, 1.0)
             
-            # Initialize trading variables
-            capital = 10000  # Starting capital
-            position = 0  # Current position (0 = no position, 1 = long, -1 = short)
-            entry_price = 0
-            trades = []
+            false_breakout_score = max(0, 1 - (result.overall_false_breakout_rate / self.max_false_breakout_rate))
             
-            for i in range(len(market_data) - 1):
-                current_price = market_data['close'].iloc[i]
-                next_price = market_data['close'].iloc[i + 1]
-                
-                # Check for entry signals
-                if position == 0:  # No position
-                    signal = await self._check_entry_signal(
-                        current_price, next_price, sr_levels, result.level_tests
-                    )
-                    
-                    if signal == "long":
-                        position = 1
-                        entry_price = next_price
-                        trades.append({
-                            "type": "entry",
-                            "side": "long",
-                            "price": entry_price,
-                            "timestamp": market_data.index[i + 1],
-                            "capital": capital
-                        })
-                    
-                    elif signal == "short":
-                        position = -1
-                        entry_price = next_price
-                        trades.append({
-                            "type": "entry",
-                            "side": "short",
-                            "price": entry_price,
-                            "timestamp": market_data.index[i + 1],
-                            "capital": capital
-                        })
-                
-                # Check for exit signals
-                elif position != 0:
-                    exit_signal = await self._check_exit_signal(
-                        position, entry_price, next_price
-                    )
-                    
-                    if exit_signal:
-                        # Calculate P&L
-                        if position == 1:  # Long position
-                            pnl = (next_price - entry_price) / entry_price
-                        else:  # Short position
-                            pnl = (entry_price - next_price) / entry_price
-                        
-                        # Update capital
-                        capital *= (1 + pnl * self.position_size)
-                        
-                        trades.append({
-                            "type": "exit",
-                            "side": "long" if position == 1 else "short",
-                            "entry_price": entry_price,
-                            "exit_price": next_price,
-                            "pnl": pnl,
-                            "capital": capital,
-                            "timestamp": market_data.index[i + 1]
-                        })
-                        
-                        position = 0
-                        entry_price = 0
+            volume_score = min(result.avg_volume_confirmation_rate / self.min_volume_confirmation, 1.0)
             
-            # Calculate trading metrics
-            result.trade_signals = trades
-            await self._calculate_trading_metrics(result, capital)
+            confidence_score = result.avg_confidence_score
             
-        except Exception as e:
-            self.logger.error(f"Failed to simulate trading strategy: {e}")
-    
-    async def _check_entry_signal(
-        self,
-        current_price: float,
-        next_price: float,
-        sr_levels: List[Dict[str, Any]],
-        level_tests: List[SRLevelTest]
-    ) -> Optional[str]:
-        """Check for entry signals based on S/R levels."""
-        try:
-            for level, test in zip(sr_levels, level_tests):
-                level_price = level.get("price", 0)
-                level_type = level.get("type", "support")
-                
-                # Only trade on high-confidence levels
-                if test.confidence_score < 0.6:
-                    continue
-                
-                # Check for support bounce (long signal)
-                if level_type == "support":
-                    if (current_price <= level_price * (1 + self.touch_threshold) and
-                        next_price > current_price and
-                        test.bounce_rate > 0.6):
-                        return "long"
-                
-                # Check for resistance bounce (short signal)
-                elif level_type == "resistance":
-                    if (current_price >= level_price * (1 - self.touch_threshold) and
-                        next_price < current_price and
-                        test.bounce_rate > 0.6):
-                        return "short"
+            level_accuracy_score = result.level_detection_accuracy
             
-            return None
-            
-        except Exception as e:
-            self.logger.error(f"Failed to check entry signal: {e}")
-            return None
-    
-    async def _check_exit_signal(
-        self,
-        position: int,
-        entry_price: float,
-        current_price: float
-    ) -> bool:
-        """Check for exit signals based on stop loss and take profit."""
-        try:
-            if position == 1:  # Long position
-                # Check stop loss
-                if current_price <= entry_price * (1 - self.stop_loss):
-                    return True
-                # Check take profit
-                elif current_price >= entry_price * (1 + self.take_profit):
-                    return True
-            
-            elif position == -1:  # Short position
-                # Check stop loss
-                if current_price >= entry_price * (1 + self.stop_loss):
-                    return True
-                # Check take profit
-                elif current_price <= entry_price * (1 - self.take_profit):
-                    return True
-            
-            return False
-            
-        except Exception as e:
-            self.logger.error(f"Failed to check exit signal: {e}")
-            return False
-    
-    async def _calculate_trading_metrics(self, result: BacktestResult, final_capital: float) -> None:
-        """Calculate trading performance metrics."""
-        try:
-            if not result.trade_signals:
-                return
-            
-            # Calculate returns
-            initial_capital = 10000
-            result.total_return = (final_capital - initial_capital) / initial_capital
-            
-            # Calculate win rate
-            winning_trades = [t for t in result.trade_signals if t.get("pnl", 0) > 0]
-            result.win_rate = len(winning_trades) / len(result.trade_signals) if result.trade_signals else 0
-            
-            # Calculate profit factor
-            gross_profit = sum(t.get("pnl", 0) for t in winning_trades)
-            losing_trades = [t for t in result.trade_signals if t.get("pnl", 0) < 0]
-            gross_loss = abs(sum(t.get("pnl", 0) for t in losing_trades))
-            
-            result.profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf')
-            
-            # Calculate Sharpe ratio (simplified)
-            returns = [t.get("pnl", 0) for t in result.trade_signals]
-            if returns:
-                avg_return = np.mean(returns)
-                std_return = np.std(returns)
-                result.sharpe_ratio = avg_return / std_return if std_return > 0 else 0
-            
-            # Calculate max drawdown
-            capital_curve = [10000]  # Starting capital
-            for trade in result.trade_signals:
-                if trade["type"] == "exit":
-                    capital_curve.append(trade["capital"])
-            
-            if len(capital_curve) > 1:
-                peak = capital_curve[0]
-                max_dd = 0
-                for capital in capital_curve[1:]:
-                    if capital > peak:
-                        peak = capital
-                    dd = (peak - capital) / peak
-                    max_dd = max(max_dd, dd)
-                result.max_drawdown = -max_dd
-            
-        except Exception as e:
-            self.logger.error(f"Failed to calculate trading metrics: {e}")
-    
-    async def _calculate_performance_metrics(self, result: BacktestResult) -> None:
-        """Calculate final performance metrics."""
-        try:
-            # Combine S/R validation metrics with trading metrics
-            # This gives us a comprehensive view of S/R level effectiveness
-            
-            # S/R validation score (0-1)
-            sr_validation_score = (
-                result.overall_bounce_rate * 0.4 +
-                (1 - result.overall_false_breakout_rate) * 0.3 +
-                result.level_detection_accuracy * 0.3
+            # Weighted S/R validation score
+            result.sr_validation_score = (
+                bounce_score * 0.3 +           # 30% - Bounce rate
+                false_breakout_score * 0.25 +   # 25% - Low false breakouts
+                volume_score * 0.2 +           # 20% - Volume confirmation
+                confidence_score * 0.15 +      # 15% - Overall confidence
+                level_accuracy_score * 0.1     # 10% - Level detection accuracy
             )
             
-            # Trading performance score (0-1)
-            trading_score = (
-                max(0, result.win_rate) * 0.3 +
-                min(1, result.profit_factor / 2) * 0.3 +
-                max(0, result.sharpe_ratio / 2) * 0.2 +
-                max(0, 1 + result.total_return) * 0.2
-            )
-            
-            # Overall performance score
-            overall_score = (sr_validation_score * 0.6 + trading_score * 0.4)
-            
-            # Store the overall score for optimization
-            result.overall_performance_score = overall_score
-            
-            self.logger.info(f"📊 Performance Metrics:")
-            self.logger.info(f"  S/R Validation Score: {sr_validation_score:.3f}")
-            self.logger.info(f"  Trading Score: {trading_score:.3f}")
-            self.logger.info(f"  Overall Score: {overall_score:.3f}")
+            self.logger.info(f"📊 S/R Validation Score Components:")
+            self.logger.info(f"  Bounce Score: {bounce_score:.3f}")
+            self.logger.info(f"  False Breakout Score: {false_breakout_score:.3f}")
+            self.logger.info(f"  Volume Score: {volume_score:.3f}")
+            self.logger.info(f"  Confidence Score: {confidence_score:.3f}")
+            self.logger.info(f"  Level Accuracy Score: {level_accuracy_score:.3f}")
+            self.logger.info(f"  Overall S/R Validation Score: {result.sr_validation_score:.3f}")
             
         except Exception as e:
-            self.logger.error(f"Failed to calculate performance metrics: {e}")
+            self.logger.error(f"Failed to calculate S/R validation score: {e}")
 
 
 # Setup function for easy integration

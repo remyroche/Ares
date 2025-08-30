@@ -125,10 +125,14 @@ async def test_sr_backtesting_validation():
                 "false_breakout_threshold": 0.02,  # 2% false breakout
                 "confirmation_periods": 3,
                 "min_touches": 2,
-                "enable_trading_simulation": True,
-                "position_size": 0.1,
-                "stop_loss": 0.02,
-                "take_profit": 0.04,
+                "volume_spike_threshold": 1.5,  # 1.5x average volume
+                "institutional_volume_threshold": 2.0,  # 2x average volume
+                "volume_confirmation_threshold": 1.2,  # 1.2x average volume
+                "volume_lookback_periods": 20,  # 20 periods for volume baseline
+                "volume_cluster_radius": 0.005,  # 0.5% price range for clustering
+                "min_bounce_rate": 0.6,  # 60% minimum bounce rate
+                "max_false_breakout_rate": 0.3,  # 30% max false breakouts
+                "min_volume_confirmation": 0.5,  # 50% volume confirmation
             }
         }
         
@@ -220,12 +224,10 @@ async def test_direct_backtesting(config: dict, market_data: pd.DataFrame):
             logger.info(f"  Institutional Volume Ratio: {backtest_result.avg_institutional_volume_ratio:.2%}")
             logger.info(f"  Volume Cluster Score: {backtest_result.avg_volume_cluster_score:.2f}")
             
-            logger.info("\n💰 Trading Performance:")
-            logger.info(f"  Win Rate: {backtest_result.win_rate:.2%}")
-            logger.info(f"  Profit Factor: {backtest_result.profit_factor:.2f}")
-            logger.info(f"  Sharpe Ratio: {backtest_result.sharpe_ratio:.2f}")
-            logger.info(f"  Total Return: {backtest_result.total_return:.2%}")
-            logger.info(f"  Max Drawdown: {backtest_result.max_drawdown:.2%}")
+            logger.info("\n🎯 S/R Validation Score:")
+            logger.info(f"  Overall S/R Validation Score: {backtest_result.sr_validation_score:.3f}")
+            logger.info(f"  Level Detection Accuracy: {backtest_result.level_detection_accuracy:.2%}")
+            logger.info(f"  Average Confidence Score: {backtest_result.avg_confidence_score:.3f}")
             
             logger.info("\n🎯 Individual Level Analysis:")
             for i, level_test in enumerate(backtest_result.level_tests[:5]):  # Show first 5
@@ -280,9 +282,9 @@ async def test_optimization_with_backtesting(config: dict, market_data: pd.DataF
             if hasattr(optimizer, 'backtest_results') and optimizer.backtest_results:
                 latest_backtest = optimizer.backtest_results[-1]['backtest_result']
                 logger.info(f"\n🎯 Optimization Backtesting Results:")
-                logger.info(f"  Overall Performance Score: {latest_backtest.overall_performance_score:.3f}")
-                logger.info(f"  S/R Validation Score: {latest_backtest.overall_bounce_rate:.2%}")
-                logger.info(f"  Trading Score: {latest_backtest.win_rate:.2%}")
+                logger.info(f"  S/R Validation Score: {latest_backtest.sr_validation_score:.3f}")
+                logger.info(f"  Bounce Rate: {latest_backtest.overall_bounce_rate:.2%}")
+                logger.info(f"  Volume Confirmation: {latest_backtest.avg_volume_confirmation_rate:.2%}")
         
     except Exception as e:
         logger.error(f"❌ Optimization with backtesting test failed: {e}")
@@ -347,30 +349,29 @@ async def test_success_metrics_analysis(config: dict, market_data: pd.DataFrame)
                     "successful_levels": backtest_result.successful_levels,
                     "accuracy": backtest_result.level_detection_accuracy,
                     "bounce_rate": backtest_result.overall_bounce_rate,
-                    "win_rate": backtest_result.win_rate,
-                    "profit_factor": backtest_result.profit_factor,
-                    "sharpe_ratio": backtest_result.sharpe_ratio,
-                    "performance_score": backtest_result.overall_performance_score
+                    "volume_confirmation": backtest_result.avg_volume_confirmation_rate,
+                    "confidence_score": backtest_result.avg_confidence_score,
+                    "validation_score": backtest_result.sr_validation_score
                 })
         
         # Compare results
         logger.info("\n📊 Parameter Set Comparison:")
-        logger.info("="*80)
-        logger.info(f"{'Parameter Set':<15} {'Levels':<8} {'Success':<8} {'Accuracy':<10} {'Bounce':<8} {'Win Rate':<10} {'Profit':<8} {'Sharpe':<8} {'Score':<8}")
-        logger.info("="*80)
+        logger.info("="*90)
+        logger.info(f"{'Parameter Set':<15} {'Levels':<8} {'Success':<8} {'Accuracy':<10} {'Bounce':<8} {'Volume':<8} {'Confidence':<10} {'Score':<8}")
+        logger.info("="*90)
         
         for result in results:
             logger.info(f"{result['name']:<15} {result['total_levels']:<8} {result['successful_levels']:<8} "
-                       f"{result['accuracy']:<10.2%} {result['bounce_rate']:<8.2%} {result['win_rate']:<10.2%} "
-                       f"{result['profit_factor']:<8.2f} {result['sharpe_ratio']:<8.2f} {result['performance_score']:<8.3f}")
+                       f"{result['accuracy']:<10.2%} {result['bounce_rate']:<8.2%} {result['volume_confirmation']:<8.2%} "
+                       f"{result['confidence_score']:<10.3f} {result['validation_score']:<8.3f}")
         
         # Find best performing parameter set
-        best_result = max(results, key=lambda x: x['performance_score'])
+        best_result = max(results, key=lambda x: x['validation_score'])
         logger.info(f"\n🏆 Best Performing Parameter Set: {best_result['name']}")
-        logger.info(f"   Performance Score: {best_result['performance_score']:.3f}")
+        logger.info(f"   S/R Validation Score: {best_result['validation_score']:.3f}")
         logger.info(f"   Level Detection Accuracy: {best_result['accuracy']:.2%}")
         logger.info(f"   Bounce Rate: {best_result['bounce_rate']:.2%}")
-        logger.info(f"   Trading Win Rate: {best_result['win_rate']:.2%}")
+        logger.info(f"   Volume Confirmation: {best_result['volume_confirmation']:.2%}")
         
     except Exception as e:
         logger.error(f"❌ Success metrics analysis failed: {e}")
@@ -390,7 +391,8 @@ async def assess_sr_level_validity(backtest_result):
             "confidence_threshold": 0.5,   # 50% confidence score
             "min_touches": 3,              # Minimum 3 touches
             "max_false_breakout_rate": 0.3,  # Maximum 30% false breakouts
-            "min_win_rate": 0.5,           # Minimum 50% win rate
+            "volume_confirmation_threshold": 0.5,  # Minimum 50% volume confirmation
+            "validation_score_threshold": 0.7,  # Minimum 70% validation score
         }
         
         # Assess overall validity
@@ -418,11 +420,18 @@ async def assess_sr_level_validity(backtest_result):
             assessment.append(f"❌ False breakout rate too high: {backtest_result.overall_false_breakout_rate:.2%} > {validity_criteria['max_false_breakout_rate']:.2%}")
             overall_valid = False
         
-        # Check trading performance
-        if backtest_result.win_rate >= validity_criteria["min_win_rate"]:
-            assessment.append("✅ Trading win rate is acceptable")
+        # Check volume confirmation
+        if backtest_result.avg_volume_confirmation_rate >= validity_criteria["volume_confirmation_threshold"]:
+            assessment.append("✅ Volume confirmation rate is acceptable")
         else:
-            assessment.append(f"❌ Win rate too low: {backtest_result.win_rate:.2%} < {validity_criteria['min_win_rate']:.2%}")
+            assessment.append(f"❌ Volume confirmation too low: {backtest_result.avg_volume_confirmation_rate:.2%} < {validity_criteria['volume_confirmation_threshold']:.2%}")
+            overall_valid = False
+        
+        # Check overall validation score
+        if backtest_result.sr_validation_score >= validity_criteria["validation_score_threshold"]:
+            assessment.append("✅ Overall S/R validation score is acceptable")
+        else:
+            assessment.append(f"❌ Validation score too low: {backtest_result.sr_validation_score:.3f} < {validity_criteria['validation_score_threshold']:.3f}")
             overall_valid = False
         
         # Check level detection accuracy
@@ -438,11 +447,11 @@ async def assess_sr_level_validity(backtest_result):
         
         # Overall verdict
         if overall_valid:
-            logger.info(f"\n🎉 VERDICT: S/R levels are VALID and EFFECTIVE")
-            logger.info(f"   Overall Performance Score: {backtest_result.overall_performance_score:.3f}")
+            logger.info(f"\n🎉 VERDICT: S/R levels are VALID and RELIABLE")
+            logger.info(f"   S/R Validation Score: {backtest_result.sr_validation_score:.3f}")
         else:
             logger.info(f"\n⚠️  VERDICT: S/R levels need IMPROVEMENT")
-            logger.info(f"   Overall Performance Score: {backtest_result.overall_performance_score:.3f}")
+            logger.info(f"   S/R Validation Score: {backtest_result.sr_validation_score:.3f}")
         
         # Recommendations
         logger.info(f"\n💡 Recommendations:")
@@ -450,10 +459,12 @@ async def assess_sr_level_validity(backtest_result):
             logger.info("  - Increase bounce rate by improving S/R detection algorithms")
         if backtest_result.overall_false_breakout_rate > 0.3:
             logger.info("  - Reduce false breakouts by improving confirmation logic")
-        if backtest_result.win_rate < 0.5:
-            logger.info("  - Improve trading strategy based on S/R levels")
+        if backtest_result.avg_volume_confirmation_rate < 0.5:
+            logger.info("  - Improve volume analysis to confirm S/R level significance")
         if backtest_result.level_detection_accuracy < 0.5:
             logger.info("  - Enhance level detection accuracy through parameter optimization")
+        if backtest_result.sr_validation_score < 0.7:
+            logger.info("  - Focus on improving overall S/R validation metrics")
         
     except Exception as e:
         logger.error(f"❌ S/R validity assessment failed: {e}")

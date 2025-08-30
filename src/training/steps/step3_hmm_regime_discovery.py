@@ -53,7 +53,14 @@ from src.utils.centralized_decorators import (
     validate_pipeline_step
 )
 from src.utils.logger import system_logger
-from src.utils.enhanced_mlflow_integration import with_enhanced_mlflow_logging, log_step_artifact, log_step_dataframe
+from src.utils.enhanced_mlflow_integration import (
+    with_enhanced_mlflow_logging, 
+    log_step_artifact, 
+    log_step_dataframe,
+    log_step_dataframe_with_standardized_name,
+    log_step_report,
+    log_step_artifact_with_standardized_name
+)
 
 # Import SR Breakout Predictor for enhanced regime analysis
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
@@ -332,42 +339,72 @@ class HMMRegimeDiscoveryStep:
         return pipeline_state
 
     async def _log_step3_artifacts_to_mlflow(self, regime_results: dict[str, Any], training_input: dict[str, Any]) -> None:
-        """Log step 3 artifacts to MLflow with enhanced metadata."""
+        """Log step 3 artifacts to MLflow with enhanced metadata and standardized naming."""
         try:
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             timeframe = training_input.get("timeframe", "1m")
             data_dir = training_input.get("data_dir", "data_cache")
             
-            # Log composite clusters DataFrame
+            # Log composite clusters DataFrame with standardized naming
             if "composite_df" in regime_results:
                 composite_df = regime_results["composite_df"]
-                log_step_dataframe(
+                artifact_name = log_step_dataframe_with_standardized_name(
                     config=self.config,
                     step_name="step3_hmm_regime_discovery",
                     df=composite_df,
-                    artifact_name=f"{exchange}_{symbol}_{timeframe}_composite_clusters",
+                    artifact_type="composite_clusters",
                     additional_metadata={
                         "artifact_type": "composite_clusters",
                         "dataframe_shape": list(composite_df.shape),
                         "regime_count": len(composite_df.get("composite_cluster_id", []).unique()) if "composite_cluster_id" in composite_df.columns else 0,
+                        "timeframe": timeframe,
                     }
                 )
+                self.logger.info(f"✅ Logged composite clusters: {artifact_name}")
             
-            # Log intensity DataFrame
+            # Log intensity DataFrame with standardized naming
             if "intensity_df" in regime_results:
                 intensity_df = regime_results["intensity_df"]
-                log_step_dataframe(
+                artifact_name = log_step_dataframe_with_standardized_name(
                     config=self.config,
                     step_name="step3_hmm_regime_discovery",
                     df=intensity_df,
-                    artifact_name=f"{exchange}_{symbol}_{timeframe}_intensity_clusters",
+                    artifact_type="intensity_clusters",
                     additional_metadata={
                         "artifact_type": "intensity_clusters",
                         "dataframe_shape": list(intensity_df.shape),
                         "intensity_features": [col for col in intensity_df.columns if "intensity" in col],
+                        "timeframe": timeframe,
                     }
                 )
+                self.logger.info(f"✅ Logged intensity clusters: {artifact_name}")
+            
+            # Log regime discovery report
+            if "metrics" in regime_results and "reports" in regime_results:
+                report_data = {
+                    "metrics": regime_results["metrics"],
+                    "reports": regime_results["reports"],
+                    "training_input": {
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "timeframe": timeframe,
+                    },
+                    "execution_timestamp": datetime.now().isoformat(),
+                }
+                
+                report_name = log_step_report(
+                    config=self.config,
+                    step_name="step3_hmm_regime_discovery",
+                    report_data=report_data,
+                    report_type="regime_discovery_report",
+                    additional_metadata={
+                        "hmm_states": regime_results["metrics"].get("hmm_states", 0),
+                        "composite_clusters": regime_results["metrics"].get("composite_clusters", 0),
+                        "reports_generated": list(regime_results["reports"].keys()) if "reports" in regime_results else [],
+                    }
+                )
+                self.logger.info(f"✅ Logged regime discovery report: {report_name}")
             
             # Log metrics
             if "metrics" in regime_results:
@@ -403,6 +440,7 @@ class HMMRegimeDiscoveryStep:
                         "n_components": getattr(hmm_model, 'n_components', 0),
                         "covariance_type": getattr(hmm_model, 'covariance_type', 'unknown'),
                         "training_algorithm": "GaussianHMM",
+                        "timeframe": timeframe,
                     }
                 )
             
@@ -418,10 +456,11 @@ class HMMRegimeDiscoveryStep:
                     additional_metadata={
                         "n_clusters": getattr(kmeans_model, 'n_clusters', 0),
                         "training_algorithm": "KMeans",
+                        "timeframe": timeframe,
                     }
                 )
             
-            self.logger.info("✅ Step 3 artifacts logged to MLflow successfully")
+            self.logger.info("✅ Step 3 artifacts logged to MLflow with standardized naming successfully")
             
         except Exception as e:
             self.logger.error(f"❌ Failed to log step 3 artifacts to MLflow: {e}")

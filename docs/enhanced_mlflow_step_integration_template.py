@@ -17,6 +17,10 @@ from src.utils.enhanced_mlflow_integration import (
     log_step_dataframe,
     log_step_model,
     log_step_metrics,
+    log_step_dataframe_with_standardized_name,
+    log_step_artifact_with_standardized_name,
+    log_step_report,
+    generate_standardized_artifact_name,
     EnhancedMLflowManager,
 )
 
@@ -62,7 +66,7 @@ class ExampleStep:
         # Example: Save artifacts
         artifacts = await self._save_artifacts(processed_data, trained_model, symbol, exchange, timeframe)
         
-        # Log step-specific artifacts to MLflow
+        # Log step-specific artifacts to MLflow with standardized naming
         await self._log_step_artifacts_to_mlflow(
             processed_data, trained_model, metrics, artifacts, training_input
         )
@@ -84,25 +88,27 @@ class ExampleStep:
         artifacts: Dict[str, str],
         training_input: Dict[str, Any]
     ) -> None:
-        """Log step artifacts to MLflow with enhanced metadata."""
+        """Log step artifacts to MLflow with enhanced metadata and standardized naming."""
         try:
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             timeframe = training_input.get("timeframe", "1m")
             
-            # Log processed data as DataFrame
+            # Log processed data as DataFrame with standardized naming
             if hasattr(processed_data, 'to_parquet'):
-                log_step_dataframe(
+                artifact_name = log_step_dataframe_with_standardized_name(
                     config=self.config,
                     step_name="example_step",
                     df=processed_data,
-                    artifact_name=f"{exchange}_{symbol}_{timeframe}_processed_data",
+                    artifact_type="processed_data",
                     additional_metadata={
                         "artifact_type": "processed_data",
                         "dataframe_shape": list(processed_data.shape),
                         "processing_method": "example_processing",
+                        "timeframe": timeframe,
                     }
                 )
+                self.logger.info(f"✅ Logged processed data: {artifact_name}")
             
             # Log trained model
             if trained_model:
@@ -115,8 +121,36 @@ class ExampleStep:
                     additional_metadata={
                         "training_algorithm": getattr(trained_model, '__class__.__name__', 'Unknown'),
                         "model_parameters": getattr(trained_model, 'get_params', lambda: {})() if hasattr(trained_model, 'get_params') else {},
+                        "timeframe": timeframe,
                     }
                 )
+            
+            # Log step report
+            report_data = {
+                "step_execution_summary": {
+                    "processed_data_shape": list(processed_data.shape) if hasattr(processed_data, 'shape') else [],
+                    "model_trained": trained_model is not None,
+                    "metrics_calculated": len(metrics),
+                    "artifacts_generated": len(artifacts),
+                },
+                "metrics": metrics,
+                "artifacts": artifacts,
+                "training_input": training_input,
+                "execution_timestamp": datetime.now().isoformat(),
+            }
+            
+            report_name = log_step_report(
+                config=self.config,
+                step_name="example_step",
+                report_data=report_data,
+                report_type="example_step_report",
+                additional_metadata={
+                    "data_processed": hasattr(processed_data, 'shape'),
+                    "model_trained": trained_model is not None,
+                    "timeframe": timeframe,
+                }
+            )
+            self.logger.info(f"✅ Logged step report: {report_name}")
             
             # Log metrics
             if metrics:
@@ -127,13 +161,14 @@ class ExampleStep:
                     additional_metadata={
                         "metrics_type": "example_performance",
                         "validation_method": "cross_validation",
+                        "timeframe": timeframe,
                     }
                 )
             
-            # Log artifact files
+            # Log artifact files with standardized naming
             for artifact_name, artifact_path in artifacts.items():
                 if Path(artifact_path).exists():
-                    log_step_artifact(
+                    artifact_file_name = log_step_artifact_with_standardized_name(
                         config=self.config,
                         step_name="example_step",
                         artifact_path=artifact_path,
@@ -141,10 +176,12 @@ class ExampleStep:
                         additional_metadata={
                             "artifact_filename": Path(artifact_path).name,
                             "artifact_size_bytes": Path(artifact_path).stat().st_size,
+                            "timeframe": timeframe,
                         }
                     )
+                    self.logger.info(f"✅ Logged artifact {artifact_name}: {artifact_file_name}")
             
-            self.logger.info("✅ Example step artifacts logged to MLflow successfully")
+            self.logger.info("✅ Example step artifacts logged to MLflow with standardized naming successfully")
             
         except Exception as e:
             self.logger.error(f"❌ Failed to log example step artifacts to MLflow: {e}")

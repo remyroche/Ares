@@ -224,6 +224,278 @@ def log_step_artifact(
         system_logger.error(f"Failed to log artifact '{artifact_path}' for step {step_name}: {e}")
 
 
+def generate_standardized_artifact_name(
+    exchange: str,
+    token: str,
+    step_number: str,
+    artifact_type: str,
+    extension: str = "",
+    timestamp: Optional[datetime] = None
+) -> str:
+    """Generate standardized artifact name following the pattern: exchange_token_date_hourminute_NumberOfStep_Artifact
+    
+    Args:
+        exchange: Exchange name (e.g., "BINANCE")
+        token: Token/symbol name (e.g., "ETHUSDT")
+        step_number: Step number (e.g., "step3", "step6")
+        artifact_type: Type of artifact (e.g., "composite_clusters", "features_train", "hmm_model")
+        extension: File extension (e.g., ".parquet", ".pkl", ".json")
+        timestamp: Optional timestamp, defaults to current time
+        
+    Returns:
+        Standardized artifact name
+    """
+    if timestamp is None:
+        timestamp = datetime.now()
+    
+    date_str = timestamp.strftime("%Y%m%d")
+    time_str = timestamp.strftime("%H%M")
+    
+    # Clean up step number to just the number
+    step_num = step_number.replace("step", "").replace("_", "")
+    
+    # Clean up artifact type (replace spaces and special chars with underscores)
+    clean_artifact_type = artifact_type.replace(" ", "_").replace("-", "_").lower()
+    
+    # Build the standardized name
+    artifact_name = f"{exchange}_{token}_{date_str}_{time_str}_{step_num}_{clean_artifact_type}"
+    
+    if extension:
+        if not extension.startswith("."):
+            extension = "." + extension
+        artifact_name += extension
+    
+    return artifact_name
+
+
+def log_step_dataframe(
+    config: Dict[str, Any],
+    step_name: str,
+    df: pd.DataFrame,
+    artifact_name: str,
+    run_id: Optional[str] = None,
+    additional_metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Log a DataFrame as an artifact for a specific step.
+    
+    Args:
+        config: Configuration dictionary
+        step_name: Name of the pipeline step
+        df: DataFrame to log
+        artifact_name: Name for the artifact
+        run_id: Optional MLflow run ID
+        additional_metadata: Additional metadata to log
+    """
+    try:
+        metadata = extract_training_metadata(config)
+        
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp_file:
+            df.to_parquet(tmp_file.name, index=False)
+            tmp_path = tmp_file.name
+        
+        # Prepare additional metadata
+        extra_metadata = {
+            "artifact_type": "dataframe",
+            "dataframe_shape": list(df.shape),
+            "dataframe_columns": list(df.columns),
+            "dataframe_dtypes": df.dtypes.to_dict(),
+        }
+        if additional_metadata:
+            extra_metadata.update(additional_metadata)
+        
+        # Log artifact
+        log_artifacts_with_metadata(
+            local_path=tmp_path,
+            artifact_path=f"artifacts/{step_name}/{artifact_name}.parquet",
+            asset=metadata["asset"],
+            exchange=metadata["exchange"],
+            lookback_period=metadata["lookback_period"],
+            project_version=metadata["project_version"],
+            run_id=run_id,
+            additional_metadata=extra_metadata,
+        )
+        
+        # Clean up temporary file
+        os.unlink(tmp_path)
+        
+        system_logger.info(f"✅ Logged DataFrame '{artifact_name}' for step {step_name}")
+        
+    except Exception as e:
+        system_logger.error(f"Failed to log DataFrame '{artifact_name}' for step {step_name}: {e}")
+
+
+def log_step_dataframe_with_standardized_name(
+    config: Dict[str, Any],
+    step_name: str,
+    df: pd.DataFrame,
+    artifact_type: str,
+    run_id: Optional[str] = None,
+    additional_metadata: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Log a DataFrame with standardized naming pattern.
+    
+    Args:
+        config: Configuration dictionary
+        step_name: Name of the pipeline step
+        df: DataFrame to log
+        artifact_type: Type of artifact (e.g., "composite_clusters", "features_train")
+        run_id: Optional MLflow run ID
+        additional_metadata: Additional metadata to log
+        
+    Returns:
+        Generated artifact name
+    """
+    metadata = extract_training_metadata(config)
+    exchange = metadata["exchange"]
+    token = metadata["asset"]
+    
+    # Generate standardized artifact name
+    artifact_name = generate_standardized_artifact_name(
+        exchange=exchange,
+        token=token,
+        step_number=step_name,
+        artifact_type=artifact_type,
+        extension="parquet"
+    )
+    
+    # Log the DataFrame
+    log_step_dataframe(
+        config=config,
+        step_name=step_name,
+        df=df,
+        artifact_name=artifact_name,
+        run_id=run_id,
+        additional_metadata=additional_metadata,
+    )
+    
+    return artifact_name
+
+
+def log_step_artifact_with_standardized_name(
+    config: Dict[str, Any],
+    step_name: str,
+    artifact_path: str,
+    artifact_type: str,
+    run_id: Optional[str] = None,
+    additional_metadata: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Log an artifact with standardized naming pattern.
+    
+    Args:
+        config: Configuration dictionary
+        step_name: Name of the pipeline step
+        artifact_path: Path to the artifact file
+        artifact_type: Type of artifact (e.g., "model", "report", "metrics")
+        run_id: Optional MLflow run ID
+        additional_metadata: Additional metadata to log
+        
+    Returns:
+        Generated artifact name
+    """
+    metadata = extract_training_metadata(config)
+    exchange = metadata["exchange"]
+    token = metadata["asset"]
+    
+    # Get file extension
+    file_extension = os.path.splitext(artifact_path)[1]
+    
+    # Generate standardized artifact name
+    artifact_name = generate_standardized_artifact_name(
+        exchange=exchange,
+        token=token,
+        step_number=step_name,
+        artifact_type=artifact_type,
+        extension=file_extension
+    )
+    
+    # Log the artifact
+    log_step_artifact(
+        config=config,
+        step_name=step_name,
+        artifact_path=artifact_path,
+        artifact_type=artifact_type,
+        run_id=run_id,
+        additional_metadata=additional_metadata,
+    )
+    
+    return artifact_name
+
+
+def log_step_report(
+    config: Dict[str, Any],
+    step_name: str,
+    report_data: Dict[str, Any],
+    report_type: str,
+    run_id: Optional[str] = None,
+    additional_metadata: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Log a step report with standardized naming pattern.
+    
+    Args:
+        config: Configuration dictionary
+        step_name: Name of the pipeline step
+        report_data: Report data to log
+        report_type: Type of report (e.g., "training_summary", "optimization_results")
+        run_id: Optional MLflow run ID
+        additional_metadata: Additional metadata to log
+        
+    Returns:
+        Generated report name
+    """
+    try:
+        metadata = extract_training_metadata(config)
+        exchange = metadata["exchange"]
+        token = metadata["asset"]
+        
+        # Generate standardized report name
+        report_name = generate_standardized_artifact_name(
+            exchange=exchange,
+            token=token,
+            step_number=step_name,
+            artifact_type=report_type,
+            extension="json"
+        )
+        
+        # Create temporary file
+        import json
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as tmp_file:
+            json.dump(report_data, tmp_file, indent=2, default=str)
+            tmp_path = tmp_file.name
+        
+        # Prepare additional metadata
+        extra_metadata = {
+            "artifact_type": "report",
+            "report_type": report_type,
+            "report_keys": list(report_data.keys()),
+            "report_size": len(report_data),
+        }
+        if additional_metadata:
+            extra_metadata.update(additional_metadata)
+        
+        # Log artifact
+        log_artifacts_with_metadata(
+            local_path=tmp_path,
+            artifact_path=f"artifacts/{step_name}/{report_name}",
+            asset=metadata["asset"],
+            exchange=metadata["exchange"],
+            lookback_period=metadata["lookback_period"],
+            project_version=metadata["project_version"],
+            run_id=run_id,
+            additional_metadata=extra_metadata,
+        )
+        
+        # Clean up temporary file
+        os.unlink(tmp_path)
+        
+        system_logger.info(f"✅ Logged report '{report_name}' for step {step_name}")
+        return report_name
+        
+    except Exception as e:
+        system_logger.error(f"Failed to log report for step {step_name}: {e}")
+        return ""
+
+
 def log_step_dataframe(
     config: Dict[str, Any],
     step_name: str,

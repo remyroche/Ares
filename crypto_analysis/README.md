@@ -22,10 +22,10 @@ A comprehensive tool for downloading and analyzing cryptocurrency data to calcul
 
 - **Triple Barrier Profit Analysis:**
   - **Multiple barrier levels:** 0.3% to 1.5% in 0.1% increments (13 levels)
-  - **Up/Down barriers:** Down barrier is half of up barrier (e.g., 1% up / 0.5% down)
-  - **No time limit:** Trades continue until barrier is hit
-  - **Entry signals:** Enter on price direction change
-  - **Exit conditions:** Take profit at up barrier, stop loss at down barrier
+  - **Theoretical perfect trades:** Only captures successful movements at their peak
+  - **Daily analysis:** Each day's open, high, low prices are analyzed
+  - **Long/Short positions:** Both directions are evaluated independently
+  - **100% capture:** Assumes perfect execution at optimal entry/exit points
 
 - **Intraday Pattern Analysis:**
   - Hourly price movement patterns
@@ -111,15 +111,13 @@ This will:
 - **Price Change Standard Deviation:** Variability of price changes
 
 ### Triple Barrier Profit Metrics
-- **Total Trades:** Number of completed trades
-- **Average Profit:** Mean profit per trade
-- **Win Rate:** Percentage of profitable trades
-- **Profit Frequency:** Trades per period
+- **Total Trades:** Number of successful trades that exceed the barrier
+- **Average Profit:** Mean profit per successful trade
+- **Long Trades:** Number of successful long positions
+- **Short Trades:** Number of successful short positions
+- **Profit Frequency:** Successful trades per day
 - **Max Profit:** Maximum single trade profit
-- **Total Potential Profit:** Cumulative profit across all trades
-- **Average Trade Duration:** Mean time per trade (in 15-minute periods)
-- **Take Profit Rate:** Percentage of trades that hit take profit
-- **Stop Loss Rate:** Percentage of trades that hit stop loss
+- **Total Potential Profit:** Cumulative profit across all successful trades
 
 ### Movement Statistics
 - **Movement Percentiles:** 10th, 25th, 50th, 75th, 90th, 95th, 99th percentiles
@@ -138,23 +136,22 @@ This will:
 
 ### Barrier Levels Tested
 - **0.3% to 1.5%:** 13 barrier levels in 0.1% increments
-- **Up Barriers:** 0.3%, 0.4%, 0.5%, 0.6%, 0.7%, 0.8%, 0.9%, 1.0%, 1.1%, 1.2%, 1.3%, 1.4%, 1.5%
-- **Down Barriers:** Half of up barriers (0.15%, 0.2%, 0.25%, etc.)
+- **Barrier Levels:** 0.3%, 0.4%, 0.5%, 0.6%, 0.7%, 0.8%, 0.9%, 1.0%, 1.1%, 1.2%, 1.3%, 1.4%, 1.5%
 
-### Trading Logic
-- **Entry Signal:** Enter position when price direction changes (crosses previous close)
-- **Long Position:** Buy when price goes up, take profit at up barrier, stop loss at down barrier
-- **Short Position:** Sell when price goes down, take profit at down barrier, stop loss at up barrier
-- **No Time Limit:** Trades continue until either barrier is hit
-- **Perfect Execution:** Assumes no slippage, no fees, immediate execution
+### Analysis Method
+- **Daily Analysis:** Each day's open, high, low prices are analyzed
+- **Long Position:** Buy at open, sell at high (if profit ≥ barrier)
+- **Short Position:** Sell at open, buy at low (if profit ≥ barrier)
+- **Perfect Execution:** Assumes optimal entry/exit at exact prices
+- **Success Only:** Only counts trades that exceed the barrier level
 
 ### Key Insights Provided
-- **Profit Potential:** Average profit per trade for each barrier level
-- **Win Rate Analysis:** Success rate for each barrier configuration
-- **Trade Frequency:** How often trades occur for each barrier level
+- **Profit Potential:** Average profit per successful trade for each barrier level
+- **Trade Frequency:** How often successful trades occur for each barrier level
+- **Long vs Short Analysis:** Which direction works better for each asset
 - **Asset Comparison:** Which assets offer the best profit opportunities
-- **Risk Assessment:** Relationship between volatility and profit potential
 - **Barrier Performance:** Which barrier levels work best for each asset
+- **Theoretical Maximum:** Perfect profit capture potential for each asset
 
 ## Supported Assets
 

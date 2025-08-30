@@ -1,5 +1,6 @@
 # Step 12 Confidence Optimization Configuration
-# This file contains the confidence thresholds that will be optimized in step12
+# This file contains the confidence thresholds that will be optimized in step17
+# and automatically delivered for tactician confidence optimization
 
 step12_confidence_optimization:
   # Position Monitor Confidence Thresholds (to be optimized)
@@ -49,7 +50,7 @@ step12_confidence_optimization:
     # Combined confidence threshold for position opening
     combined_confidence_threshold: 0.75
 
-  # Optimization Parameters for Step 12
+  # Optimization Parameters for Step 17 (Final Parameters Optimization)
   optimization:
     # Confidence threshold ranges to test
     confidence_ranges:
@@ -86,6 +87,16 @@ step12_confidence_optimization:
       - "profit_factor"
       - "total_return"
       - "barrier_hit_rate"  # How often we hit barriers vs avoid them
+    
+    # Step 17 Integration
+    step17_integration:
+      enabled: true
+      auto_deliver_step12_results: true
+      extract_tactician_parameters: true
+      confidence_optimization: true
+      position_sizing_optimization: true
+      leverage_optimization: true
+      tpsl_optimization: true
 
   # Validation Rules
   validation:

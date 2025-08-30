@@ -55,21 +55,13 @@ def test_barrier_calculations():
     upper_25_fraction = 0.25
     lower_25_fraction = 0.25
     
-    # Calculate all 4 barrier combinations
+    # Calculate 2 barrier combinations
     barriers = {
-        "upper_50_lower_50": (
+        "barrier_50_50": (
             analyst_upper * upper_50_fraction,  # 50% upper
             analyst_lower * lower_50_fraction   # 50% lower
         ),
-        "upper_50_lower_25": (
-            analyst_upper * upper_50_fraction,  # 50% upper
-            analyst_lower * lower_25_fraction   # 25% lower
-        ),
-        "upper_25_lower_50": (
-            analyst_upper * upper_25_fraction,  # 25% upper
-            analyst_lower * lower_50_fraction   # 50% lower
-        ),
-        "upper_25_lower_25": (
+        "barrier_25_25": (
             analyst_upper * upper_25_fraction,  # 25% upper
             analyst_lower * lower_25_fraction   # 25% lower
         )
@@ -187,10 +179,8 @@ def test_best_barrier_selection():
     
     # Simulate precision scores for each barrier combination
     barrier_results = {
-        "upper_50_lower_50": {"precision_score": 0.85, "quality_score": 0.67},
-        "upper_50_lower_25": {"precision_score": 0.90, "quality_score": 0.80},
-        "upper_25_lower_50": {"precision_score": 0.82, "quality_score": 0.50},
-        "upper_25_lower_25": {"precision_score": 0.88, "quality_score": 0.75}
+        "barrier_50_50": {"precision_score": 0.85, "quality_score": 0.67},
+        "barrier_25_25": {"precision_score": 0.88, "quality_score": 0.75}
     }
     
     # Find best performing barrier combination
@@ -245,10 +235,10 @@ def main():
         
         print("\n" + "=" * 80)
         print("✅ ALL TESTS COMPLETED SUCCESSFULLY!")
-        print("\n🎯 4-Barrier System Features Verified:")
-        print("   ✓ 4 barrier combinations: 50%/50%, 50%/25%, 25%/50%, 25%/25%")
+        print("\n🎯 2-Barrier System Features Verified:")
+        print("   ✓ 2 barrier combinations: 50-50%, 25-25%")
         print("   ✓ Dynamic barrier calculation based on Analyst values")
-        print("   ✓ Multi-outcome predictions for all barrier combinations")
+        print("   ✓ Multi-outcome predictions for 2 barrier combinations")
         print("   ✓ Price deviation predictions for each barrier combination")
         print("   ✓ Price direction predictions (same as Analyst)")
         print("   ✓ Price target confidence (ML model calculated)")
@@ -256,17 +246,15 @@ def main():
         print("   ✓ ML model confidence calculation")
         
         print("\n🔧 Technical Implementation:")
-        print("   • 4 barrier combinations calculated as fractions of Analyst barriers")
+        print("   • 2 barrier combinations calculated as fractions of Analyst barriers")
         print("   • Price deviations calculated for each barrier combination")
         print("   • ML model selects best performing barrier combination")
         print("   • Confidence calculated by ML model based on market conditions")
-        print("   • Multi-outcome predictions for all 4 barrier scenarios")
+        print("   • Multi-outcome predictions for 2 barrier scenarios")
         
         print("\n📊 Example Output:")
-        print("   • upper_50_lower_50: Upper=0.0010 (0.100%), Lower=0.0005 (0.050%)")
-        print("   • upper_50_lower_25: Upper=0.0010 (0.100%), Lower=0.0003 (0.025%)")
-        print("   • upper_25_lower_50: Upper=0.0005 (0.050%), Lower=0.0005 (0.050%)")
-        print("   • upper_25_lower_25: Upper=0.0005 (0.050%), Lower=0.0003 (0.025%)")
+        print("   • barrier_50_50: Upper=0.0010 (0.100%), Lower=0.0005 (0.050%)")
+        print("   • barrier_25_25: Upper=0.0005 (0.050%), Lower=0.0003 (0.025%)")
         
         print(f"\n🎯 Best Barrier Selected: {best_barrier}")
         

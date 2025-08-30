@@ -61,7 +61,7 @@ class TacticianEnhancedPredictionIntegrator:
         
         # Multi-outcome prediction configuration (similar to Analyst)
         self.prediction_types = [
-            "price_deviation_prediction",    # Price deviation % for all 4 barrier combinations
+            "price_deviation_prediction",    # Price deviation % for 2 barrier combinations
             "price_direction_prediction",    # Price direction (long/short)
             "price_target_confidence"        # Confidence to reach upper barrier before lower barrier
         ]
@@ -351,10 +351,10 @@ class TacticianEnhancedPredictionIntegrator:
         barrier_combinations: Dict[str, Tuple[float, float]],
         timeframe: str
     ) -> Dict[str, float]:
-        """Enhance prediction value for all 4 barrier combinations."""
+        """Enhance prediction value for 2 barrier combinations."""
         try:
             if prediction_type == "price_deviation_prediction":
-                # Calculate price deviations for all 4 barrier combinations
+                # Calculate price deviations for 2 barrier combinations
                 current_price = market_data['close'].iloc[-1] if not market_data.empty else 100.0
                 
                 deviations = {}
@@ -372,7 +372,7 @@ class TacticianEnhancedPredictionIntegrator:
                 return deviations
                 
             elif prediction_type == "price_direction_prediction":
-                # Same direction as Analyst for all barrier combinations
+                # Same direction as Analyst for 2 barrier combinations
                 directions = {}
                 for barrier_name in barrier_combinations.keys():
                     directions[barrier_name] = base_value  # Keep same direction
@@ -381,9 +381,14 @@ class TacticianEnhancedPredictionIntegrator:
                 
             elif prediction_type == "price_target_confidence":
                 # Confidence to reach upper barrier before lower barrier for each combination
+                # ML model calculates this based on market conditions, volatility, and barrier distances
                 confidences = {}
                 for barrier_name, (upper_barrier, lower_barrier) in barrier_combinations.items():
-                    # ML model calculates confidence based on market conditions and barrier distances
+                    # ML model will calculate confidence based on:
+                    # - Market volatility
+                    # - Barrier distances
+                    # - Recent price action
+                    # - Support/resistance levels
                     # For now, use base confidence - ML model will enhance this
                     confidences[barrier_name] = base_value
                 

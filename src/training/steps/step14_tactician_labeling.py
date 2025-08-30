@@ -129,28 +129,9 @@ class TacticianTripleBarrierLabeler:
             return True  # Default to allow if filter fails
 
     def _calculate_adaptive_barriers(self, data: pd.DataFrame, entry_idx: int, base_pt: float, base_sl: float) -> tuple[float, float]:
-        """Calculate adaptive barriers based on market conditions."""
-        try:
-            # Volatility adjustment
-            if len(data) >= 20:
-                recent_data = data.iloc[max(0, entry_idx-20):entry_idx+1]
-                if len(recent_data) >= 10:
-                    returns = recent_data["close"].pct_change().dropna()
-                    volatility = returns.std()
-                    
-                    # Adjust barriers based on volatility
-                    volatility_multiplier = min(2.0, max(0.5, 1.0 / (volatility * 100)))
-                    
-                    adjusted_pt = base_pt * volatility_multiplier
-                    adjusted_sl = base_sl * volatility_multiplier
-                    
-                    return adjusted_pt, adjusted_sl
-            
-            return base_pt, base_sl
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Adaptive barrier calculation error: {e}")
-            return base_pt, base_sl
+        """Calculate barriers - no dynamic adaptation, ML model handles market conditions."""
+        # No hardcoded volatility adjustment - ML model will calculate optimal barriers
+        return base_pt, base_sl
 
     def _generate_multi_outcome_predictions(
         self,
@@ -162,9 +143,9 @@ class TacticianTripleBarrierLabeler:
         precision_score: float,
         quality_score: float
     ) -> dict[str, Any]:
-        """Generate multi-outcome predictions for all 4 barrier combinations."""
+        """Generate multi-outcome predictions for 2 barrier combinations."""
         try:
-            # Calculate price deviations for all 4 barrier combinations
+            # Calculate price deviations for 2 barrier combinations
             price_deviations = {}
             price_directions = {}
             price_target_confidences = {}
@@ -184,8 +165,13 @@ class TacticianTripleBarrierLabeler:
                 price_directions[barrier_name] = price_direction
                 
                 # Calculate confidence to reach upper barrier before lower barrier
-                # ML model will enhance this based on market conditions
+                # ML model calculates this based on market conditions, volatility, and barrier distances
                 base_confidence = precision_score
+                # ML model will enhance confidence based on:
+                # - Market volatility
+                # - Barrier distances  
+                # - Recent price action
+                # - Support/resistance levels
                 price_target_confidences[barrier_name] = base_confidence
             
             return {
@@ -199,7 +185,7 @@ class TacticianTripleBarrierLabeler:
             
         except Exception as e:
             self.logger.error(f"❌ Error generating multi-outcome predictions: {e}")
-            # Return fallback values for all barrier combinations
+            # Return fallback values for 2 barrier combinations
             fallback_deviations = {name: 0.0 for name in barrier_combinations.keys()}
             fallback_directions = {name: 0 for name in barrier_combinations.keys()}
             fallback_confidences = {name: 0.0 for name in barrier_combinations.keys()}
@@ -275,24 +261,21 @@ class TacticianTripleBarrierLabeler:
             if not self._apply_quality_filters(data, entry_idx):
                 continue
             
-            # Calculate barriers for all 4 combinations
+            # Calculate barriers for 2 combinations
             barrier_prices = {}
             for barrier_name, (upper_pct, lower_pct) in self.barrier_combinations.items():
                 base_upper = entry_prices.iloc[i] * (1 + upper_pct * signal)
                 base_lower = entry_prices.iloc[i] * (1 - lower_pct * signal)
                 
-                # Apply adaptive barriers if enabled
-                if self.config.get("enable_adaptive_barriers", True):
-                    upper, lower = self._calculate_adaptive_barriers(data, entry_idx, base_upper, base_lower)
-                else:
-                    upper, lower = base_upper, base_lower
+                # No adaptive barriers - ML model handles market conditions
+                upper, lower = base_upper, base_lower
                 
                 barrier_prices[barrier_name] = (upper, lower)
 
             # Get the path data for barrier hit detection
             path = data.iloc[entry_idx:entry_idx + self.max_lookahead]
 
-            # Check for hits with enhanced precision for all 4 barrier combinations
+            # Check for hits with enhanced precision for 2 barrier combinations
             barrier_results = {}
             best_precision_score = 0.0
             best_quality_score = 0.0
@@ -356,12 +339,12 @@ class TacticianTripleBarrierLabeler:
                 precision_score = 0.0
                 quality_score = 0.0
 
-            # Generate multi-outcome predictions for all 4 barrier combinations
+            # Generate multi-outcome predictions for 2 barrier combinations
             predictions = self._generate_multi_outcome_predictions(
                 data, entry_idx, signal, barrier_prices, entry_prices.iloc[i], precision_score, quality_score
             )
             
-            # Store multi-outcome predictions for all 4 barrier combinations
+            # Store multi-outcome predictions for 2 barrier combinations
             # Store the best performing barrier combination as the main prediction
             if best_barrier_name:
                 price_deviation_predictions.iloc[entry_idx] = predictions["price_deviations"][best_barrier_name]

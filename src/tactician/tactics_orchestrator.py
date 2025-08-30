@@ -98,6 +98,36 @@ class DecisionPolicy:
             self.logger.error(failed(f"❌ Decision Policy initialization failed: {e}"))
             return False
 
+    def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
+        """
+        Refresh configuration from step17 optimization results.
+        This method is called automatically when step17 completes.
+        
+        Args:
+            step17_results: Step17 optimization results
+        """
+        try:
+            # Update decision policy configuration
+            if "decision_policy" in step17_results:
+                policy_optimization = step17_results["decision_policy"]
+                self.confidence_threshold = policy_optimization.get("confidence_threshold", self.confidence_threshold)
+                self.risk_threshold = policy_optimization.get("risk_threshold", self.risk_threshold)
+            
+            # Refresh all component managers
+            if self.position_sizer:
+                self.position_sizer.refresh_step17_configuration(step17_results)
+            
+            if self.leverage_sizer:
+                self.leverage_sizer.refresh_step17_configuration(step17_results)
+            
+            if self.ml_tactics:
+                self.ml_tactics.refresh_step17_configuration(step17_results)
+            
+            self.logger.info("✅ Decision policy configuration refreshed from step17 results")
+            
+        except Exception as e:
+            self.logger.error(f"Error refreshing step17 configuration: {e}")
+
     async def _initialize_components(self) -> None:
         """Initialize all component managers."""
         try:
@@ -556,6 +586,43 @@ class TacticsOrchestrator:
         except Exception as e:
             self.logger.error(failed(f"❌ Tactics Orchestrator initialization failed: {e}"))
             return False
+
+    def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
+        """
+        Refresh configuration from step17 optimization results.
+        This method is called automatically when step17 completes.
+        
+        Args:
+            step17_results: Step17 optimization results
+        """
+        try:
+            self.logger.info("🔄 Refreshing tactics orchestrator configuration from step17 results...")
+            
+            # Refresh decision policy
+            if self.decision_policy:
+                self.decision_policy.refresh_step17_configuration(step17_results)
+            
+            # Refresh position monitor (already has auto-refresh)
+            if self.position_monitor:
+                # Position monitor auto-refreshes from step12 results
+                pass
+            
+            # Refresh position closer
+            if self.position_closer:
+                self.position_closer.refresh_step17_configuration(step17_results)
+            
+            # Refresh order manager if it has step17 refresh method
+            if hasattr(self.order_manager, 'refresh_step17_configuration'):
+                self.order_manager.refresh_step17_configuration(step17_results)
+            
+            # Refresh position strategy if it has step17 refresh method
+            if hasattr(self.position_strategy, 'refresh_step17_configuration'):
+                self.position_strategy.refresh_step17_configuration(step17_results)
+            
+            self.logger.info("✅ Tactics orchestrator configuration refreshed from step17 results")
+            
+        except Exception as e:
+            self.logger.error(f"Error refreshing step17 configuration: {e}")
 
     def _validate_configuration(self) -> bool:
         """
